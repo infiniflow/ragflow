@@ -39,13 +39,13 @@ from common.data_source.utils import (
 
 class NotionConnector(LoadConnector, PollConnector):
     """Notion Page connector that reads all Notion pages this integration has access to.
-    
+
     Arguments:
         batch_size (int): Number of objects to index in a batch
         recursive_index_enabled (bool): Whether to recursively index child pages
         root_page_id (str | None): Specific root page ID to start indexing from
     """
-    
+
     def __init__(
         self,
         batch_size: int = INDEX_BATCH_SIZE,
@@ -69,7 +69,7 @@ class NotionConnector(LoadConnector, PollConnector):
         logging.debug(f"Fetching children of block with ID '{block_id}'")
         block_url = f"https://api.notion.com/v1/blocks/{block_id}/children"
         query_params = {"start_cursor": cursor} if cursor else None
-        
+
         try:
             response = rl_requests.get(
                 block_url,
@@ -95,7 +95,7 @@ class NotionConnector(LoadConnector, PollConnector):
         """Fetch a page from its ID via the Notion API."""
         logging.debug(f"Fetching page for ID '{page_id}'")
         page_url = f"https://api.notion.com/v1/pages/{page_id}"
-        
+
         try:
             data = fetch_notion_data(page_url, self.headers, "GET")
             return NotionPage(**data)
@@ -108,13 +108,13 @@ class NotionConnector(LoadConnector, PollConnector):
         """Attempt to fetch a database as a page."""
         logging.debug(f"Fetching database for ID '{database_id}' as a page")
         database_url = f"https://api.notion.com/v1/databases/{database_id}"
-        
+
         data = fetch_notion_data(database_url, self.headers, "GET")
         database_name = data.get("title")
         database_name = (
             database_name[0].get("text", {}).get("content") if database_name else None
         )
-        
+
         return NotionPage(**data, database_name=database_name)
 
     @retry(tries=3, delay=1, backoff=2)
@@ -125,7 +125,7 @@ class NotionConnector(LoadConnector, PollConnector):
         logging.debug(f"Fetching database for ID '{database_id}'")
         block_url = f"https://api.notion.com/v1/databases/{database_id}/query"
         body = {"start_cursor": cursor} if cursor else None
-        
+
         try:
             data = fetch_notion_data(block_url, self.headers, "POST", body)
             return data
@@ -145,18 +145,18 @@ class NotionConnector(LoadConnector, PollConnector):
         result_blocks: list[NotionBlock] = []
         result_pages: list[str] = []
         cursor = None
-        
+
         while True:
             data = self._fetch_database(database_id, cursor)
-            
+
             for result in data["results"]:
                 obj_id = result["id"]
                 obj_type = result["object"]
                 text = properties_to_str(result.get("properties", {}))
-                
+
                 if text:
                     result_blocks.append(NotionBlock(id=obj_id, text=text, prefix="\n"))
-                
+
                 if self.recursive_index_enabled:
                     if obj_type == "page":
                         logging.debug(f"Found page with ID '{obj_id}' in database '{database_id}'")
@@ -165,12 +165,12 @@ class NotionConnector(LoadConnector, PollConnector):
                         logging.debug(f"Found database with ID '{obj_id}' in database '{database_id}'")
                         _, child_pages = self._read_pages_from_database(obj_id)
                         result_pages.extend(child_pages)
-            
+
             if data["next_cursor"] is None:
                 break
-            
+
             cursor = data["next_cursor"]
-        
+
         return result_blocks, result_pages
 
     def _read_blocks(self, base_block_id: str) -> tuple[list[NotionBlock], list[str]]:
@@ -178,30 +178,30 @@ class NotionConnector(LoadConnector, PollConnector):
         result_blocks: list[NotionBlock] = []
         child_pages: list[str] = []
         cursor = None
-        
+
         while True:
             data = self._fetch_child_blocks(base_block_id, cursor)
-            
+
             if data is None:
                 return result_blocks, child_pages
-            
+
             for result in data["results"]:
                 logging.debug(f"Found child block for block with ID '{base_block_id}': {result}")
                 result_block_id = result["id"]
                 result_type = result["type"]
                 result_obj = result[result_type]
-                
+
                 if result_type in ["ai_block", "unsupported", "external_object_instance_page"]:
                     logging.warning(f"Skipping unsupported block type '{result_type}'")
                     continue
-                
+
                 cur_result_text_arr = []
                 if "rich_text" in result_obj:
                     for rich_text in result_obj["rich_text"]:
                         if "text" in rich_text:
                             text = rich_text["text"]["content"]
                             cur_result_text_arr.append(text)
-                
+
                 if result["has_children"]:
                     if result_type == "child_page":
                         child_pages.append(result_block_id)
@@ -211,14 +211,14 @@ class NotionConnector(LoadConnector, PollConnector):
                         logging.debug(f"Finished sub-block: {result_block_id}")
                         result_blocks.extend(subblocks)
                         child_pages.extend(subblock_child_pages)
-                
+
                 if result_type == "child_database":
                     inner_blocks, inner_child_pages = self._read_pages_from_database(result_block_id)
                     result_blocks.extend(inner_blocks)
-                    
+
                     if self.recursive_index_enabled:
                         child_pages.extend(inner_child_pages)
-                
+
                 if cur_result_text_arr:
                     new_block = NotionBlock(
                         id=result_block_id,
@@ -226,24 +226,24 @@ class NotionConnector(LoadConnector, PollConnector):
                         prefix="\n",
                     )
                     result_blocks.append(new_block)
-            
+
             if data["next_cursor"] is None:
                 break
-            
+
             cursor = data["next_cursor"]
-        
+
         return result_blocks, child_pages
 
     def _read_page_title(self, page: NotionPage) -> Optional[str]:
         """Extracts the title from a Notion page."""
         if hasattr(page, "database_name") and page.database_name:
             return page.database_name
-        
+
         for _, prop in page.properties.items():
             if prop["type"] == "title" and len(prop["title"]) > 0:
                 page_title = " ".join([t["plain_text"] for t in prop["title"]]).strip()
                 return page_title
-        
+
         return None
 
     def _read_pages(
@@ -251,25 +251,25 @@ class NotionConnector(LoadConnector, PollConnector):
     ) -> Generator[Document, None, None]:
         """Reads pages for rich text content and generates Documents."""
         all_child_page_ids: list[str] = []
-        
+
         for page in pages:
             if page.id in self.indexed_pages:
                 logging.debug(f"Already indexed page with ID '{page.id}'. Skipping.")
                 continue
-            
+
             logging.info(f"Reading page with ID '{page.id}', with url {page.url}")
             page_blocks, child_page_ids = self._read_blocks(page.id)
             all_child_page_ids.extend(child_page_ids)
             self.indexed_pages.add(page.id)
-            
+
             raw_page_title = self._read_page_title(page)
             page_title = raw_page_title or f"Untitled Page with ID {page.id}"
-            
+
             if not page_blocks:
                 if not raw_page_title:
                     logging.warning(f"No blocks OR title found for page with ID '{page.id}'. Skipping.")
                     continue
-                
+
                 text = page_title
                 if page.properties:
                     text += "\n\n" + "\n".join(
@@ -295,7 +295,7 @@ class NotionConnector(LoadConnector, PollConnector):
                 size_bytes=len(blob),
                 doc_updated_at=datetime.fromisoformat(page.last_edited_time).astimezone(timezone.utc)
             )
-        
+
         if self.recursive_index_enabled and all_child_page_ids:
             for child_page_batch_ids in batch_generator(all_child_page_ids, INDEX_BATCH_SIZE):
                 child_page_batch = [
@@ -316,7 +316,7 @@ class NotionConnector(LoadConnector, PollConnector):
         """Recursively load pages starting from root page ID."""
         if self.root_page_id is None or not self.recursive_index_enabled:
             raise RuntimeError("Recursive page lookup is not enabled")
-        
+
         logging.info(f"Recursively loading pages from Notion based on root page with ID: {self.root_page_id}")
         pages = [self._fetch_page(page_id=self.root_page_id)]
         yield from batch_generator(self._read_pages(pages), self.batch_size)
@@ -331,17 +331,17 @@ class NotionConnector(LoadConnector, PollConnector):
         if self.recursive_index_enabled and self.root_page_id:
             yield from self._recursive_load()
             return
-        
+
         query_dict = {
             "filter": {"property": "object", "value": "page"},
             "page_size": 100,
         }
-        
+
         while True:
             db_res = self._search_notion(query_dict)
             pages = [NotionPage(**page) for page in db_res.results]
             yield from batch_generator(self._read_pages(pages), self.batch_size)
-            
+
             if db_res.has_more:
                 query_dict["start_cursor"] = db_res.next_cursor
             else:
@@ -354,17 +354,17 @@ class NotionConnector(LoadConnector, PollConnector):
         if self.recursive_index_enabled and self.root_page_id:
             yield from self._recursive_load()
             return
-        
+
         query_dict = {
             "page_size": 100,
             "sort": {"timestamp": "last_edited_time", "direction": "descending"},
             "filter": {"property": "object", "value": "page"},
         }
-        
+
         while True:
             db_res = self._search_notion(query_dict)
             pages = filter_pages_by_time(db_res.results, start, end, "last_edited_time")
-            
+
             if pages:
                 yield from batch_generator(self._read_pages(pages), self.batch_size)
                 if db_res.has_more:
@@ -378,7 +378,7 @@ class NotionConnector(LoadConnector, PollConnector):
         """Validate Notion connector settings and credentials."""
         if not self.headers.get("Authorization"):
             raise ConnectorMissingCredentialError("Notion credentials not loaded.")
-        
+
         try:
             if self.root_page_id:
                 response = rl_requests.get(
@@ -394,12 +394,12 @@ class NotionConnector(LoadConnector, PollConnector):
                     json=test_query,
                     timeout=30,
                 )
-            
+
             response.raise_for_status()
-            
+
         except rl_requests.exceptions.HTTPError as http_err:
             status_code = http_err.response.status_code if http_err.response else None
-            
+
             if status_code == 401:
                 raise CredentialExpiredError("Notion credential appears to be invalid or expired (HTTP 401).")
             elif status_code == 403:
@@ -410,14 +410,14 @@ class NotionConnector(LoadConnector, PollConnector):
                 raise ConnectorValidationError("Validation failed due to Notion rate-limits being exceeded (HTTP 429).")
             else:
                 raise UnexpectedValidationError(f"Unexpected Notion HTTP error (status={status_code}): {http_err}")
-        
+
         except Exception as exc:
             raise UnexpectedValidationError(f"Unexpected error during Notion settings validation: {exc}")
 
 
 if __name__ == "__main__":
     import os
-    
+
     root_page_id = os.environ.get("NOTION_ROOT_PAGE_ID")
     connector = NotionConnector(root_page_id=root_page_id)
     connector.load_credentials({"notion_integration_token": os.environ.get("NOTION_INTEGRATION_TOKEN")})
