@@ -220,8 +220,8 @@ class TenantService(CommonService):
     @classmethod
     @DB.connection_context()
     def user_gateway(cls, tenant_id):
-        hashobj = hashlib.sha256(tenant_id.encode("utf-8"))
-        return int(hashobj.hexdigest(), 16)%len(MINIO)
+        hash_obj = hashlib.sha256(tenant_id.encode("utf-8"))
+        return int(hash_obj.hexdigest(), 16)%len(MINIO)
 
 
 class UserTenantService(CommonService):

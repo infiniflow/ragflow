@@ -108,7 +108,7 @@ class FileSource(StrEnum):
     S3 = "s3"
     NOTION = "notion"
     DISCORD = "discord"
-    CONFLUENNCE = "confluence"
+    CONFLUENCE = "confluence"
     GMAIL = "gmail"
     GOOGLE_DRIVER = "google_driver"
     JIRA = "jira"

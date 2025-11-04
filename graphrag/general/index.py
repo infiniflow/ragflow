@@ -23,7 +23,7 @@ import trio
 from api import settings
 from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from graphrag.entity_resolution import EntityResolution
 from graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from graphrag.general.extractor import Extractor

@@ -18,7 +18,7 @@
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
-from api.utils.log_utils import init_root_logger
+from common.log_utils import init_root_logger
 from plugin import GlobalPluginManager
 init_root_logger("ragflow_server")
 

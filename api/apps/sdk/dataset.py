@@ -28,12 +28,11 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService
-from common.misc_utils import get_uuid
+from common.contants import RetCode
 from api.utils.api_utils import (
     deep_merge,
     get_error_argument_result,
     get_error_data_result,
-    get_error_operating_result,
     get_error_permission_result,
     get_parser_config,
     get_result,
@@ -80,29 +79,28 @@ def create(tenant_id):
           properties:
             name:
               type: string
-              description: Name of the dataset.
+              description: Dataset name (required).
             avatar:
               type: string
-              description: Base64 encoding of the avatar.
+              description: Optional base64-encoded avatar image.
             description:
               type: string
-              description: Description of the dataset.
+              description: Optional dataset description.
             embedding_model:
               type: string
-              description: Embedding model Name.
+              description: Optional embedding model name; if omitted, the tenant's default embedding model is used.
             permission:
               type: string
               enum: ['me', 'team']
-              description: Dataset permission.
+              description: Visibility of the dataset (private to me or shared with team).
             chunk_method:
               type: string
               enum: ["naive", "book", "email", "laws", "manual", "one", "paper",
-                     "picture", "presentation", "qa", "table", "tag"
-                     ]
-              description: Chunking method.
+                     "picture", "presentation", "qa", "table", "tag"]
+              description: Chunking method; if omitted, defaults to "naive".
             parser_config:
               type: object
-              description: Parser configuration.
+              description: Optional parser configuration; server-side defaults will be applied.
     responses:
       200:
         description: Successful operation.
@@ -117,43 +115,42 @@ def create(tenant_id):
     # |----------------|-------------|
     # | embedding_model| embd_id     |
     # | chunk_method   | parser_id   |
+
     req, err = validate_and_parse_json_request(request, CreateDatasetReq)
     if err is not None:
         return get_error_argument_result(err)
+    
+    req = KnowledgebaseService.create_with_name(
+        name = req.pop("name", None),
+        tenant_id = tenant_id,
+        parser_id = req.pop("parser_id", None),
+        **req
+    )
+
+    # Insert embedding model(embd id)
+    ok, t = TenantService.get_by_id(tenant_id)
+    if not ok:
+        return get_error_permission_result(message="Tenant not found")
+    if not req.get("embd_id"):
+        req["embd_id"] = t.embd_id
+    else:
+        ok, err = verify_embedding_availability(req["embd_id"], tenant_id)
+        if not ok:
+            return err
+
 
     try:
-        if KnowledgebaseService.get_or_none(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value):
-            return get_error_operating_result(message=f"Dataset name '{req['name']}' already exists")
-
-        req["parser_config"] = get_parser_config(req["parser_id"], req["parser_config"])
-        req["id"] = get_uuid()
-        req["tenant_id"] = tenant_id
-        req["created_by"] = tenant_id
-
-        ok, t = TenantService.get_by_id(tenant_id)
-        if not ok:
-            return get_error_permission_result(message="Tenant not found")
-
-        if not req.get("embd_id"):
-            req["embd_id"] = t.embd_id
-        else:
-            ok, err = verify_embedding_availability(req["embd_id"], tenant_id)
-            if not ok:
-                return err
-
-        if not KnowledgebaseService.save(**req):
-            return get_error_data_result(message="Create dataset error.(Database error)")
-
-        ok, k = KnowledgebaseService.get_by_id(req["id"])
-        if not ok:
-            return get_error_data_result(message="Dataset created failed")
-
-        response_data = remap_dictionary_keys(k.to_dict())
-        return get_result(data=response_data)
-    except OperationalError as e:
+      if not KnowledgebaseService.save(**req):
+          return get_error_data_result()
+      ok, k = KnowledgebaseService.get_by_id(req["id"])
+      if not ok:
+        return get_error_data_result(message="Dataset created failed")
+    
+      response_data = remap_dictionary_keys(k.to_dict())
+      return get_result(data=response_data)
+    except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Database operation failed")
-
 
 @manager.route("/datasets", methods=["DELETE"])  # noqa: F821
 @token_required
@@ -488,7 +485,7 @@ def knowledge_graph(tenant_id, dataset_id):
         return get_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
     req = {
@@ -529,7 +526,7 @@ def delete_knowledge_graph(tenant_id, dataset_id):
         return get_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
     settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]},

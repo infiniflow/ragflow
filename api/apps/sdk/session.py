@@ -25,7 +25,7 @@ from api import settings
 from api.db import LLMType, StatusEnum
 from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
-from api.db.services.canvas_service import UserCanvasService, completionOpenAI
+from api.db.services.canvas_service import UserCanvasService, completion_openai
 from api.db.services.canvas_service import completion as agent_completion
 from api.db.services.conversation_service import ConversationService, iframe_completion
 from api.db.services.conversation_service import completion as rag_completion
@@ -41,7 +41,7 @@ from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, gen_meta_filter, keyword_extraction, chunks_format
-
+from common.contants import RetCode
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
@@ -412,7 +412,7 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
     stream = req.pop("stream", False)
     if stream:
         resp = Response(
-            completionOpenAI(
+            completion_openai(
                 tenant_id,
                 agent_id,
                 question,
@@ -430,7 +430,7 @@ def agents_completion_openai_compatibility(tenant_id, agent_id):
     else:
         # For non-streaming, just return the response directly
         response = next(
-            completionOpenAI(
+            completion_openai(
                 tenant_id,
                 agent_id,
                 question,
@@ -959,7 +959,7 @@ def retrieval_test_embedded():
         kb_ids = [kb_ids]
     if not kb_ids:
         return get_json_result(data=False, message='Please specify dataset firstly.',
-                               code=settings.RetCode.DATA_ERROR)
+                               code=RetCode.DATA_ERROR)
     doc_ids = req.get("doc_ids", [])
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
@@ -996,7 +996,7 @@ def retrieval_test_embedded():
                     break
             else:
                 return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.",
-                                       code=settings.RetCode.OPERATING_ERROR)
+                                       code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
@@ -1034,7 +1034,7 @@ def retrieval_test_embedded():
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message="No chunk found! Check the chunk status please!",
-                                   code=settings.RetCode.DATA_ERROR)
+                                   code=RetCode.DATA_ERROR)
         return server_error_response(e)
 
 
@@ -1104,7 +1104,7 @@ def detail_share_embedded():
                 break
         else:
             return get_json_result(data=False, message="Has no permission for this operation.",
-                                   code=settings.RetCode.OPERATING_ERROR)
+                                   code=RetCode.OPERATING_ERROR)
 
         search = SearchService.get_detail(search_id)
         if not search:
