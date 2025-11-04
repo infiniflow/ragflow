@@ -985,7 +985,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
                     "content_with_weight": mind_map,
                     "knowledge_graph_kwd": "mind_map"
                 })
-            except Exception as e:
+            except Exception:
                 logging.exception("Mind map generation error")
 
         vects = embedding(doc_id, [c["content_with_weight"] for c in cks])

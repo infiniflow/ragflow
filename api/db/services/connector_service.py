@@ -123,7 +123,7 @@ class SyncLogsService(CommonService):
             e = cls.query(kb_id=kb_id, connector_id=connector_id, status=TaskStatus.SCHEDULE)
             if e:
                 logging.warning(f"{kb_id}--{connector_id} has already had a scheduling sync task which is abnormal.")
-                return
+                return None
             reindex = "1" if reindex else "0"
             return cls.save(**{
                 "id": get_uuid(),
@@ -158,7 +158,7 @@ class SyncLogsService(CommonService):
     @classmethod
     def duplicate_and_parse(cls, kb, docs, tenant_id, src):
         if not docs:
-            return
+            return None
 
         class FileObj(BaseModel):
             filename: str

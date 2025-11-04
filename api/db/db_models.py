@@ -369,6 +369,7 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                     time.sleep(self.retry_delay * (2 ** attempt))
                 else:
                     raise
+        return None
 
 
 class PooledDatabase(Enum):

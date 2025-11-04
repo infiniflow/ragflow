@@ -172,7 +172,7 @@ func_factory = {
     FileSource.S3: S3,
     FileSource.NOTION: Notion,
     FileSource.DISCORD: Discord,
-    FileSource.CONFLUENNCE: Confluence,
+    FileSource.CONFLUENCE: Confluence,
     FileSource.GMAIL: Gmail,
     FileSource.GOOGLE_DRIVER: GoogleDriver,
     FileSource.JIRA: Jira,
