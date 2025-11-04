@@ -23,7 +23,7 @@ from libs.auth import RAGFlowHttpApiAuth
 from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
-
+from configs import DEFAULT_PARSER_CONFIG
 
 @pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
@@ -637,42 +637,21 @@ class TestDatasetCreate:
         payload = {"name": "parser_config_empty", "parser_config": {}}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
-        assert res["data"]["parser_config"] == {
-            "chunk_token_num": 512,
-            "delimiter": r"\n",
-            "html4excel": False,
-            "layout_recognize": "DeepDOC",
-            "raptor": {"use_raptor": False},
-            "graphrag": {"use_graphrag": False},
-        }, res
+        assert res["data"]["parser_config"] == DEFAULT_PARSER_CONFIG, res
 
     @pytest.mark.p2
     def test_parser_config_unset(self, HttpApiAuth):
         payload = {"name": "parser_config_unset"}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
-        assert res["data"]["parser_config"] == {
-            "chunk_token_num": 512,
-            "delimiter": r"\n",
-            "html4excel": False,
-            "layout_recognize": "DeepDOC",
-            "raptor": {"use_raptor": False},
-            "graphrag": {"use_graphrag": False},
-        }, res
+        assert res["data"]["parser_config"] == DEFAULT_PARSER_CONFIG, res
 
     @pytest.mark.p3
     def test_parser_config_none(self, HttpApiAuth):
         payload = {"name": "parser_config_none", "parser_config": None}
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 0, res
-        assert res["data"]["parser_config"] == {
-            "chunk_token_num": 512,
-            "delimiter": "\\n",
-            "html4excel": False,
-            "layout_recognize": "DeepDOC",
-            "raptor": {"use_raptor": False},
-            "graphrag": {"use_graphrag": False},
-        }, res
+        assert res["data"]["parser_config"] == DEFAULT_PARSER_CONFIG, res
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
