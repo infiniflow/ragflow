@@ -19,12 +19,10 @@ import json
 import logging
 import os
 import queue
-import random
 import threading
 import time
 from copy import deepcopy
 from functools import wraps
-from io import BytesIO
 from typing import Any, Callable, Coroutine, Optional, Type, Union
 
 import requests
@@ -33,20 +31,17 @@ from flask import (
     Response,
     jsonify,
     make_response,
-    send_file,
 )
 from flask_login import current_user
 from flask import (
     request as flask_request,
 )
 from peewee import OperationalError
-from werkzeug.http import HTTP_STATUS_CODES
 
 from api import settings
-from api.constants import REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC
 from api.db import ActiveEnum
 from api.db.db_models import APIToken
-from api.utils.json_encode import CustomJSONEncoder, json_dumps
+from api.utils.json_encode import CustomJSONEncoder
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
@@ -76,19 +71,6 @@ def serialize_for_json(obj):
     else:
         # Fallback: convert to string representation
         return str(obj)
-
-
-def get_exponential_backoff_interval(retries, full_jitter=False):
-    """Calculate the exponential backoff wait time."""
-    # Will be zero if factor equals 0
-    countdown = min(REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC * (2 ** retries))
-    # Full jitter according to
-    # https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
-    if full_jitter:
-        countdown = random.randrange(countdown + 1)
-    # Adjust according to maximum wait time and account for negative values.
-    return max(0, countdown)
-
 
 def get_data_error_result(code=settings.RetCode.DATA_ERROR, message="Sorry! Data missing!"):
     logging.exception(Exception(message))
@@ -122,22 +104,6 @@ def server_error_response(e):
                                message="No chunk found, please upload file and parse it.")
 
     return get_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e))
-
-
-def error_response(response_code, message=None):
-    if message is None:
-        message = HTTP_STATUS_CODES.get(response_code, "Unknown Error")
-
-    return Response(
-        json.dumps(
-            {
-                "message": message,
-                "code": response_code,
-            }
-        ),
-        status=response_code,
-        mimetype="application/json",
-    )
 
 
 def validate_request(*args, **kwargs):
@@ -203,23 +169,6 @@ def active_required(f):
     return wrapper
 
 
-def is_localhost(ip):
-    return ip in {"127.0.0.1", "::1", "[::1]", "localhost"}
-
-
-def send_file_in_mem(data, filename):
-    if not isinstance(data, (str, bytes)):
-        data = json_dumps(data)
-    if isinstance(data, str):
-        data = data.encode("utf-8")
-
-    f = BytesIO()
-    f.write(data)
-    f.seek(0)
-
-    return send_file(f, as_attachment=True, attachment_filename=filename)
-
-
 def get_json_result(code: settings.RetCode = settings.RetCode.SUCCESS, message="success", data=None):
     response = {"code": code, "message": message, "data": data}
     return jsonify(response)
@@ -264,35 +213,11 @@ def construct_response(code=settings.RetCode.SUCCESS, message="success", data=No
     return response
 
 
-def construct_result(code=settings.RetCode.DATA_ERROR, message="data is missing"):
-    result_dict = {"code": code, "message": message}
-    response = {}
-    for key, value in result_dict.items():
-        if value is None and key != "code":
-            continue
-        else:
-            response[key] = value
-    return jsonify(response)
-
-
 def construct_json_result(code: settings.RetCode = settings.RetCode.SUCCESS, message="success", data=None):
     if data is None:
         return jsonify({"code": code, "message": message})
     else:
         return jsonify({"code": code, "message": message, "data": data})
-
-
-def construct_error_response(e):
-    logging.exception(e)
-    try:
-        if e.code == 401:
-            return construct_json_result(code=settings.RetCode.UNAUTHORIZED, message=repr(e))
-    except BaseException:
-        pass
-    if len(e.args) > 1:
-        return construct_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
-    return construct_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e))
-
 
 def token_required(func):
     @wraps(func)
