@@ -22,7 +22,6 @@ from flask_login import login_required, current_user
 import numpy as np
 
 from api.db import LLMType
-from api.db.services import duplicate_name
 from api.db.services.llm_service import LLMBundle
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.file2document_service import File2DocumentService
@@ -31,7 +30,6 @@ from api.db.services.pipeline_operation_log_service import PipelineOperationLogS
 from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters
-from common.misc_utils import get_uuid
 from api.db import PipelineTaskType, StatusEnum, FileSource, VALID_FILE_TYPES, VALID_TASK_STATUS
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
@@ -50,63 +48,17 @@ from rag.utils.doc_store_conn import OrderByExpr
 @validate_request("name")
 def create():
     req = request.json
-    dataset_name = req["name"]
-    if not isinstance(dataset_name, str):
-        return get_data_error_result(message="Dataset name must be string.")
-    if dataset_name.strip() == "":
-        return get_data_error_result(message="Dataset name can't be empty.")
-    if len(dataset_name.encode("utf-8")) > DATASET_NAME_LIMIT:
-        return get_data_error_result(
-            message=f"Dataset name length is {len(dataset_name)} which is larger than {DATASET_NAME_LIMIT}")
+    req = KnowledgebaseService.create_with_name(
+        name = req.pop("name", None),
+        tenant_id = current_user.id,
+        parser_id = req.pop("parser_id", None),
+        **req
+    )        
 
-    dataset_name = dataset_name.strip()
-    dataset_name = duplicate_name(
-        KnowledgebaseService.query,
-        name=dataset_name,
-        tenant_id=current_user.id,
-        status=StatusEnum.VALID.value)
     try:
-        req["id"] = get_uuid()
-        req["name"] = dataset_name
-        req["tenant_id"] = current_user.id
-        req["created_by"] = current_user.id
-        if not req.get("parser_id"):
-            req["parser_id"] = "naive"
-        e, t = TenantService.get_by_id(current_user.id)
-        if not e:
-            return get_data_error_result(message="Tenant not found.")
-
-        req["parser_config"] = {
-            "layout_recognize": "DeepDOC",
-            "chunk_token_num": 512,
-            "delimiter": "\n",
-            "auto_keywords": 0,
-            "auto_questions": 0,
-            "html4excel": False,
-            "topn_tags": 3,
-            "raptor": {
-                "use_raptor": True,
-                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                "max_token": 256,
-                "threshold": 0.1,
-                "max_cluster": 64,
-                "random_seed": 0
-            },
-            "graphrag": {
-                "use_graphrag": True,
-                "entity_types": [
-                    "organization",
-                    "person",
-                    "geo",
-                    "event",
-                    "category"
-                ],
-                "method": "light"
-            }
-        }
         if not KnowledgebaseService.save(**req):
             return get_data_error_result()
-        return get_json_result(data={"kb_id": req["id"]})
+        return get_json_result(data={"kb_id":req["id"]})
     except Exception as e:
         return server_error_response(e)
 

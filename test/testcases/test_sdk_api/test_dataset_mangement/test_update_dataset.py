@@ -24,7 +24,7 @@ from ragflow_sdk import DataSet
 from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
-
+from configs import DEFAULT_PARSER_CONFIG
 
 class TestRquest:
     @pytest.mark.p2
@@ -634,14 +634,7 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         expected_config = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         dataset.update({"parser_config": {}})
         assert str(dataset.parser_config) == str(expected_config), str(dataset)
@@ -654,14 +647,7 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         expected_config = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         dataset.update({"parser_config": None})
         assert str(dataset.parser_config) == str(expected_config), str(dataset)
