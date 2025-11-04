@@ -14,7 +14,8 @@
 #  limitations under the License.
 #
 
-from enum import Enum, IntEnum, StrEnum
+from enum import Enum, IntEnum
+from strenum import StrEnum
 
 SERVICE_CONF = "service_conf.yaml"
 

@@ -36,7 +36,7 @@ from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import gen_meta_filter, cross_languages, keyword_extraction
 from rag.settings import PAGERANK_FLD
 from common.string_utils import remove_redundant_spaces
-from common.contants import RetCode
+from common.constants import RetCode
 
 
 @manager.route('/list', methods=['POST'])  # noqa: F821

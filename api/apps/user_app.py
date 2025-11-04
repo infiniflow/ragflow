@@ -36,7 +36,7 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.misc_utils import download_img, get_uuid
-from common.contants import RetCode
+from common.constants import RetCode
 from common.connection_utils import construct_response
 from api.utils.api_utils import (
     get_data_error_result,

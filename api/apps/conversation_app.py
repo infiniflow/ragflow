@@ -30,7 +30,7 @@ from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import chunks_format
-from common.contants import RetCode
+from common.constants import RetCode
 
 
 @manager.route("/set", methods=["POST"])  # noqa: F821
