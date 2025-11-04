@@ -21,7 +21,7 @@ export function EmbedContainer({
   return (
     <section className="h-[100vh] flex justify-center items-center">
       <div className="w-40 flex gap-2 absolute left-3 top-12 items-center">
-        <img src="/logo.svg" alt="" />
+        <img src="/ARP-logo.svg" alt="" />
         <span className="text-2xl font-bold">{appConf.appName}</span>
       </div>
       <div className=" w-[80vw] border rounded-lg">

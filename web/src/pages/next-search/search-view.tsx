@@ -89,7 +89,7 @@ export default function SearchingView({
             setIsSearching?.(false);
           }}
         >
-          RAGFlow
+          ARPAI
         </h1>
         <div
           className={cn(

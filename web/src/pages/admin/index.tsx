@@ -134,8 +134,8 @@ function AdminLogin() {
 
         <div className="absolute top-3 left-0 w-full">
           <div className="absolute mt-12 ml-12 flex items-center">
-            <img className="size-8 mr-5" src="/logo.svg" alt="logo" />
-            <span className="text-xl font-bold">RAGFlow</span>
+            <img className="size-8 mr-5" src="/ARP-logo.svg" alt="logo" />
+            <span className="text-xl font-bold">ARPAI</span>
           </div>
 
           <h1 className="mt-[6.5rem] text-4xl font-medium text-center mb-12">

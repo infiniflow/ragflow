@@ -33,7 +33,7 @@ export default function SearchPage({
             'text-4xl font-bold bg-gradient-to-l from-[#40EBE3] to-[#4A51FF] bg-clip-text',
           )}
         >
-          RAGFlow
+          ARPAI
         </h1>
 
         <div className="rounded-lg  text-primary text-xl sticky flex justify-center w-full transform scale-100 mt-8 p-6 h-[240px] border">

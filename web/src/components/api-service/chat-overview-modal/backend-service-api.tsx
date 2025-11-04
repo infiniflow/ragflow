@@ -12,7 +12,7 @@ const BackendServiceApi = ({ show }: { show(): void }) => {
     <Card
       title={
         <Space size={'large'}>
-          <span>RAGFlow API</span>
+          <span>ARP-AI API</span>
           <Button onClick={show} type="primary">
             {t('apiKey')}
           </Button>

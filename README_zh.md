@@ -346,6 +346,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
+   $env:PYTHONPATH = (Get-Location).Path
    bash docker/launch_backend_service.sh
    ```
 

@@ -1,4 +1,3 @@
-import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
@@ -34,7 +33,7 @@ import { useLocation } from 'umi';
 import { BellButton } from './bell-button';
 
 const handleDocHelpCLick = () => {
-  window.open('https://ragflow.io/docs/dev/category/guides', 'target');
+  window.open('https://www.arptech.net/', 'target');
 };
 
 export function Header() {
@@ -109,7 +108,7 @@ export function Header() {
     <section className="py-5 px-10 flex justify-between items-center ">
       <div className="flex items-center gap-4">
         <img
-          src={'/logo.svg'}
+          src={'/ARP-logo.svg'}
           alt="logo"
           className="size-10 mr-[12] cursor-pointer"
           onClick={handleLogoClick}
@@ -125,20 +124,6 @@ export function Header() {
         activeClassName="text-bg-base bg-metallic-gradient border-b-[#00BEB4] border-b-2"
       ></Segmented>
       <div className="flex items-center gap-5 text-text-badge">
-        <a
-          target="_blank"
-          href="https://discord.com/invite/NjYzJD3GM3"
-          rel="noreferrer"
-        >
-          <IconFontFill name="a-DiscordIconSVGVectorIcon"></IconFontFill>
-        </a>
-        <a
-          target="_blank"
-          href="https://github.com/infiniflow/ragflow"
-          rel="noreferrer"
-        >
-          <IconFontFill name="GitHub"></IconFontFill>
-        </a>
         <DropdownMenu>
           <DropdownMenuTrigger>
             <div className="flex items-center gap-1">

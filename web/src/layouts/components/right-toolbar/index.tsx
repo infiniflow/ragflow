@@ -1,5 +1,5 @@
 import { useTranslate } from '@/hooks/common-hooks';
-import { DownOutlined, GithubOutlined } from '@ant-design/icons';
+import { DownOutlined } from '@ant-design/icons';
 import { Dropdown, MenuProps, Space } from 'antd';
 import camelCase from 'lodash/camelCase';
 import React, { useCallback, useMemo } from 'react';
@@ -22,12 +22,8 @@ const Circle = ({ children, ...restProps }: React.PropsWithChildren) => {
   );
 };
 
-const handleGithubCLick = () => {
-  window.open('https://github.com/infiniflow/ragflow', 'target');
-};
-
 const handleDocHelpCLick = () => {
-  window.open('https://ragflow.io/docs/dev/category/guides', 'target');
+  window.open('https://www.arptech.net/', 'target');
 };
 
 const RightToolBar = () => {
@@ -77,9 +73,7 @@ const RightToolBar = () => {
             <DownOutlined />
           </Space>
         </Dropdown>
-        <Circle>
-          <GithubOutlined onClick={handleGithubCLick} />
-        </Circle>
+        {/* Removed GitHub community link */}
         <Circle>
           <CircleHelp className="size-4" onClick={handleDocHelpCLick} />
         </Circle>
