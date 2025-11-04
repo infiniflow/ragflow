@@ -9,7 +9,7 @@ import BingForm from '../form/bing-form';
 import CategorizeForm from '../form/categorize-form';
 import CodeForm from '../form/code-form';
 import CrawlerForm from '../form/crawler-form';
-import DeepLForm from '../form/deepl-form';
+import DataOperationsForm from '../form/data-operations-form';
 import DuckDuckGoForm from '../form/duckduckgo-form';
 import EmailForm from '../form/email-form';
 import ExeSQLForm from '../form/exesql-form';
@@ -99,9 +99,6 @@ export const FormConfigMap = {
   [Operator.GoogleScholar]: {
     component: GoogleScholarForm,
   },
-  [Operator.DeepL]: {
-    component: DeepLForm,
-  },
   [Operator.GitHub]: {
     component: GithubForm,
   },
@@ -189,5 +186,8 @@ export const FormConfigMap = {
   },
   [Operator.Extractor]: {
     component: ExtractorForm,
+  },
+  [Operator.DataOperations]: {
+    component: DataOperationsForm,
   },
 };

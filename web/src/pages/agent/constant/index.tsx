@@ -126,9 +126,6 @@ export const componentMenuList = [
     name: Operator.GoogleScholar,
   },
   {
-    name: Operator.DeepL,
-  },
-  {
     name: Operator.GitHub,
   },
   {
@@ -386,11 +383,6 @@ export const initialGoogleScholarValues = {
       type: 'Array<Object>',
     },
   },
-};
-
-export const initialDeepLValues = {
-  top_n: 5,
-  auth_key: 'relevance',
 };
 
 export const initialGithubValues = {
@@ -723,6 +715,10 @@ export const initialPlaceholderValues = {
   // It's just a visual placeholder
 };
 
+export const initialDataOperationsValues = {
+  outputs: {},
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -771,7 +767,6 @@ export const RestrictedUpstreamMap = {
   [Operator.Google]: [Operator.Begin, Operator.Retrieval],
   [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
-  [Operator.DeepL]: [Operator.Begin, Operator.Retrieval],
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
   [Operator.BaiduFanyi]: [Operator.Begin, Operator.Retrieval],
   [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
@@ -798,7 +793,8 @@ export const RestrictedUpstreamMap = {
   [Operator.UserFillUp]: [Operator.Begin],
   [Operator.Tool]: [Operator.Begin],
   [Operator.Placeholder]: [Operator.Begin],
-  [Operator.Parser]: [Operator.Begin],
+  [Operator.DataOperations]: [Operator.Begin],
+  [Operator.Parser]: [Operator.Begin], // pipeline
   [Operator.Splitter]: [Operator.Begin],
   [Operator.HierarchicalMerger]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
@@ -822,7 +818,6 @@ export const NodeMap = {
   [Operator.Google]: 'ragNode',
   [Operator.Bing]: 'ragNode',
   [Operator.GoogleScholar]: 'ragNode',
-  [Operator.DeepL]: 'ragNode',
   [Operator.GitHub]: 'ragNode',
   [Operator.BaiduFanyi]: 'ragNode',
   [Operator.QWeather]: 'ragNode',
@@ -855,6 +850,7 @@ export const NodeMap = {
   [Operator.Splitter]: 'splitterNode',
   [Operator.HierarchicalMerger]: 'splitterNode',
   [Operator.Extractor]: 'contextNode',
+  [Operator.DataOperations]: 'dataOperationsNode',
 };
 
 export enum BeginQueryType {

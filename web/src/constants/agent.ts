@@ -83,7 +83,6 @@ export enum Operator {
   Google = 'Google',
   Bing = 'Bing',
   GoogleScholar = 'GoogleScholar',
-  DeepL = 'DeepL',
   GitHub = 'GitHub',
   BaiduFanyi = 'BaiduFanyi',
   QWeather = 'QWeather',
@@ -110,6 +109,7 @@ export enum Operator {
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
   Placeholder = 'Placeholder',
+  DataOperations = 'DataOperations',
   File = 'File', // pipeline
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',

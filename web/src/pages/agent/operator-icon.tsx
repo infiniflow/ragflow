@@ -14,7 +14,7 @@ import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.s
 
 import { IconFont } from '@/components/icon-font';
 import { cn } from '@/lib/utils';
-import { HousePlus } from 'lucide-react';
+import { FileCode, HousePlus } from 'lucide-react';
 import { Operator } from './constant';
 
 interface IProps {
@@ -56,13 +56,18 @@ export const SVGIconMap = {
   [Operator.Crawler]: CrawlerIcon,
 };
 
+export const LucideIconMap = {
+  [Operator.DataOperations]: FileCode,
+};
+
 const Empty = () => {
   return <div className="hidden"></div>;
 };
 
 const OperatorIcon = ({ name, className }: IProps) => {
-  const Icon = OperatorIconMap[name as keyof typeof OperatorIconMap] || Empty;
-  const SvgIcon = SVGIconMap[name as keyof typeof SVGIconMap] || Empty;
+  const Icon = OperatorIconMap[name as keyof typeof OperatorIconMap];
+  const SvgIcon = SVGIconMap[name as keyof typeof SVGIconMap];
+  const LucideIcon = LucideIconMap[name as keyof typeof LucideIconMap];
 
   if (name === Operator.Begin) {
     return (
@@ -77,11 +82,21 @@ const OperatorIcon = ({ name, className }: IProps) => {
     );
   }
 
-  return typeof Icon === 'string' ? (
-    <IconFont name={Icon} className={cn('size-5 ', className)}></IconFont>
-  ) : (
-    <SvgIcon className={cn('size-5 fill-current', className)}></SvgIcon>
-  );
+  if (Icon) {
+    return (
+      <IconFont name={Icon} className={cn('size-5 ', className)}></IconFont>
+    );
+  }
+
+  if (LucideIcon) {
+    return <LucideIcon className={cn('size-5', className)} />;
+  }
+
+  if (SvgIcon) {
+    return <SvgIcon className={cn('size-5 fill-current', className)}></SvgIcon>;
+  }
+
+  return <Empty></Empty>;
 };
 
 export default OperatorIcon;

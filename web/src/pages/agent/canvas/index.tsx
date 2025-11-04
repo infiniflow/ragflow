@@ -53,6 +53,7 @@ import { RagNode } from './node';
 import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
+import { DataOperationsNode } from './node/data-operations-node';
 import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { ExtractorNode } from './node/extractor-node';
 import { FileNode } from './node/file-node';
@@ -96,6 +97,7 @@ export const nodeTypes: NodeTypes = {
   tokenizerNode: TokenizerNode,
   splitterNode: SplitterNode,
   contextNode: ExtractorNode,
+  dataOperationsNode: DataOperationsNode,
 };
 
 const edgeTypes = {

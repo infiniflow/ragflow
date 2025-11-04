@@ -29,7 +29,7 @@ export function HomeCard({
         onClick?.();
       }}
     >
-      <CardContent className="p-4 flex gap-2 items-start group h-full w-full">
+      <CardContent className="p-4 flex gap-2 items-start group h-full w-full hover:shadow-md">
         <div className="flex justify-between mb-4">
           <RAGFlowAvatar
             className="w-[32px] h-[32px]"

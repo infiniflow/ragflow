@@ -19,7 +19,7 @@ import {
   initialCategorizeValues,
   initialCodeValues,
   initialCrawlerValues,
-  initialDeepLValues,
+  initialDataOperationsValues,
   initialDuckValues,
   initialEmailValues,
   initialExeSqlValues,
@@ -93,7 +93,6 @@ export const useInitializeOperatorParams = () => {
       [Operator.Google]: initialGoogleValues,
       [Operator.Bing]: initialBingValues,
       [Operator.GoogleScholar]: initialGoogleScholarValues,
-      [Operator.DeepL]: initialDeepLValues,
       [Operator.SearXNG]: initialSearXNGValues,
       [Operator.GitHub]: initialGithubValues,
       [Operator.BaiduFanyi]: initialBaiduFanyiValues,
@@ -131,6 +130,7 @@ export const useInitializeOperatorParams = () => {
         sys_prompt: t('flow.prompts.system.summary'),
         prompts: t('flow.prompts.user.summary'),
       },
+      [Operator.DataOperations]: initialDataOperationsValues,
     };
   }, [llmId]);
 
