@@ -24,6 +24,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
 from common.misc_utils import get_uuid
+from common.contants import RetCode
 from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required
 
 
@@ -45,7 +46,7 @@ def create(tenant_id):
     embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
     embd_count = list(set(embd_ids))
     if len(embd_count) > 1:
-        return get_result(message='Datasets use different embedding models."', code=settings.RetCode.AUTHENTICATION_ERROR)
+        return get_result(message='Datasets use different embedding models."', code=RetCode.AUTHENTICATION_ERROR)
     req["kb_ids"] = ids
     # llm
     llm = req.get("llm")
@@ -167,7 +168,7 @@ def update(tenant_id, chat_id):
         embd_ids = [TenantLLMService.split_model_name_and_factory(kb.embd_id)[0] for kb in kbs]  # remove vendor suffix for comparison
         embd_count = list(set(embd_ids))
         if len(embd_count) > 1:
-            return get_result(message='Datasets use different embedding models."', code=settings.RetCode.AUTHENTICATION_ERROR)
+            return get_result(message='Datasets use different embedding models."', code=RetCode.AUTHENTICATION_ERROR)
         req["kb_ids"] = ids
     else:
         req["kb_ids"] = []

@@ -43,6 +43,7 @@ from rag.settings import PAGERANK_FLD
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr  
+from common.contants import RetCode
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821
@@ -130,14 +131,14 @@ def update():
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     try:
         if not KnowledgebaseService.query(
                 created_by=current_user.id, id=req["kb_id"]):
             return get_json_result(
                 data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+                code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
         if not e:
@@ -188,7 +189,7 @@ def detail():
         else:
             return get_json_result(
                 data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+                code=RetCode.OPERATING_ERROR)
         kb = KnowledgebaseService.get_detail(kb_id)
         if not kb:
             return get_data_error_result(
@@ -246,7 +247,7 @@ def rm():
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     try:
         kbs = KnowledgebaseService.query(
@@ -254,7 +255,7 @@ def rm():
         if not kbs:
             return get_json_result(
                 data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+                code=RetCode.OPERATING_ERROR)
 
         for doc in DocumentService.query(kb_id=req["kb_id"]):
             if not DocumentService.remove_document(doc, kbs[0].tenant_id):
@@ -286,7 +287,7 @@ def list_tags(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
 
     tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
@@ -305,7 +306,7 @@ def list_tags_from_kbs():
             return get_json_result(
                 data=False,
                 message='No authorization.',
-                code=settings.RetCode.AUTHENTICATION_ERROR
+                code=RetCode.AUTHENTICATION_ERROR
             )
 
     tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
@@ -323,7 +324,7 @@ def rm_tags(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     e, kb = KnowledgebaseService.get_by_id(kb_id)
 
@@ -343,7 +344,7 @@ def rename_tags(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     e, kb = KnowledgebaseService.get_by_id(kb_id)
 
@@ -361,7 +362,7 @@ def knowledge_graph(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(kb_id)
     req = {
@@ -401,7 +402,7 @@ def delete_knowledge_graph(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(kb_id)
     settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
@@ -418,7 +419,7 @@ def get_meta():
             return get_json_result(
                 data=False,
                 message='No authorization.',
-                code=settings.RetCode.AUTHENTICATION_ERROR
+                code=RetCode.AUTHENTICATION_ERROR
             )
     return get_json_result(data=DocumentService.get_meta_by_kbs(kb_ids))
 
@@ -431,7 +432,7 @@ def get_basic_info():
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
 
     basic_info = DocumentService.knowledgebase_basic_info(kb_id)
@@ -444,7 +445,7 @@ def get_basic_info():
 def list_pipeline_logs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
 
     keywords = request.args.get("keywords", "")
 
@@ -488,7 +489,7 @@ def list_pipeline_logs():
 def list_pipeline_dataset_logs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
 
     page_number = int(request.args.get("page", 0))
     items_per_page = int(request.args.get("page_size", 0))
@@ -522,7 +523,7 @@ def list_pipeline_dataset_logs():
 def delete_pipeline_logs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
 
     req = request.get_json()
     log_ids = req.get("log_ids", [])
@@ -537,7 +538,7 @@ def delete_pipeline_logs():
 def pipeline_log_detail():
     log_id = request.args.get("log_id")
     if not log_id:
-        return get_json_result(data=False, message='Lack of "Pipeline log ID"', code=settings.RetCode.ARGUMENT_ERROR)
+        return get_json_result(data=False, message='Lack of "Pipeline log ID"', code=RetCode.ARGUMENT_ERROR)
 
     ok, log = PipelineOperationLogService.get_by_id(log_id)
     if not ok:
@@ -930,4 +931,4 @@ def check_embedding():
     }
     if summary["avg_cos_sim"] > 0.99:
         return get_json_result(data={"summary": summary, "results": results})
-    return get_json_result(code=settings.RetCode.NOT_EFFECTIVE, message="failed", data={"summary": summary, "results": results})
+    return get_json_result(code=RetCode.NOT_EFFECTIVE, message="failed", data={"summary": summary, "results": results})
