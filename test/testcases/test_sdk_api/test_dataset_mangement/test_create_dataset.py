@@ -23,7 +23,7 @@ from ragflow_sdk import DataSet, RAGFlow
 from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
-from utils.config_utils import DEFAULT_PARSER_CONFIG
+from configs import DEFAULT_PARSER_CONFIG
 
 @pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:

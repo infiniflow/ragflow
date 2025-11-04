@@ -25,7 +25,7 @@ from libs.auth import RAGFlowHttpApiAuth
 from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
-from utils.config_utils import DEFAULT_PARSER_CONFIG
+from configs import DEFAULT_PARSER_CONFIG
 # TODO: Missing scenario for updating embedding_model with chunk_count != 0
 
 
