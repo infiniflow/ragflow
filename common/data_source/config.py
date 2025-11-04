@@ -42,6 +42,7 @@ class DocumentSource(str, Enum):
     OCI_STORAGE = "oci_storage"
     SLACK = "slack"
     CONFLUENCE = "confluence"
+    DISCORD = "discord"
 
 
 class FileOrigin(str, Enum):

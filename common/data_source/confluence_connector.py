@@ -6,6 +6,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from typing import Any, cast, Iterator, Callable, Generator
 
 import requests
@@ -46,6 +47,8 @@ from common.data_source.utils import load_all_docs_from_checkpoint_connector, sc
     is_atlassian_date_error, validate_attachment_filetype
 from rag.utils.redis_conn import RedisDB, REDIS_CONN
 
+_USER_ID_TO_DISPLAY_NAME_CACHE: dict[str, str | None] = {}
+_USER_EMAIL_CACHE: dict[str, str | None] = {}
 
 class ConfluenceCheckpoint(ConnectorCheckpoint):
 
@@ -1064,6 +1067,7 @@ def get_page_restrictions(
     return ee_get_all_page_restrictions(
         confluence_client, page_id, page_restrictions, ancestors
     )"""
+    return {}
 
 
 def get_all_space_permissions(
@@ -1095,6 +1099,7 @@ def get_all_space_permissions(
     )
 
     return ee_get_all_space_permissions(confluence_client, is_cloud)"""
+    return {}
 
 
 def _make_attachment_link(
@@ -1129,25 +1134,7 @@ def _process_image_attachment(
     media_type: str,
 ) -> AttachmentProcessingResult:
     """Process an image attachment by saving it without generating a summary."""
-    """
-    try:
-        # Use the standardized image storage and section creation
-        section, file_name = store_image_and_create_section(
-            image_data=raw_bytes,
-            file_id=Path(attachment["id"]).name,
-            display_name=attachment["title"],
-            media_type=media_type,
-            file_origin=FileOrigin.CONNECTOR,
-        )
-        logging.info(f"Stored image attachment with file name: {file_name}")
-
-        # Return empty text but include the file_name for later processing
-        return AttachmentProcessingResult(text="", file_name=file_name, error=None)
-    except Exception as e:
-        msg = f"Image storage failed for {attachment['title']}: {e}"
-        logging.error(msg, exc_info=e)
-        return AttachmentProcessingResult(text=None, file_name=None, error=msg)
-    """
+    return AttachmentProcessingResult(text="", file_blob=raw_bytes, file_name=attachment.get("title", "unknown_title"), error=None)
 
 
 def process_attachment(
@@ -1167,6 +1154,7 @@ def process_attachment(
         if not validate_attachment_filetype(attachment):
             return AttachmentProcessingResult(
                 text=None,
+                file_blob=None,
                 file_name=None,
                 error=f"Unsupported file type: {media_type}",
             )
@@ -1176,7 +1164,7 @@ def process_attachment(
         )
         if not attachment_link:
             return AttachmentProcessingResult(
-                text=None, file_name=None, error="Failed to make attachment link"
+                text=None, file_blob=None, file_name=None, error="Failed to make attachment link"
             )
 
         attachment_size = attachment["extensions"]["fileSize"]
@@ -1185,6 +1173,7 @@ def process_attachment(
             if not allow_images:
                 return AttachmentProcessingResult(
                     text=None,
+                    file_blob=None,
                     file_name=None,
                     error="Image downloading is not enabled",
                 )
@@ -1197,6 +1186,7 @@ def process_attachment(
                 )
                 return AttachmentProcessingResult(
                     text=None,
+                    file_blob=None,
                     file_name=None,
                     error=f"Attachment text too long: {attachment_size} chars",
                 )
@@ -1216,6 +1206,7 @@ def process_attachment(
             )
             return AttachmentProcessingResult(
                 text=None,
+                file_blob=None,
                 file_name=None,
                 error=f"Attachment download status code is {resp.status_code}",
             )
@@ -1223,7 +1214,7 @@ def process_attachment(
         raw_bytes = resp.content
         if not raw_bytes:
             return AttachmentProcessingResult(
-                text=None, file_name=None, error="attachment.content is None"
+                text=None, file_blob=None, file_name=None, error="attachment.content is None"
             )
 
         # Process image attachments
@@ -1233,31 +1224,17 @@ def process_attachment(
             )
 
         # Process document attachments
-        """
         try:
-            text = extract_file_text(
-                file=BytesIO(raw_bytes),
-                file_name=attachment["title"],
-            )
-
-            # Skip if the text is too long
-            if len(text) > CONFLUENCE_CONNECTOR_ATTACHMENT_CHAR_COUNT_THRESHOLD:
-                return AttachmentProcessingResult(
-                    text=None,
-                    file_name=None,
-                    error=f"Attachment text too long: {len(text)} chars",
-                )
-
-            return AttachmentProcessingResult(text=text, file_name=None, error=None)
+            return AttachmentProcessingResult(text="",file_blob=raw_bytes, file_name=attachment.get("title", "unknown_title"), error=None)
         except Exception as e:
+            logging.exception(e)
             return AttachmentProcessingResult(
-                text=None, file_name=None, error=f"Failed to extract text: {e}"
+                text=None, file_blob=None, file_name=None, error=f"Failed to extract text: {e}"
             )
-        """
 
     except Exception as e:
         return AttachmentProcessingResult(
-            text=None, file_name=None, error=f"Failed to process attachment: {e}"
+            text=None, file_blob=None, file_name=None, error=f"Failed to process attachment: {e}"
         )
 
 
@@ -1266,7 +1243,7 @@ def convert_attachment_to_content(
     attachment: dict[str, Any],
     page_id: str,
     allow_images: bool,
-) -> tuple[str | None, str | None] | None:
+) -> tuple[str | None, bytes | bytearray | None] | None:
     """
     Facade function which:
       1. Validates attachment type
@@ -1288,8 +1265,7 @@ def convert_attachment_to_content(
         )
         return None
 
-    # Return the text and the file name
-    return result.text, result.file_name
+    return result.file_name, result.file_blob
 
 
 class ConfluenceConnector(
@@ -1554,10 +1530,11 @@ class ConfluenceConnector(
             # Create the document
             return Document(
                 id=page_url,
-                sections=sections,
                 source=DocumentSource.CONFLUENCE,
                 semantic_identifier=page_title,
-                metadata=metadata,
+                extension=".html",  # Confluence pages are HTML
+                blob=page_content.encode("utf-8"),  # Encode page content as bytes
+                size_bytes=len(page_content.encode("utf-8")),  # Calculate size in bytes
                 doc_updated_at=datetime_from_string(page["version"]["when"]),
                 primary_owners=primary_owners if primary_owners else None,
             )
@@ -1614,6 +1591,7 @@ class ConfluenceConnector(
                 )
                 continue
 
+
             logging.info(
                 f"Processing attachment: {attachment['title']} attached to page {page['title']}"
             )
@@ -1638,15 +1616,11 @@ class ConfluenceConnector(
                 if response is None:
                     continue
 
-                content_text, file_storage_name = response
+                file_storage_name, file_blob = response
 
-                sections: list[TextSection | ImageSection] = []
-                if content_text:
-                    sections.append(TextSection(text=content_text, link=object_url))
-                elif file_storage_name:
-                    sections.append(
-                        ImageSection(link=object_url, image_file_id=file_storage_name)
-                    )
+                if not file_blob:
+                    logging.info("Skipping attachment because it is no blob fetched")
+                    continue
 
                 # Build attachment-specific metadata
                 attachment_metadata: dict[str, str | list[str]] = {}
@@ -1675,11 +1649,16 @@ class ConfluenceConnector(
                         BasicExpertInfo(display_name=display_name, email=email)
                     ]
 
+                extension = Path(attachment.get("title", "")).suffix or ".unknown"
+
                 attachment_doc = Document(
                     id=attachment_id,
-                    sections=sections,
+                    # sections=sections,
                     source=DocumentSource.CONFLUENCE,
                     semantic_identifier=attachment.get("title", object_url),
+                    extension=extension,
+                    blob=file_blob,
+                    size_bytes=len(file_blob),
                     metadata=attachment_metadata,
                     doc_updated_at=(
                         datetime_from_string(attachment["version"]["when"])
@@ -1758,7 +1737,7 @@ class ConfluenceConnector(
             )
             # yield attached docs and failures
             yield from attachment_docs
-            yield from attachment_failures
+            # yield from attachment_failures
 
             # Create checkpoint once a full page of results is returned
             if checkpoint.next_page_url and checkpoint.next_page_url != page_query_url:

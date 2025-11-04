@@ -19,17 +19,17 @@ from common.data_source.models import (
 
 class LoadConnector(ABC):
     """Load connector interface"""
-    
+
     @abstractmethod
     def load_credentials(self, credentials: Dict[str, Any]) -> Dict[str, Any] | None:
         """Load credentials"""
         pass
-    
+
     @abstractmethod
     def load_from_state(self) -> Generator[list[Document], None, None]:
         """Load documents from state"""
         pass
-    
+
     @abstractmethod
     def validate_connector_settings(self) -> None:
         """Validate connector settings"""
@@ -38,7 +38,7 @@ class LoadConnector(ABC):
 
 class PollConnector(ABC):
     """Poll connector interface"""
-    
+
     @abstractmethod
     def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> Generator[list[Document], None, None]:
         """Poll source to get documents"""
@@ -47,7 +47,7 @@ class PollConnector(ABC):
 
 class CredentialsConnector(ABC):
     """Credentials connector interface"""
-    
+
     @abstractmethod
     def load_credentials(self, credentials: Dict[str, Any]) -> Dict[str, Any] | None:
         """Load credentials"""
@@ -56,7 +56,7 @@ class CredentialsConnector(ABC):
 
 class SlimConnectorWithPermSync(ABC):
     """Simplified connector interface (with permission sync)"""
-    
+
     @abstractmethod
     def retrieve_all_slim_docs_perm_sync(
         self,
@@ -70,7 +70,7 @@ class SlimConnectorWithPermSync(ABC):
 
 class CheckpointedConnectorWithPermSync(ABC):
     """Checkpointed connector interface (with permission sync)"""
-    
+
     @abstractmethod
     def load_from_checkpoint(
         self,
@@ -80,7 +80,7 @@ class CheckpointedConnectorWithPermSync(ABC):
     ) -> Generator[Document | ConnectorFailure, None, ConnectorCheckpoint]:
         """Load documents from checkpoint"""
         pass
-    
+
     @abstractmethod
     def load_from_checkpoint_with_perm_sync(
         self,
@@ -90,12 +90,12 @@ class CheckpointedConnectorWithPermSync(ABC):
     ) -> Generator[Document | ConnectorFailure, None, ConnectorCheckpoint]:
         """Load documents from checkpoint (with permission sync)"""
         pass
-    
+
     @abstractmethod
     def build_dummy_checkpoint(self) -> ConnectorCheckpoint:
         """Build dummy checkpoint"""
         pass
-    
+
     @abstractmethod
     def validate_checkpoint_json(self, checkpoint_json: str) -> ConnectorCheckpoint:
         """Validate checkpoint JSON"""
@@ -388,8 +388,11 @@ class AttachmentProcessingResult(BaseModel):
     """
 
     text: str | None
+    file_blob: bytes | bytearray | None
     file_name: str | None
     error: str | None = None
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class IndexingHeartbeatInterface(ABC):

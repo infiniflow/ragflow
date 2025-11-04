@@ -1,8 +1,8 @@
 """Data model definitions for all connectors"""
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional, List, NotRequired, Sequence, NamedTuple
-from typing_extensions import TypedDict
+from typing import Any, Optional, List, Sequence, NamedTuple
+from typing_extensions import TypedDict, NotRequired
 from pydantic import BaseModel
 
 

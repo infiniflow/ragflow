@@ -1,19 +1,20 @@
 """Discord connector"""
+
 import asyncio
 import logging
-from datetime import timezone, datetime
-from typing import Any, Iterable, AsyncIterable
+import os
+from datetime import datetime, timezone
+from typing import Any, AsyncIterable, Iterable
 
 from discord import Client, MessageType
-from discord.channel import TextChannel
+from discord.channel import TextChannel, Thread
 from discord.flags import Intents
-from discord.channel import Thread
 from discord.message import Message as DiscordMessage
 
-from common.data_source.exceptions import ConnectorMissingCredentialError
 from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource
+from common.data_source.exceptions import ConnectorMissingCredentialError
 from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch
-from common.data_source.models import Document, TextSection, GenerateDocumentsOutput
+from common.data_source.models import Document, GenerateDocumentsOutput, TextSection
 
 _DISCORD_DOC_ID_PREFIX = "DISCORD_"
 _SNIPPET_LENGTH = 30
@@ -33,9 +34,7 @@ def _convert_message_to_document(
     semantic_substring = ""
 
     # Only messages from TextChannels will make it here but we have to check for it anyways
-    if isinstance(message.channel, TextChannel) and (
-        channel_name := message.channel.name
-    ):
+    if isinstance(message.channel, TextChannel) and (channel_name := message.channel.name):
         metadata["Channel"] = channel_name
         semantic_substring += f" in Channel: #{channel_name}"
 
@@ -47,20 +46,25 @@ def _convert_message_to_document(
         # Add more detail to the semantic identifier if available
         semantic_substring += f" in Thread: {title}"
 
-    snippet: str = (
-        message.content[:_SNIPPET_LENGTH].rstrip() + "..."
-        if len(message.content) > _SNIPPET_LENGTH
-        else message.content
-    )
+    snippet: str = message.content[:_SNIPPET_LENGTH].rstrip() + "..." if len(message.content) > _SNIPPET_LENGTH else message.content
 
     semantic_identifier = f"{message.author.name} said{semantic_substring}: {snippet}"
+
+    # fallback to created_at
+    doc_updated_at = message.edited_at if message.edited_at else message.created_at
+    if doc_updated_at and doc_updated_at.tzinfo is None:
+        doc_updated_at = doc_updated_at.replace(tzinfo=timezone.utc)
+    elif doc_updated_at:
+        doc_updated_at = doc_updated_at.astimezone(timezone.utc)
 
     return Document(
         id=f"{_DISCORD_DOC_ID_PREFIX}{message.id}",
         source=DocumentSource.DISCORD,
         semantic_identifier=semantic_identifier,
-        doc_updated_at=message.edited_at,
-        blob=message.content.encode("utf-8")
+        doc_updated_at=doc_updated_at,
+        blob=message.content.encode("utf-8"),
+        extension="txt",
+        size_bytes=len(message.content.encode("utf-8")),
     )
 
 
@@ -169,13 +173,7 @@ def _manage_async_retrieval(
     end: datetime | None = None,
 ) -> Iterable[Document]:
     # parse requested_start_date_string to datetime
-    pull_date: datetime | None = (
-        datetime.strptime(requested_start_date_string, "%Y-%m-%d").replace(
-            tzinfo=timezone.utc
-        )
-        if requested_start_date_string
-        else None
-    )
+    pull_date: datetime | None = datetime.strptime(requested_start_date_string, "%Y-%m-%d").replace(tzinfo=timezone.utc) if requested_start_date_string else None
 
     # Set start_time to the later of start and pull_date, or whichever is provided
     start_time = max(filter(None, [start, pull_date])) if start or pull_date else None
@@ -243,9 +241,7 @@ class DiscordConnector(LoadConnector, PollConnector):
     ):
         self.batch_size = batch_size
         self.channel_names: list[str] = channel_names if channel_names else []
-        self.server_ids: list[int] = (
-            [int(server_id) for server_id in server_ids] if server_ids else []
-        )
+        self.server_ids: list[int] = [int(server_id) for server_id in server_ids] if server_ids else []
         self._discord_bot_token: str | None = None
         self.requested_start_date_string: str = start_date or ""
 
@@ -315,9 +311,7 @@ if __name__ == "__main__":
         channel_names=channel_names.split(",") if channel_names else [],
         start_date=os.environ.get("start_date", None),
     )
-    connector.load_credentials(
-        {"discord_bot_token": os.environ.get("discord_bot_token")}
-    )
+    connector.load_credentials({"discord_bot_token": os.environ.get("discord_bot_token")})
 
     for doc_batch in connector.poll_source(start, end):
         for doc in doc_batch:
