@@ -24,10 +24,6 @@ from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource, CONTINUE
     _PROBLEMATIC_EXPANSIONS, _REPLACEMENT_EXPANSIONS, _USER_NOT_FOUND, _COMMENT_EXPANSION_FIELDS, \
     _ATTACHMENT_EXPANSION_FIELDS, _PAGE_EXPANSION_FIELDS, ONE_DAY, ONE_HOUR, _RESTRICTIONS_EXPANSION_FIELDS, \
     _SLIM_DOC_BATCH_SIZE, CONFLUENCE_CONNECTOR_ATTACHMENT_SIZE_THRESHOLD
-
-# Global caches for user information
-_USER_ID_TO_DISPLAY_NAME_CACHE: dict[str, str | None] = {}
-_USER_EMAIL_CACHE: dict[str, str | None] = {}
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
     ConnectorValidationError,
@@ -51,6 +47,8 @@ from common.data_source.utils import load_all_docs_from_checkpoint_connector, sc
     is_atlassian_date_error, validate_attachment_filetype
 from rag.utils.redis_conn import RedisDB, REDIS_CONN
 
+_USER_ID_TO_DISPLAY_NAME_CACHE: dict[str, str | None] = {}
+_USER_EMAIL_CACHE: dict[str, str | None] = {}
 
 class ConfluenceCheckpoint(ConnectorCheckpoint):
 
@@ -1260,7 +1258,6 @@ def convert_attachment_to_content(
         )
         return None
 
-    print("\n\nbefore process attachment\n\n", flush=True)
     result = process_attachment(confluence_client, attachment, page_id, allow_images)
     if result.error is not None:
         logging.warning(
@@ -1570,7 +1567,6 @@ class ConfluenceConnector(
         attachment_docs: list[Document] = []
         page_url = ""
 
-        print("before paginated_cql_retrieval", flush=True)
         for attachment in self.confluence_client.paginated_cql_retrieval(
             cql=attachment_query,
             expand=",".join(_ATTACHMENT_EXPANSION_FIELDS),
@@ -1580,7 +1576,6 @@ class ConfluenceConnector(
             # TODO(rkuo): this check is partially redundant with validate_attachment_filetype
             # and checks in convert_attachment_to_content/process_attachment
             # but doing the check here avoids an unnecessary download. Due for refactoring.
-            print(f"{self.allow_images=}",flush=True)
             if not self.allow_images:
                 if media_type.startswith("image/"):
                     logging.info(
@@ -1588,7 +1583,6 @@ class ConfluenceConnector(
                     )
                     continue
 
-            print(f"{attachment=}",flush=True)
             if not validate_attachment_filetype(
                 attachment,
             ):
@@ -1597,18 +1591,15 @@ class ConfluenceConnector(
                 )
                 continue
 
-            print("assert validate_attachment_filetype",flush=True)
 
             logging.info(
                 f"Processing attachment: {attachment['title']} attached to page {page['title']}"
             )
             # Attachment document id: use the download URL for stable identity
             try:
-                print("build confluence document id", flush=True)
                 object_url = build_confluence_document_id(
                     self.wiki_base, attachment["_links"]["download"], self.is_cloud
                 )
-                print("after build confluence document id", flush=True)
             except Exception as e:
                 logging.warning(
                     f"Invalid attachment url for id {attachment['id']}, skipping"
@@ -1740,7 +1731,6 @@ class ConfluenceConnector(
             # yield completed document (or failure)
             yield doc_or_failure
 
-            print("66666666666666666666666666666666666666666666", flush=True)
             # Now get attachments for that page:
             attachment_docs, attachment_failures = self._fetch_page_attachments(
                 page, start, end
