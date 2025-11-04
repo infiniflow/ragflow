@@ -35,6 +35,12 @@ def num_tokens_from_string(string: str) -> int:
         return 0
 
 def total_token_count_from_response(resp):
+    """
+    Extract token count from LLM response in various formats.
+
+    Handles None responses and different response structures from various LLM providers.
+    Returns 0 if token count cannot be determined.
+    """
     if resp is None:
         return 0
 
