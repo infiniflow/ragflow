@@ -26,7 +26,6 @@ from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
 from docx.opc.oxml import parse_xml
 from markdown import markdown
 from PIL import Image
-from tika import parser
 
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle

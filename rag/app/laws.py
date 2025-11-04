@@ -15,7 +15,6 @@
 #
 
 import logging
-from tika import parser
 import re
 from io import BytesIO
 from docx import Document
@@ -25,7 +24,7 @@ from deepdoc.parser.utils import get_text
 from rag.nlp import bullets_category, remove_contents_table, \
     make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge
 from rag.nlp import rag_tokenizer, Node
-from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
+from deepdoc.parser import PdfParser, DocxParser, HtmlParser
 from rag.app.naive import plaintext_parser, PARSERS
 
 

@@ -15,7 +15,6 @@
 #
 
 import logging
-from tika import parser
 import re
 from io import BytesIO
 
