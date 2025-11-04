@@ -13,11 +13,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-from enum import StrEnum
-
-class MCPServerType(StrEnum):
-    SSE = "sse"
-    STREAMABLE_HTTP = "streamable-http"
-
-VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}

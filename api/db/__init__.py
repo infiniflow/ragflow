@@ -46,20 +46,6 @@ class FileType(StrEnum):
 
 VALID_FILE_TYPES = {FileType.PDF, FileType.DOC, FileType.VISUAL, FileType.AURAL, FileType.VIRTUAL, FileType.FOLDER, FileType.OTHER}
 
-class FileSource(StrEnum):
-    LOCAL = ""
-    KNOWLEDGEBASE = "knowledgebase"
-    S3 = "s3"
-    NOTION = "notion"
-    DISCORD = "discord"
-    CONFLUENCE = "confluence"
-    GMAIL = "gmail"
-    GOOGLE_DRIVER = "google_driver"
-    JIRA = "jira"
-    SHAREPOINT = "sharepoint"
-    SLACK = "slack"
-    TEAMS = "teams"
-
 
 class InputType(StrEnum):
     LOAD_STATE = "load_state"  # e.g. loading a current full state or a save state, such as from a file
@@ -71,14 +57,6 @@ class InputType(StrEnum):
 class CanvasCategory(StrEnum):
     Agent = "agent_canvas"
     DataFlow = "dataflow_canvas"
-
-
-class MCPServerType(StrEnum):
-    SSE = "sse"
-    STREAMABLE_HTTP = "streamable-http"
-
-
-VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
 
 
 class PipelineTaskType(StrEnum):
