@@ -701,7 +701,8 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         "doc_id": fake_doc_id,
         "kb_id": [str(row["kb_id"])],
         "docnm_kwd": row["name"],
-        "title_tks": rag_tokenizer.tokenize(row["name"])
+        "title_tks": rag_tokenizer.tokenize(row["name"]),
+        "raptor_kwd": "raptor"
     }
     if row["pagerank"]:
         doc[PAGERANK_FLD] = int(row["pagerank"])
