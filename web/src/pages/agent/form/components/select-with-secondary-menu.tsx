@@ -23,7 +23,7 @@ import { ChevronDownIcon, XIcon } from 'lucide-react';
 import * as React from 'react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { VariableType } from '../../constant';
+import { JsonSchemaDataType } from '../../constant';
 import {
   useFindAgentStructuredOutputLabel,
   useShowSecondaryMenu,
@@ -52,7 +52,7 @@ interface GroupedSelectWithSecondaryMenuProps {
   value?: string;
   onChange?: (value: string) => void;
   placeholder?: string;
-  type?: VariableType;
+  types?: JsonSchemaDataType[];
 }
 
 export function GroupedSelectWithSecondaryMenu({
@@ -60,7 +60,7 @@ export function GroupedSelectWithSecondaryMenu({
   value,
   onChange,
   placeholder,
-  type,
+  types,
 }: GroupedSelectWithSecondaryMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
@@ -157,7 +157,7 @@ export function GroupedSelectWithSecondaryMenu({
                         key={option.value}
                         data={option}
                         click={handleSecondaryMenuClick}
-                        type={type}
+                        types={types}
                       ></StructuredOutputSecondaryMenu>
                     );
                   }
