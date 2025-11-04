@@ -26,7 +26,7 @@ import json_repair
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from common.base64_image import image2id
 from common.log_utils import init_root_logger
 from common.file_utils import get_project_base_directory

@@ -23,7 +23,7 @@ from typing import Any
 from agent.component.base import ComponentBase, ComponentParamBase
 from jinja2 import Template as Jinja2Template
 
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class MessageParam(ComponentParamBase):
