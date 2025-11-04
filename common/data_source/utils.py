@@ -48,6 +48,16 @@ from common.data_source.models import BasicExpertInfo, Document
 
 
 def datetime_from_string(datetime_string: str) -> datetime:
+    datetime_string = datetime_string.strip()
+
+    # Handle the case where the datetime string ends with 'Z' (Zulu time)
+    if datetime_string.endswith('Z'):
+        datetime_string = datetime_string[:-1] + '+00:00'
+
+    # Handle timezone format "+0000" -> "+00:00"
+    if datetime_string.endswith('+0000'):
+        datetime_string = datetime_string[:-5] + '+00:00'
+
     datetime_object = datetime.fromisoformat(datetime_string)
 
     if datetime_object.tzinfo is None:
