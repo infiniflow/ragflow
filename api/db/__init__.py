@@ -65,13 +65,6 @@ class LLMType(StrEnum):
     TTS    = 'tts'
 
 
-class ChatStyle(StrEnum):
-    CREATIVE = 'Creative'
-    PRECISE = 'Precise'
-    EVENLY = 'Evenly'
-    CUSTOM = 'Custom'
-
-
 class TaskStatus(StrEnum):
     UNSTART = "0"
     RUNNING = "1"
@@ -124,16 +117,9 @@ class InputType(StrEnum):
     SLIM_RETRIEVAL = "slim_retrieval"
 
 
-class CanvasType(StrEnum):
-    ChatBot = "chatbot"
-    DocBot = "docbot"
-
-
 class CanvasCategory(StrEnum):
     Agent = "agent_canvas"
     DataFlow = "dataflow_canvas"
-
-VALID_CANVAS_CATEGORIES = {CanvasCategory.Agent, CanvasCategory.DataFlow}
 
 
 class MCPServerType(StrEnum):
