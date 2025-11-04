@@ -30,7 +30,10 @@ async def image2id(d: dict, storage_put_func: partial, objname:str, bucket:str="
     from io import BytesIO
     import trio
     from rag.svr.task_executor import minio_limiter
-    if not d.get("image"):
+    if "image" not in d:
+        return
+    if not d["image"]:
+        del d["image"]
         return
 
     with BytesIO() as output_buffer:

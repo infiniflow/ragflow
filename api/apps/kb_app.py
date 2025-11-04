@@ -22,6 +22,7 @@ from flask_login import login_required, current_user
 import numpy as np
 
 from api.db import LLMType
+from api.db.services.connector_service import Connector2KbService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.file2document_service import File2DocumentService
@@ -147,6 +148,8 @@ def detail():
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
         kb["size"] = DocumentService.get_total_size_by_kb_id(kb_id=kb["id"],keywords="", run_status=[], types=[])
+        kb["connectors"] = Connector2KbService.list_connectors(kb_id)
+
         for key in ["graphrag_task_finish_at", "raptor_task_finish_at", "mindmap_task_finish_at"]:
             if finish_at := kb.get(key):
                 kb[key] = finish_at.strftime("%Y-%m-%d %H:%M:%S")
@@ -720,26 +723,31 @@ def delete_kb_task():
     if not pipeline_task_type or pipeline_task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
         return get_error_data_result(message="Invalid task type")
 
+    def cancel_task(task_id):
+        REDIS_CONN.set(f"{task_id}-cancel", "x")
+
     match pipeline_task_type:
         case PipelineTaskType.GRAPH_RAG:
-            settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
             kb_task_id_field = "graphrag_task_id"
             task_id = kb.graphrag_task_id
             kb_task_finish_at = "graphrag_task_finish_at"
+            cancel_task(task_id)
+            settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
         case PipelineTaskType.RAPTOR:
             kb_task_id_field = "raptor_task_id"
             task_id = kb.raptor_task_id
             kb_task_finish_at = "raptor_task_finish_at"
+            cancel_task(task_id)
+            settings.docStoreConn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), kb_id)
         case PipelineTaskType.MINDMAP:
             kb_task_id_field = "mindmap_task_id"
             task_id = kb.mindmap_task_id
             kb_task_finish_at = "mindmap_task_finish_at"
+            cancel_task(task_id)
         case _:
             return get_error_data_result(message="Internal Error: Invalid task type")
 
-    def cancel_task(task_id):
-        REDIS_CONN.set(f"{task_id}-cancel", "x")
-    cancel_task(task_id)
+
 
     ok = KnowledgebaseService.update_by_id(kb_id, {kb_task_id_field: "", kb_task_finish_at: None})
     if not ok:
@@ -883,4 +891,16 @@ def check_embedding():
     }
     if summary["avg_cos_sim"] > 0.99:
         return get_json_result(data={"summary": summary, "results": results})
-    return get_json_result(code=RetCode.NOT_EFFECTIVE, message="failed", data={"summary": summary, "results": results})
+    return get_json_result(code=settings.RetCode.NOT_EFFECTIVE, message="failed", data={"summary": summary, "results": results})
+
+
+@manager.route("/<kb_id>/link", methods=["POST"])  # noqa: F821
+@validate_request("connector_ids")
+@login_required
+def link_connector(kb_id):
+    req = request.json
+    errors = Connector2KbService.link_connectors(kb_id, req["connector_ids"], current_user.id)
+    if errors:
+        return get_json_result(data=False, message=errors, code=settings.RetCode.SERVER_ERROR)
+    return get_json_result(data=True)
+
