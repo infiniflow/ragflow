@@ -43,6 +43,7 @@ from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
 from rag.utils.storage_factory import STORAGE_IMPL
 from common.string_utils import remove_redundant_spaces
+from common.contants import RetCode
 
 MAXIMUM_OF_UPLOADING_FILES = 256
 
@@ -127,13 +128,13 @@ def upload(dataset_id, tenant_id):
                     description: Processing status.
     """
     if "file" not in request.files:
-        return get_error_data_result(message="No file part!", code=settings.RetCode.ARGUMENT_ERROR)
+        return get_error_data_result(message="No file part!", code=RetCode.ARGUMENT_ERROR)
     file_objs = request.files.getlist("file")
     for file_obj in file_objs:
         if file_obj.filename == "":
-            return get_result(message="No file selected!", code=settings.RetCode.ARGUMENT_ERROR)
+            return get_result(message="No file selected!", code=RetCode.ARGUMENT_ERROR)
         if len(file_obj.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-            return get_result(message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=settings.RetCode.ARGUMENT_ERROR)
+            return get_result(message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=RetCode.ARGUMENT_ERROR)
     """
     # total size
     total_size = 0
@@ -145,7 +146,7 @@ def upload(dataset_id, tenant_id):
     if total_size > MAX_TOTAL_FILE_SIZE:
         return get_result(
             message=f"Total file size exceeds 10MB limit! ({total_size / (1024 * 1024):.2f} MB)",
-            code=settings.RetCode.ARGUMENT_ERROR,
+            code=RetCode.ARGUMENT_ERROR,
         )
     """
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
@@ -153,7 +154,7 @@ def upload(dataset_id, tenant_id):
         raise LookupError(f"Can't find the dataset with ID {dataset_id}!")
     err, files = FileService.upload_document(kb, file_objs, tenant_id)
     if err:
-        return get_result(message="\n".join(err), code=settings.RetCode.SERVER_ERROR)
+        return get_result(message="\n".join(err), code=RetCode.SERVER_ERROR)
     # rename key's name
     renamed_doc_list = []
     for file in files:
@@ -253,12 +254,12 @@ def update_doc(tenant_id, dataset_id, document_id):
         if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
             return get_result(
                 message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.",
-                code=settings.RetCode.ARGUMENT_ERROR,
+                code=RetCode.ARGUMENT_ERROR,
             )
         if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
             return get_result(
                 message="The extension of file can't be changed",
-                code=settings.RetCode.ARGUMENT_ERROR,
+                code=RetCode.ARGUMENT_ERROR,
             )
         for d in DocumentService.query(name=req["name"], kb_id=doc.kb_id):
             if d.name == req["name"]:
@@ -402,7 +403,7 @@ def download(tenant_id, dataset_id, document_id):
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
     file_stream = STORAGE_IMPL.get(doc_id, doc_location)
     if not file_stream:
-        return construct_json_result(message="This file is empty.", code=settings.RetCode.DATA_ERROR)
+        return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
     file = BytesIO(file_stream)
     # Use send_file with a proper filename and MIME type
     return send_file(
@@ -676,10 +677,10 @@ def delete(tenant_id, dataset_id):
             errors += str(e)
 
     if not_found:
-        return get_result(message=f"Documents not found: {not_found}", code=settings.RetCode.DATA_ERROR)
+        return get_result(message=f"Documents not found: {not_found}", code=RetCode.DATA_ERROR)
 
     if errors:
-        return get_result(message=errors, code=settings.RetCode.SERVER_ERROR)
+        return get_result(message=errors, code=RetCode.SERVER_ERROR)
 
     if duplicate_messages:
         if success_count > 0:
@@ -763,7 +764,7 @@ def parse(tenant_id, dataset_id):
         queue_tasks(doc, bucket, name, 0)
         success_count += 1
     if not_found:
-        return get_result(message=f"Documents not found: {not_found}", code=settings.RetCode.DATA_ERROR)
+        return get_result(message=f"Documents not found: {not_found}", code=RetCode.DATA_ERROR)
     if duplicate_messages:
         if success_count > 0:
             return get_result(
@@ -969,7 +970,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
     if req.get("id"):
         chunk = settings.docStoreConn.get(req.get("id"), search.index_name(tenant_id), [dataset_id])
         if not chunk:
-            return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=settings.RetCode.NOT_FOUND)
+            return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.NOT_FOUND)
         k = []
         for n in chunk.keys():
             if re.search(r"(_vec$|_sm_|_tks|_ltks)", n):
@@ -1418,7 +1419,7 @@ def retrieval_test(tenant_id):
     if len(embd_nms) != 1:
         return get_result(
             message='Datasets use different embedding models."',
-            code=settings.RetCode.DATA_ERROR,
+            code=RetCode.DATA_ERROR,
         )
     if "question" not in req:
         return get_error_data_result("`question` is required.")
@@ -1509,6 +1510,6 @@ def retrieval_test(tenant_id):
         if str(e).find("not_found") > 0:
             return get_result(
                 message="No chunk found! Check the chunk status please!",
-                code=settings.RetCode.DATA_ERROR,
+                code=RetCode.DATA_ERROR,
             )
         return server_error_response(e)

@@ -36,6 +36,7 @@ from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import gen_meta_filter, cross_languages, keyword_extraction
 from rag.settings import PAGERANK_FLD
 from common.string_utils import remove_redundant_spaces
+from common.contants import RetCode
 
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
@@ -83,7 +84,7 @@ def list_chunk():
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message='No chunk found!',
-                                   code=settings.RetCode.DATA_ERROR)
+                                   code=RetCode.DATA_ERROR)
         return server_error_response(e)
 
 
@@ -115,7 +116,7 @@ def get():
     except Exception as e:
         if str(e).find("NotFoundError") >= 0:
             return get_json_result(data=False, message='Chunk not found!',
-                                   code=settings.RetCode.DATA_ERROR)
+                                   code=RetCode.DATA_ERROR)
         return server_error_response(e)
 
 
@@ -292,7 +293,7 @@ def retrieval_test():
         kb_ids = [kb_ids]
     if not kb_ids:
         return get_json_result(data=False, message='Please specify dataset firstly.',
-                               code=settings.RetCode.DATA_ERROR)
+                               code=RetCode.DATA_ERROR)
 
     doc_ids = req.get("doc_ids", [])
     use_kg = req.get("use_kg", False)
@@ -326,7 +327,7 @@ def retrieval_test():
             else:
                 return get_json_result(
                     data=False, message='Only owner of knowledgebase authorized for this operation.',
-                    code=settings.RetCode.OPERATING_ERROR)
+                    code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
@@ -371,7 +372,7 @@ def retrieval_test():
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message='No chunk found! Check the chunk status please!',
-                                   code=settings.RetCode.DATA_ERROR)
+                                   code=RetCode.DATA_ERROR)
         return server_error_response(e)
 
 

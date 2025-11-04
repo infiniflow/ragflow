@@ -28,6 +28,7 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService
+from common.contants import RetCode
 from api.utils.api_utils import (
     deep_merge,
     get_error_argument_result,
@@ -484,7 +485,7 @@ def knowledge_graph(tenant_id, dataset_id):
         return get_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
     req = {
@@ -525,7 +526,7 @@ def delete_knowledge_graph(tenant_id, dataset_id):
         return get_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
     settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]},

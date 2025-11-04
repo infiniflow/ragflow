@@ -14,7 +14,44 @@
 #  limitations under the License.
 #
 
+from enum import Enum, IntEnum
+
 SERVICE_CONF = "service_conf.yaml"
+
+
+class CustomEnum(Enum):
+    @classmethod
+    def valid(cls, value):
+        try:
+            cls(value)
+            return True
+        except BaseException:
+            return False
+
+    @classmethod
+    def values(cls):
+        return [member.value for member in cls.__members__.values()]
+
+    @classmethod
+    def names(cls):
+        return [member.name for member in cls.__members__.values()]
+
+
+class RetCode(IntEnum, CustomEnum):
+    SUCCESS = 0
+    NOT_EFFECTIVE = 10
+    EXCEPTION_ERROR = 100
+    ARGUMENT_ERROR = 101
+    DATA_ERROR = 102
+    OPERATING_ERROR = 103
+    CONNECTION_ERROR = 105
+    RUNNING = 106
+    PERMISSION_ERROR = 108
+    AUTHENTICATION_ERROR = 109
+    UNAUTHORIZED = 401
+    SERVER_ERROR = 500
+    FORBIDDEN = 403
+    NOT_FOUND = 404
 
 # environment
 # ENV_STRONG_TEST_COUNT = "STRONG_TEST_COUNT"
@@ -60,5 +97,3 @@ SERVICE_CONF = "service_conf.yaml"
 # ENV_MAX_CONCURRENT_MINIO = "MAX_CONCURRENT_MINIO"
 # ENV_WORKER_HEARTBEAT_TIMEOUT = "WORKER_HEARTBEAT_TIMEOUT"
 # ENV_TRACE_MALLOC_ENABLED = "TRACE_MALLOC_ENABLED"
-
-

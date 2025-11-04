@@ -41,7 +41,7 @@ from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, gen_meta_filter, keyword_extraction, chunks_format
-
+from common.contants import RetCode
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
@@ -959,7 +959,7 @@ def retrieval_test_embedded():
         kb_ids = [kb_ids]
     if not kb_ids:
         return get_json_result(data=False, message='Please specify dataset firstly.',
-                               code=settings.RetCode.DATA_ERROR)
+                               code=RetCode.DATA_ERROR)
     doc_ids = req.get("doc_ids", [])
     similarity_threshold = float(req.get("similarity_threshold", 0.0))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
@@ -996,7 +996,7 @@ def retrieval_test_embedded():
                     break
             else:
                 return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.",
-                                       code=settings.RetCode.OPERATING_ERROR)
+                                       code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
         if not e:
@@ -1034,7 +1034,7 @@ def retrieval_test_embedded():
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message="No chunk found! Check the chunk status please!",
-                                   code=settings.RetCode.DATA_ERROR)
+                                   code=RetCode.DATA_ERROR)
         return server_error_response(e)
 
 
@@ -1104,7 +1104,7 @@ def detail_share_embedded():
                 break
         else:
             return get_json_result(data=False, message="Has no permission for this operation.",
-                                   code=settings.RetCode.OPERATING_ERROR)
+                                   code=RetCode.OPERATING_ERROR)
 
         search = SearchService.get_detail(search_id)
         if not search:
