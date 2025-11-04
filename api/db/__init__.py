@@ -78,9 +78,10 @@ class TaskStatus(StrEnum):
     CANCEL = "2"
     DONE = "3"
     FAIL = "4"
+    SCHEDULE = "5"
 
 
-VALID_TASK_STATUS     = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL}
+VALID_TASK_STATUS     = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL, TaskStatus.SCHEDULE}
 
 
 class ParserType(StrEnum):
@@ -105,6 +106,22 @@ class FileSource(StrEnum):
     LOCAL = ""
     KNOWLEDGEBASE = "knowledgebase"
     S3 = "s3"
+    NOTION = "notion"
+    DISCORD = "discord"
+    CONFLUENCE = "confluence"
+    GMAIL = "gmail"
+    GOOGLE_DRIVER = "google_driver"
+    JIRA = "jira"
+    SHAREPOINT = "sharepoint"
+    SLACK = "slack"
+    TEAMS = "teams"
+
+
+class InputType(StrEnum):
+    LOAD_STATE = "load_state"  # e.g. loading a current full state or a save state, such as from a file
+    POLL = "poll"  # e.g. calling an API to get all documents in the last hour
+    EVENT = "event"  # e.g. registered an endpoint as a listener, and processing connector events
+    SLIM_RETRIEVAL = "slim_retrieval"
 
 
 class CanvasType(StrEnum):

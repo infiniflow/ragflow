@@ -26,7 +26,7 @@ from api.common.check_team_permission import check_file_team_permission
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from api.db import FileType, FileSource
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
@@ -62,8 +62,8 @@ def upload():
         if not e:
             return get_data_error_result( message="Can't find this folder!")
         for file_obj in file_objs:
-            MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
-            if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(current_user.id) >= MAX_FILE_NUM_PER_USER:
+            MAX_FILE_NUM_PER_USER: int = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
+            if 0 < MAX_FILE_NUM_PER_USER <= DocumentService.get_doc_count(current_user.id):
                 return get_data_error_result( message="Exceed the maximum file number of a free user!")
 
             # split file name path
@@ -376,7 +376,7 @@ def move():
 
         ok, dest_folder = FileService.get_by_id(dest_parent_id)
         if not ok or not dest_folder:
-            return get_data_error_result(message="Parent Folder not found!")
+            return get_data_error_result(message="Parent folder not found!")
 
         files = FileService.get_by_ids(file_ids)
         if not files:
@@ -387,7 +387,7 @@ def move():
         for file_id in file_ids:
             file = files_dict.get(file_id)
             if not file:
-                return get_data_error_result(message="File or Folder not found!")
+                return get_data_error_result(message="File or folder not found!")
             if not file.tenant_id:
                 return get_data_error_result(message="Tenant not found!")
             if not check_file_team_permission(file, current_user.id):

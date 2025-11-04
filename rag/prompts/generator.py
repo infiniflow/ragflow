@@ -22,11 +22,11 @@ from typing import Tuple
 import jinja2
 import json_repair
 import trio
-from api.utils import hash_str2int
+from common.misc_utils import hash_str2int
 from rag.nlp import rag_tokenizer
 from rag.prompts.template import load_prompt
 from rag.settings import TAG_FLD
-from rag.utils import encoder, num_tokens_from_string
+from common.token_utils import encoder, num_tokens_from_string
 
 
 STOP_TOKEN="<|STOP|>"
@@ -146,6 +146,7 @@ KEYWORD_PROMPT_TEMPLATE = load_prompt("keyword_prompt")
 QUESTION_PROMPT_TEMPLATE = load_prompt("question_prompt")
 VISION_LLM_DESCRIBE_PROMPT = load_prompt("vision_llm_describe_prompt")
 VISION_LLM_FIGURE_DESCRIBE_PROMPT = load_prompt("vision_llm_figure_describe_prompt")
+STRUCTURED_OUTPUT_PROMPT = load_prompt("structured_output_prompt")
 
 ANALYZE_TASK_SYSTEM = load_prompt("analyze_task_system")
 ANALYZE_TASK_USER = load_prompt("analyze_task_user")
@@ -401,6 +402,11 @@ def reflect(chat_mdl, history: list[dict], tool_call_res: list[Tuple], user_defi
 
 def form_message(system_prompt, user_prompt):
     return [{"role": "system", "content": system_prompt},{"role": "user", "content": user_prompt}]
+
+
+def structured_output_prompt(schema=None) -> str:
+    template = PROMPT_JINJA_ENV.from_string(STRUCTURED_OUTPUT_PROMPT)
+    return template.render(schema=schema)
 
 
 def tool_call_summary(chat_mdl, name: str, params: dict, result: str, user_defined_prompts: dict={}) -> str:

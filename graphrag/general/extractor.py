@@ -23,7 +23,7 @@ from typing import Callable
 import networkx as nx
 import trio
 
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from graphrag.utils import (
     GraphChange,
@@ -38,7 +38,7 @@ from graphrag.utils import (
 )
 from rag.llm.chat_model import Base as CompletionLLM
 from rag.prompts.generator import message_fit_in
-from rag.utils import truncate
+from common.token_utils import truncate
 
 GRAPH_FIELD_SEP = "<SEP>"
 DEFAULT_ENTITY_TYPES = ["organization", "person", "geo", "event", "category"]

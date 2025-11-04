@@ -15,9 +15,9 @@
 #
 import os
 import logging
-from api.utils.configs import get_base_config, decrypt_database_config
-from api.utils.file_utils import get_project_base_directory
-from api.utils.common import pip_install_torch
+from common.config_utils import get_base_config, decrypt_database_config
+from common.file_utils import get_project_base_directory
+from common.misc_utils import pip_install_torch
 
 # Server
 RAG_CONF_PATH = os.path.join(get_project_base_directory(), "conf")

@@ -27,7 +27,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
 
 
@@ -101,14 +101,14 @@ class PipelineOperationLogService(CommonService):
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
             logging.warning(f"Document for referred_document_id {referred_document_id} not found")
-            return
+            return None
         DocumentService.update_progress_immediately([document.to_dict()])
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
             logging.warning(f"Document for referred_document_id {referred_document_id} not found")
-            return
+            return None
         if document.progress not in [1, -1]:
-            return
+            return None
         operation_status = document.run
 
         if pipeline_id:

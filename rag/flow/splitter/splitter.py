@@ -17,8 +17,8 @@ from functools import partial
 
 import trio
 
-from api.utils import get_uuid
-from api.utils.base64_image import id2image, image2id
+from common.misc_utils import get_uuid
+from common.base64_image import id2image, image2id
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.splitter.schema import SplitterFromUpstream

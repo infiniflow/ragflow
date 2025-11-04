@@ -23,13 +23,13 @@ from api.db import LLMType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import TenantService
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.tokenizer.schema import TokenizerFromUpstream
 from rag.nlp import rag_tokenizer
 from rag.settings import EMBEDDING_BATCH_SIZE
 from rag.svr.task_executor import embed_limiter
-from rag.utils import truncate
+from common.token_utils import truncate
 
 
 class TokenizerParam(ProcessParamBase):
@@ -63,6 +63,8 @@ class Tokenizer(ProcessBase):
         texts = []
         for c in chunks:
             txt = ""
+            if isinstance(self._param.fields, str):
+                self._param.fields=[self._param.fields]
             for f in self._param.fields:
                 f = c.get(f)
                 if isinstance(f, str):

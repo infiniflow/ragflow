@@ -22,8 +22,8 @@ import numpy as np
 import requests
 from yarl import URL
 
-from api.utils.log_utils import log_exception
-from rag.utils import num_tokens_from_string, truncate, total_token_count_from_response
+from common.log_utils import log_exception
+from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):

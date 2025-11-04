@@ -30,7 +30,7 @@ from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
-from rag.utils import num_tokens_from_string, total_token_count_from_response
+from common.token_utils import num_tokens_from_string, total_token_count_from_response
 
 
 class Base(ABC):
@@ -539,7 +539,7 @@ class OllamaCV(Base):
         try:
             response = self.client.generate(
                 model=self.model_name,
-                prompt=vision_prompt[0]["content"][0]["text"],
+                prompt=vision_prompt[0]["content"],
                 images=[image],
             )
             ans = response["response"].strip()

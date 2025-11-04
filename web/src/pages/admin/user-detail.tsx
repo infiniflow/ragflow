@@ -41,7 +41,6 @@ import {
   getUserDetails,
   listUserAgents,
   listUserDatasets,
-  type AdminService,
 } from '@/services/admin-service';
 
 import EnterpriseFeature from './components/enterprise-feature';
@@ -323,7 +322,7 @@ function AdminUserDetail() {
         </Button>
       </nav>
 
-      <Card className="h-0 basis-0 grow flex flex-col bg-transparent border dark:border-border-button overflow-hidden">
+      <Card className="!shadow-none h-0 basis-0 grow flex flex-col bg-transparent border dark:border-border-button overflow-hidden">
         <CardHeader className="pb-10 border-b dark:border-border-button space-y-8">
           <section className="flex items-center gap-4 text-base">
             <Avatar className="justify-center items-center bg-bg-group uppercase">

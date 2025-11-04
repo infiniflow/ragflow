@@ -26,7 +26,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import server_error_response, token_required
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from api.db import FileType
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService

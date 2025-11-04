@@ -20,7 +20,7 @@ import uuid
 
 import valkey as redis
 from rag import settings
-from rag.utils import singleton
+from common.decorator import singleton
 from valkey.lock import Lock
 import trio
 

@@ -2,7 +2,6 @@ import { get } from 'lodash';
 import { ReactNode, useCallback } from 'react';
 import { AgentStructuredOutputField, Operator } from '../constant';
 import useGraphStore from '../store';
-import { filterAgentStructuredOutput } from '../utils/filter-agent-structured-output';
 
 function getNodeId(value: string) {
   return value.split('@').at(0);
@@ -25,12 +24,10 @@ export function useShowSecondaryMenu() {
   return showSecondaryMenu;
 }
 
-export function useFilterStructuredOutputByValue() {
-  const { getOperatorTypeFromId, getNode, clickedNodeId } = useGraphStore(
-    (state) => state,
-  );
+export function useGetStructuredOutputByValue() {
+  const { getNode } = useGraphStore((state) => state);
 
-  const filterStructuredOutput = useCallback(
+  const getStructuredOutput = useCallback(
     (value: string) => {
       const node = getNode(getNodeId(value));
       const structuredOutput = get(
@@ -38,17 +35,12 @@ export function useFilterStructuredOutputByValue() {
         `data.form.outputs.${AgentStructuredOutputField}`,
       );
 
-      const filteredStructuredOutput = filterAgentStructuredOutput(
-        structuredOutput,
-        getOperatorTypeFromId(clickedNodeId),
-      );
-
-      return filteredStructuredOutput;
+      return structuredOutput;
     },
-    [clickedNodeId, getNode, getOperatorTypeFromId],
+    [getNode],
   );
 
-  return filterStructuredOutput;
+  return getStructuredOutput;
 }
 
 export function useFindAgentStructuredOutputLabel() {

@@ -23,8 +23,9 @@ import traceback
 from werkzeug.serving import run_simple
 from flask import Flask
 from routes import admin_bp
-from api.utils.log_utils import init_root_logger
-from api.constants import SERVICE_CONF
+from common.log_utils import init_root_logger
+from common.contants import SERVICE_CONF
+from common.config_utils import show_configs
 from api import settings
 from config import load_configurations, SERVICE_CONFIGS
 from auth import init_default_admin, setup_auth
@@ -51,6 +52,7 @@ if __name__ == '__main__':
         os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
     )
     Session(app)
+    show_configs()
     login_manager = LoginManager()
     login_manager.init_app(app)
     settings.init_settings()

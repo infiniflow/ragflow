@@ -23,8 +23,8 @@ import { ChevronDownIcon, XIcon } from 'lucide-react';
 import * as React from 'react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { VariableType } from '../../constant';
 import {
-  useFilterStructuredOutputByValue,
   useFindAgentStructuredOutputLabel,
   useShowSecondaryMenu,
 } from '../../hooks/use-build-structured-output';
@@ -52,6 +52,7 @@ interface GroupedSelectWithSecondaryMenuProps {
   value?: string;
   onChange?: (value: string) => void;
   placeholder?: string;
+  type?: VariableType;
 }
 
 export function GroupedSelectWithSecondaryMenu({
@@ -59,16 +60,17 @@ export function GroupedSelectWithSecondaryMenu({
   value,
   onChange,
   placeholder,
+  type,
 }: GroupedSelectWithSecondaryMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
 
   const showSecondaryMenu = useShowSecondaryMenu();
-  const filterStructuredOutput = useFilterStructuredOutputByValue();
   const findAgentStructuredOutputLabel = useFindAgentStructuredOutputLabel();
 
   // Find the label of the selected item
   const flattenedOptions = options.flatMap((g) => g.options);
+
   let selectedItem = flattenedOptions
     .flatMap((o) => [o, ...(o.children || [])])
     .find((o) => o.value === value);
@@ -140,7 +142,7 @@ export function GroupedSelectWithSecondaryMenu({
       <PopoverContent className="p-0" align="start">
         <Command value={value}>
           <CommandInput placeholder="Search..." />
-          <CommandList className="overflow-visible">
+          <CommandList className="overflow-auto">
             {options.map((group, idx) => (
               <CommandGroup key={idx} heading={group.label}>
                 {group.options.map((option) => {
@@ -150,15 +152,12 @@ export function GroupedSelectWithSecondaryMenu({
                   );
 
                   if (shouldShowSecondary) {
-                    const filteredStructuredOutput = filterStructuredOutput(
-                      option.value,
-                    );
                     return (
                       <StructuredOutputSecondaryMenu
                         key={option.value}
                         data={option}
                         click={handleSecondaryMenuClick}
-                        filteredStructuredOutput={filteredStructuredOutput}
+                        type={type}
                       ></StructuredOutputSecondaryMenu>
                     );
                   }
