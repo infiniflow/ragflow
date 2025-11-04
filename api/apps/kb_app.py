@@ -22,7 +22,6 @@ from flask_login import login_required, current_user
 import numpy as np
 
 from api.db import LLMType
-from api.db.services import duplicate_name
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
