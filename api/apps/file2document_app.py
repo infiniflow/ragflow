@@ -27,7 +27,6 @@ from common.misc_utils import get_uuid
 from common.contants import RetCode
 from api.db import FileType
 from api.db.services.document_service import DocumentService
-from api import settings
 from api.utils.api_utils import get_json_result
 
 

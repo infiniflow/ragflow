@@ -17,7 +17,6 @@
 from flask import request
 from flask_login import current_user, login_required
 
-from api import settings
 from api.constants import DATASET_NAME_LIMIT
 from api.db import StatusEnum
 from api.db.db_models import DB

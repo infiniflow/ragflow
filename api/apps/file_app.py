@@ -31,7 +31,6 @@ from common.contants import RetCode
 from api.db import FileType, FileSource
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
-from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
 from api.utils.web_utils import CONTENT_TYPE_MAP

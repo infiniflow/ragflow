@@ -17,7 +17,6 @@ import logging
 
 from flask import request
 
-from api import settings
 from api.db import StatusEnum
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
