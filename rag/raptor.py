@@ -20,7 +20,7 @@ import numpy as np
 from sklearn.mixture import GaussianMixture
 import trio
 
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from graphrag.utils import (
     get_llm_cache,
     get_embed_cache,

@@ -19,7 +19,7 @@ from abc import ABC
 from typing import Any
 
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class SwitchParam(ComponentParamBase):

@@ -25,7 +25,7 @@ from api.db.services.dialog_service import meta_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api import settings
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from rag.app.tag import label_question
 from rag.prompts.generator import cross_languages, kb_prompt, gen_meta_filter
 

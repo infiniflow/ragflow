@@ -23,7 +23,7 @@ from abc import ABC
 import requests
 
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from deepdoc.parser import HtmlParser
 
 

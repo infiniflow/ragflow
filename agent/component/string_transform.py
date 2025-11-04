@@ -18,7 +18,7 @@ import re
 from abc import ABC
 from jinja2 import Template as Jinja2Template
 from agent.component.base import ComponentParamBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from .message import Message
 
 

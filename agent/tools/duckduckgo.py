@@ -19,7 +19,7 @@ import time
 from abc import ABC
 from duckduckgo_search import DDGS
 from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class DuckDuckGoParam(ToolParamBase):

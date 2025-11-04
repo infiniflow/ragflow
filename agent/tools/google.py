@@ -19,7 +19,7 @@ import time
 from abc import ABC
 from serpapi import GoogleSearch
 from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class GoogleParam(ToolParamBase):

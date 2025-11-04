@@ -25,7 +25,7 @@ from email.header import Header
 from email.utils import formataddr
 
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class EmailParam(ToolParamBase):

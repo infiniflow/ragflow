@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import networkx as nx
 import pandas as pd
 
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from graphrag.general import leiden
 from graphrag.general.community_report_prompt import COMMUNITY_REPORT_PROMPT
 from graphrag.general.extractor import Extractor

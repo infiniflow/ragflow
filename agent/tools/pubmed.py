@@ -21,7 +21,7 @@ from Bio import Entrez
 import re
 import xml.etree.ElementTree as ET
 from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class PubMedParam(ToolParamBase):

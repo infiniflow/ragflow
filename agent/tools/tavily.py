@@ -19,7 +19,7 @@ import time
 from abc import ABC
 from tavily import TavilyClient
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class TavilySearchParam(ToolParamBase):

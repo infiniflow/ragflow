@@ -25,7 +25,7 @@ from networkx.readwrite import json_graph
 
 from api import settings
 from common.misc_utils import get_uuid
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from rag.nlp import rag_tokenizer, search
 from rag.utils.doc_store_conn import OrderByExpr
 from rag.utils.redis_conn import REDIS_CONN

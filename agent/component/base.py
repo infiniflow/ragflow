@@ -25,7 +25,7 @@ from typing import Any, List, Union
 import pandas as pd
 import trio
 from agent import settings
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"

@@ -20,7 +20,7 @@ from abc import ABC
 import pandas as pd
 import yfinance as yf
 from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class YahooFinanceParam(ToolParamBase):
