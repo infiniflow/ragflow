@@ -15,6 +15,7 @@
 #
 
 from enum import Enum, IntEnum
+from strenum import StrEnum
 
 SERVICE_CONF = "service_conf.yaml"
 
@@ -52,6 +53,83 @@ class RetCode(IntEnum, CustomEnum):
     SERVER_ERROR = 500
     FORBIDDEN = 403
     NOT_FOUND = 404
+
+
+class StatusEnum(Enum):
+    VALID = "1"
+    INVALID = "0"
+
+
+class ActiveEnum(Enum):
+    ACTIVE = "1"
+    INACTIVE = "0"
+
+
+class LLMType(StrEnum):
+    CHAT = 'chat'
+    EMBEDDING = 'embedding'
+    SPEECH2TEXT = 'speech2text'
+    IMAGE2TEXT = 'image2text'
+    RERANK = 'rerank'
+    TTS = 'tts'
+
+
+class TaskStatus(StrEnum):
+    UNSTART = "0"
+    RUNNING = "1"
+    CANCEL = "2"
+    DONE = "3"
+    FAIL = "4"
+    SCHEDULE = "5"
+
+
+VALID_TASK_STATUS = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL,
+                     TaskStatus.SCHEDULE}
+
+
+class ParserType(StrEnum):
+    PRESENTATION = "presentation"
+    LAWS = "laws"
+    MANUAL = "manual"
+    PAPER = "paper"
+    RESUME = "resume"
+    BOOK = "book"
+    QA = "qa"
+    TABLE = "table"
+    NAIVE = "naive"
+    PICTURE = "picture"
+    ONE = "one"
+    AUDIO = "audio"
+    EMAIL = "email"
+    KG = "knowledge_graph"
+    TAG = "tag"
+
+
+class FileSource(StrEnum):
+    LOCAL = ""
+    KNOWLEDGEBASE = "knowledgebase"
+    S3 = "s3"
+    NOTION = "notion"
+    DISCORD = "discord"
+    CONFLUENCE = "confluence"
+    GMAIL = "gmail"
+    GOOGLE_DRIVER = "google_driver"
+    JIRA = "jira"
+    SHAREPOINT = "sharepoint"
+    SLACK = "slack"
+    TEAMS = "teams"
+
+
+class PipelineTaskType(StrEnum):
+    PARSE = "Parse"
+    DOWNLOAD = "Download"
+    RAPTOR = "RAPTOR"
+    GRAPH_RAG = "GraphRAG"
+    MINDMAP = "Mindmap"
+
+
+VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR,
+                             PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP}
 
 # environment
 # ENV_STRONG_TEST_COUNT = "STRONG_TEST_COUNT"

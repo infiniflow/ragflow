@@ -43,7 +43,7 @@ from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
 from rag.utils.storage_factory import STORAGE_IMPL
 from common.string_utils import remove_redundant_spaces
-from common.contants import RetCode
+from common.constants import RetCode
 
 MAXIMUM_OF_UPLOADING_FILES = 256
 

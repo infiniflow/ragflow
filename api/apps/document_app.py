@@ -44,7 +44,7 @@ from api.utils.api_utils import (
 )
 from api.utils.file_utils import filename_type, thumbnail
 from common.file_utils import get_project_base_directory
-from common.contants import RetCode
+from common.constants import RetCode
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search, rag_tokenizer

@@ -23,7 +23,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
 from common.misc_utils import get_uuid
-from common.contants import RetCode
+from common.constants import RetCode
 from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required
 
 
