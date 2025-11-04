@@ -1728,6 +1728,16 @@ Important structured information may include: names, dates, locations, events, k
         configuration: 'Configuration',
         structuredOutput: 'Structured output',
       },
+      operations: 'Operations',
+      operationsOptions: {
+        selectKeys: 'Select keys',
+        literalEval: 'Literal eval',
+        combine: 'Combine',
+        filterValues: 'Filter values',
+        appendOrUpdate: 'Append or update',
+        removeKeys: 'Remove keys',
+        renameKeys: 'Rename keys',
+      },
     },
     llmTools: {
       bad_calculator: {

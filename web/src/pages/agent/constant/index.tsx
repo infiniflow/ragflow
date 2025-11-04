@@ -715,8 +715,23 @@ export const initialPlaceholderValues = {
   // It's just a visual placeholder
 };
 
+export enum Operations {
+  SelectKeys = 'select keys',
+  LiteralEval = 'literal eval',
+  Combine = 'combine',
+  FilterValues = 'filter values',
+  AppendOrUpdate = 'append or update',
+  RemoveKeys = 'remove keys',
+  RenameKeys = 'rename keys',
+}
+
 export const initialDataOperationsValues = {
-  outputs: {},
+  operations: Operations.SelectKeys,
+  outputs: {
+    result: {
+      type: 'Array<Object>',
+    },
+  },
 };
 
 export const CategorizeAnchorPointPositions = [

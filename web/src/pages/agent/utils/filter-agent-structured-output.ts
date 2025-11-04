@@ -4,14 +4,14 @@ import { JsonSchemaDataType } from '../constant';
 
 export function hasSpecificTypeChild(
   data: Record<string, any> | Array<any>,
-  type: string,
+  types: string[] = [],
 ) {
   if (Array.isArray(data)) {
     for (const value of data) {
-      if (isPlainObject(value) && value.type === type) {
+      if (isPlainObject(value) && types.some((x) => x === value.type)) {
         return true;
       }
-      if (hasSpecificTypeChild(value, type)) {
+      if (hasSpecificTypeChild(value, types)) {
         return true;
       }
     }
@@ -19,11 +19,11 @@ export function hasSpecificTypeChild(
 
   if (isPlainObject(data)) {
     for (const value of Object.values(data)) {
-      if (isPlainObject(value) && value.type === type) {
+      if (isPlainObject(value) && types.some((x) => x === value.type)) {
         return true;
       }
 
-      if (hasSpecificTypeChild(value, type)) {
+      if (hasSpecificTypeChild(value, types)) {
         return true;
       }
     }
@@ -33,7 +33,7 @@ export function hasSpecificTypeChild(
 }
 
 export function hasArrayChild(data: Record<string, any> | Array<any>) {
-  return hasSpecificTypeChild(data, JsonSchemaDataType.Array);
+  return hasSpecificTypeChild(data, [JsonSchemaDataType.Array]);
 }
 
 export function hasJsonSchemaChild(data: JSONSchema) {
