@@ -20,7 +20,7 @@ from functools import partial
 from typing import Any
 import trio
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class ProcessParamBase(ComponentParamBase):
