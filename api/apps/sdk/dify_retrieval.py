@@ -25,7 +25,7 @@ from api import settings
 from api.utils.api_utils import validate_request, build_error_result, apikey_required
 from rag.app.tag import label_question
 from api.db.services.dialog_service import meta_filter, convert_conditions
-from common.contants import RetCode
+from common.constants import RetCode
 
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required

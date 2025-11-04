@@ -41,7 +41,7 @@ from rag.settings import PAGERANK_FLD
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr  
-from common.contants import RetCode
+from common.constants import RetCode
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821

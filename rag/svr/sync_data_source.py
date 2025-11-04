@@ -170,7 +170,7 @@ class Confluence(SyncBase):
             docs = [{
                 "id": doc.id,
                 "connector_id": task["connector_id"],
-                "source": FileSource.CONFLUENNCE,
+                "source": FileSource.CONFLUENCE,
                 "semantic_identifier": doc.semantic_identifier,
                 "extension": doc.extension,
                 "size_bytes": doc.size_bytes,
@@ -179,7 +179,7 @@ class Confluence(SyncBase):
             }]
 
             e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-            err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{FileSource.CONFLUENNCE}/{task['connector_id']}")
+            err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{FileSource.CONFLUENCE}/{task['connector_id']}")
             SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
             doc_num += len(docs)
 

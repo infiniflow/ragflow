@@ -40,7 +40,7 @@ from api.db.db_models import APIToken
 from api.utils.json_encode import CustomJSONEncoder
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 from common.connection_utils import timeout
-from common.contants import RetCode
+from common.constants import RetCode
 
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)

@@ -22,7 +22,7 @@ import asyncio
 import trio
 from functools import wraps
 from flask import make_response, jsonify
-from common.contants import RetCode
+from common.constants import RetCode
 
 TimeoutException = Union[Type[BaseException], BaseException]
 OnTimeoutCallback = Union[Callable[..., Any], Coroutine[Any, Any, Any]]

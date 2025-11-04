@@ -23,7 +23,7 @@ from api.db import UserTenantRole, StatusEnum
 from api.db.db_models import UserTenant
 from api.db.services.user_service import UserTenantService, UserService
 
-from common.contants import RetCode
+from common.constants import RetCode
 from common.misc_utils import get_uuid
 from common.time_utils import delta_seconds
 from api.utils.api_utils import get_json_result, validate_request, server_error_response, get_data_error_result

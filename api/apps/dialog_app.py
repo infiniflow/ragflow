@@ -24,7 +24,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from common.misc_utils import get_uuid
-from common.contants import RetCode
+from common.constants import RetCode
 from api.utils.api_utils import get_json_result
 
 
