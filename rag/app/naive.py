@@ -51,7 +51,7 @@ def DeepDOC_parser(filename, binary=None, from_page=0, to_page=100000, callback=
     tables = vision_figure_parser_pdf_wrapper(tbls=tables,
                                               callback=callback,
                                               **kwargs)
-    return sections, tables
+    return sections, tables, pdf_parser.outlines
 
 
 def MinerU_parser(filename, binary=None, callback=None, **kwargs):
@@ -71,7 +71,7 @@ def MinerU_parser(filename, binary=None, callback=None, **kwargs):
         backend=os.environ.get("MINERU_BACKEND", "pipeline"),
         delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
     )
-    return sections, tables
+    return sections, tables, []
 
 
 def Docling_parser(filename, binary=None, callback=None, **kwargs):
@@ -88,7 +88,7 @@ def Docling_parser(filename, binary=None, callback=None, **kwargs):
         output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
         delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
     )
-    return sections, tables
+    return sections, tables, []
 
 
 def TCADP_parser(filename, binary=None, callback=None, **kwargs):
@@ -105,7 +105,7 @@ def TCADP_parser(filename, binary=None, callback=None, **kwargs):
         output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""),
         file_type="PDF"
     )
-    return sections, tables
+    return sections, tables, []
 
 
 def plaintext_parser(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
@@ -121,7 +121,7 @@ def plaintext_parser(filename, binary=None, from_page=0, to_page=100000, callbac
         to_page=to_page,
         callback=callback
     )
-    return sections, tables
+    return sections, tables, pdf_parser.outlines
 
 
 PARSERS = {
@@ -605,7 +605,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         st = timer()
 
-        chunks, images = naive_merge_docx(
+        chunks, images, _ = naive_merge_docx(
             sections, int(parser_config.get(
                 "chunk_token_num", 128)), parser_config.get(
                 "delimiter", "\n!?。；！？"))

@@ -22,7 +22,7 @@ from api.db import ParserType
 from io import BytesIO
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level
 from common.token_utils import num_tokens_from_string
-from deepdoc.parser import PdfParser, PlainParser, DocxParser
+from deepdoc.parser import PdfParser, DocxParser
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
 from docx import Document
 from PIL import Image
@@ -205,7 +205,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         pdf_parser = PARSERS.get(name, plaintext_parser)
         callback(0.1, "Start to parse.")
 
-        sections, tables = pdf_parser(
+        sections, tables, outline = pdf_parser(
             filename = filename,
             binary = binary,
             from_page = from_page,
@@ -224,15 +224,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         
         callback(0.8, "Finish parsing.")
 
-        if not pdf_parser.outlines:
-            pdf_parser.outlines = []
-
-        if len(sections) > 0 and len(pdf_parser.outlines) / len(sections) > 0.03:
-            max_lvl = max([lvl for _, lvl in pdf_parser.outlines])
+        if len(sections) > 0 and len(outline) / len(sections) > 0.03:
+            max_lvl = max([lvl for _, lvl in outline])
             most_level = max(0, max_lvl - 1)
             levels = []
             for txt, _, _ in sections:
-                for t, lvl in pdf_parser.outlines:
+                for t, lvl in outline:
                     tks = set([t[i] + t[i + 1] for i in range(len(t) - 1)])
                     tks_ = set([txt[i] + txt[i + 1]
                                 for i in range(min(len(t), len(txt) - 1))])
