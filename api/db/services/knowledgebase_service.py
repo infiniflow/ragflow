@@ -285,7 +285,7 @@ class KnowledgebaseService(CommonService):
             (cls.model.status == StatusEnum.VALID.value)
         ).dicts()
         if not kbs:
-            return
+            return None
         return kbs[0]
 
     @classmethod
@@ -381,7 +381,7 @@ class KnowledgebaseService(CommonService):
         """Create a dataset (knowledgebase) by name with kb_app defaults.
 
         This encapsulates the creation logic used in kb_app.create so other callers
-        (including RESTful endpoints) can reuse the same behavior.
+        (including RESTFul endpoints) can reuse the same behavior.
 
         Returns:
             (ok: bool, model_or_msg): On success, returns (True, Knowledgebase model instance);
