@@ -39,6 +39,8 @@ import faulthandler
 from api.db import FileSource, TaskStatus
 from api import settings
 from api.versions import get_ragflow_version
+from common.data_source.confluence_connector import ConfluenceConnector
+from common.data_source.utils import load_all_docs_from_checkpoint_connector
 
 MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 task_limiter = trio.Semaphore(MAX_CONCURRENT_TASKS)
@@ -115,6 +117,77 @@ class S3(SyncBase):
         return next_update
 
 
+class Confluence(SyncBase):
+    async def _run(self, task: dict):
+        from common.data_source.interfaces import StaticCredentialsProvider
+        from common.data_source.config import DocumentSource
+
+        self.connector = ConfluenceConnector(
+            wiki_base=self.conf["wiki_base"],
+            space=self.conf.get("space", ""),
+            is_cloud=self.conf.get("is_cloud", True),
+            # page_id=self.conf.get("page_id", ""),
+        )
+
+        credentials_provider = StaticCredentialsProvider(
+            tenant_id=task["tenant_id"],
+            connector_name=DocumentSource.CONFLUENCE,
+            credential_json={
+                "confluence_username": self.conf["username"],
+                "confluence_access_token": self.conf["access_token"],
+            },
+        )
+        self.connector.set_credentials_provider(credentials_provider)
+
+        # Determine the time range for synchronization based on reindex or poll_range_start
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = 0.0
+            begin_info = "totally"
+        else:
+            start_time = task["poll_range_start"].timestamp()
+            begin_info = f"from {task['poll_range_start']}"
+
+        end_time = datetime.now(timezone.utc).timestamp()
+
+        document_generator = load_all_docs_from_checkpoint_connector(
+            connector=self.connector,
+            start=start_time,
+            end=end_time,
+        )
+
+        logging.info("Connect to Confluence: {} {}".format(self.conf["wiki_base"], begin_info))
+
+        doc_num = 0
+        next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        if task["poll_range_start"]:
+            next_update = task["poll_range_start"]
+
+        for doc in document_generator:
+            min_update = doc.doc_updated_at if doc.doc_updated_at else next_update
+            max_update = doc.doc_updated_at if doc.doc_updated_at else next_update
+            next_update = max([next_update, max_update])
+
+            docs = [{
+                "id": doc.id,
+                "connector_id": task["connector_id"],
+                "source": FileSource.CONFLUENNCE,
+                "semantic_identifier": doc.semantic_identifier,
+                "extension": doc.extension,
+                "size_bytes": doc.size_bytes,
+                "doc_updated_at": doc.doc_updated_at,
+                "blob": doc.blob
+            }]
+
+            e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
+            err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{FileSource.CONFLUENNCE}/{task['connector_id']}")
+            SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
+            doc_num += len(docs)
+
+        logging.info("{} docs synchronized from Confluence: {} {}".format(doc_num, self.conf["wiki_base"], begin_info))
+        SyncLogsService.done(task["id"])
+        return next_update
+
+
 class Notion(SyncBase):
 
     async def __call__(self, task: dict):
@@ -122,12 +195,6 @@ class Notion(SyncBase):
 
 
 class Discord(SyncBase):
-
-    async def __call__(self, task: dict):
-        pass
-
-
-class Confluence(SyncBase):
 
     async def __call__(self, task: dict):
         pass
@@ -244,14 +311,14 @@ CONSUMER_NAME = "data_sync_" + CONSUMER_NO
 
 async def main():
     logging.info(r"""
-  _____        _           _____                  
- |  __ \      | |         / ____|                 
- | |  | | __ _| |_ __ _  | (___  _   _ _ __   ___ 
+  _____        _           _____
+ |  __ \      | |         / ____|
+ | |  | | __ _| |_ __ _  | (___  _   _ _ __   ___
  | |  | |/ _` | __/ _` |  \___ \| | | | '_ \ / __|
- | |__| | (_| | || (_| |  ____) | |_| | | | | (__ 
+ | |__| | (_| | || (_| |  ____) | |_| | | | | (__
  |_____/ \__,_|\__\__,_| |_____/ \__, |_| |_|\___|
-                                  __/ |           
-                                 |___/                              
+                                  __/ |
+                                 |___/
     """)
     logging.info(f'RAGFlow version: {get_ragflow_version()}')
     show_configs()
