@@ -21,7 +21,11 @@ from api.db import StatusEnum, TenantPermission
 from api.db.db_models import DB, Document, Knowledgebase, User, UserTenant, UserCanvas
 from api.db.services.common_service import CommonService
 from common.time_utils import current_timestamp, datetime_format
-
+from api.db.services import duplicate_name
+from api.db.services.user_service import TenantService
+from common.misc_utils import get_uuid
+from api.constants import DATASET_NAME_LIMIT
+from api.utils.api_utils import get_parser_config, get_data_error_result
 
 class KnowledgebaseService(CommonService):
     """Service class for managing knowledge base operations.
@@ -281,7 +285,7 @@ class KnowledgebaseService(CommonService):
             (cls.model.status == StatusEnum.VALID.value)
         ).dicts()
         if not kbs:
-            return
+            return None
         return kbs[0]
 
     @classmethod
@@ -362,6 +366,64 @@ class KnowledgebaseService(CommonService):
         # Returns:
         #     List of all knowledge base IDs
         return [m["id"] for m in cls.model.select(cls.model.id).dicts()]
+
+
+    @classmethod
+    @DB.connection_context()
+    def create_with_name(
+        cls,
+        *,
+        name: str,
+        tenant_id: str,
+        parser_id: str | None = None,
+        **kwargs
+    ):
+        """Create a dataset (knowledgebase) by name with kb_app defaults.
+
+        This encapsulates the creation logic used in kb_app.create so other callers
+        (including RESTFul endpoints) can reuse the same behavior.
+
+        Returns:
+            (ok: bool, model_or_msg): On success, returns (True, Knowledgebase model instance);
+                                      on failure, returns (False, error_message).
+        """
+        # Validate name
+        if not isinstance(name, str):
+            return get_data_error_result(message="Dataset name must be string.")
+        dataset_name = name.strip()
+        if dataset_name == "":
+            return get_data_error_result(message="Dataset name can't be empty.")
+        if len(dataset_name.encode("utf-8")) > DATASET_NAME_LIMIT:
+            return get_data_error_result(message=f"Dataset name length is {len(dataset_name)} which is larger than {DATASET_NAME_LIMIT}")
+
+        # Deduplicate name within tenant
+        dataset_name = duplicate_name(
+            cls.query,
+            name=dataset_name,
+            tenant_id=tenant_id,
+            status=StatusEnum.VALID.value,
+        )
+
+        # Verify tenant exists
+        ok, _t = TenantService.get_by_id(tenant_id)
+        if not ok:
+            return False, "Tenant not found."
+
+        # Build payload
+        kb_id = get_uuid()
+        payload = {
+            "id": kb_id,
+            "name": dataset_name,
+            "tenant_id": tenant_id,
+            "created_by": tenant_id,
+            "parser_id": (parser_id or "naive"),
+            **kwargs
+        }
+
+        # Default parser_config (align with kb_app.create) — do not accept external overrides
+        payload["parser_config"] = get_parser_config(parser_id, kwargs.get("parser_config"))
+        return payload
+
 
     @classmethod
     @DB.connection_context()

@@ -27,10 +27,10 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from common.misc_utils import get_uuid
+from common.contants import RetCode
 from api.db import FileType, FileSource
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
-from api import settings
 from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
 from api.utils.web_utils import CONTENT_TYPE_MAP
@@ -49,21 +49,21 @@ def upload():
 
     if 'file' not in request.files:
         return get_json_result(
-            data=False, message='No file part!', code=settings.RetCode.ARGUMENT_ERROR)
+            data=False, message='No file part!', code=RetCode.ARGUMENT_ERROR)
     file_objs = request.files.getlist('file')
 
     for file_obj in file_objs:
         if file_obj.filename == '':
             return get_json_result(
-                data=False, message='No file selected!', code=settings.RetCode.ARGUMENT_ERROR)
+                data=False, message='No file selected!', code=RetCode.ARGUMENT_ERROR)
     file_res = []
     try:
         e, pf_folder = FileService.get_by_id(pf_id)
         if not e:
             return get_data_error_result( message="Can't find this folder!")
         for file_obj in file_objs:
-            MAX_FILE_NUM_PER_USER = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
-            if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(current_user.id) >= MAX_FILE_NUM_PER_USER:
+            MAX_FILE_NUM_PER_USER: int = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
+            if 0 < MAX_FILE_NUM_PER_USER <= DocumentService.get_doc_count(current_user.id):
                 return get_data_error_result( message="Exceed the maximum file number of a free user!")
 
             # split file name path
@@ -134,7 +134,7 @@ def create():
     try:
         if not FileService.is_parent_folder_exist(pf_id):
             return get_json_result(
-                data=False, message="Parent Folder Doesn't Exist!", code=settings.RetCode.OPERATING_ERROR)
+                data=False, message="Parent Folder Doesn't Exist!", code=RetCode.OPERATING_ERROR)
         if FileService.query(name=req["name"], parent_id=pf_id):
             return get_data_error_result(
                 message="Duplicated folder name in the same folder.")
@@ -279,7 +279,7 @@ def rm():
             if not file.tenant_id:
                 return get_data_error_result(message="Tenant not found!")
             if not check_file_team_permission(file, current_user.id):
-                return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
+                return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
             if file.source_type == FileSource.KNOWLEDGEBASE:
                 continue
@@ -306,14 +306,14 @@ def rename():
         if not e:
             return get_data_error_result(message="File not found!")
         if not check_file_team_permission(file, current_user.id):
-            return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
+            return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
         if file.type != FileType.FOLDER.value \
             and pathlib.Path(req["name"].lower()).suffix != pathlib.Path(
                 file.name.lower()).suffix:
             return get_json_result(
                 data=False,
                 message="The extension of file can't be changed",
-                code=settings.RetCode.ARGUMENT_ERROR)
+                code=RetCode.ARGUMENT_ERROR)
         for file in FileService.query(name=req["name"], pf_id=file.parent_id):
             if file.name == req["name"]:
                 return get_data_error_result(
@@ -344,7 +344,7 @@ def get(file_id):
         if not e:
             return get_data_error_result(message="Document not found!")
         if not check_file_team_permission(file, current_user.id):
-            return get_json_result(data=False, message='No authorization.', code=settings.RetCode.AUTHENTICATION_ERROR)
+            return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
 
         blob = STORAGE_IMPL.get(file.parent_id, file.location)
         if not blob:
@@ -376,7 +376,7 @@ def move():
 
         ok, dest_folder = FileService.get_by_id(dest_parent_id)
         if not ok or not dest_folder:
-            return get_data_error_result(message="Parent Folder not found!")
+            return get_data_error_result(message="Parent folder not found!")
 
         files = FileService.get_by_ids(file_ids)
         if not files:
@@ -387,14 +387,14 @@ def move():
         for file_id in file_ids:
             file = files_dict.get(file_id)
             if not file:
-                return get_data_error_result(message="File or Folder not found!")
+                return get_data_error_result(message="File or folder not found!")
             if not file.tenant_id:
                 return get_data_error_result(message="Tenant not found!")
             if not check_file_team_permission(file, current_user.id):
                 return get_json_result(
                     data=False,
                     message="No authorization.",
-                    code=settings.RetCode.AUTHENTICATION_ERROR,
+                    code=RetCode.AUTHENTICATION_ERROR,
                 )
 
         def _move_entry_recursive(source_file_entry, dest_folder):

@@ -671,7 +671,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addCondition: 'Add Condition',
       meta: {
         disabled: 'Disabled',
-        automatic: 'Automatic',
+        auto: 'Automatic',
         manual: 'Manual',
       },
       cancel: 'Cancel',
@@ -1528,6 +1528,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       knowledgeBaseVars: 'Knowledge base variables',
       code: 'Code',
       codeDescription: 'It allows developers to write custom Python logic.',
+      dataOperations: 'Data operations',
+      dataOperationsDescription: 'Perform various operations on a Data object.',
       inputVariables: 'Input variables',
       runningHintText: 'is running...🕞',
       openingSwitch: 'Opening switch',

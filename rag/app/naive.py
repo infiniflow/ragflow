@@ -365,7 +365,7 @@ class Markdown(MarkdownParser):
         html_content = markdown(text)
         soup = BeautifulSoup(html_content, 'html.parser')
         return soup
-    
+
     def get_picture_urls(self, soup):
         if soup:
             return [img.get('src') for img in soup.find_all('img') if img.get('src')]
@@ -375,7 +375,7 @@ class Markdown(MarkdownParser):
         if soup:
             return set([a.get('href') for a in soup.find_all('a') if a.get('href')])
         return []
-    
+
     def get_pictures(self, text):
         """Download and open all images from markdown text."""
         import requests
@@ -548,9 +548,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         elif layout_recognizer == "MinerU":
             mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
             mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
-            pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
-            if not pdf_parser.check_installation():
-                callback(-1, "MinerU not found.")
+            mineru_server_url = os.environ.get("MINERU_SERVER_URL", "")
+            mineru_backend = os.environ.get("MINERU_BACKEND", "pipeline")
+            pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api, mineru_server_url=mineru_server_url)
+            ok, reason = pdf_parser.check_installation(backend=mineru_backend)
+            if not ok:
+                callback(-1, f"MinerU not found or server not accessible: {reason}")
                 return res
 
             sections, tables = pdf_parser.parse_pdf(
@@ -558,7 +561,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 binary=binary,
                 callback=callback,
                 output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
-                backend=os.environ.get("MINERU_BACKEND", "pipeline"),
+                backend=mineru_backend,
+                server_url=mineru_server_url,
                 delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
             )
             parser_config["chunk_token_num"] = 0
@@ -731,9 +735,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 logging.info(f"Failed to chunk url in registered file type {url}: {e}")
                 sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
             url_res.extend(sub_url_res)
-        
+
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
-    
+
     if embed_res:
         res.extend(embed_res)
     if url_res:

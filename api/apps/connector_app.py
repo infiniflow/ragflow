@@ -18,12 +18,11 @@ import time
 from flask import request
 from flask_login import login_required, current_user
 
-from api import settings
 from api.db import TaskStatus, InputType
 from api.db.services.connector_service import ConnectorService, Connector2KbService, SyncLogsService
 from api.utils.api_utils import get_json_result, validate_request, get_data_error_result
 from common.misc_utils import get_uuid
-
+from common.contants import RetCode
 
 @manager.route("/set", methods=["POST"])  # noqa: F821
 @login_required
@@ -95,7 +94,7 @@ def link_kb(connector_id):
     req = request.json
     errors = Connector2KbService.link_kb(connector_id, req["kb_ids"], current_user.id)
     if errors:
-        return get_json_result(data=False, message=errors, code=settings.RetCode.SERVER_ERROR)
+        return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
     return get_json_result(data=True)
 
 
