@@ -660,7 +660,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       addCondition: '增加条件',
       meta: {
         disabled: '禁用',
-        automatic: '自动',
+        auto: '自动',
         manual: '手动',
       },
       cancel: '取消',

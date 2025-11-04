@@ -671,7 +671,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addCondition: 'Add Condition',
       meta: {
         disabled: 'Disabled',
-        automatic: 'Automatic',
+        auto: 'Automatic',
         manual: 'Manual',
       },
       cancel: 'Cancel',

@@ -611,7 +611,7 @@ export default {
       addCondition: 'Добавить условие',
       meta: {
         disabled: 'Отключено',
-        automatic: 'Автоматически',
+        auto: 'Автоматически',
         manual: 'Вручную',
       },
       cancel: 'Отмена',
