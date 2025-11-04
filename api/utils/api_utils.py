@@ -27,7 +27,6 @@ import trio
 from flask import (
     Response,
     jsonify,
-    make_response,
 )
 from flask_login import current_user
 from flask import (
@@ -191,25 +190,6 @@ def build_error_result(code=RetCode.FORBIDDEN, message="success"):
     response = {"code": code, "message": message}
     response = jsonify(response)
     response.status_code = code
-    return response
-
-
-def construct_response(code=RetCode.SUCCESS, message="success", data=None, auth=None):
-    result_dict = {"code": code, "message": message, "data": data}
-    response_dict = {}
-    for key, value in result_dict.items():
-        if value is None and key != "code":
-            continue
-        else:
-            response_dict[key] = value
-    response = make_response(jsonify(response_dict))
-    if auth:
-        response.headers["Authorization"] = auth
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Method"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    response.headers["Access-Control-Expose-Headers"] = "Authorization"
     return response
 
 
