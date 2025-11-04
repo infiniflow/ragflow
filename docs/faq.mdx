@@ -540,11 +540,38 @@ uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
 
 ### How to configure MinerU-specific settings?
 
-1. Set `MINERU_EXECUTABLE` (default: `mineru`) to the path of the MinerU executable.
+1. Set `MINERU_EXECUTABLE` (default: `mineru`) to the path to the MinerU executable.
 2. Set `MINERU_DELETE_OUTPUT` to `0` to keep MinerU's output. (Default: `1`, which deletes temporary output)
 3. Set `MINERU_OUTPUT_DIR` to specify the output directory for MinerU.
-4. Set `MINERU_BACKEND` to `"pipeline"`. (Options: `"pipeline"` (default) | `"vlm-transformers"`)
+4. Set `MINERU_BACKEND` to specify a parsing backend:
+   - `"pipeline"` (default): The traditional multimodel pipeline.
+   - `"vlm-transformers"`: A vision-language model using HuggingFace Transformers.
+   - `"vlm-vllm-engine"`: A vision-language model using local vLLM engine (requires a local GPU).
+   - `"vlm-http-client"`: A vision-language model via HTTP client to remote vLLM server (RAGFlow only requires CPU).
+5. If using the `"vlm-http-client"` backend, you must also set `MINERU_SERVER_URL` to the URL of your vLLM server.
 
 :::tip NOTE
 For information about other environment variables natively supported by MinerU, see [here](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).
+:::
+
+---
+
+### How to use MinerU with a vLLM server for document parsing?
+
+RAGFlow supports MinerU's `vlm-http-client` backend, enabling you to delegate document parsing tasks to a remote vLLM server. With this configuration, RAGFlow will connect to your remote vLLM server as a client and use its powerful GPU resources for document parsing. This significantly improves performance for parsing complex documents while reducing the resources required on your RAGFlow server. To configure MinerU with a vLLM server:
+
+1. Set up a vLLM server running MinerU:
+   ```bash
+   mineru-vllm-server --port 30000
+   ```
+
+2. Configure the following environment variables in your **docker/.env** file:
+   - `MINERU_EXECUTABLE=/ragflow/uv_tools/.venv/bin/mineru` (or the path to your MinerU executable)
+   - `MINERU_BACKEND="vlm-http-client"`
+   - `MINERU_SERVER_URL="http://your-vllm-server-ip:30000"`
+
+3. Complete the rest standard MinerU setup steps as described [here](#how-to-configure-mineru-specific-settings).
+
+:::tip NOTE
+When using the `vlm-http-client` backend, the RAGFlow server requires no GPU, only network connectivity. This enables cost-effective distributed deployment with multiple RAGFlow instances sharing one remote vLLM server.
 :::

@@ -224,8 +224,9 @@ class Parser(ProcessBase):
             mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
             mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
             pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
-            if not pdf_parser.check_installation():
-                raise RuntimeError("MinerU not found. Please install it via: pip install -U 'mineru[core]'.")
+            ok, reason = pdf_parser.check_installation()
+            if not ok:
+                raise RuntimeError(f"MinerU not found or server not accessible: {reason}. Please install it via: pip install -U 'mineru[core]'.")
 
             lines, _ = pdf_parser.parse_pdf(
                 filepath=name,
