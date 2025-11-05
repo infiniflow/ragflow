@@ -41,7 +41,7 @@ class RAGFlowMinio:
             self.conn = Minio(settings.MINIO["host"],
                               access_key=settings.MINIO["user"],
                               secret_key=settings.MINIO["password"],
-                              secure=False
+                              secure=str(settings.MINIO.get("secure", False)).lower() == "true"
                               )
         except Exception:
             logging.exception(

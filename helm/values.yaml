@@ -32,6 +32,8 @@ env:
   MINIO_ROOT_USER: rag_flow
   # The password for MinIO
   MINIO_PASSWORD: infini_rag_flow_helm
+  # Whether to use secure connection (HTTPS) for MinIO.
+  MINIO_SECURE: false
 
   # The password for Redis
   REDIS_PASSWORD: infini_rag_flow_helm
