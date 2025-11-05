@@ -19,7 +19,6 @@ from timeit import default_timer as timer
 
 from api import settings
 from api.db.db_models import DB
-from rag import settings as rag_settings
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.es_conn import ESConnection
@@ -121,7 +120,7 @@ def get_mysql_status():
 def check_minio_alive():
     start_time = timer()
     try:
-        response = requests.get(f'http://{rag_settings.MINIO["host"]}/minio/health/live')
+        response = requests.get(f'http://{globals.MINIO["host"]}/minio/health/live')
         if response.status_code == 200:
             return {"status": "alive", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
         else:

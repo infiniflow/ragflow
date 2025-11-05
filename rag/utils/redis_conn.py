@@ -19,8 +19,8 @@ import json
 import uuid
 
 import valkey as redis
-from rag import settings
 from common.decorator import singleton
+from common import globals
 from valkey.lock import Lock
 import trio
 
@@ -61,7 +61,7 @@ class RedisDB:
 
     def __init__(self):
         self.REDIS = None
-        self.config = settings.REDIS
+        self.config = globals.REDIS
         self.__open__()
 
     def register_scripts(self) -> None:
