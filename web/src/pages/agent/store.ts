@@ -105,7 +105,10 @@ const useGraphStore = create<RFState>()(
       clickedToolId: '',
       onNodesChange: (changes) => {
         set({
-          nodes: applyNodeChanges(changes, get().nodes),
+          nodes: applyNodeChanges(
+            changes, // The issue of errors when using templates was resolved by using cloneDeep.
+            cloneDeep(get().nodes) as RAGFlowNodeType[], //   Cannot assign to read only property 'width' of object '#<Object>'
+          ),
         });
       },
       onEdgesChange: (changes: EdgeChange[]) => {
