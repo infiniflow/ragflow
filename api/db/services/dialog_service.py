@@ -294,12 +294,13 @@ def meta_filter(metas: dict, filters: list[dict]):
     def filter_out(v2docs, operator, value):
         ids = []
         for input, docids in v2docs.items():
-            try:
-                input = float(input)
-                value = float(value)
-            except Exception:
-                input = str(input)
-                value = str(value)
+            if operator in ["=", "≠", ">", "<", "≥", "≤"]:
+                try:
+                    input = float(input)
+                    value = float(value)
+                except Exception:
+                    input = str(input)
+                    value = str(value)
 
             for conds in [
                 (operator == "contains", str(value).lower() in str(input).lower()),
