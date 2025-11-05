@@ -509,11 +509,11 @@ class Markdown(MarkdownParser):
                 txt = f.read()
 
         remainder, tables = self.extract_tables_and_remainder(f'{txt}\n', separate_tables=separate_tables)
-
+        # To eliminate duplicate tables in chunking result, uncomment code below and set separate_tables to True in line 410.
+        # extractor = MarkdownElementExtractor(remainder)
         extractor = MarkdownElementExtractor(txt)
         element_sections = extractor.extract_elements(delimiter)
         sections = [(element, "") for element in element_sections]
-
         tbls = []
         for table in tables:
             tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
