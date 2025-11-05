@@ -17,7 +17,6 @@
 from flask import request
 from flask_login import login_required, current_user
 
-from api import settings
 from api.apps import smtp_mail_server
 from api.db import UserTenantRole
 from api.db.db_models import UserTenant

@@ -31,7 +31,7 @@ from peewee import InterfaceError, OperationalError, BigIntegerField, BooleanFie
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 
-from api import settings, utils
+from api import utils
 from api.db import SerializedType
 from api.utils.json_encode import json_dumps, json_loads
 from api.utils.configs import deserialize_b64, serialize_b64

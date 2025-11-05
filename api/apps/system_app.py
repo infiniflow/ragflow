@@ -23,7 +23,6 @@ from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import UserTenantService
-from api import settings
 from api.utils.api_utils import (
     get_json_result,
     get_data_error_result,

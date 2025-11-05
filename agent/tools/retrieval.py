@@ -24,7 +24,6 @@ from api.db.services.document_service import DocumentService
 from api.db.services.dialog_service import meta_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api import settings
 from common import settings
 from common.connection_utils import timeout
 from rag.app.tag import label_question

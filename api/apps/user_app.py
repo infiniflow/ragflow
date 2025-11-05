@@ -26,7 +26,6 @@ from flask import redirect, request, session, make_response
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from api import settings
 from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
 from api.db.db_models import TenantLLM

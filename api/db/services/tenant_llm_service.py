@@ -16,7 +16,6 @@
 import os
 import logging
 from langfuse import Langfuse
-from api import settings
 from common import settings
 from common.constants import LLMType
 from api.db.db_models import DB, LLMFactories, TenantLLM

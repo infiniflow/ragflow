@@ -24,7 +24,6 @@ from flask import request, send_file
 from peewee import OperationalError
 from pydantic import BaseModel, Field, validator
 
-from api import settings
 from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import FileType
 from api.db.db_models import File, Task

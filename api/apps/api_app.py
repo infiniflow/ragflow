@@ -836,7 +836,7 @@ def completion_faq():
             if ans["reference"]["chunks"][chunk_idx]["img_id"]:
                 try:
                     bkt, nm = ans["reference"]["chunks"][chunk_idx]["img_id"].split("-")
-                    response = STORAGE_IMPL.get(bkt, nm)
+                    response = settings.STORAGE_IMPL.get(bkt, nm)
                     data_type_picture["url"] = base64.b64encode(response).decode('utf-8')
                     data.append(data_type_picture)
                     break

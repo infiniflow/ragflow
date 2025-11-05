@@ -27,7 +27,7 @@ from common.connection_utils import timeout
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.tokenizer.schema import TokenizerFromUpstream
 from rag.nlp import rag_tokenizer
-from common import constants
+from common import settings
 from rag.svr.task_executor import embed_limiter
 from common.token_utils import truncate
 

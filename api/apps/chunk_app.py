@@ -21,7 +21,6 @@ import xxhash
 from flask import request
 from flask_login import current_user, login_required
 
-from api import settings
 from api.db.services.dialog_service import meta_filter
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService

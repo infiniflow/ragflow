@@ -16,7 +16,6 @@
 import logging
 import uuid
 
-from api import settings
 from api.utils.api_utils import group_by
 from api.db import FileType, UserTenantRole
 from api.db.services.api_service import APITokenService, API4ConversationService

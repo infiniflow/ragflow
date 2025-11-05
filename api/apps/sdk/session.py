@@ -21,7 +21,6 @@ import tiktoken
 from flask import Response, jsonify, request
 
 from agent.canvas import Canvas
-from api import settings
 from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService, completion_openai
