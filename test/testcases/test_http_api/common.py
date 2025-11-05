@@ -16,9 +16,9 @@
 from pathlib import Path
 
 import requests
-from configs import HOST_ADDRESS, VERSION
+from test.testcases.configs import HOST_ADDRESS, VERSION
 from requests_toolbelt import MultipartEncoder
-from utils.file_utils import create_txt_file
+from test.testcases.utils.file_utils import create_txt_file
 
 HEADERS = {"Content-Type": "application/json"}
 DATASETS_API_URL = f"/api/{VERSION}/datasets"
