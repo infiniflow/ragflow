@@ -39,10 +39,14 @@ class ConnectorService(CommonService):
             if not task:
                 if status == TaskStatus.SCHEDULE:
                     SyncLogsService.schedule(connector_id, c2k.kb_id)
+                    ConnectorService.update_by_id(connector_id, {"status": status})
+                    return
 
             if task.status == TaskStatus.DONE:
                 if status == TaskStatus.SCHEDULE:
                     SyncLogsService.schedule(connector_id, c2k.kb_id, task.poll_range_end, total_docs_indexed=task.total_docs_indexed)
+                    ConnectorService.update_by_id(connector_id, {"status": status})
+                    return
 
             task = task.to_dict()
             task["status"] = status
@@ -72,16 +76,19 @@ class SyncLogsService(CommonService):
             cls.model.id,
             cls.model.connector_id,
             cls.model.kb_id,
+            cls.model.update_date,
             cls.model.poll_range_start,
             cls.model.poll_range_end,
             cls.model.new_docs_indexed,
-            cls.model.error_msg,
+            cls.model.total_docs_indexed,
+            cls.model.full_exception_trace,
             cls.model.error_count,
             Connector.name,
             Connector.source,
             Connector.tenant_id,
             Connector.timeout_secs,
             Knowledgebase.name.alias("kb_name"),
+            Knowledgebase.avatar.alias("kb_avatar"),
             cls.model.from_beginning.alias("reindex"),
             cls.model.status
         ]
@@ -128,7 +135,7 @@ class SyncLogsService(CommonService):
                 logging.warning(f"{kb_id}--{connector_id} has already had a scheduling sync task which is abnormal.")
                 return None
             reindex = "1" if reindex else "0"
-            ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDUL})
+            ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDULE})
             return cls.save(**{
                 "id": get_uuid(),
                 "kb_id": kb_id, "status": TaskStatus.SCHEDULE, "connector_id": connector_id,
@@ -145,7 +152,7 @@ class SyncLogsService(CommonService):
                                  full_exception_trace=cls.model.full_exception_trace + str(e)
                                  ) \
                 .where(cls.model.id == task.id).execute()
-                ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDUL})
+                ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDULE})
 
     @classmethod
     def increase_docs(cls, id, min_update, max_update, doc_num, err_msg="", error_count=0):

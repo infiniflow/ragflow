@@ -277,6 +277,14 @@ class Canvas(Graph):
         for k, cpn in self.components.items():
             self.components[k]["obj"].reset(True)
 
+        if kwargs.get("webhook_payload"):
+            for k, cpn in self.components.items():
+                if self.components[k]["obj"].component_name.lower() == "webhook":
+                    for kk, vv in kwargs["webhook_payload"].items():
+                        self.components[k]["obj"].set_output(kk, vv)
+
+            self.components[k]["obj"].reset(True)
+
         for k in kwargs.keys():
             if k in ["query", "user_id", "files"] and kwargs[k]:
                 if k == "files":

@@ -115,7 +115,7 @@ export default {
       similarityThreshold: '相似度閾值',
       similarityThresholdTip:
         '我們使用混合相似度得分來評估兩行文本之間的距離。它是加權關鍵詞相似度和向量餘弦相似度。如果查詢和塊之間的相似度小於此閾值，則該塊將被過濾掉。預設值設定為 0.2，也就是說，文本塊的混合相似度得分至少要 20 才會被檢索。',
-      vectorSimilarityWeight: '關鍵字相似度權重',
+      vectorSimilarityWeight: '矢量相似度權重',
       vectorSimilarityWeightTip:
         '我們使用混合相似性評分來評估兩行文本之間的距離。它是加權關鍵字相似性和矢量餘弦相似性或rerank得分（0〜1）。兩個權重的總和為1.0。',
       testText: '測試文本',
