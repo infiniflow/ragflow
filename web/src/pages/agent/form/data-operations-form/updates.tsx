@@ -6,6 +6,7 @@ import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
+import { PromptEditor } from '../components/prompt-editor';
 
 type SelectKeysProps = {
   name: string;
@@ -47,7 +48,7 @@ export function Updates({
               </RAGFlowFormItem>
               <Separator className="w-2" />
               <RAGFlowFormItem name={valueFieldAlias} className="flex-1">
-                <Input></Input>
+                <PromptEditor showToolbar={false} multiLine={false} />
               </RAGFlowFormItem>
               <Button variant={'ghost'} onClick={() => remove(index)}>
                 <X />
