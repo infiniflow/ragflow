@@ -15,16 +15,15 @@
 #
 
 import logging
-from tika import parser
 from io import BytesIO
 import re
 
 from deepdoc.parser.utils import get_text
 from rag.app import naive
 from rag.nlp import rag_tokenizer, tokenize
-from deepdoc.parser import PdfParser, ExcelParser, PlainParser, HtmlParser
-from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
-
+from deepdoc.parser import PdfParser, ExcelParser, HtmlParser
+from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper
+from rag.app.naive import plaintext_parser, PARSERS
 
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
@@ -83,12 +82,34 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
-            pdf_parser = PlainParser()
-        sections, tbls = pdf_parser(
-            filename if not binary else binary, to_page=to_page, callback=callback)
-        tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
+        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+
+        if isinstance(layout_recognizer, bool):
+            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
+
+        name = layout_recognizer.strip().lower()
+        parser = PARSERS.get(name, plaintext_parser)
+        callback(0.1, "Start to parse.")
+
+        sections, tbls, _ = parser(
+            filename = filename,
+            binary = binary,
+            from_page = from_page,
+            to_page = to_page,
+            lang = lang,
+            callback = callback,
+            pdf_cls = Pdf,
+            **kwargs
+        )
+
+        if not sections and not tbls:
+            return []
+
+        if name in ["tcadp", "docling", "mineru"]:
+            parser_config["chunk_token_num"] = 0
+        
+        callback(0.8, "Finish parsing.")
+        
         for (img, rows), poss in tbls:
             if not rows:
                 continue

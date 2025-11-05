@@ -32,7 +32,6 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import queue_tasks, TaskService
 from api.db.services.user_service import UserTenantService
-from api import settings
 from common.misc_utils import get_uuid
 from common.constants import RetCode, VALID_TASK_STATUS, LLMType, ParserType, FileSource
 from api.utils.api_utils import server_error_response, get_data_error_result, get_json_result, validate_request, \
@@ -48,6 +47,7 @@ from api.db.services.canvas_service import UserCanvasService
 from agent.canvas import Canvas
 from functools import partial
 from pathlib import Path
+from common import globals
 
 
 @manager.route('/new_token', methods=['POST'])  # noqa: F821
@@ -538,7 +538,7 @@ def list_chunks():
             )
         kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
 
-        res = settings.retriever.chunk_list(doc_id, tenant_id, kb_ids)
+        res = globals.retriever.chunk_list(doc_id, tenant_id, kb_ids)
         res = [
             {
                 "content": res_item["content_with_weight"],
@@ -564,7 +564,7 @@ def get_chunk(chunk_id):
     try:
         tenant_id = objs[0].tenant_id
         kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
-        chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
+        chunk = globals.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
         if chunk is None:
             return server_error_response(Exception("Chunk not found"))
         k = []
@@ -886,7 +886,7 @@ def retrieval():
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kbs[0].tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
-        ranks = settings.retriever.retrieval(question, embd_mdl, kbs[0].tenant_id, kb_ids, page, size,
+        ranks = globals.retriever.retrieval(question, embd_mdl, kbs[0].tenant_id, kb_ids, page, size,
                                                similarity_threshold, vector_similarity_weight, top,
                                                doc_ids, rerank_mdl=rerank_mdl, highlight= highlight,
                                                rank_feature=label_question(question, kbs))
