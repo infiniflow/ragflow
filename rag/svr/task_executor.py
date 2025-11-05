@@ -1067,8 +1067,8 @@ async def main():
     logging.info(f'RAGFlow version: {get_ragflow_version()}')
     show_configs()
     settings.init_settings()
-    from api.settings import EMBEDDING_CFG
-    logging.info(f'api.settings.EMBEDDING_CFG: {EMBEDDING_CFG}')
+    from common import globals
+    logging.info(f'globals.EMBEDDING_CFG: {globals.EMBEDDING_CFG}')
     print_rag_settings()
     if sys.platform != "win32":
         signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)
