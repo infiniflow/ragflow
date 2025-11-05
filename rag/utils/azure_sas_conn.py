@@ -20,15 +20,15 @@ import time
 from io import BytesIO
 from common.decorator import singleton
 from azure.storage.blob import ContainerClient
-from common import globals
+from common import settings
 
 
 @singleton
 class RAGFlowAzureSasBlob:
     def __init__(self):
         self.conn = None
-        self.container_url = os.getenv('CONTAINER_URL', globals.AZURE["container_url"])
-        self.sas_token = os.getenv('SAS_TOKEN', globals.AZURE["sas_token"])
+        self.container_url = os.getenv('CONTAINER_URL', settings.AZURE["container_url"])
+        self.sas_token = os.getenv('SAS_TOKEN', settings.AZURE["sas_token"])
         self.__open__()
 
     def __open__(self):

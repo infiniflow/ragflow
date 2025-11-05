@@ -20,7 +20,7 @@ import uuid
 
 import valkey as redis
 from common.decorator import singleton
-from common import globals
+from common import settings
 from valkey.lock import Lock
 import trio
 
@@ -61,7 +61,7 @@ class RedisDB:
 
     def __init__(self):
         self.REDIS = None
-        self.config = globals.REDIS
+        self.config = settings.REDIS
         self.__open__()
 
     def register_scripts(self) -> None:

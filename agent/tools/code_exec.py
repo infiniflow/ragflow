@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field, field_validator
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from api import settings
 from common.connection_utils import timeout
+from common import settings
 
 
 class Language(StrEnum):

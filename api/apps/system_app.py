@@ -38,7 +38,7 @@ from timeit import default_timer as timer
 from rag.utils.redis_conn import REDIS_CONN
 from flask import jsonify
 from api.utils.health_utils import run_health_checks
-from common import globals
+from common import settings
 
 
 @manager.route("/version", methods=["GET"])  # noqa: F821
@@ -101,7 +101,7 @@ def status():
     res = {}
     st = timer()
     try:
-        res["doc_engine"] = globals.docStoreConn.health()
+        res["doc_engine"] = settings.docStoreConn.health()
         res["doc_engine"]["elapsed"] = "{:.1f}".format((timer() - st) * 1000.0)
     except Exception as e:
         res["doc_engine"] = {

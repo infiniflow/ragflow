@@ -28,6 +28,7 @@ from common.misc_utils import get_uuid
 from common.time_utils import delta_seconds
 from api.utils.api_utils import get_json_result, validate_request, server_error_response, get_data_error_result
 from api.utils.web_utils import send_invite_email
+from common import settings
 
 
 @manager.route("/<tenant_id>/user/list", methods=["GET"])  # noqa: F821

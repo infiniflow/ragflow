@@ -39,6 +39,7 @@ from api.utils.configs import deserialize_b64, serialize_b64
 from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
 from common.decorator import singleton
 from common.constants import ParserType
+from common import settings
 
 
 CONTINUOUS_FIELD_TYPE = {IntegerField, FloatField, DateTimeField}

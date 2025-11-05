@@ -26,7 +26,7 @@ DOC_BULK_SIZE = int(os.environ.get("DOC_BULK_SIZE", 4))
 EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", 16))
 SVR_QUEUE_NAME = "rag_flow_svr_queue"
 SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
-PAGERANK_FLD = "pagerank_fea"
+
 TAG_FLD = "tag_feas"
 
 PARALLEL_DEVICES = 0

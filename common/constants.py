@@ -18,7 +18,7 @@ from enum import Enum, IntEnum
 from strenum import StrEnum
 
 SERVICE_CONF = "service_conf.yaml"
-
+RAG_FLOW_SERVICE_NAME = "ragflow"
 
 class CustomEnum(Enum):
     @classmethod
@@ -181,3 +181,5 @@ VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
 # ENV_MAX_CONCURRENT_MINIO = "MAX_CONCURRENT_MINIO"
 # ENV_WORKER_HEARTBEAT_TIMEOUT = "WORKER_HEARTBEAT_TIMEOUT"
 # ENV_TRACE_MALLOC_ENABLED = "TRACE_MALLOC_ENABLED"
+
+PAGERANK_FLD = "pagerank_fea"
