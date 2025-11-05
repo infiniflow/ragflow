@@ -11,7 +11,7 @@ class DataOperationsParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.inputs = []
-        self.operations = "literal eval"
+        self.operations = "literal_eval"
         self.select_keys = []
         self.filter_values=[]
         self.updates=[]
@@ -25,7 +25,7 @@ class DataOperationsParam(ComponentParamBase):
         }
     
     def check(self):
-        self.check_valid_value(self.operations, "Support operations", ["select keys", "literal eval","combine","filter values","append or update","remove keys","rename keys"])
+        self.check_valid_value(self.operations, "Support operations", ["select_keys", "literal_eval","combine","filter_values","append_or_update","remove_keys","rename_keys"])
     
     
 
@@ -55,17 +55,17 @@ class DataOperations(ComponentBase,ABC):
                 self.input_objects.extend(x for x in input_object if isinstance(x, dict))
             else:
                 continue
-        if self._param.operations == "select keys":
+        if self._param.operations == "select_keys":
             self._select_keys()
-        elif self._param.operations == "literal eval":
+        elif self._param.operations == "literal_eval":
             self._literal_eval()
         elif self._param.operations == "combine":
             self._combine()
-        elif self._param.operations == "filter values":
+        elif self._param.operations == "filter_values":
             self._filter_values()
-        elif self._param.operations == "append or update":
+        elif self._param.operations == "append_or_update":
             self._append_or_update()
-        elif self._param.operations == "remove keys":
+        elif self._param.operations == "remove_keys":
             self._remove_keys()
         else:
             self._rename_keys()
@@ -129,13 +129,13 @@ class DataOperations(ComponentBase,ABC):
         v = self.norm(val)
         if op == "equals":
             return v == target
-        if op == "not equals":
+        if op == "not_equals":
             return v != target
         if op == "contains":
             return target in v
-        if op == "starts with":
+        if op == "starts_with":
             return v.startswith(target)
-        if op == "ends with":
+        if op == "ends_with":
             return v.endswith(target)
         return False
         
