@@ -16,6 +16,13 @@
 from abc import ABC
 from agent.component.base import ComponentBase, ComponentParamBase
 
+"""
+class VariableModel(BaseModel):
+    data_type: Annotated[Literal["string", "number", "Object", "Boolean", "Array<string>", "Array<number>", "Array<object>", "Array<boolean>"], Field(default="Array<string>")]
+    input_mode: Annotated[Literal["constant", "variable"], Field(default="constant")]
+    value: Annotated[Any, Field(default=None)]
+    model_config = ConfigDict(extra="forbid")
+"""
 
 class IterationParam(ComponentParamBase):
     """

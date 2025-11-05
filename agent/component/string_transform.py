@@ -16,6 +16,8 @@
 import os
 import re
 from abc import ABC
+from typing import Any
+
 from jinja2 import Template as Jinja2Template
 from agent.component.base import ComponentParamBase
 from common.connection_utils import timeout
@@ -42,6 +44,9 @@ class StringTransformParam(ComponentParamBase):
 
 class StringTransform(Message, ABC):
     component_name = "StringTransform"
+
+    def get_input_elements(self) -> dict[str, Any]:
+        return self.get_input_elements_from_text(self._param.script)
 
     def get_input_form(self) -> dict[str, dict]:
         if self._param.method == "split":

@@ -281,12 +281,21 @@ class Canvas(Graph):
         def _run_batch(f, t):
             with ThreadPoolExecutor(max_workers=5) as executor:
                 thr = []
-                for i in range(f, t):
+                i = f
+                while i < t:
                     cpn = self.get_component_obj(self.path[i])
                     if cpn.component_name.lower() in ["begin", "userfillup"]:
                         thr.append(executor.submit(cpn.invoke, inputs=kwargs.get("inputs", {})))
+                        i += 1
                     else:
-                        thr.append(executor.submit(cpn.invoke, **cpn.get_input()))
+                        for _, ele in cpn.get_input_elements().items():
+                            if isinstance(ele, dict) and ele.get("_cpn_id") and ele.get("_cpn_id") not in self.path[:i]:
+                                self.path.pop(i)
+                                t -= 1
+                                break
+                        else:
+                            thr.append(executor.submit(cpn.invoke, **cpn.get_input()))
+                            i += 1
                 for t in thr:
                     t.result()
 
@@ -316,6 +325,7 @@ class Canvas(Graph):
                     "thoughts": self.get_component_thoughts(self.path[i])
                 })
             _run_batch(idx, to)
+            to = len(self.path)
             # post processing of components invocation
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])
