@@ -38,6 +38,7 @@ from api.db.services.user_service import TenantService, UserService, UserTenantS
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.nlp import search
 from common.constants import ActiveEnum
+from common import globals
 
 def create_new_user(user_info: dict) -> dict:
     """
@@ -63,7 +64,7 @@ def create_new_user(user_info: dict) -> dict:
         "id": user_id,
         "name": user_info["nickname"] + "‘s Kingdom",
         "llm_id": settings.CHAT_MDL,
-        "embd_id": settings.EMBEDDING_MDL,
+        "embd_id": globals.EMBEDDING_MDL,
         "asr_id": settings.ASR_MDL,
         "parser_ids": settings.PARSERS,
         "img2txt_id": settings.IMAGE2TEXT_MDL,

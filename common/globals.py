@@ -14,4 +14,6 @@
 #  limitations under the License.
 #
 
+EMBEDDING_MDL = ""
+
 EMBEDDING_CFG = ""

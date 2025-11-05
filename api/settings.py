@@ -32,7 +32,7 @@ LLM = None
 LLM_FACTORY = None
 LLM_BASE_URL = None
 CHAT_MDL = ""
-EMBEDDING_MDL = ""
+
 RERANK_MDL = ""
 ASR_MDL = ""
 IMAGE2TEXT_MDL = ""
@@ -125,7 +125,7 @@ def init_settings():
     except Exception:
         FACTORY_LLM_INFOS = []
 
-    global CHAT_MDL, EMBEDDING_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
+    global CHAT_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
     global CHAT_CFG, RERANK_CFG, ASR_CFG, IMAGE2TEXT_CFG
 
     global API_KEY, PARSERS, HOST_IP, HOST_PORT, SECRET_KEY
@@ -135,7 +135,7 @@ def init_settings():
     )
 
     chat_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("chat_model", CHAT_MDL))
-    embedding_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("embedding_model", EMBEDDING_MDL))
+    embedding_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("embedding_model", globals.EMBEDDING_MDL))
     rerank_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("rerank_model", RERANK_MDL))
     asr_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("asr_model", ASR_MDL))
     image2text_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("image2text_model", IMAGE2TEXT_MDL))
@@ -147,7 +147,7 @@ def init_settings():
     IMAGE2TEXT_CFG = _resolve_per_model_config(image2text_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
 
     CHAT_MDL = CHAT_CFG.get("model", "") or ""
-    EMBEDDING_MDL = os.getenv("TEI_MODEL", "BAAI/bge-small-en-v1.5") if "tei-" in os.getenv("COMPOSE_PROFILES", "") else ""
+    globals.EMBEDDING_MDL = os.getenv("TEI_MODEL", "BAAI/bge-small-en-v1.5") if "tei-" in os.getenv("COMPOSE_PROFILES", "") else ""
     RERANK_MDL = RERANK_CFG.get("model", "") or ""
     ASR_MDL = ASR_CFG.get("model", "") or ""
     IMAGE2TEXT_MDL = IMAGE2TEXT_CFG.get("model", "") or ""
