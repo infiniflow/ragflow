@@ -1,10 +1,10 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
+import { PromptEditor } from '../components/prompt-editor';
 
 type SelectKeysProps = {
   name: string;
@@ -33,7 +33,7 @@ export function SelectKeys({ name, label, tooltip }: SelectKeysProps) {
           return (
             <div key={field.id} className="flex items-center gap-2">
               <RAGFlowFormItem name={nameField} className="flex-1">
-                <Input></Input>
+                <PromptEditor showToolbar={false} multiLine={false} />
               </RAGFlowFormItem>
               <Button variant={'ghost'} onClick={() => remove(index)}>
                 <X />
