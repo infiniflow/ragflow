@@ -582,7 +582,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             callback(0.8, "Finish parsing.")
 
         elif layout_recognizer == "TCADP Parser":
-            tcadp_parser = TCADPParser()
+            table_result_type = parser_config.get("table_result_type", "1")
+            markdown_image_response_type = parser_config.get("markdown_image_response_type", "1")
+            tcadp_parser = TCADPParser(
+                table_result_type=table_result_type,
+                markdown_image_response_type=markdown_image_response_type
+            )
             if not tcadp_parser.check_installation():
                 callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
                 return res
@@ -613,8 +618,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         # Check if tcadp_parser is selected for spreadsheet files
         layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
-        if layout_recognizer == "tcadp_parser":
-            tcadp_parser = TCADPParser()
+        if layout_recognizer == "TCADP Parser":
+            table_result_type = parser_config.get("table_result_type", "1")
+            markdown_image_response_type = parser_config.get("markdown_image_response_type", "1")
+            tcadp_parser = TCADPParser(
+                table_result_type=table_result_type,
+                markdown_image_response_type=markdown_image_response_type
+            )
             if not tcadp_parser.check_installation():
                 callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
                 return res

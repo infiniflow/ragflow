@@ -1647,6 +1647,8 @@ This delimiter is used to split the input text into several text pieces echo of 
 The Indexer will store the content in the corresponding data structures for the selected methods.`,
       // file: 'File',
       parserMethod: 'PDF parser',
+      tableResultType: 'Table Result Type',
+      markdownImageResponseType: 'Markdown Image Response Type',
       // systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',

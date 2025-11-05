@@ -248,7 +248,12 @@ class Parser(ProcessBase):
                 bboxes.append(box)
         elif conf.get("parse_method").lower() == "tcadp parser":
             # ADP is a document parsing tool using Tencent Cloud API
-            tcadp_parser = TCADPParser()
+            table_result_type = conf.get("table_result_type", "1")
+            markdown_image_response_type = conf.get("markdown_image_response_type", "1")
+            tcadp_parser = TCADPParser(
+                table_result_type=table_result_type,
+                markdown_image_response_type=markdown_image_response_type
+            )
             sections, _ = tcadp_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
@@ -309,7 +314,12 @@ class Parser(ProcessBase):
 
         # Handle TCADP parser
         if parse_method.lower() == "tcadp parser":
-            tcadp_parser = TCADPParser()
+            table_result_type = conf.get("table_result_type", "1")
+            markdown_image_response_type = conf.get("markdown_image_response_type", "1")
+            tcadp_parser = TCADPParser(
+                table_result_type=table_result_type,
+                markdown_image_response_type=markdown_image_response_type
+            )
             if not tcadp_parser.check_installation():
                 raise RuntimeError("TCADP parser not available. Please check Tencent Cloud API configuration.")
 
@@ -408,7 +418,12 @@ class Parser(ProcessBase):
 
         # Handle TCADP parser
         if parse_method.lower() == "tcadp parser":
-            tcadp_parser = TCADPParser()
+            table_result_type = conf.get("table_result_type", "1")
+            markdown_image_response_type = conf.get("markdown_image_response_type", "1")
+            tcadp_parser = TCADPParser(
+                table_result_type=table_result_type,
+                markdown_image_response_type=markdown_image_response_type
+            )
             if not tcadp_parser.check_installation():
                 raise RuntimeError("TCADP parser not available. Please check Tencent Cloud API configuration.")
 

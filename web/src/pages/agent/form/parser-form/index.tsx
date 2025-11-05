@@ -69,6 +69,8 @@ export const FormSchema = z.object({
       fields: z.array(z.string()).optional(),
       llm_id: z.string().optional(),
       system_prompt: z.string().optional(),
+      table_result_type: z.string().optional(),
+      markdown_image_response_type: z.string().optional(),
     }),
   ),
 });
@@ -188,6 +190,8 @@ const ParserForm = ({ node }: INextOperatorForm) => {
       lang: '',
       fields: [],
       llm_id: '',
+      table_result_type: '',
+      markdown_image_response_type: '',
     });
   }, [append]);
 
