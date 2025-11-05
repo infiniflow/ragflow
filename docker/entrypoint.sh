@@ -6,10 +6,11 @@ set -e
 # Usage and command-line argument parsing
 # -----------------------------------------------------------------------------
 function usage() {
-    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
+    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--disable-datasync] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
     echo
     echo "  --disable-webserver             Disables the web server (nginx + ragflow_server)."
     echo "  --disable-taskexecutor          Disables task executor workers."
+    echo "  --disable-datasync              Disables synchronization of datasource workers."
     echo "  --enable-mcpserver              Enables the MCP server."
     echo "  --enable-adminserver            Enables the Admin server."
     echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
@@ -28,6 +29,7 @@ function usage() {
 
 ENABLE_WEBSERVER=1 # Default to enable web server
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
+ENABLE_DATASYNC=1
 ENABLE_MCP_SERVER=0
 ENABLE_ADMIN_SERVER=0 # Default close admin server
 CONSUMER_NO_BEG=0
@@ -67,6 +69,10 @@ for arg in "$@"; do
       ;;
     --disable-taskexecutor)
       ENABLE_TASKEXECUTOR=0
+      shift
+      ;;
+    --disable-datasyn)
+      ENABLE_DATASYNC=0
       shift
       ;;
     --enable-mcpserver)
@@ -233,6 +239,13 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting ragflow_server..."
     while true; do
         "$PY" api/ragflow_server.py
+    done &
+fi
+
+if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
+    echo "Starting data sync..."
+    while true; do
+        "$PY" rag/svr/sync_data_source.py
     done &
 fi
 
