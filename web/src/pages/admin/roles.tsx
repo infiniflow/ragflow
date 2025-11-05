@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -29,7 +30,6 @@ import {
 import { LucideEdit3, LucideTrash2, LucideUserPlus } from 'lucide-react';
 
 import {
-  AdminService,
   assignRolePermissions,
   createRole,
   deleteRole,
@@ -149,7 +149,9 @@ function AdminRoles() {
 
   return (
     <>
-      <Card className="!shadow-none w-full h-full border border-border-button bg-transparent rounded-xl">
+      <Card className="!shadow-none relative w-full h-full border border-border-button bg-transparent rounded-xl">
+        <Spotlight />
+
         <ScrollArea className="size-full">
           <CardHeader className="space-y-0 flex flex-row justify-between items-center">
             <CardTitle>{t('admin.roles')}</CardTitle>

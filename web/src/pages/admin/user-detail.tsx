@@ -16,6 +16,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 
+import Spotlight from '@/components/spotlight';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -322,7 +323,9 @@ function AdminUserDetail() {
         </Button>
       </nav>
 
-      <Card className="!shadow-none h-0 basis-0 grow flex flex-col bg-transparent border dark:border-border-button overflow-hidden">
+      <Card className="!shadow-none relative h-0 basis-0 grow flex flex-col bg-transparent border dark:border-border-button overflow-hidden">
+        <Spotlight />
+
         <CardHeader className="pb-10 border-b dark:border-border-button space-y-8">
           <section className="flex items-center gap-4 text-base">
             <Avatar className="justify-center items-center bg-bg-group uppercase">

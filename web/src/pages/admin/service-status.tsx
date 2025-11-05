@@ -23,6 +23,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { cn } from '@/lib/utils';
 
+import Spotlight from '@/components/spotlight';
 import { TableEmpty } from '@/components/table-skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -151,11 +152,11 @@ function AdminServiceStatus() {
                 alive: 'bg-state-success-5 text-state-success',
                 timeout: 'bg-state-error-5 text-state-error',
                 fail: 'bg-gray-500/5 text-text-disable',
-              }[cell.getValue<string>()],
+              }[cell.getValue()],
             )}
           >
             <LucideDot className="size-[1em] stroke-[8] mr-1" />
-            {cell.getValue()}
+            {t(`admin.${cell.getValue()}`)}
           </Badge>
         ),
         enableSorting: false,
@@ -215,7 +216,9 @@ function AdminServiceStatus() {
 
   return (
     <>
-      <Card className="!shadow-none h-full border border-border-button bg-transparent rounded-xl">
+      <Card className="!shadow-none relative h-full border border-border-button bg-transparent rounded-xl">
+        <Spotlight />
+
         <ScrollArea className="size-full">
           <CardHeader className="space-y-0 flex flex-row justify-between items-center">
             <CardTitle>{t('admin.serviceStatus')}</CardTitle>
@@ -252,7 +255,7 @@ function AdminServiceStatus() {
                           table.getColumn('service_type')!?.setFilterValue
                         }
                       >
-                        <Label className="space-x-2">
+                        <Label className="flex items-center space-x-2">
                           <RadioGroupItem
                             className="bg-bg-input border-border-button"
                             value=""
@@ -261,7 +264,10 @@ function AdminServiceStatus() {
                         </Label>
 
                         {SERVICE_TYPE_FILTER_OPTIONS.map(({ label, value }) => (
-                          <Label key={value} className="space-x-2">
+                          <Label
+                            key={value}
+                            className="flex items-center space-x-2"
+                          >
                             <RadioGroupItem
                               className="bg-bg-input border-border-button"
                               value={value}
