@@ -30,13 +30,14 @@ class LLMService(CommonService):
 
 def get_init_tenant_llm(user_id):
     from api import settings
+    from common import globals
     tenant_llm = []
 
     seen = set()
     factory_configs = []
     for factory_config in [
         settings.CHAT_CFG,
-        settings.EMBEDDING_CFG,
+        globals.EMBEDDING_CFG,
         settings.ASR_CFG,
         settings.IMAGE2TEXT_CFG,
         settings.RERANK_CFG,

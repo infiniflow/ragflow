@@ -25,6 +25,7 @@ import rag.utils.opensearch_conn
 from api.constants import RAG_FLOW_SERVICE_NAME
 from common.config_utils import decrypt_database_config, get_base_config
 from common.file_utils import get_project_base_directory
+from common import globals
 from rag.nlp import search
 
 LLM = None
@@ -36,7 +37,7 @@ RERANK_MDL = ""
 ASR_MDL = ""
 IMAGE2TEXT_MDL = ""
 CHAT_CFG = ""
-EMBEDDING_CFG = ""
+
 RERANK_CFG = ""
 ASR_CFG = ""
 IMAGE2TEXT_CFG = ""
@@ -125,7 +126,7 @@ def init_settings():
         FACTORY_LLM_INFOS = []
 
     global CHAT_MDL, EMBEDDING_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
-    global CHAT_CFG, EMBEDDING_CFG, RERANK_CFG, ASR_CFG, IMAGE2TEXT_CFG
+    global CHAT_CFG, RERANK_CFG, ASR_CFG, IMAGE2TEXT_CFG
 
     global API_KEY, PARSERS, HOST_IP, HOST_PORT, SECRET_KEY
     API_KEY = LLM.get("api_key")
@@ -140,7 +141,7 @@ def init_settings():
     image2text_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("image2text_model", IMAGE2TEXT_MDL))
 
     CHAT_CFG = _resolve_per_model_config(chat_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
-    EMBEDDING_CFG = _resolve_per_model_config(embedding_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
+    globals.EMBEDDING_CFG = _resolve_per_model_config(embedding_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
     RERANK_CFG = _resolve_per_model_config(rerank_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
     ASR_CFG = _resolve_per_model_config(asr_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
     IMAGE2TEXT_CFG = _resolve_per_model_config(image2text_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
