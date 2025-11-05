@@ -51,7 +51,7 @@ class SyncBase:
         self.conf = conf
 
     async def __call__(self, task: dict):
-        SyncLogsService.start(task["id"])
+        SyncLogsService.start(task["id"], task["connector_id"])
         try:
             async with task_limiter:
                 with trio.fail_after(task["timeout_secs"]):
@@ -113,7 +113,7 @@ class S3(SyncBase):
                                                                   self.conf["bucket_name"],
                                                                   begin_info
                                                                   ))
-        SyncLogsService.done(task["id"])
+        SyncLogsService.done(task["id"], task["connector_id"])
         return next_update
 
 
