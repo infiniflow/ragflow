@@ -26,13 +26,12 @@ import traceback
 
 from api.db.services.connector_service import SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils.log_utils import init_root_logger, get_project_base_directory
-from api.utils.configs import show_configs
+from common.log_utils import init_root_logger
+from common.config_utils import show_configs
 from common.data_source import BlobStorageConnector
 import logging
 import os
 from datetime import datetime, timezone
-import tracemalloc
 import signal
 import trio
 import faulthandler
@@ -41,6 +40,7 @@ from api import settings
 from api.versions import get_ragflow_version
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.utils import load_all_docs_from_checkpoint_connector
+from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 
 MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 task_limiter = trio.Semaphore(MAX_CONCURRENT_TASKS)
@@ -51,11 +51,39 @@ class SyncBase:
         self.conf = conf
 
     async def __call__(self, task: dict):
-        SyncLogsService.start(task["id"])
+        SyncLogsService.start(task["id"], task["connector_id"])
         try:
             async with task_limiter:
                 with trio.fail_after(task["timeout_secs"]):
-                    task["poll_range_start"] = await self._run(task)
+                    document_batch_generator = await self._generate(task)
+                    doc_num = 0
+                    next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
+                    if task["poll_range_start"]:
+                        next_update = task["poll_range_start"]
+                    for document_batch in document_batch_generator:
+                        min_update = min([doc.doc_updated_at for doc in document_batch])
+                        max_update = max([doc.doc_updated_at for doc in document_batch])
+                        next_update = max([next_update, max_update])
+                        docs = [{
+                            "id": doc.id,
+                            "connector_id": task["connector_id"],
+                            "source": FileSource.S3,
+                            "semantic_identifier": doc.semantic_identifier,
+                            "extension": doc.extension,
+                            "size_bytes": doc.size_bytes,
+                            "doc_updated_at": doc.doc_updated_at,
+                            "blob": doc.blob
+                        } for doc in document_batch]
+
+                        e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
+                        err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{FileSource.S3}/{task['connector_id']}")
+                        SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
+                        doc_num += len(docs)
+
+                    logging.info("{} docs synchronized till {}".format(doc_num, next_update))
+                    SyncLogsService.done(task["id"], task["connector_id"])
+                    task["poll_range_start"] = next_update
+
         except Exception as ex:
             msg = '\n'.join([
                 ''.join(traceback.format_exception_only(None, ex)).strip(),
@@ -65,12 +93,12 @@ class SyncBase:
 
         SyncLogsService.schedule(task["connector_id"], task["kb_id"], task["poll_range_start"])
 
-    async def _run(self, task: dict):
+    async def _generate(self, task: dict):
         raise NotImplementedError
 
 
 class S3(SyncBase):
-    async def _run(self, task: dict):
+    async def _generate(self, task: dict):
         self.connector = BlobStorageConnector(
             bucket_type=self.conf.get("bucket_type", "s3"),
             bucket_name=self.conf["bucket_name"],
@@ -85,40 +113,11 @@ class S3(SyncBase):
                                                                   self.conf["bucket_name"],
                                                                   begin_info
                                                                   ))
-        doc_num = 0
-        next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
-        if task["poll_range_start"]:
-            next_update = task["poll_range_start"]
-        for document_batch in document_batch_generator:
-            min_update = min([doc.doc_updated_at for doc in document_batch])
-            max_update = max([doc.doc_updated_at for doc in document_batch])
-            next_update = max([next_update, max_update])
-            docs = [{
-                    "id": doc.id,
-                    "connector_id": task["connector_id"],
-                    "source": FileSource.S3,
-                    "semantic_identifier": doc.semantic_identifier,
-                    "extension": doc.extension,
-                    "size_bytes": doc.size_bytes,
-                    "doc_updated_at": doc.doc_updated_at,
-                    "blob": doc.blob
-                } for doc in document_batch]
-
-            e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-            err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{FileSource.S3}/{task['connector_id']}")
-            SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
-            doc_num += len(docs)
-
-        logging.info("{} docs synchronized from {}: {} {}".format(doc_num, self.conf.get("bucket_type", "s3"),
-                                                                  self.conf["bucket_name"],
-                                                                  begin_info
-                                                                  ))
-        SyncLogsService.done(task["id"])
-        return next_update
+        return document_batch_generator
 
 
 class Confluence(SyncBase):
-    async def _run(self, task: dict):
+    async def _generate(self, task: dict):
         from common.data_source.interfaces import StaticCredentialsProvider
         from common.data_source.config import DocumentSource
 
@@ -156,84 +155,56 @@ class Confluence(SyncBase):
         )
 
         logging.info("Connect to Confluence: {} {}".format(self.conf["wiki_base"], begin_info))
-
-        doc_num = 0
-        next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
-        if task["poll_range_start"]:
-            next_update = task["poll_range_start"]
-
-        for doc in document_generator:
-            min_update = doc.doc_updated_at if doc.doc_updated_at else next_update
-            max_update = doc.doc_updated_at if doc.doc_updated_at else next_update
-            next_update = max([next_update, max_update])
-
-            docs = [{
-                "id": doc.id,
-                "connector_id": task["connector_id"],
-                "source": FileSource.CONFLUENCE,
-                "semantic_identifier": doc.semantic_identifier,
-                "extension": doc.extension,
-                "size_bytes": doc.size_bytes,
-                "doc_updated_at": doc.doc_updated_at,
-                "blob": doc.blob
-            }]
-
-            e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-            err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{FileSource.CONFLUENCE}/{task['connector_id']}")
-            SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
-            doc_num += len(docs)
-
-        logging.info("{} docs synchronized from Confluence: {} {}".format(doc_num, self.conf["wiki_base"], begin_info))
-        SyncLogsService.done(task["id"])
-        return next_update
+        return document_generator
 
 
 class Notion(SyncBase):
 
-    async def __call__(self, task: dict):
+    async def _generate(self, task: dict):
         pass
 
 
 class Discord(SyncBase):
 
-    async def __call__(self, task: dict):
+    async def _generate(self, task: dict):
         pass
 
 
 class Gmail(SyncBase):
 
-    async def __call__(self, task: dict):
+    async def _generate(self, task: dict):
         pass
 
 
 class GoogleDriver(SyncBase):
 
-    async def __call__(self, task: dict):
+    async def _generate(self, task: dict):
         pass
 
 
 class Jira(SyncBase):
 
-    async def __call__(self, task: dict):
+    async def _generate(self, task: dict):
         pass
 
 
 class SharePoint(SyncBase):
 
-    async def __call__(self, task: dict):
+    async def _generate(self, task: dict):
         pass
 
 
 class Slack(SyncBase):
 
-    async def __call__(self, task: dict):
+    async def _generate(self, task: dict):
         pass
 
 
 class Teams(SyncBase):
 
-    async def __call__(self, task: dict):
+    async def _generate(self, task: dict):
         pass
+
 
 func_factory = {
     FileSource.S3: S3,
@@ -261,41 +232,6 @@ async def dispatch_tasks():
 
 
 stop_event = threading.Event()
-
-
-# SIGUSR1 handler: start tracemalloc and take snapshot
-def start_tracemalloc_and_snapshot(signum, frame):
-    if not tracemalloc.is_tracing():
-        logging.info("start tracemalloc")
-        tracemalloc.start()
-    else:
-        logging.info("tracemalloc is already running")
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    snapshot_file = f"snapshot_{timestamp}.trace"
-    snapshot_file = os.path.abspath(os.path.join(get_project_base_directory(), "logs", f"{os.getpid()}_snapshot_{timestamp}.trace"))
-
-    snapshot = tracemalloc.take_snapshot()
-    snapshot.dump(snapshot_file)
-    current, peak = tracemalloc.get_traced_memory()
-    if sys.platform == "win32":
-        import  psutil
-        process = psutil.Process()
-        max_rss = process.memory_info().rss / 1024
-    else:
-        import resource
-        max_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    logging.info(f"taken snapshot {snapshot_file}. max RSS={max_rss / 1000:.2f} MB, current memory usage: {current / 10**6:.2f} MB, Peak memory usage: {peak / 10**6:.2f} MB")
-
-
-# SIGUSR2 handler: stop tracemalloc
-def stop_tracemalloc(signum, frame):
-    if tracemalloc.is_tracing():
-        logging.info("stop tracemalloc")
-        tracemalloc.stop()
-    else:
-        logging.info("tracemalloc not running")
-
 
 
 def signal_handler(sig, frame):

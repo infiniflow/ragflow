@@ -111,12 +111,14 @@ class SyncLogsService(CommonService):
         return list(query.dicts())
 
     @classmethod
-    def start(cls, id):
+    def start(cls, id, connector_id):
         cls.update_by_id(id, {"status": TaskStatus.RUNNING, "time_started": datetime.now().strftime('%Y-%m-%d %H:%M:%S') })
+        ConnectorService.update_by_id(connector_id, {"status": TaskStatus.RUNNING})
 
     @classmethod
-    def done(cls, id):
+    def done(cls, id, connector_id):
         cls.update_by_id(id, {"status": TaskStatus.DONE})
+        ConnectorService.update_by_id(connector_id, {"status": TaskStatus.DONE})
 
     @classmethod
     def schedule(cls, connector_id, kb_id, poll_range_start=None, reindex=False, total_docs_indexed=0):
@@ -126,6 +128,7 @@ class SyncLogsService(CommonService):
                 logging.warning(f"{kb_id}--{connector_id} has already had a scheduling sync task which is abnormal.")
                 return None
             reindex = "1" if reindex else "0"
+            ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDUL})
             return cls.save(**{
                 "id": get_uuid(),
                 "kb_id": kb_id, "status": TaskStatus.SCHEDULE, "connector_id": connector_id,
@@ -142,6 +145,7 @@ class SyncLogsService(CommonService):
                                  full_exception_trace=cls.model.full_exception_trace + str(e)
                                  ) \
                 .where(cls.model.id == task.id).execute()
+                ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDUL})
 
     @classmethod
     def increase_docs(cls, id, min_update, max_update, doc_num, err_msg="", error_count=0):
