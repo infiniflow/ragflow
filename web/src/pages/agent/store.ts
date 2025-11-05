@@ -14,7 +14,7 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
 } from '@xyflow/react';
-import { omit } from 'lodash';
+import { cloneDeep, omit } from 'lodash';
 import differenceWith from 'lodash/differenceWith';
 import intersectionWith from 'lodash/intersectionWith';
 import lodashSet from 'lodash/set';
@@ -53,6 +53,7 @@ export type RFState = {
     values: any,
     path?: (string | number)[],
   ) => RAGFlowNodeType[];
+  replaceNodeForm: (nodeId: string, values: any) => void;
   onSelectionChange: OnSelectionChangeFunc;
   addNode: (nodes: RAGFlowNodeType) => void;
   getNode: (id?: string | null) => RAGFlowNodeType | undefined;
@@ -104,7 +105,10 @@ const useGraphStore = create<RFState>()(
       clickedToolId: '',
       onNodesChange: (changes) => {
         set({
-          nodes: applyNodeChanges(changes, get().nodes),
+          nodes: applyNodeChanges(
+            changes, // The issue of errors when using templates was resolved by using cloneDeep.
+            cloneDeep(get().nodes) as RAGFlowNodeType[], //   Cannot assign to read only property 'width' of object '#<Object>'
+          ),
         });
       },
       onEdgesChange: (changes: EdgeChange[]) => {
@@ -432,6 +436,19 @@ const useGraphStore = create<RFState>()(
         });
 
         return nextNodes;
+      },
+      replaceNodeForm(nodeId, values) {
+        if (nodeId) {
+          set((state) => {
+            for (const node of state.nodes) {
+              if (node.id === nodeId) {
+                //cloneDeep Solving the issue of react-hook-form errors
+                node.data.form = cloneDeep(values); // TypeError: Cannot assign to read only property '0' of object '[object Array]'
+                break;
+              }
+            }
+          });
+        }
       },
       updateSwitchFormData: (source, sourceHandle, target, isConnecting) => {
         const { updateNodeForm, edges } = get();

@@ -17,7 +17,8 @@ import os
 import logging
 from langfuse import Langfuse
 from api import settings
-from api.db import LLMType
+from common import globals
+from common.constants import LLMType
 from api.db.db_models import DB, LLMFactories, TenantLLM
 from api.db.services.common_service import CommonService
 from api.db.services.langfuse_service import TenantLangfuseService
@@ -52,14 +53,14 @@ class TenantLLMService(CommonService):
                 mdlnm += "___VLLM"
             objs = cls.query(tenant_id=tenant_id, llm_name=mdlnm, llm_factory=fid)
         if not objs:
-            return
+            return None
         return objs[0]
 
     @classmethod
     @DB.connection_context()
     def get_my_llms(cls, tenant_id):
         fields = [cls.model.llm_factory, LLMFactories.logo, LLMFactories.tags, cls.model.model_type, cls.model.llm_name,
-                  cls.model.used_tokens]
+                  cls.model.used_tokens, cls.model.status]
         objs = cls.model.select(*fields).join(LLMFactories, on=(cls.model.llm_factory == LLMFactories.name)).where(
             cls.model.tenant_id == tenant_id, ~cls.model.api_key.is_null()).dicts()
 
@@ -114,7 +115,7 @@ class TenantLLMService(CommonService):
         if model_config:
             model_config = model_config.to_dict()
         elif llm_type == LLMType.EMBEDDING and fid == 'Builtin' and "tei-" in os.getenv("COMPOSE_PROFILES", "") and mdlnm == os.getenv('TEI_MODEL', ''):
-            embedding_cfg = settings.EMBEDDING_CFG
+            embedding_cfg = globals.EMBEDDING_CFG
             model_config = {"llm_factory": 'Builtin', "api_key": embedding_cfg["api_key"], "llm_name": mdlnm, "api_base": embedding_cfg["base_url"]}
         else:
             raise LookupError(f"Model({mdlnm}@{fid}) not authorized")
@@ -133,42 +134,43 @@ class TenantLLMService(CommonService):
         kwargs.update({"provider": model_config["llm_factory"]})
         if llm_type == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
-                return
+                return None
             return EmbeddingModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"],
                                                                base_url=model_config["api_base"])
 
         if llm_type == LLMType.RERANK:
             if model_config["llm_factory"] not in RerankModel:
-                return
+                return None
             return RerankModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"],
                                                             base_url=model_config["api_base"])
 
         if llm_type == LLMType.IMAGE2TEXT.value:
             if model_config["llm_factory"] not in CvModel:
-                return
+                return None
             return CvModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], lang,
                                                         base_url=model_config["api_base"], **kwargs)
 
         if llm_type == LLMType.CHAT.value:
             if model_config["llm_factory"] not in ChatModel:
-                return
+                return None
             return ChatModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"],
                                                           base_url=model_config["api_base"], **kwargs)
 
         if llm_type == LLMType.SPEECH2TEXT:
             if model_config["llm_factory"] not in Seq2txtModel:
-                return
+                return None
             return Seq2txtModel[model_config["llm_factory"]](key=model_config["api_key"],
                                                              model_name=model_config["llm_name"], lang=lang,
                                                              base_url=model_config["api_base"])
         if llm_type == LLMType.TTS:
             if model_config["llm_factory"] not in TTSModel:
-                return
+                return None
             return TTSModel[model_config["llm_factory"]](
                 model_config["api_key"],
                 model_config["llm_name"],
                 base_url=model_config["api_base"],
             )
+        return None
 
     @classmethod
     @DB.connection_context()
@@ -240,6 +242,7 @@ class TenantLLMService(CommonService):
             return llm.model_type
         for llm in TenantLLMService.query(llm_name=llm_id):
             return llm.model_type
+        return None
 
 
 class LLM4Tenant:

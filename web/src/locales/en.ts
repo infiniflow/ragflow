@@ -671,7 +671,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addCondition: 'Add Condition',
       meta: {
         disabled: 'Disabled',
-        automatic: 'Automatic',
+        auto: 'Automatic',
         manual: 'Manual',
       },
       cancel: 'Cancel',
@@ -1528,6 +1528,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       knowledgeBaseVars: 'Knowledge base variables',
       code: 'Code',
       codeDescription: 'It allows developers to write custom Python logic.',
+      dataOperations: 'Data operations',
+      dataOperationsDescription: 'Perform various operations on a Data object.',
       inputVariables: 'Input variables',
       runningHintText: 'is running...🕞',
       openingSwitch: 'Opening switch',
@@ -1726,6 +1728,17 @@ Important structured information may include: names, dates, locations, events, k
       },
       structuredOutput: {
         configuration: 'Configuration',
+        structuredOutput: 'Structured output',
+      },
+      operations: 'Operations',
+      operationsOptions: {
+        selectKeys: 'Select keys',
+        literalEval: 'Literal eval',
+        combine: 'Combine',
+        filterValues: 'Filter values',
+        appendOrUpdate: 'Append or update',
+        removeKeys: 'Remove keys',
+        renameKeys: 'Rename keys',
       },
     },
     llmTools: {
@@ -1969,6 +1982,10 @@ Important structured information may include: names, dates, locations, events, k
       deleteRole: 'Delete role',
       deleteRoleConfirmation:
         'Are you sure you want to delete this role? This action cannot be undone.',
+
+      alive: 'Alive',
+      timeout: 'Timeout',
+      fail: 'Fail',
     },
   },
 };

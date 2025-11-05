@@ -7,7 +7,8 @@ import { cn } from '@/lib/utils';
 import { get, isEmpty, isPlainObject } from 'lodash';
 import { ChevronRight } from 'lucide-react';
 import { PropsWithChildren, ReactNode, useCallback } from 'react';
-import { JsonSchemaDataType, VariableType } from '../../constant';
+import { useTranslation } from 'react-i18next';
+import { JsonSchemaDataType } from '../../constant';
 import { useGetStructuredOutputByValue } from '../../hooks/use-build-structured-output';
 import {
   hasJsonSchemaChild,
@@ -19,32 +20,36 @@ type DataItem = { label: ReactNode; value: string; parentLabel?: ReactNode };
 type StructuredOutputSecondaryMenuProps = {
   data: DataItem;
   click(option: { label: ReactNode; value: string }): void;
-  type?: VariableType | JsonSchemaDataType;
+  types?: JsonSchemaDataType[];
 } & PropsWithChildren;
 
 export function StructuredOutputSecondaryMenu({
   data,
   click,
-  type,
+  types = [],
 }: StructuredOutputSecondaryMenuProps) {
+  const { t } = useTranslation();
   const filterStructuredOutput = useGetStructuredOutputByValue();
   const structuredOutput = filterStructuredOutput(data.value);
 
   const handleSubMenuClick = useCallback(
     (option: { label: ReactNode; value: string }, dataType?: string) => () => {
       // The query variable of the iteration operator can only select array type data.
-      if ((type && type === dataType) || !type) {
+      if (
+        (!isEmpty(types) && types?.some((x) => x === dataType)) ||
+        isEmpty(types)
+      ) {
         click(option);
       }
     },
-    [click, type],
+    [click, types],
   );
 
   const handleMenuClick = useCallback(() => {
-    if (isEmpty(type) || type === JsonSchemaDataType.Object) {
+    if (isEmpty(types) || types?.some((x) => x === JsonSchemaDataType.Object)) {
       click(data);
     }
-  }, [click, data, type]);
+  }, [click, data, types]);
 
   const renderAgentStructuredOutput = useCallback(
     (values: any, option: { label: ReactNode; value: string }) => {
@@ -60,10 +65,10 @@ export function StructuredOutputSecondaryMenu({
               const dataType = get(value, 'type');
 
               if (
-                !type ||
-                (type &&
-                  (dataType === type ||
-                    hasSpecificTypeChild(value ?? {}, type)))
+                isEmpty(types) ||
+                (!isEmpty(types) &&
+                  (types?.some((x) => x === dataType) ||
+                    hasSpecificTypeChild(value ?? {}, types)))
               ) {
                 return (
                   <li key={key} className="pl-1">
@@ -88,10 +93,13 @@ export function StructuredOutputSecondaryMenu({
 
       return <div></div>;
     },
-    [handleSubMenuClick, type],
+    [handleSubMenuClick, types],
   );
 
-  if (!hasJsonSchemaChild(structuredOutput)) {
+  if (
+    !hasJsonSchemaChild(structuredOutput) ||
+    (!isEmpty(types) && !hasSpecificTypeChild(structuredOutput, types))
+  ) {
     return null;
   }
 
@@ -113,7 +121,9 @@ export function StructuredOutputSecondaryMenu({
         )}
       >
         <section className="p-2">
-          <div className="p-1">{data?.parentLabel} structured output:</div>
+          <div className="p-1">
+            {t('flow.structuredOutput.structuredOutput')}
+          </div>
           {renderAgentStructuredOutput(structuredOutput, data)}
         </section>
       </HoverCardContent>

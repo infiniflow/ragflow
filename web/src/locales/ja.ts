@@ -491,7 +491,7 @@ export default {
       addCondition: '条件を追加',
       meta: {
         disabled: '無効',
-        automatic: '自動',
+        auto: '自動',
         manual: '手動',
       },
       cancel: 'キャンセル',

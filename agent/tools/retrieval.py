@@ -13,17 +13,20 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from functools import partial
+import json
 import os
 import re
 from abc import ABC
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.document_service import DocumentService
 from api.db.services.dialog_service import meta_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api import settings
-from api.utils.api_utils import timeout
+from common import globals
+from common.connection_utils import timeout
 from rag.app.tag import label_question
 from rag.prompts.generator import cross_languages, kb_prompt, gen_meta_filter
 
@@ -131,7 +134,35 @@ class Retrieval(ToolBase, ABC):
                 if not doc_ids:
                     doc_ids = None
             elif self._param.meta_data_filter.get("method") == "manual":
-                doc_ids.extend(meta_filter(metas, self._param.meta_data_filter["manual"]))
+                filters=self._param.meta_data_filter["manual"]
+                for flt in filters:
+                    pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z:0-9_.-]+|sys\.[a-z_]+)\} *\}*")
+                    s = flt["value"]
+                    out_parts = []
+                    last = 0
+
+                    for m in pat.finditer(s):
+                        out_parts.append(s[last:m.start()])
+                        key = m.group(1)
+                        v = self._canvas.get_variable_value(key)
+                        if v is None:
+                            rep = ""
+                        elif isinstance(v, partial):
+                            buf = []
+                            for chunk in v():
+                                buf.append(chunk)
+                            rep = "".join(buf)
+                        elif isinstance(v, str):
+                            rep = v
+                        else:
+                            rep = json.dumps(v, ensure_ascii=False)
+
+                        out_parts.append(rep)
+                        last = m.end()
+
+                    out_parts.append(s[last:])
+                    flt["value"] = "".join(out_parts)
+                doc_ids.extend(meta_filter(metas, filters))
                 if not doc_ids:
                     doc_ids = None
 
@@ -140,7 +171,7 @@ class Retrieval(ToolBase, ABC):
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
-            kbinfos = settings.retriever.retrieval(
+            kbinfos = globals.retriever.retrieval(
                 query,
                 embd_mdl,
                 [kb.tenant_id for kb in kbs],
@@ -156,7 +187,7 @@ class Retrieval(ToolBase, ABC):
             )
             if self._param.toc_enhance:
                 chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT)
-                cks = settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs], chat_mdl, self._param.top_n)
+                cks = globals.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs], chat_mdl, self._param.top_n)
                 if cks:
                     kbinfos["chunks"] = cks
             if self._param.use_kg:

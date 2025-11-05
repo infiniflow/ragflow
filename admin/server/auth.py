@@ -27,13 +27,11 @@ from api import settings
 from api.common.exceptions import AdminException, UserNotFoundError
 from api.db.init_data import encode_to_base64
 from api.db.services import UserService
-from api.db import ActiveEnum, StatusEnum
+from common.constants import ActiveEnum, StatusEnum
 from api.utils.crypt import decrypt
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format, get_format_time
-from api.utils.api_utils import (
-    construct_response,
-)
+from common.connection_utils import construct_response
 
 
 def setup_auth(login_manager):

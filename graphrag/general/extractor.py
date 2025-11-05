@@ -23,7 +23,7 @@ from typing import Callable
 import networkx as nx
 import trio
 
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from graphrag.utils import (
     GraphChange,

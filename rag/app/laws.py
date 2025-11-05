@@ -15,18 +15,17 @@
 #
 
 import logging
-from tika import parser
 import re
 from io import BytesIO
 from docx import Document
 
-from api.db import ParserType
+from common.constants import ParserType
 from deepdoc.parser.utils import get_text
 from rag.nlp import bullets_category, remove_contents_table, \
     make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge
 from rag.nlp import rag_tokenizer, Node
-from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
-
+from deepdoc.parser import PdfParser, DocxParser, HtmlParser
+from rag.app.naive import plaintext_parser, PARSERS
 
 
 
@@ -156,13 +155,36 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return tokenize_chunks(chunks, doc, eng, None)
     
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
-            pdf_parser = PlainParser()
-        for txt, poss in pdf_parser(filename if not binary else binary,
-                                    from_page=from_page, to_page=to_page, callback=callback)[0]:
+        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+
+        if isinstance(layout_recognizer, bool):
+            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
+
+        name = layout_recognizer.strip().lower()
+        parser = PARSERS.get(name, plaintext_parser)
+        callback(0.1, "Start to parse.")
+
+        raw_sections, tables, _ = parser(
+            filename = filename,
+            binary = binary,
+            from_page = from_page,
+            to_page = to_page,
+            lang = lang,
+            callback = callback,
+            pdf_cls = Pdf,
+            **kwargs
+        )
+
+        if not raw_sections and not tables:
+            return []
+
+        if name in ["tcadp", "docling", "mineru"]:
+            parser_config["chunk_token_num"] = 0
+        
+        for txt, poss in raw_sections:
             sections.append(txt + poss)
 
+        callback(0.8, "Finish parsing.")
     elif re.search(r"\.(txt|md|markdown|mdx)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
