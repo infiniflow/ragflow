@@ -273,7 +273,7 @@ function transformDataOperationsParams(params: DataOperationsFormSchemaType) {
     ...params,
     select_keys: params?.select_keys?.map((x) => x.name),
     remove_keys: params?.remove_keys?.map((x) => x.name),
-    inputs: params.inputs.map((x) => x.input),
+    query: params.query.map((x) => x.input),
   };
 }
 
