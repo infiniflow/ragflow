@@ -20,7 +20,6 @@ import os
 import networkx as nx
 import trio
 
-from api import settings
 from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
 from common.connection_utils import timeout

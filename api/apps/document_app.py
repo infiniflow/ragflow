@@ -23,7 +23,6 @@ import flask
 from flask import request
 from flask_login import current_user, login_required
 
-from api import settings
 from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, FileType

@@ -24,7 +24,6 @@ from common import globals
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api import settings
 from common.misc_utils import get_uuid
 from rag.nlp import tokenize, search
 from ranx import evaluate

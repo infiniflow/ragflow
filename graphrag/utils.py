@@ -23,7 +23,6 @@ import trio
 import xxhash
 from networkx.readwrite import json_graph
 
-from api import settings
 from common.misc_utils import get_uuid
 from common.connection_utils import timeout
 from rag.nlp import rag_tokenizer, search
