@@ -17,14 +17,25 @@ import os
 import json
 import secrets
 from datetime import date
+import logging
 from common.constants import RAG_FLOW_SERVICE_NAME
 from common.file_utils import get_project_base_directory
 from common.config_utils import get_base_config, decrypt_database_config
+from common.misc_utils import pip_install_torch
+from common.constants import SVR_QUEUE_NAME, Storage
 
 import rag.utils
 import rag.utils.es_conn
 import rag.utils.infinity_conn
 import rag.utils.opensearch_conn
+from rag.utils import redis_conn
+from rag.utils.azure_sas_conn import RAGFlowAzureSasBlob
+from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
+from rag.utils.minio_conn import RAGFlowMinio
+from rag.utils.opendal_conn import OpenDALStorage
+from rag.utils.s3_conn import RAGFlowS3
+from rag.utils.oss_conn import RAGFlowOSS
+
 from rag.nlp import search
 
 LLM = None
@@ -95,36 +106,23 @@ S3 = {}
 MINIO = {}
 OSS = {}
 OS = {}
-REDIS = {}
+
+DOC_MAXIMUM_SIZE: int = 128 * 1024 * 1024
+DOC_BULK_SIZE: int = 4
+EMBEDDING_BATCH_SIZE: int = 16
+
+PARALLEL_DEVICES: int = 0
 
 STORAGE_IMPL_TYPE = os.getenv('STORAGE_IMPL', 'MINIO')
+STORAGE_IMPL = None
 
-# Initialize the selected configuration data based on environment variables to solve the problem of initialization errors due to lack of configuration
-if DOC_ENGINE == 'elasticsearch':
-    ES = get_base_config("es", {})
-elif DOC_ENGINE == 'opensearch':
-    OS = get_base_config("os", {})
-elif DOC_ENGINE == 'infinity':
-    INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
+def get_svr_queue_name(priority: int) -> str:
+    if priority == 0:
+        return SVR_QUEUE_NAME
+    return f"{SVR_QUEUE_NAME}_{priority}"
 
-if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
-    AZURE = get_base_config("azure", {})
-elif STORAGE_IMPL_TYPE == 'AWS_S3':
-    S3 = get_base_config("s3", {})
-elif STORAGE_IMPL_TYPE == 'MINIO':
-    MINIO = decrypt_database_config(name="minio")
-elif STORAGE_IMPL_TYPE == 'OSS':
-    OSS = get_base_config("oss", {})
-
-try:
-    REDIS = decrypt_database_config(name="redis")
-except Exception:
-    try:
-        REDIS = get_base_config("redis", {})
-    except Exception:
-        REDIS = {}
-
-
+def get_svr_queue_names():
+    return [get_svr_queue_name(priority) for priority in [1, 0]]
 
 def _get_or_create_secret_key():
     secret_key = os.environ.get("RAGFLOW_SECRET_KEY")
@@ -142,6 +140,20 @@ def _get_or_create_secret_key():
     new_key = secrets.token_hex(32)
     logging.warning(f"SECURITY WARNING: Using auto-generated SECRET_KEY. Generated key: {new_key}")
     return new_key
+
+class StorageFactory:
+    storage_mapping = {
+        Storage.MINIO: RAGFlowMinio,
+        Storage.AZURE_SPN: RAGFlowAzureSpnBlob,
+        Storage.AZURE_SAS: RAGFlowAzureSasBlob,
+        Storage.AWS_S3: RAGFlowS3,
+        Storage.OSS: RAGFlowOSS,
+        Storage.OPENDAL: OpenDALStorage
+    }
+
+    @classmethod
+    def create(cls, storage: Storage):
+        return cls.storage_mapping[storage]()
 
 
 def init_settings():
@@ -216,18 +228,34 @@ def init_settings():
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, docStoreConn
+    global DOC_ENGINE, docStoreConn, ES, OS, INFINITY
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
     # DOC_ENGINE = os.environ.get('DOC_ENGINE', "opensearch")
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
+        ES = get_base_config("es", {})
         docStoreConn = rag.utils.es_conn.ESConnection()
     elif lower_case_doc_engine == "infinity":
+        INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
         docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
+        OS = get_base_config("os", {})
         docStoreConn = rag.utils.opensearch_conn.OSConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
+
+    global AZURE, S3, MINIO, OSS
+    if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
+        AZURE = get_base_config("azure", {})
+    elif STORAGE_IMPL_TYPE == 'AWS_S3':
+        S3 = get_base_config("s3", {})
+    elif STORAGE_IMPL_TYPE == 'MINIO':
+        MINIO = decrypt_database_config(name="minio")
+    elif STORAGE_IMPL_TYPE == 'OSS':
+        OSS = get_base_config("oss", {})
+
+    global STORAGE_IMPL
+    STORAGE_IMPL = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
 
     global retriever, kg_retriever
     retriever = search.Dealer(docStoreConn)
@@ -254,6 +282,20 @@ def init_settings():
         MAIL_DEFAULT_SENDER = (mail_default_sender[0], mail_default_sender[1])
     MAIL_FRONTEND_URL = SMTP_CONF.get("mail_frontend_url", "")
 
+    global DOC_MAXIMUM_SIZE, DOC_BULK_SIZE, EMBEDDING_BATCH_SIZE
+    DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
+    DOC_BULK_SIZE = int(os.environ.get("DOC_BULK_SIZE", 4))
+    EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", 16))
+
+def check_and_install_torch():
+    global PARALLEL_DEVICES
+    try:
+        pip_install_torch()
+        import torch.cuda
+        PARALLEL_DEVICES = torch.cuda.device_count()
+        logging.info(f"found {PARALLEL_DEVICES} gpus")
+    except Exception:
+        logging.info("can't import package 'torch'")
 
 def _parse_model_entry(entry):
     if isinstance(entry, str):
@@ -284,3 +326,8 @@ def _resolve_per_model_config(entry_dict, backup_factory, backup_api_key, backup
         "api_key": m_api_key,
         "base_url": m_base_url,
     }
+
+def print_rag_settings():
+    logging.info(f"MAX_CONTENT_LENGTH: {DOC_MAXIMUM_SIZE}")
+    logging.info(f"MAX_FILE_COUNT_PER_USER: {int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))}")
+

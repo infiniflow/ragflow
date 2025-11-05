@@ -200,7 +200,6 @@ def switch():
 @login_required
 @validate_request("chunk_ids", "doc_id")
 def rm():
-    from rag.utils.storage_factory import STORAGE_IMPL
     req = request.json
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
@@ -214,8 +213,8 @@ def rm():
         chunk_number = len(deleted_chunk_ids)
         DocumentService.decrement_chunk_num(doc.id, doc.kb_id, 1, chunk_number, 0)
         for cid in deleted_chunk_ids:
-            if STORAGE_IMPL.obj_exist(doc.kb_id, cid):
-                STORAGE_IMPL.rm(doc.kb_id, cid)
+            if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
+                settings.STORAGE_IMPL.rm(doc.kb_id, cid)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

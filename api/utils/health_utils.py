@@ -20,7 +20,6 @@ from timeit import default_timer as timer
 from api import settings
 from api.db.db_models import DB
 from rag.utils.redis_conn import REDIS_CONN
-from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.es_conn import ESConnection
 from rag.utils.infinity_conn import InfinityConnection
 from common import settings
@@ -62,7 +61,7 @@ def check_doc_engine() -> tuple[bool, dict]:
 def check_storage() -> tuple[bool, dict]:
     st = timer()
     try:
-        STORAGE_IMPL.health()
+        settings.STORAGE_IMPL.health()
         return True, {"elapsed": f"{(timer() - st) * 1000.0:.1f}"}
     except Exception as e:
         return False, {"elapsed": f"{(timer() - st) * 1000.0:.1f}", "error": str(e)}

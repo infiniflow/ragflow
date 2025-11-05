@@ -137,6 +137,14 @@ class MCPServerType(StrEnum):
 
 VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
 
+class Storage(Enum):
+    MINIO = 1
+    AZURE_SPN = 2
+    AZURE_SAS = 3
+    AWS_S3 = 4
+    OSS = 5
+    OPENDAL = 6
+
 # environment
 # ENV_STRONG_TEST_COUNT = "STRONG_TEST_COUNT"
 # ENV_RAGFLOW_SECRET_KEY = "RAGFLOW_SECRET_KEY"
@@ -183,3 +191,6 @@ VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
 # ENV_TRACE_MALLOC_ENABLED = "TRACE_MALLOC_ENABLED"
 
 PAGERANK_FLD = "pagerank_fea"
+SVR_QUEUE_NAME = "rag_flow_svr_queue"
+SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
+TAG_FLD = "tag_feas"

@@ -61,14 +61,12 @@ from rag.app import laws, paper, presentation, manual, qa, table, book, resume, 
     email, tag
 from rag.nlp import search, rag_tokenizer, add_positions
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
-from rag.settings import DOC_MAXIMUM_SIZE, DOC_BULK_SIZE, EMBEDDING_BATCH_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD
 from common.token_utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
-from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.utils import chat_limiter
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common import settings
-from common.constants import PAGERANK_FLD
+from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
 
 BATCH_SIZE = 64
 
@@ -170,7 +168,7 @@ async def collect():
     global CONSUMER_NAME, DONE_TASKS, FAILED_TASKS
     global UNACKED_ITERATOR
 
-    svr_queue_names = get_svr_queue_names()
+    svr_queue_names = settings.get_svr_queue_names()
     try:
         if not UNACKED_ITERATOR:
             UNACKED_ITERATOR = REDIS_CONN.get_unacked_iterator(svr_queue_names, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
@@ -223,14 +221,14 @@ async def collect():
 
 
 async def get_storage_binary(bucket, name):
-    return await trio.to_thread.run_sync(lambda: STORAGE_IMPL.get(bucket, name))
+    return await trio.to_thread.run_sync(lambda: settings.STORAGE_IMPL.get(bucket, name))
 
 
 @timeout(60*80, 1)
 async def build_chunks(task, progress_callback):
-    if task["size"] > DOC_MAXIMUM_SIZE:
+    if task["size"] > settings.DOC_MAXIMUM_SIZE:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
-                                              (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
+                                              (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
         return []
 
     chunker = FACTORY[task["parser_id"].lower()]
@@ -287,7 +285,7 @@ async def build_chunks(task, progress_callback):
                 d["img_id"] = ""
                 docs.append(d)
                 return
-            await image2id(d, partial(STORAGE_IMPL.put, tenant_id=task["tenant_id"]), d["id"], task["kb_id"])
+            await image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=task["tenant_id"]), d["id"], task["kb_id"])
             docs.append(d)
         except Exception:
             logging.exception(
@@ -453,9 +451,9 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         return mdl.encode([truncate(c, mdl.max_length-10) for c in txts])
 
     cnts_ = np.array([])
-    for i in range(0, len(cnts), EMBEDDING_BATCH_SIZE):
+    for i in range(0, len(cnts), settings.EMBEDDING_BATCH_SIZE):
         async with embed_limiter:
-            vts, c = await trio.to_thread.run_sync(lambda: batch_encode(cnts[i: i + EMBEDDING_BATCH_SIZE]))
+            vts, c = await trio.to_thread.run_sync(lambda: batch_encode(cnts[i: i + settings.EMBEDDING_BATCH_SIZE]))
         if len(cnts_) == 0:
             cnts_ = vts
         else:
@@ -529,19 +527,19 @@ async def run_dataflow(task: dict):
                 return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
             vects = np.array([])
             texts = [o.get("questions", o.get("summary", o["text"])) for o in chunks]
-            delta = 0.20/(len(texts)//EMBEDDING_BATCH_SIZE+1)
+            delta = 0.20/(len(texts)//settings.EMBEDDING_BATCH_SIZE+1)
             prog = 0.8
-            for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
                 async with embed_limiter:
-                    vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + EMBEDDING_BATCH_SIZE]))
+                    vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + settings.EMBEDDING_BATCH_SIZE]))
                 if len(vects) == 0:
                     vects = vts
                 else:
                     vects = np.concatenate((vects, vts), axis=0)
                 embedding_token_consumption += c
                 prog += delta
-                if i % (len(texts)//EMBEDDING_BATCH_SIZE/100+1) == 1:
-                    set_progress(task_id, prog=prog, msg=f"{i+1} / {len(texts)//EMBEDDING_BATCH_SIZE}")
+                if i % (len(texts)//settings.EMBEDDING_BATCH_SIZE/100+1) == 1:
+                    set_progress(task_id, prog=prog, msg=f"{i+1} / {len(texts)//settings.EMBEDDING_BATCH_SIZE}")
 
             assert len(vects) == len(chunks)
             for i, ck in enumerate(chunks):
@@ -691,15 +689,15 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
 async def delete_image(kb_id, chunk_id):
     try:
         async with minio_limiter:
-            STORAGE_IMPL.delete(kb_id, chunk_id)
+            settings.STORAGE_IMPL.delete(kb_id, chunk_id)
     except Exception:
         logging.exception(f"Deleting image of chunk {chunk_id} got exception")
         raise
 
 
 async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback):
-    for b in range(0, len(chunks), DOC_BULK_SIZE):
-        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
+    for b in range(0, len(chunks), settings.DOC_BULK_SIZE):
+        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + settings.DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
         task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
@@ -710,7 +708,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
             progress_callback(-1, msg=error_message)
             raise Exception(error_message)
-        chunk_ids = [chunk["id"] for chunk in chunks[:b + DOC_BULK_SIZE]]
+        chunk_ids = [chunk["id"] for chunk in chunks[:b + settings.DOC_BULK_SIZE]]
         chunk_ids_str = " ".join(chunk_ids)
         try:
             TaskService.update_chunk_ids(task_id, chunk_ids_str)
@@ -971,7 +969,7 @@ async def report_status():
     while True:
         try:
             now = datetime.now()
-            group_info = REDIS_CONN.queue_info(get_svr_queue_name(0), SVR_CONSUMER_GROUP_NAME)
+            group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(0), SVR_CONSUMER_GROUP_NAME)
             if group_info is not None:
                 PENDING_TASKS = int(group_info.get("pending", 0))
                 LAG_TASKS = int(group_info.get("lag", 0))
@@ -1033,8 +1031,9 @@ async def main():
     logging.info(f'RAGFlow version: {get_ragflow_version()}')
     show_configs()
     settings.init_settings()
+    settings.check_and_install_torch()
     logging.info(f'settings.EMBEDDING_CFG: {settings.EMBEDDING_CFG}')
-    print_rag_settings()
+    settings.print_rag_settings()
     if sys.platform != "win32":
         signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)
         signal.signal(signal.SIGUSR2, stop_tracemalloc)

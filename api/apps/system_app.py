@@ -32,7 +32,6 @@ from api.utils.api_utils import (
 )
 from api.versions import get_ragflow_version
 from common.time_utils import current_timestamp, datetime_format
-from rag.utils.storage_factory import STORAGE_IMPL, STORAGE_IMPL_TYPE
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
@@ -113,15 +112,15 @@ def status():
 
     st = timer()
     try:
-        STORAGE_IMPL.health()
+        settings.STORAGE_IMPL.health()
         res["storage"] = {
-            "storage": STORAGE_IMPL_TYPE.lower(),
+            "storage": settings.STORAGE_IMPL_TYPE.lower(),
             "status": "green",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
         }
     except Exception as e:
         res["storage"] = {
-            "storage": STORAGE_IMPL_TYPE.lower(),
+            "storage": settings.STORAGE_IMPL_TYPE.lower(),
             "status": "red",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
             "error": str(e),

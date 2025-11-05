@@ -38,7 +38,6 @@ from api.utils.api_utils import get_json_result
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.utils.redis_conn import REDIS_CONN
-from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr  
 from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType, PAGERANK_FLD
 from common import settings
@@ -226,8 +225,8 @@ def rm():
         for kb in kbs:
             settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
             settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
-            if hasattr(STORAGE_IMPL, 'remove_bucket'):
-                STORAGE_IMPL.remove_bucket(kb.id)
+            if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
+                settings.STORAGE_IMPL.remove_bucket(kb.id)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

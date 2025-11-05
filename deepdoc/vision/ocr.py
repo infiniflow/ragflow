@@ -23,7 +23,7 @@ from huggingface_hub import snapshot_download
 
 from common.file_utils import get_project_base_directory
 from common.misc_utils import pip_install_torch
-from rag.settings import PARALLEL_DEVICES
+from common import settings
 from .operators import *  # noqa: F403
 from . import operators
 import math
@@ -554,10 +554,10 @@ class OCR:
                         "rag/res/deepdoc")
                 
                 # Append muti-gpus task to the list
-                if PARALLEL_DEVICES > 0:
+                if settings.PARALLEL_DEVICES > 0:
                     self.text_detector = []
                     self.text_recognizer = []
-                    for device_id in range(PARALLEL_DEVICES):
+                    for device_id in range(settings.PARALLEL_DEVICES):
                         self.text_detector.append(TextDetector(model_dir, device_id))
                         self.text_recognizer.append(TextRecognizer(model_dir, device_id))
                 else:
@@ -569,10 +569,10 @@ class OCR:
                                               local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"),
                                               local_dir_use_symlinks=False)
                 
-                if PARALLEL_DEVICES > 0:
+                if settings.PARALLEL_DEVICES > 0:
                     self.text_detector = []
                     self.text_recognizer = []
-                    for device_id in range(PARALLEL_DEVICES):
+                    for device_id in range(settings.PARALLEL_DEVICES):
                         self.text_detector.append(TextDetector(model_dir, device_id))
                         self.text_recognizer.append(TextRecognizer(model_dir, device_id))
                 else:

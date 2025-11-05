@@ -41,7 +41,6 @@ from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
-from rag.utils.storage_factory import STORAGE_IMPL
 from common.string_utils import remove_redundant_spaces
 from common.constants import RetCode, LLMType, ParserType, TaskStatus, FileSource
 from common import settings
@@ -402,7 +401,7 @@ def download(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
     # The process of downloading
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
-    file_stream = STORAGE_IMPL.get(doc_id, doc_location)
+    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
     if not file_stream:
         return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
     file = BytesIO(file_stream)
@@ -672,7 +671,7 @@ def delete(tenant_id, dataset_id):
             )
             File2DocumentService.delete_by_document_id(doc_id)
 
-            STORAGE_IMPL.rm(b, n)
+            settings.STORAGE_IMPL.rm(b, n)
             success_count += 1
         except Exception as e:
             errors += str(e)

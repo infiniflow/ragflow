@@ -25,7 +25,7 @@ import trio
 from common.misc_utils import hash_str2int
 from rag.nlp import rag_tokenizer
 from rag.prompts.template import load_prompt
-from rag.settings import TAG_FLD
+from common.constants import TAG_FLD
 from common.token_utils import encoder, num_tokens_from_string
 
 

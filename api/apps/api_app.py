@@ -40,7 +40,6 @@ from api.utils.api_utils import server_error_response, get_data_error_result, ge
 from api.utils.file_utils import filename_type, thumbnail
 from rag.app.tag import label_question
 from rag.prompts.generator import keyword_extraction
-from rag.utils.storage_factory import STORAGE_IMPL
 from common.time_utils import current_timestamp, datetime_format
 
 from api.db.services.canvas_service import UserCanvasService
@@ -428,10 +427,10 @@ def upload():
                 message="This type of file has not been supported yet!")
 
         location = filename
-        while STORAGE_IMPL.obj_exist(kb_id, location):
+        while settings.STORAGE_IMPL.obj_exist(kb_id, location):
             location += "_"
         blob = request.files['file'].read()
-        STORAGE_IMPL.put(kb_id, location, blob)
+        settings.STORAGE_IMPL.put(kb_id, location, blob)
         doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
@@ -699,7 +698,7 @@ def document_rm():
             FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
             File2DocumentService.delete_by_document_id(doc_id)
 
-            STORAGE_IMPL.rm(b, n)
+            settings.STORAGE_IMPL.rm(b, n)
         except Exception as e:
             errors += str(e)
 
@@ -792,7 +791,7 @@ def completion_faq():
                 if ans["reference"]["chunks"][chunk_idx]["img_id"]:
                     try:
                         bkt, nm = ans["reference"]["chunks"][chunk_idx]["img_id"].split("-")
-                        response = STORAGE_IMPL.get(bkt, nm)
+                        response = settings.STORAGE_IMPL.get(bkt, nm)
                         data_type_picture["url"] = base64.b64encode(response).decode('utf-8')
                         data.append(data_type_picture)
                         break
