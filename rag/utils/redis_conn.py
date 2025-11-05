@@ -19,7 +19,6 @@ import json
 import uuid
 
 import valkey as redis
-from rag import settings
 from common.decorator import singleton
 from common import globals
 from valkey.lock import Lock
