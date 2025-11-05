@@ -25,6 +25,7 @@ from api.utils.api_utils import validate_request, build_error_result, apikey_req
 from rag.app.tag import label_question
 from api.db.services.dialog_service import meta_filter, convert_conditions
 from common.constants import RetCode, LLMType
+from common import globals
 
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required
@@ -137,7 +138,7 @@ def retrieval(tenant_id):
         # print("doc_ids", doc_ids)
         if not doc_ids and metadata_condition is not None:
             doc_ids = ['-999']
-        ranks = settings.retriever.retrieval(
+        ranks = globals.retriever.retrieval(
             question,
             embd_mdl,
             kb.tenant_id,

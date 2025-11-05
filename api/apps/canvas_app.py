@@ -25,7 +25,6 @@ from flask import request, Response
 from flask_login import login_required, current_user
 
 from agent.component import LLM
-from api import settings
 from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
@@ -46,6 +45,7 @@ from api.utils.file_utils import filename_type, read_potential_broken_pdf
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
+from common import globals
 
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
@@ -192,8 +192,8 @@ def rerun():
     if 0 < doc["progress"] < 1:
         return get_data_error_result(message=f"`{doc['name']}` is processing...")
 
-    if settings.docStoreConn.indexExist(search.index_name(current_user.id), doc["kb_id"]):
-        settings.docStoreConn.delete({"doc_id": doc["id"]}, search.index_name(current_user.id), doc["kb_id"])
+    if globals.docStoreConn.indexExist(search.index_name(current_user.id), doc["kb_id"]):
+        globals.docStoreConn.delete({"doc_id": doc["id"]}, search.index_name(current_user.id), doc["kb_id"])
     doc["progress_msg"] = ""
     doc["chunk_num"] = 0
     doc["token_num"] = 0

@@ -35,7 +35,6 @@ from api.db import VALID_FILE_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
-from api import settings
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.settings import PAGERANK_FLD
@@ -43,7 +42,7 @@ from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr  
 from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType
-
+from common import globals
 
 @manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
@@ -110,11 +109,11 @@ def update():
 
         if kb.pagerank != req.get("pagerank", 0):
             if req.get("pagerank", 0) > 0:
-                settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
+                globals.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
                                          search.index_name(kb.tenant_id), kb.id)
             else:
                 # Elasticsearch requires PAGERANK_FLD be non-zero!
-                settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
+                globals.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
                                          search.index_name(kb.tenant_id), kb.id)
 
         e, kb = KnowledgebaseService.get_by_id(kb.id)
@@ -226,8 +225,8 @@ def rm():
             return get_data_error_result(
                 message="Database error (Knowledgebase removal)!")
         for kb in kbs:
-            settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
-            settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
+            globals.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
+            globals.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
             if hasattr(STORAGE_IMPL, 'remove_bucket'):
                 STORAGE_IMPL.remove_bucket(kb.id)
         return get_json_result(data=True)
@@ -248,7 +247,7 @@ def list_tags(kb_id):
     tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
     tags = []
     for tenant in tenants:
-        tags += settings.retriever.all_tags(tenant["tenant_id"], [kb_id])
+        tags += globals.retriever.all_tags(tenant["tenant_id"], [kb_id])
     return get_json_result(data=tags)
 
 
@@ -267,7 +266,7 @@ def list_tags_from_kbs():
     tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
     tags = []
     for tenant in tenants:
-        tags += settings.retriever.all_tags(tenant["tenant_id"], kb_ids)
+        tags += globals.retriever.all_tags(tenant["tenant_id"], kb_ids)
     return get_json_result(data=tags)
 
 
@@ -284,7 +283,7 @@ def rm_tags(kb_id):
     e, kb = KnowledgebaseService.get_by_id(kb_id)
 
     for t in req["tags"]:
-        settings.docStoreConn.update({"tag_kwd": t, "kb_id": [kb_id]},
+        globals.docStoreConn.update({"tag_kwd": t, "kb_id": [kb_id]},
                                      {"remove": {"tag_kwd": t}},
                                      search.index_name(kb.tenant_id),
                                      kb_id)
@@ -303,7 +302,7 @@ def rename_tags(kb_id):
         )
     e, kb = KnowledgebaseService.get_by_id(kb_id)
 
-    settings.docStoreConn.update({"tag_kwd": req["from_tag"], "kb_id": [kb_id]},
+    globals.docStoreConn.update({"tag_kwd": req["from_tag"], "kb_id": [kb_id]},
                                      {"remove": {"tag_kwd": req["from_tag"].strip()}, "add": {"tag_kwd": req["to_tag"]}},
                                      search.index_name(kb.tenant_id),
                                      kb_id)
@@ -326,9 +325,9 @@ def knowledge_graph(kb_id):
     }
 
     obj = {"graph": {}, "mind_map": {}}
-    if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), kb_id):
+    if not globals.docStoreConn.indexExist(search.index_name(kb.tenant_id), kb_id):
         return get_json_result(data=obj)
-    sres = settings.retriever.search(req, search.index_name(kb.tenant_id), [kb_id])
+    sres = globals.retriever.search(req, search.index_name(kb.tenant_id), [kb_id])
     if not len(sres.ids):
         return get_json_result(data=obj)
 
@@ -360,7 +359,7 @@ def delete_knowledge_graph(kb_id):
             code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(kb_id)
-    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
+    globals.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
 
     return get_json_result(data=True)
 
@@ -732,13 +731,13 @@ def delete_kb_task():
             task_id = kb.graphrag_task_id
             kb_task_finish_at = "graphrag_task_finish_at"
             cancel_task(task_id)
-            settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
+            globals.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
         case PipelineTaskType.RAPTOR:
             kb_task_id_field = "raptor_task_id"
             task_id = kb.raptor_task_id
             kb_task_finish_at = "raptor_task_finish_at"
             cancel_task(task_id)
-            settings.docStoreConn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), kb_id)
+            globals.docStoreConn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), kb_id)
         case PipelineTaskType.MINDMAP:
             kb_task_id_field = "mindmap_task_id"
             task_id = kb.mindmap_task_id
@@ -850,7 +849,7 @@ def check_embedding():
     tenant_id = kb.tenant_id
 
     emb_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embd_id)
-    samples = sample_random_chunks_with_vectors(settings.docStoreConn, tenant_id=tenant_id, kb_id=kb_id, n=n)
+    samples = sample_random_chunks_with_vectors(globals.docStoreConn, tenant_id=tenant_id, kb_id=kb_id, n=n)
 
     results, eff_sims = [], []
     for ck in samples:

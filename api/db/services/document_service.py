@@ -26,7 +26,6 @@ import trio
 import xxhash
 from peewee import fn, Case, JOIN
 
-from api import settings
 from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
 from api.db import FileType, UserTenantRole, CanvasCategory
 from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas, \
@@ -42,7 +41,7 @@ from rag.settings import get_svr_queue_name, SVR_CONSUMER_GROUP_NAME
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr
-
+from common import globals
 
 class DocumentService(CommonService):
     model = Document
@@ -309,10 +308,10 @@ class DocumentService(CommonService):
             page_size = 1000
             all_chunk_ids = []
             while True:
-                chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
+                chunks = globals.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
                                                       page * page_size, page_size, search.index_name(tenant_id),
                                                       [doc.kb_id])
-                chunk_ids = settings.docStoreConn.getChunkIds(chunks)
+                chunk_ids = globals.docStoreConn.getChunkIds(chunks)
                 if not chunk_ids:
                     break
                 all_chunk_ids.extend(chunk_ids)
@@ -323,19 +322,19 @@ class DocumentService(CommonService):
             if doc.thumbnail and not doc.thumbnail.startswith(IMG_BASE64_PREFIX):
                 if STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
                     STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
-            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+            globals.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
-            graph_source = settings.docStoreConn.getFields(
-                settings.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
+            graph_source = globals.docStoreConn.getFields(
+                globals.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
             )
             if len(graph_source) > 0 and doc.id in list(graph_source.values())[0]["source_id"]:
-                settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "source_id": doc.id},
+                globals.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "source_id": doc.id},
                                              {"remove": {"source_id": doc.id}},
                                              search.index_name(tenant_id), doc.kb_id)
-                settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]},
+                globals.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]},
                                              {"removed_kwd": "Y"},
                                              search.index_name(tenant_id), doc.kb_id)
-                settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
+                globals.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
                                              search.index_name(tenant_id), doc.kb_id)
         except Exception:
             pass
@@ -996,10 +995,10 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             d["q_%d_vec" % len(v)] = v
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
-                if not settings.docStoreConn.indexExist(idxnm, kb_id):
-                    settings.docStoreConn.createIdx(idxnm, kb_id, len(vects[0]))
+                if not globals.docStoreConn.indexExist(idxnm, kb_id):
+                    globals.docStoreConn.createIdx(idxnm, kb_id, len(vects[0]))
                 try_create_idx = False
-            settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
+            globals.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 
         DocumentService.increment_chunk_num(
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)

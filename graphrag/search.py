@@ -29,6 +29,7 @@ from rag.utils.doc_store_conn import OrderByExpr
 
 from rag.nlp.search import Dealer, index_name
 from common.float_utils import get_float
+from common import globals
 
 
 class KGSearch(Dealer):
@@ -334,6 +335,6 @@ if __name__ == "__main__":
     _, kb = KnowledgebaseService.get_by_id(kb_id)
     embed_bdl = LLMBundle(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
 
-    kg = KGSearch(settings.docStoreConn)
+    kg = KGSearch(globals.docStoreConn)
     print(kg.retrieval({"question": args.question, "kb_ids": [kb_id]},
                     search.index_name(kb.tenant_id), [kb_id], embed_bdl, llm_bdl))

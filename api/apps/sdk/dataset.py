@@ -20,7 +20,6 @@ import os
 import json
 from flask import request
 from peewee import OperationalError
-from api import settings
 from api.db.db_models import File
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
@@ -49,6 +48,7 @@ from api.utils.validation_utils import (
 )
 from rag.nlp import search
 from rag.settings import PAGERANK_FLD
+from common import globals
 
 
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
@@ -360,11 +360,11 @@ def update(tenant_id, dataset_id):
                 return get_error_argument_result(message="'pagerank' can only be set when doc_engine is elasticsearch")
 
             if req["pagerank"] > 0:
-                settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
+                globals.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
                                              search.index_name(kb.tenant_id), kb.id)
             else:
                 # Elasticsearch requires PAGERANK_FLD be non-zero!
-                settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
+                globals.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
                                              search.index_name(kb.tenant_id), kb.id)
 
         if not KnowledgebaseService.update_by_id(kb.id, req):
@@ -493,9 +493,9 @@ def knowledge_graph(tenant_id, dataset_id):
     }
 
     obj = {"graph": {}, "mind_map": {}}
-    if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), dataset_id):
+    if not globals.docStoreConn.indexExist(search.index_name(kb.tenant_id), dataset_id):
         return get_result(data=obj)
-    sres = settings.retriever.search(req, search.index_name(kb.tenant_id), [dataset_id])
+    sres = globals.retriever.search(req, search.index_name(kb.tenant_id), [dataset_id])
     if not len(sres.ids):
         return get_result(data=obj)
 
@@ -528,7 +528,7 @@ def delete_knowledge_graph(tenant_id, dataset_id):
             code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
-    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]},
+    globals.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]},
                                  search.index_name(kb.tenant_id), dataset_id)
 
     return get_result(data=True)

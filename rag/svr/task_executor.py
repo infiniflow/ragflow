@@ -27,7 +27,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from common.connection_utils import timeout
-from common.base64_image import image2id
+from rag.utils.base64_image import image2id
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from graphrag.general.index import run_graphrag_for_kb
@@ -68,6 +68,7 @@ from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.utils import chat_limiter
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
+from common import globals
 
 BATCH_SIZE = 64
 
@@ -349,7 +350,7 @@ async def build_chunks(task, progress_callback):
         examples = []
         all_tags = get_tags_from_cache(kb_ids)
         if not all_tags:
-            all_tags = settings.retriever.all_tags_in_portion(tenant_id, kb_ids, S)
+            all_tags = globals.retriever.all_tags_in_portion(tenant_id, kb_ids, S)
             set_tags_to_cache(kb_ids, all_tags)
         else:
             all_tags = json.loads(all_tags)
@@ -362,7 +363,7 @@ async def build_chunks(task, progress_callback):
             if task_canceled:
                 progress_callback(-1, msg="Task has been canceled.")
                 return
-            if settings.retriever.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(d[TAG_FLD]) > 0:
+            if globals.retriever.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(d[TAG_FLD]) > 0:
                 examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
             else:
                 docs_to_tag.append(d)
@@ -423,7 +424,7 @@ def build_TOC(task, docs, progress_callback):
 
 def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
-    return settings.docStoreConn.createIdx(idxnm, row.get("kb_id", ""), vector_size)
+    return globals.docStoreConn.createIdx(idxnm, row.get("kb_id", ""), vector_size)
 
 
 async def embedding(docs, mdl, parser_config=None, callback=None):
@@ -647,7 +648,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
     chunks = []
     vctr_nm = "q_%d_vec"%vector_size
     for doc_id in doc_ids:
-        for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
+        for d in globals.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
                                                  fields=["content_with_weight", vctr_nm],
                                                  sort_by_position=True):
             chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
@@ -698,7 +699,7 @@ async def delete_image(kb_id, chunk_id):
 
 async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback):
     for b in range(0, len(chunks), DOC_BULK_SIZE):
-        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
+        doc_store_result = await trio.to_thread.run_sync(lambda: globals.docStoreConn.insert(chunks[b:b + DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
         task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
@@ -715,7 +716,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
             TaskService.update_chunk_ids(task_id, chunk_ids_str)
         except DoesNotExist:
             logging.warning(f"do_handle_task update_chunk_ids failed since task {task_id} is unknown.")
-            doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id))
+            doc_store_result = await trio.to_thread.run_sync(lambda: globals.docStoreConn.delete({"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id))
             async with trio.open_nursery() as nursery:
                 for chunk_id in chunk_ids:
                     nursery.start_soon(delete_image, task_dataset_id, chunk_id)
@@ -751,7 +752,7 @@ async def do_handle_task(task):
     progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
 
     # FIXME: workaround, Infinity doesn't support table parsing method, this check is to notify user
-    lower_case_doc_engine = settings.DOC_ENGINE.lower()
+    lower_case_doc_engine = globals.DOC_ENGINE.lower()
     if lower_case_doc_engine == 'infinity' and task['parser_id'].lower() == 'table':
         error_message = "Table parsing method is not supported by Infinity, please use other parsing methods or use Elasticsearch as the document engine."
         progress_callback(-1, msg=error_message)

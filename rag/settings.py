@@ -18,13 +18,14 @@ import logging
 from common.config_utils import get_base_config, decrypt_database_config
 from common.file_utils import get_project_base_directory
 from common.misc_utils import pip_install_torch
+from common import globals
 
 # Server
 RAG_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
 
 # Get storage type and document engine from system environment variables
 STORAGE_IMPL_TYPE = os.getenv('STORAGE_IMPL', 'MINIO')
-DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
+globals.DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
 
 ES = {}
 INFINITY = {}
@@ -35,11 +36,11 @@ OSS = {}
 OS = {}
 
 # Initialize the selected configuration data based on environment variables to solve the problem of initialization errors due to lack of configuration
-if DOC_ENGINE == 'elasticsearch':
+if globals.DOC_ENGINE == 'elasticsearch':
     ES = get_base_config("es", {})
-elif DOC_ENGINE == 'opensearch':
+elif globals.DOC_ENGINE == 'opensearch':
     OS = get_base_config("os", {})
-elif DOC_ENGINE == 'infinity':
+elif globals.DOC_ENGINE == 'infinity':
     INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
 
 if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:

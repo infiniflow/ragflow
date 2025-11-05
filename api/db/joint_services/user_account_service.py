@@ -38,6 +38,7 @@ from api.db.services.user_service import TenantService, UserService, UserTenantS
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.nlp import search
 from common.constants import ActiveEnum
+from common import globals
 
 def create_new_user(user_info: dict) -> dict:
     """
@@ -63,7 +64,7 @@ def create_new_user(user_info: dict) -> dict:
         "id": user_id,
         "name": user_info["nickname"] + "‘s Kingdom",
         "llm_id": settings.CHAT_MDL,
-        "embd_id": settings.EMBEDDING_MDL,
+        "embd_id": globals.EMBEDDING_MDL,
         "asr_id": settings.ASR_MDL,
         "parser_ids": settings.PARSERS,
         "img2txt_id": settings.IMAGE2TEXT_MDL,
@@ -179,7 +180,7 @@ def delete_user_data(user_id: str) -> dict:
                     )
                     done_msg += f"- Deleted {file2doc_delete_res} document-file relation records.\n"
                 # step1.1.3 delete chunk in es
-                r = settings.docStoreConn.delete({"kb_id": kb_ids},
+                r = globals.docStoreConn.delete({"kb_id": kb_ids},
                                          search.index_name(tenant_id), kb_ids)
                 done_msg += f"- Deleted {r} chunk records.\n"
                 kb_delete_res = KnowledgebaseService.delete_by_ids(kb_ids)
@@ -237,7 +238,7 @@ def delete_user_data(user_id: str) -> dict:
                     kb_doc_info = {}
                     for _tenant_id, kb_doc in kb_grouped_doc.items():
                         for _kb_id, docs in kb_doc.items():
-                            chunk_delete_res += settings.docStoreConn.delete(
+                            chunk_delete_res += globals.docStoreConn.delete(
                                 {"doc_id": [d["id"] for d in docs]},
                                 search.index_name(_tenant_id), _kb_id
                             )

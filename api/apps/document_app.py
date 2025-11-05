@@ -23,7 +23,6 @@ import flask
 from flask import request
 from flask_login import current_user, login_required
 
-from api import settings
 from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, FileType
@@ -49,6 +48,7 @@ from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search, rag_tokenizer
 from rag.utils.storage_factory import STORAGE_IMPL
+from common import globals
 
 
 @manager.route("/upload", methods=["POST"])  # noqa: F821
@@ -367,7 +367,7 @@ def change_status():
                 continue
 
             status_int = int(status)
-            if not settings.docStoreConn.update({"doc_id": doc_id}, {"available_int": status_int}, search.index_name(kb.tenant_id), doc.kb_id):
+            if not globals.docStoreConn.update({"doc_id": doc_id}, {"available_int": status_int}, search.index_name(kb.tenant_id), doc.kb_id):
                 result[doc_id] = {"error": "Database error (docStore update)!"}
             result[doc_id] = {"status": status}
         except Exception as e:
@@ -432,8 +432,8 @@ def run():
             DocumentService.update_by_id(id, info)
             if req.get("delete", False):
                 TaskService.filter_delete([Task.doc_id == id])
-                if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
-                    settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
+                if globals.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+                    globals.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
 
             if str(req["run"]) == TaskStatus.RUNNING.value:
                 doc = doc.to_dict()
@@ -479,8 +479,8 @@ def rename():
             "title_tks": title_tks,
             "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
         }
-        if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
-            settings.docStoreConn.update(
+        if globals.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+            globals.docStoreConn.update(
                 {"doc_id": req["doc_id"]},
                 es_body,
                 search.index_name(tenant_id),
@@ -541,8 +541,8 @@ def change_parser():
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
-            if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
-                settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+            if globals.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+                globals.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
     try:
         if "pipeline_id" in req and req["pipeline_id"] != "":
