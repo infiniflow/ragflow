@@ -123,6 +123,7 @@ class DataOperations(ComponentBase,ABC):
         key = rule.get("key")
         op = (rule.get("operator") or "equals").lower()
         target = self.norm(rule.get("value"))
+        target = self._canvas.get_variable_value(target) or target
         if key not in obj:
             return False
         val = obj.get(key, None)
@@ -162,7 +163,7 @@ class DataOperations(ComponentBase,ABC):
                 k = (item.get("key") or "").strip()
                 if not k:
                     continue
-                new_obj[k] = item.get("value")
+                new_obj[k] = self._canvas.get_variable_value(item.get("value")) or item.get("value")
             results.append(new_obj)
         self.set_output("result", results)
 
