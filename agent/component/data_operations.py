@@ -10,7 +10,7 @@ class DataOperationsParam(ComponentParamBase):
     """
     def __init__(self):
         super().__init__()
-        self.inputs = []
+        self.query = []
         self.operations = "literal_eval"
         self.select_keys = []
         self.filter_values=[]
@@ -35,17 +35,17 @@ class DataOperations(ComponentBase,ABC):
     def get_input_form(self) -> dict[str, dict]:
         return {
             k: {"name": o.get("name", ""), "type": "line"}
-            for input_item in (self._param.inputs or [])
+            for input_item in (self._param.query or [])
             for k, o in self.get_input_elements_from_text(input_item).items()
         }
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         self.input_objects=[]
-        inputs = getattr(self._param, "inputs", None)
+        inputs = getattr(self._param, "query", None)
         if not isinstance(inputs, (list, tuple)):
             inputs = [inputs]
-        for input_ref in self._param.inputs:
+        for input_ref in inputs:
             input_object=self._canvas.get_variable_value(input_ref)
             if input_object is None:
                 continue
