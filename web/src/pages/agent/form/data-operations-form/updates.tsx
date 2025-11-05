@@ -1,11 +1,11 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { BlockButton, Button } from '@/components/ui/button';
-import { FormLabel } from '@/components/ui/form';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
+import { DynamicFormHeader } from '../components/dynamic-fom-header';
 
 type SelectKeysProps = {
   name: string;
@@ -21,7 +21,6 @@ export function Updates({
   keyField,
   valueField,
 }: SelectKeysProps) {
-  const { t } = useTranslation();
   const form = useFormContext();
 
   const { fields, remove, append } = useFieldArray({
@@ -31,7 +30,11 @@ export function Updates({
 
   return (
     <section className="space-y-2">
-      <FormLabel tooltip={tooltip}>{label}</FormLabel>
+      <DynamicFormHeader
+        label={label}
+        tooltip={tooltip}
+        onClick={() => append({ [keyField]: '', [valueField]: '' })}
+      ></DynamicFormHeader>
       <div className="space-y-5">
         {fields.map((field, index) => {
           const keyFieldAlias = `${name}.${index}.${keyField}`;
@@ -42,6 +45,7 @@ export function Updates({
               <RAGFlowFormItem name={keyFieldAlias} className="flex-1">
                 <Input></Input>
               </RAGFlowFormItem>
+              <Separator className="w-2" />
               <RAGFlowFormItem name={valueFieldAlias} className="flex-1">
                 <Input></Input>
               </RAGFlowFormItem>
@@ -52,10 +56,6 @@ export function Updates({
           );
         })}
       </div>
-
-      <BlockButton onClick={() => append({ [keyField]: '', [valueField]: '' })}>
-        {t('common.add')}
-      </BlockButton>
     </section>
   );
 }
