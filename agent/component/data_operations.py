@@ -128,15 +128,15 @@ class DataOperations(ComponentBase,ABC):
         val = obj.get(key, None)
         v = self.norm(val)
         if op == "equals":
-            return val == target
+            return v == target
         if op == "not equals":
-            return val != target
+            return v != target
         if op == "contains":
-            return target in val
+            return target in v
         if op == "starts with":
-            return val.startswith(target)
+            return v.startswith(target)
         if op == "ends with":
-            return val.endswith(target)
+            return v.endswith(target)
         return False
         
     def _filter_values(self):
