@@ -57,7 +57,7 @@ class DataOperations(ComponentBase,ABC):
                 continue
         if self._param.operations == "select_keys":
             self._select_keys()
-        elif self._param.operations == "literal_eval":
+        elif self._param.operations == "recursive_eval":
             self._literal_eval()
         elif self._param.operations == "combine":
             self._combine()
@@ -100,7 +100,7 @@ class DataOperations(ComponentBase,ABC):
 
     def _combine(self):
         result={}
-        for obj in self.input_objects():
+        for obj in self.input_objects:
             for key, value in obj.items():
                 if key not in result:
                     result[key] = value
@@ -123,7 +123,7 @@ class DataOperations(ComponentBase,ABC):
         key = rule.get("key")
         op = (rule.get("operator") or "equals").lower()
         target = self.norm(rule.get("value"))
-        target = self._canvas.get_variable_value(target) or target
+        target = self._canvas.get_value_with_variable(target) or target
         if key not in obj:
             return False
         val = obj.get(key, None)
@@ -143,7 +143,7 @@ class DataOperations(ComponentBase,ABC):
     def _filter_values(self):
         results=[]
         rules = (getattr(self._param, "filter_values", None) or [])
-        for obj in self.input_objects():
+        for obj in self.input_objects:
             if not rules:
                 results.append(obj)
                 continue
@@ -155,7 +155,7 @@ class DataOperations(ComponentBase,ABC):
     def _append_or_update(self):
         results=[]
         updates = getattr(self._param, "updates", []) or [] 
-        for obj in self.input_objects():
+        for obj in self.input_objects:
             new_obj = dict(obj)
             for item in updates:
                 if not isinstance(item, dict):
@@ -163,7 +163,7 @@ class DataOperations(ComponentBase,ABC):
                 k = (item.get("key") or "").strip()
                 if not k:
                     continue
-                new_obj[k] = self._canvas.get_variable_value(item.get("value")) or item.get("value")
+                new_obj[k] = self._canvas.get_value_with_variable(item.get("value")) or item.get("value")
             results.append(new_obj)
         self.set_output("result", results)
 
