@@ -104,6 +104,10 @@ def update():
                 message="Duplicated knowledgebase name.")
 
         del req["kb_id"]
+        connectors = []
+        if "connectors" in req:
+            connectors = req["connectors"]
+            del req["connectors"]
         if not KnowledgebaseService.update_by_id(kb.id, req):
             return get_data_error_result()
 
@@ -120,6 +124,10 @@ def update():
         if not e:
             return get_data_error_result(
                 message="Database error (Knowledgebase rename)!")
+        if connectors:
+            errors = Connector2KbService.link_connectors(kb.id, [conn["id"] for conn in connectors], current_user.id)
+            if errors:
+                logging.error("Link KB errors: ", errors)
         kb = kb.to_dict()
         kb.update(req)
 
@@ -891,14 +899,4 @@ def check_embedding():
         return get_json_result(data={"summary": summary, "results": results})
     return get_json_result(code=RetCode.NOT_EFFECTIVE, message="failed", data={"summary": summary, "results": results})
 
-
-@manager.route("/<kb_id>/link", methods=["POST"])  # noqa: F821
-@validate_request("connector_ids")
-@login_required
-def link_connector(kb_id):
-    req = request.json
-    errors = Connector2KbService.link_connectors(kb_id, req["connector_ids"], current_user.id)
-    if errors:
-        return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
-    return get_json_result(data=True)
 
