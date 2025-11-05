@@ -127,15 +127,15 @@ class DataOperations(ComponentBase,ABC):
             return False
         val = obj.get(key, None)
         v = self.norm(val)
-        if op == "equals":
+        if op == "=":
             return v == target
-        if op == "not_equals":
+        if op == "≠":
             return v != target
         if op == "contains":
             return target in v
-        if op == "starts_with":
+        if op == "start with":
             return v.startswith(target)
-        if op == "ends_with":
+        if op == "end with":
             return v.endswith(target)
         return False
         
