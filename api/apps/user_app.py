@@ -58,6 +58,7 @@ from api.utils.web_utils import (
     hash_code,
     captcha_key,
 )
+from common import globals
 
 
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
@@ -623,7 +624,7 @@ def user_register(user_id, user):
         "id": user_id,
         "name": user["nickname"] + "‘s Kingdom",
         "llm_id": settings.CHAT_MDL,
-        "embd_id": settings.EMBEDDING_MDL,
+        "embd_id": globals.EMBEDDING_MDL,
         "asr_id": settings.ASR_MDL,
         "parser_ids": settings.PARSERS,
         "img2txt_id": settings.IMAGE2TEXT_MDL,

@@ -24,6 +24,7 @@ from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.es_conn import ESConnection
 from rag.utils.infinity_conn import InfinityConnection
+from common import globals
 
 
 def _ok_nok(ok: bool) -> str:
@@ -52,7 +53,7 @@ def check_redis() -> tuple[bool, dict]:
 def check_doc_engine() -> tuple[bool, dict]:
     st = timer()
     try:
-        meta = settings.docStoreConn.health()
+        meta = globals.docStoreConn.health()
         # treat any successful call as ok
         return True, {"elapsed": f"{(timer() - st) * 1000.0:.1f}", **(meta or {})}
     except Exception as e:

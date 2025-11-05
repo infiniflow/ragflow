@@ -32,12 +32,12 @@ LLM = None
 LLM_FACTORY = None
 LLM_BASE_URL = None
 CHAT_MDL = ""
-EMBEDDING_MDL = ""
+# EMBEDDING_MDL = "" has been moved to common/globals.py
 RERANK_MDL = ""
 ASR_MDL = ""
 IMAGE2TEXT_MDL = ""
 CHAT_CFG = ""
-
+# EMBEDDING_CFG = "" has been moved to common/globals.py
 RERANK_CFG = ""
 ASR_CFG = ""
 IMAGE2TEXT_CFG = ""
@@ -61,10 +61,10 @@ HTTP_APP_KEY = None
 GITHUB_OAUTH = None
 FEISHU_OAUTH = None
 OAUTH_CONFIG = None
-DOC_ENGINE = None
-docStoreConn = None
+# DOC_ENGINE = None has been moved to common/globals.py
+# docStoreConn = None has been moved to common/globals.py
 
-retriever = None
+#retriever = None has been moved to common/globals.py
 kg_retriever = None
 
 # user registration switch
@@ -125,7 +125,7 @@ def init_settings():
     except Exception:
         FACTORY_LLM_INFOS = []
 
-    global CHAT_MDL, EMBEDDING_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
+    global CHAT_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
     global CHAT_CFG, RERANK_CFG, ASR_CFG, IMAGE2TEXT_CFG
 
     global API_KEY, PARSERS, HOST_IP, HOST_PORT, SECRET_KEY
@@ -135,7 +135,7 @@ def init_settings():
     )
 
     chat_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("chat_model", CHAT_MDL))
-    embedding_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("embedding_model", EMBEDDING_MDL))
+    embedding_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("embedding_model", globals.EMBEDDING_MDL))
     rerank_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("rerank_model", RERANK_MDL))
     asr_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("asr_model", ASR_MDL))
     image2text_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("image2text_model", IMAGE2TEXT_MDL))
@@ -147,7 +147,7 @@ def init_settings():
     IMAGE2TEXT_CFG = _resolve_per_model_config(image2text_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
 
     CHAT_MDL = CHAT_CFG.get("model", "") or ""
-    EMBEDDING_MDL = os.getenv("TEI_MODEL", "BAAI/bge-small-en-v1.5") if "tei-" in os.getenv("COMPOSE_PROFILES", "") else ""
+    globals.EMBEDDING_MDL = os.getenv("TEI_MODEL", "BAAI/bge-small-en-v1.5") if "tei-" in os.getenv("COMPOSE_PROFILES", "") else ""
     RERANK_MDL = RERANK_CFG.get("model", "") or ""
     ASR_MDL = ASR_CFG.get("model", "") or ""
     IMAGE2TEXT_MDL = IMAGE2TEXT_CFG.get("model", "") or ""
@@ -169,23 +169,23 @@ def init_settings():
 
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, docStoreConn, retriever, kg_retriever
-    DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
-    # DOC_ENGINE = os.environ.get('DOC_ENGINE', "opensearch")
-    lower_case_doc_engine = DOC_ENGINE.lower()
+    global kg_retriever
+    globals.DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
+    # globals.DOC_ENGINE = os.environ.get('DOC_ENGINE', "opensearch")
+    lower_case_doc_engine = globals.DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
-        docStoreConn = rag.utils.es_conn.ESConnection()
+        globals.docStoreConn = rag.utils.es_conn.ESConnection()
     elif lower_case_doc_engine == "infinity":
-        docStoreConn = rag.utils.infinity_conn.InfinityConnection()
+        globals.docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
-        docStoreConn = rag.utils.opensearch_conn.OSConnection()
+        globals.docStoreConn = rag.utils.opensearch_conn.OSConnection()
     else:
-        raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
+        raise Exception(f"Not supported doc engine: {globals.DOC_ENGINE}")
 
-    retriever = search.Dealer(docStoreConn)
+    globals.retriever = search.Dealer(globals.docStoreConn)
     from graphrag import search as kg_search
 
-    kg_retriever = kg_search.KGSearch(docStoreConn)
+    kg_retriever = kg_search.KGSearch(globals.docStoreConn)
 
     if int(os.environ.get("SANDBOX_ENABLED", "0")):
         global SANDBOX_HOST
