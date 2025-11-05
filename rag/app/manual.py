@@ -205,7 +205,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         pdf_parser = PARSERS.get(name, plaintext_parser)
         callback(0.1, "Start to parse.")
 
-        sections, tables, outline = pdf_parser(
+        sections, tbls, pdf_parser = pdf_parser(
             filename = filename,
             binary = binary,
             from_page = from_page,
@@ -216,7 +216,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             **kwargs
         )
 
-        if not sections and not tables:
+        if not sections and not tbls:
             return []
 
         if name in ["tcadp", "docling", "mineru"]:
@@ -224,12 +224,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         
         callback(0.8, "Finish parsing.")
 
-        if len(sections) > 0 and len(outline) / len(sections) > 0.03:
-            max_lvl = max([lvl for _, lvl in outline])
+        if len(sections) > 0 and len(pdf_parser.outlines) / len(sections) > 0.03:
+            max_lvl = max([lvl for _, lvl in pdf_parser.outlines])
             most_level = max(0, max_lvl - 1)
             levels = []
             for txt, _, _ in sections:
-                for t, lvl in outline:
+                for t, lvl in pdf_parser.outlines:
                     tks = set([t[i] + t[i + 1] for i in range(len(t) - 1)])
                     tks_ = set([txt[i] + txt[i + 1]
                                 for i in range(min(len(t), len(txt) - 1))])
