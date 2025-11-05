@@ -22,7 +22,6 @@ from flask import request
 from flask_login import current_user, login_required
 
 from api import settings
-from api.db import LLMType, ParserType
 from api.db.services.dialog_service import meta_filter
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -36,7 +35,7 @@ from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import gen_meta_filter, cross_languages, keyword_extraction
 from rag.settings import PAGERANK_FLD
 from common.string_utils import remove_redundant_spaces
-from common.constants import RetCode
+from common.constants import RetCode, LLMType, ParserType
 
 
 @manager.route('/list', methods=['POST'])  # noqa: F821

@@ -26,7 +26,7 @@ from langfuse import Langfuse
 from peewee import fn
 from agentic_reasoning import DeepResearcher
 from api import settings
-from api.db import LLMType, ParserType, StatusEnum
+from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService

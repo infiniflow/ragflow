@@ -15,7 +15,7 @@
 #
 from datetime import datetime
 
-from api.db import FileSource
+from common.constants import FileSource
 from api.db.db_models import DB
 from api.db.db_models import File, File2Document
 from api.db.services.common_service import CommonService

@@ -20,7 +20,7 @@ import re
 from io import BytesIO
 from docx import Document
 
-from api.db import ParserType
+from common.constants import ParserType
 from deepdoc.parser.utils import get_text
 from rag.nlp import bullets_category, remove_contents_table, \
     make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge

@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, validator
 
 from api import settings
 from api.constants import FILE_NAME_LEN_LIMIT
-from api.db import FileSource, FileType, LLMType, ParserType, TaskStatus
+from api.db import FileType
 from api.db.db_models import File, Task
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
@@ -43,7 +43,7 @@ from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
 from rag.utils.storage_factory import STORAGE_IMPL
 from common.string_utils import remove_redundant_spaces
-from common.constants import RetCode
+from common.constants import RetCode, LLMType, ParserType, TaskStatus, FileSource
 
 MAXIMUM_OF_UPLOADING_FILES = 256
 
