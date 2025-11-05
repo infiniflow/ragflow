@@ -75,11 +75,11 @@ class RAGFlowMarkdownParser:
         table_with_attributes_pattern = re.compile(
             rf"<(?:{'|'.join(TAGS)})[^>]*>", re.IGNORECASE
         )
-        working_text = re.sub(
-            table_with_attributes_pattern,
-            lambda m: f"<{re.match(r'<(\w+)', m.group()).group(1)}>",
-            working_text,
-        )
+        def replace_tag(m):
+            tag_name = re.match(r"<(\w+)", m.group()).group(1)
+            return "<{}>".format(tag_name)
+
+        working_text = re.sub(table_with_attributes_pattern, replace_tag, working_text)
 
         if "<table>" in working_text.lower():  # for optimize performance
             # HTML table extraction - handle possible html/body wrapper tags
