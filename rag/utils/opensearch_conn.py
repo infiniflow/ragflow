@@ -31,6 +31,7 @@ from common.file_utils import get_project_base_directory
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer
+from common import globals
 
 ATTEMPT_TIME = 2
 
@@ -41,13 +42,13 @@ logger = logging.getLogger('ragflow.opensearch_conn')
 class OSConnection(DocStoreConnection):
     def __init__(self):
         self.info = {}
-        logger.info(f"Use OpenSearch {settings.OS['hosts']} as the doc engine.")
+        logger.info(f"Use OpenSearch {globals.OS['hosts']} as the doc engine.")
         for _ in range(ATTEMPT_TIME):
             try:
                 self.os = OpenSearch(
-                    settings.OS["hosts"].split(","),
-                    http_auth=(settings.OS["username"], settings.OS[
-                        "password"]) if "username" in settings.OS and "password" in settings.OS else None,
+                    globals.OS["hosts"].split(","),
+                    http_auth=(globals.OS["username"], globals.OS[
+                        "password"]) if "username" in globals.OS and "password" in globals.OS else None,
                     verify_certs=False,
                     timeout=600
                 )
@@ -55,10 +56,10 @@ class OSConnection(DocStoreConnection):
                     self.info = self.os.info()
                     break
             except Exception as e:
-                logger.warning(f"{str(e)}. Waiting OpenSearch {settings.OS['hosts']} to be healthy.")
+                logger.warning(f"{str(e)}. Waiting OpenSearch {globals.OS['hosts']} to be healthy.")
                 time.sleep(5)
         if not self.os.ping():
-            msg = f"OpenSearch {settings.OS['hosts']} is unhealthy in 120s."
+            msg = f"OpenSearch {globals.OS['hosts']} is unhealthy in 120s."
             logger.error(msg)
             raise Exception(msg)
         v = self.info.get("version", {"number": "2.18.0"})
@@ -73,7 +74,7 @@ class OSConnection(DocStoreConnection):
             logger.error(msg)
             raise Exception(msg)
         self.mapping = json.load(open(fp_mapping, "r"))
-        logger.info(f"OpenSearch {settings.OS['hosts']} is healthy.")
+        logger.info(f"OpenSearch {globals.OS['hosts']} is healthy.")
 
     """
     Database operations

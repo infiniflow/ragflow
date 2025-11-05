@@ -30,6 +30,7 @@ from rag.settings import PAGERANK_FLD, TAG_FLD
 from common.decorator import singleton
 import pandas as pd
 from common.file_utils import get_project_base_directory
+from common import globals
 from rag.nlp import is_english
 
 from rag.utils.doc_store_conn import (
@@ -130,8 +131,8 @@ def concat_dataframes(df_list: list[pd.DataFrame], selectFields: list[str]) -> p
 @singleton
 class InfinityConnection(DocStoreConnection):
     def __init__(self):
-        self.dbName = settings.INFINITY.get("db_name", "default_db")
-        infinity_uri = settings.INFINITY["uri"]
+        self.dbName = globals.INFINITY.get("db_name", "default_db")
+        infinity_uri = globals.INFINITY["uri"]
         if ":" in infinity_uri:
             host, port = infinity_uri.split(":")
             infinity_uri = infinity.common.NetworkAddress(host, int(port))
