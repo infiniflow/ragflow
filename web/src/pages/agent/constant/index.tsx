@@ -6,8 +6,10 @@ import {
   AgentGlobals,
   AgentGlobalsSysQueryWithBrace,
   CodeTemplateStrMap,
+  ComparisonOperator,
   Operator,
   ProgrammingLanguage,
+  SwitchOperatorOptions,
   initialLlmBaseValues,
 } from '@/constants/agent';
 export { Operator } from '@/constants/agent';
@@ -35,8 +37,6 @@ export enum PromptRole {
 }
 
 import {
-  Circle,
-  CircleSlash2,
   CloudUpload,
   ListOrdered,
   OptionIcon,
@@ -166,27 +166,12 @@ export const componentMenuList = [
   },
 ];
 
-export const SwitchOperatorOptions = [
-  { value: '=', label: 'equal', icon: 'equal' },
-  { value: '≠', label: 'notEqual', icon: 'not-equals' },
-  { value: '>', label: 'gt', icon: 'Less' },
-  { value: '≥', label: 'ge', icon: 'Greater-or-equal' },
-  { value: '<', label: 'lt', icon: 'Less' },
-  { value: '≤', label: 'le', icon: 'less-or-equal' },
-  { value: 'contains', label: 'contains', icon: 'Contains' },
-  { value: 'not contains', label: 'notContains', icon: 'not-contains' },
-  { value: 'start with', label: 'startWith', icon: 'list-start' },
-  { value: 'end with', label: 'endWith', icon: 'list-end' },
-  {
-    value: 'empty',
-    label: 'empty',
-    icon: <Circle className="size-4" />,
-  },
-  {
-    value: 'not empty',
-    label: 'notEmpty',
-    icon: <CircleSlash2 className="size-4" />,
-  },
+export const DataOperationsOperatorOptions = [
+  ComparisonOperator.Equal,
+  ComparisonOperator.NotEqual,
+  ComparisonOperator.Contains,
+  ComparisonOperator.StartWith,
+  ComparisonOperator.EndWith,
 ];
 
 export const SwitchElseTo = 'end_cpn_ids';
@@ -716,16 +701,17 @@ export const initialPlaceholderValues = {
 };
 
 export enum Operations {
-  SelectKeys = 'select keys',
-  LiteralEval = 'literal eval',
+  SelectKeys = 'select_keys',
+  LiteralEval = 'literal_eval',
   Combine = 'combine',
-  FilterValues = 'filter values',
-  AppendOrUpdate = 'append or update',
-  RemoveKeys = 'remove keys',
-  RenameKeys = 'rename keys',
+  FilterValues = 'filter_values',
+  AppendOrUpdate = 'append_or_update',
+  RemoveKeys = 'remove_keys',
+  RenameKeys = 'rename_keys',
 }
 
 export const initialDataOperationsValues = {
+  query: [],
   operations: Operations.SelectKeys,
   outputs: {
     result: {

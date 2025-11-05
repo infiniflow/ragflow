@@ -1,4 +1,7 @@
+import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Input } from '@/components/ui/input';
 import { t } from 'i18next';
+import { z } from 'zod';
 
 export type OutputType = {
   title: string;
@@ -7,6 +10,7 @@ export type OutputType = {
 
 type OutputProps = {
   list: Array<OutputType>;
+  isFormRequired?: boolean;
 };
 
 export function transferOutputs(outputs: Record<string, any>) {
@@ -16,7 +20,11 @@ export function transferOutputs(outputs: Record<string, any>) {
   }));
 }
 
-export function Output({ list }: OutputProps) {
+export const OutputSchema = {
+  outputs: z.record(z.any()),
+};
+
+export function Output({ list, isFormRequired = false }: OutputProps) {
   return (
     <section className="space-y-2">
       <div className="text-sm">{t('flow.output')}</div>
@@ -30,6 +38,11 @@ export function Output({ list }: OutputProps) {
           </li>
         ))}
       </ul>
+      {isFormRequired && (
+        <RAGFlowFormItem name="outputs" className="hidden">
+          <Input></Input>
+        </RAGFlowFormItem>
+      )}
     </section>
   );
 }
