@@ -1937,7 +1937,7 @@ Important structured information may include: names, dates, locations, events, k
       disable: 'Disable',
       all: 'All',
       actions: 'Actions',
-      newUser: 'New User',
+      newUser: 'New user',
       email: 'Email',
       name: 'Name',
       nickname: 'Nickname',
@@ -1990,7 +1990,7 @@ Important structured information may include: names, dates, locations, events, k
       deleteWhitelistEmailConfirmation:
         'Are you sure you want to delete this email from whitelist? This action cannot be undone.',
 
-      importWhitelist: 'Import whitelist (excel)',
+      importWhitelist: 'Import whitelist (Excel)',
       importSelectExcelFile: 'Excel file (.xlsx)',
       importOverwriteExistingEmails: 'Overwrite existing emails',
       importInvalidExcelFile: 'Please select a valid Excel file',

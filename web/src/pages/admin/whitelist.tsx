@@ -272,7 +272,7 @@ function AdminWhitelist() {
                 onClick={() => setCreateModalOpen(true)}
               >
                 <LucidePlus />
-                {t('admin.createEmail')}
+                {t('admin.newUser')}
               </Button>
             </div>
           </CardHeader>
