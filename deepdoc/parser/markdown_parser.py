@@ -70,9 +70,16 @@ class RAGFlowMarkdownParser:
             )
             working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables)
 
-        # Replace any <table ...> to <table>
-        table_with_attributes_pattern = re.compile(r'<table[^>]*>', re.IGNORECASE)
-        working_text = re.sub(table_with_attributes_pattern, '<table>', working_text)
+        # Replace any TAGS e.g. <table ...> to <table>
+        TAGS = ["table", "td", "tr", "th", "tbody", "thead", "div"]
+        table_with_attributes_pattern = re.compile(
+            rf"<(?:{'|'.join(TAGS)})[^>]*>", re.IGNORECASE
+        )
+        working_text = re.sub(
+            table_with_attributes_pattern,
+            lambda m: f"<{re.match(r'<(\w+)', m.group()).group(1)}>",
+            working_text,
+        )
 
         if "<table>" in working_text.lower():  # for optimize performance
             # HTML table extraction - handle possible html/body wrapper tags
