@@ -25,7 +25,6 @@ from infinity.common import ConflictType, InfinityException, SortType
 from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
 from infinity.errors import ErrorCode
-from rag import settings
 from rag.settings import PAGERANK_FLD, TAG_FLD
 from common.decorator import singleton
 import pandas as pd

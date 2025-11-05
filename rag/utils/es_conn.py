@@ -24,7 +24,6 @@ import copy
 from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
 from elastic_transport import ConnectionTimeout
-from rag import settings
 from rag.settings import TAG_FLD, PAGERANK_FLD
 from common.decorator import singleton
 from common.file_utils import get_project_base_directory
