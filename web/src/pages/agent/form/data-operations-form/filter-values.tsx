@@ -1,13 +1,14 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { BlockButton, Button } from '@/components/ui/button';
-import { FormLabel } from '@/components/ui/form';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
+import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-operator-options';
 import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
+import { DataOperationsOperatorOptions } from '../../constant';
+import { DynamicFormHeader } from '../components/dynamic-fom-header';
 
 type SelectKeysProps = {
   name: string;
@@ -25,7 +26,6 @@ export function FilterValues({
   valueField = 'value',
   operatorField = 'operator',
 }: SelectKeysProps) {
-  const { t } = useTranslation();
   const form = useFormContext();
 
   const { fields, remove, append } = useFieldArray({
@@ -33,9 +33,18 @@ export function FilterValues({
     control: form.control,
   });
 
+  const operatorOptions = useBuildSwitchOperatorOptions(
+    DataOperationsOperatorOptions,
+  );
+
   return (
     <section className="space-y-2">
-      <FormLabel tooltip={tooltip}>{label}</FormLabel>
+      <DynamicFormHeader
+        label={label}
+        tooltip={tooltip}
+        onClick={() => append({ [keyField]: '', [valueField]: '' })}
+      ></DynamicFormHeader>
+
       <div className="space-y-5">
         {fields.map((field, index) => {
           const keyFieldAlias = `${name}.${index}.${keyField}`;
@@ -47,12 +56,15 @@ export function FilterValues({
               <RAGFlowFormItem name={keyFieldAlias} className="flex-1">
                 <Input></Input>
               </RAGFlowFormItem>
-              <Separator orientation="vertical" className="h-2.5" />
+              <Separator className="w-2" />
 
               <RAGFlowFormItem name={operatorFieldAlias} className="flex-1">
-                <SelectWithSearch {...field} options={[]}></SelectWithSearch>
+                <SelectWithSearch
+                  {...field}
+                  options={operatorOptions}
+                ></SelectWithSearch>
               </RAGFlowFormItem>
-              <Separator orientation="vertical" className="h-2.5" />
+              <Separator className="w-2" />
 
               <RAGFlowFormItem name={valueFieldAlias} className="flex-1">
                 <Input></Input>
@@ -64,10 +76,6 @@ export function FilterValues({
           );
         })}
       </div>
-
-      <BlockButton onClick={() => append({ [keyField]: '', [valueField]: '' })}>
-        {t('common.add')}
-      </BlockButton>
     </section>
   );
 }

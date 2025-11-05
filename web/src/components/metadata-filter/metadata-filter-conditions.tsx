@@ -15,10 +15,10 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
+import { SwitchOperatorOptions } from '@/constants/agent';
+import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-operator-options';
 import { useFetchKnowledgeMetadata } from '@/hooks/use-knowledge-request';
-import { SwitchOperatorOptions } from '@/pages/agent/constant';
 import { PromptEditor } from '@/pages/agent/form/components/prompt-editor';
-import { useBuildSwitchOperatorOptions } from '@/pages/agent/form/switch-form';
 import { Plus, X } from 'lucide-react';
 import { useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';

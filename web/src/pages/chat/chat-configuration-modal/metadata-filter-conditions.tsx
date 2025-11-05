@@ -1,6 +1,6 @@
+import { SwitchOperatorOptions } from '@/constants/agent';
+import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-operator-options';
 import { useFetchKnowledgeMetadata } from '@/hooks/use-knowledge-request';
-import { SwitchOperatorOptions } from '@/pages/agent/constant';
-import { useBuildSwitchOperatorOptions } from '@/pages/agent/form/switch-form';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import {
   Button,

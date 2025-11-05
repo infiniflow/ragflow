@@ -1,9 +1,9 @@
 import { Card, CardContent } from '@/components/ui/card';
+import { SwitchOperatorOptions } from '@/constants/agent';
+import { LogicalOperatorIcon } from '@/hooks/logic-hooks/use-build-operator-options';
 import { ISwitchCondition, ISwitchNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import { memo, useCallback } from 'react';
-import { SwitchOperatorOptions } from '../../constant';
-import { LogicalOperatorIcon } from '../../form/switch-form';
 import { useGetVariableLabelByValue } from '../../hooks/use-get-begin-query';
 import { CommonHandle, LeftEndHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
