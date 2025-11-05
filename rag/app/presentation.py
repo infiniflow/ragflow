@@ -25,7 +25,7 @@ from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.pdf_parser import VisionParser
 from rag.nlp import tokenize, is_english
 from rag.nlp import rag_tokenizer
-from deepdoc.parser import PdfParser, PptParser, PlainParser
+from deepdoc.parser import PdfParser, PdfParserVietnamese, PptParser, PlainParser
 from PyPDF2 import PdfReader as pdf2_read
 
 
@@ -55,7 +55,7 @@ class Ppt(PptParser):
         return [(txts[i], imgs[i]) for i in range(len(txts))]
 
 
-class Pdf(PdfParser):
+class _PresentationPdfBase:
     def __init__(self):
         super().__init__()
 
@@ -67,24 +67,45 @@ class Pdf(PdfParser):
             return True
         return False
 
-    def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None):
+    def __call__(
+        self,
+        filename,
+        binary=None,
+        from_page=0,
+        to_page=100000,
+        zoomin=3,
+        callback=None,
+    ):
         from timeit import default_timer as timer
+
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary,
-                        zoomin, from_page, to_page, callback)
-        callback(msg="Page {}~{}: OCR finished ({:.2f}s)".format(from_page, min(to_page, self.total_page), timer() - start))
-        assert len(self.boxes) == len(self.page_images), "{} vs. {}".format(
-            len(self.boxes), len(self.page_images))
+        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        callback(
+            msg="Page {}~{}: OCR finished ({:.2f}s)".format(
+                from_page, min(to_page, self.total_page), timer() - start
+            )
+        )
+        assert len(self.boxes) == len(self.page_images), "{} vs. {}".format(len(self.boxes), len(self.page_images))
         res = []
         for i in range(len(self.boxes)):
-            lines = "\n".join([b["text"] for b in self.boxes[i]
-                              if not self.__garbage(b["text"])])
+            lines = "\n".join([b["text"] for b in self.boxes[i] if not self.__garbage(b["text"])])
             res.append((lines, self.page_images[i]))
-        callback(0.9, "Page {}~{}: Parsing finished".format(
-            from_page, min(to_page, self.total_page)))
+        callback(
+            0.9,
+            "Page {}~{}: Parsing finished".format(
+                from_page, min(to_page, self.total_page)
+            ),
+        )
         return res
+
+
+class Pdf(_PresentationPdfBase, PdfParser):
+    """Default presentation PDF parser."""
+
+
+class PdfVietnamese(_PresentationPdfBase, PdfParserVietnamese):
+    """Vietnamese-optimized presentation parser."""
 
 
 class PlainPdf(PlainParser):
@@ -130,8 +151,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
-        if layout_recognizer == "DeepDOC":
-            pdf_parser = Pdf()
+        if layout_recognizer in {"DeepDOC", "DeepDOCVN"}:
+            pdf_parser = Pdf() if layout_recognizer == "DeepDOC" else PdfVietnamese()
             sections = pdf_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
         elif layout_recognizer == "Plain Text":
             pdf_parser = PlainParser()

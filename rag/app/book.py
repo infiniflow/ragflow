@@ -25,15 +25,26 @@ from rag.nlp import bullets_category, is_english,remove_contents_table, \
     hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, \
     tokenize_chunks
 from rag.nlp import rag_tokenizer
-from deepdoc.parser import PdfParser, PlainParser, HtmlParser
+from deepdoc.parser import PdfParser, PdfParserVietnamese, PlainParser, HtmlParser
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
 from PIL import Image
 
 
-class Pdf(PdfParser):
-    def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None):
+class _BookPdfBase:
+    def __init__(self):
+        super().__init__()
+
+    def __call__(
+        self,
+        filename,
+        binary=None,
+        from_page=0,
+        to_page=100000,
+        zoomin=3,
+        callback=None,
+    ):
         from timeit import default_timer as timer
+
         start = timer()
         callback(msg="OCR started")
         self.__images__(
@@ -41,7 +52,8 @@ class Pdf(PdfParser):
             zoomin,
             from_page,
             to_page,
-            callback)
+            callback,
+        )
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
         start = timer()
@@ -61,8 +73,18 @@ class Pdf(PdfParser):
         self._merge_with_same_bullet()
         callback(0.8, "Text extraction ({:.2f}s)".format(timer() - start))
 
-        return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", ""))
-                for b in self.boxes], tbls
+        return [
+            (b["text"] + self._line_tag(b, zoomin), b.get("layoutno", ""))
+            for b in self.boxes
+        ], tbls
+
+
+class Pdf(_BookPdfBase, PdfParser):
+    """Default book parser."""
+
+
+class PdfVietnamese(_BookPdfBase, PdfParserVietnamese):
+    """Vietnamese-optimized book parser."""
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
@@ -96,9 +118,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
+        layout_choice = parser_config.get("layout_recognize", "DeepDOC")
+        if layout_choice == "Plain Text":
             pdf_parser = PlainParser()
+        elif layout_choice == "DeepDOCVN":
+            pdf_parser = PdfVietnamese()
+        else:
+            pdf_parser = Pdf()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
         tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)

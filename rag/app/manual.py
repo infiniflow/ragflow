@@ -22,20 +22,28 @@ from common.constants import ParserType
 from io import BytesIO
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level
 from common.token_utils import num_tokens_from_string
-from deepdoc.parser import PdfParser, PlainParser, DocxParser
+from deepdoc.parser import PdfParser, PdfParserVietnamese, PlainParser, DocxParser
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
 from docx import Document
 from PIL import Image
 
 
-class Pdf(PdfParser):
+class _ManualPdfBase:
     def __init__(self):
         self.model_speciess = ParserType.MANUAL.value
         super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None):
+    def __call__(
+        self,
+        filename,
+        binary=None,
+        from_page=0,
+        to_page=100000,
+        zoomin=3,
+        callback=None,
+    ):
         from timeit import default_timer as timer
+
         start = timer()
         callback(msg="OCR started")
         self.__images__(
@@ -43,7 +51,7 @@ class Pdf(PdfParser):
             zoomin,
             from_page,
             to_page,
-            callback
+            callback,
         )
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.debug("OCR: {}".format(timer() - start))
@@ -64,12 +72,21 @@ class Pdf(PdfParser):
         self._filter_forpages()
         callback(0.68, "Text merged ({:.2f}s)".format(timer() - start))
 
-        # clean mess
         for b in self.boxes:
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
 
-        return [(b["text"], b.get("layoutno", ""), self.get_position(b, zoomin))
-                for i, b in enumerate(self.boxes)], tbls
+        return [
+            (b["text"], b.get("layoutno", ""), self.get_position(b, zoomin))
+            for i, b in enumerate(self.boxes)
+        ], tbls
+
+
+class Pdf(_ManualPdfBase, PdfParser):
+    """Default manual parser."""
+
+
+class PdfVietnamese(_ManualPdfBase, PdfParserVietnamese):
+    """Vietnamese-optimized manual parser."""
 
 
 class Docx(DocxParser):
@@ -196,9 +213,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
+        layout_choice = parser_config.get("layout_recognize", "DeepDOC")
+        if layout_choice == "Plain Text":
             pdf_parser = PlainParser()
+        elif layout_choice == "DeepDOCVN":
+            pdf_parser = PdfVietnamese()
+        else:
+            pdf_parser = Pdf()
         sections, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
         if sections and len(sections[0]) < 3:

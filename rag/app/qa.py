@@ -25,7 +25,7 @@ from openpyxl import load_workbook
 from deepdoc.parser.utils import get_text
 from rag.nlp import is_english, random_choices, qbullets_category, add_positions, has_qbullet, docx_question_level
 from rag.nlp import rag_tokenizer, tokenize_table, concat_img
-from deepdoc.parser import PdfParser, ExcelParser, DocxParser
+from deepdoc.parser import PdfParser, PdfParserVietnamese, ExcelParser, DocxParser
 from docx import Document
 from PIL import Image
 from markdown import markdown
@@ -76,9 +76,19 @@ class Excel(ExcelParser):
         return res
 
 
-class Pdf(PdfParser):
-    def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None):
+class _QaPdfBase:
+    def __init__(self):
+        super().__init__()
+
+    def __call__(
+        self,
+        filename,
+        binary=None,
+        from_page=0,
+        to_page=100000,
+        zoomin=3,
+        callback=None,
+    ):
         start = timer()
         callback(msg="OCR started")
         self.__images__(
@@ -86,7 +96,7 @@ class Pdf(PdfParser):
             zoomin,
             from_page,
             to_page,
-            callback
+            callback,
         )
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.debug("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
@@ -102,9 +112,6 @@ class Pdf(PdfParser):
         self._text_merge()
         callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
         tbls = self._extract_table_figure(True, zoomin, True, True)
-        #self._naive_vertical_merge()
-        # self._concat_downward()
-        #self._filter_forpages()
         logging.debug("layouts: {}".format(timer() - start))
         sections = [b["text"] for b in self.boxes]
         bull_x0_list = []
@@ -114,12 +121,14 @@ class Pdf(PdfParser):
         qai_list = []
         last_q, last_a, last_tag = '', '', ''
         last_index = -1
-        last_box = {'text':''}
+        last_box = {'text': ''}
         last_bull = None
+
         def sort_key(element):
             tbls_pn = element[1][0][0]
             tbls_top = element[1][0][3]
             return tbls_pn, tbls_top
+
         tbls.sort(key=sort_key)
         tbl_index = 0
         last_pn, last_bottom = 0, 0
@@ -131,26 +140,31 @@ class Pdf(PdfParser):
             line_pn = get_float(line_tag.lstrip('@@').split('\t')[0])
             line_top = get_float(line_tag.rstrip('##').split('\t')[3])
             tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = self.get_tbls_info(tbls, tbl_index)
-            if not has_bull:  # No question bullet
+            if not has_bull:
                 if not last_q:
-                    if tbl_pn < line_pn or (tbl_pn == line_pn and tbl_top <= line_top):    # image passed
+                    if tbl_pn < line_pn or (tbl_pn == line_pn and tbl_top <= line_top):
                         tbl_index += 1
                     continue
-                else:
-                    sum_tag = line_tag
-                    sum_section = section
-                    while ((tbl_pn == last_pn and tbl_top>= last_bottom) or (tbl_pn > last_pn)) \
-                        and ((tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)):    # add image at the middle of current answer
-                        sum_tag = f'{tbl_tag}{sum_tag}'
-                        sum_section = f'{tbl_text}{sum_section}'
-                        tbl_index += 1
-                        tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = self.get_tbls_info(tbls, tbl_index)
-                    last_a = f'{last_a}{sum_section}'
-                    last_tag = f'{last_tag}{sum_tag}'
+                sum_tag = line_tag
+                sum_section = section
+                while (
+                    (tbl_pn == last_pn and tbl_top >= last_bottom) or (tbl_pn > last_pn)
+                ) and (
+                    (tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)
+                ):
+                    sum_tag = f'{tbl_tag}{sum_tag}'
+                    sum_section = f'{tbl_text}{sum_section}'
+                    tbl_index += 1
+                    tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = self.get_tbls_info(tbls, tbl_index)
+                last_a = f'{last_a}{sum_section}'
+                last_tag = f'{last_tag}{sum_tag}'
             else:
                 if last_q:
-                    while ((tbl_pn == last_pn and tbl_top>= last_bottom) or (tbl_pn > last_pn)) \
-                        and ((tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)):    # add image at the end of last answer
+                    while (
+                        (tbl_pn == last_pn and tbl_top >= last_bottom) or (tbl_pn > last_pn)
+                    ) and (
+                        (tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)
+                    ):
                         last_tag = f'{last_tag}{tbl_tag}'
                         last_a = f'{last_a}{tbl_text}'
                         tbl_index += 1
@@ -167,7 +181,6 @@ class Pdf(PdfParser):
         if last_q:
             qai_list.append((last_q, last_a, *self.crop(last_tag, need_position=True)))
         return qai_list, tbls
-
     def get_tbls_info(self, tbls, tbl_index):
         if tbl_index >= len(tbls):
             return 1, 0, 0, 0, 0, '@@0\t0\t0\t0\t0##', ''
@@ -180,6 +193,14 @@ class Pdf(PdfParser):
             .format(tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom)
         _tbl_text = ''.join(tbls[tbl_index][0][1])
         return tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, _tbl_text
+
+
+class Pdf(_QaPdfBase, PdfParser):
+    """Default Q&A PDF parser."""
+
+
+class PdfVietnamese(_QaPdfBase, PdfParserVietnamese):
+    """Vietnamese-optimized Q&A parser."""
 
 
 class Docx(DocxParser):
@@ -408,7 +429,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        pdf_parser = Pdf()
+        layout_choice = parser_config.get("layout_recognize", "DeepDOC")
+        if layout_choice == "DeepDOCVN":
+            pdf_parser = PdfVietnamese()
+        else:
+            pdf_parser = Pdf()
         qai_list, tbls = pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)
         for q, a, image, poss in qai_list:

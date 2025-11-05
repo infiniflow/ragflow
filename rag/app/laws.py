@@ -25,7 +25,7 @@ from deepdoc.parser.utils import get_text
 from rag.nlp import bullets_category, remove_contents_table, \
     make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge
 from rag.nlp import rag_tokenizer, Node
-from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
+from deepdoc.parser import PdfParser, PdfParserVietnamese, DocxParser, PlainParser, HtmlParser
 
 
 
@@ -99,14 +99,22 @@ class Docx(DocxParser):
         '''
 
 
-class Pdf(PdfParser):
+class _LawsPdfBase:
     def __init__(self):
         self.model_speciess = ParserType.LAWS.value
         super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None):
+    def __call__(
+        self,
+        filename,
+        binary=None,
+        from_page=0,
+        to_page=100000,
+        zoomin=3,
+        callback=None,
+    ):
         from timeit import default_timer as timer
+
         start = timer()
         callback(msg="OCR started")
         self.__images__(
@@ -114,21 +122,27 @@ class Pdf(PdfParser):
             zoomin,
             from_page,
             to_page,
-            callback
+            callback,
         )
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
         start = timer()
         self._layouts_rec(zoomin)
         callback(0.67, "Layout analysis ({:.2f}s)".format(timer() - start))
-        logging.debug("layouts:".format(
-            ))
+        logging.debug("layouts:".format())
         self._naive_vertical_merge()
 
         callback(0.8, "Text extraction ({:.2f}s)".format(timer() - start))
 
-        return [(b["text"], self._line_tag(b, zoomin))
-                for b in self.boxes], None
+        return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], None
+
+
+class Pdf(_LawsPdfBase, PdfParser):
+    """Default laws PDF parser."""
+
+
+class PdfVietnamese(_LawsPdfBase, PdfParserVietnamese):
+    """Vietnamese-optimized laws parser."""
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
@@ -156,9 +170,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return tokenize_chunks(chunks, doc, eng, None)
     
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
+        layout_choice = parser_config.get("layout_recognize", "DeepDOC")
+        if layout_choice == "Plain Text":
             pdf_parser = PlainParser()
+        elif layout_choice == "DeepDOCVN":
+            pdf_parser = PdfVietnamese()
+        else:
+            pdf_parser = Pdf()
         for txt, poss in pdf_parser(filename if not binary else binary,
                                     from_page=from_page, to_page=to_page, callback=callback)[0]:
             sections.append(txt + poss)
