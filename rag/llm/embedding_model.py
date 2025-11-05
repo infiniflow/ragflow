@@ -29,6 +29,7 @@ from zhipuai import ZhipuAI
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate
+from common import globals
 from api import settings
 import logging
 
@@ -69,8 +70,8 @@ class BuiltinEmbed(Base):
     _model_lock = threading.Lock()
 
     def __init__(self, key, model_name, **kwargs):
-        logging.info(f"Initialize BuiltinEmbed according to settings.EMBEDDING_CFG: {settings.EMBEDDING_CFG}")
-        embedding_cfg = settings.EMBEDDING_CFG
+        logging.info(f"Initialize BuiltinEmbed according to globals.EMBEDDING_CFG: {globals.EMBEDDING_CFG}")
+        embedding_cfg = globals.EMBEDDING_CFG
         if not BuiltinEmbed._model and "tei-" in os.getenv("COMPOSE_PROFILES", ""):
             with BuiltinEmbed._model_lock:
                 BuiltinEmbed._model_name = settings.EMBEDDING_MDL
