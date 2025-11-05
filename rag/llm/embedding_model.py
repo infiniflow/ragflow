@@ -30,7 +30,6 @@ from zhipuai import ZhipuAI
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate
 from common import globals
-from api import settings
 import logging
 
 

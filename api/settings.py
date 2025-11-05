@@ -32,12 +32,12 @@ LLM = None
 LLM_FACTORY = None
 LLM_BASE_URL = None
 CHAT_MDL = ""
-
+# EMBEDDING_MDL = "" has been moved to common/globals.py
 RERANK_MDL = ""
 ASR_MDL = ""
 IMAGE2TEXT_MDL = ""
 CHAT_CFG = ""
-
+# EMBEDDING_CFG = "" has been moved to common/globals.py
 RERANK_CFG = ""
 ASR_CFG = ""
 IMAGE2TEXT_CFG = ""
@@ -61,10 +61,10 @@ HTTP_APP_KEY = None
 GITHUB_OAUTH = None
 FEISHU_OAUTH = None
 OAUTH_CONFIG = None
-DOC_ENGINE = None
-docStoreConn = None
+# DOC_ENGINE = None has been moved to common/globals.py
+# docStoreConn = None has been moved to common/globals.py
 
-retriever = None
+#retriever = None has been moved to common/globals.py
 kg_retriever = None
 
 # user registration switch
@@ -169,23 +169,23 @@ def init_settings():
 
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, docStoreConn, retriever, kg_retriever
-    DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
-    # DOC_ENGINE = os.environ.get('DOC_ENGINE', "opensearch")
-    lower_case_doc_engine = DOC_ENGINE.lower()
+    global kg_retriever
+    globals.DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
+    # globals.DOC_ENGINE = os.environ.get('DOC_ENGINE', "opensearch")
+    lower_case_doc_engine = globals.DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
-        docStoreConn = rag.utils.es_conn.ESConnection()
+        globals.docStoreConn = rag.utils.es_conn.ESConnection()
     elif lower_case_doc_engine == "infinity":
-        docStoreConn = rag.utils.infinity_conn.InfinityConnection()
+        globals.docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
-        docStoreConn = rag.utils.opensearch_conn.OSConnection()
+        globals.docStoreConn = rag.utils.opensearch_conn.OSConnection()
     else:
-        raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
+        raise Exception(f"Not supported doc engine: {globals.DOC_ENGINE}")
 
-    retriever = search.Dealer(docStoreConn)
+    globals.retriever = search.Dealer(globals.docStoreConn)
     from graphrag import search as kg_search
 
-    kg_retriever = kg_search.KGSearch(docStoreConn)
+    kg_retriever = kg_search.KGSearch(globals.docStoreConn)
 
     if int(os.environ.get("SANDBOX_ENABLED", "0")):
         global SANDBOX_HOST

@@ -34,7 +34,7 @@ from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.settings import get_svr_queue_name
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.redis_conn import REDIS_CONN
-from api import settings
+from common import globals
 from rag.nlp import search
 
 CANVAS_DEBUG_DOC_ID = "dataflow_x"
@@ -418,7 +418,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             if pre_task["chunk_ids"]:
                 pre_chunk_ids.extend(pre_task["chunk_ids"].split())
         if pre_chunk_ids:
-            settings.docStoreConn.delete({"id": pre_chunk_ids}, search.index_name(chunking_config["tenant_id"]),
+            globals.docStoreConn.delete({"id": pre_chunk_ids}, search.index_name(chunking_config["tenant_id"]),
                                          chunking_config["kb_id"])
     DocumentService.update_by_id(doc["id"], {"chunk_num": ck_num})
 
