@@ -247,9 +247,9 @@ function AdminServiceStatus() {
 
                       <RadioGroup
                         value={
-                          table
+                          (table
                             .getColumn('service_type')!
-                            ?.getFilterValue() as string
+                            ?.getFilterValue() as string) ?? ''
                         }
                         onValueChange={
                           table.getColumn('service_type')!?.setFilterValue
