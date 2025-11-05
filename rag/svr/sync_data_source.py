@@ -26,13 +26,12 @@ import traceback
 
 from api.db.services.connector_service import SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from common.log_utils import init_root_logger, get_project_base_directory
+from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from common.data_source import BlobStorageConnector
 import logging
 import os
 from datetime import datetime, timezone
-import tracemalloc
 import signal
 import trio
 import faulthandler

@@ -29,7 +29,6 @@ from api.db.services.pipeline_operation_log_service import PipelineOperationLogS
 from common.connection_utils import timeout
 from common.base64_image import image2id
 from common.log_utils import init_root_logger
-from common.file_utils import get_project_base_directory
 from common.config_utils import show_configs
 from graphrag.general.index import run_graphrag_for_kb
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
@@ -45,7 +44,6 @@ import re
 from functools import partial
 from multiprocessing.context import TimeoutError
 from timeit import default_timer as timer
-import tracemalloc
 import signal
 import trio
 import exceptiongroup
