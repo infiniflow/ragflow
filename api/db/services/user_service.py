@@ -26,7 +26,7 @@ from api.db.db_models import User, Tenant
 from api.db.services.common_service import CommonService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
-from api.db import StatusEnum
+from common.constants import StatusEnum
 from rag.settings import MINIO
 
 

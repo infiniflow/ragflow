@@ -22,7 +22,7 @@ import trio
 import numpy as np
 from PIL import Image
 
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle

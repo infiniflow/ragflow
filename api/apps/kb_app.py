@@ -21,7 +21,7 @@ from flask import request
 from flask_login import login_required, current_user
 import numpy as np
 
-from api.db import LLMType
+
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
@@ -31,7 +31,7 @@ from api.db.services.pipeline_operation_log_service import PipelineOperationLogS
 from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters
-from api.db import PipelineTaskType, StatusEnum, FileSource, VALID_FILE_TYPES, VALID_TASK_STATUS
+from api.db import VALID_FILE_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
@@ -42,7 +42,7 @@ from rag.settings import PAGERANK_FLD
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr  
-from common.constants import RetCode
+from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821
@@ -748,7 +748,6 @@ def delete_kb_task():
             return get_error_data_result(message="Internal Error: Invalid task type")
 
 
-
     ok = KnowledgebaseService.update_by_id(kb_id, {kb_task_id_field: "", kb_task_finish_at: None})
     if not ok:
         return server_error_response(f"Internal error: cannot delete task {pipeline_task_type}")
@@ -891,7 +890,7 @@ def check_embedding():
     }
     if summary["avg_cos_sim"] > 0.99:
         return get_json_result(data={"summary": summary, "results": results})
-    return get_json_result(code=settings.RetCode.NOT_EFFECTIVE, message="failed", data={"summary": summary, "results": results})
+    return get_json_result(code=RetCode.NOT_EFFECTIVE, message="failed", data={"summary": summary, "results": results})
 
 
 @manager.route("/<kb_id>/link", methods=["POST"])  # noqa: F821
@@ -901,6 +900,6 @@ def link_connector(kb_id):
     req = request.json
     errors = Connector2KbService.link_connectors(kb_id, req["connector_ids"], current_user.id)
     if errors:
-        return get_json_result(data=False, message=errors, code=settings.RetCode.SERVER_ERROR)
+        return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
     return get_json_result(data=True)
 

@@ -315,7 +315,7 @@ class KGSearch(Dealer):
 if __name__ == "__main__":
     from api import settings
     import argparse
-    from api.db import LLMType
+    from common.constants import LLMType
     from api.db.services.knowledgebase_service import KnowledgebaseService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.user_service import TenantService

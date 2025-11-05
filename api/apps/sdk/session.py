@@ -22,7 +22,6 @@ from flask import Response, jsonify, request
 
 from agent.canvas import Canvas
 from api import settings
-from api.db import LLMType, StatusEnum
 from api.db.db_models import APIToken
 from api.db.services.api_service import API4ConversationService
 from api.db.services.canvas_service import UserCanvasService, completion_openai
@@ -41,7 +40,7 @@ from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, gen_meta_filter, keyword_extraction, chunks_format
-from common.constants import RetCode
+from common.constants import RetCode, LLMType, StatusEnum
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required

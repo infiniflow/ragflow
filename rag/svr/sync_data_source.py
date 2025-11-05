@@ -36,7 +36,7 @@ import tracemalloc
 import signal
 import trio
 import faulthandler
-from api.db import FileSource, TaskStatus
+from common.constants import FileSource, TaskStatus
 from api import settings
 from api.versions import get_ragflow_version
 from common.data_source.confluence_connector import ConfluenceConnector

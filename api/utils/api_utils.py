@@ -35,7 +35,7 @@ from flask import (
 from peewee import OperationalError
 
 from api import settings
-from api.db import ActiveEnum
+from common.constants import ActiveEnum
 from api.db.db_models import APIToken
 from api.utils.json_encode import CustomJSONEncoder
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions

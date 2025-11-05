@@ -19,7 +19,6 @@ import logging
 from copy import deepcopy
 from flask import Response, request
 from flask_login import current_user, login_required
-from api.db import LLMType
 from api.db.db_models import APIToken
 from api.db.services.conversation_service import ConversationService, structure_answer
 from api.db.services.dialog_service import DialogService, ask, chat, gen_mindmap
@@ -30,7 +29,7 @@ from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import chunks_format
-from common.constants import RetCode
+from common.constants import RetCode, LLMType
 
 
 @manager.route("/set", methods=["POST"])  # noqa: F821

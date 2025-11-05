@@ -18,7 +18,7 @@ import os
 import re
 import tempfile
 
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from rag.nlp import rag_tokenizer, tokenize
 

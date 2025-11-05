@@ -20,7 +20,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.parser.pdf_parser import VisionParser
 from rag.nlp import tokenize, is_english

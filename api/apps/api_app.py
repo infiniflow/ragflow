@@ -21,7 +21,7 @@ from flask import request, Response
 from api.db.services.llm_service import LLMBundle
 from flask_login import login_required, current_user
 
-from api.db import VALID_FILE_TYPES, VALID_TASK_STATUS, FileType, LLMType, ParserType, FileSource
+from api.db import VALID_FILE_TYPES, FileType
 from api.db.db_models import APIToken, Task, File
 from api.db.services import duplicate_name
 from api.db.services.api_service import APITokenService, API4ConversationService
@@ -34,7 +34,7 @@ from api.db.services.task_service import queue_tasks, TaskService
 from api.db.services.user_service import UserTenantService
 from api import settings
 from common.misc_utils import get_uuid
-from common.constants import RetCode
+from common.constants import RetCode, VALID_TASK_STATUS, LLMType, ParserType, FileSource
 from api.utils.api_utils import server_error_response, get_data_error_result, get_json_result, validate_request, \
     generate_confirmation_token
 

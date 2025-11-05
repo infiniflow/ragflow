@@ -131,6 +131,12 @@ class PipelineTaskType(StrEnum):
 VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR,
                              PipelineTaskType.GRAPH_RAG, PipelineTaskType.MINDMAP}
 
+class MCPServerType(StrEnum):
+    SSE = "sse"
+    STREAMABLE_HTTP = "streamable-http"
+
+VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
+
 # environment
 # ENV_STRONG_TEST_COUNT = "STRONG_TEST_COUNT"
 # ENV_RAGFLOW_SECRET_KEY = "RAGFLOW_SECRET_KEY"

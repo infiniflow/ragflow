@@ -21,7 +21,7 @@ from flask_login import login_required, current_user
 from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
 from api.db.services.llm_service import LLMService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from api.db import StatusEnum, LLMType
+from common.constants import StatusEnum, LLMType
 from api.db.db_models import TenantLLM
 from api.utils.api_utils import get_json_result
 from common.base64_image import test_image

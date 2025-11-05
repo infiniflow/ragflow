@@ -15,7 +15,7 @@
 #
 import time
 from uuid import uuid4
-from api.db import StatusEnum
+from common.constants import StatusEnum
 from api.db.db_models import Conversation, DB
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
