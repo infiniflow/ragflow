@@ -1,6 +1,6 @@
 <div align="center">
 <a href="https://demo.ragflow.io/">
-<img src="web/src/assets/logo-with-text.png" width="520" alt="Logo ragflow">
+<img src="web/src/assets/logo-with-text.svg" width="520" alt="Logo ragflow">
 </a>
 </div>
 
@@ -22,7 +22,7 @@
         <img alt="Lencana Daring" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.20.5">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Rilis%20Terbaru" alt="Rilis Terbaru">
@@ -43,7 +43,13 @@
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
-#
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
+</div>
+
+<div align="center">
+<a href="https://trendshift.io/repositories/9064" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9064" alt="infiniflow%2Fragflow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</div>
 
 <details open>
 <summary><b>📕 Daftar Isi </b> </summary>
@@ -80,8 +86,9 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2025-10-23 Mendukung MinerU & Docling sebagai metode penguraian dokumen.
+- 2025-10-15 Dukungan untuk jalur data yang terorkestrasi.
 - 2025-08-08 Mendukung model seri GPT-5 terbaru dari OpenAI.
-- 2025-08-04 Mendukung model baru, termasuk Kimi K2 dan Grok 4.
 - 2025-08-01 Mendukung alur kerja agen dan MCP.
 - 2025-05-23 Menambahkan komponen pelaksana kode Python/JS ke Agen.
 - 2025-05-05 Mendukung kueri lintas bahasa.
@@ -129,7 +136,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 ## 🔎 Arsitektur Sistem
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/infiniflow/ragflow/assets/12318111/d6ac5664-c237-4200-a7c2-a4a00691b485" width="1000"/>
+<img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
 ## 🎬 Mulai
@@ -168,41 +175,42 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
    > ```bash
    > vm.max_map_count=262144
    > ```
-
+   >
 2. Clone repositori:
 
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    ```
-
 3. Bangun image Docker pre-built dan jalankan server:
 
 > [!CAUTION]
 > Semua gambar Docker dibangun untuk platform x86. Saat ini, kami tidak menawarkan gambar Docker untuk ARM64.
 > Jika Anda menggunakan platform ARM64, [silakan gunakan panduan ini untuk membangun gambar Docker yang kompatibel dengan sistem Anda](https://ragflow.io/docs/dev/build_docker_image).
 
-> Perintah di bawah ini mengunduh edisi v0.20.5-slim dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.20.5-slim, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server. Misalnya, atur RAGFLOW_IMAGE=infiniflow/ragflow:v0.20.5 untuk edisi lengkap v0.20.5.
+> Perintah di bawah ini mengunduh edisi v0.21.1 dari gambar Docker RAGFlow. Silakan merujuk ke tabel berikut untuk deskripsi berbagai edisi RAGFlow. Untuk mengunduh edisi RAGFlow yang berbeda dari v0.21.1, perbarui variabel RAGFLOW_IMAGE di docker/.env sebelum menggunakan docker compose untuk memulai server.
 
 ```bash
-$ cd ragflow/docker
-# Use CPU for embedding and DeepDoc tasks:
-$ docker compose -f docker-compose.yml up -d
+   $ cd ragflow/docker
+   # Use CPU for embedding and DeepDoc tasks:
+   $ docker compose -f docker-compose.yml up -d
 
-# To use GPU to accelerate embedding and DeepDoc tasks:
-# docker compose -f docker-compose-gpu.yml up -d
+   # To use GPU to accelerate embedding and DeepDoc tasks:
+   # sed -i '1i DEVICE=gpu' .env
+   # docker compose -f docker-compose.yml up -d
 ```
 
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-| ----------------- | --------------- | --------------------- | ------------------------ |
-| v0.20.5           | &approx;9       | :heavy_check_mark:    | Stable release           |
-| v0.20.5-slim      | &approx;2       | ❌                    | Stable release           |
-| nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-| nightly-slim      | &approx;2       | ❌                    | _Unstable_ nightly build |
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                    |
+| ----------------- | --------------- | --------------------- | -------------------------- |
+| v0.21.1           | &approx;9       | ✔️                  | Stable release             |
+| v0.21.1-slim      | &approx;2       | ❌                    | Stable release             |
+| nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+
+> Catatan: Mulai dari `v0.22.0`, kami hanya menyediakan edisi slim dan tidak lagi menambahkan akhiran **-slim** pada tag image.
 
 1. Periksa status server setelah server aktif dan berjalan:
 
    ```bash
-   $ docker logs -f ragflow-server
+   $ docker logs -f docker-ragflow-cpu-1
    ```
 
    _Output berikut menandakan bahwa sistem berhasil diluncurkan:_
@@ -220,14 +228,17 @@ $ docker compose -f docker-compose.yml up -d
 
    > Jika Anda melewatkan langkah ini dan langsung login ke RAGFlow, browser Anda mungkin menampilkan error `network anormal`
    > karena RAGFlow mungkin belum sepenuhnya siap.
-
+   >
 2. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
+
    > Dengan pengaturan default, Anda hanya perlu memasukkan `http://IP_DEVICE_ANDA` (**tanpa** nomor port) karena
    > port HTTP default `80` bisa dihilangkan saat menggunakan konfigurasi default.
+   >
 3. Dalam [service_conf.yaml.template](./docker/service_conf.yaml.template), pilih LLM factory yang diinginkan di `user_default_llm` dan perbarui
    bidang `API_KEY` dengan kunci API yang sesuai.
 
    > Lihat [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) untuk informasi lebih lanjut.
+   >
 
    _Sistem telah siap digunakan!_
 
@@ -256,16 +267,6 @@ Image ini berukuran sekitar 2 GB dan bergantung pada aplikasi LLM eksternal dan 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
-```
-
-## 🔧 Membangun Docker Image Termasuk Model Embedding
-
-Image ini berukuran sekitar 9 GB. Karena sudah termasuk model embedding, ia hanya bergantung pada aplikasi LLM eksternal.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
@@ -276,17 +277,15 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    pipx install uv pre-commit
    ```
-
 2. Clone kode sumber dan instal dependensi Python:
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   uv sync --python 3.10 # install RAGFlow dependent python modules
    uv run download_deps.py
    pre-commit install
    ```
-
 3. Jalankan aplikasi yang diperlukan (MinIO, Elasticsearch, Redis, dan MySQL) menggunakan Docker Compose:
 
    ```bash
@@ -298,13 +297,11 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```
    127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
-
 4. Jika Anda tidak dapat mengakses HuggingFace, atur variabel lingkungan `HF_ENDPOINT` untuk menggunakan situs mirror:
 
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
-
 5. Jika sistem operasi Anda tidak memiliki jemalloc, instal sebagai berikut:
 
    ```bash
@@ -315,7 +312,6 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    # mac
    sudo brew install jemalloc
    ```
-
 6. Jalankan aplikasi backend:
 
    ```bash
@@ -323,14 +319,12 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh
    ```
-
 7. Instal dependensi frontend:
 
    ```bash
    cd web
    npm install
    ```
-
 8. Jalankan aplikasi frontend:
 
    ```bash
@@ -340,14 +334,11 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _Output berikut menandakan bahwa sistem berhasil diluncurkan:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-
-
 9. Hentikan layanan front-end dan back-end RAGFlow setelah pengembangan selesai:
 
    ```bash
    pkill -f "ragflow_server.py|task_executor.py"
    ```
-
 
 ## 📚 Dokumentasi
 

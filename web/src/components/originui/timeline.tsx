@@ -1,7 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { parseColorToRGBA } from '@/utils/common-util';
+import { TimelineNodeType } from '@/pages/dataflow-result/constant';
+import { parseColorToRGB } from '@/utils/common-util';
 import { Slot } from '@radix-ui/react-slot';
 import * as React from 'react';
 
@@ -220,6 +221,8 @@ interface TimelineNode
   completed?: boolean;
   clickable?: boolean;
   activeStyle?: TimelineIndicatorNodeProps;
+  detail?: any;
+  type?: TimelineNodeType;
 }
 
 interface CustomTimelineProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -243,7 +246,7 @@ const CustomTimeline = ({
   orientation = 'horizontal',
   lineStyle = 'solid',
   lineColor = 'var(--text-secondary)',
-  indicatorColor = 'var(--accent-primary)',
+  indicatorColor = 'rgb(var(--accent-primary))',
   defaultValue = 1,
   className,
   activeStyle,
@@ -251,8 +254,7 @@ const CustomTimeline = ({
 }: CustomTimelineProps) => {
   const [internalActiveStep, setInternalActiveStep] =
     React.useState(defaultValue);
-  const _lineColor = `rgb(${parseColorToRGBA(lineColor)})`;
-  console.log(lineColor, _lineColor);
+  const _lineColor = `rgb(${parseColorToRGB(lineColor)})`;
   const currentActiveStep = activeStep ?? internalActiveStep;
 
   const handleStepChange = (step: number, id: string | number) => {
@@ -261,7 +263,7 @@ const CustomTimeline = ({
     }
     onStepChange?.(step, id);
   };
-  const [r, g, b] = parseColorToRGBA(indicatorColor);
+  const [r, g, b] = parseColorToRGB(indicatorColor);
   return (
     <Timeline
       value={currentActiveStep}
@@ -284,8 +286,6 @@ const CustomTimeline = ({
           typeof _nodeSizeTemp === 'number'
             ? `${_nodeSizeTemp}px`
             : _nodeSizeTemp;
-        console.log('icon-size', nodeSize, node.nodeSize, _nodeSize);
-        // const activeStyle = _activeStyle || {};
 
         return (
           <TimelineItem
@@ -372,11 +372,10 @@ const CustomTimeline = ({
               )}
             </TimelineIndicator>
 
-            <TimelineHeader>
-              {node.date && <TimelineDate>{node.date}</TimelineDate>}
+            <TimelineHeader className="transform -translate-x-[40%] text-center">
               <TimelineTitle
                 className={cn(
-                  'text-sm font-medium',
+                  'text-sm font-medium -ml-1',
                   isActive && _activeStyle.textColor
                     ? `text-${_activeStyle.textColor}`
                     : '',
@@ -387,6 +386,7 @@ const CustomTimeline = ({
               >
                 {node.title}
               </TimelineTitle>
+              {node.date && <TimelineDate>{node.date}</TimelineDate>}
             </TimelineHeader>
             {node.content && <TimelineContent>{node.content}</TimelineContent>}
           </TimelineItem>

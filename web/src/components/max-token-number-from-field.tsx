@@ -17,7 +17,7 @@ export function MaxTokenNumberFormField({ max = 2048, initialValue }: IProps) {
       tooltip={t('chunkTokenNumberTip')}
       max={max}
       defaultValue={initialValue ?? 0}
-      layout={FormLayout.Vertical}
+      layout={FormLayout.Horizontal}
     ></SliderInputFormField>
   );
 }

@@ -21,13 +21,16 @@ from pathlib import Path
 from flask_login import current_user
 from peewee import fn
 
-from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileSource, FileType, ParserType
-from api.db.db_models import DB, Document, File, File2Document, Knowledgebase
+from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileType
+from api.db.db_models import DB, Document, File, File2Document, Knowledgebase, Task
 from api.db.services import duplicate_name
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
+from common.constants import TaskStatus, FileSource, ParserType
+from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.task_service import TaskService
 from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img
 from rag.llm.cv_model import GptV4
 from rag.utils.storage_factory import STORAGE_IMPL
@@ -160,6 +163,23 @@ class FileService(CommonService):
         else:
             result_ids.append(folder_id)
         return result_ids
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_file_ids_by_tenant_id(cls, tenant_id):
+        fields = [cls.model.id]
+        files = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)
+        files.order_by(cls.model.create_time.asc())
+        offset, limit = 0, 100
+        res = []
+        while True:
+            file_batch = files.offset(offset).limit(limit)
+            _temp = list(file_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
 
     @classmethod
     @DB.connection_context()
@@ -403,7 +423,7 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def upload_document(self, kb, file_objs, user_id):
+    def upload_document(self, kb, file_objs, user_id, src="local"):
         root_folder = self.get_root_folder(user_id)
         pf_id = root_folder["id"]
         self.init_knowledgebase_docs(pf_id, user_id)
@@ -440,10 +460,12 @@ class FileService(CommonService):
                     "id": doc_id,
                     "kb_id": kb.id,
                     "parser_id": self.get_parser(filetype, filename, kb.parser_id),
+                    "pipeline_id": kb.pipeline_id,
                     "parser_config": kb.parser_config,
                     "created_by": user_id,
                     "type": filetype,
                     "name": filename,
+                    "source_type": src,
                     "suffix": Path(filename).suffix.lstrip("."),
                     "location": location,
                     "size": len(blob),
@@ -457,6 +479,16 @@ class FileService(CommonService):
                 err.append(file.filename + ": " + str(e))
 
         return err, files
+
+    @classmethod
+    @DB.connection_context()
+    def list_all_files_by_parent_id(cls, parent_id):
+        try:
+            files = cls.model.select().where((cls.model.parent_id == parent_id) & (cls.model.id != parent_id))
+            return list(files)
+        except Exception:
+            logging.exception("list_by_parent_id failed")
+            raise RuntimeError("Database error (list_by_parent_id)!")
 
     @staticmethod
     def parse_docs(file_objs, user_id):
@@ -495,7 +527,7 @@ class FileService(CommonService):
             return ParserType.AUDIO.value
         if re.search(r"\.(ppt|pptx|pages)$", filename):
             return ParserType.PRESENTATION.value
-        if re.search(r"\.(eml)$", filename):
+        if re.search(r"\.(msg|eml)$", filename):
             return ParserType.EMAIL.value
         return default
 
@@ -508,3 +540,48 @@ class FileService(CommonService):
     def put_blob(user_id, location, blob):
         bname = f"{user_id}-downloads"
         return STORAGE_IMPL.put(bname, location, blob)
+
+    @classmethod
+    @DB.connection_context()
+    def delete_docs(cls, doc_ids, tenant_id):
+        root_folder = FileService.get_root_folder(tenant_id)
+        pf_id = root_folder["id"]
+        FileService.init_knowledgebase_docs(pf_id, tenant_id)
+        errors = ""
+        kb_table_num_map = {}
+        for doc_id in doc_ids:
+            try:
+                e, doc = DocumentService.get_by_id(doc_id)
+                if not e:
+                    raise Exception("Document not found!")
+                tenant_id = DocumentService.get_tenant_id(doc_id)
+                if not tenant_id:
+                    raise Exception("Tenant not found!")
+
+                b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
+
+                TaskService.filter_delete([Task.doc_id == doc_id])
+                if not DocumentService.remove_document(doc, tenant_id):
+                    raise Exception("Database error (Document removal)!")
+
+                f2d = File2DocumentService.get_by_document_id(doc_id)
+                deleted_file_count = 0
+                if f2d:
+                    deleted_file_count = FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+                File2DocumentService.delete_by_document_id(doc_id)
+                if deleted_file_count > 0:
+                    STORAGE_IMPL.rm(b, n)
+
+                doc_parser = doc.parser_id
+                if doc_parser == ParserType.TABLE:
+                    kb_id = doc.kb_id
+                    if kb_id not in kb_table_num_map:
+                        counts = DocumentService.count_by_kb_id(kb_id=kb_id, keywords="", run_status=[TaskStatus.DONE], types=[])
+                        kb_table_num_map[kb_id] = counts
+                    kb_table_num_map[kb_id] -= 1
+                    if kb_table_num_map[kb_id] <= 0:
+                        KnowledgebaseService.delete_field_map(kb_id)
+            except Exception as e:
+                errors += str(e)
+
+        return errors

@@ -20,7 +20,7 @@ import peewee
 
 from api.db.db_models import DB, TenantLangfuse
 from api.db.services.common_service import CommonService
-from api.utils import current_timestamp, datetime_format
+from common.time_utils import current_timestamp, datetime_format
 
 
 class TenantLangfuseService(CommonService):
@@ -50,6 +50,11 @@ class TenantLangfuseService(CommonService):
             return keys
         except peewee.DoesNotExist:
             return None
+
+    @classmethod
+    @DB.connection_context()
+    def delete_ty_tenant_id(cls, tenant_id):
+        return cls.model.delete().where(cls.model.tenant_id == tenant_id).execute()
 
     @classmethod
     def update_by_tenant(cls, tenant_id, langfuse_keys):

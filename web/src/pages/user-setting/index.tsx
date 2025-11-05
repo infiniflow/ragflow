@@ -1,5 +1,5 @@
 import { Outlet } from 'umi';
-import SideBar from './sidebar';
+import { SideBar } from './sidebar';
 
 import { PageHeader } from '@/components/page-header';
 import {
@@ -38,10 +38,18 @@ const UserSetting = () => {
         </Breadcrumb>
       </PageHeader>
       <div
-        className={cn(styles.settingWrapper, 'overflow-auto flex flex-1 pt-4')}
+        className={cn(
+          styles.settingWrapper,
+          'overflow-auto flex flex-1 pt-4 pr-4 pb-4',
+        )}
       >
         <SideBar></SideBar>
-        <div className={cn(styles.outletWrapper, 'flex flex-1 px-8')}>
+        <div
+          className={cn(
+            styles.outletWrapper,
+            'flex flex-1 border border-border-button rounded-lg',
+          )}
+        >
           <Outlet></Outlet>
         </div>
       </div>

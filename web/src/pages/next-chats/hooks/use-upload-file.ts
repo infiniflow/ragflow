@@ -20,7 +20,7 @@ export function useUploadFile() {
       if (Array.isArray(files) && files.length) {
         const file = files[0];
         const ret = await uploadAndParseFile({ file, options, conversationId });
-        if (ret.code === 0 && Array.isArray(ret.data)) {
+        if (ret?.code === 0 && Array.isArray(ret?.data)) {
           setFileIds((list) => [...list, ...ret.data]);
           setFileMap((map) => {
             map.set(files[0], ret.data[0]);

@@ -62,7 +62,8 @@ export function SavingButton() {
             if (beValid) {
               form.handleSubmit(async (values) => {
                 console.log('saveKnowledgeConfiguration: ', values);
-                delete values['avatar'];
+                delete values['parseType'];
+                // delete values['avatar'];
                 await saveKnowledgeConfiguration({
                   kb_id,
                   ...values,

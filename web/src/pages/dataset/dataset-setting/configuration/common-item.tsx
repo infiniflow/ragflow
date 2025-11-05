@@ -1,3 +1,4 @@
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import {
   FormControl,
   FormField,
@@ -6,19 +7,21 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
-import { ArrowUpRight } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import {
   useHasParsedDocument,
   useSelectChunkMethodList,
   useSelectEmbeddingModelOptions,
 } from '../hooks';
-
-export function ChunkMethodItem() {
+interface IProps {
+  line?: 1 | 2;
+  isEdit?: boolean;
+}
+export function ChunkMethodItem(props: IProps) {
+  const { line } = props;
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   // const handleChunkMethodSelectChange = useHandleChunkMethodSelectChange(form);
@@ -29,28 +32,29 @@ export function ChunkMethodItem() {
       control={form.control}
       name={'parser_id'}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
-          <div className="flex items-center">
+        <FormItem className=" items-center space-y-1">
+          <div className={line === 1 ? 'flex items-center' : ''}>
             <FormLabel
               required
               tooltip={t('chunkMethodTip')}
-              className="text-sm text-muted-foreground whitespace-wrap w-1/4"
+              className={cn('text-sm', {
+                'w-1/4 whitespace-pre-wrap': line === 1,
+              })}
             >
-              {t('chunkMethod')}
+              {t('builtIn')}
             </FormLabel>
-            <div className="w-3/4 ">
+            <div className={line === 1 ? 'w-3/4 ' : 'w-full'}>
               <FormControl>
-                <RAGFlowSelect
+                <SelectWithSearch
                   {...field}
                   options={parserList}
                   placeholder={t('chunkMethodPlaceholder')}
-                  // onChange={handleChunkMethodSelectChange}
                 />
               </FormControl>
             </div>
           </div>
           <div className="flex pt-1">
-            <div className="w-1/4"></div>
+            <div className={line === 1 ? 'w-1/4' : ''}></div>
             <FormMessage />
           </div>
         </FormItem>
@@ -58,192 +62,50 @@ export function ChunkMethodItem() {
     />
   );
 }
-
-export function EmbeddingModelItem({ line = 1 }: { line?: 1 | 2 }) {
+export function EmbeddingModelItem({ line = 1, isEdit = true }: IProps) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   const embeddingModelOptions = useSelectEmbeddingModelOptions();
-  const disabled = useHasParsedDocument();
-
-  return (
-    <FormField
-      control={form.control}
-      name={'embd_id'}
-      render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
-          <div className={cn({ 'flex items-center': line === 1 })}>
-            <FormLabel
-              required
-              tooltip={t('embeddingModelTip')}
-              className={cn('text-sm  whitespace-wrap ', {
-                'w-1/4': line === 1,
-              })}
-            >
-              {t('embeddingModel')}
-            </FormLabel>
-            <div
-              className={cn('text-muted-foreground', { 'w-3/4': line === 1 })}
-            >
-              <FormControl>
-                <RAGFlowSelect
-                  {...field}
-                  options={embeddingModelOptions}
-                  disabled={disabled}
-                  placeholder={t('embeddingModelPlaceholder')}
-                />
-              </FormControl>
-            </div>
-          </div>
-          <div className="flex pt-1">
-            <div className="w-1/4"></div>
-            <FormMessage />
-          </div>
-        </FormItem>
-      )}
-    />
-  );
-}
-
-export function ParseTypeItem() {
-  const { t } = useTranslate('knowledgeConfiguration');
-  const form = useFormContext();
-
-  return (
-    <FormField
-      control={form.control}
-      name={'parseType'}
-      render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
-          <div className="">
-            <FormLabel
-              tooltip={t('parseTypeTip')}
-              className="text-sm  whitespace-wrap "
-            >
-              {t('parseType')}
-            </FormLabel>
-            <div className="text-muted-foreground">
-              <FormControl>
-                <Radio.Group {...field}>
-                  <div className="w-3/4 flex gap-2 justify-between text-muted-foreground">
-                    <Radio value={1}>{t('builtIn')}</Radio>
-                    <Radio value={2}>{t('manualSetup')}</Radio>
-                  </div>
-                </Radio.Group>
-              </FormControl>
-            </div>
-          </div>
-          <div className="flex pt-1">
-            <div className="w-1/4"></div>
-            <FormMessage />
-          </div>
-        </FormItem>
-      )}
-    />
-  );
-}
-
-export function DataFlowItem() {
-  const { t } = useTranslate('knowledgeConfiguration');
-  const form = useFormContext();
-
-  return (
-    <FormField
-      control={form.control}
-      name={'data_flow'}
-      render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
-          <div className="">
-            <div className="flex gap-2 justify-between ">
-              <FormLabel
-                tooltip={t('dataFlowTip')}
-                className="text-sm text-text-primary whitespace-wrap "
-              >
-                {t('dataFlow')}
-              </FormLabel>
-              <div className="text-sm flex text-text-primary">
-                {t('buildItFromScratch')}
-                <ArrowUpRight size={14} />
-              </div>
-            </div>
-
-            <div className="text-muted-foreground">
-              <FormControl>
-                <RAGFlowSelect
-                  {...field}
-                  placeholder={t('dataFlowPlaceholder')}
-                  options={[{ value: '0', label: t('dataFlowDefault') }]}
-                />
-              </FormControl>
-            </div>
-          </div>
-          <div className="flex pt-1">
-            <div className="w-1/4"></div>
-            <FormMessage />
-          </div>
-        </FormItem>
-      )}
-    />
-  );
-}
-
-export function DataExtractKnowledgeItem() {
-  const { t } = useTranslate('knowledgeConfiguration');
-  const form = useFormContext();
-
+  const disabled = useHasParsedDocument(isEdit);
   return (
     <>
-      {' '}
       <FormField
         control={form.control}
-        name={'extractKnowledgeGraph'}
+        name={'embd_id'}
         render={({ field }) => (
-          <FormItem className=" items-center space-y-0 ">
-            <div className="">
+          <FormItem className={cn(' items-center space-y-0 ')}>
+            <div
+              className={cn('flex', {
+                ' items-center': line === 1,
+                'flex-col gap-1': line === 2,
+              })}
+            >
               <FormLabel
-                tooltip={t('extractKnowledgeGraphTip')}
-                className="text-sm  whitespace-wrap "
+                required
+                tooltip={t('embeddingModelTip')}
+                className={cn('text-sm  whitespace-wrap ', {
+                  'w-1/4': line === 1,
+                })}
               >
-                {t('extractKnowledgeGraph')}
+                {t('embeddingModel')}
               </FormLabel>
-              <div className="text-muted-foreground">
+              <div
+                className={cn('text-muted-foreground', { 'w-3/4': line === 1 })}
+              >
                 <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
+                  <SelectWithSearch
+                    onChange={field.onChange}
+                    value={field.value}
+                    options={embeddingModelOptions}
+                    disabled={isEdit ? disabled : false}
+                    placeholder={t('embeddingModelPlaceholder')}
+                    triggerClassName="!bg-bg-base"
                   />
                 </FormControl>
               </div>
             </div>
             <div className="flex pt-1">
-              <div className="w-1/4"></div>
-              <FormMessage />
-            </div>
-          </FormItem>
-        )}
-      />{' '}
-      <FormField
-        control={form.control}
-        name={'useRAPTORToEnhanceRetrieval'}
-        render={({ field }) => (
-          <FormItem className=" items-center space-y-0 ">
-            <div className="">
-              <FormLabel
-                tooltip={t('useRAPTORToEnhanceRetrievalTip')}
-                className="text-sm  whitespace-wrap "
-              >
-                {t('useRAPTORToEnhanceRetrieval')}
-              </FormLabel>
-              <div className="text-muted-foreground">
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </div>
-            </div>
-            <div className="flex pt-1">
-              <div className="w-1/4"></div>
+              <div className={line === 1 ? 'w-1/4' : ''}></div>
               <FormMessage />
             </div>
           </FormItem>
@@ -253,36 +115,50 @@ export function DataExtractKnowledgeItem() {
   );
 }
 
-export function TeamItem() {
+export function ParseTypeItem({ line = 2 }: { line?: number }) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
 
   return (
     <FormField
       control={form.control}
-      name={'team'}
+      name={'parseType'}
       render={({ field }) => (
         <FormItem className=" items-center space-y-0 ">
-          <div className="">
+          <div
+            className={cn('flex', {
+              ' items-center': line === 1,
+              'flex-col gap-1': line === 2,
+            })}
+          >
             <FormLabel
-              tooltip={t('teamTip')}
-              className="text-sm  whitespace-wrap "
+              // tooltip={t('parseTypeTip')}
+              className={cn('text-sm  whitespace-wrap ', {
+                'w-1/4': line === 1,
+              })}
             >
-              <span className="text-destructive mr-1"> *</span>
-              {t('team')}
+              {t('parseType')}
             </FormLabel>
-            <div className="text-muted-foreground">
+            <div
+              className={cn('text-muted-foreground', { 'w-3/4': line === 1 })}
+            >
               <FormControl>
-                <RAGFlowSelect
-                  {...field}
-                  placeholder={t('teamPlaceholder')}
-                  options={[{ value: '0', label: t('teamDefault') }]}
-                />
+                <Radio.Group {...field}>
+                  <div
+                    className={cn(
+                      'flex gap-2 justify-between text-muted-foreground',
+                      line === 1 ? 'w-1/2' : 'w-3/4',
+                    )}
+                  >
+                    <Radio value={1}>{t('builtIn')}</Radio>
+                    <Radio value={2}>{t('manualSetup')}</Radio>
+                  </div>
+                </Radio.Group>
               </FormControl>
             </div>
           </div>
           <div className="flex pt-1">
-            <div className="w-1/4"></div>
+            <div className={line === 1 ? 'w-1/4' : ''}></div>
             <FormMessage />
           </div>
         </FormItem>
@@ -307,6 +183,42 @@ export function EnableAutoGenerateItem() {
               className="text-sm  whitespace-wrap w-1/4"
             >
               {t('enableAutoGenerate')}
+            </FormLabel>
+            <div className="text-muted-foreground w-3/4">
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+            </div>
+          </div>
+          <div className="flex pt-1">
+            <div className="w-1/4"></div>
+            <FormMessage />
+          </div>
+        </FormItem>
+      )}
+    />
+  );
+}
+
+export function EnableTocToggle() {
+  const { t } = useTranslate('knowledgeConfiguration');
+  const form = useFormContext();
+
+  return (
+    <FormField
+      control={form.control}
+      name={'parser_config.toc_extraction'}
+      render={({ field }) => (
+        <FormItem className=" items-center space-y-0 ">
+          <div className="flex items-center">
+            <FormLabel
+              tooltip={t('tocExtractionTip')}
+              className="text-sm  whitespace-wrap w-1/4"
+            >
+              {t('tocExtraction')}
             </FormLabel>
             <div className="text-muted-foreground w-3/4">
               <FormControl>

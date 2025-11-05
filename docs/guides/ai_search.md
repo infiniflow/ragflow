@@ -22,7 +22,7 @@ When debugging your chat assistant, you can use AI search as a reference to veri
 ## Prerequisites
 
 - Ensure that you have configured the system's default models on the **Model providers** page.
-- Ensure that the intended knowledge bases are properly configured and the intended documents have finished file parsing.
+- Ensure that the intended datasets are properly configured and the intended documents have finished file parsing.
 
 ## Frequently asked questions
 

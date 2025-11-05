@@ -8,8 +8,9 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { MultiSelect } from '@/components/ui/multi-select';
+import { FormLayout } from '@/constants/form';
 import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
-import { Flex, Form, InputNumber, Select, Slider, Space } from 'antd';
+import { Form, Select, Space } from 'antd';
 import DOMPurify from 'dompurify';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -44,7 +45,7 @@ export const TagSetItem = () => {
         <FormItem className=" items-center space-y-0 ">
           <div className="flex items-center">
             <FormLabel
-              className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+              className="text-sm text-text-secondary whitespace-nowrap w-1/4"
               tooltip={
                 <div
                   dangerouslySetInnerHTML={{
@@ -116,26 +117,8 @@ export const TopNTagsItem = () => {
       max={10}
       min={1}
       defaultValue={3}
+      layout={FormLayout.Horizontal}
     ></SliderInputFormField>
-  );
-
-  return (
-    <Form.Item label={t('knowledgeConfiguration.topnTags')}>
-      <Flex gap={20} align="center">
-        <Flex flex={1}>
-          <Form.Item
-            name={['parser_config', 'topn_tags']}
-            noStyle
-            initialValue={3}
-          >
-            <Slider max={10} min={1} style={{ width: '100%' }} />
-          </Form.Item>
-        </Flex>
-        <Form.Item name={['parser_config', 'topn_tags']} noStyle>
-          <InputNumber max={10} min={1} />
-        </Form.Item>
-      </Flex>
-    </Form.Item>
   );
 };
 

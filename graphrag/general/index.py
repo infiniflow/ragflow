@@ -20,9 +20,9 @@ import os
 import networkx as nx
 import trio
 
-from api import settings
-from api.utils import get_uuid
-from api.utils.api_utils import timeout
+from api.db.services.document_service import DocumentService
+from common.misc_utils import get_uuid
+from common.connection_utils import timeout
 from graphrag.entity_resolution import EntityResolution
 from graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from graphrag.general.extractor import Extractor
@@ -39,6 +39,7 @@ from graphrag.utils import (
 )
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
+from common import globals
 
 
 async def run_graphrag(
@@ -54,7 +55,7 @@ async def run_graphrag(
     start = trio.current_time()
     tenant_id, kb_id, doc_id = row["tenant_id"], str(row["kb_id"]), row["doc_id"]
     chunks = []
-    for d in settings.retrievaler.chunk_list(doc_id, tenant_id, [kb_id], fields=["content_with_weight", "doc_id"]):
+    for d in globals.retriever.chunk_list(doc_id, tenant_id, [kb_id], fields=["content_with_weight", "doc_id"], sort_by_position=True):
         chunks.append(d["content_with_weight"])
 
     with trio.fail_after(max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000):
@@ -125,6 +126,212 @@ async def run_graphrag(
     return
 
 
+async def run_graphrag_for_kb(
+    row: dict,
+    doc_ids: list[str],
+    language: str,
+    kb_parser_config: dict,
+    chat_model,
+    embedding_model,
+    callback,
+    *,
+    with_resolution: bool = True,
+    with_community: bool = True,
+    max_parallel_docs: int = 4,
+) -> dict:
+    tenant_id, kb_id = row["tenant_id"], row["kb_id"]
+    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+    start = trio.current_time()
+    fields_for_chunks = ["content_with_weight", "doc_id"]
+
+    if not doc_ids:
+        logging.info(f"Fetching all docs for {kb_id}")
+        docs, _ = DocumentService.get_by_kb_id(
+            kb_id=kb_id,
+            page_number=0,
+            items_per_page=0,
+            orderby="create_time",
+            desc=False,
+            keywords="",
+            run_status=[],
+            types=[],
+            suffix=[],
+        )
+        doc_ids = [doc["id"] for doc in docs]
+
+    doc_ids = list(dict.fromkeys(doc_ids))
+    if not doc_ids:
+        callback(msg=f"[GraphRAG] kb:{kb_id} has no processable doc_id.")
+        return {"ok_docs": [], "failed_docs": [], "total_docs": 0, "total_chunks": 0, "seconds": 0.0}
+
+    def load_doc_chunks(doc_id: str) -> list[str]:
+        from common.token_utils import num_tokens_from_string
+
+        chunks = []
+        current_chunk = ""
+
+        for d in globals.retriever.chunk_list(
+            doc_id,
+            tenant_id,
+            [kb_id],
+            fields=fields_for_chunks,
+            sort_by_position=True,
+        ):
+            content = d["content_with_weight"]
+            if num_tokens_from_string(current_chunk + content) < 1024:
+                current_chunk += content
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = content
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
+
+    all_doc_chunks: dict[str, list[str]] = {}
+    total_chunks = 0
+    for doc_id in doc_ids:
+        chunks = load_doc_chunks(doc_id)
+        all_doc_chunks[doc_id] = chunks
+        total_chunks += len(chunks)
+
+    if total_chunks == 0:
+        callback(msg=f"[GraphRAG] kb:{kb_id} has no available chunks in all documents, skip.")
+        return {"ok_docs": [], "failed_docs": doc_ids, "total_docs": len(doc_ids), "total_chunks": 0, "seconds": 0.0}
+
+    semaphore = trio.Semaphore(max_parallel_docs)
+
+    subgraphs: dict[str, object] = {}
+    failed_docs: list[tuple[str, str]] = []  # (doc_id, error)
+
+    async def build_one(doc_id: str):
+        chunks = all_doc_chunks.get(doc_id, [])
+        if not chunks:
+            callback(msg=f"[GraphRAG] doc:{doc_id} has no available chunks, skip generation.")
+            return
+
+        kg_extractor = LightKGExt if ("method" not in kb_parser_config.get("graphrag", {}) or kb_parser_config["graphrag"]["method"] != "general") else GeneralKGExt
+
+        deadline = max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000
+
+        async with semaphore:
+            try:
+                msg = f"[GraphRAG] build_subgraph doc:{doc_id}"
+                callback(msg=f"{msg} start (chunks={len(chunks)}, timeout={deadline}s)")
+                with trio.fail_after(deadline):
+                    sg = await generate_subgraph(
+                        kg_extractor,
+                        tenant_id,
+                        kb_id,
+                        doc_id,
+                        chunks,
+                        language,
+                        kb_parser_config.get("graphrag", {}).get("entity_types", []),
+                        chat_model,
+                        embedding_model,
+                        callback,
+                    )
+                if sg:
+                    subgraphs[doc_id] = sg
+                    callback(msg=f"{msg} done")
+                else:
+                    failed_docs.append((doc_id, "subgraph is empty"))
+                    callback(msg=f"{msg} empty")
+            except Exception as e:
+                failed_docs.append((doc_id, repr(e)))
+                callback(msg=f"[GraphRAG] build_subgraph doc:{doc_id} FAILED: {e!r}")
+
+    async with trio.open_nursery() as nursery:
+        for doc_id in doc_ids:
+            nursery.start_soon(build_one, doc_id)
+
+    ok_docs = [d for d in doc_ids if d in subgraphs]
+    if not ok_docs:
+        callback(msg=f"[GraphRAG] kb:{kb_id} no subgraphs generated successfully, end.")
+        now = trio.current_time()
+        return {"ok_docs": [], "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
+
+    kb_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value="batch_merge", timeout=1200)
+    await kb_lock.spin_acquire()
+    callback(msg=f"[GraphRAG] kb:{kb_id} merge lock acquired")
+
+    try:
+        union_nodes: set = set()
+        final_graph = None
+
+        for doc_id in ok_docs:
+            sg = subgraphs[doc_id]
+            union_nodes.update(set(sg.nodes()))
+
+            new_graph = await merge_subgraph(
+                tenant_id,
+                kb_id,
+                doc_id,
+                sg,
+                embedding_model,
+                callback,
+            )
+            if new_graph is not None:
+                final_graph = new_graph
+
+        if final_graph is None:
+            callback(msg=f"[GraphRAG] kb:{kb_id} merge finished (no in-memory graph returned).")
+        else:
+            callback(msg=f"[GraphRAG] kb:{kb_id} merge finished, graph ready.")
+    finally:
+        kb_lock.release()
+
+    if not with_resolution and not with_community:
+        now = trio.current_time()
+        callback(msg=f"[GraphRAG] KB merge done in {now - start:.2f}s. ok={len(ok_docs)} / total={len(doc_ids)}")
+        return {"ok_docs": ok_docs, "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
+
+    await kb_lock.spin_acquire()
+    callback(msg=f"[GraphRAG] kb:{kb_id} post-merge lock acquired for resolution/community")
+
+    try:
+        subgraph_nodes = set()
+        for sg in subgraphs.values():
+            subgraph_nodes.update(set(sg.nodes()))
+
+        if with_resolution:
+            await resolve_entities(
+                final_graph,
+                subgraph_nodes,
+                tenant_id,
+                kb_id,
+                None,
+                chat_model,
+                embedding_model,
+                callback,
+            )
+
+        if with_community:
+            await extract_community(
+                final_graph,
+                tenant_id,
+                kb_id,
+                None,
+                chat_model,
+                embedding_model,
+                callback,
+            )
+    finally:
+        kb_lock.release()
+
+    now = trio.current_time()
+    callback(msg=f"[GraphRAG] GraphRAG for KB {kb_id} done in {now - start:.2f} seconds. ok={len(ok_docs)} failed={len(failed_docs)} total_docs={len(doc_ids)} total_chunks={total_chunks}")
+    return {
+        "ok_docs": ok_docs,
+        "failed_docs": failed_docs,  # [(doc_id, error), ...]
+        "total_docs": len(doc_ids),
+        "total_chunks": total_chunks,
+        "seconds": now - start,
+    }
+
+
 async def generate_subgraph(
     extractor: Extractor,
     tenant_id: str,
@@ -180,8 +387,8 @@ async def generate_subgraph(
         "removed_kwd": "N",
     }
     cid = chunk_id(chunk)
-    await trio.to_thread.run_sync(settings.docStoreConn.delete, {"knowledge_graph_kwd": "subgraph", "source_id": doc_id}, search.index_name(tenant_id), kb_id)
-    await trio.to_thread.run_sync(settings.docStoreConn.insert, [{"id": cid, **chunk}], search.index_name(tenant_id), kb_id)
+    await trio.to_thread.run_sync(globals.docStoreConn.delete, {"knowledge_graph_kwd": "subgraph", "source_id": doc_id}, search.index_name(tenant_id), kb_id)
+    await trio.to_thread.run_sync(globals.docStoreConn.insert, [{"id": cid, **chunk}], search.index_name(tenant_id), kb_id)
     now = trio.current_time()
     callback(msg=f"generated subgraph for doc {doc_id} in {now - start:.2f} seconds.")
     return subgraph
@@ -289,7 +496,7 @@ async def extract_community(
         chunks.append(chunk)
 
     await trio.to_thread.run_sync(
-        lambda: settings.docStoreConn.delete(
+        lambda: globals.docStoreConn.delete(
             {"knowledge_graph_kwd": "community_report", "kb_id": kb_id},
             search.index_name(tenant_id),
             kb_id,
@@ -297,7 +504,7 @@ async def extract_community(
     )
     es_bulk_size = 4
     for b in range(0, len(chunks), es_bulk_size):
-        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b : b + es_bulk_size], search.index_name(tenant_id), kb_id))
+        doc_store_result = await trio.to_thread.run_sync(lambda: globals.docStoreConn.insert(chunks[b : b + es_bulk_size], search.index_name(tenant_id), kb_id))
         if doc_store_result:
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
             raise Exception(error_message)

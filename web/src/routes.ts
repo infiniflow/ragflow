@@ -1,6 +1,8 @@
+import { IS_ENTERPRISE } from './pages/admin/utils';
+
 export enum Routes {
   Root = '/',
-  Login = '/login',
+  Login = '/login-next',
   Logout = '/logout',
   Home = '/home',
   Datasets = '/datasets',
@@ -18,9 +20,11 @@ export enum Routes {
   Files = '/files',
   ProfileSetting = '/profile-setting',
   Profile = '/profile',
+  Api = '/api',
   Mcp = '/mcp',
   Team = '/team',
   Plan = '/plan',
+  System = '/system',
   Model = '/model',
   Prompt = '/prompt',
   ProfileMcp = `${ProfileSetting}${Mcp}`,
@@ -30,7 +34,6 @@ export enum Routes {
   ProfilePrompt = `${ProfileSetting}${Prompt}`,
   ProfileProfile = `${ProfileSetting}${Profile}`,
   DatasetTesting = '/testing',
-  DatasetSetting = '/setting',
   Chunk = '/chunk',
   ChunkResult = `${Chunk}${Chunk}`,
   Parsed = '/parsed',
@@ -41,18 +44,23 @@ export enum Routes {
   AgentLogPage = '/agent-log-page',
   AgentShare = '/agent/share',
   ChatShare = `${Chats}/share`,
+  ChatWidget = `${Chats}/widget`,
   UserSetting = '/user-setting',
-  DataFlows = '/data-flows',
-  DataFlow = '/data-flow',
   DataSetOverview = '/dataset-overview',
   DataSetSetting = '/dataset-setting',
   DataflowResult = '/dataflow-result',
+  Admin = '/admin',
+  AdminServices = `${Admin}/services`,
+  AdminUserManagement = `${Admin}/users`,
+  AdminWhitelist = `${Admin}/whitelist`,
+  AdminRoles = `${Admin}/roles`,
+  AdminMonitoring = `${Admin}/monitoring`,
 }
 
 const routes = [
   {
     path: '/login',
-    component: '@/pages/login',
+    component: '@/pages/login-next',
     layout: false,
   },
   {
@@ -73,6 +81,11 @@ const routes = [
   {
     path: Routes.AgentShare,
     component: `@/pages${Routes.AgentShare}`,
+    layout: false,
+  },
+  {
+    path: Routes.ChatWidget,
+    component: `@/pages${Routes.ChatWidget}`,
     layout: false,
   },
   {
@@ -127,16 +140,8 @@ const routes = [
     component: '@/pages/file-manager',
   },
   {
-    path: '/flow',
-    component: '@/pages/flow/list',
-  },
-  {
     path: Routes.AgentList,
     component: `@/pages/${Routes.Agents}`,
-  },
-  {
-    path: '/flow/:id',
-    component: '@/pages/flow',
   },
   {
     path: '/search',
@@ -265,10 +270,6 @@ const routes = [
         component: `@/pages${Routes.Dataset}`,
       },
       {
-        path: `${Routes.DatasetBase}${Routes.DatasetSetting}/:id`,
-        component: `@/pages${Routes.DatasetBase}${Routes.DatasetSetting}`,
-      },
-      {
         path: `${Routes.DatasetBase}${Routes.DatasetTesting}/:id`,
         component: `@/pages${Routes.DatasetBase}${Routes.DatasetTesting}`,
       },
@@ -287,7 +288,7 @@ const routes = [
     ],
   },
   {
-    path: `${Routes.DataflowResult}/:id`,
+    path: `${Routes.DataflowResult}`,
     layout: false,
     component: `@/pages${Routes.DataflowResult}`,
   },
@@ -369,7 +370,7 @@ const routes = [
       {
         path: '/user-setting/profile',
         // component: '@/pages/user-setting/setting-profile',
-        component: '@/pages/user-setting/setting-profile',
+        component: '@/pages/user-setting/profile',
       },
       {
         path: '/user-setting/locale',
@@ -388,11 +389,11 @@ const routes = [
         component: '@/pages/user-setting/setting-team',
       },
       {
-        path: '/user-setting/system',
+        path: `/user-setting${Routes.System}`,
         component: '@/pages/user-setting/setting-system',
       },
       {
-        path: '/user-setting/api',
+        path: `/user-setting${Routes.Api}`,
         component: '@/pages/user-setting/setting-api',
       },
       {
@@ -401,21 +402,55 @@ const routes = [
       },
     ],
   },
+
+  // Admin routes
   {
-    path: Routes.DataFlows,
+    path: Routes.Admin,
+    component: `@/pages/admin`,
     layout: false,
-    component: '@/layouts/next',
-    routes: [
-      {
-        path: Routes.DataFlows,
-        component: `@/pages${Routes.DataFlows}`,
-      },
-    ],
   },
   {
-    path: `${Routes.DataFlow}/:id`,
+    path: `${Routes.AdminUserManagement}/:id`,
     layout: false,
-    component: `@/pages${Routes.DataFlow}`,
+    wrappers: ['@/wrappers/authAdmin'],
+    component: `@/pages/admin/user-detail`,
+  },
+  {
+    path: Routes.Admin,
+    component: `@/pages/admin/layout`,
+    layout: false,
+    routes: [
+      {
+        path: Routes.AdminServices,
+        component: `@/pages/admin/service-status`,
+        wrappers: ['@/wrappers/authAdmin'],
+      },
+      {
+        path: Routes.AdminUserManagement,
+        component: `@/pages/admin/users`,
+        wrappers: ['@/wrappers/authAdmin'],
+      },
+
+      ...(IS_ENTERPRISE
+        ? [
+            {
+              path: Routes.AdminWhitelist,
+              component: `@/pages/admin/whitelist`,
+              wrappers: ['@/wrappers/authAdmin'],
+            },
+            {
+              path: Routes.AdminRoles,
+              component: `@/pages/admin/roles`,
+              wrappers: ['@/wrappers/authAdmin'],
+            },
+            {
+              path: Routes.AdminMonitoring,
+              component: `@/pages/admin/monitoring`,
+              wrappers: ['@/wrappers/authAdmin'],
+            },
+          ]
+        : []),
+    ],
   },
 ];
 

@@ -23,7 +23,7 @@ from typing import Callable
 import networkx as nx
 import trio
 
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from graphrag.general.graph_prompt import SUMMARIZE_DESCRIPTIONS_PROMPT
 from graphrag.utils import (
     GraphChange,
@@ -37,8 +37,8 @@ from graphrag.utils import (
     split_string_by_multi_markers,
 )
 from rag.llm.chat_model import Base as CompletionLLM
-from rag.prompts import message_fit_in
-from rag.utils import truncate
+from rag.prompts.generator import message_fit_in
+from common.token_utils import truncate
 
 GRAPH_FIELD_SEP = "<SEP>"
 DEFAULT_ENTITY_TYPES = ["organization", "person", "geo", "event", "category"]
@@ -105,15 +105,35 @@ class Extractor:
 
         async def extract_all(doc_id, chunks, max_concurrency=MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK):
             out_results = []
+            error_count = 0
+            max_errors = 3
+
             limiter = trio.Semaphore(max_concurrency)
 
             async def worker(chunk_key_dp: tuple[str, str], idx: int, total: int):
+                nonlocal error_count
                 async with limiter:
-                    await self._process_single_content(chunk_key_dp, idx, total, out_results)
+                    try:
+                        await self._process_single_content(chunk_key_dp, idx, total, out_results)
+                    except Exception as e:
+                        error_count += 1
+                        error_msg = f"Error processing chunk {idx+1}/{total}: {str(e)}"
+                        logging.warning(error_msg)
+                        if self.callback:
+                            self.callback(msg=error_msg)
+
+                        if error_count > max_errors:
+                            raise Exception(f"Maximum error count ({max_errors}) reached. Last errors: {str(e)}")
 
             async with trio.open_nursery() as nursery:
                 for i, ck in enumerate(chunks):
                     nursery.start_soon(worker, (doc_id, ck), i, len(chunks))
+
+            if error_count > 0:
+                warning_msg = f"Completed with {error_count} errors (out of {len(chunks)} chunks processed)"
+                logging.warning(warning_msg)
+                if self.callback:
+                    self.callback(msg=warning_msg)
 
             return out_results
 
@@ -129,8 +149,8 @@ class Extractor:
                 maybe_edges[tuple(sorted(k))].extend(v)
             sum_token_count += token_count
         now = trio.current_time()
-        if callback:
-            callback(msg=f"Entities and relationships extraction done, {len(maybe_nodes)} nodes, {len(maybe_edges)} edges, {sum_token_count} tokens, {now - start_ts:.2f}s.")
+        if self.callback:
+            self.callback(msg=f"Entities and relationships extraction done, {len(maybe_nodes)} nodes, {len(maybe_edges)} edges, {sum_token_count} tokens, {now - start_ts:.2f}s.")
         start_ts = now
         logging.info("Entities merging...")
         all_entities_data = []
@@ -138,8 +158,8 @@ class Extractor:
             for en_nm, ents in maybe_nodes.items():
                 nursery.start_soon(self._merge_nodes, en_nm, ents, all_entities_data)
         now = trio.current_time()
-        if callback:
-            callback(msg=f"Entities merging done, {now - start_ts:.2f}s.")
+        if self.callback:
+            self.callback(msg=f"Entities merging done, {now - start_ts:.2f}s.")
 
         start_ts = now
         logging.info("Relationships merging...")
@@ -148,8 +168,8 @@ class Extractor:
             for (src, tgt), rels in maybe_edges.items():
                 nursery.start_soon(self._merge_edges, src, tgt, rels, all_relationships_data)
         now = trio.current_time()
-        if callback:
-            callback(msg=f"Relationships merging done, {now - start_ts:.2f}s.")
+        if self.callback:
+            self.callback(msg=f"Relationships merging done, {now - start_ts:.2f}s.")
 
         if not len(all_entities_data) and not len(all_relationships_data):
             logging.warning("Didn't extract any entities and relationships, maybe your LLM is not working")
@@ -227,7 +247,7 @@ class Extractor:
     async def _handle_entity_relation_summary(self, entity_or_relation_name: str, description: str) -> str:
         summary_max_tokens = 512
         use_description = truncate(description, summary_max_tokens)
-        description_list = (use_description.split(GRAPH_FIELD_SEP),)
+        description_list = use_description.split(GRAPH_FIELD_SEP)
         if len(description_list) <= 12:
             return use_description
         prompt_template = SUMMARIZE_DESCRIPTIONS_PROMPT

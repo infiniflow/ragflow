@@ -16,6 +16,7 @@
 import inspect
 import logging
 import re
+from common.token_utils import num_tokens_from_string
 from functools import partial
 from typing import Generator
 from api.db.db_models import LLM
@@ -29,13 +30,14 @@ class LLMService(CommonService):
 
 def get_init_tenant_llm(user_id):
     from api import settings
+    from common import globals
     tenant_llm = []
 
     seen = set()
     factory_configs = []
     for factory_config in [
         settings.CHAT_CFG,
-        settings.EMBEDDING_CFG,
+        globals.EMBEDDING_CFG,
         settings.ASR_CFG,
         settings.IMAGE2TEXT_CFG,
         settings.RERANK_CFG,
@@ -59,21 +61,6 @@ def get_init_tenant_llm(user_id):
                 }
             )
 
-    if settings.LIGHTEN != 1:
-        for buildin_embedding_model in settings.BUILTIN_EMBEDDING_MODELS:
-            mdlnm, fid = TenantLLMService.split_model_name_and_factory(buildin_embedding_model)
-            tenant_llm.append(
-                {
-                    "tenant_id": user_id,
-                    "llm_factory": fid,
-                    "llm_name": mdlnm,
-                    "model_type": "embedding",
-                    "api_key": "",
-                    "api_base": "",
-                    "max_tokens": 1024 if buildin_embedding_model == "BAAI/bge-large-zh-v1.5@BAAI" else 512,
-                }
-            )
-
     unique = {}
     for item in tenant_llm:
         key = (item["tenant_id"], item["llm_factory"], item["llm_name"])
@@ -94,9 +81,19 @@ class LLMBundle(LLM4Tenant):
 
     def encode(self, texts: list):
         if self.langfuse:
-            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="encode", model=self.llm_name, input={"texts": texts})
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="encode", model=self.llm_name, input={"texts": texts})        
+    
+        safe_texts = []
+        for text in texts:
+            token_size = num_tokens_from_string(text)
+            if token_size > self.max_length:
+                target_len = int(self.max_length * 0.95)
+                safe_texts.append(text[:target_len])
+            else:
+                safe_texts.append(text)
+                
+        embeddings, used_tokens = self.mdl.encode(safe_texts)
 
-        embeddings, used_tokens = self.mdl.encode(texts)
         llm_name = getattr(self, "llm_name", None)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, llm_name):
             logging.error("LLMBundle.encode can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
@@ -205,32 +202,31 @@ class LLMBundle(LLM4Tenant):
             return txt
 
         return txt[last_think_end + len("</think>") :]
-    
+
     @staticmethod
     def _clean_param(chat_partial, **kwargs):
         func = chat_partial.func
         sig = inspect.signature(func)
-        keyword_args = []
         support_var_args = False
-        for param in sig.parameters.values():
-            if param.kind == inspect.Parameter.VAR_KEYWORD or param.kind == inspect.Parameter.VAR_POSITIONAL:
-                support_var_args = True
-            elif param.kind == inspect.Parameter.KEYWORD_ONLY:
-                keyword_args.append(param.name)
+        allowed_params = set()
 
-        use_kwargs = kwargs
-        if not support_var_args:
-            use_kwargs = {k: v for k, v in kwargs.items() if k in keyword_args}
-        return use_kwargs
-        
+        for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                support_var_args = True
+            elif param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
+                allowed_params.add(param.name)
+        if support_var_args:
+            return kwargs
+        else:
+            return {k: v for k, v in kwargs.items() if k in allowed_params}
     def chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs) -> str:
         if self.langfuse:
             generation = self.langfuse.start_generation(trace_context=self.trace_context, name="chat", model=self.llm_name, input={"system": system, "history": history})
 
-        chat_partial = partial(self.mdl.chat, system, history, gen_conf)
+        chat_partial = partial(self.mdl.chat, system, history, gen_conf, **kwargs)
         if self.is_tools and self.mdl.is_tools:
-            chat_partial = partial(self.mdl.chat_with_tools, system, history, gen_conf)
-            
+            chat_partial = partial(self.mdl.chat_with_tools, system, history, gen_conf, **kwargs)
+
         use_kwargs = self._clean_param(chat_partial, **kwargs)
         txt, used_tokens = chat_partial(**use_kwargs)
         txt = self._remove_reasoning_content(txt)
@@ -266,7 +262,7 @@ class LLMBundle(LLM4Tenant):
                 break
 
             if txt.endswith("</think>"):
-                ans = ans.rstrip("</think>")
+                ans = ans[: -len("</think>")]
 
             if not self.verbose_tool_use:
                 txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)

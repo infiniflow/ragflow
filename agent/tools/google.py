@@ -19,7 +19,7 @@ import time
 from abc import ABC
 from serpapi import GoogleSearch
 from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class GoogleParam(ToolParamBase):
@@ -116,7 +116,7 @@ class GoogleParam(ToolParamBase):
 class Google(ToolBase, ABC):
     component_name = "Google"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
         if not kwargs.get("q"):
             self.set_output("formalized_content", "")
@@ -154,6 +154,6 @@ class Google(ToolBase, ABC):
 
     def thoughts(self) -> str:
         return """
-Keywords: {} 
+Keywords: {}
 Looking for the most relevant articles.
         """.format(self.get_input().get("query", "-_-!"))

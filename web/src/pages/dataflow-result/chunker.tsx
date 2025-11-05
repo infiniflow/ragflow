@@ -1,3 +1,4 @@
+import { TimelineNode } from '@/components/originui/timeline';
 import message from '@/components/ui/message';
 import {
   RAGFlowPagination,
@@ -23,9 +24,16 @@ import {
   useUpdateChunk,
 } from './hooks';
 import styles from './index.less';
-const ChunkerContainer = () => {
+
+interface IProps {
+  isChange: boolean;
+  setIsChange: (isChange: boolean) => void;
+  step?: TimelineNode;
+}
+const ChunkerContainer = (props: IProps) => {
+  const { isChange, setIsChange, step } = props;
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
-  const [isChange, setIsChange] = useState(false);
+
   const { t } = useTranslation();
   const {
     data: { documentInfo, data = [], total },
@@ -135,19 +143,18 @@ const ChunkerContainer = () => {
     setIsChange(true);
     onChunkUpdatingOk(e);
   };
+
+  const handleReRunFunc = () => {
+    setIsChange(false);
+  };
   return (
-    <>
+    <div className="w-full h-full">
       {isChange && (
         <div className=" absolute top-2 right-6">
-          <RerunButton />
+          <RerunButton step={step} onRerun={handleReRunFunc} />
         </div>
       )}
-      <div
-        className={classNames(
-          { [styles.pagePdfWrapper]: isPdf },
-          'flex flex-col w-3/5',
-        )}
-      >
+      <div className={classNames('flex flex-col w-full')}>
         <Spin spinning={loading} className={styles.spin} size="large">
           <div className="h-[50px] flex flex-row justify-between items-end pb-[5px]">
             <div>
@@ -176,7 +183,7 @@ const ChunkerContainer = () => {
                 selectedChunkIds={selectedChunkIds}
               />
             </div>
-            <div className="h-[calc(100vh-280px)] overflow-y-auto pr-2 scrollbar-thin">
+            <div className="h-[calc(100vh-280px)] overflow-y-auto pr-2 scrollbar-auto">
               <div
                 className={classNames(
                   styles.chunkContainer,
@@ -227,7 +234,7 @@ const ChunkerContainer = () => {
           parserId={documentInfo.parser_id}
         />
       )}
-    </>
+    </div>
   );
 };
 

@@ -17,9 +17,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PIL import Image
 
-from api.utils.api_utils import timeout
+from common.constants import LLMType
+from api.db.services.llm_service import LLMBundle
+from common.connection_utils import timeout
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
-from rag.prompts import vision_llm_figure_describe_prompt
+from rag.prompts.generator import vision_llm_figure_describe_prompt
 
 
 def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
@@ -32,6 +34,43 @@ def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
         if isinstance(figure_data[1], Image.Image)
     ]
 
+def vision_figure_parser_docx_wrapper(sections,tbls,callback=None,**kwargs):
+    try:
+        vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+        callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
+    except Exception:
+        vision_model = None
+    if vision_model:
+        figures_data = vision_figure_parser_figure_data_wrapper(sections)
+        try:
+            docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+            boosted_figures = docx_vision_parser(callback=callback)
+            tbls.extend(boosted_figures)
+        except Exception as e:
+            callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+    return tbls
+
+def vision_figure_parser_pdf_wrapper(tbls,callback=None,**kwargs):
+    try:
+        vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+        callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
+    except Exception:
+        vision_model = None
+    if vision_model:
+        def is_figure_item(item):
+            return (
+                isinstance(item[0][0], Image.Image) and
+                isinstance(item[0][1], list)
+            )
+        figures_data = [item for item in tbls if is_figure_item(item)]
+        try:
+            docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+            boosted_figures = docx_vision_parser(callback=callback)
+            tbls = [item for item in tbls if not is_figure_item(item)]
+            tbls.extend(boosted_figures)
+        except Exception as e:
+            callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+    return tbls
 
 shared_executor = ThreadPoolExecutor(max_workers=10)
 

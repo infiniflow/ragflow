@@ -20,7 +20,7 @@ import uuid
 
 import valkey as redis
 from rag import settings
-from rag.utils import singleton
+from common.decorator import singleton
 from valkey.lock import Lock
 import trio
 
@@ -71,16 +71,21 @@ class RedisDB:
 
     def __open__(self):
         try:
-            self.REDIS = redis.StrictRedis(
-                host=self.config["host"].split(":")[0],
-                port=int(self.config.get("host", ":6379").split(":")[1]),
-                db=int(self.config.get("db", 1)),
-                password=self.config.get("password"),
-                decode_responses=True,
-            )
+            conn_params = {
+                "host": self.config["host"].split(":")[0],
+                "port": int(self.config.get("host", ":6379").split(":")[1]),
+                "db": int(self.config.get("db", 1)),
+                "decode_responses": True,
+            }
+            password = self.config.get("password")
+            if password:
+                conn_params["password"] = password
+
+            self.REDIS = redis.StrictRedis(**conn_params)
+
             self.register_scripts()
-        except Exception:
-            logging.warning("Redis can't be connected.")
+        except Exception as e:
+            logging.warning(f"Redis can't be connected. Error: {str(e)}")
         return self.REDIS
 
     def health(self):
@@ -90,6 +95,20 @@ class RedisDB:
 
         if self.REDIS.get(a) == b:
             return True
+
+    def info(self):
+        info = self.REDIS.info()
+        return {
+            'redis_version': info["redis_version"],
+            'server_mode': info["server_mode"],
+            'used_memory': info["used_memory_human"],
+            'total_system_memory': info["total_system_memory_human"],
+            'mem_fragmentation_ratio': info["mem_fragmentation_ratio"],
+            'connected_clients': info["connected_clients"],
+            'blocked_clients': info["blocked_clients"],
+            'instantaneous_ops_per_sec': info["instantaneous_ops_per_sec"],
+            'total_commands_processed': info["total_commands_processed"]
+        }
 
     def is_alive(self):
         return self.REDIS is not None

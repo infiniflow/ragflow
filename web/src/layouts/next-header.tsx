@@ -1,3 +1,4 @@
+import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,6 @@ import {
   CircleHelp,
   Cpu,
   File,
-  Github,
   House,
   Library,
   MessageSquareText,
@@ -106,7 +106,7 @@ export function Header() {
   }, [navigate]);
 
   return (
-    <section className="p-5 pr-14 flex justify-between items-center ">
+    <section className="py-5 px-10 flex justify-between items-center ">
       <div className="flex items-center gap-4">
         <img
           src={'/logo.svg'}
@@ -114,22 +114,31 @@ export function Header() {
           className="size-10 mr-[12] cursor-pointer"
           onClick={handleLogoClick}
         />
+      </div>
+      <Segmented
+        rounded="xxxl"
+        sizeType="xl"
+        buttonSize="xl"
+        options={options}
+        value={pathname}
+        onChange={handleChange}
+        activeClassName="text-bg-base bg-metallic-gradient border-b-[#00BEB4] border-b-2"
+      ></Segmented>
+      <div className="flex items-center gap-5 text-text-badge">
         <a
-          className="flex items-center gap-1.5 text-text-secondary"
+          target="_blank"
+          href="https://discord.com/invite/NjYzJD3GM3"
+          rel="noreferrer"
+        >
+          <IconFontFill name="a-DiscordIconSVGVectorIcon"></IconFontFill>
+        </a>
+        <a
           target="_blank"
           href="https://github.com/infiniflow/ragflow"
           rel="noreferrer"
         >
-          <Github className="size-4" />
-          {/* <span className=" text-base">21.5k stars</span> */}
+          <IconFontFill name="GitHub"></IconFontFill>
         </a>
-      </div>
-      <Segmented
-        options={options}
-        value={pathname}
-        onChange={handleChange}
-      ></Segmented>
-      <div className="flex items-center gap-5 text-text-badge">
         <DropdownMenu>
           <DropdownMenuTrigger>
             <div className="flex items-center gap-1">
@@ -156,6 +165,7 @@ export function Header() {
           <RAGFlowAvatar
             name={nickname}
             avatar={avatar}
+            isPerson
             className="size-8 cursor-pointer"
             onClick={navigateToOldProfile}
           ></RAGFlowAvatar>

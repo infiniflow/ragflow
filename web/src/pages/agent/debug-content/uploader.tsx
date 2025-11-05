@@ -86,7 +86,7 @@ export function FileUploadDirectUpload({
           </div>
           <p className="font-medium text-sm">Drag & drop files here</p>
           <p className="text-muted-foreground text-xs">
-            Or click to browse (max 2 files)
+            Or click to browse (max 1 files)
           </p>
         </div>
         <FileUploadTrigger asChild>

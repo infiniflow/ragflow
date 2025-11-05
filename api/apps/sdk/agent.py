@@ -19,11 +19,12 @@ import time
 from typing import Any, cast
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.user_canvas_version import UserCanvasVersionService
-from api.settings import RetCode
-from api.utils import get_uuid
+from common.constants import RetCode
+from common.misc_utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_error_data_result, get_json_result, token_required
 from api.utils.api_utils import get_result
 from flask import request
+
 
 @manager.route('/agents', methods=['GET'])  # noqa: F821
 @token_required
@@ -41,7 +42,7 @@ def list_agents(tenant_id):
         desc = False
     else:
         desc = True
-    canvas = UserCanvasService.get_list(tenant_id,page_number,items_per_page,orderby,desc,id,title)
+    canvas = UserCanvasService.get_list(tenant_id, page_number, items_per_page, orderby, desc, id, title)
     return get_result(data=canvas)
 
 
@@ -93,7 +94,7 @@ def update_agent(tenant_id: str, agent_id: str):
             req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
 
         req["dsl"] = json.loads(req["dsl"])
-    
+
     if req.get("title") is not None:
         req["title"] = req["title"].strip()
 

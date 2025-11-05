@@ -22,7 +22,7 @@ import pymysql
 import psycopg2
 import pyodbc
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class ExeSQLParam(ToolParamBase):
@@ -53,12 +53,13 @@ class ExeSQLParam(ToolParamBase):
         self.max_records = 1024
 
     def check(self):
-        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql'])
+        self.check_valid_value(self.db_type, "Choose DB type", ['mysql', 'postgres', 'mariadb', 'mssql', 'IBM DB2', 'trino'])
         self.check_empty(self.database, "Database name")
         self.check_empty(self.username, "database username")
         self.check_empty(self.host, "IP Address")
         self.check_positive_integer(self.port, "IP Port")
-        self.check_empty(self.password, "Database password")
+        if self.db_type != "trino":
+            self.check_empty(self.password, "Database password")
         self.check_positive_integer(self.max_records, "Maximum number of records")
         if self.database == "rag_flow":
             if self.host == "ragflow-mysql":
@@ -78,7 +79,7 @@ class ExeSQLParam(ToolParamBase):
 class ExeSQL(ToolBase, ABC):
     component_name = "ExeSQL"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
 
         def convert_decimals(obj):
@@ -123,6 +124,94 @@ class ExeSQL(ToolBase, ABC):
                     r'PWD=' + self._param.password
             )
             db = pyodbc.connect(conn_str)
+        elif self._param.db_type == 'trino':
+            try:
+                import trino
+                from trino.auth import BasicAuthentication
+            except Exception:
+                raise Exception("Missing dependency 'trino'. Please install: pip install trino")
+
+            def _parse_catalog_schema(db: str):
+                if not db:
+                    return None, None
+                if "." in db:
+                    c, s = db.split(".", 1)
+                elif "/" in db:
+                    c, s = db.split("/", 1)
+                else:
+                    c, s = db, "default"
+                return c, s
+
+            catalog, schema = _parse_catalog_schema(self._param.database)
+            if not catalog:
+                raise Exception("For Trino, `database` must be 'catalog.schema' or at least 'catalog'.")
+
+            http_scheme = "https" if os.environ.get("TRINO_USE_TLS", "0") == "1" else "http"
+            auth = None
+            if http_scheme == "https" and self._param.password:
+                auth = BasicAuthentication(self._param.username, self._param.password)
+
+            try:
+                db = trino.dbapi.connect(
+                    host=self._param.host,
+                    port=int(self._param.port or 8080),
+                    user=self._param.username or "ragflow",
+                    catalog=catalog,
+                    schema=schema or "default",
+                    http_scheme=http_scheme,
+                    auth=auth
+                )
+            except Exception as e:
+                raise Exception("Database Connection Failed! \n" + str(e))
+        elif self._param.db_type == 'IBM DB2':
+            import ibm_db
+            conn_str = (
+                f"DATABASE={self._param.database};"
+                f"HOSTNAME={self._param.host};"
+                f"PORT={self._param.port};"
+                f"PROTOCOL=TCPIP;"
+                f"UID={self._param.username};"
+                f"PWD={self._param.password};"
+            )
+            try:
+                conn = ibm_db.connect(conn_str, "", "")
+            except Exception as e:
+                raise Exception("Database Connection Failed! \n" + str(e))
+
+            sql_res = []
+            formalized_content = []
+            for single_sql in sqls:
+                single_sql = single_sql.replace("```", "").strip()
+                if not single_sql:
+                    continue
+                single_sql = re.sub(r"\[ID:[0-9]+\]", "", single_sql)
+
+                stmt = ibm_db.exec_immediate(conn, single_sql)
+                rows = []
+                row = ibm_db.fetch_assoc(stmt)
+                while row and len(rows) < self._param.max_records:
+                    rows.append(row)
+                    row = ibm_db.fetch_assoc(stmt)
+
+                if not rows:
+                    sql_res.append({"content": "No record in the database!"})
+                    continue
+
+                df = pd.DataFrame(rows)
+                for col in df.columns:
+                    if pd.api.types.is_datetime64_any_dtype(df[col]):
+                        df[col] = df[col].dt.strftime("%Y-%m-%d")
+
+                df = df.where(pd.notnull(df), None)
+
+                sql_res.append(convert_decimals(df.to_dict(orient="records")))
+                formalized_content.append(df.to_markdown(index=False, floatfmt=".6f"))
+
+            ibm_db.close(conn)
+
+            self.set_output("json", sql_res)
+            self.set_output("formalized_content", "\n\n".join(formalized_content))
+            return self.output("formalized_content")
         try:
             cursor = db.cursor()
         except Exception as e:
@@ -149,6 +238,8 @@ class ExeSQL(ToolBase, ABC):
             for col in single_res.columns:
                 if pd.api.types.is_datetime64_any_dtype(single_res[col]):
                     single_res[col] = single_res[col].dt.strftime('%Y-%m-%d')
+
+            single_res = single_res.where(pd.notnull(single_res), None)
 
             sql_res.append(convert_decimals(single_res.to_dict(orient='records')))
             formalized_content.append(single_res.to_markdown(index=False, floatfmt=".6f"))

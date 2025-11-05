@@ -27,10 +27,12 @@ export interface ModalProps {
   okText?: ReactNode | string;
   onOk?: () => void;
   onCancel?: () => void;
+  disabled?: boolean;
 }
 export interface ModalType extends FC<ModalProps> {
   show: typeof modalIns.show;
   hide: typeof modalIns.hide;
+  destroy: typeof modalIns.destroy;
 }
 
 const Modal: ModalType = ({
@@ -54,6 +56,7 @@ const Modal: ModalType = ({
   confirmLoading,
   cancelText,
   okText,
+  disabled = false,
 }) => {
   const sizeClasses = {
     small: 'max-w-md',
@@ -76,20 +79,20 @@ const Modal: ModalType = ({
   const handleCancel = useCallback(() => {
     onOpenChange?.(false);
     onCancel?.();
-  }, [onOpenChange, onCancel]);
+  }, [onCancel, onOpenChange]);
 
   const handleOk = useCallback(() => {
     onOpenChange?.(true);
     onOk?.();
-  }, [onOpenChange, onOk]);
+  }, [onOk, onOpenChange]);
   const handleChange = (open: boolean) => {
     onOpenChange?.(open);
     console.log('open', open, onOpenChange);
-    if (open) {
-      handleOk();
+    if (open && !disabled) {
+      onOk?.();
     }
     if (!open) {
-      handleCancel();
+      onCancel?.();
     }
   };
   const footEl = useMemo(() => {
@@ -111,9 +114,12 @@ const Modal: ModalType = ({
           </button>
           <button
             type="button"
-            disabled={confirmLoading}
+            disabled={confirmLoading || disabled}
             onClick={() => handleOk()}
-            className="px-2 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+            className={cn(
+              'px-2 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90',
+              { 'cursor-not-allowed': disabled },
+            )}
           >
             {confirmLoading && (
               <Loader className="inline-block mr-2 h-4 w-4 animate-spin" />
@@ -134,6 +140,7 @@ const Modal: ModalType = ({
       </div>
     );
   }, [
+    disabled,
     footer,
     cancelText,
     t,
@@ -152,7 +159,7 @@ const Modal: ModalType = ({
           onClick={() => maskClosable && onOpenChange?.(false)}
         >
           <DialogPrimitive.Content
-            className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-colors-background-neutral-standard rounded-lg shadow-lg border transition-all focus-visible:!outline-none`}
+            className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-bg-base rounded-lg shadow-lg border border-border-default transition-all focus-visible:!outline-none`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* title */}
@@ -177,7 +184,7 @@ const Modal: ModalType = ({
                   <DialogPrimitive.Close asChild>
                     <button
                       type="button"
-                      className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-muted"
+                      className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-muted focus-visible:outline-none"
                     >
                       {closeIcon}
                     </button>
@@ -187,7 +194,7 @@ const Modal: ModalType = ({
             )}
 
             {/* content */}
-            <div className="py-2 px-6 overflow-y-auto max-h-[80vh] focus-visible:!outline-none">
+            <div className="py-2 px-6 overflow-y-auto scrollbar-auto max-h-[80vh] focus-visible:!outline-none">
               {destroyOnClose && !open ? null : children}
             </div>
 
@@ -208,5 +215,6 @@ Modal.show = modalIns
       return modalIns.show;
     };
 Modal.hide = modalIns.hide;
+Modal.destroy = modalIns.destroy;
 
 export { Modal };

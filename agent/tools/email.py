@@ -25,7 +25,7 @@ from email.header import Header
 from email.utils import formataddr
 
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class EmailParam(ToolParamBase):
@@ -98,8 +98,8 @@ class EmailParam(ToolParamBase):
 
 class Email(ToolBase, ABC):
     component_name = "Email"
-    
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60))
+
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
         if not kwargs.get("to_email"):
             self.set_output("success", False)

@@ -1,0 +1,728 @@
+{
+    "id": 23,
+    "title": {
+        "en": "Advanced Ingestion Pipeline",
+        "de": "Erweiterte Ingestion Pipeline",
+        "zh": "编排复杂的 Ingestion Pipeline"
+    },
+    "description": {
+        "en": "This template demonstrates how to use an LLM to generate summaries, keywords, Q&A, and metadata for each chunk to support diverse retrieval needs.",
+        "de": "Diese Vorlage demonstriert, wie ein LLM verwendet wird, um Zusammenfassungen, Schlüsselwörter, Fragen & Antworten und Metadaten für jedes Segment zu generieren, um vielfältige Abrufanforderungen zu unterstützen.",
+        "zh": "此模板演示如何利用大模型为切片生成摘要、关键词、问答及元数据，以满足多样化的召回需求。"
+    },
+    "canvas_type": "Ingestion Pipeline",
+    "canvas_category": "dataflow_canvas",
+    "dsl": {
+        "components": {
+            "File": {
+                "obj": {
+                    "component_name": "File",
+                    "params": {}
+                },
+                "downstream": [
+                    "Parser:HipSignsRhyme"
+                ],
+                "upstream": []
+            },
+            "Parser:HipSignsRhyme": {
+                "obj": {
+                    "component_name": "Parser",
+                    "params": {
+                        "outputs": {
+                            "html": {
+                                "type": "string",
+                                "value": ""
+                            },
+                            "json": {
+                                "type": "Array<object>",
+                                "value": []
+                            },
+                            "markdown": {
+                                "type": "string",
+                                "value": ""
+                            },
+                            "text": {
+                                "type": "string",
+                                "value": ""
+                            }
+                        },
+                        "setups": {
+                            "pdf": {
+                                "output_format": "markdown",
+                                "suffix": [
+                                    "pdf"
+                                ],
+                                "parse_method": "DeepDOC"
+                            },
+                            "spreadsheet": {
+                                "output_format": "html",
+                                "suffix": [
+                                    "xls",
+                                    "xlsx",
+                                    "csv"
+                                ]
+                            },
+                            "image": {
+                                "output_format": "text",
+                                "suffix": [
+                                    "jpg",
+                                    "jpeg",
+                                    "png",
+                                    "gif"
+                                ],
+                                "parse_method": "ocr"
+                            },
+                            "email": {
+                                "output_format": "text",
+                                "suffix": [
+                                    "eml",
+                                    "msg"
+                                ],
+                                "fields": [
+                                    "from",
+                                    "to",
+                                    "cc",
+                                    "bcc",
+                                    "date",
+                                    "subject",
+                                    "body",
+                                    "attachments"
+                                ]
+                            },
+                            "text&markdown": {
+                                "output_format": "text",
+                                "suffix": [
+                                    "md",
+                                    "markdown",
+                                    "mdx",
+                                    "txt"
+                                ]
+                            },
+                            "word": {
+                                "output_format": "json",
+                                "suffix": [
+                                    "doc",
+                                    "docx"
+                                ]
+                            },
+                            "slides": {
+                                "output_format": "json",
+                                "suffix": [
+                                    "pptx"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "downstream": [
+                    "Splitter:KindDingosJam"
+                ],
+                "upstream": [
+                    "File"
+                ]
+            },
+            "Splitter:KindDingosJam": {
+                "obj": {
+                    "component_name": "Splitter",
+                    "params": {
+                        "chunk_token_size": 512,
+                        "delimiters": [
+                            "\n"
+                        ],
+                        "outputs": {
+                            "chunks": {
+                                "type": "Array<Object>",
+                                "value": []
+                            }
+                        },
+                        "overlapped_percent": 0.002
+                    }
+                },
+                "downstream": [
+                    "Extractor:NineTiesSin"
+                ],
+                "upstream": [
+                    "Parser:HipSignsRhyme"
+                ]
+            },
+            "Extractor:NineTiesSin": {
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "field_name": "summary",
+                        "frequencyPenaltyEnabled": false,
+                        "frequency_penalty": 0.7,
+                        "llm_id": "deepseek-chat@DeepSeek",
+                        "maxTokensEnabled": false,
+                        "max_tokens": 256,
+                        "outputs": {},
+                        "presencePenaltyEnabled": false,
+                        "presence_penalty": 0.4,
+                        "prompts": [
+                            {
+                                "content": "Text to Summarize:\n{Splitter:KindDingosJam@chunks}",
+                                "role": "user"
+                            }
+                        ],
+                        "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
+                        "temperature": 0.1,
+                        "temperatureEnabled": false,
+                        "topPEnabled": false,
+                        "top_p": 0.3
+                    }
+                },
+                "downstream": [
+                    "Extractor:TastyPointsLay"
+                ],
+                "upstream": [
+                    "Splitter:KindDingosJam"
+                ]
+            },
+            "Extractor:TastyPointsLay": {
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "field_name": "keywords",
+                        "frequencyPenaltyEnabled": false,
+                        "frequency_penalty": 0.7,
+                        "llm_id": "deepseek-chat@DeepSeek",
+                        "maxTokensEnabled": false,
+                        "max_tokens": 256,
+                        "outputs": {},
+                        "presencePenaltyEnabled": false,
+                        "presence_penalty": 0.4,
+                        "prompts": [
+                            {
+                                "content": "Text Content:\n{Splitter:KindDingosJam@chunks}\n",
+                                "role": "user"
+                            }
+                        ],
+                        "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nExtract the most important keywords/phrases of a given piece of text content.\n\nRequirements\n- Summarize the text content, and give the top 5 important keywords/phrases.\n- The keywords MUST be in the same language as the given piece of text content.\n- The keywords are delimited by ENGLISH COMMA.\n- Output keywords ONLY.",
+                        "temperature": 0.1,
+                        "temperatureEnabled": false,
+                        "topPEnabled": false,
+                        "top_p": 0.3
+                    }
+                },
+                "downstream": [
+                    "Extractor:BlueResultsWink"
+                ],
+                "upstream": [
+                    "Extractor:NineTiesSin"
+                ]
+            },
+            "Extractor:BlueResultsWink": {
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "field_name": "questions",
+                        "frequencyPenaltyEnabled": false,
+                        "frequency_penalty": 0.7,
+                        "llm_id": "deepseek-chat@DeepSeek",
+                        "maxTokensEnabled": false,
+                        "max_tokens": 256,
+                        "outputs": {},
+                        "presencePenaltyEnabled": false,
+                        "presence_penalty": 0.4,
+                        "prompts": [
+                            {
+                                "content": "Text Content:\n\n{Splitter:KindDingosJam@chunks}\n",
+                                "role": "user"
+                            }
+                        ],
+                        "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nPropose 3 questions about a given piece of text content.\n\nRequirements\n- Understand and summarize the text content, and propose the top 3 important questions.\n- The questions SHOULD NOT have overlapping meanings.\n- The questions SHOULD cover the main content of the text as much as possible.\n- The questions MUST be in the same language as the given piece of text content.\n- One question per line.\n- Output questions ONLY.",
+                        "temperature": 0.1,
+                        "temperatureEnabled": false,
+                        "topPEnabled": false,
+                        "top_p": 0.3
+                    }
+                },
+                "downstream": [
+                    "Extractor:CuteBusesBet"
+                ],
+                "upstream": [
+                    "Extractor:TastyPointsLay"
+                ]
+            },
+            "Extractor:CuteBusesBet": {
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "field_name": "metadata",
+                        "frequencyPenaltyEnabled": false,
+                        "frequency_penalty": 0.7,
+                        "llm_id": "deepseek-chat@DeepSeek",
+                        "maxTokensEnabled": false,
+                        "max_tokens": 256,
+                        "outputs": {},
+                        "presencePenaltyEnabled": false,
+                        "presence_penalty": 0.4,
+                        "prompts": [
+                            {
+                                "content": "Content: \n\n{Splitter:KindDingosJam@chunks}",
+                                "role": "user"
+                            }
+                        ],
+                        "sys_prompt": "Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.\n\nImportant structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.",
+                        "temperature": 0.1,
+                        "temperatureEnabled": false,
+                        "topPEnabled": false,
+                        "top_p": 0.3
+                    }
+                },
+                "downstream": [
+                    "Tokenizer:LegalHorsesCheer"
+                ],
+                "upstream": [
+                    "Extractor:BlueResultsWink"
+                ]
+            },
+            "Tokenizer:LegalHorsesCheer": {
+                "obj": {
+                    "component_name": "Tokenizer",
+                    "params": {
+                        "fields": "text",
+                        "filename_embd_weight": 0.1,
+                        "outputs": {},
+                        "search_method": [
+                            "embedding",
+                            "full_text"
+                        ]
+                    }
+                },
+                "downstream": [],
+                "upstream": [
+                    "Extractor:CuteBusesBet"
+                ]
+            }
+        },
+        "globals": {},
+        "graph": {
+            "nodes": [
+                {
+                    "data": {
+                        "label": "File",
+                        "name": "File"
+                    },
+                    "dragging": false,
+                    "id": "File",
+                    "measured": {
+                        "height": 48,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": -301.4128436198721,
+                        "y": 375.86728431988394
+                    },
+                    "selected": false,
+                    "sourcePosition": "left",
+                    "targetPosition": "right",
+                    "type": "beginNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "outputs": {
+                                "html": {
+                                    "type": "string",
+                                    "value": ""
+                                },
+                                "json": {
+                                    "type": "Array<object>",
+                                    "value": []
+                                },
+                                "markdown": {
+                                    "type": "string",
+                                    "value": ""
+                                },
+                                "text": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "setups": [
+                                {
+                                    "fileFormat": "pdf",
+                                    "output_format": "markdown",
+                                    "parse_method": "DeepDOC"
+                                },
+                                {
+                                    "fileFormat": "spreadsheet",
+                                    "output_format": "html"
+                                },
+                                {
+                                    "fileFormat": "image",
+                                    "output_format": "text",
+                                    "parse_method": "ocr"
+                                },
+                                {
+                                    "fields": [
+                                        "from",
+                                        "to",
+                                        "cc",
+                                        "bcc",
+                                        "date",
+                                        "subject",
+                                        "body",
+                                        "attachments"
+                                    ],
+                                    "fileFormat": "email",
+                                    "output_format": "text"
+                                },
+                                {
+                                    "fileFormat": "text&markdown",
+                                    "output_format": "text"
+                                },
+                                {
+                                    "fileFormat": "word",
+                                    "output_format": "json"
+                                },
+                                {
+                                    "fileFormat": "slides",
+                                    "output_format": "json"
+                                }
+                            ]
+                        },
+                        "label": "Parser",
+                        "name": "Parser"
+                    },
+                    "dragging": false,
+                    "id": "Parser:HipSignsRhyme",
+                    "measured": {
+                        "height": 56,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": -297.12089864837964,
+                        "y": 532.2084591689336
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "parserNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "chunk_token_size": 512,
+                            "delimiters": [
+                                {
+                                    "value": "\n"
+                                }
+                            ],
+                            "outputs": {
+                                "chunks": {
+                                    "type": "Array<Object>",
+                                    "value": []
+                                }
+                            },
+                            "overlapped_percent": 0.2
+                        },
+                        "label": "Splitter",
+                        "name": "Token Chunker"
+                    },
+                    "dragging": false,
+                    "id": "Splitter:KindDingosJam",
+                    "measured": {
+                        "height": 80,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 7.288275851418206,
+                        "y": 371.19722568785704
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "splitterNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "field_name": "summary",
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.7,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_tokens": 256,
+                            "outputs": {},
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.4,
+                            "prompts": "Text to Summarize:\n{Splitter:KindDingosJam@chunks}",
+                            "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
+                            "temperature": 0.1,
+                            "temperatureEnabled": false,
+                            "topPEnabled": false,
+                            "top_p": 0.3
+                        },
+                        "label": "Extractor",
+                        "name": "Summarization"
+                    },
+                    "dragging": false,
+                    "id": "Extractor:NineTiesSin",
+                    "measured": {
+                        "height": 84,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 9.537168313582939,
+                        "y": 461.26662127765564
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "contextNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "field_name": "keywords",
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.7,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_tokens": 256,
+                            "outputs": {},
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.4,
+                            "prompts": "Text Content:\n{Splitter:KindDingosJam@chunks}\n",
+                            "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nExtract the most important keywords/phrases of a given piece of text content.\n\nRequirements\n- Summarize the text content, and give the top 5 important keywords/phrases.\n- The keywords MUST be in the same language as the given piece of text content.\n- The keywords are delimited by ENGLISH COMMA.\n- Output keywords ONLY.",
+                            "temperature": 0.1,
+                            "temperatureEnabled": false,
+                            "topPEnabled": false,
+                            "top_p": 0.3
+                        },
+                        "label": "Extractor",
+                        "name": "Auto Keywords"
+                    },
+                    "dragging": false,
+                    "id": "Extractor:TastyPointsLay",
+                    "measured": {
+                        "height": 84,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 7.473032067783009,
+                        "y": 533.0519245332371
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "contextNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "field_name": "questions",
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.7,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_tokens": 256,
+                            "outputs": {},
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.4,
+                            "prompts": "Text Content:\n\n{Splitter:KindDingosJam@chunks}\n",
+                            "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nPropose 3 questions about a given piece of text content.\n\nRequirements\n- Understand and summarize the text content, and propose the top 3 important questions.\n- The questions SHOULD NOT have overlapping meanings.\n- The questions SHOULD cover the main content of the text as much as possible.\n- The questions MUST be in the same language as the given piece of text content.\n- One question per line.\n- Output questions ONLY.",
+                            "temperature": 0.1,
+                            "temperatureEnabled": false,
+                            "topPEnabled": false,
+                            "top_p": 0.3
+                        },
+                        "label": "Extractor",
+                        "name": "Auto Questions"
+                    },
+                    "dragging": false,
+                    "id": "Extractor:BlueResultsWink",
+                    "measured": {
+                        "height": 84,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 2.905601749296892,
+                        "y": 617.0420857433816
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "contextNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "field_name": "metadata",
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.7,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_tokens": 256,
+                            "outputs": {},
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.4,
+                            "prompts": "Content: \n\n{Splitter:KindDingosJam@chunks}",
+                            "sys_prompt": "Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.\n\nImportant structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.",
+                            "temperature": 0.1,
+                            "temperatureEnabled": false,
+                            "topPEnabled": false,
+                            "top_p": 0.3
+                        },
+                        "label": "Extractor",
+                        "name": "Generate Metadata"
+                    },
+                    "dragging": false,
+                    "id": "Extractor:CuteBusesBet",
+                    "measured": {
+                        "height": 84,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 327.16477358029204,
+                        "y": 374.11630810111944
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "contextNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "fields": "text",
+                            "filename_embd_weight": 0.1,
+                            "outputs": {},
+                            "search_method": [
+                                "embedding",
+                                "full_text"
+                            ]
+                        },
+                        "label": "Tokenizer",
+                        "name": "Indexer"
+                    },
+                    "dragging": false,
+                    "id": "Tokenizer:LegalHorsesCheer",
+                    "measured": {
+                        "height": 120,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 345.50155210663667,
+                        "y": 533.0511852267863
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "tokenizerNode"
+                },
+                {
+                    "id": "Note:CruelSidesStick",
+                    "type": "noteNode",
+                    "position": {
+                        "x": -29,
+                        "y": 765
+                    },
+                    "data": {
+                        "label": "Note",
+                        "name": "Add more attributes",
+                        "form": {
+                            "text": "Using LLM to generate summaries, keywords, Q&A, and metadata."
+                        }
+                    },
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "dragHandle": ".note-drag-handle",
+                    "measured": {
+                        "width": 281,
+                        "height": 130
+                    },
+                    "width": 281,
+                    "height": 130,
+                    "resizing": false
+                }
+            ],
+            "edges": [
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__Filestart-Parser:HipSignsRhymeend",
+                    "source": "File",
+                    "sourceHandle": "start",
+                    "target": "Parser:HipSignsRhyme",
+                    "targetHandle": "end"
+                },
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__Splitter:KindDingosJamstart-Extractor:NineTiesSinend",
+                    "source": "Splitter:KindDingosJam",
+                    "sourceHandle": "start",
+                    "target": "Extractor:NineTiesSin",
+                    "targetHandle": "end"
+                },
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__Extractor:NineTiesSinstart-Extractor:TastyPointsLayend",
+                    "source": "Extractor:NineTiesSin",
+                    "sourceHandle": "start",
+                    "target": "Extractor:TastyPointsLay",
+                    "targetHandle": "end"
+                },
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__Extractor:TastyPointsLaystart-Extractor:BlueResultsWinkend",
+                    "source": "Extractor:TastyPointsLay",
+                    "sourceHandle": "start",
+                    "target": "Extractor:BlueResultsWink",
+                    "targetHandle": "end"
+                },
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__Extractor:BlueResultsWinkstart-Extractor:CuteBusesBetend",
+                    "source": "Extractor:BlueResultsWink",
+                    "sourceHandle": "start",
+                    "target": "Extractor:CuteBusesBet",
+                    "targetHandle": "end"
+                },
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__Extractor:CuteBusesBetstart-Tokenizer:LegalHorsesCheerend",
+                    "source": "Extractor:CuteBusesBet",
+                    "sourceHandle": "start",
+                    "target": "Tokenizer:LegalHorsesCheer",
+                    "targetHandle": "end"
+                },
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__Parser:HipSignsRhymestart-Splitter:KindDingosJamend",
+                    "markerEnd": "logo",
+                    "source": "Parser:HipSignsRhyme",
+                    "sourceHandle": "start",
+                    "style": {
+                        "stroke": "rgba(91, 93, 106, 1)",
+                        "strokeWidth": 1
+                    },
+                    "target": "Splitter:KindDingosJam",
+                    "targetHandle": "end",
+                    "type": "buttonEdge",
+                    "zIndex": 1001
+                }
+            ]
+        },
+        "history": [],
+        "messages": [],
+        "path": [],
+        "retrieval": []
+    },
+    "avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAABpQSURBVHgBbXoJfFTluf5zzpw5syaZZLKRjZCEBEIgLAFBLYIW0apsUnFprUu1t3q1WqWl2Nvi36X6v7aIqNV760WttVotFVBZROAiEowIYQ1bQvY9mcxk9jlzzn2+E7Cx7eSX32xneb93ed7nfb6R8A+PVWvfm3ek4exih01ZAkjFsiShu7cf40uKcM9ty5DuSUEyqSMS03i0AYfNCsOA+fofH+LceEJDXNNhtylQZRmlbh1/6gHur3Mi3KgAHkCxAZqb1/PzvYXniasN6TCcwPIpftzvTdaHNLneZZEfnz8tvXn0PaSLL9as/Zvnk7qDv7Zb5YfSUlPMzwZ8fqS4nXjgrpsxc1oJurqDpkHCVJtVMc+OxTU+SVBVC3R9ZBESDReL1HQdikWGhf/FqoavYjpu2ZuKzrMKUjOA66/fi+BgLjbvKQdSdUg0XgrJ0LmWmpIgXqwII0WXYbVznW4rBjULWgLS82FH4vGl49KHvl7AvCUPeeJWdXd2tneqsC4cjWB4OIw7br4BixZeytcxRKJxGmTASmNketIw/m6seB1PJGFVaCy/i3KR4lkcN0bVEVcN3LLPir1nHYAziTG5Cn660MDjoWswxTseLetfRDeNT9Ka7JQoXpgSwFyngR4u5C/tKXir2YGOuASFp8u8nmzI9WEd83GnNGQu4OoHXlzrjvQ95EgOYyiiY/Ilc3D/HUu4FhlDgTCN12iMBKfd+rWXv/mQ+D3M45L0usOhIoXvc91JrGxQ8OIBJ6QgF58rIz+X6ZGWQCEXMS/Hj81bHDhySoVaoOGXU/24JU2HapWx/pQdvz3kRtZkA3fNiGKsR0ePy4FlvNFW3lEJRZ5/xO18WLJv8BVrcJ7XArxjMIiaTA1/+q4XhRjCSZ8ECz2sWkV6gLksPCsxCnw/KgIa00XnAVbFAoXflzo0vDkAPPhpKsLDMiR6zghrcOQr8DCvbTQy7Ad6j/KeKQZuqvbjiaI4OkMKitN1fHtzOhodFjywPI4qScNZw4pImhV3PPU31Gyvg89hx2sbfoLTuZ750sy1H21w2K13LJxbDU9RJnY06di0XcFUFtVHy8MwkqwFhk++mNs0VNNGvCQ8H9eSNJqv+V/m1HEiYWD5p3a09togpzMHBhTcXJlATZ4VH7bo2NXBnGa6JMIGqseG8PKEEJS4bKbIVSVcwB/S4Jss4en5UVgGk+gc48Llnx7Hktt/g2S/D4mqCTDOdSAlNIiz9928Tspoe+zwOE/hVCYqdqYvw2c+F1rtUTx9xInOLTL+dmsYc3M1tIe4CAlmwXIdCMXiJvA4bCqyrXxh0/H9Qyp2HHBAUnRY0mTYmW4nFvtQVOBBPCmDdY6T24GZ53X8flYfZtPLp8My0l0WXF4kYewrbrSWyXhkbgzpEQNX5Ngx+81dkO97BeHSPCAQgTKzDIna02bdWQP+ZnlI8k09G2xCn94Mb9dDOIZe9PpUrCECFN+rY+k7TmxsVpDnNEyPJ+hxUbAOVYWXuV7miuO5Lub766nYsceBBTURTBmTgOYz8Na1YYQkG+IGC5uRDEQNVC4EGs61IyvDik5DQVmOFVVZEu7fy6jZZMy+VMMsJYGITcKvB5KQHqbxHhcwFGTYElAWTIGcYodMoNBUe7H8Yfb9KLB60BruY157sCH5Borp1c6EgsecEaT90MA9G5046Seq6LwAkUbk+oQUHV9GdWS/n4r/3JUCKTWJVfcCp664CY7vPQIXDYi9k2QNKYi2EHyGgba6YWy4cRP0tx5DTmEG8jwKEqytYWbay/tUpN5g4AZZx511brz4Y8Lq1A5I6Q6inx3JuBVJxYXg6vdopw0J2KA7PLDsedS7JkDDch1p0JjK3dIJxNvnIZLuQr7LwLdsCWz3WvHOByp+My+BFKbPkEXHPHr71d1OMOWRyfCXVQCdxMHFhJnI8bk41piFnlWbMGNgEh5bvxq3PrwA7d1NaNryEfKWXIn078xCIhBDPov6V1/ZcchtQaJUwqGfJHDL6q+w4FiUKepDjfskOqMWdIfjCDpt6A0m0D8UhjyvEtq0cbAEV1yyJk9OQ2NvADkJD7xyDiJtDeieXY03vHZIBVZUlmg40WRB0JfEH70qHnzbCR8RQ04H0hgJm1uG0yrBn4jj021lOHogB94ZSVzPIiyak45ZN3rQuG8Q3YeAaMUw7vx4PSw9cdGqkWFJ4L5tLoRvl7BwcRcWbT2HbiLg5wTLNuUI5iQTrD8N5U8th1xTita6VoQdDsTzvLCW5kDyfPRzwykxH7uCSEt1wGF3YOn8ctz46BwceCWKTUU2fLl2LKQZdMjrOlauOYxX/rsKId1GSAWsRCVnKptfREZ4iJ1DMfBQtQ/3ZybRTIiMhqMo92ZDdzONND+amwYxFPegcmwGAsGYCbuTd6ZiWkM3rvttJ7bImxHVh6HAhWtvm457ssKo3XQKfd1DKCr2oul0P/sM6QuRMBqLQrEft2DlNVcyZRJ4/WgtBvQQDv3gHLb+tQ7lSiUq20qx5EYDv24uhDbHgq7ibDzy4+N4/L1q6F0MO+F0gKhiGMTvmgB+VxRjsSpoVW0YbO6Bt0DFF0fPIcTWyazG9o1voLLIiyn//lOkZ6o4OSiZaPad33bjbcvrSEtmwIlUsO8jSb610e+AlcFqjBL9+D/gYFNk3QRZxIXeDEhF33/MsFmt8BY5cOpgHyZPz0Lw/xH/mefWpIsXiiLPUoopzho8Wz8BEx5owdiPP8CpFfPRevUUGGxYxUVhvFoVRB7RppmYnpvGhkXy9qvCKCY5PVjNJjkYjrHhGTh1thHDwTDSvUlseZpXrynHBl82ap5+DD6oGKFyIyRHMzTE+GxnylxT6kSsL8jGGMOgnkRVSQYOikabaVyxJnYuAa4BatgC92YZMWKeypgnmYsJXjZuWCDH+6H4y9BcxoLddwbNegqMRWPxuyl9eLKIeRogJ7JbUEyvOtIlHHghgjMth9HRH0ORJQvFC9jBeZPSwmx4Ur2oGJePk5t0dMlWHPBKyPnkA/rc8002yz9WGoo9Ko62RxCmA149+RBO1XVje/0QnIK5FmWlID/HiZtn1eDfLr8UA4NhhojECXb63ocgS4pNHg1oQkFtN8IZNvi5rJv+fwWOVvZjgqygWVNQUeBAVqqKYIT4HDfIThV4b2nHwgdd6Not6tUwO3g4rsPFBf7urtM49VYBblu3HfrsFMSduZDkf+ZZ4pMgOdbciR4U5KXiscV/Ri9Z8fRxbuTSFjl+mkStXcKZXV04Wd8Fm2I1Twyjj/4ooVfCXMZZpEte1LsPIYdN5Y3+H2BFiR1nhi1sSAoK2JSS7LqC6NlpeJzEbepPZfQ9uwgnD7ehYEM7GaRi8idFFD69/smeZuRW7EV1/A+oWDmMw2+tJHU+byLT6AedjPPDUaSRTlfl2ZGd60ax14bLJzOFWvyQU6fZ4Kl2oMfhR2NLDxuG/nUADTaLbFQjKg/DafSi64dzUbPTh0/PB9nQgLJcG/m+4EPfJHZiDpAJs98/SFq8qBoWLYS/7T0Kj0NBU6cPv9+wA6+fnI87Dl2OprW/QM0Xh1H5bgx733seDr0XVsZ99ELSGeW36zqwaEk5Vqd2476bxqHuBLODjECed1UZ8qalIPNKF/oOhtk55Qs1JJlRUNkXZuhX48Tcy2Fz5eLKQ61YXJMNN9v+cDhhelW+cLPRw06UYS/JzkRH5SmMzy9FiTsTqdIGwm8vfrBiATraEwgO6Ch44DtocJ3H8ne7seRXPtR+/CLOLfs2VKKDHf1cRwK8CSJkwm8f6IO1bheije147VSfuTApU3vEuNVyGU5UnUbfSTJA48LKJUHadLj1NhxfvBShe6/HXdftRt5VY7BgVRHSqgmLMdIT5rUwXFBsk3aPGi8FSw0Sfc4NdbPGKhFiQ/JHIugNMJWUkftk5jqw9nsH8Mn7TaiUilCt52HjwjQcW5KDaFcL0vbVIauhEakDPvTFA7hh9mTsZjNzWKKIkD1IM431RtVfM/D58mNwy5zdiOdWI2SGsXN8FZrW3I7yWhWLX6wl9FWjgxeyEutXtZShuzlqzgEq8ymRTJp2jx4tTQOzHfj9bUew//QRyGQHcy6dittemIBYIGlGWbBKEcBrx76BchSQqqSC4wMuMUpQ6+lEYOpUtE60wUeAiitJJDkZJsmzxFEKGbJ0HVYbHYRLq+pgi07BUEkheucQ36uqUHxWxtWvNmBMzIZuwuaA0YMMHuctt+LOI2Mw3Jo0511hhMh/kU6JC/OBIH1iIYY9iUidDR8938aRUMbilUWwTYoh5E+aBTox34rjtRrWL2xDZtwN0e6OkxPzTKTQzBKpAL0Gew9yze/6yZbHgwiII3yeBCnnl1EjwanFzYxTWTsZrSFUfOVDdiuRg3KBx12ChqE2/PzDcTj+YQh2zor7/urDI+fGYqAt8U+wJ+pBzM6xWMKcn+NkiFGOlenVRCEW+9CxJGyTE5iSLuMo8eKe92KwPOXD4s4YfBYbmycHd/51op3mGkhnX7bT2yKmCvNC4V8cMbY8FSFmibL4yb0MnVjRUZRiItq4wgA7QEraRGJ6GAeHGvHS0SlYf3szrr03C80HImaOs3xN2eTiaGkaL1CINSGmNjdnhQEySG2QPaGIlDnA/sBDx5TyPH5/w5c27KrnkLR3APptaXCeSWDapmZ8yX4jC5VD0GVzCRYzGuI1k4emjzw0WiDmRHmIB+xj0KJcZx1D18nG1YsOdr0o2uJ+/PvaEjx73XmcqA/RbgkOj0gZySz2KCWVv6OQYaoRuIBCYlkC0VQy1bhFo9/Y/jnkvxxg09vqwd5aO6oK6QDmkdKroXaGG/VpjbAzClHT0ISpaoRptmSKJ9IFbJRGvafTwgwDfQM2aq7Hwj/FDBUbJ8aVOdCwPYTGthApggPj5zux+91BOEU3oreFWCUsDQpP0/MONjFxU7Eokf8p/N5iY1NLZbpoEopqXVj3uZNDvYxXfgH88DYV117lghZiLvUm0VGQj5ARwKKnZ2Lidfno1wPkQpwDpJhp2T8+xGirSJDwrx6m1jNInJ5iw8tPVCKFMshrS9vRTaqweEcuwj1itBxhoS6miyheIXJZhfe5KGISShw6WuwSLvncgTOH6ZhsGSXTOD/k0WHEcC+P6ajI5BjHmdSvY/ZcD258exlpdhKli/Ix9cdlOPzCOZzZ3wl/MMQ6tV2Igrg+0c/CPnA9NhkXFyFWJLKu1xjEPMcVGIqGGBkDk9noPjzUi6t/lo0Vz+TAoPGBoGYqExdFLhMSzTSicEWYczok3H6ESsRBzq9chKpoSC9QwKEKzowkjyPVOCBhiJmZVqnj0axuVNoVtPclUZ5vQ3GWii6fhpCdvYRjXx+7f6A5QqeyWTIY6cVOeCvckObjXUOsShhup/eyyzyoeqIQyivZOLmzWWQisq9zYMWfc0EGjH5OUjamhlDhkqPw3uzAdEBJmoEnTgNP1nNWjDHVqEaIhidIvI1YnpnD+aGfw0gfCSMHoQerfPiRN4oGvwrO/KguspOecHJLGOawYyqYrKVwVDNLN4MKhlPIG5ooa6bQt56dYobdzVV7Sh3IyLIhjfJf58c6jhVacPO2fEwe74CvLQYhRrpcKuJMlRhvoCojApcwfgKnr61UImZudNFTMmxMlxhh58qxUTwzmwoGi/n1Yxqe2MiDOfteM2MYz+SH2ZnJj+J25PN4j1OB0Iy1xIhjBC1TSKHzHVGcDFqwpd2NfZ2Umig4iGwZY+eIdKyT1FEgCQ9WWRE6T0gytweZv1lkfUY3wxhLmjThog5qNi1CYYzHlXHK72ESLieqHKdEaEljGtJbBnP84aoYnq1JwEh1E7Fgpk/b/xr4jCPjJG8YXUkVOakKHSYLh5p1JKIqHCPR++XuBN46o+CRfS4MM5UmjU9i0hgdXgpoYL/oZPpJx1oCxr9sRppmGijkc/F+ND0QofNaDAgR+646Ge+fcZAuizpiuognRkgllvU9GEDvgA1jGdWk8Cb5vtQq4fsfb8Uvr/42LGrMLPbR1xb3kpMaXKQNc9/zoJmOu3dxHDO9GvqpXCsJlZRHxnnlPB7ISGHHp5pwMWQXPSzQRKjLLtLf6IXXF3Oeh6OMUvjzbTJW/8WFhJ+5nMlruBj7OMycB8+z+UP4U4UfNx/Ox6dPtcOVA+x4fytecX6K6t9/GwX0YFsS/6Ryq9TWA5TUJ77sgftaA+unh6EFmZIh6kPsUHusn+GAvh9+TojP9boJENm6iUFi5QkiiMBzq3IBz/WRwhbfiw2N8S4dZMEYs9mFlW+loCpfxrXTOWnRcGmY1SZykp6WeUyYw/qfz32G8DoZ3/vNtzD3nkKo5D3xD/14UrsaLbGQyWJHlO2RexucdQ3ee8Z/pcK+Avjt5Ch6KaA7dRXjMo7gV/pqbA9vhT8axFrPXVTqXVA8Fhf6SVOFsaL9C4cYo3ZbNH5QSHoYYAQu+0zBoWa7qVDPuwm4ezoEY0fXm0B9gJ2XvCdJplE0No71i8JoMi6B9CMdO+dvw+ZX92HH9l14+Z3bYItnQFFls5uHo4kRR9lVjKeE7n2eMuL1wC/zoxhmPY7h+CkA44qu9XBxtr4urRLjLBl4L3QM2bZUyL3BYXqZ0MQLCCogeIyZ8zQ+lXlelpYkcaNq/GoKDp9yIsPLIbuGfYD6D/VXxHqBoy30JKVDGwXe564YwI5Jg7D20aD7ktjbcI4ClQPfeeYW7Gx/E2cpMyoWMlECBhVUjpcy8rLTkGON4e49doTzJCybGoeXmyJvDjnx6Os2vLKqj2GPI6xH0WMJ4LNEE/bHz6KHEpCcGFBGOhhG5llhuMa8r6TWudknI+PtFGxg+1c8pAY5TC86SKXuE2K3fJieX7WOZ2YpuGuWD4em92MyC7U1acfYigQO/9yJaYW5rCUdZ042o7ahH++8/gK6mo/CGiIz/UxFSUkaXn3rA+6TqXj7ICncVUBrixUPrpZQPO0MfnHfOUzs2wmpIw/VkQLsOd6GhrZeKM0uxBq5hWVIf0+XBEM5gchykJJ3wRYVPQHCouCGYsuMXTcRIUUmnW5vpcOJCMLrc+aE8dxYdghi8/mEHTkZXDR3Yg48qeLIuz5om3PxH8FUaBMNKhIJfLBlC8mTFfeWNuNSDuk/3fI7Ktyp+MvVN7ILMqKUhrxzmvBMj4H98nnsJa1umd6CiS2pONLUSXt0HPjuo7j5i//BALfBFJMCM8/zGLKYVceCOjv2HaBs6L3AOTJYkUNWEx416jq+RjJQyihjJibwwmV+yioGWmi4h1he6BQbCEQMbkXt23kEamEAp9qA5p1lyLmSewbkLiX5OZDZSGvWbcD/7KpD585z+PPuP2LpLjpyqYSfzehEb28r3pe/ouTfhstnVeHNX6zEmAdXIjs7w9xI+4/tW6B1C4mf7lWIueVMlzVNlEdeS8MXX9oxs5jNjNK5JISyAGUWAZGi0XBbSM2y4Kn5/dhbMQQHi3aQQ09JNpU9t2Jyd4EsQvMsySvGtHUBVJRmITZ0oX8YukkTztS24j/XrYOzK4ocdxzlkypxltPsQvaNjo79qMVmRPQgJ7IMHKfUs9S7DvPHjIdxkvXJ/9NHu9C+w4/gnjjkfWKHhHj+0ud2uFhA/02au/xOjn4kWGK7U3RoKT7CZ26dHkDdrE7MYkdtpkZflM1OShlRNCnNbEaGOQvEWTtX/UHBl1QX7HcdRtEy7o/R8jSStf1H+/GjSw/hBstP0HRiK55b/xKG+ukcyjNFGw/jS8s+uIx0XCSYGvlEZIhOWR3EtPQsyMcJAueJmA0k/sf4+u63U5qt+VJxxVReJCuBADfUCnji2SG6ilOULnB5SgTrCqgYk0G2ay54WRMuu2ymSyJpjOLnI3tmoiGl6k7cevY8yjOrcYm6ET/7YxlSCmUTScIM5xVZK/DSsXvgirhxXecPIMXeQKO+By49/Rswbi5E9BaPBf0vhzDzllxMKivEno5TcFvVesVRkNzkyVV+IkhUJrvjs7U6Al9Q80lIyGJRra3oxTQCVSOrKyvFwp12i8lbBHbHEyO7loK7CHlFYyMa2Ue2jOhCtgJ8susM6mI3mtKiws9bOwewcg+lwstySBDjGFIG8Xn7u6QEb1B55qRHbDb0b1Ibk534NRa3E9GjGq65uwrbXjrGvTjUc5vVmOcwtN0qJcIhzhUxcjvVbeDn1PhvdUVNpuimipqVajEvlfwH3iI6t6AbKhudoNnJURERFEQcv7/+FL63aDKvP4wz56MoLM9GhPsGpnzL1v1vPXciev9rOLYsgJmrHkdQLoa5rzvqId65OE/k3ZiK3tNUClNYoBZlnBy9U9ozzAzpOUJ2SUK+rGYYX13Ri/lEpTbJhdx0i0mFdWO08SM7lYJWmx3cqTKb5Au/n8DX+SuaYkGREzvuDmKy9Q8oz3sHNksKIThi2id2Z8Ult036K6bU7Yc7twgNt9xBMa2ZbFb+xgLE2O1rj0LmODrru2Ox8EfV67a983DzyJ3WGp4pxbHd60p93B6W0UMmmUua66aOw5T+ht4jSF3swigpNvsukrCLNZC4MNgLddrQRwZ9uTEFDccHMGacE1nc8FDGJhALj6gXIv3yily4e9w2TGhOwTu/uQztjnbMeGQtWSmdKmVAzHsmxxELtmlYEJ5Z/xw2zIf0wdDIpLz98ei2VXe/2685HKpLnV1Itdlikb5OB7FKcSONixBeFosQ84HxL351oFgsI9HgABClgYl+FTEjgcwyG7jjijANj3Hj0MUFWq0jURO/kehv82M3N1iu3TmAzNY01K5dgfayfDhaW5Hq76RLIxQamK5aYl16S8qd9Uuf/fuPPUY/Gs77ijlGriHAVPPrqRc/F+giclrkemykii8M8MY3yk2jxDgi8BI1hknUQkIHtZh7ZyBNFlGh0g7VzlqjRxUzikRAwuVNZX/BGEqLU6XJXHwz9IKpqFuYi/PjYs26v2dT+rFzH7RvW7BntL3/B41Ezp+M4ooqAAAAAElFTkSuQmCC"
+}

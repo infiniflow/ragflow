@@ -1,3 +1,4 @@
+import { CardContainer } from '@/components/card-container';
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
@@ -17,13 +18,21 @@ import { useCallback } from 'react';
 import { AgentCard } from './agent-card';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
+import { useSelectFilters } from './hooks/use-selelct-filters';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { useHandleImportJsonFile } from './use-import-json';
 import { useRenameAgent } from './use-rename-agent';
 
 export default function Agents() {
-  const { data, pagination, setPagination, searchString, handleInputChange } =
-    useFetchAgentListByPage();
+  const {
+    data,
+    pagination,
+    setPagination,
+    searchString,
+    handleInputChange,
+    filterValue,
+    handleFilterSubmit,
+  } = useFetchAgentListByPage();
   const { navigateToAgentTemplates } = useNavigatePage();
 
   const {
@@ -50,6 +59,8 @@ export default function Agents() {
     hideFileUploadModal,
   } = useHandleImportJsonFile();
 
+  const filters = useSelectFilters();
+
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
       setPagination({ page, pageSize });
@@ -64,7 +75,10 @@ export default function Agents() {
           title={t('flow.agents')}
           searchString={searchString}
           onSearchChange={handleInputChange}
-          icon="agent"
+          icon="agents"
+          filters={filters}
+          onChange={handleFilterSubmit}
+          value={filterValue}
         >
           <DropdownMenu>
             <DropdownMenuTrigger>
@@ -79,28 +93,28 @@ export default function Agents() {
                 onClick={showCreatingModal}
               >
                 <Clipboard />
-                Create from Blank
+                {t('flow.createFromBlank')}
               </DropdownMenuItem>
               <DropdownMenuItem
                 justifyBetween={false}
                 onClick={navigateToAgentTemplates}
               >
                 <ClipboardPlus />
-                Create from Template
+                {t('flow.createFromTemplate')}
               </DropdownMenuItem>
               <DropdownMenuItem
                 justifyBetween={false}
                 onClick={handleImportJson}
               >
                 <FileInput />
-                Import json file
+                {t('flow.importJsonFile')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </ListFilterBar>
       </div>
       <div className="flex-1 overflow-auto">
-        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[calc(100dvh-280px)] overflow-auto px-8">
+        <CardContainer className="max-h-[calc(100dvh-280px)] overflow-auto px-8">
           {data.map((x) => {
             return (
               <AgentCard
@@ -110,7 +124,7 @@ export default function Agents() {
               ></AgentCard>
             );
           })}
-        </div>
+        </CardContainer>
       </div>
       <div className="mt-8 px-8 pb-8">
         <RAGFlowPagination

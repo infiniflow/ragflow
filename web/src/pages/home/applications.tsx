@@ -1,4 +1,5 @@
-import { IconFont } from '@/components/icon-font';
+import { CardSineLineContainer } from '@/components/card-singleline-container';
+import { HomeIcon } from '@/components/svg-icon';
 import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { Routes } from '@/routes';
 import { useCallback, useMemo, useState } from 'react';
@@ -10,9 +11,9 @@ import { ChatList } from './chat-list';
 import { SearchList } from './search-list';
 
 const IconMap = {
-  [Routes.Chats]: 'chat',
-  [Routes.Searches]: 'search',
-  [Routes.Agents]: 'agent',
+  [Routes.Chats]: 'chats',
+  [Routes.Searches]: 'searches',
+  [Routes.Agents]: 'agents',
 };
 
 export function Applications() {
@@ -34,33 +35,40 @@ export function Applications() {
   );
 
   const handleChange = (path: SegmentedValue) => {
-    setVal(path as string);
+    setVal(path as Routes);
   };
 
   return (
     <section className="mt-12">
       <div className="flex justify-between items-center mb-5">
-        <h2 className="text-2xl font-bold flex gap-2.5">
-          <IconFont
+        <h2 className="text-2xl font-semibold flex gap-2.5">
+          {/* <IconFont
             name={IconMap[val as keyof typeof IconMap]}
             className="size-8"
-          ></IconFont>
+          ></IconFont> */}
+          <HomeIcon
+            name={`${IconMap[val as keyof typeof IconMap]}`}
+            width={'32'}
+          />
           {options.find((x) => x.value === val)?.label}
         </h2>
         <Segmented
           options={options}
           value={val}
           onChange={handleChange}
-          className="bg-bg-card border border-border-button rounded-full"
-          activeClassName="bg-text-primary border-none"
+          buttonSize="xl"
+          // className="bg-bg-card border border-border-button rounded-lg"
+          // activeClassName="bg-text-primary border-none rounded-lg"
         ></Segmented>
       </div>
-      <div className="flex flex-wrap gap-4">
+      {/* <div className="flex flex-wrap gap-4"> */}
+      <CardSineLineContainer>
         {val === Routes.Agents && <Agents></Agents>}
         {val === Routes.Chats && <ChatList></ChatList>}
         {val === Routes.Searches && <SearchList></SearchList>}
         {<SeeAllAppCard click={handleNavigate}></SeeAllAppCard>}
-      </div>
+      </CardSineLineContainer>
+      {/* </div> */}
     </section>
   );
 }

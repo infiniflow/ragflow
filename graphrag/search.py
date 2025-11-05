@@ -21,13 +21,15 @@ import json_repair
 import pandas as pd
 import trio
 
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from graphrag.query_analyze_prompt import PROMPTS
 from graphrag.utils import get_entity_type2samples, get_llm_cache, set_llm_cache, get_relation
-from rag.utils import num_tokens_from_string, get_float
+from common.token_utils import num_tokens_from_string
 from rag.utils.doc_store_conn import OrderByExpr
 
 from rag.nlp.search import Dealer, index_name
+from common.float_utils import get_float
+from common import globals
 
 
 class KGSearch(Dealer):
@@ -314,7 +316,7 @@ class KGSearch(Dealer):
 if __name__ == "__main__":
     from api import settings
     import argparse
-    from api.db import LLMType
+    from common.constants import LLMType
     from api.db.services.knowledgebase_service import KnowledgebaseService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.user_service import TenantService
@@ -333,6 +335,6 @@ if __name__ == "__main__":
     _, kb = KnowledgebaseService.get_by_id(kb_id)
     embed_bdl = LLMBundle(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
 
-    kg = KGSearch(settings.docStoreConn)
+    kg = KGSearch(globals.docStoreConn)
     print(kg.retrieval({"question": args.question, "kb_ids": [kb_id]},
                     search.index_name(kb.tenant_id), [kb_id], embed_bdl, llm_bdl))

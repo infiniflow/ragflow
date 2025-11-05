@@ -19,7 +19,7 @@ from botocore.exceptions import ClientError
 from botocore.config import Config
 import time
 from io import BytesIO
-from rag.utils import singleton
+from common.decorator import singleton
 from rag import settings
 
 
@@ -106,7 +106,7 @@ class RAGFlowOSS:
 
     @use_prefix_path
     @use_default_bucket
-    def put(self, bucket, fnm, binary):
+    def put(self, bucket, fnm, binary, tenant_id=None):
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
         for _ in range(1):
             try:
@@ -123,7 +123,7 @@ class RAGFlowOSS:
 
     @use_prefix_path
     @use_default_bucket
-    def rm(self, bucket, fnm):
+    def rm(self, bucket, fnm, tenant_id=None):
         try:
             self.conn.delete_object(Bucket=bucket, Key=fnm)
         except Exception:
@@ -131,7 +131,7 @@ class RAGFlowOSS:
 
     @use_prefix_path
     @use_default_bucket
-    def get(self, bucket, fnm):
+    def get(self, bucket, fnm, tenant_id=None):
         for _ in range(1):
             try:
                 r = self.conn.get_object(Bucket=bucket, Key=fnm)
@@ -145,7 +145,7 @@ class RAGFlowOSS:
 
     @use_prefix_path
     @use_default_bucket
-    def obj_exist(self, bucket, fnm):
+    def obj_exist(self, bucket, fnm, tenant_id=None):
         try:
             if self.conn.head_object(Bucket=bucket, Key=fnm):
                 return True
@@ -157,7 +157,7 @@ class RAGFlowOSS:
 
     @use_prefix_path
     @use_default_bucket
-    def get_presigned_url(self, bucket, fnm, expires):
+    def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
         for _ in range(10):
             try:
                 r = self.conn.generate_presigned_url('get_object',

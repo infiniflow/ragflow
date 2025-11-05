@@ -14,14 +14,13 @@
 #  limitations under the License.
 #
 import logging
-import base64
 import json
 import os
 import time
 import uuid
 from copy import deepcopy
 
-from api.db import LLMType, UserTenantRole
+from api.db import UserTenantRole
 from api.db.db_models import init_database_tables as init_web_db, LLMFactories, LLM, TenantLLM
 from api.db.services import UserService
 from api.db.services.canvas_service import CanvasTemplateService
@@ -31,12 +30,10 @@ from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMSer
 from api.db.services.llm_service import LLMService, LLMBundle, get_init_tenant_llm
 from api.db.services.user_service import TenantService, UserTenantService
 from api import settings
-from api.utils.file_utils import get_project_base_directory
-
-
-def encode_to_base64(input_string):
-    base64_encoded = base64.b64encode(input_string.encode('utf-8'))
-    return base64_encoded.decode('utf-8')
+from common.constants import LLMType
+from common.file_utils import get_project_base_directory
+from common import globals
+from api.common.base64 import encode_to_base64
 
 
 def init_superuser():
@@ -53,7 +50,7 @@ def init_superuser():
         "id": user_info["id"],
         "name": user_info["nickname"] + "‘s Kingdom",
         "llm_id": settings.CHAT_MDL,
-        "embd_id": settings.EMBEDDING_MDL,
+        "embd_id": globals.EMBEDDING_MDL,
         "asr_id": settings.ASR_MDL,
         "parser_ids": settings.PARSERS,
         "img2txt_id": settings.IMAGE2TEXT_MDL

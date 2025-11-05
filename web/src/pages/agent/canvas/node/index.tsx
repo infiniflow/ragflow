@@ -1,36 +1,33 @@
 import { IRagNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
-import { memo } from 'react';
+import { PropsWithChildren, memo } from 'react';
 import { NodeHandleId } from '../../constant';
-import { needsSingleStepDebugging } from '../../utils';
-import { CommonHandle } from './handle';
-import { LeftHandleStyle, RightHandleStyle } from './handle-icon';
+import { needsSingleStepDebugging, showCopyIcon } from '../../utils';
+import { CommonHandle, LeftEndHandle } from './handle';
+import { RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';
+
+type RagNodeProps = NodeProps<IRagNode> & PropsWithChildren;
 
 function InnerRagNode({
   id,
   data,
   isConnectable = true,
   selected,
-}: NodeProps<IRagNode>) {
+  children,
+}: RagNodeProps) {
   return (
     <ToolBar
       selected={selected}
       id={id}
       label={data.label}
       showRun={needsSingleStepDebugging(data.label)}
+      showCopy={showCopyIcon(data.label)}
     >
       <NodeWrapper selected={selected}>
-        <CommonHandle
-          id={NodeHandleId.End}
-          type="target"
-          position={Position.Left}
-          isConnectable={isConnectable}
-          style={LeftHandleStyle}
-          nodeId={id}
-        ></CommonHandle>
+        <LeftEndHandle></LeftEndHandle>
         <CommonHandle
           type="source"
           position={Position.Right}
@@ -41,6 +38,7 @@ function InnerRagNode({
           isConnectableEnd={false}
         ></CommonHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
+        {children}
       </NodeWrapper>
     </ToolBar>
   );

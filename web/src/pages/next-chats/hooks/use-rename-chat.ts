@@ -34,6 +34,7 @@ export const useRenameChat = () => {
         use_kg: false,
         reasoning: false,
         parameters: [{ key: 'knowledge', optional: false }],
+        toc_enhance: false,
       },
       llm_id: tenantInfo.data.llm_id,
       llm_setting: {},
@@ -68,6 +69,8 @@ export const useRenameChat = () => {
     (record?: IDialog) => {
       if (record) {
         setChat(record);
+      } else {
+        setChat({} as IDialog);
       }
       showChatRenameModal();
     },

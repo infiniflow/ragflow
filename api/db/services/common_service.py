@@ -14,12 +14,25 @@
 #  limitations under the License.
 #
 from datetime import datetime
-
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import peewee
+from peewee import InterfaceError, OperationalError
 
 from api.db.db_models import DB
-from api.utils import current_timestamp, datetime_format, get_uuid
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, datetime_format
 
+def retry_db_operation(func):
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
+        retry=retry_if_exception_type((InterfaceError, OperationalError)),
+        before_sleep=lambda retry_state: print(f"RETRY {retry_state.attempt_number} TIMES"),
+        reraise=True,
+    )
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+    return wrapper
 
 class CommonService:
     """Base service class that provides common database operations.
@@ -202,6 +215,7 @@ class CommonService:
 
     @classmethod
     @DB.connection_context()
+    @retry_db_operation
     def update_by_id(cls, pid, data):
         # Update a single record by ID
         # Args:

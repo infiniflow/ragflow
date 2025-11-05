@@ -624,6 +624,10 @@ export default {
       baseUrl: 'Basis-URL',
       baseUrlTip:
         'Wenn Ihr API-Schlüssel von OpenAI stammt, ignorieren Sie dies. Andere Zwischenanbieter geben diese Basis-URL mit dem API-Schlüssel an.',
+      tongyiBaseUrlTip:
+        'Für chinesische Benutzer ist keine Eingabe erforderlich oder verwenden Sie https://dashscope.aliyuncs.com/compatible-mode/v1. Für internationale Benutzer verwenden Sie https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      tongyiBaseUrlPlaceholder:
+        '(Nur für internationale Benutzer, bitte Hinweis beachten)',
       modify: 'Ändern',
       systemModelSettings: 'Standardmodelle festlegen',
       chatModel: 'Chat-Modell',
@@ -1166,6 +1170,8 @@ export default {
       cleanHtml: 'HTML bereinigen',
       cleanHtmlTip:
         'Wenn die Antwort im HTML-Format vorliegt und nur der Hauptinhalt gewünscht wird, schalten Sie dies bitte ein.',
+      invalidUrl:
+        'Muss eine gültige URL oder eine URL mit Variablenplatzhaltern im Format {Variablenname} oder {Komponente@Variable} sein',
       reference: 'Referenz',
       input: 'Eingabe',
       output: 'Ausgabe',

@@ -15,12 +15,10 @@
 #
 import json
 import re
-import traceback
+import logging
 from copy import deepcopy
 from flask import Response, request
 from flask_login import current_user, login_required
-from api import settings
-from api.db import LLMType
 from api.db.db_models import APIToken
 from api.db.services.conversation_service import ConversationService, structure_answer
 from api.db.services.dialog_service import DialogService, ask, chat, gen_mindmap
@@ -29,8 +27,9 @@ from api.db.services.search_service import SearchService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
-from rag.prompts.prompt_template import load_prompt
-from rag.prompts.prompts import chunks_format
+from rag.prompts.template import load_prompt
+from rag.prompts.generator import chunks_format
+from common.constants import RetCode, LLMType
 
 
 @manager.route("/set", methods=["POST"])  # noqa: F821
@@ -93,7 +92,7 @@ def get():
                 avatar = dialog[0].icon
                 break
         else:
-            return get_json_result(data=False, message="Only owner of conversation authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
+            return get_json_result(data=False, message="Only owner of conversation authorized for this operation.", code=RetCode.OPERATING_ERROR)
 
         for ref in conv.reference:
             if isinstance(ref, list):
@@ -142,7 +141,7 @@ def rm():
                 if DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id):
                     break
             else:
-                return get_json_result(data=False, message="Only owner of conversation authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
+                return get_json_result(data=False, message="Only owner of conversation authorized for this operation.", code=RetCode.OPERATING_ERROR)
             ConversationService.delete_by_id(cid)
         return get_json_result(data=True)
     except Exception as e:
@@ -155,7 +154,7 @@ def list_conversation():
     dialog_id = request.args["dialog_id"]
     try:
         if not DialogService.query(tenant_id=current_user.id, id=dialog_id):
-            return get_json_result(data=False, message="Only owner of dialog authorized for this operation.", code=settings.RetCode.OPERATING_ERROR)
+            return get_json_result(data=False, message="Only owner of dialog authorized for this operation.", code=RetCode.OPERATING_ERROR)
         convs = ConversationService.query(dialog_id=dialog_id, order_by=ConversationService.model.create_time, reverse=True)
 
         convs = [d.to_dict() for d in convs]
@@ -226,7 +225,7 @@ def completion():
                 if not is_embedded:
                     ConversationService.update_by_id(conv.id, conv.to_dict())
             except Exception as e:
-                traceback.print_exc()
+                logging.exception(e)
                 yield "data:" + json.dumps({"code": 500, "message": str(e), "data": {"answer": "**ERROR**: " + str(e), "reference": []}}, ensure_ascii=False) + "\n\n"
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
 

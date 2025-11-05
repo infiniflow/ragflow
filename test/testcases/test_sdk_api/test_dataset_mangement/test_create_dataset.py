@@ -23,7 +23,7 @@ from ragflow_sdk import DataSet, RAGFlow
 from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
-
+from configs import DEFAULT_PARSER_CONFIG
 
 @pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
@@ -182,11 +182,10 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
-            ("BAAI/bge-large-zh-v1.5@BAAI", "BAAI/bge-large-zh-v1.5@BAAI"),
-            ("maidalun1020/bce-embedding-base_v1@Youdao", "maidalun1020/bce-embedding-base_v1@Youdao"),
+            ("BAAI/bge-small-en-v1.5@Builtin", "BAAI/bge-small-en-v1.5@Builtin"),
             ("embedding-3@ZHIPU-AI", "embedding-3@ZHIPU-AI"),
         ],
-        ids=["builtin_baai", "builtin_youdao", "tenant_zhipu"],
+        ids=["builtin_baai", "tenant_zhipu"],
     )
     def test_embedding_model(self, client, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
@@ -219,11 +218,11 @@ class TestDatasetCreate:
         [
             ("empty", ""),
             ("space", " "),
-            ("missing_at", "BAAI/bge-large-zh-v1.5BAAI"),
-            ("missing_model_name", "@BAAI"),
-            ("missing_provider", "BAAI/bge-large-zh-v1.5@"),
-            ("whitespace_only_model_name", " @BAAI"),
-            ("whitespace_only_provider", "BAAI/bge-large-zh-v1.5@ "),
+            ("missing_at", "BAAI/bge-small-en-v1.5Builtin"),
+            ("missing_model_name", "@Builtin"),
+            ("missing_provider", "BAAI/bge-small-en-v1.5@"),
+            ("whitespace_only_model_name", " @Builtin"),
+            ("whitespace_only_provider", "BAAI/bge-small-en-v1.5@ "),
         ],
         ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
     )
@@ -240,13 +239,13 @@ class TestDatasetCreate:
     def test_embedding_model_unset(self, client):
         payload = {"name": "embedding_model_unset"}
         dataset = client.create_dataset(**payload)
-        assert dataset.embedding_model == "BAAI/bge-large-zh-v1.5@BAAI", str(dataset)
+        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(dataset)
 
     @pytest.mark.p2
     def test_embedding_model_none(self, client):
         payload = {"name": "embedding_model_none", "embedding_model": None}
         dataset = client.create_dataset(**payload)
-        assert dataset.embedding_model == "BAAI/bge-large-zh-v1.5@BAAI", str(dataset)
+        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(dataset)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -587,14 +586,7 @@ class TestDatasetCreate:
     def test_parser_config_empty(self, client):
         excepted_value = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         parser_config_o = DataSet.ParserConfig(client, {})
         payload = {"name": "parser_config_empty", "parser_config": parser_config_o}
@@ -605,14 +597,7 @@ class TestDatasetCreate:
     def test_parser_config_unset(self, client):
         excepted_value = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         payload = {"name": "parser_config_unset"}
         dataset = client.create_dataset(**payload)
@@ -622,14 +607,7 @@ class TestDatasetCreate:
     def test_parser_config_none(self, client):
         excepted_value = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         payload = {"name": "parser_config_empty", "parser_config": None}
         dataset = client.create_dataset(**payload)

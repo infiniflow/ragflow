@@ -2,9 +2,14 @@ import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import {
+  MetadataFilter,
+  MetadataFilterSchema,
+} from '@/components/metadata-filter';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
+import { TOCEnhanceFormField } from '@/components/toc-enhance-form-field';
 import { TopNFormField } from '@/components/top-n-item';
 import {
   Form,
@@ -39,6 +44,8 @@ export const RetrievalPartialSchema = {
   empty_response: z.string(),
   cross_languages: z.array(z.string()),
   use_kg: z.boolean(),
+  toc_enhance: z.boolean(),
+  ...MetadataFilterSchema,
 };
 
 export const FormSchema = z.object({
@@ -83,6 +90,10 @@ function RetrievalForm({ node }: INextOperatorForm) {
         title: 'formalized_content',
         type: initialRetrievalValues.outputs.formalized_content.type,
       },
+      {
+        title: 'json',
+        type: initialRetrievalValues.outputs.json.type,
+      },
     ];
   }, []);
 
@@ -112,9 +123,11 @@ function RetrievalForm({ node }: INextOperatorForm) {
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>
             <RerankFormFields></RerankFormFields>
+            <MetadataFilter canReference></MetadataFilter>
             <EmptyResponseField></EmptyResponseField>
             <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
             <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+            <TOCEnhanceFormField name="toc_enhance"></TOCEnhanceFormField>
           </FormContainer>
         </Collapse>
         <Output list={outputList}></Output>

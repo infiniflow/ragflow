@@ -16,12 +16,7 @@ export const NameFormSchema = {
 export function NameFormField() {
   const { t } = useTranslation();
   return (
-    <RAGFlowFormItem
-      name="name"
-      required
-      label={t('common.name')}
-      tooltip={t('flow.sqlStatementTip')}
-    >
+    <RAGFlowFormItem name="name" required label={t('common.name')}>
       <Input placeholder={t('common.namePlaceholder')} autoComplete="off" />
     </RAGFlowFormItem>
   );

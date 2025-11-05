@@ -1,6 +1,9 @@
 ragflow:
   host: 0.0.0.0
   http_port: 9380
+admin:
+  host: 0.0.0.0
+  http_port: 9381
 mysql:
   name: 'rag_flow'
   user: 'root'
@@ -29,6 +32,11 @@ redis:
   db: 1
   password: 'infini_rag_flow'
   host: 'localhost:6379'
+user_default_llm:
+  default_models:
+    embedding_model:
+      api_key: 'xxx'
+      base_url: 'http://localhost:6380'
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'
@@ -74,7 +82,8 @@ redis:
 #       api_key: 'xxxx'
 #       base_url: 'https://api.xx.com'
 #     embedding_model:
-#       name: 'bge-m3'
+#       api_key: 'xxx'
+#       base_url: 'http://localhost:6380'
 #     rerank_model: 'bge-reranker-v2'
 #     asr_model:
 #       model: 'whisper-large-v3' # alias of name
@@ -124,3 +133,9 @@ redis:
 #     - "RAGFlow" # display name
 #     - "" # sender email address
 #   mail_frontend_url: "https://your-frontend.example.com"
+# tcadp_config:
+#  secret_id: 'tencent_secret_id'
+#  secret_key: 'tencent_secret_key'
+#  region: 'tencent_region'
+#  table_result_type: '1'
+#  markdown_image_response_type: '1'

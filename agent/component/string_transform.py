@@ -16,9 +16,11 @@
 import os
 import re
 from abc import ABC
+from typing import Any
+
 from jinja2 import Template as Jinja2Template
 from agent.component.base import ComponentParamBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from .message import Message
 
 
@@ -43,6 +45,9 @@ class StringTransformParam(ComponentParamBase):
 class StringTransform(Message, ABC):
     component_name = "StringTransform"
 
+    def get_input_elements(self) -> dict[str, Any]:
+        return self.get_input_elements_from_text(self._param.script)
+
     def get_input_form(self) -> dict[str, dict]:
         if self._param.method == "split":
             return {
@@ -56,7 +61,7 @@ class StringTransform(Message, ABC):
             "type": "line"
         } for k, o in self.get_input_elements_from_text(self._param.script).items()}
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         if self._param.method == "split":
             self._split(kwargs.get("line"))
@@ -90,7 +95,7 @@ class StringTransform(Message, ABC):
         for k,v in kwargs.items():
             if not v:
                 v = ""
-            script = re.sub(k, v, script)
+            script = re.sub(k, lambda match: v, script)
 
         self.set_output("result", script)
 

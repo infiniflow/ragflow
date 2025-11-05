@@ -4,7 +4,6 @@ import CSVFileViewer from './csv-preview';
 import { DocPreviewer } from './doc-preview';
 import { ExcelCsvPreviewer } from './excel-preview';
 import { ImagePreviewer } from './image-preview';
-import styles from './index.less';
 import PdfPreviewer, { IProps } from './pdf-preview';
 import { PptPreviewer } from './ppt-preview';
 import { TxtPreviewer } from './txt-preview';
@@ -24,7 +23,7 @@ const Preview = ({
   return (
     <>
       {fileType === 'pdf' && highlights && setWidthAndHeight && (
-        <section className={styles.documentPreview}>
+        <section>
           <PdfPreviewer
             highlights={highlights}
             setWidthAndHeight={setWidthAndHeight}

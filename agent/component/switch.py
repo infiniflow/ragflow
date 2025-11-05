@@ -19,7 +19,7 @@ from abc import ABC
 from typing import Any
 
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class SwitchParam(ComponentParamBase):
@@ -61,7 +61,7 @@ class SwitchParam(ComponentParamBase):
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
         for cond in self._param.conditions:
             res = []

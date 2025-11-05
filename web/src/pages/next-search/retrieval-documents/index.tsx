@@ -14,15 +14,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
 import {
   useAllTestingResult,
   useSelectTestingResult,
 } from '@/hooks/knowledge-hooks';
 import { cn } from '@/lib/utils';
-import { Separator } from '@radix-ui/react-select';
 import { CheckIcon, ChevronDown, Files, XIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 interface IProps {
   onTesting(documentIds: string[]): void;
@@ -35,11 +34,9 @@ const RetrievalDocuments = ({
   selectedDocumentIds,
   setSelectedDocumentIds,
 }: IProps) => {
-  const { t } = useTranslation();
   const { documents: documentsAll } = useAllTestingResult();
   const { documents } = useSelectTestingResult();
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
-  const maxCount = 3;
   const { documents: useDocuments } = {
     documents:
       documentsAll?.length > documents?.length ? documentsAll : documents,

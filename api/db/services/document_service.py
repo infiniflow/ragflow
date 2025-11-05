@@ -24,22 +24,24 @@ from io import BytesIO
 
 import trio
 import xxhash
-from peewee import fn, Case
+from peewee import fn, Case, JOIN
 
-from api import settings
 from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
-from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole
-from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File
+from api.db import FileType, UserTenantRole, CanvasCategory
+from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas, \
+    User
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils import current_timestamp, get_format_time, get_uuid
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, get_format_time
+from common.constants import LLMType, ParserType, StatusEnum, TaskStatus
 from rag.nlp import rag_tokenizer, search
 from rag.settings import get_svr_queue_name, SVR_CONSUMER_GROUP_NAME
 from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr
-
+from common import globals
 
 class DocumentService(CommonService):
     model = Document
@@ -51,6 +53,7 @@ class DocumentService(CommonService):
             cls.model.thumbnail,
             cls.model.kb_id,
             cls.model.parser_id,
+            cls.model.pipeline_id,
             cls.model.parser_config,
             cls.model.source_type,
             cls.model.type,
@@ -77,9 +80,12 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_list(cls, kb_id, page_number, items_per_page,
-                 orderby, desc, keywords, id, name):
+                 orderby, desc, keywords, id, name, suffix=None, run = None):
         fields = cls.get_cls_model_fields()
-        docs = cls.model.select(*fields).join(File2Document, on = (File2Document.document_id == cls.model.id)).join(File, on = (File.id == File2Document.file_id)).where(cls.model.kb_id == kb_id)
+        docs = cls.model.select(*[*fields, UserCanvas.title]).join(File2Document, on = (File2Document.document_id == cls.model.id))\
+            .join(File, on = (File.id == File2Document.file_id))\
+            .join(UserCanvas, on = ((cls.model.pipeline_id == UserCanvas.id) & (UserCanvas.canvas_category == CanvasCategory.DataFlow.value)), join_type=JOIN.LEFT_OUTER)\
+            .where(cls.model.kb_id == kb_id)
         if id:
             docs = docs.where(
                 cls.model.id == id)
@@ -91,6 +97,10 @@ class DocumentService(CommonService):
             docs = docs.where(
                 fn.LOWER(cls.model.name).contains(keywords.lower())
             )
+        if suffix:
+            docs = docs.where(cls.model.suffix.in_(suffix))
+        if run:
+            docs = docs.where(cls.model.run.in_(run))
         if desc:
             docs = docs.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -117,12 +127,22 @@ class DocumentService(CommonService):
                      orderby, desc, keywords, run_status, types, suffix):
         fields = cls.get_cls_model_fields()
         if keywords:
-            docs = cls.model.select(*fields).join(File2Document, on=(File2Document.document_id == cls.model.id)).join(File, on=(File.id == File2Document.file_id)).where(
-                (cls.model.kb_id == kb_id),
-                (fn.LOWER(cls.model.name).contains(keywords.lower()))
-            )
+            docs = cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name"), User.nickname])\
+                .join(File2Document, on=(File2Document.document_id == cls.model.id))\
+                .join(File, on=(File.id == File2Document.file_id))\
+                .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
+                .join(User, on=(cls.model.created_by == User.id), join_type=JOIN.LEFT_OUTER)\
+                .where(
+                    (cls.model.kb_id == kb_id),
+                    (fn.LOWER(cls.model.name).contains(keywords.lower()))
+                )
         else:
-            docs = cls.model.select(*fields).join(File2Document, on=(File2Document.document_id == cls.model.id)).join(File, on=(File.id == File2Document.file_id)).where(cls.model.kb_id == kb_id)
+            docs = cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name"), User.nickname])\
+                .join(File2Document, on=(File2Document.document_id == cls.model.id))\
+                .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
+                .join(File, on=(File.id == File2Document.file_id))\
+                .join(User, on=(cls.model.created_by == User.id), join_type=JOIN.LEFT_OUTER)\
+                .where(cls.model.kb_id == kb_id)
 
         if run_status:
             docs = docs.where(cls.model.run.in_(run_status))
@@ -230,6 +250,46 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_all_doc_ids_by_kb_ids(cls, kb_ids):
+        fields = [cls.model.id]
+        docs = cls.model.select(*fields).where(cls.model.kb_id.in_(kb_ids))
+        docs.order_by(cls.model.create_time.asc())
+        # maybe cause slow query by deep paginate, optimize later
+        offset, limit = 0, 100
+        res = []
+        while True:
+            doc_batch = docs.offset(offset).limit(limit)
+            _temp = list(doc_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_docs_by_creator_id(cls, creator_id):
+        fields = [
+            cls.model.id, cls.model.kb_id, cls.model.token_num, cls.model.chunk_num, Knowledgebase.tenant_id
+        ]
+        docs = cls.model.select(*fields).join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id)).where(
+            cls.model.created_by == creator_id
+        )
+        docs.order_by(cls.model.create_time.asc())
+        # maybe cause slow query by deep paginate, optimize later
+        offset, limit = 0, 100
+        res = []
+        while True:
+            doc_batch = docs.offset(offset).limit(limit)
+            _temp = list(doc_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
+    @classmethod
+    @DB.connection_context()
     def insert(cls, doc):
         if not cls.save(**doc):
             raise RuntimeError("Database error (Document)!")
@@ -248,10 +308,10 @@ class DocumentService(CommonService):
             page_size = 1000
             all_chunk_ids = []
             while True:
-                chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
+                chunks = globals.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
                                                       page * page_size, page_size, search.index_name(tenant_id),
                                                       [doc.kb_id])
-                chunk_ids = settings.docStoreConn.getChunkIds(chunks)
+                chunk_ids = globals.docStoreConn.getChunkIds(chunks)
                 if not chunk_ids:
                     break
                 all_chunk_ids.extend(chunk_ids)
@@ -262,19 +322,19 @@ class DocumentService(CommonService):
             if doc.thumbnail and not doc.thumbnail.startswith(IMG_BASE64_PREFIX):
                 if STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
                     STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
-            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+            globals.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
-            graph_source = settings.docStoreConn.getFields(
-                settings.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
+            graph_source = globals.docStoreConn.getFields(
+                globals.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
             )
             if len(graph_source) > 0 and doc.id in list(graph_source.values())[0]["source_id"]:
-                settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "source_id": doc.id},
+                globals.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "source_id": doc.id},
                                              {"remove": {"source_id": doc.id}},
                                              search.index_name(tenant_id), doc.kb_id)
-                settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]},
+                globals.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]},
                                              {"removed_kwd": "Y"},
                                              search.index_name(tenant_id), doc.kb_id)
-                settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
+                globals.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
                                              search.index_name(tenant_id), doc.kb_id)
         except Exception:
             pass
@@ -330,8 +390,7 @@ class DocumentService(CommonService):
                                process_duration=cls.model.process_duration + duration).where(
             cls.model.id == doc_id).execute()
         if num == 0:
-            raise LookupError(
-                "Document not found which is supposed to be there")
+            logging.warning("Document not found which is supposed to be there")
         num = Knowledgebase.update(
             token_num=Knowledgebase.token_num +
                       token_num,
@@ -597,17 +656,33 @@ class DocumentService(CommonService):
     @DB.connection_context()
     def update_progress(cls):
         docs = cls.get_unfinished_docs()
+
+        cls._sync_progress(docs)
+
+
+    @classmethod
+    @DB.connection_context()
+    def update_progress_immediately(cls, docs:list[dict]):
+        if not docs:
+            return
+
+        cls._sync_progress(docs)
+
+
+    @classmethod
+    @DB.connection_context()
+    def _sync_progress(cls, docs:list[dict]):
+        from api.db.services.task_service import TaskService
+
         for d in docs:
             try:
-                tsks = Task.query(doc_id=d["id"], order_by=Task.create_time)
+                tsks = TaskService.query(doc_id=d["id"], order_by=Task.create_time)
                 if not tsks:
                     continue
                 msg = []
                 prg = 0
                 finished = True
                 bad = 0
-                has_raptor = False
-                has_graphrag = False
                 e, doc = DocumentService.get_by_id(d["id"])
                 status = doc.run  # TaskStatus.RUNNING.value
                 priority = 0
@@ -619,24 +694,14 @@ class DocumentService(CommonService):
                     prg += t.progress if t.progress >= 0 else 0
                     if t.progress_msg.strip():
                         msg.append(t.progress_msg)
-                    if t.task_type == "raptor":
-                        has_raptor = True
-                    elif t.task_type == "graphrag":
-                        has_graphrag = True
                     priority = max(priority, t.priority)
                 prg /= len(tsks)
                 if finished and bad:
                     prg = -1
                     status = TaskStatus.FAIL.value
                 elif finished:
-                    if (d["parser_config"].get("raptor") or {}).get("use_raptor") and not has_raptor:
-                        queue_raptor_o_graphrag_tasks(d, "raptor", priority)
-                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    elif (d["parser_config"].get("graphrag") or {}).get("use_graphrag") and not has_graphrag:
-                        queue_raptor_o_graphrag_tasks(d, "graphrag", priority)
-                        prg = 0.98 * len(tsks) / (len(tsks) + 1)
-                    else:
-                        status = TaskStatus.DONE.value
+                    prg = 1
+                    status = TaskStatus.DONE.value
 
                 msg = "\n".join(sorted(msg))
                 info = {
@@ -648,7 +713,7 @@ class DocumentService(CommonService):
                     info["progress"] = prg
                 if msg:
                     info["progress_msg"] = msg
-                    if msg.endswith("created task graphrag") or msg.endswith("created task raptor"):
+                    if msg.endswith("created task graphrag") or msg.endswith("created task raptor") or msg.endswith("created task mindmap"):
                         info["progress_msg"] += "\n%d tasks are ahead in the queue..."%get_queue_length(priority)
                 else:
                     info["progress_msg"] = "%d tasks are ahead in the queue..."%get_queue_length(priority)
@@ -729,21 +794,51 @@ class DocumentService(CommonService):
             "cancelled": int(cancelled),
         }
 
-def queue_raptor_o_graphrag_tasks(doc, ty, priority):
-    chunking_config = DocumentService.get_chunking_config(doc["id"])
+    @classmethod
+    def run(cls, tenant_id:str, doc:dict, kb_table_num_map:dict):
+        from api.db.services.task_service import queue_dataflow, queue_tasks
+        from api.db.services.file2document_service import File2DocumentService
+
+        doc["tenant_id"] = tenant_id
+        doc_parser = doc.get("parser_id", ParserType.NAIVE)
+        if doc_parser == ParserType.TABLE:
+            kb_id = doc.get("kb_id")
+            if not kb_id:
+                return
+            if kb_id not in kb_table_num_map:
+                count = DocumentService.count_by_kb_id(kb_id=kb_id, keywords="", run_status=[TaskStatus.DONE], types=[])
+                kb_table_num_map[kb_id] = count
+                if kb_table_num_map[kb_id] <= 0:
+                    KnowledgebaseService.delete_field_map(kb_id)
+        if doc.get("pipeline_id", ""):
+            queue_dataflow(tenant_id, flow_id=doc["pipeline_id"], task_id=get_uuid(), doc_id=doc["id"])
+        else:
+            bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
+            queue_tasks(doc, bucket, name, 0)
+
+
+def queue_raptor_o_graphrag_tasks(sample_doc_id, ty, priority, fake_doc_id="", doc_ids=[]):
+    """
+    You can provide a fake_doc_id to bypass the restriction of tasks at the knowledgebase level.
+    Optionally, specify a list of doc_ids to determine which documents participate in the task.
+    """
+    assert ty in ["graphrag", "raptor", "mindmap"], "type should be graphrag, raptor or mindmap"
+
+    chunking_config = DocumentService.get_chunking_config(sample_doc_id["id"])
     hasher = xxhash.xxh64()
     for field in sorted(chunking_config.keys()):
         hasher.update(str(chunking_config[field]).encode("utf-8"))
 
     def new_task():
-        nonlocal doc
+        nonlocal sample_doc_id
         return {
             "id": get_uuid(),
-            "doc_id": doc["id"],
+            "doc_id": sample_doc_id["id"],
             "from_page": 100000000,
             "to_page": 100000000,
             "task_type": ty,
-            "progress_msg":  datetime.now().strftime("%H:%M:%S") + " created task " + ty
+            "progress_msg":  datetime.now().strftime("%H:%M:%S") + " created task " + ty,
+            "begin_at": datetime.now(),
         }
 
     task = new_task()
@@ -752,7 +847,12 @@ def queue_raptor_o_graphrag_tasks(doc, ty, priority):
     hasher.update(ty.encode("utf-8"))
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
+
+    task["doc_id"] = fake_doc_id
+    task["doc_ids"] = doc_ids
+    DocumentService.begin2parse(sample_doc_id["id"])
     assert REDIS_CONN.queue_product(get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
+    return task["id"]
 
 
 def get_queue_length(priority):
@@ -885,7 +985,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
                     "content_with_weight": mind_map,
                     "knowledge_graph_kwd": "mind_map"
                 })
-            except Exception as e:
+            except Exception:
                 logging.exception("Mind map generation error")
 
         vects = embedding(doc_id, [c["content_with_weight"] for c in cks])
@@ -895,10 +995,10 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             d["q_%d_vec" % len(v)] = v
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
-                if not settings.docStoreConn.indexExist(idxnm, kb_id):
-                    settings.docStoreConn.createIdx(idxnm, kb_id, len(vects[0]))
+                if not globals.docStoreConn.indexExist(idxnm, kb_id):
+                    globals.docStoreConn.createIdx(idxnm, kb_id, len(vects[0]))
                 try_create_idx = False
-            settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
+            globals.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 
         DocumentService.increment_chunk_num(
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)

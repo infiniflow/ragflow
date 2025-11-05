@@ -3,8 +3,8 @@ import logging
 import pymysql
 from urllib.parse import quote_plus
 
-from api.utils import get_base_config
-from rag.utils import singleton
+from common.config_utils import get_base_config
+from common.decorator import singleton
 
 
 CREATE_TABLE_SQL = """
@@ -65,20 +65,20 @@ class OpenDALStorage:
         r = self._operator.write(f"{bucket}/{fnm}", binary)
         return r
 
-    def put(self, bucket, fnm, binary):
+    def put(self, bucket, fnm, binary, tenant_id=None):
         self._operator.write(f"{bucket}/{fnm}", binary)
 
-    def get(self, bucket, fnm):
+    def get(self, bucket, fnm, tenant_id=None):
         return self._operator.read(f"{bucket}/{fnm}")
 
-    def rm(self, bucket, fnm):
+    def rm(self, bucket, fnm, tenant_id=None):
         self._operator.delete(f"{bucket}/{fnm}")
         self._operator.__init__()
 
-    def scan(self, bucket, fnm):
+    def scan(self, bucket, fnm, tenant_id=None):
         return self._operator.scan(f"{bucket}/{fnm}")
 
-    def obj_exist(self, bucket, fnm):
+    def obj_exist(self, bucket, fnm, tenant_id=None):
         return self._operator.exists(f"{bucket}/{fnm}")
 
 

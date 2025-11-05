@@ -19,7 +19,7 @@ import time
 from abc import ABC
 import wikipedia
 from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class WikipediaParam(ToolParamBase):
@@ -64,7 +64,7 @@ class WikipediaParam(ToolParamBase):
 class Wikipedia(ToolBase, ABC):
     component_name = "Wikipedia"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
         if not kwargs.get("query"):
             self.set_output("formalized_content", "")
@@ -99,6 +99,6 @@ class Wikipedia(ToolBase, ABC):
 
     def thoughts(self) -> str:
         return """
-Keywords: {} 
+Keywords: {}
 Looking for the most relevant articles.
         """.format(self.get_input().get("query", "-_-!"))

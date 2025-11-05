@@ -13,20 +13,24 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import base64
 import json
 import os
+import tempfile
+import logging
 from abc import ABC
 from copy import deepcopy
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import urljoin
 import requests
 from openai import OpenAI
 from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
 from rag.nlp import is_english
-from rag.prompts import vision_llm_describe_prompt
-from rag.utils import num_tokens_from_string
+from rag.prompts.generator import vision_llm_describe_prompt
+from common.token_utils import num_tokens_from_string, total_token_count_from_response
 
 
 class Base(ABC):
@@ -38,6 +42,7 @@ class Base(ABC):
         self.is_tools = False
         self.tools = []
         self.toolcall_sessions = {}
+        self.extra_body = None
 
     def describe(self, image):
         raise NotImplementedError("Please implement encode method!")
@@ -45,7 +50,7 @@ class Base(ABC):
     def describe_with_prompt(self, image, prompt=None):
         raise NotImplementedError("Please implement encode method!")
 
-    def _form_history(self, system, history, images=[]):
+    def _form_history(self, system, history, images=None):
         hist = []
         if system:
             hist.append({"role": "system", "content": system})
@@ -73,24 +78,26 @@ class Base(ABC):
             })
         return pmpt
 
-    def chat(self, system, history, gen_conf, images=[], **kwargs):
+    def chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=self._form_history(system, history, images)
+                messages=self._form_history(system, history, images),
+                extra_body=self.extra_body,
             )
             return response.choices[0].message.content.strip(), response.usage.total_tokens
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=[], **kwargs):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         tk_count = 0
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=self._form_history(system, history, images),
-                stream=True
+                stream=True,
+                extra_body=self.extra_body,
             )
             for resp in response:
                 if not resp.choices[0].delta.content:
@@ -125,7 +132,7 @@ class Base(ABC):
             b64 = base64.b64encode(data).decode("utf-8")
             return f"data:{mime};base64,{b64}"
         with BytesIO() as buffered:
-            fmt = "JPEG"
+            fmt = "jpeg"
             try:
                 image.save(buffered, format="JPEG")
             except Exception:
@@ -133,10 +140,10 @@ class Base(ABC):
                 buffered.seek(0)
                 buffered.truncate()
                 image.save(buffered, format="PNG")
-                fmt = "PNG"
+                fmt = "png"
             data = buffered.getvalue()
             b64 = base64.b64encode(data).decode("utf-8")
-            mime = f"image/{fmt.lower()}"
+            mime = f"image/{fmt}"
         return f"data:{mime};base64,{b64}"
 
     def prompt(self, b64):
@@ -167,6 +174,7 @@ class GptV4(Base):
     def __init__(self, key, model_name="gpt-4-vision-preview", lang="Chinese", base_url="https://api.openai.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.openai.com/v1"
+        self.api_key = key
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
@@ -177,16 +185,18 @@ class GptV4(Base):
         res = self.client.chat.completions.create(
             model=self.model_name,
             messages=self.prompt(b64),
+            extra_body=self.extra_body,
         )
-        return res.choices[0].message.content.strip(), res.usage.total_tokens
+        return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
     def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
         res = self.client.chat.completions.create(
             model=self.model_name,
             messages=self.vision_llm_prompt(b64, prompt),
+            extra_body=self.extra_body,
         )
-        return res.choices[0].message.content.strip(), res.usage.total_tokens
+        return res.choices[0].message.content.strip(),total_token_count_from_response(res)
 
 
 class AzureGptV4(GptV4):
@@ -217,6 +227,61 @@ class QWenCV(GptV4):
         if not base_url:
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+
+    def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
+        if video_bytes:
+            try:
+                summary, summary_num_tokens = self._process_video(video_bytes, filename)
+                return summary, summary_num_tokens
+            except Exception as e:
+                return "**ERROR**: " + str(e), 0
+
+        return "**ERROR**: Method chat not supported yet.", 0
+
+    def _process_video(self, video_bytes, filename):
+        from dashscope import MultiModalConversation
+
+        video_suffix = Path(filename).suffix or ".mp4"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=video_suffix) as tmp:
+            tmp.write(video_bytes)
+            tmp_path = tmp.name
+
+        video_path = f"file://{tmp_path}"
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "video": video_path,
+                        "fps": 2,
+                    },
+                    {
+                        "text": "Please summarize this video in proper sentences.",
+                    },
+                ],
+            }
+        ]
+
+        def call_api():
+            response = MultiModalConversation.call(
+                api_key=self.api_key,
+                model=self.model_name,
+                messages=messages,
+            )
+            summary = response["output"]["choices"][0]["message"].content[0]["text"]
+            return summary, num_tokens_from_string(summary)
+
+        try:
+            return call_api()
+        except Exception as e1:
+            import dashscope
+
+            dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
+            try:
+                return call_api()
+            except Exception as e2:
+                raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
+
 
 
 class HunyuanCV(GptV4):
@@ -249,6 +314,17 @@ class StepFunCV(GptV4):
         self.lang = lang
         Base.__init__(self, **kwargs)
 
+class VolcEngineCV(GptV4):
+    _FACTORY_NAME = "VolcEngine"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://ark.cn-beijing.volces.com/api/v3", **kwargs):
+        if not base_url:
+            base_url = "https://ark.cn-beijing.volces.com/api/v3"
+        ark_api_key = json.loads(key).get("ark_api_key", "")
+        self.client = OpenAI(api_key=ark_api_key, base_url=base_url)
+        self.model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+        self.lang = lang
+        Base.__init__(self, **kwargs)
 
 class LmStudioCV(GptV4):
     _FACTORY_NAME = "LM-Studio"
@@ -327,10 +403,27 @@ class OpenRouterCV(GptV4):
     ):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        api_key = json.loads(key).get("api_key", "")
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
+        provider_order = json.loads(key).get("provider_order", "")
+        self.extra_body = {}
+        if provider_order:
+            def _to_order_list(x):
+                if x is None:
+                    return []
+                if isinstance(x, str):
+                    return [s.strip() for s in x.split(",") if s.strip()]
+                if isinstance(x, (list, tuple)):
+                    return [str(s).strip() for s in x if str(s).strip()]
+                return []
+            provider_cfg = {}
+            provider_order = _to_order_list(provider_order)
+            provider_cfg["order"] = provider_order
+            provider_cfg["allow_fallbacks"] = False
+            self.extra_body["provider"] = provider_cfg
 
 
 class LocalAICV(GptV4):
@@ -413,7 +506,7 @@ class OllamaCV(Base):
             options["frequency_penalty"] = gen_conf["frequency_penalty"]
         return options
 
-    def _form_history(self, system, history, images=[]):
+    def _form_history(self, system, history, images=None):
         hist = deepcopy(history)
         if system and hist[0]["role"] == "user":
             hist.insert(0, {"role": "system", "content": system})
@@ -433,7 +526,7 @@ class OllamaCV(Base):
         try:
             response = self.client.generate(
                 model=self.model_name,
-                prompt=prompt[0]["content"][0]["text"],
+                prompt=prompt[0]["content"],
                 images=[image],
             )
             ans = response["response"].strip()
@@ -446,7 +539,7 @@ class OllamaCV(Base):
         try:
             response = self.client.generate(
                 model=self.model_name,
-                prompt=vision_prompt[0]["content"][0]["text"],
+                prompt=vision_prompt[0]["content"],
                 images=[image],
             )
             ans = response["response"].strip()
@@ -454,7 +547,7 @@ class OllamaCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat(self, system, history, gen_conf, images=[]):
+    def chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
             response = self.client.chat(
                 model=self.model_name,
@@ -468,7 +561,7 @@ class OllamaCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=[]):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         try:
             response = self.client.chat(
@@ -496,13 +589,14 @@ class GeminiCV(Base):
 
         client.configure(api_key=key)
         _client = client.get_default_generative_client()
+        self.api_key=key
         self.model_name = model_name
         self.model = GenerativeModel(model_name=self.model_name)
         self.model._client = _client
         self.lang = lang
         Base.__init__(self, **kwargs)
 
-    def _form_history(self, system, history, images=[]):
+    def _form_history(self, system, history, images=None):
         hist = []
         if system:
             hist.append({"role": "user", "parts": [system, history[0]["content"]]})
@@ -522,11 +616,10 @@ class GeminiCV(Base):
         )
         b64 = self.image2base64(image)
         with BytesIO(base64.b64decode(b64)) as bio:
-            img = open(bio)
-            input = [prompt, img]
-            res = self.model.generate_content(input)
-            img.close()
-            return res.text, res.usage_metadata.total_token_count
+            with open(bio) as img:
+                input = [prompt, img]
+                res = self.model.generate_content(input)
+                return res.text, total_token_count_from_response(res)
 
     def describe_with_prompt(self, image, prompt=None):
         from PIL.Image import open
@@ -534,24 +627,31 @@ class GeminiCV(Base):
         b64 = self.image2base64(image)
         vision_prompt = prompt if prompt else vision_llm_describe_prompt()
         with BytesIO(base64.b64decode(b64)) as bio:
-            img = open(bio)
-            input = [vision_prompt, img]
-            res = self.model.generate_content(input)
-            img.close()
-            return res.text, res.usage_metadata.total_token_count
+            with open(bio) as img:
+                input = [vision_prompt, img]
+                res = self.model.generate_content(input)
+                return res.text, total_token_count_from_response(res)
 
-    def chat(self, system, history, gen_conf, images=[]):
+
+    def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
+        if video_bytes:
+            try:
+                summary, summary_num_tokens = self._process_video(video_bytes, filename)
+                return summary, summary_num_tokens
+            except Exception as e:
+                return "**ERROR**: " + str(e), 0
+
         generation_config = dict(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7))
         try:
             response = self.model.generate_content(
                 self._form_history(system, history, images),
                 generation_config=generation_config)
             ans = response.text
-            return ans, response.usage_metadata.total_token_count
+            return ans, total_token_count_from_response(ans)
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=[]):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         response = None
         try:
@@ -570,10 +670,47 @@ class GeminiCV(Base):
         except Exception as e:
             yield ans + "\n**ERROR**: " + str(e)
 
-        if response and hasattr(response, "usage_metadata") and hasattr(response.usage_metadata, "total_token_count"):
-            yield response.usage_metadata.total_token_count
-        else:
-            yield 0
+        yield total_token_count_from_response(response)
+
+    def _process_video(self, video_bytes, filename):
+        from google import genai
+        from google.genai import types
+
+        video_size_mb = len(video_bytes) / (1024 * 1024)
+        client = genai.Client(api_key=self.api_key)
+
+        tmp_path = None
+        try:
+            if video_size_mb <= 20:
+                response = client.models.generate_content(
+                    model="models/gemini-2.5-flash",
+                    contents=types.Content(parts=[
+                        types.Part(inline_data=types.Blob(data=video_bytes, mime_type="video/mp4")),
+                        types.Part(text="Please summarize the video in proper sentences.")
+                    ])
+                )
+            else:
+                logging.info(f"Video size {video_size_mb:.2f}MB exceeds 20MB. Using Files API...")
+                video_suffix = Path(filename).suffix or ".mp4"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=video_suffix) as tmp:
+                    tmp.write(video_bytes)
+                    tmp_path = Path(tmp.name)
+                uploaded_file = client.files.upload(file=tmp_path)
+
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[uploaded_file, "Please summarize this video in proper sentences."]
+                )
+
+            summary = response.text or ""
+            logging.info(f"Video summarized: {summary[:32]}...")
+            return summary, num_tokens_from_string(summary)
+        except Exception as e:
+            logging.error(f"Video processing failed: {e}")
+            raise
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
 
 
 class NvidiaCV(Base):
@@ -619,7 +756,7 @@ class NvidiaCV(Base):
         response = response.json()
         return (
             response["choices"][0]["message"]["content"].strip(),
-            response["usage"]["total_tokens"],
+            total_token_count_from_response(response),
         )
 
     def _request(self, msg, gen_conf={}):
@@ -642,26 +779,25 @@ class NvidiaCV(Base):
         response = self._request(vision_prompt)
         return (
             response["choices"][0]["message"]["content"].strip(),
-            response["usage"]["total_tokens"],
+            total_token_count_from_response(response)
         )
 
-    def chat(self, system, history, gen_conf, images=[], **kwargs):
+    def chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
             response = self._request(self._form_history(system, history, images), gen_conf)
             return (
                 response["choices"][0]["message"]["content"].strip(),
-                response["usage"]["total_tokens"],
+                total_token_count_from_response(response)
             )
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=[], **kwargs):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         total_tokens = 0
         try:
             response = self._request(self._form_history(system, history, images), gen_conf)
             cnt = response["choices"][0]["message"]["content"]
-            if "usage" in response and "total_tokens" in response["usage"]:
-                total_tokens += response["usage"]["total_tokens"]
+            total_tokens +=  total_token_count_from_response(response)
             for resp in cnt:
                 yield resp
         except Exception as e:
@@ -710,7 +846,7 @@ class AnthropicCV(Base):
         prompt = self.prompt(b64, prompt if prompt else vision_llm_describe_prompt())
 
         response = self.client.messages.create(model=self.model_name, max_tokens=self.max_tokens, messages=prompt)
-        return response["content"][0]["text"].strip(), response["usage"]["input_tokens"] + response["usage"]["output_tokens"]
+        return response["content"][0]["text"].strip(), total_token_count_from_response(response)
 
     def _clean_conf(self, gen_conf):
         if "presence_penalty" in gen_conf:
@@ -721,7 +857,7 @@ class AnthropicCV(Base):
             gen_conf["max_tokens"] = self.max_tokens
         return gen_conf
 
-    def chat(self, system, history, gen_conf, images=[]):
+    def chat(self, system, history, gen_conf, images=None, **kwargs):
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
         try:
@@ -737,12 +873,12 @@ class AnthropicCV(Base):
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return (
                 ans,
-                response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
+                total_token_count_from_response(response),
             )
         except Exception as e:
             return ans + "\n**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=[]):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         gen_conf = self._clean_conf(gen_conf)
         total_tokens = 0
         try:
@@ -826,13 +962,13 @@ class GoogleCV(AnthropicCV, GeminiCV):
         else:
             return GeminiCV.describe_with_prompt(self, image, prompt)
 
-    def chat(self, system, history, gen_conf, images=[]):
+    def chat(self, system, history, gen_conf, images=None, **kwargs):
         if "claude" in self.model_name:
             return AnthropicCV.chat(self, system, history, gen_conf, images)
         else:
             return GeminiCV.chat(self, system, history, gen_conf, images)
 
-    def chat_streamly(self, system, history, gen_conf, images=[]):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         if "claude" in self.model_name:
             for ans in AnthropicCV.chat_streamly(self, system, history, gen_conf, images):
                 yield ans

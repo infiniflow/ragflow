@@ -1,6 +1,7 @@
 import '@/locales/config';
 import type { Preview } from '@storybook/react-webpack5';
 import { createElement } from 'react';
+import '../public/iconfont.js';
 import { TooltipProvider } from '../src/components/ui/tooltip';
 
 import '../tailwind.css';

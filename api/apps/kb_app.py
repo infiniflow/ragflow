@@ -14,60 +14,52 @@
 #  limitations under the License.
 #
 import json
+import logging
+import random
 
 from flask import request
 from flask_login import login_required, current_user
+import numpy as np
 
-from api.db.services import duplicate_name
-from api.db.services.document_service import DocumentService
+
+from api.db.services.connector_service import Connector2KbService
+from api.db.services.llm_service import LLMBundle
+from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
+from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request, not_allowed_parameters
-from api.utils import get_uuid
-from api.db import StatusEnum, FileSource
+from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters
+from api.db import VALID_FILE_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
-from api import settings
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.settings import PAGERANK_FLD
+from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.storage_factory import STORAGE_IMPL
-
+from rag.utils.doc_store_conn import OrderByExpr  
+from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType
+from common import globals
 
 @manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("name")
 def create():
     req = request.json
-    dataset_name = req["name"]
-    if not isinstance(dataset_name, str):
-        return get_data_error_result(message="Dataset name must be string.")
-    if dataset_name.strip() == "":
-        return get_data_error_result(message="Dataset name can't be empty.")
-    if len(dataset_name.encode("utf-8")) > DATASET_NAME_LIMIT:
-        return get_data_error_result(
-            message=f"Dataset name length is {len(dataset_name)} which is larger than {DATASET_NAME_LIMIT}")
+    req = KnowledgebaseService.create_with_name(
+        name = req.pop("name", None),
+        tenant_id = current_user.id,
+        parser_id = req.pop("parser_id", None),
+        **req
+    )        
 
-    dataset_name = dataset_name.strip()
-    dataset_name = duplicate_name(
-        KnowledgebaseService.query,
-        name=dataset_name,
-        tenant_id=current_user.id,
-        status=StatusEnum.VALID.value)
     try:
-        req["id"] = get_uuid()
-        req["name"] = dataset_name
-        req["tenant_id"] = current_user.id
-        req["created_by"] = current_user.id
-        e, t = TenantService.get_by_id(current_user.id)
-        if not e:
-            return get_data_error_result(message="Tenant not found.")
-        req["embd_id"] = t.embd_id
         if not KnowledgebaseService.save(**req):
             return get_data_error_result()
-        return get_json_result(data={"kb_id": req["id"]})
+        return get_json_result(data={"kb_id":req["id"]})
     except Exception as e:
         return server_error_response(e)
 
@@ -91,14 +83,14 @@ def update():
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     try:
         if not KnowledgebaseService.query(
                 created_by=current_user.id, id=req["kb_id"]):
             return get_json_result(
                 data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+                code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
         if not e:
@@ -117,11 +109,11 @@ def update():
 
         if kb.pagerank != req.get("pagerank", 0):
             if req.get("pagerank", 0) > 0:
-                settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
+                globals.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
                                          search.index_name(kb.tenant_id), kb.id)
             else:
                 # Elasticsearch requires PAGERANK_FLD be non-zero!
-                settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
+                globals.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
                                          search.index_name(kb.tenant_id), kb.id)
 
         e, kb = KnowledgebaseService.get_by_id(kb.id)
@@ -149,12 +141,17 @@ def detail():
         else:
             return get_json_result(
                 data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+                code=RetCode.OPERATING_ERROR)
         kb = KnowledgebaseService.get_detail(kb_id)
         if not kb:
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
         kb["size"] = DocumentService.get_total_size_by_kb_id(kb_id=kb["id"],keywords="", run_status=[], types=[])
+        kb["connectors"] = Connector2KbService.list_connectors(kb_id)
+
+        for key in ["graphrag_task_finish_at", "raptor_task_finish_at", "mindmap_task_finish_at"]:
+            if finish_at := kb.get(key):
+                kb[key] = finish_at.strftime("%Y-%m-%d %H:%M:%S")
         return get_json_result(data=kb)
     except Exception as e:
         return server_error_response(e)
@@ -204,7 +201,7 @@ def rm():
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     try:
         kbs = KnowledgebaseService.query(
@@ -212,7 +209,7 @@ def rm():
         if not kbs:
             return get_json_result(
                 data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+                code=RetCode.OPERATING_ERROR)
 
         for doc in DocumentService.query(kb_id=req["kb_id"]):
             if not DocumentService.remove_document(doc, kbs[0].tenant_id):
@@ -228,8 +225,8 @@ def rm():
             return get_data_error_result(
                 message="Database error (Knowledgebase removal)!")
         for kb in kbs:
-            settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
-            settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
+            globals.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
+            globals.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
             if hasattr(STORAGE_IMPL, 'remove_bucket'):
                 STORAGE_IMPL.remove_bucket(kb.id)
         return get_json_result(data=True)
@@ -244,13 +241,13 @@ def list_tags(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
 
     tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
     tags = []
     for tenant in tenants:
-        tags += settings.retrievaler.all_tags(tenant["tenant_id"], [kb_id])
+        tags += globals.retriever.all_tags(tenant["tenant_id"], [kb_id])
     return get_json_result(data=tags)
 
 
@@ -263,13 +260,13 @@ def list_tags_from_kbs():
             return get_json_result(
                 data=False,
                 message='No authorization.',
-                code=settings.RetCode.AUTHENTICATION_ERROR
+                code=RetCode.AUTHENTICATION_ERROR
             )
 
     tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
     tags = []
     for tenant in tenants:
-        tags += settings.retrievaler.all_tags(tenant["tenant_id"], kb_ids)
+        tags += globals.retriever.all_tags(tenant["tenant_id"], kb_ids)
     return get_json_result(data=tags)
 
 
@@ -281,12 +278,12 @@ def rm_tags(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     e, kb = KnowledgebaseService.get_by_id(kb_id)
 
     for t in req["tags"]:
-        settings.docStoreConn.update({"tag_kwd": t, "kb_id": [kb_id]},
+        globals.docStoreConn.update({"tag_kwd": t, "kb_id": [kb_id]},
                                      {"remove": {"tag_kwd": t}},
                                      search.index_name(kb.tenant_id),
                                      kb_id)
@@ -301,11 +298,11 @@ def rename_tags(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     e, kb = KnowledgebaseService.get_by_id(kb_id)
 
-    settings.docStoreConn.update({"tag_kwd": req["from_tag"], "kb_id": [kb_id]},
+    globals.docStoreConn.update({"tag_kwd": req["from_tag"], "kb_id": [kb_id]},
                                      {"remove": {"tag_kwd": req["from_tag"].strip()}, "add": {"tag_kwd": req["to_tag"]}},
                                      search.index_name(kb.tenant_id),
                                      kb_id)
@@ -319,7 +316,7 @@ def knowledge_graph(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(kb_id)
     req = {
@@ -328,9 +325,9 @@ def knowledge_graph(kb_id):
     }
 
     obj = {"graph": {}, "mind_map": {}}
-    if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), kb_id):
+    if not globals.docStoreConn.indexExist(search.index_name(kb.tenant_id), kb_id):
         return get_json_result(data=obj)
-    sres = settings.retrievaler.search(req, search.index_name(kb.tenant_id), [kb_id])
+    sres = globals.retriever.search(req, search.index_name(kb.tenant_id), [kb_id])
     if not len(sres.ids):
         return get_json_result(data=obj)
 
@@ -359,10 +356,10 @@ def delete_knowledge_graph(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(kb_id)
-    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
+    globals.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
 
     return get_json_result(data=True)
 
@@ -376,7 +373,7 @@ def get_meta():
             return get_json_result(
                 data=False,
                 message='No authorization.',
-                code=settings.RetCode.AUTHENTICATION_ERROR
+                code=RetCode.AUTHENTICATION_ERROR
             )
     return get_json_result(data=DocumentService.get_meta_by_kbs(kb_ids))
 
@@ -389,9 +386,519 @@ def get_basic_info():
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
 
     basic_info = DocumentService.knowledgebase_basic_info(kb_id)
 
     return get_json_result(data=basic_info)
+
+
+@manager.route("/list_pipeline_logs", methods=["POST"])  # noqa: F821
+@login_required
+def list_pipeline_logs():
+    kb_id = request.args.get("kb_id")
+    if not kb_id:
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
+
+    keywords = request.args.get("keywords", "")
+
+    page_number = int(request.args.get("page", 0))
+    items_per_page = int(request.args.get("page_size", 0))
+    orderby = request.args.get("orderby", "create_time")
+    if request.args.get("desc", "true").lower() == "false":
+        desc = False
+    else:
+        desc = True
+    create_date_from = request.args.get("create_date_from", "")
+    create_date_to = request.args.get("create_date_to", "")
+    if create_date_to > create_date_from:
+        return get_data_error_result(message="Create data filter is abnormal.")
+
+    req = request.get_json()
+
+    operation_status = req.get("operation_status", [])
+    if operation_status:
+        invalid_status = {s for s in operation_status if s not in VALID_TASK_STATUS}
+        if invalid_status:
+            return get_data_error_result(message=f"Invalid filter operation_status status conditions: {', '.join(invalid_status)}")
+
+    types = req.get("types", [])
+    if types:
+        invalid_types = {t for t in types if t not in VALID_FILE_TYPES}
+        if invalid_types:
+            return get_data_error_result(message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
+
+    suffix = req.get("suffix", [])
+
+    try:
+        logs, tol = PipelineOperationLogService.get_file_logs_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, operation_status, types, suffix, create_date_from, create_date_to)
+        return get_json_result(data={"total": tol, "logs": logs})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/list_pipeline_dataset_logs", methods=["POST"])  # noqa: F821
+@login_required
+def list_pipeline_dataset_logs():
+    kb_id = request.args.get("kb_id")
+    if not kb_id:
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
+
+    page_number = int(request.args.get("page", 0))
+    items_per_page = int(request.args.get("page_size", 0))
+    orderby = request.args.get("orderby", "create_time")
+    if request.args.get("desc", "true").lower() == "false":
+        desc = False
+    else:
+        desc = True
+    create_date_from = request.args.get("create_date_from", "")
+    create_date_to = request.args.get("create_date_to", "")
+    if create_date_to > create_date_from:
+        return get_data_error_result(message="Create data filter is abnormal.")
+
+    req = request.get_json()
+
+    operation_status = req.get("operation_status", [])
+    if operation_status:
+        invalid_status = {s for s in operation_status if s not in VALID_TASK_STATUS}
+        if invalid_status:
+            return get_data_error_result(message=f"Invalid filter operation_status status conditions: {', '.join(invalid_status)}")
+
+    try:
+        logs, tol = PipelineOperationLogService.get_dataset_logs_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, operation_status, create_date_from, create_date_to)
+        return get_json_result(data={"total": tol, "logs": logs})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/delete_pipeline_logs", methods=["POST"])  # noqa: F821
+@login_required
+def delete_pipeline_logs():
+    kb_id = request.args.get("kb_id")
+    if not kb_id:
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
+
+    req = request.get_json()
+    log_ids = req.get("log_ids", [])
+
+    PipelineOperationLogService.delete_by_ids(log_ids)
+
+    return get_json_result(data=True)
+
+
+@manager.route("/pipeline_log_detail", methods=["GET"])  # noqa: F821
+@login_required
+def pipeline_log_detail():
+    log_id = request.args.get("log_id")
+    if not log_id:
+        return get_json_result(data=False, message='Lack of "Pipeline log ID"', code=RetCode.ARGUMENT_ERROR)
+
+    ok, log = PipelineOperationLogService.get_by_id(log_id)
+    if not ok:
+        return get_data_error_result(message="Invalid pipeline log ID")
+
+    return get_json_result(data=log.to_dict())
+
+
+@manager.route("/run_graphrag", methods=["POST"])  # noqa: F821
+@login_required
+def run_graphrag():
+    req = request.json
+
+    kb_id = req.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.graphrag_task_id
+    if task_id:
+        ok, task = TaskService.get_by_id(task_id)
+        if not ok:
+            logging.warning(f"A valid GraphRAG task id is expected for kb {kb_id}")
+
+        if task and task.progress not in [-1, 1]:
+            return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A Graph Task is already running.")
+
+    documents, _ = DocumentService.get_by_kb_id(
+        kb_id=kb_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    if not documents:
+        return get_error_data_result(message=f"No documents in Knowledgebase {kb_id}")
+
+    sample_document = documents[0]
+    document_ids = [document["id"] for document in documents]
+
+    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="graphrag", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+
+    if not KnowledgebaseService.update_by_id(kb.id, {"graphrag_task_id": task_id}):
+        logging.warning(f"Cannot save graphrag_task_id for kb {kb_id}")
+
+    return get_json_result(data={"graphrag_task_id": task_id})
+
+
+@manager.route("/trace_graphrag", methods=["GET"])  # noqa: F821
+@login_required
+def trace_graphrag():
+    kb_id = request.args.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.graphrag_task_id
+    if not task_id:
+        return get_json_result(data={})
+
+    ok, task = TaskService.get_by_id(task_id)
+    if not ok:
+        return get_error_data_result(message="GraphRAG Task Not Found or Error Occurred")
+
+    return get_json_result(data=task.to_dict())
+
+
+@manager.route("/run_raptor", methods=["POST"])  # noqa: F821
+@login_required
+def run_raptor():
+    req = request.json
+
+    kb_id = req.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.raptor_task_id
+    if task_id:
+        ok, task = TaskService.get_by_id(task_id)
+        if not ok:
+            logging.warning(f"A valid RAPTOR task id is expected for kb {kb_id}")
+
+        if task and task.progress not in [-1, 1]:
+            return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A RAPTOR Task is already running.")
+
+    documents, _ = DocumentService.get_by_kb_id(
+        kb_id=kb_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    if not documents:
+        return get_error_data_result(message=f"No documents in Knowledgebase {kb_id}")
+
+    sample_document = documents[0]
+    document_ids = [document["id"] for document in documents]
+
+    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="raptor", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+
+    if not KnowledgebaseService.update_by_id(kb.id, {"raptor_task_id": task_id}):
+        logging.warning(f"Cannot save raptor_task_id for kb {kb_id}")
+
+    return get_json_result(data={"raptor_task_id": task_id})
+
+
+@manager.route("/trace_raptor", methods=["GET"])  # noqa: F821
+@login_required
+def trace_raptor():
+    kb_id = request.args.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.raptor_task_id
+    if not task_id:
+        return get_json_result(data={})
+
+    ok, task = TaskService.get_by_id(task_id)
+    if not ok:
+        return get_error_data_result(message="RAPTOR Task Not Found or Error Occurred")
+
+    return get_json_result(data=task.to_dict())
+
+
+@manager.route("/run_mindmap", methods=["POST"])  # noqa: F821
+@login_required
+def run_mindmap():
+    req = request.json
+
+    kb_id = req.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.mindmap_task_id
+    if task_id:
+        ok, task = TaskService.get_by_id(task_id)
+        if not ok:
+            logging.warning(f"A valid Mindmap task id is expected for kb {kb_id}")
+
+        if task and task.progress not in [-1, 1]:
+            return get_error_data_result(message=f"Task {task_id} in progress with status {task.progress}. A Mindmap Task is already running.")
+
+    documents, _ = DocumentService.get_by_kb_id(
+        kb_id=kb_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    if not documents:
+        return get_error_data_result(message=f"No documents in Knowledgebase {kb_id}")
+
+    sample_document = documents[0]
+    document_ids = [document["id"] for document in documents]
+
+    task_id = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="mindmap", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=list(document_ids))
+
+    if not KnowledgebaseService.update_by_id(kb.id, {"mindmap_task_id": task_id}):
+        logging.warning(f"Cannot save mindmap_task_id for kb {kb_id}")
+
+    return get_json_result(data={"mindmap_task_id": task_id})
+
+
+@manager.route("/trace_mindmap", methods=["GET"])  # noqa: F821
+@login_required
+def trace_mindmap():
+    kb_id = request.args.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_error_data_result(message="Invalid Knowledgebase ID")
+
+    task_id = kb.mindmap_task_id
+    if not task_id:
+        return get_json_result(data={})
+
+    ok, task = TaskService.get_by_id(task_id)
+    if not ok:
+        return get_error_data_result(message="Mindmap Task Not Found or Error Occurred")
+
+    return get_json_result(data=task.to_dict())
+
+
+@manager.route("/unbind_task", methods=["DELETE"])  # noqa: F821
+@login_required
+def delete_kb_task():
+    kb_id = request.args.get("kb_id", "")
+    if not kb_id:
+        return get_error_data_result(message='Lack of "KB ID"')
+    ok, kb = KnowledgebaseService.get_by_id(kb_id)
+    if not ok:
+        return get_json_result(data=True)
+
+    pipeline_task_type = request.args.get("pipeline_task_type", "")
+    if not pipeline_task_type or pipeline_task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
+        return get_error_data_result(message="Invalid task type")
+
+    def cancel_task(task_id):
+        REDIS_CONN.set(f"{task_id}-cancel", "x")
+
+    match pipeline_task_type:
+        case PipelineTaskType.GRAPH_RAG:
+            kb_task_id_field = "graphrag_task_id"
+            task_id = kb.graphrag_task_id
+            kb_task_finish_at = "graphrag_task_finish_at"
+            cancel_task(task_id)
+            globals.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
+        case PipelineTaskType.RAPTOR:
+            kb_task_id_field = "raptor_task_id"
+            task_id = kb.raptor_task_id
+            kb_task_finish_at = "raptor_task_finish_at"
+            cancel_task(task_id)
+            globals.docStoreConn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), kb_id)
+        case PipelineTaskType.MINDMAP:
+            kb_task_id_field = "mindmap_task_id"
+            task_id = kb.mindmap_task_id
+            kb_task_finish_at = "mindmap_task_finish_at"
+            cancel_task(task_id)
+        case _:
+            return get_error_data_result(message="Internal Error: Invalid task type")
+
+
+    ok = KnowledgebaseService.update_by_id(kb_id, {kb_task_id_field: "", kb_task_finish_at: None})
+    if not ok:
+        return server_error_response(f"Internal error: cannot delete task {pipeline_task_type}")
+
+    return get_json_result(data=True)
+
+@manager.route("/check_embedding", methods=["post"])  # noqa: F821
+@login_required
+def check_embedding():
+
+    def _guess_vec_field(src: dict) -> str | None:
+        for k in src or {}:
+            if k.endswith("_vec"):
+                return k
+        return None
+
+    def _as_float_vec(v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [float(x) for x in v.split("\t") if x != ""]
+        if isinstance(v, (list, tuple, np.ndarray)):
+            return [float(x) for x in v]
+        return []
+
+    def _to_1d(x):
+        a = np.asarray(x, dtype=np.float32)
+        return a.reshape(-1)  
+
+    def _cos_sim(a, b, eps=1e-12):
+        a = _to_1d(a)
+        b = _to_1d(b)
+        na = np.linalg.norm(a)
+        nb = np.linalg.norm(b)
+        if na < eps or nb < eps: 
+            return 0.0
+        return float(np.dot(a, b) / (na * nb))
+
+    def sample_random_chunks_with_vectors(
+        docStoreConn,
+        tenant_id: str,
+        kb_id: str,
+        n: int = 5,
+        base_fields=("docnm_kwd","doc_id","content_with_weight","page_num_int","position_int","top_int"),
+    ):
+        index_nm = search.index_name(tenant_id)
+
+        res0 = docStoreConn.search(
+            selectFields=[], highlightFields=[],
+            condition={"kb_id": kb_id, "available_int": 1},
+            matchExprs=[], orderBy=OrderByExpr(),
+            offset=0, limit=1,
+            indexNames=index_nm, knowledgebaseIds=[kb_id]
+        )
+        total = docStoreConn.getTotal(res0)
+        if total <= 0:
+            return []
+
+        n = min(n, total)
+        offsets = sorted(random.sample(range(total), n))
+        out = []
+
+        for off in offsets:
+            res1 = docStoreConn.search(
+                selectFields=list(base_fields),
+                highlightFields=[],
+                condition={"kb_id": kb_id, "available_int": 1},
+                matchExprs=[], orderBy=OrderByExpr(),
+                offset=off, limit=1,
+                indexNames=index_nm, knowledgebaseIds=[kb_id]
+            )
+            ids = docStoreConn.getChunkIds(res1)
+            if not ids: 
+                continue
+
+            cid = ids[0]
+            full_doc = docStoreConn.get(cid, index_nm, [kb_id]) or {}
+            vec_field = _guess_vec_field(full_doc)
+            vec = _as_float_vec(full_doc.get(vec_field))
+
+            out.append({
+                "chunk_id": cid,
+                "kb_id": kb_id,
+                "doc_id": full_doc.get("doc_id"),
+                "doc_name": full_doc.get("docnm_kwd"),
+                "vector_field": vec_field,
+                "vector_dim": len(vec),
+                "vector": vec,
+                "page_num_int": full_doc.get("page_num_int"),
+                "position_int": full_doc.get("position_int"),
+                "top_int": full_doc.get("top_int"),
+                "content_with_weight": full_doc.get("content_with_weight") or "",
+            })
+        return out
+    req = request.json
+    kb_id = req.get("kb_id", "")
+    embd_id = req.get("embd_id", "")
+    n = int(req.get("check_num", 5))
+    _, kb = KnowledgebaseService.get_by_id(kb_id)
+    tenant_id = kb.tenant_id
+
+    emb_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embd_id)
+    samples = sample_random_chunks_with_vectors(globals.docStoreConn, tenant_id=tenant_id, kb_id=kb_id, n=n)
+
+    results, eff_sims = [], []
+    for ck in samples:
+        txt = (ck.get("content_with_weight") or "").strip()
+        if not txt:
+            results.append({"chunk_id": ck["chunk_id"], "reason": "no_text"})
+            continue
+
+        if not ck.get("vector"):
+            results.append({"chunk_id": ck["chunk_id"], "reason": "no_stored_vector"})
+            continue
+
+        try:
+            qv, _ = emb_mdl.encode_queries(txt)  
+            sim = _cos_sim(qv, ck["vector"])
+        except Exception:
+            return get_error_data_result(message="embedding failure")
+
+        eff_sims.append(sim)
+        results.append({
+            "chunk_id": ck["chunk_id"],
+            "doc_id": ck["doc_id"],
+            "doc_name": ck["doc_name"],
+            "vector_field": ck["vector_field"],
+            "vector_dim": ck["vector_dim"],
+            "cos_sim": round(sim, 6),
+        })
+
+    summary = {
+        "kb_id": kb_id,
+        "model": embd_id,
+        "sampled": len(samples),
+        "valid": len(eff_sims),
+        "avg_cos_sim": round(float(np.mean(eff_sims)) if eff_sims else 0.0, 6),
+        "min_cos_sim": round(float(np.min(eff_sims)) if eff_sims else 0.0, 6),
+        "max_cos_sim": round(float(np.max(eff_sims)) if eff_sims else 0.0, 6),
+    }
+    if summary["avg_cos_sim"] > 0.99:
+        return get_json_result(data={"summary": summary, "results": results})
+    return get_json_result(code=RetCode.NOT_EFFECTIVE, message="failed", data={"summary": summary, "results": results})
+
+
+@manager.route("/<kb_id>/link", methods=["POST"])  # noqa: F821
+@validate_request("connector_ids")
+@login_required
+def link_connector(kb_id):
+    req = request.json
+    errors = Connector2KbService.link_connectors(kb_id, req["connector_ids"], current_user.id)
+    if errors:
+        return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
+    return get_json_result(data=True)
+

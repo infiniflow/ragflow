@@ -5,6 +5,7 @@ import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { MetadataFilter } from '@/components/metadata-filter';
 import { SwitchFormField } from '@/components/switch-fom-field';
 import { TavilyFormField } from '@/components/tavily-form-field';
+import { TOCEnhanceFormField } from '@/components/toc-enhance-form-field';
 import {
   FormControl,
   FormField,
@@ -109,6 +110,7 @@ export default function ChatBasicSetting() {
         label={t('tts')}
         tooltip={t('ttsTip')}
       ></SwitchFormField>
+      <TOCEnhanceFormField name="prompt_config.toc_enhance"></TOCEnhanceFormField>
       <TavilyFormField></TavilyFormField>
       <KnowledgeBaseFormField></KnowledgeBaseFormField>
       <MetadataFilter></MetadataFilter>

@@ -15,11 +15,14 @@
 #
 import json
 import logging
+import string
+import os
 import re
 import secrets
+import time
 from datetime import datetime
 
-from flask import redirect, request, session
+from flask import redirect, request, session, make_response
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -31,21 +34,31 @@ from api.db.services.file_service import FileService
 from api.db.services.llm_service import get_init_tenant_llm
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
-from api.utils import (
-    current_timestamp,
-    datetime_format,
-    decrypt,
-    download_img,
-    get_format_time,
-    get_uuid,
-)
+from common.time_utils import current_timestamp, datetime_format, get_format_time
+from common.misc_utils import download_img, get_uuid
+from common.constants import RetCode
+from common.connection_utils import construct_response
 from api.utils.api_utils import (
-    construct_response,
     get_data_error_result,
     get_json_result,
     server_error_response,
     validate_request,
 )
+from api.utils.crypt import decrypt
+from rag.utils.redis_conn import REDIS_CONN
+from api.apps import smtp_mail_server
+from api.utils.web_utils import (
+    send_email_html,
+    OTP_LENGTH,
+    OTP_TTL_SECONDS,
+    ATTEMPT_LIMIT,
+    ATTEMPT_LOCK_SECONDS,
+    RESEND_COOLDOWN_SECONDS,
+    otp_keys,
+    hash_code,
+    captcha_key,
+)
+from common import globals
 
 
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
@@ -80,14 +93,14 @@ def login():
           type: object
     """
     if not request.json:
-        return get_json_result(data=False, code=settings.RetCode.AUTHENTICATION_ERROR, message="Unauthorized!")
+        return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="Unauthorized!")
 
     email = request.json.get("email", "")
     users = UserService.query(email=email)
     if not users:
         return get_json_result(
             data=False,
-            code=settings.RetCode.AUTHENTICATION_ERROR,
+            code=RetCode.AUTHENTICATION_ERROR,
             message=f"Email: {email} is not registered!",
         )
 
@@ -95,10 +108,17 @@ def login():
     try:
         password = decrypt(password)
     except BaseException:
-        return get_json_result(data=False, code=settings.RetCode.SERVER_ERROR, message="Fail to crypt password")
+        return get_json_result(data=False, code=RetCode.SERVER_ERROR, message="Fail to crypt password")
 
     user = UserService.query_user(email, password)
-    if user:
+
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+        return get_json_result(
+            data=False,
+            code=RetCode.FORBIDDEN,
+            message="This account has been disabled, please contact the administrator!",
+        )
+    elif user:
         response_data = user.to_json()
         user.access_token = get_uuid()
         login_user(user)
@@ -110,7 +130,7 @@ def login():
     else:
         return get_json_result(
             data=False,
-            code=settings.RetCode.AUTHENTICATION_ERROR,
+            code=RetCode.AUTHENTICATION_ERROR,
             message="Email and password do not match!",
         )
 
@@ -133,7 +153,7 @@ def get_login_channels():
         return get_json_result(data=channels)
     except Exception as e:
         logging.exception(e)
-        return get_json_result(data=[], message=f"Load channels failure, error: {str(e)}", code=settings.RetCode.EXCEPTION_ERROR)
+        return get_json_result(data=[], message=f"Load channels failure, error: {str(e)}", code=RetCode.EXCEPTION_ERROR)
 
 
 @manager.route("/login/<channel>", methods=["GET"])  # noqa: F821
@@ -227,6 +247,9 @@ def oauth_callback(channel):
         # User exists, try to log in
         user = users[0]
         user.access_token = get_uuid()
+        if user and hasattr(user, 'is_active') and user.is_active == "0":
+            return redirect("/?error=user_inactive")
+
         login_user(user)
         user.save()
         return redirect(f"/?auth={user.get_id()}")
@@ -317,6 +340,8 @@ def github_callback():
     # User has already registered, try to log in
     user = users[0]
     user.access_token = get_uuid()
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+        return redirect("/?error=user_inactive")
     login_user(user)
     user.save()
     return redirect("/?auth=%s" % user.get_id())
@@ -418,6 +443,8 @@ def feishu_callback():
 
     # User has already registered, try to log in
     user = users[0]
+    if user and hasattr(user, 'is_active') and user.is_active == "0":
+        return redirect("/?error=user_inactive")
     user.access_token = get_uuid()
     login_user(user)
     user.save()
@@ -510,7 +537,7 @@ def setting_user():
         if not check_password_hash(current_user.password, decrypt(request_data["password"])):
             return get_json_result(
                 data=False,
-                code=settings.RetCode.AUTHENTICATION_ERROR,
+                code=RetCode.AUTHENTICATION_ERROR,
                 message="Password error!",
             )
 
@@ -538,7 +565,7 @@ def setting_user():
         return get_json_result(data=True)
     except Exception as e:
         logging.exception(e)
-        return get_json_result(data=False, message="Update failure!", code=settings.RetCode.EXCEPTION_ERROR)
+        return get_json_result(data=False, message="Update failure!", code=RetCode.EXCEPTION_ERROR)
 
 
 @manager.route("/info", methods=["GET"])  # noqa: F821
@@ -597,7 +624,7 @@ def user_register(user_id, user):
         "id": user_id,
         "name": user["nickname"] + "‘s Kingdom",
         "llm_id": settings.CHAT_MDL,
-        "embd_id": settings.EMBEDDING_MDL,
+        "embd_id": globals.EMBEDDING_MDL,
         "asr_id": settings.ASR_MDL,
         "parser_ids": settings.PARSERS,
         "img2txt_id": settings.IMAGE2TEXT_MDL,
@@ -668,7 +695,7 @@ def user_add():
         return get_json_result(
             data=False,
             message="User registration is disabled!",
-            code=settings.RetCode.OPERATING_ERROR,
+            code=RetCode.OPERATING_ERROR,
         )
 
     req = request.json
@@ -679,7 +706,7 @@ def user_add():
         return get_json_result(
             data=False,
             message=f"Invalid email address: {email_address}!",
-            code=settings.RetCode.OPERATING_ERROR,
+            code=RetCode.OPERATING_ERROR,
         )
 
     # Check if the email address is already used
@@ -687,7 +714,7 @@ def user_add():
         return get_json_result(
             data=False,
             message=f"Email: {email_address} has already registered!",
-            code=settings.RetCode.OPERATING_ERROR,
+            code=RetCode.OPERATING_ERROR,
         )
 
     # Construct user info data
@@ -722,7 +749,7 @@ def user_add():
         return get_json_result(
             data=False,
             message=f"User registration failure, error: {str(e)}",
-            code=settings.RetCode.EXCEPTION_ERROR,
+            code=RetCode.EXCEPTION_ERROR,
         )
 
 
@@ -811,3 +838,172 @@ def set_tenant_info():
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+        
+
+@manager.route("/forget/captcha", methods=["GET"])  # noqa: F821
+def forget_get_captcha():
+    """
+    GET /forget/captcha?email=<email>
+    - Generate an image captcha and cache it in Redis under key captcha:{email} with TTL = OTP_TTL_SECONDS.
+    - Returns the captcha as a PNG image.
+    """
+    email = (request.args.get("email") or "")
+    if not email:
+        return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="email is required")
+
+    users = UserService.query(email=email)
+    if not users:
+        return get_json_result(data=False, code=RetCode.DATA_ERROR, message="invalid email")
+
+    # Generate captcha text
+    allowed = string.ascii_uppercase + string.digits
+    captcha_text = "".join(secrets.choice(allowed) for _ in range(OTP_LENGTH))
+    REDIS_CONN.set(captcha_key(email), captcha_text, 60) # Valid for 60 seconds
+
+    from captcha.image import ImageCaptcha
+    image = ImageCaptcha(width=300, height=120, font_sizes=[50, 60, 70])
+    img_bytes = image.generate(captcha_text).read()
+    response = make_response(img_bytes)
+    response.headers.set("Content-Type", "image/JPEG")
+    return response
+
+
+@manager.route("/forget/otp", methods=["POST"])  # noqa: F821
+def forget_send_otp():
+    """
+    POST /forget/otp
+    - Verify the image captcha stored at captcha:{email} (case-insensitive).
+    - On success, generate an email OTP (A–Z with length = OTP_LENGTH), store hash + salt (and timestamp) in Redis with TTL, reset attempts and cooldown, and send the OTP via email.
+    """
+    req = request.get_json()
+    email = req.get("email") or ""
+    captcha = (req.get("captcha") or "").strip()
+
+    if not email or not captcha:
+        return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="email and captcha required")
+
+    users = UserService.query(email=email)
+    if not users:
+        return get_json_result(data=False, code=RetCode.DATA_ERROR, message="invalid email")
+
+    stored_captcha = REDIS_CONN.get(captcha_key(email))
+    if not stored_captcha:
+        return get_json_result(data=False, code=RetCode.NOT_EFFECTIVE, message="invalid or expired captcha")
+    if (stored_captcha or "").strip().lower() != captcha.lower():
+        return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="invalid or expired captcha")
+
+    # Delete captcha to prevent reuse
+    REDIS_CONN.delete(captcha_key(email))
+
+    k_code, k_attempts, k_last, k_lock = otp_keys(email)
+    now = int(time.time())
+    last_ts = REDIS_CONN.get(k_last)
+    if last_ts:
+        try:
+            elapsed = now - int(last_ts)
+        except Exception:
+            elapsed = RESEND_COOLDOWN_SECONDS
+        remaining = RESEND_COOLDOWN_SECONDS - elapsed
+        if remaining > 0:
+            return get_json_result(data=False, code=RetCode.NOT_EFFECTIVE, message=f"you still have to wait {remaining} seconds")
+
+    # Generate OTP (uppercase letters only) and store hashed
+    otp = "".join(secrets.choice(string.ascii_uppercase) for _ in range(OTP_LENGTH))
+    salt = os.urandom(16)
+    code_hash = hash_code(otp, salt)
+    REDIS_CONN.set(k_code, f"{code_hash}:{salt.hex()}", OTP_TTL_SECONDS)
+    REDIS_CONN.set(k_attempts, 0, OTP_TTL_SECONDS)
+    REDIS_CONN.set(k_last, now, OTP_TTL_SECONDS)
+    REDIS_CONN.delete(k_lock)
+
+    ttl_min = OTP_TTL_SECONDS // 60
+
+    if not smtp_mail_server:
+        logging.warning("SMTP mail server not initialized; skip sending email.")
+    else:
+        try:
+            send_email_html(
+                subject="Your Password Reset Code",
+                to_email=email,
+                template_key="reset_code",
+                code=otp,
+                ttl_min=ttl_min,
+            )
+        except Exception:
+            return get_json_result(data=False, code=RetCode.SERVER_ERROR, message="failed to send email")
+        
+    return get_json_result(data=True, code=RetCode.SUCCESS, message="verification passed, email sent")
+
+
+@manager.route("/forget", methods=["POST"])  # noqa: F821
+def forget():
+    """
+    POST: Verify email + OTP and reset password, then log the user in.
+    Request JSON: { email, otp, new_password, confirm_new_password }
+    """
+    req = request.get_json()
+    email = req.get("email") or ""
+    otp = (req.get("otp") or "").strip()
+    new_pwd = req.get("new_password")
+    new_pwd2 = req.get("confirm_new_password")
+
+    if not all([email, otp, new_pwd, new_pwd2]):
+        return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="email, otp and passwords are required")
+
+    # For reset, passwords are provided as-is (no decrypt needed)
+    if new_pwd != new_pwd2:
+        return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="passwords do not match")
+
+    users = UserService.query(email=email)
+    if not users:
+        return get_json_result(data=False, code=RetCode.DATA_ERROR, message="invalid email")
+
+    user = users[0]
+    # Verify OTP from Redis
+    k_code, k_attempts, k_last, k_lock = otp_keys(email)
+    if REDIS_CONN.get(k_lock):
+        return get_json_result(data=False, code=RetCode.NOT_EFFECTIVE, message="too many attempts, try later")
+
+    stored = REDIS_CONN.get(k_code)
+    if not stored:
+        return get_json_result(data=False, code=RetCode.NOT_EFFECTIVE, message="expired otp")
+
+    try:
+        stored_hash, salt_hex = str(stored).split(":", 1)
+        salt = bytes.fromhex(salt_hex)
+    except Exception:
+        return get_json_result(data=False, code=RetCode.EXCEPTION_ERROR, message="otp storage corrupted")
+
+    # Case-insensitive verification: OTP generated uppercase
+    calc = hash_code(otp.upper(), salt)
+    if calc != stored_hash:
+        # bump attempts
+        try:
+            attempts = int(REDIS_CONN.get(k_attempts) or 0) + 1
+        except Exception:
+            attempts = 1
+        REDIS_CONN.set(k_attempts, attempts, OTP_TTL_SECONDS)
+        if attempts >= ATTEMPT_LIMIT:
+            REDIS_CONN.set(k_lock, int(time.time()), ATTEMPT_LOCK_SECONDS)
+        return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="expired otp")
+
+    # Success: consume OTP and reset password
+    REDIS_CONN.delete(k_code)
+    REDIS_CONN.delete(k_attempts)
+    REDIS_CONN.delete(k_last)
+    REDIS_CONN.delete(k_lock)
+
+    try:
+        UserService.update_user_password(user.id, new_pwd)
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(data=False, code=RetCode.EXCEPTION_ERROR, message="failed to reset password")
+
+    # Auto login (reuse login flow)
+    user.access_token = get_uuid()
+    login_user(user)
+    user.update_time = (current_timestamp(),)
+    user.update_date = (datetime_format(datetime.now()),)
+    user.save()
+    msg = "Password reset successful. Logged in."
+    return construct_response(data=user.to_json(), auth=user.get_id(), message=msg)

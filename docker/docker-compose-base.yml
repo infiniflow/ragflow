@@ -1,6 +1,5 @@
 services:
   es01:
-    container_name: ragflow-es-01
     profiles:
       - elasticsearch
     image: elasticsearch:${STACK_VERSION}
@@ -20,7 +19,6 @@ services:
       - cluster.routing.allocation.disk.watermark.low=5gb
       - cluster.routing.allocation.disk.watermark.high=3gb
       - cluster.routing.allocation.disk.watermark.flood_stage=2gb
-      - TZ=${TIMEZONE}
     mem_limit: ${MEM_LIMIT}
     ulimits:
       memlock:
@@ -36,7 +34,6 @@ services:
     restart: on-failure
 
   opensearch01:
-    container_name: ragflow-opensearch-01
     profiles:
       - opensearch
     image: hub.icert.top/opensearchproject/opensearch:2.19.1
@@ -57,7 +54,6 @@ services:
       - cluster.routing.allocation.disk.watermark.low=5gb
       - cluster.routing.allocation.disk.watermark.high=3gb
       - cluster.routing.allocation.disk.watermark.flood_stage=2gb
-      - TZ=${TIMEZONE}
       - http.port=9201
     mem_limit: ${MEM_LIMIT}
     ulimits:
@@ -74,10 +70,9 @@ services:
     restart: on-failure
 
   infinity:
-    container_name: ragflow-infinity
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.6.0-dev5
+    image: infiniflow/infinity:v0.6.2
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -87,8 +82,6 @@ services:
       - ${INFINITY_HTTP_PORT}:23820
       - ${INFINITY_PSQL_PORT}:5432
     env_file: .env
-    environment:
-      - TZ=${TIMEZONE}
     mem_limit: ${MEM_LIMIT}
     ulimits:
       nofile:
@@ -104,7 +97,6 @@ services:
     restart: on-failure
 
   sandbox-executor-manager:
-    container_name: ragflow-sandbox-executor-manager
     profiles:
       - sandbox
     image: ${SANDBOX_EXECUTOR_MANAGER_IMAGE-infiniflow/sandbox-executor-manager:latest}
@@ -119,7 +111,6 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      - TZ=${TIMEZONE}
       - SANDBOX_EXECUTOR_MANAGER_POOL_SIZE=${SANDBOX_EXECUTOR_MANAGER_POOL_SIZE:-3}
       - SANDBOX_BASE_PYTHON_IMAGE=${SANDBOX_BASE_PYTHON_IMAGE:-infiniflow/sandbox-base-python:latest}
       - SANDBOX_BASE_NODEJS_IMAGE=${SANDBOX_BASE_NODEJS_IMAGE:-infiniflow/sandbox-base-nodejs:latest}
@@ -136,11 +127,9 @@ services:
   mysql:
     # mysql:5.7 linux/arm64 image is unavailable.
     image: mysql:8.0.39
-    container_name: ragflow-mysql
     env_file: .env
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
-      - TZ=${TIMEZONE}
     command:
       --max_connections=1000
       --character-set-server=utf8mb4
@@ -165,7 +154,6 @@ services:
 
   minio:
     image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
-    container_name: ragflow-minio
     command: server --console-address ":9001" /data
     ports:
       - ${MINIO_PORT}:9000
@@ -174,7 +162,6 @@ services:
     environment:
       - MINIO_ROOT_USER=${MINIO_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
-      - TZ=${TIMEZONE}
     volumes:
       - minio_data:/data
     networks:
@@ -189,7 +176,6 @@ services:
   redis:
     # swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/valkey/valkey:8
     image: valkey/valkey:8
-    container_name: ragflow-redis
     command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 128mb --maxmemory-policy allkeys-lru
     env_file: .env
     ports:
@@ -207,6 +193,62 @@ services:
       start_period: 10s    
 
 
+  tei-cpu:
+    profiles:
+      - tei-cpu
+    image: ${TEI_IMAGE_CPU}
+    hostname: tei
+    ports:
+      - ${TEI_PORT-6380}:80
+    env_file: .env
+    networks:
+      - ragflow
+    command: ["--model-id", "/data/${TEI_MODEL}", "--auto-truncate"]
+    restart: on-failure
+
+
+  tei-gpu:
+    profiles:
+      - tei-gpu
+    image: ${TEI_IMAGE_GPU}
+    hostname: tei
+    ports:
+      - ${TEI_PORT-6380}:80
+    env_file: .env
+    networks:
+      - ragflow
+    command: ["--model-id", "/data/${TEI_MODEL}", "--auto-truncate"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: on-failure
+
+
+  kibana:
+    profiles:
+      - kibana
+    image: kibana:${STACK_VERSION}
+    ports:
+      - ${KIBANA_PORT-5601}:5601
+    env_file: .env
+    volumes:
+      - kibana_data:/usr/share/kibana/data
+    depends_on:
+      es01:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    networks:
+      - ragflow
+    restart: on-failure
+
 
 volumes:
   esdata01:
@@ -220,6 +262,10 @@ volumes:
   minio_data:
     driver: local
   redis_data:
+    driver: local
+  tei_data:
+    driver: local
+  kibana_data:
     driver: local
 
 networks:

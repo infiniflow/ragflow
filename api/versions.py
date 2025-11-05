@@ -34,8 +34,6 @@ def get_ragflow_version() -> str:
             RAGFLOW_VERSION_INFO = f.read().strip()
     else:
         RAGFLOW_VERSION_INFO = get_closest_tag_and_count()
-        LIGHTEN = int(os.environ.get("LIGHTEN", "0"))
-        RAGFLOW_VERSION_INFO += " slim" if LIGHTEN == 1 else " full"
     return RAGFLOW_VERSION_INFO
 
 

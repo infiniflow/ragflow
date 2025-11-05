@@ -21,13 +21,12 @@ from copy import deepcopy
 from typing import Any, Generator
 import json_repair
 from functools import partial
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.api_utils import timeout
-from rag.prompts import message_fit_in, citation_prompt
-from rag.prompts.prompts import tool_call_summary
+from common.connection_utils import timeout
+from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt, structured_output_prompt
 
 
 class LLMParam(ComponentParamBase):
@@ -82,9 +81,9 @@ class LLMParam(ComponentParamBase):
 
 class LLM(ComponentBase):
     component_name = "LLM"
-    
-    def __init__(self, canvas, id, param: ComponentParamBase):
-        super().__init__(canvas, id, param)
+
+    def __init__(self, canvas, component_id, param: ComponentParamBase):
+        super().__init__(canvas, component_id, param)
         self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id),
                                   self._param.llm_id, max_retries=self._param.max_retries,
                                   retry_interval=self._param.delay_after_error
@@ -102,6 +101,8 @@ class LLM(ComponentBase):
 
     def get_input_elements(self) -> dict[str, Any]:
         res = self.get_input_elements_from_text(self._param.sys_prompt)
+        if isinstance(self._param.prompts, str):
+            self._param.prompts = [{"role": "user", "content": self._param.prompts}]
         for prompt in self._param.prompts:
             d = self.get_input_elements_from_text(prompt["content"])
             res.update(d)
@@ -112,6 +113,17 @@ class LLM(ComponentBase):
 
     def add2system_prompt(self, txt):
         self._param.sys_prompt += txt
+
+    def _sys_prompt_and_msg(self, msg, args):
+        if isinstance(self._param.prompts, str):
+            self._param.prompts = [{"role": "user", "content": self._param.prompts}]
+        for p in self._param.prompts:
+            if msg and msg[-1]["role"] == p["role"]:
+                continue
+            p = deepcopy(p)
+            p["content"] = self.string_format(p["content"], args)
+            msg.append(p)
+        return msg, self.string_format(self._param.sys_prompt, args)
 
     def _prepare_prompt_variables(self):
         if self._param.visual_files_var:
@@ -128,7 +140,6 @@ class LLM(ComponentBase):
 
         args = {}
         vars = self.get_input_elements() if not self._param.debug_inputs else self._param.debug_inputs
-        sys_prompt = self._param.sys_prompt
         for k, o in vars.items():
             args[k] = o["value"]
             if not isinstance(args[k], str):
@@ -138,16 +149,8 @@ class LLM(ComponentBase):
                     args[k] = str(args[k])
             self.set_input_value(k, args[k])
 
-        msg = self._canvas.get_history(self._param.message_history_window_size)[:-1]
-        for p in self._param.prompts:
-            if msg and msg[-1]["role"] == p["role"]:
-                continue
-            msg.append(deepcopy(p))
-
-        sys_prompt = self.string_format(sys_prompt, args)
+        msg, sys_prompt = self._sys_prompt_and_msg(self._canvas.get_history(self._param.message_history_window_size)[:-1], args)
         user_defined_prompt, sys_prompt = self._extract_prompts(sys_prompt)
-        for m in msg:
-            m["content"] = self.string_format(m["content"], args)
         if self._param.cite and self._canvas.get_reference()["chunks"]:
             sys_prompt += citation_prompt(user_defined_prompt)
 
@@ -202,7 +205,7 @@ class LLM(ComponentBase):
             for txt in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs):
                 yield delta(txt)
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         def clean_formated_answer(ans: str) -> str:
             ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
@@ -210,11 +213,15 @@ class LLM(ComponentBase):
             return re.sub(r"```\n*$", "", ans, flags=re.DOTALL)
 
         prompt, msg, _ = self._prepare_prompt_variables()
-        error = ""
-
-        if self._param.output_structure:
-            prompt += "\nThe output MUST follow this JSON format:\n"+json.dumps(self._param.output_structure, ensure_ascii=False, indent=2)
-            prompt += "\nRedundant information is FORBIDDEN."
+        error: str = ""
+        output_structure=None
+        try:
+            output_structure = None#self._param.outputs['structured']
+        except Exception:
+            pass
+        if output_structure:
+            schema=json.dumps(output_structure, ensure_ascii=False, indent=2)
+            prompt += structured_output_prompt(schema)
             for _ in range(self._param.max_retries+1):
                 _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
                 error = ""
@@ -225,7 +232,7 @@ class LLM(ComponentBase):
                     error = ans
                     continue
                 try:
-                    self.set_output("structured_content", json_repair.loads(clean_formated_answer(ans)))
+                    self.set_output("structured", json_repair.loads(clean_formated_answer(ans)))
                     return
                 except Exception:
                     msg.append({"role": "user", "content": "The answer can't not be parsed as JSON"})
@@ -236,7 +243,7 @@ class LLM(ComponentBase):
 
         downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
         ex = self.exception_handler()
-        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure and not (ex and ex["goto"]):
+        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not output_structure and not (ex and ex["goto"]):
             self.set_output("content", partial(self._stream_output, prompt, msg))
             return
 

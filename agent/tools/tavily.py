@@ -19,7 +19,7 @@ import time
 from abc import ABC
 from tavily import TavilyClient
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class TavilySearchParam(ToolParamBase):
@@ -31,7 +31,7 @@ class TavilySearchParam(ToolParamBase):
         self.meta:ToolMeta = {
             "name": "tavily_search",
             "description": """
-Tavily is a search engine optimized for LLMs, aimed at efficient, quick and persistent search results. 
+Tavily is a search engine optimized for LLMs, aimed at efficient, quick and persistent search results.
 When searching:
    - Start with specific query which should focus on just a single aspect.
    - Number of keywords in query should be less than 5.
@@ -101,7 +101,7 @@ When searching:
 class TavilySearch(ToolBase, ABC):
     component_name = "TavilySearch"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
         if not kwargs.get("query"):
             self.set_output("formalized_content", "")
@@ -136,7 +136,7 @@ class TavilySearch(ToolBase, ABC):
 
     def thoughts(self) -> str:
         return """
-Keywords: {} 
+Keywords: {}
 Looking for the most relevant articles.
                 """.format(self.get_input().get("query", "-_-!"))
 
@@ -199,7 +199,7 @@ class TavilyExtractParam(ToolParamBase):
 class TavilyExtract(ToolBase, ABC):
     component_name = "TavilyExtract"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         self.tavily_client = TavilyClient(api_key=self._param.api_key)
         last_e = None

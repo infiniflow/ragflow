@@ -16,13 +16,12 @@
 from flask import Response, request
 from flask_login import current_user, login_required
 
-from api.db import VALID_MCP_SERVER_TYPES
 from api.db.db_models import MCPServer
 from api.db.services.mcp_server_service import MCPServerService
 from api.db.services.user_service import TenantService
-from api.settings import RetCode
+from common.constants import RetCode, VALID_MCP_SERVER_TYPES
 
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request, \
     get_mcp_tools
 from api.utils.web_utils import get_float, safe_json_parse

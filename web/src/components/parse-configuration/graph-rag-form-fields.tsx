@@ -1,6 +1,11 @@
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
+import {
+  GenerateLogButton,
+  GenerateType,
+  IGenerateLogButtonProps,
+} from '@/pages/dataset/dataset/generate-button/generate';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -47,9 +52,17 @@ export const showGraphRagItems = (parserId: DocumentParserType | undefined) => {
 type GraphRagItemsProps = {
   marginBottom?: boolean;
   className?: string;
+  data: IGenerateLogButtonProps;
+  onDelete?: () => void;
 };
 
-export function UseGraphRagFormField() {
+export function UseGraphRagFormField({
+  data,
+  onDelete,
+}: {
+  data: IGenerateLogButtonProps;
+  onDelete?: () => void;
+}) {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
 
@@ -57,21 +70,28 @@ export function UseGraphRagFormField() {
     <FormField
       control={form.control}
       name="parser_config.graphrag.use_graphrag"
-      render={({ field }) => (
+      render={() => (
         <FormItem defaultChecked={false} className=" items-center space-y-0 ">
           <div className="flex items-center gap-1">
             <FormLabel
               tooltip={t('useGraphRagTip')}
-              className="text-sm text-muted-foreground whitespace-break-spaces w-1/4"
+              className="text-sm whitespace-break-spaces w-1/4"
             >
               {t('useGraphRag')}
             </FormLabel>
             <div className="w-3/4">
               <FormControl>
-                <Switch
+                {/* <Switch
                   checked={field.value}
                   onCheckedChange={field.onChange}
-                ></Switch>
+                ></Switch> */}
+                <GenerateLogButton
+                  {...data}
+                  onDelete={onDelete}
+                  className="w-full text-text-secondary"
+                  status={1}
+                  type={GenerateType.KnowledgeGraph}
+                />
               </FormControl>
             </div>
           </div>
@@ -89,6 +109,8 @@ export function UseGraphRagFormField() {
 const GraphRagItems = ({
   marginBottom = false,
   className = 'p-10',
+  data,
+  onDelete,
 }: GraphRagItemsProps) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
@@ -114,7 +136,10 @@ const GraphRagItems = ({
 
   return (
     <FormContainer className={cn({ 'mb-4': marginBottom }, className)}>
-      <UseGraphRagFormField></UseGraphRagFormField>
+      <UseGraphRagFormField
+        data={data}
+        onDelete={onDelete}
+      ></UseGraphRagFormField>
       {useRaptor && (
         <>
           <EntityTypesFormField name="parser_config.graphrag.entity_types"></EntityTypesFormField>
@@ -125,7 +150,7 @@ const GraphRagItems = ({
               <FormItem className=" items-center space-y-0 ">
                 <div className="flex items-center">
                   <FormLabel
-                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                    className="text-sm whitespace-nowrap w-1/4"
                     tooltip={renderWideTooltip(
                       <div
                         dangerouslySetInnerHTML={{
@@ -161,7 +186,7 @@ const GraphRagItems = ({
                 <div className="flex items-center">
                   <FormLabel
                     tooltip={renderWideTooltip('resolutionTip')}
-                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                    className="text-sm whitespace-nowrap w-1/4"
                   >
                     {t('resolution')}
                   </FormLabel>
@@ -190,7 +215,7 @@ const GraphRagItems = ({
                 <div className="flex items-center">
                   <FormLabel
                     tooltip={renderWideTooltip('communityTip')}
-                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                    className="text-sm whitespace-nowrap w-1/4"
                   >
                     {t('community')}
                   </FormLabel>
@@ -210,6 +235,18 @@ const GraphRagItems = ({
               </FormItem>
             )}
           />
+          {/* {showGenerateItem && (
+            <div className="w-full flex items-center">
+              <div className="text-sm whitespace-nowrap w-1/4">
+                {t('extractKnowledgeGraph')}
+              </div>
+              <GenerateLogButton
+                className="w-3/4 text-text-secondary"
+                status={1}
+                type={GenerateType.KnowledgeGraph}
+              />
+            </div>
+          )} */}
         </>
       )}
     </FormContainer>

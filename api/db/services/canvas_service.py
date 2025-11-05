@@ -22,7 +22,7 @@ from api.db import CanvasCategory, TenantPermission
 from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from api.utils.api_utils import get_data_openai
 import tiktoken
 from peewee import fn
@@ -63,7 +63,38 @@ class UserCanvasService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_tenant_id(cls, pid):
+    def get_all_agents_by_tenant_ids(cls, tenant_ids, user_id):
+        # will get all permitted agents, be cautious
+        fields = [
+            cls.model.id,
+            cls.model.title,
+            cls.model.permission,
+            cls.model.canvas_type,
+            cls.model.canvas_category
+        ]
+        # find team agents and owned agents
+        agents = cls.model.select(*fields).where(
+            (cls.model.user_id.in_(tenant_ids) & (cls.model.permission == TenantPermission.TEAM.value)) | (
+                cls.model.user_id == user_id
+            )
+        )
+        # sort by create_time, asc
+        agents.order_by(cls.model.create_time.asc())
+        # maybe cause slow query by deep paginate, optimize later
+        offset, limit = 0, 50
+        res = []
+        while True:
+            ag_batch = agents.offset(offset).limit(limit)
+            _temp = list(ag_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_canvas_id(cls, pid):
         try:
 
             fields = [
@@ -95,7 +126,7 @@ class UserCanvasService(CommonService):
     @DB.connection_context()
     def get_by_tenant_ids(cls, joined_tenant_ids, user_id,
                           page_number, items_per_page,
-                          orderby, desc, keywords, canvas_category=CanvasCategory.Agent,
+                          orderby, desc, keywords, canvas_category=None
                           ):
         fields = [
             cls.model.id,
@@ -104,6 +135,7 @@ class UserCanvasService(CommonService):
             cls.model.dsl,
             cls.model.description,
             cls.model.permission,
+            cls.model.user_id.alias("tenant_id"),
             User.nickname,
             User.avatar.alias('tenant_avatar'),
             cls.model.update_time,
@@ -111,31 +143,30 @@ class UserCanvasService(CommonService):
         ]
         if keywords:
             agents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
-                ((cls.model.user_id.in_(joined_tenant_ids) & (cls.model.permission ==
-                                                                TenantPermission.TEAM.value)) | (
-                    cls.model.user_id == user_id)),
+                (((cls.model.user_id.in_(joined_tenant_ids)) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.user_id == user_id)),
                 (fn.LOWER(cls.model.title).contains(keywords.lower()))
             )
         else:
             agents = cls.model.select(*fields).join(User, on=(cls.model.user_id == User.id)).where(
-                ((cls.model.user_id.in_(joined_tenant_ids) & (cls.model.permission ==
-                                                                TenantPermission.TEAM.value)) | (
-                    cls.model.user_id == user_id))
+                (((cls.model.user_id.in_(joined_tenant_ids)) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.user_id == user_id))
             )
-        agents = agents.where(cls.model.canvas_category == canvas_category)
+        if canvas_category:
+            agents = agents.where(cls.model.canvas_category == canvas_category)
         if desc:
             agents = agents.order_by(cls.model.getter_by(orderby).desc())
         else:
             agents = agents.order_by(cls.model.getter_by(orderby).asc())
+
         count = agents.count()
-        agents = agents.paginate(page_number, items_per_page)
+        if page_number and items_per_page:
+            agents = agents.paginate(page_number, items_per_page)
         return list(agents.dicts()), count
 
     @classmethod
     @DB.connection_context()
     def accessible(cls, canvas_id, tenant_id):
         from api.db.services.user_service import UserTenantService
-        e, c = UserCanvasService.get_by_tenant_id(canvas_id)
+        e, c = UserCanvasService.get_by_canvas_id(canvas_id)
         if not e:
             return False
 
@@ -201,9 +232,9 @@ def completion(tenant_id, agent_id, session_id=None, **kwargs):
     API4ConversationService.append_message(conv["id"], conv)
 
 
-def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
-    tiktokenenc = tiktoken.get_encoding("cl100k_base")
-    prompt_tokens = len(tiktokenenc.encode(str(question)))
+def completion_openai(tenant_id, agent_id, question, session_id=None, stream=True, **kwargs):
+    tiktoken_encoder = tiktoken.get_encoding("cl100k_base")
+    prompt_tokens = len(tiktoken_encoder.encode(str(question)))
     user_id = kwargs.get("user_id", "")
 
     if stream:
@@ -221,7 +252,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                     try:
                         ans = json.loads(ans[5:])  # remove "data:"
                     except Exception as e:
-                        logging.exception(f"Agent OpenAI-Compatible completionOpenAI parse answer failed: {e}")
+                        logging.exception(f"Agent OpenAI-Compatible completion_openai parse answer failed: {e}")
                         continue
                 if ans.get("event") not in ["message", "message_end"]:
                     continue
@@ -230,7 +261,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                 if ans["event"] == "message":
                     content_piece = ans["data"]["content"]
 
-                completion_tokens += len(tiktokenenc.encode(content_piece))
+                completion_tokens += len(tiktoken_encoder.encode(content_piece))
 
                 openai_data = get_data_openai(
                         id=session_id or str(uuid4()),
@@ -257,7 +288,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                     content=f"**ERROR**: {str(e)}",
                     finish_reason="stop",
                     prompt_tokens=prompt_tokens,
-                    completion_tokens=len(tiktokenenc.encode(f"**ERROR**: {str(e)}")),
+                    completion_tokens=len(tiktoken_encoder.encode(f"**ERROR**: {str(e)}")),
                     stream=True
                 ),
                 ensure_ascii=False
@@ -287,7 +318,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                 if ans.get("data", {}).get("reference", None):
                     reference.update(ans["data"]["reference"])
 
-            completion_tokens = len(tiktokenenc.encode(all_content))
+            completion_tokens = len(tiktoken_encoder.encode(all_content))
 
             openai_data = get_data_openai(
                 id=session_id or str(uuid4()),
@@ -309,7 +340,7 @@ def completionOpenAI(tenant_id, agent_id, question, session_id=None, stream=True
                 id=session_id or str(uuid4()),
                 model=agent_id,
                 prompt_tokens=prompt_tokens,
-                completion_tokens=len(tiktokenenc.encode(f"**ERROR**: {str(e)}")),
+                completion_tokens=len(tiktoken_encoder.encode(f"**ERROR**: {str(e)}")),
                 content=f"**ERROR**: {str(e)}",
                 finish_reason="stop",
                 param=None

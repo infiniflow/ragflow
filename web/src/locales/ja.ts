@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      selectPlaceholder: '選択してください',
       delete: '削除',
       deleteModalTitle: 'この項目を削除してよろしいですか？',
       ok: 'はい',
@@ -174,6 +175,7 @@ export default {
         'ナレッジベースの設定、特にチャンク方法をここで更新してください。',
       name: 'ナレッジベース名',
       photo: 'ナレッジベース写真',
+      photoTip: '4MBのファイルをアップロードできます',
       description: '説明',
       language: '言語',
       languageMessage: '言語を入力してください',
@@ -332,6 +334,12 @@ export default {
       questionTip: `質問が指定されている場合、チャンクの埋め込みはそれらに基づきます。`,
     },
     chat: {
+      messagePlaceholder: 'メッセージを入力してください...',
+      exit: '終了',
+      multipleModels: '複数モデル',
+      applyModelConfigs: 'モデル設定を適用',
+      conversations: '会話一覧',
+      chatApps: 'チャットアプリ',
       newConversation: '新しい会話',
       createAssistant: 'アシスタントを作成',
       assistantSetting: 'アシスタント設定',
@@ -351,6 +359,7 @@ export default {
       language: '言語',
       emptyResponse: '空の応答',
       emptyResponseTip: `ナレッジベースに該当する内容がない場合、この応答が使用されます。`,
+      emptyResponseMessage: `ナレッジベースから関連する情報が取得できなかった場合に発動します。ナレッジベースが選択されていない場合、このフィールドをクリアしてください。`,
       setAnOpener: 'オープニングメッセージを設定',
       setAnOpenerInitial: `こんにちは！ 私はあなたのアシスタントです。何をお手伝いしましょうか？`,
       setAnOpenerTip: 'お客様をどのように歓迎しますか？',
@@ -377,10 +386,14 @@ export default {
       model: 'モデル',
       modelTip: '大規模言語チャットモデル',
       modelMessage: '選択してください！',
+      modelEnabledTools: '有効化されたツール',
+      modelEnabledToolsTip:
+        'モデルで使用するツールを1つ以上選択してください。ツール呼び出しをサポートしていないモデルでは効果がありません。',
       freedom: '自由度',
       improvise: '自由に',
       precise: '正確に',
       balance: 'バランス',
+      custom: 'カスタム',
       freedomTip: `'正確に'は、LLMが慎重に質問に答えることを意味します。'自由に'は、LLMが多く話し、自由に答えることを望むことを意味します。'バランス'は、慎重さと自由さの間のバランスを取ることを意味します。`,
       temperature: '温度',
       temperatureMessage: '温度は必須です',
@@ -434,6 +447,7 @@ export default {
       partialTitle: '部分埋め込み',
       extensionTitle: 'Chrome拡張機能',
       tokenError: 'まずAPIトークンを作成してください！',
+      betaError: 'システム設定ページからRAGFlow APIキーを取得してください。',
       searching: '検索中...',
       parsing: '解析中',
       uploading: 'アップロード中',
@@ -450,6 +464,38 @@ export default {
         'マルチラウンドの会話では、ナレッジベースへのクエリが最適化されます。大規模モデルが呼び出され、追加のトークンが消費されます。',
       howUseId: 'チャットIDの使い方？',
       description: 'アシスタントの説明',
+      descriptionPlaceholder: '例: 履歴書用のチャットアシスタント',
+      useKnowledgeGraph: 'ナレッジグラフを使用',
+      useKnowledgeGraphTip:
+        'ナレッジグラフを利用してエンティティや関係をまたいだ検索を行います。マルチホップ質問応答が可能になりますが、検索時間が大幅に増加します。',
+      keyword: 'キーワード解析',
+      keywordTip: `LLMでユーザーの質問を解析し、重要キーワードを抽出して関連性計算で強調します。長文クエリに有効ですが応答速度が遅くなります。`,
+      languageTip:
+        '選択した言語で文をリライトできます。未選択の場合は直近の質問の言語が使われます。',
+      avatarHidden: 'アバターを非表示',
+      locale: 'ロケール',
+      selectLanguage: '言語を選択',
+      reasoning: '推論',
+      reasoningTip: `Deepseek-R1 や OpenAI o1 のように、推論ワークフローを有効にできます。ステップごとの論理展開で複雑な質問への正確さが向上します。`,
+      tavilyApiKeyTip:
+        'ここにTavilyのAPIキーを設定すると、ナレッジベース検索に加えてウェブ検索も利用できます。',
+      tavilyApiKeyMessage: 'Tavily APIキーを入力してください',
+      tavilyApiKeyHelp: '取得方法はこちら',
+      crossLanguage: 'クロス言語検索',
+      crossLanguageTip: `1つ以上の言語を選択すると、その言語でも検索します。未選択の場合は元の言語で検索します。`,
+      createChat: 'チャットを作成',
+      metadata: 'メタデータ',
+      metadataTip:
+        'メタデータ（タグ、カテゴリ、アクセス権限など）を使って、関連情報の検索を制御・絞り込みます。',
+      conditions: '条件',
+      addCondition: '条件を追加',
+      meta: {
+        disabled: '無効',
+        auto: '自動',
+        manual: '手動',
+      },
+      cancel: 'キャンセル',
+      chatSetting: 'チャット設定',
     },
     setting: {
       profile: 'プロファイル',
@@ -508,6 +554,9 @@ export default {
       baseUrl: 'ベースURL',
       baseUrlTip:
         'APIキーがOpenAIからのものであれば無視してください。他の中間プロバイダーはAPIキーと共にこのベースURLを提供します。',
+      tongyiBaseUrlTip:
+        '中国ユーザーの場合、記入不要または https://dashscope.aliyuncs.com/compatible-mode/v1 を使用してください。国際ユーザーは https://dashscope-intl.aliyuncs.com/compatible-mode/v1 を使用してください',
+      tongyiBaseUrlPlaceholder: '（国際ユーザーのみ、ヒントをご覧ください）',
       modify: '変更',
       systemModelSettings: 'デフォルトモデルを設定する',
       chatModel: 'チャットモデル',
@@ -1049,6 +1098,8 @@ export default {
       cleanHtml: 'HTMLをクリーン',
       cleanHtmlTip:
         '応答がHTML形式であり、主要なコンテンツのみが必要な場合は、これをオンにしてください。',
+      invalidUrl:
+        '有効なURLまたは{variable_name}または{component@variable}形式の変数プレースホルダーを含むURLである必要があります',
       reference: '参照',
       input: '入力',
       output: '出力',

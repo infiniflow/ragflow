@@ -89,6 +89,7 @@ export type RFState = {
   ) => void; // Deleting a condition of a classification operator will delete the related edge
   findAgentToolNodeById: (id: string | null) => string | undefined;
   selectNodeIds: (nodeIds: string[]) => void;
+  hasChildNode: (nodeId: string) => boolean;
 };
 
 // this is our useStore hook that we can use in our components to get parts of the store and call actions
@@ -127,8 +128,9 @@ const useGraphStore = create<RFState>()(
       },
       onConnect: (connection: Connection) => {
         const { updateFormDataOnConnect } = get();
+        const newEdges = addEdge(connection, get().edges);
         set({
-          edges: addEdge(connection, get().edges),
+          edges: newEdges,
         });
         updateFormDataOnConnect(connection);
       },
@@ -474,14 +476,13 @@ const useGraphStore = create<RFState>()(
       },
       updateNodeName: (id, name) => {
         if (id) {
-          set({
-            nodes: get().nodes.map((node) => {
+          set((state) => {
+            for (const node of state.nodes) {
               if (node.id === id) {
                 node.data.name = name;
+                break;
               }
-
-              return node;
-            }),
+            }
           });
         }
       },
@@ -525,6 +526,10 @@ const useGraphStore = create<RFState>()(
             selected: nodeIds.includes(node.id),
           })),
         );
+      },
+      hasChildNode: (nodeId) => {
+        const { edges } = get();
+        return edges.some((edge) => edge.source === nodeId);
       },
     })),
     { name: 'graph', trace: true },

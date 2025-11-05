@@ -26,11 +26,13 @@ from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
 from elastic_transport import ConnectionTimeout
 from rag import settings
 from rag.settings import TAG_FLD, PAGERANK_FLD
-from rag.utils import singleton, get_float
-from api.utils.file_utils import get_project_base_directory
+from common.decorator import singleton
+from common.file_utils import get_project_base_directory
+from common.misc_utils import convert_bytes
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer
+from common.float_utils import get_float
 
 ATTEMPT_TIME = 2
 
@@ -73,9 +75,8 @@ class ESConnection(DocStoreConnection):
             settings.ES["hosts"].split(","),
             basic_auth=(settings.ES["username"], settings.ES[
                 "password"]) if "username" in settings.ES and "password" in settings.ES else None,
-            verify_certs=False,
-            timeout=600
-        )
+            verify_certs= settings.ES.get("verify_certs", False),
+            timeout=600 )
         if self.es:
             self.info = self.es.info()
             return True
@@ -502,7 +503,7 @@ class ESConnection(DocStoreConnection):
                 if not isinstance(v, str):
                     m[n] = str(m[n])
                 # if n.find("tks") > 0:
-                #     m[n] = rmSpace(m[n])
+                #     m[n] = remove_redundant_spaces(m[n])
 
             if m:
                 res_fields[d["id"]] = m
@@ -579,3 +580,52 @@ class ESConnection(DocStoreConnection):
                 break
         logger.error(f"ESConnection.sql timeout for {ATTEMPT_TIME} times!")
         return None
+
+    def get_cluster_stats(self):
+        """
+        curl -XGET "http://{es_host}/_cluster/stats" -H "kbn-xsrf: reporting" to view raw stats.
+        """
+        raw_stats = self.es.cluster.stats()
+        logger.debug(f"ESConnection.get_cluster_stats: {raw_stats}")
+        try:
+            res = {
+                'cluster_name': raw_stats['cluster_name'],
+                'status': raw_stats['status']
+            }
+            indices_status = raw_stats['indices']
+            res.update({
+                'indices': indices_status['count'],
+                'indices_shards': indices_status['shards']['total']
+            })
+            doc_info = indices_status['docs']
+            res.update({
+                'docs': doc_info['count'],
+                'docs_deleted': doc_info['deleted']
+            })
+            store_info = indices_status['store']
+            res.update({
+                'store_size': convert_bytes(store_info['size_in_bytes']),
+                'total_dataset_size': convert_bytes(store_info['total_data_set_size_in_bytes'])
+            })
+            mappings_info = indices_status['mappings']
+            res.update({
+                'mappings_fields': mappings_info['total_field_count'],
+                'mappings_deduplicated_fields': mappings_info['total_deduplicated_field_count'],
+                'mappings_deduplicated_size': convert_bytes(mappings_info['total_deduplicated_mapping_size_in_bytes'])
+            })
+            node_info = raw_stats['nodes']
+            res.update({
+                'nodes': node_info['count']['total'],
+                'nodes_version': node_info['versions'],
+                'os_mem': convert_bytes(node_info['os']['mem']['total_in_bytes']),
+                'os_mem_used': convert_bytes(node_info['os']['mem']['used_in_bytes']),
+                'os_mem_used_percent': node_info['os']['mem']['used_percent'],
+                'jvm_versions': node_info['jvm']['versions'][0]['vm_version'],
+                'jvm_heap_used': convert_bytes(node_info['jvm']['mem']['heap_used_in_bytes']),
+                'jvm_heap_max': convert_bytes(node_info['jvm']['mem']['heap_max_in_bytes'])
+            })
+            return res
+
+        except Exception as e:
+            logger.exception(f"ESConnection.get_cluster_stats: {e}")
+            return None

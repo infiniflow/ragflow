@@ -21,7 +21,7 @@ import pandas as pd
 import pywencai
 
 from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class WenCaiParam(ToolParamBase):
@@ -68,7 +68,7 @@ fund selection platform: through AI technology, is committed to providing excell
 class WenCai(ToolBase, ABC):
     component_name = "WenCai"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
         if not kwargs.get("query"):
             self.set_output("report", "")

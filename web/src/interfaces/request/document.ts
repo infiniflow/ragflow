@@ -7,6 +7,7 @@ export interface IChangeParserConfigRequestBody {
 
 export interface IChangeParserRequestBody {
   parser_id: string;
+  pipeline_id: string;
   doc_id: string;
   parser_config: IChangeParserConfigRequestBody;
 }

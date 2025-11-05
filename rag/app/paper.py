@@ -18,11 +18,11 @@ import logging
 import copy
 import re
 
-from api.db import ParserType
+from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
+from common.constants import ParserType
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
 from deepdoc.parser import PdfParser, PlainParser
 import numpy as np
-
 
 class Pdf(PdfParser):
     def __init__(self):
@@ -160,6 +160,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             pdf_parser = Pdf()
             paper = pdf_parser(filename if not binary else binary,
                                from_page=from_page, to_page=to_page, callback=callback)
+        tbls=paper["tables"]
+        tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
+        paper["tables"] = tbls
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")
 

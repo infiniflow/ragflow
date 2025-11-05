@@ -1,3 +1,4 @@
+import { NodeCollapsible } from '@/components/collapse';
 import { IAgentForm, IToolNode } from '@/interfaces/database/agent';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { get } from 'lodash';
@@ -49,33 +50,40 @@ function InnerToolNode({
         type="target"
         position={Position.Top}
         isConnectable={isConnectable}
+        className="!bg-accent-primary !size-2"
       ></Handle>
-      <ul className="space-y-2">
-        {tools.map((x) => (
-          <ToolCard
-            key={x.component_name}
-            onClick={handleClick(x.component_name)}
-            className="cursor-pointer"
-            data-tool={x.component_name}
-          >
-            <div className="flex gap-1 items-center pointer-events-none">
-              <OperatorIcon name={x.component_name as Operator}></OperatorIcon>
-              {x.component_name}
-            </div>
-          </ToolCard>
-        ))}
+      <NodeCollapsible items={[tools, mcpList]}>
+        {(x) => {
+          if ('mcp_id' in x) {
+            const mcp = x as unknown as IAgentForm['mcp'][number];
+            return (
+              <ToolCard
+                onClick={handleClick(mcp.mcp_id)}
+                className="cursor-pointer"
+                data-tool={x.mcp_id}
+              >
+                {findMcpById(mcp.mcp_id)?.name}
+              </ToolCard>
+            );
+          }
 
-        {mcpList.map((x) => (
-          <ToolCard
-            key={x.mcp_id}
-            onClick={handleClick(x.mcp_id)}
-            className="cursor-pointer"
-            data-tool={x.mcp_id}
-          >
-            {findMcpById(x.mcp_id)?.name}
-          </ToolCard>
-        ))}
-      </ul>
+          const tool = x as unknown as IAgentForm['tools'][number];
+          return (
+            <ToolCard
+              onClick={handleClick(tool.component_name)}
+              className="cursor-pointer"
+              data-tool={tool.component_name}
+            >
+              <div className="flex gap-1 items-center pointer-events-none">
+                <OperatorIcon
+                  name={tool.component_name as Operator}
+                ></OperatorIcon>
+                {tool.component_name}
+              </div>
+            </ToolCard>
+          );
+        }}
+      </NodeCollapsible>
     </NodeWrapper>
   );
 }

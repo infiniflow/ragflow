@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 from api.apps import smtp_mail_server
 from flask_mail import Message
 from flask import render_template_string
+from api.utils.email_templates import EMAIL_TEMPLATES
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
@@ -33,6 +34,12 @@ from selenium.webdriver.support.expected_conditions import staleness_of
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
+
+OTP_LENGTH = 8
+OTP_TTL_SECONDS = 5 * 60
+ATTEMPT_LIMIT = 5
+ATTEMPT_LOCK_SECONDS = 30 * 60
+RESEND_COOLDOWN_SECONDS = 60
 
 
 CONTENT_TYPE_MAP = {
@@ -178,24 +185,49 @@ def get_float(req: dict, key: str, default: float | int = 10.0) -> float:
         return default
 
 
-INVITE_EMAIL_TMPL = """
-<p>Hi {{email}},</p>
-<p>{{inviter}} has invited you to join their team (ID: {{tenant_id}}).</p>
-<p>Click the link below to complete your registration:<br>
-<a href="{{invite_url}}">{{invite_url}}</a></p>
-<p>If you did not request this, please ignore this email.</p>
-"""
+def send_email_html(subject: str, to_email: str, template_key: str, **context):
+    """Generic HTML email sender using shared templates.
+    template_key must exist in EMAIL_TEMPLATES.
+    """
+    from api.apps import app
+    tmpl = EMAIL_TEMPLATES.get(template_key)
+    if not tmpl:
+        raise ValueError(f"Unknown email template: {template_key}")
+    with app.app_context():
+        msg = Message(subject=subject, recipients=[to_email])
+        msg.html = render_template_string(tmpl, **context)
+        smtp_mail_server.send(msg)
+
 
 def send_invite_email(to_email, invite_url, tenant_id, inviter):
-    from api.apps import  app
-    with app.app_context():
-        msg = Message(subject="RAGFlow Invitation",
-                      recipients=[to_email])
-        msg.html = render_template_string(
-            INVITE_EMAIL_TMPL,
-            email=to_email,
-            invite_url=invite_url,
-            tenant_id=tenant_id,
-            inviter=inviter,
-        )
-        smtp_mail_server.send(msg)
+    # Reuse the generic HTML sender with 'invite' template
+    send_email_html(
+        subject="RAGFlow Invitation",
+        to_email=to_email,
+        template_key="invite",
+        email=to_email,
+        invite_url=invite_url,
+        tenant_id=tenant_id,
+        inviter=inviter,
+    )
+
+
+def otp_keys(email: str):
+    email = (email or "").strip().lower()
+    return (
+        f"otp:{email}",
+        f"otp_attempts:{email}",
+        f"otp_last_sent:{email}",
+        f"otp_lock:{email}",
+    )
+
+
+def hash_code(code: str, salt: bytes) -> str:
+    import hashlib
+    import hmac 
+    return hmac.new(salt, (code or "").encode("utf-8"), hashlib.sha256).hexdigest()
+    
+
+def captcha_key(email: str) -> str:
+    return f"captcha:{email}"
+    

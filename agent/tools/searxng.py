@@ -19,7 +19,7 @@ import time
 from abc import ABC
 import requests
 from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class SearXNGParam(ToolParamBase):
@@ -77,7 +77,7 @@ class SearXNGParam(ToolParamBase):
 class SearXNG(ToolBase, ABC):
     component_name = "SearXNG"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
         # Gracefully handle try-run without inputs
         query = kwargs.get("query")
@@ -85,7 +85,7 @@ class SearXNG(ToolBase, ABC):
             self.set_output("formalized_content", "")
             return ""
 
-        searxng_url = (kwargs.get("searxng_url") or getattr(self._param, "searxng_url", "") or "").strip()
+        searxng_url = (getattr(self._param, "searxng_url", "") or kwargs.get("searxng_url") or "").strip()
         # In try-run, if no URL configured, just return empty instead of raising
         if not searxng_url:
             self.set_output("formalized_content", "")
@@ -94,7 +94,6 @@ class SearXNG(ToolBase, ABC):
         last_e = ""
         for _ in range(self._param.max_retries+1):
             try:
-                # 构建搜索参数
                 search_params = {
                     'q': query,
                     'format': 'json',
@@ -104,33 +103,29 @@ class SearXNG(ToolBase, ABC):
                     'pageno': 1
                 }
 
-                # 发送搜索请求
                 response = requests.get(
                     f"{searxng_url}/search",
                     params=search_params,
                     timeout=10
                 )
                 response.raise_for_status()
-                
+
                 data = response.json()
-                
-                # 验证响应数据
+
                 if not data or not isinstance(data, dict):
                     raise ValueError("Invalid response from SearXNG")
-                
+
                 results = data.get("results", [])
                 if not isinstance(results, list):
                     raise ValueError("Invalid results format from SearXNG")
-                
-                # 限制结果数量
+
                 results = results[:self._param.top_n]
-                
-                # 处理搜索结果
+
                 self._retrieve_chunks(results,
                                       get_title=lambda r: r.get("title", ""),
                                       get_url=lambda r: r.get("url", ""),
                                       get_content=lambda r: r.get("content", ""))
-                
+
                 self.set_output("json", results)
                 return self.output("formalized_content")
 
@@ -151,6 +146,6 @@ class SearXNG(ToolBase, ABC):
 
     def thoughts(self) -> str:
         return """
-Keywords: {} 
+Keywords: {}
 Searching with SearXNG for relevant results...
                 """.format(self.get_input().get("query", "-_-!"))

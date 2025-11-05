@@ -18,14 +18,15 @@ import logging
 import copy
 import re
 
-from api.db import ParserType
+from common.constants import ParserType
 from io import BytesIO
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level
-from rag.utils import num_tokens_from_string
-from deepdoc.parser import PdfParser, PlainParser, DocxParser
+from common.token_utils import num_tokens_from_string
+from deepdoc.parser import PdfParser, DocxParser
+from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
 from docx import Document
 from PIL import Image
-
+from rag.app.naive import plaintext_parser, PARSERS
 
 class Pdf(PdfParser):
     def __init__(self):
@@ -79,12 +80,21 @@ class Docx(DocxParser):
         img = paragraph._element.xpath('.//pic:pic')
         if not img:
             return None
-        img = img[0]
-        embed = img.xpath('.//a:blip/@r:embed')[0]
-        related_part = document.part.related_parts[embed]
-        image = related_part.image
-        image = Image.open(BytesIO(image.blob))
-        return image
+        try:
+            img = img[0]
+            embed = img.xpath('.//a:blip/@r:embed')[0]
+            related_part = document.part.related_parts[embed]
+            image = related_part.image
+            if image is not None:
+                image = Image.open(BytesIO(image.blob))
+                return image
+            elif related_part.blob is not None:
+                image = Image.open(BytesIO(related_part.blob))
+                return image
+            else:
+                return None
+        except Exception:
+            return None
 
     def concat_img(self, img1, img2):
         if img1 and not img2:
@@ -186,15 +196,34 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
-            pdf_parser = PlainParser()
-        sections, tbls = pdf_parser(filename if not binary else binary,
-                                    from_page=from_page, to_page=to_page, callback=callback)
-        if sections and len(sections[0]) < 3:
-            sections = [(t, lvl, [[0] * 5]) for t, lvl in sections]
-        # set pivot using the most frequent type of title,
-        # then merge between 2 pivot
+        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+
+        if isinstance(layout_recognizer, bool):
+            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
+
+        name = layout_recognizer.strip().lower()
+        pdf_parser = PARSERS.get(name, plaintext_parser)
+        callback(0.1, "Start to parse.")
+
+        sections, tbls, pdf_parser = pdf_parser(
+            filename = filename,
+            binary = binary,
+            from_page = from_page,
+            to_page = to_page,
+            lang = lang,
+            callback = callback,
+            pdf_cls = Pdf,
+            **kwargs
+        )
+
+        if not sections and not tbls:
+            return []
+
+        if name in ["tcadp", "docling", "mineru"]:
+            parser_config["chunk_token_num"] = 0
+        
+        callback(0.8, "Finish parsing.")
+
         if len(sections) > 0 and len(pdf_parser.outlines) / len(sections) > 0.03:
             max_lvl = max([lvl for _, lvl in pdf_parser.outlines])
             most_level = max(0, max_lvl - 1)
@@ -252,7 +281,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             tk_cnt = num_tokens_from_string(txt)
             if sec_id > -1:
                 last_sid = sec_id
-
+        tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
         res = tokenize_table(tbls, doc, eng)
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
         return res
@@ -261,6 +290,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         docx_parser = Docx()
         ti_list, tbls = docx_parser(filename, binary,
                                     from_page=0, to_page=10000, callback=callback)
+        tbls=vision_figure_parser_docx_wrapper(sections=ti_list,tbls=tbls,callback=callback,**kwargs)
         res = tokenize_table(tbls, doc, eng)
         for text, image in ti_list:
             d = copy.deepcopy(doc)

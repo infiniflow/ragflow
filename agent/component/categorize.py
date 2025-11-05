@@ -18,17 +18,17 @@ import os
 import re
 from abc import ABC
 
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from agent.component.llm import LLMParam, LLM
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from rag.llm.chat_model import ERROR_PREFIX
 
 
 class CategorizeParam(LLMParam):
 
     """
-    Define the Categorize component parameters.
+    Define the categorize component parameters.
     """
     def __init__(self):
         super().__init__()
@@ -80,7 +80,7 @@ Here's description of each category:
  - Prioritize the most specific applicable category
  - Return only the category name without explanations
  - Use "Other" only when no other category fits
- 
+
  """.format(
             "\n - ".join(list(self.category_description.keys())),
             "\n".join(descriptions)
@@ -96,7 +96,7 @@ Here's description of each category:
 class Categorize(LLM, ABC):
     component_name = "Categorize"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         msg = self._canvas.get_history(self._param.message_history_window_size)
         if not msg:
@@ -112,7 +112,7 @@ class Categorize(LLM, ABC):
 
         user_prompt = """
 ---- Real Data ----
-{} → 
+{} →
 """.format(" | ".join(["{}: \"{}\"".format(c["role"].upper(), re.sub(r"\n", "", c["content"], flags=re.DOTALL)) for c in msg]))
         ans = chat_mdl.chat(self._param.sys_prompt, [{"role": "user", "content": user_prompt}], self._param.gen_conf())
         logging.info(f"input: {user_prompt}, answer: {str(ans)}")

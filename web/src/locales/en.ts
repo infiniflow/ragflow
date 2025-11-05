@@ -3,11 +3,12 @@ export default {
     common: {
       noResults: 'No results.',
       selectPlaceholder: 'select value',
-      selectAll: 'Select All',
+      selectAll: 'Select all',
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete this item?',
-      ok: 'Yes',
-      cancel: 'No',
+      ok: 'Ok',
+      cancel: 'Cancel',
+      yes: 'Yes',
       no: 'No',
       total: 'Total',
       rename: 'Rename',
@@ -57,6 +58,8 @@ export default {
       },
     },
     login: {
+      loginTitle: 'Sign in to Your Account',
+      signUpTitle: 'Create an Account',
       login: 'Sign in',
       signUp: 'Sign up',
       loginDescription: 'We’re so excited to see you again!',
@@ -72,7 +75,8 @@ export default {
       nicknamePlaceholder: 'Please input nickname',
       register: 'Create an account',
       continue: 'Continue',
-      title: 'Start building your smart assistants.',
+      title: 'A leading RAG engine for LLM context',
+      start: "Let's get started",
       description:
         'Sign up for free to explore top RAG technology. Create knowledge bases and AIs to empower your business.',
       review: 'from 500+ reviews',
@@ -96,36 +100,45 @@ export default {
       description: 'Which knowledge bases will you use today?',
       createKnowledgeBase: 'Create Dataset',
       name: 'Name',
-      namePlaceholder: 'Please input name!',
+      namePlaceholder: 'Please input name.',
       doc: 'Docs',
       searchKnowledgePlaceholder: 'Search',
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      localUpload: 'Local Upload',
+      fileSize: 'File Size',
+      fileType: 'File Type',
+      uploadedBy: 'Uploaded by',
+      notGenerated: 'Not generated',
+      generatedOn: 'Generated on ',
+      subbarFiles: 'Files',
       generateKnowledgeGraph:
         'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
       generateRaptor:
-        'This will extract entities and relationships from all your documents in this dataset. The process may take a while to complete.',
+        'Performs recursive clustering and summarization of document chunks to build a hierarchical tree structure, enabling more context-aware retrieval across lengthy documents.',
       generate: 'Generate',
-      raptor: 'Raptor',
-      knowledgeGraph: 'Knowledge Graph',
+      raptor: 'RAPTOR',
       processingType: 'Processing Type',
-      dataPipeline: 'Data Pipeline',
+      dataPipeline: 'Ingestion pipeline',
       operations: 'Operations',
+      taskId: 'Task ID',
+      duration: 'Duration',
+      details: 'Details',
       status: 'Status',
       task: 'Task',
       startDate: 'Start Date',
       source: 'Source',
       fileName: 'File Name',
-      datasetLogs: 'Dataset Logs',
-      fileLogs: 'File Logs',
-      overview: 'Overview',
+      datasetLogs: 'Dataset',
+      fileLogs: 'File',
+      overview: 'Logs',
       success: 'Success',
       failed: 'Failed',
       completed: 'Completed',
-      processLog: 'Process Log',
+      datasetLog: 'Dataset Log',
       created: 'Created',
-      learnMore: 'Learn More',
+      learnMore: 'Built-in pipeline introduction',
       general: 'General',
       chunkMethodTab: 'Chunk Method',
       testResults: 'Test Results',
@@ -138,12 +151,12 @@ export default {
       testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
-      knowledgeGraph: 'Knowledge graph',
+      knowledgeGraph: 'Knowledge Graph',
       name: 'Name',
       namePlaceholder: 'Please input name!',
       doc: 'Docs',
       datasetDescription:
-        '😉 Please wait for your files to finish parsing before starting an AI-powered chat.',
+        'Please wait for your files to finish parsing before starting an AI-powered chat.',
       addFile: 'Add file',
       searchFiles: 'Search your files',
       localFiles: 'Local files',
@@ -178,7 +191,7 @@ export default {
         'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
-      testingLabel: 'Testing',
+      testingLabel: 'Run',
       similarity: 'Hybrid similarity',
       termSimilarity: 'Term similarity',
       vectorSimilarity: 'Vector similarity',
@@ -261,15 +274,35 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      tocExtraction: 'TOC Enhance',
+      tocExtractionTip:
+        " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
+      deleteGenerateModalContent: `
+        <p>Deleting the generated <strong class='text-text-primary'>{{type}}</strong>  results
+        will remove all derived entities and relationships from this dataset.
+        Your original files will remain intact.<p>
+        <br/>
+        Do you want to continue?
+      `,
+      extractRaptor: 'Extract Raptor',
+      extractKnowledgeGraph: 'Extract Knowledge Graph',
+      filterPlaceholder: 'please input filter',
+      fileFilterTip: '',
+      fileFilter: 'File Filter',
+      setDefaultTip: '',
+      setDefault: 'Set as Default',
+      eidtLinkDataPipeline: 'Edit Ingestion pipeline',
+      linkPipelineSetTip: 'Manage Ingestion pipeline linkage with this dataset',
+      default: 'Default',
+      dataPipeline: 'Ingestion pipeline',
+      linkDataPipeline: 'Link Ingestion pipeline',
       enableAutoGenerate: 'Enable Auto Generate',
       teamPlaceholder: 'Please select a team.',
-      dataFlowPlaceholder: 'Please select a data flow.',
+      dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
-      useRAPTORToEnhanceRetrieval: 'Use RAPTOR to Enhance Retrieval',
-      extractKnowledgeGraph: 'Extract Knowledge Graph',
-      dataFlow: 'Data Flow',
-      parseType: 'Parse Type',
-      manualSetup: 'Manual Setup',
+      dataFlow: 'Pipeline',
+      parseType: 'Ingestion pipeline',
+      manualSetup: 'Choose pipeline',
       builtIn: 'Built-in',
       titleDescription:
         'Update your knowledge base configuration here, particularly the chunking method.',
@@ -319,7 +352,7 @@ export default {
       manual: `<p>Only <b>PDF</b> is supported.</p><p>
       We assume that the manual has a hierarchical section structure, using the lowest section titles as basic unit for chunking documents. Therefore, figures and tables in the same section will not be separated, which may result in larger chunk sizes.
       </p>`,
-      naive: `<p>Supported file formats are <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
+      naive: `<p>Supported file formats are <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPTX, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
       <p>This method chunks files using a 'naive' method: </p>
       <p>
       <li>Use vision detection model to split the texts into smaller segments.</li>
@@ -395,9 +428,9 @@ export default {
 <p>In a Tag column, <b>comma</b> is used to separate tags.</p>
 <i>Lines of texts that fail to follow the above rules will be ignored.</i>
 `,
-      useRaptor: 'Use RAPTOR to enhance retrieval',
+      useRaptor: 'RAPTOR',
       useRaptorTip:
-        'Enable RAPTOR for multi-hop question-answering tasks. See https://ragflow.io/docs/dev/enable_raptor for details.',
+        'RAPTOR can be used for multi-hop question-answering tasks. Navigate to the Files page, click Generate > RAPTOR to enable it. See https://ragflow.io/docs/dev/enable_raptor for details.',
       prompt: 'Prompt',
       promptTip:
         'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
@@ -441,15 +474,16 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       topnTags: 'Top-N Tags',
       tags: 'Tags',
       addTag: 'Add tag',
-      useGraphRag: 'Extract knowledge graph',
+      useGraphRag: 'Knowledge graph',
       useGraphRagTip:
         'Construct a knowledge graph over file chunks of the current knowledge base to enhance multi-hop question-answering involving nested logic. See https://ragflow.io/docs/dev/construct_knowledge_graph for details.',
       graphRagMethod: 'Method',
-      graphRagMethodTip: `Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
-        General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
+      graphRagMethodTip: `
+      Light: (Default) Use prompts provided by github.com/HKUDS/LightRAG to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.</br>
+      General: Use prompts provided by github.com/microsoft/graphrag to extract entities and relationships`,
       resolution: 'Entity resolution',
       resolutionTip: `An entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more accurate graph`,
-      community: 'Community reports generation',
+      community: 'Community reports',
       communityTip:
         'In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See here for more information: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
       theDocumentBeingParsedCannotBeDeleted:
@@ -511,10 +545,10 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       setAnOpener: 'Opening greeting',
       setAnOpenerInitial: `Hi! I'm your assistant. What can I do for you?`,
       setAnOpenerTip: 'Set an opening greeting for users.',
-      knowledgeBases: 'Knowledge bases',
+      knowledgeBases: 'Datasets',
       knowledgeBasesMessage: 'Please select',
       knowledgeBasesTip:
-        'Select the knowledge bases to associate with this chat assistant. An empty knowledge base will not appear in the dropdown list.',
+        'Select the datasets to associate with this chat assistant. An empty knowledge base will not appear in the dropdown list.',
       system: 'System prompt',
       systemInitialValue: `You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
       Here is the knowledge base:
@@ -637,13 +671,18 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addCondition: 'Add Condition',
       meta: {
         disabled: 'Disabled',
-        automatic: 'Automatic',
+        auto: 'Automatic',
         manual: 'Manual',
       },
       cancel: 'Cancel',
       chatSetting: 'Chat setting',
+      tocEnhance: 'TOC enhance',
+      tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      save: 'Save',
+      search: 'Search',
+      availableModels: 'Available models',
       profile: 'Profile',
       avatar: 'Avatar',
       avatarTip: 'This will be displayed on your profile.',
@@ -657,12 +696,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       passwordDescription:
         'Please enter your current password to change your password.',
       model: 'Model providers',
-      modelDescription: 'Configure model parameters and API KEY here.',
+      systemModelDescription: 'Please complete these settings before beginning',
       team: 'Team',
       system: 'System',
       logout: 'Log out',
       api: 'API',
-      username: 'Username',
+      username: 'Name',
       usernameMessage: 'Please input your username!',
       photo: 'Your photo',
       photoDescription: 'This will be displayed on your profile.',
@@ -674,7 +713,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       timezone: 'Time zone',
       timezoneMessage: 'Please input your timezone!',
       timezonePlaceholder: 'select your timezone',
-      email: 'Email address',
+      email: 'Email',
       emailDescription: 'Once registered, E-mail cannot be changed.',
       currentPassword: 'Current password',
       currentPasswordMessage: 'Please input your password!',
@@ -690,7 +729,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       cancel: 'Cancel',
       addedModels: 'Added models',
       modelsToBeAdded: 'Models to be added',
-      addTheModel: 'Add Model',
+      addTheModel: 'Add',
       apiKey: 'API-Key',
       apiKeyMessage:
         'Please enter the API key (for locally deployed model,ignore this).',
@@ -701,23 +740,25 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       baseUrl: 'Base-Url',
       baseUrlTip:
         'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
+      tongyiBaseUrlTip:
+        'For Chinese users, no need to fill in or use https://dashscope.aliyuncs.com/compatible-mode/v1. For international users, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      tongyiBaseUrlPlaceholder: '(International users only, please see tip)',
       modify: 'Modify',
       systemModelSettings: 'Set default models',
-      chatModel: 'Chat model',
-      chatModelTip:
-        'The default chat model for each newly created knowledge base.',
-      embeddingModel: 'Embedding model',
+      chatModel: 'LLM',
+      chatModelTip: 'The default LLM for each newly created knowledge base.',
+      embeddingModel: 'Embedding',
       embeddingModelTip:
         'The default embedding model for each newly created knowledge base. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
-      img2txtModel: 'Img2txt model',
+      img2txtModel: 'VLM',
       img2txtModelTip:
-        'The default img2txt model for each newly created knowledge base. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
-      sequence2txtModel: 'Speech2txt model',
+        'The default VLM for each newly created knowledge base. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+      sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'The default ASR model for each newly created knowledgebase. Use this model to translate voices to corresponding text.',
-      rerankModel: 'Rerank model',
+      rerankModel: 'Rerank',
       rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.`,
-      ttsModel: 'TTS Model',
+      ttsModel: 'TTS',
       ttsModelTip:
         'The default text-to-speech model. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
       workspace: 'Workspace',
@@ -826,9 +867,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       apiVersion: 'API-Version',
       apiVersionMessage: 'Please input API version',
       add: 'Add',
-      updateDate: 'Update Date',
-      role: 'Role',
-      invite: 'Invite',
+      updateDate: 'Date',
+      role: 'State',
+      invite: 'Invite Member',
       agree: 'Accept',
       refuse: 'Decline',
       teamMembers: 'Team Members',
@@ -917,6 +958,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       marketing: 'Marketing',
       consumerApp: 'Consumer App',
       other: 'Other',
+      ingestionPipeline: 'Ingestion Pipeline',
       agents: 'Agents',
       days: 'Days',
       beginInput: 'Begin Input',
@@ -972,14 +1014,14 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addTools: 'Add Tools',
       sysPromptDefultValue: `
       <role>
-        You are a helpful assistant, an AI assistant specialized in problem-solving for the user. 
+        You are a helpful assistant, an AI assistant specialized in problem-solving for the user.
         If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.
       </role>
       <instructions>
-        1. Understand the user’s request.  
-        2. Decompose it into logical subtasks.  
-        3. Execute each subtask step by step, reasoning transparently.  
-        4. Validate accuracy and consistency.  
+        1. Understand the user’s request.
+        2. Decompose it into logical subtasks.
+        3. Execute each subtask step by step, reasoning transparently.
+        4. Validate accuracy and consistency.
         5. Summarize the final result clearly.
       </instructions>`,
       singleLineText: 'Single-line text',
@@ -1037,7 +1079,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         {input}
   The above is the content you need to summarize.`,
       createGraph: 'Create agent',
-      createFromTemplates: 'Create from templates',
+      createFromTemplates: 'Create from template',
       retrieval: 'Retrieval',
       generate: 'Generate',
       answer: 'Interact',
@@ -1369,6 +1411,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       cleanHtml: 'Clean HTML',
       cleanHtmlTip:
         'If the response is HTML formatted and only the primary content wanted, please toggle it on.',
+      invalidUrl:
+        'Must be a valid URL or URL with variable placeholders in the format {variable_name} or {component@variable}',
       reference: 'Reference',
       input: 'Input',
       output: 'Output',
@@ -1484,6 +1528,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       knowledgeBaseVars: 'Knowledge base variables',
       code: 'Code',
       codeDescription: 'It allows developers to write custom Python logic.',
+      dataOperations: 'Data operations',
+      dataOperationsDescription: 'Perform various operations on a Data object.',
       inputVariables: 'Input variables',
       runningHintText: 'is running...🕞',
       openingSwitch: 'Opening switch',
@@ -1492,8 +1538,8 @@ This delimiter is used to split the input text into several text pieces echo of 
         'Your users will see this welcome message at the beginning.',
       modeTip: 'The mode defines how the workflow is initiated.',
       mode: 'Mode',
-      conversational: 'conversational',
-      task: 'task',
+      conversational: 'Conversational',
+      task: 'Task',
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       query: 'Query variables',
@@ -1503,7 +1549,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       agentDescription:
         'Builds agent components equipped with reasoning, tool usage, and multi-agent collaboration. ',
       maxRecords: 'Max records',
-      createAgent: 'Create Agent',
+      createAgent: 'Agent flow',
       stringTransform: 'Text Processing',
       userFillUp: 'Await Response',
       userFillUpDescription: `Pauses the workflow and waits for the user's message before continuing.`,
@@ -1557,6 +1603,141 @@ This delimiter is used to split the input text into several text pieces echo of 
       sqlStatementTip:
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
+      release: 'Publish',
+      createFromBlank: 'Create from blank',
+      createFromTemplate: 'Create from template',
+      importJsonFile: 'Import JSON file',
+      ceateAgent: 'Agent flow',
+      createPipeline: 'Ingestion pipeline',
+      chooseAgentType: 'Choose Agent Type',
+      parser: 'Parser',
+      parserDescription:
+        'Extracts raw text and structure from files for downstream processing.',
+      tokenizer: 'Indexer',
+      tokenizerRequired: 'Please add the Indexer node first',
+      tokenizerDescription:
+        'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
+      splitter: 'Token',
+      splitterDescription:
+        'Split text into chunks by token length with optional delimiters and overlap.',
+      hierarchicalMergerDescription:
+        'Split documents into sections by title hierarchy with regex rules for finer control.',
+      hierarchicalMerger: 'Title',
+      extractor: 'Transformer',
+      extractorDescription:
+        'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
+      outputFormat: 'Output format',
+      fileFormats: 'File type',
+      fileFormatOptions: {
+        pdf: 'PDF',
+        spreadsheet: 'Spreadsheet',
+        image: 'Image',
+        email: 'Email',
+        'text&markdown': 'Text & Markup',
+        word: 'Word',
+        slides: 'PPTX',
+        audio: 'Audio',
+        video: 'Video',
+      },
+      fields: 'Field',
+      addParser: 'Add Parser',
+      hierarchy: 'Hierarchy',
+      regularExpressions: 'Regular Expressions',
+      overlappedPercent: 'Overlapped percent (%)',
+      searchMethod: 'Search method',
+      searchMethodTip: `Defines how the content can be searched — by full-text, embedding, or both.
+The Indexer will store the content in the corresponding data structures for the selected methods.`,
+      // file: 'File',
+      parserMethod: 'PDF parser',
+      // systemPrompt: 'System Prompt',
+      systemPromptPlaceholder:
+        'Enter system prompt for image analysis, if empty the system default value will be used',
+      exportJson: 'Export JSON',
+      viewResult: 'View result',
+      running: 'Running',
+      summary: 'Summary',
+      keywords: 'Keywords',
+      questions: 'Questions',
+      metadata: 'Metadata',
+      fieldName: 'Result destination',
+      prompts: {
+        system: {
+          keywords: `Role
+You are a text analyzer.
+
+Task
+Extract the most important keywords/phrases of a given piece of text content.
+
+Requirements
+- Summarize the text content, and give the top 5 important keywords/phrases.
+- The keywords MUST be in the same language as the given piece of text content.
+- The keywords are delimited by ENGLISH COMMA.
+- Output keywords ONLY.`,
+          questions: `Role
+You are a text analyzer.
+
+Task
+Propose 3 questions about a given piece of text content.
+
+Requirements
+- Understand and summarize the text content, and propose the top 3 important questions.
+- The questions SHOULD NOT have overlapping meanings.
+- The questions SHOULD cover the main content of the text as much as possible.
+- The questions MUST be in the same language as the given piece of text content.
+- One question per line.
+- Output questions ONLY.`,
+          summary: `Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.
+
+Key Instructions:
+1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.
+2. Language: Write the summary in the same language as the source text.
+3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.
+4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.`,
+          metadata: `Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.
+
+Important structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.`,
+        },
+        user: {
+          keywords: `Text Content
+[Insert text here]`,
+          questions: `Text Content
+[Insert text here]`,
+          summary: `Text to Summarize:
+[Insert text here]`,
+          metadata: `Content: [INSERT CONTENT HERE]`,
+        },
+      },
+      cancel: 'Cancel',
+      swicthPromptMessage:
+        'The prompt word will change. Please confirm whether to abandon the existing prompt word?',
+      tokenizerSearchMethodOptions: {
+        full_text: 'Full-text',
+        embedding: 'Embedding',
+      },
+      filenameEmbeddingWeight: 'Filename embedding weight',
+      tokenizerFieldsOptions: {
+        text: 'Processed Text',
+        keywords: 'Keywords',
+        questions: 'Questions',
+        summary: 'Augmented Context',
+      },
+      imageParseMethodOptions: {
+        ocr: 'OCR',
+      },
+      structuredOutput: {
+        configuration: 'Configuration',
+        structuredOutput: 'Structured output',
+      },
+      operations: 'Operations',
+      operationsOptions: {
+        selectKeys: 'Select keys',
+        literalEval: 'Literal eval',
+        combine: 'Combine',
+        filterValues: 'Filter values',
+        appendOrUpdate: 'Append or update',
+        removeKeys: 'Remove keys',
+        renameKeys: 'Rename keys',
+      },
     },
     llmTools: {
       bad_calculator: {
@@ -1580,6 +1761,13 @@ This delimiter is used to split the input text into several text pieces echo of 
       serverType: 'Server Type',
       addMCP: 'Add MCP',
       editMCP: 'Edit MCP',
+      toolsAvailable: 'tools available',
+      mcpServers: 'MCP Servers',
+      customizeTheListOfMcpServers: 'Customize the list of MCP servers',
+      cachedTools: 'cached tools',
+      bulkManage: 'Bulk manage',
+      exitBulkManage: 'Exit bulk manage',
+      selected: 'Selected',
     },
     search: {
       searchApps: 'Search Apps',
@@ -1623,18 +1811,179 @@ This delimiter is used to split the input text into several text pieces echo of 
       page: '{{page}} /Page',
     },
     dataflowParser: {
+      result: 'Result',
       parseSummary: 'Parse Summary',
       parseSummaryTip: 'Parser：deepdoc',
+      parserMethod: 'Parser Method',
+      outputFormat: 'Output Format',
       rerunFromCurrentStep: 'Rerun From Current Step',
       rerunFromCurrentStepTip: 'Changes detected. Click to re-run.',
+      confirmRerun: 'Confirm Rerun Process',
+      confirmRerunModalContent: `
+      <p class="text-sm text-text-disabled font-medium mb-2">
+        You are about to rerun the process starting from the <span class="text-text-secondary">{{step}}</span> step.
+      </p>
+      <p class="text-sm mb-3 text-text-disabled">This will:</p><br />
+      <ul class="list-disc list-inside space-y-1 text-sm text-text-secondary">
+        <li>• Overwrite existing results from the current step onwards</li>
+        <li>• Create a new log entry for tracking</li>
+        <li>• Previous steps will remain unchanged</li>
+      </ul>`,
+      changeStepModalTitle: 'Step Switch Warning',
+      changeStepModalContent: `
+      <p>You are currently editing the results of this stage.</p>
+      <p>If you switch to a later stage, your changes will be lost. </p>
+      <p>To keep them, please click Rerun to re-run the current stage.</p> `,
+      changeStepModalConfirmText: 'Switch Anyway',
+      changeStepModalCancelText: 'Cancel',
+      unlinkPipelineModalTitle: 'Unlink Ingestion pipeline',
+      unlinkPipelineModalContent: `
+      <p>Once unlinked, this Dataset will no longer be connected to the current Ingestion pipeline.</p>
+      <p>Files that are already being parsed  will continue until completion</p>
+      <p>Files that are not yet parsed will no longer be processed</p> <br/>
+      <p>Are you sure you want to proceed?</p> `,
+      unlinkPipelineModalConfirmText: 'Unlink',
     },
-    dataflow: {
-      parser: 'Parser',
-      parserDescription: 'Parser',
-      chunker: 'Chunker',
-      chunkerDescription: 'Chunker',
-      tokenizer: 'Tokenizer',
-      tokenizerDescription: 'Tokenizer',
+    datasetOverview: {
+      downloadTip: 'Files being downloaded from data sources. ',
+      processingTip: 'Files being processed by Ingestion pipeline.',
+      totalFiles: 'Total Files',
+      downloading: 'Downloading',
+      downloadSuccessTip: 'Total successful downloads',
+      downloadFailedTip: 'Total failed downloads',
+      processingSuccessTip: 'Total successfully processed files',
+      processingFailedTip: 'Total failed processes',
+      processing: 'Processing',
+    },
+    admin: {
+      loginTitle: 'RAGFlow ADMIN',
+      title: 'RAGFlow admin',
+      confirm: 'Confirm',
+      close: 'Close',
+      yes: 'Yes',
+      no: 'No',
+      delete: 'Delete',
+      cancel: 'Cancel',
+      reset: 'Reset',
+      import: 'Import',
+      description: 'Description',
+      noDescription: 'No description',
+
+      resourceType: {
+        dataset: 'Dataset',
+        chat: 'Chat',
+        agent: 'Agent',
+        search: 'Search',
+        file: 'File',
+        team: 'Team',
+        memory: 'Memory',
+      },
+
+      permissionType: {
+        enable: 'Enable',
+        read: 'Read',
+        write: 'Write',
+        share: 'Share',
+      },
+
+      serviceStatus: 'Service status',
+      userManagement: 'User management',
+      registrationWhitelist: 'Registration whitelist',
+      roles: 'Roles',
+      monitoring: 'Monitoring',
+
+      active: 'Active',
+      inactive: 'Inactive',
+      enable: 'Enable',
+      disable: 'Disable',
+      all: 'All',
+      actions: 'Actions',
+      newUser: 'New User',
+      email: 'Email',
+      name: 'Name',
+      nickname: 'Nickname',
+      status: 'Status',
+      id: 'ID',
+      serviceType: 'Service type',
+      host: 'Host',
+      port: 'Port',
+
+      role: 'Role',
+      user: 'User',
+      superuser: 'Superuser',
+
+      createTime: 'Create time',
+      lastLoginTime: 'Last login time',
+      lastUpdateTime: 'Last update time',
+
+      isAnonymous: 'Is Anonymous',
+
+      deleteUser: 'Delete user',
+      deleteUserConfirmation: 'Are you sure you want to delete this user?',
+
+      createNewUser: 'Create new user',
+      changePassword: 'Change password',
+      newPassword: 'New password',
+      confirmNewPassword: 'Confirm new password',
+      password: 'Password',
+      confirmPassword: 'Confirm password',
+
+      invalidEmail: 'Please input a valid email address!',
+      passwordRequired: 'Please input your password!',
+      passwordMinLength: 'Password must be more than 8 characters.',
+      confirmPasswordRequired: 'Please confirm your password!',
+      confirmPasswordDoNotMatch: 'The password that you entered do not match!',
+
+      read: 'Read',
+      write: 'Write',
+      share: 'Share',
+      create: 'Create',
+
+      extraInfo: 'Extra information',
+      serviceDetail: `Service {{name}} detail`,
+
+      whitelistManagement: 'Whitelist management',
+      exportAsExcel: 'Export Excel',
+      importFromExcel: 'Import Excel',
+      createEmail: 'Create email',
+      deleteEmail: 'Delete email',
+      editEmail: 'Edit email',
+      deleteWhitelistEmailConfirmation:
+        'Are you sure you want to delete this email from whitelist? This action cannot be undone.',
+
+      importWhitelist: 'Import whitelist (excel)',
+      importSelectExcelFile: 'Excel file (.xlsx)',
+      importOverwriteExistingEmails: 'Overwrite existing emails',
+      importInvalidExcelFile: 'Please select a valid Excel file',
+      importFileRequired: 'Please select a file to import',
+      importFileTips:
+        'File must contain a single header column named <code>email</code>.',
+
+      chunkNum: 'Chunks',
+      docNum: 'Documents',
+      tokenNum: 'Tokens used',
+      language: 'Language',
+      createDate: 'Create date',
+      updateDate: 'Update date',
+      permission: 'Permission',
+
+      agentTitle: 'Agent title',
+      canvasCategory: 'Canvas category',
+
+      newRole: 'New Role',
+      addNewRole: 'Add new role',
+      roleName: 'Role name',
+      roleNameRequired: 'Role name is required',
+      resources: 'Resources',
+
+      editRoleDescription: 'Edit role description',
+      deleteRole: 'Delete role',
+      deleteRoleConfirmation:
+        'Are you sure you want to delete this role? This action cannot be undone.',
+
+      alive: 'Alive',
+      timeout: 'Timeout',
+      fail: 'Fail',
     },
   },
 };

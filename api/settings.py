@@ -17,29 +17,27 @@ import json
 import os
 import secrets
 from datetime import date
-from enum import Enum, IntEnum
 
 import rag.utils
 import rag.utils.es_conn
 import rag.utils.infinity_conn
 import rag.utils.opensearch_conn
 from api.constants import RAG_FLOW_SERVICE_NAME
-from api.utils import decrypt_database_config, get_base_config
-from api.utils.file_utils import get_project_base_directory
+from common.config_utils import decrypt_database_config, get_base_config
+from common.file_utils import get_project_base_directory
+from common import globals
 from rag.nlp import search
-
-LIGHTEN = int(os.environ.get("LIGHTEN", "0"))
 
 LLM = None
 LLM_FACTORY = None
 LLM_BASE_URL = None
 CHAT_MDL = ""
-EMBEDDING_MDL = ""
+# EMBEDDING_MDL = "" has been moved to common/globals.py
 RERANK_MDL = ""
 ASR_MDL = ""
 IMAGE2TEXT_MDL = ""
 CHAT_CFG = ""
-EMBEDDING_CFG = ""
+# EMBEDDING_CFG = "" has been moved to common/globals.py
 RERANK_CFG = ""
 ASR_CFG = ""
 IMAGE2TEXT_CFG = ""
@@ -49,6 +47,7 @@ HOST_IP = None
 HOST_PORT = None
 SECRET_KEY = None
 FACTORY_LLM_INFOS = None
+ALLOWED_LLM_FACTORIES = None
 
 DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
 DATABASE = decrypt_database_config(name=DATABASE_TYPE)
@@ -62,11 +61,11 @@ HTTP_APP_KEY = None
 GITHUB_OAUTH = None
 FEISHU_OAUTH = None
 OAUTH_CONFIG = None
-DOC_ENGINE = None
-docStoreConn = None
+# DOC_ENGINE = None has been moved to common/globals.py
+# docStoreConn = None has been moved to common/globals.py
 
-retrievaler = None
-kg_retrievaler = None
+#retriever = None has been moved to common/globals.py
+kg_retriever = None
 
 # user registration switch
 REGISTER_ENABLED = 1
@@ -77,12 +76,10 @@ SANDBOX_ENABLED = 0
 SANDBOX_HOST = None
 STRONG_TEST_COUNT = int(os.environ.get("STRONG_TEST_COUNT", "8"))
 
-BUILTIN_EMBEDDING_MODELS = ["BAAI/bge-large-zh-v1.5@BAAI", "maidalun1020/bce-embedding-base_v1@Youdao"]
-
 SMTP_CONF = None
 MAIL_SERVER = ""
 MAIL_PORT = 000
-MAIL_USE_SSL= True
+MAIL_USE_SSL = True
 MAIL_USE_TLS = False
 MAIL_USERNAME = ""
 MAIL_PASSWORD = ""
@@ -109,14 +106,14 @@ def get_or_create_secret_key():
 
 
 def init_settings():
-    global LLM, LLM_FACTORY, LLM_BASE_URL, LIGHTEN, DATABASE_TYPE, DATABASE, FACTORY_LLM_INFOS, REGISTER_ENABLED
-    LIGHTEN = int(os.environ.get("LIGHTEN", "0"))
+    global LLM, LLM_FACTORY, LLM_BASE_URL, DATABASE_TYPE, DATABASE, FACTORY_LLM_INFOS, REGISTER_ENABLED, ALLOWED_LLM_FACTORIES
     DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
     LLM = get_base_config("user_default_llm", {}) or {}
     LLM_DEFAULT_MODELS = LLM.get("default_models", {}) or {}
     LLM_FACTORY = LLM.get("factory", "") or ""
     LLM_BASE_URL = LLM.get("base_url", "") or ""
+    ALLOWED_LLM_FACTORIES = LLM.get("allowed_factories", None)
     try:
         REGISTER_ENABLED = int(os.environ.get("REGISTER_ENABLED", "1"))
     except Exception:
@@ -128,10 +125,8 @@ def init_settings():
     except Exception:
         FACTORY_LLM_INFOS = []
 
-    global CHAT_MDL, EMBEDDING_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
-    global CHAT_CFG, EMBEDDING_CFG, RERANK_CFG, ASR_CFG, IMAGE2TEXT_CFG
-    if not LIGHTEN:
-        EMBEDDING_MDL = BUILTIN_EMBEDDING_MODELS[0]
+    global CHAT_MDL, RERANK_MDL, ASR_MDL, IMAGE2TEXT_MDL
+    global CHAT_CFG, RERANK_CFG, ASR_CFG, IMAGE2TEXT_CFG
 
     global API_KEY, PARSERS, HOST_IP, HOST_PORT, SECRET_KEY
     API_KEY = LLM.get("api_key")
@@ -140,19 +135,19 @@ def init_settings():
     )
 
     chat_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("chat_model", CHAT_MDL))
-    embedding_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("embedding_model", EMBEDDING_MDL))
+    embedding_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("embedding_model", globals.EMBEDDING_MDL))
     rerank_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("rerank_model", RERANK_MDL))
     asr_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("asr_model", ASR_MDL))
     image2text_entry = _parse_model_entry(LLM_DEFAULT_MODELS.get("image2text_model", IMAGE2TEXT_MDL))
 
     CHAT_CFG = _resolve_per_model_config(chat_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
-    EMBEDDING_CFG = _resolve_per_model_config(embedding_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
+    globals.EMBEDDING_CFG = _resolve_per_model_config(embedding_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
     RERANK_CFG = _resolve_per_model_config(rerank_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
     ASR_CFG = _resolve_per_model_config(asr_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
     IMAGE2TEXT_CFG = _resolve_per_model_config(image2text_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
 
     CHAT_MDL = CHAT_CFG.get("model", "") or ""
-    EMBEDDING_MDL = EMBEDDING_CFG.get("model", "") or ""
+    globals.EMBEDDING_MDL = os.getenv("TEI_MODEL", "BAAI/bge-small-en-v1.5") if "tei-" in os.getenv("COMPOSE_PROFILES", "") else ""
     RERANK_MDL = RERANK_CFG.get("model", "") or ""
     ASR_MDL = ASR_CFG.get("model", "") or ""
     IMAGE2TEXT_MDL = IMAGE2TEXT_CFG.get("model", "") or ""
@@ -174,23 +169,23 @@ def init_settings():
 
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, docStoreConn, retrievaler, kg_retrievaler
-    DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
-    # DOC_ENGINE = os.environ.get('DOC_ENGINE', "opensearch")
-    lower_case_doc_engine = DOC_ENGINE.lower()
+    global kg_retriever
+    globals.DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
+    # globals.DOC_ENGINE = os.environ.get('DOC_ENGINE', "opensearch")
+    lower_case_doc_engine = globals.DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
-        docStoreConn = rag.utils.es_conn.ESConnection()
+        globals.docStoreConn = rag.utils.es_conn.ESConnection()
     elif lower_case_doc_engine == "infinity":
-        docStoreConn = rag.utils.infinity_conn.InfinityConnection()
+        globals.docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
-        docStoreConn = rag.utils.opensearch_conn.OSConnection()
+        globals.docStoreConn = rag.utils.opensearch_conn.OSConnection()
     else:
-        raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
+        raise Exception(f"Not supported doc engine: {globals.DOC_ENGINE}")
 
-    retrievaler = search.Dealer(docStoreConn)
+    globals.retriever = search.Dealer(globals.docStoreConn)
     from graphrag import search as kg_search
 
-    kg_retrievaler = kg_search.KGSearch(docStoreConn)
+    kg_retriever = kg_search.KGSearch(globals.docStoreConn)
 
     if int(os.environ.get("SANDBOX_ENABLED", "0")):
         global SANDBOX_HOST
@@ -210,41 +205,6 @@ def init_settings():
     if mail_default_sender and len(mail_default_sender) >= 2:
         MAIL_DEFAULT_SENDER = (mail_default_sender[0], mail_default_sender[1])
     MAIL_FRONTEND_URL = SMTP_CONF.get("mail_frontend_url", "")
-
-
-class CustomEnum(Enum):
-    @classmethod
-    def valid(cls, value):
-        try:
-            cls(value)
-            return True
-        except BaseException:
-            return False
-
-    @classmethod
-    def values(cls):
-        return [member.value for member in cls.__members__.values()]
-
-    @classmethod
-    def names(cls):
-        return [member.name for member in cls.__members__.values()]
-
-
-class RetCode(IntEnum, CustomEnum):
-    SUCCESS = 0
-    NOT_EFFECTIVE = 10
-    EXCEPTION_ERROR = 100
-    ARGUMENT_ERROR = 101
-    DATA_ERROR = 102
-    OPERATING_ERROR = 103
-    CONNECTION_ERROR = 105
-    RUNNING = 106
-    PERMISSION_ERROR = 108
-    AUTHENTICATION_ERROR = 109
-    UNAUTHORIZED = 401
-    SERVER_ERROR = 500
-    FORBIDDEN = 403
-    NOT_FOUND = 404
 
 
 def _parse_model_entry(entry):

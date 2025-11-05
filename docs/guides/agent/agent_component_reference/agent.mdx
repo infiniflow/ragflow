@@ -24,7 +24,7 @@ An **Agent** component is essential when you need the LLM to assist with summari
 
 ![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpg)
 
-2. If your Agent involves dataset retrieval, ensure you [have properly configured your target knowledge base(s)](../../dataset/configure_knowledge_base.md).
+2. If your Agent involves dataset retrieval, ensure you [have properly configured your target dataset(s)](../../dataset/configure_knowledge_base.md).
 
 ## Quickstart
 
@@ -113,7 +113,7 @@ Click the dropdown menu of **Model** to show the model configuration window.
 - **Model**: The chat model to use.  
   - Ensure you set the chat model correctly on the **Model providers** page.
   - You can use different models for different components to increase flexibility or improve overall performance.
-- **Freedom**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
+- **Creavity**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
   This parameter has three options:
   - **Improvise**: Produces more creative responses.
   - **Precise**: (Default) Produces more conservative responses.
@@ -132,11 +132,12 @@ Click the dropdown menu of **Model** to show the model configuration window.
 - **Frequency penalty**: Discourages the model from repeating the same words or phrases too frequently in the generated text.  
   - A higher **frequency penalty** value results in the model being more conservative in its use of repeated tokens.
   - Defaults to 0.7.
-- **Max tokens**: 
+- **Max tokens**:  
+  This sets the maximum length of the model's output, measured in the number of tokens (words or pieces of words). It is disabled by default, allowing the model to determine the number of tokens in its responses.
 
 :::tip NOTE
 - It is not necessary to stick with the same model for all components. If a specific model is not performing well for a particular task, consider using a different one.
-- If you are uncertain about the mechanism behind **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**, simply choose one of the three options of **Preset configurations**.
+- If you are uncertain about the mechanism behind **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**, simply choose one of the three options of **Creavity**.
 :::
 
 ### System prompt

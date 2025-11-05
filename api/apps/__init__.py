@@ -24,10 +24,11 @@ from flask_cors import CORS
 from flasgger import Swagger
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
-from api.db import StatusEnum
+from common.constants import StatusEnum
 from api.db.db_models import close_connection
 from api.db.services import UserService
-from api.utils import CustomJSONEncoder, commands
+from api.utils.json_encode import CustomJSONEncoder
+from api.utils import commands
 
 from flask_mail import Mail
 from flask_session import Session
