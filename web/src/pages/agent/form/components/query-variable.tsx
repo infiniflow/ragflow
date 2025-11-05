@@ -38,8 +38,10 @@ export function QueryVariable({
       ? nextOptions.map((x) => {
           return {
             ...x,
-            options: x.options.filter((y) =>
-              types?.some((x) => toLower(y.type).includes(x)),
+            options: x.options.filter(
+              (y) =>
+                types?.some((x) => toLower(y.type).includes(x)) ||
+                y.type === undefined, // agent structured output
             ),
           };
         })

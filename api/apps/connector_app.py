@@ -46,8 +46,8 @@ def set_connector():
             "status": TaskStatus.SCHEDULE
         }
         conn["status"] = TaskStatus.SCHEDULE
+        ConnectorService.save(**conn)
 
-    ConnectorService.save(**conn)
     time.sleep(1)
     e, conn = ConnectorService.get_by_id(req["id"])
 

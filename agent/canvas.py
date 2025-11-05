@@ -153,6 +153,33 @@ class Graph:
     def get_tenant_id(self):
         return self._tenant_id
 
+    def get_value_with_variable(self,value: str) -> Any:
+        pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z:0-9_.-]+|sys\.[a-z_]+)\} *\}*")
+        out_parts = []
+        last = 0
+
+        for m in pat.finditer(value):
+            out_parts.append(value[last:m.start()])
+            key = m.group(1)
+            v = self.get_variable_value(key)
+            if v is None:
+                rep = ""
+            elif isinstance(v, partial):
+                buf = []
+                for chunk in v():
+                    buf.append(chunk)
+                rep = "".join(buf)
+            elif isinstance(v, str):
+                rep = v
+            else:
+                rep = json.dumps(v, ensure_ascii=False)
+
+            out_parts.append(rep)
+            last = m.end()
+
+        out_parts.append(value[last:])
+        return("".join(out_parts))
+
     def get_variable_value(self, exp: str) -> Any:
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
         if exp.find("@") < 0:
@@ -248,6 +275,14 @@ class Canvas(Graph):
         created_at = int(time.time())
         self.add_user_input(kwargs.get("query"))
         for k, cpn in self.components.items():
+            self.components[k]["obj"].reset(True)
+
+        if kwargs.get("webhook_payload"):
+            for k, cpn in self.components.items():
+                if self.components[k]["obj"].component_name.lower() == "webhook":
+                    for kk, vv in kwargs["webhook_payload"].items():
+                        self.components[k]["obj"].set_output(kk, vv)
+
             self.components[k]["obj"].reset(True)
 
         for k in kwargs.keys():
