@@ -21,7 +21,7 @@ import importlib
 from filelock import FileLock
 
 from common.file_utils import get_project_base_directory
-from common.contants import SERVICE_CONF
+from common.constants import SERVICE_CONF
 from ruamel.yaml import YAML
 
 

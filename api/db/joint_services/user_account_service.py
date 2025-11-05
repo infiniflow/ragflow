@@ -18,7 +18,7 @@ import uuid
 
 from api import settings
 from api.utils.api_utils import group_by
-from api.db import FileType, UserTenantRole, ActiveEnum
+from api.db import FileType, UserTenantRole
 from api.db.services.api_service import APITokenService, API4ConversationService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.conversation_service import ConversationService
@@ -37,7 +37,7 @@ from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.nlp import search
-
+from common.constants import ActiveEnum
 
 def create_new_user(user_info: dict) -> dict:
     """

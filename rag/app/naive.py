@@ -27,7 +27,7 @@ from docx.opc.oxml import parse_xml
 from markdown import markdown
 from PIL import Image
 
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser

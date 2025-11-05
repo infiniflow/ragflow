@@ -52,7 +52,7 @@ import exceptiongroup
 import faulthandler
 import numpy as np
 from peewee import DoesNotExist
-from api.db import LLMType, ParserType, PipelineTaskType
+from common.constants import LLMType, ParserType, PipelineTaskType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
@@ -701,7 +701,8 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         "doc_id": fake_doc_id,
         "kb_id": [str(row["kb_id"])],
         "docnm_kwd": row["name"],
-        "title_tks": rag_tokenizer.tokenize(row["name"])
+        "title_tks": rag_tokenizer.tokenize(row["name"]),
+        "raptor_kwd": "raptor"
     }
     if row["pagerank"]:
         doc[PAGERANK_FLD] = int(row["pagerank"])

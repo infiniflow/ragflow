@@ -20,6 +20,9 @@ from io import BytesIO
 
 from PIL import Image
 
+from common.constants import LLMType
+from api.db.services.llm_service import LLMBundle
+from deepdoc.parser.pdf_parser import VisionParser
 from rag.nlp import tokenize, is_english
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, PptParser, PlainParser

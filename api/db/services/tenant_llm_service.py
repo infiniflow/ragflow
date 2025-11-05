@@ -17,7 +17,7 @@ import os
 import logging
 from langfuse import Langfuse
 from api import settings
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.db_models import DB, LLMFactories, TenantLLM
 from api.db.services.common_service import CommonService
 from api.db.services.langfuse_service import TenantLangfuseService

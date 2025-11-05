@@ -19,7 +19,7 @@ import os
 import re
 from abc import ABC
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.document_service import DocumentService
 from api.db.services.dialog_service import meta_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService

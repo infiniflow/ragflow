@@ -17,6 +17,7 @@ type RAGFlowFormItemProps = {
   horizontal?: boolean;
   required?: boolean;
   labelClassName?: string;
+  className?: string;
 };
 
 export function RAGFlowFormItem({
@@ -27,6 +28,7 @@ export function RAGFlowFormItem({
   horizontal = false,
   required = false,
   labelClassName,
+  className,
 }: RAGFlowFormItemProps) {
   const form = useFormContext();
   return (
@@ -35,9 +37,12 @@ export function RAGFlowFormItem({
       name={name}
       render={({ field }) => (
         <FormItem
-          className={cn({
-            'flex items-center': horizontal,
-          })}
+          className={cn(
+            {
+              'flex items-center': horizontal,
+            },
+            className,
+          )}
         >
           {label && (
             <FormLabel
