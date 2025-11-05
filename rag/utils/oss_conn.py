@@ -20,14 +20,14 @@ from botocore.config import Config
 import time
 from io import BytesIO
 from common.decorator import singleton
-from rag import settings
+from common import globals
 
 
 @singleton
 class RAGFlowOSS:
     def __init__(self):
         self.conn = None
-        self.oss_config = settings.OSS
+        self.oss_config = globals.OSS
         self.access_key = self.oss_config.get('access_key', None)
         self.secret_key = self.oss_config.get('secret_key', None)
         self.endpoint_url = self.oss_config.get('endpoint_url', None)

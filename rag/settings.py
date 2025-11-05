@@ -15,50 +15,12 @@
 #
 import os
 import logging
-from common.config_utils import get_base_config, decrypt_database_config
 from common.file_utils import get_project_base_directory
 from common.misc_utils import pip_install_torch
-from common import globals
 
 # Server
 RAG_CONF_PATH = os.path.join(get_project_base_directory(), "conf")
 
-# Get storage type and document engine from system environment variables
-STORAGE_IMPL_TYPE = os.getenv('STORAGE_IMPL', 'MINIO')
-globals.DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
-
-ES = {}
-INFINITY = {}
-AZURE = {}
-S3 = {}
-MINIO = {}
-OSS = {}
-OS = {}
-
-# Initialize the selected configuration data based on environment variables to solve the problem of initialization errors due to lack of configuration
-if globals.DOC_ENGINE == 'elasticsearch':
-    ES = get_base_config("es", {})
-elif globals.DOC_ENGINE == 'opensearch':
-    OS = get_base_config("os", {})
-elif globals.DOC_ENGINE == 'infinity':
-    INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
-
-if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
-    AZURE = get_base_config("azure", {})
-elif STORAGE_IMPL_TYPE == 'AWS_S3':
-    S3 = get_base_config("s3", {})
-elif STORAGE_IMPL_TYPE == 'MINIO':
-    MINIO = decrypt_database_config(name="minio")
-elif STORAGE_IMPL_TYPE == 'OSS':
-    OSS = get_base_config("oss", {})
-
-try:
-    REDIS = decrypt_database_config(name="redis")
-except Exception:
-    try:
-        REDIS = get_base_config("redis", {})
-    except Exception:
-        REDIS = {}
 DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
 DOC_BULK_SIZE = int(os.environ.get("DOC_BULK_SIZE", 4))
 EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", 16))
