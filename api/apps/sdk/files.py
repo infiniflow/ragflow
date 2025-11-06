@@ -32,7 +32,7 @@ from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
 from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
-from rag.utils.storage_factory import STORAGE_IMPL
+from common import settings
 
 
 @manager.route('/file/upload', methods=['POST'])  # noqa: F821
@@ -126,7 +126,7 @@ def upload(tenant_id):
 
             filetype = filename_type(file_obj_names[file_len - 1])
             location = file_obj_names[file_len - 1]
-            while STORAGE_IMPL.obj_exist(last_folder.id, location):
+            while settings.STORAGE_IMPL.obj_exist(last_folder.id, location):
                 location += "_"
             blob = file_obj.read()
             filename = duplicate_name(FileService.query, name=file_obj_names[file_len - 1], parent_id=last_folder.id)
@@ -142,7 +142,7 @@ def upload(tenant_id):
                 "size": len(blob),
             }
             file = FileService.insert(file)
-            STORAGE_IMPL.put(last_folder.id, location, blob)
+            settings.STORAGE_IMPL.put(last_folder.id, location, blob)
             file_res.append(file.to_json())
         return get_json_result(data=file_res)
     except Exception as e:
@@ -497,10 +497,10 @@ def rm(tenant_id):
                     e, file = FileService.get_by_id(inner_file_id)
                     if not e:
                         return get_json_result(message="File not found!", code=404)
-                    STORAGE_IMPL.rm(file.parent_id, file.location)
+                    settings.STORAGE_IMPL.rm(file.parent_id, file.location)
                 FileService.delete_folder_by_pf_id(tenant_id, file_id)
             else:
-                STORAGE_IMPL.rm(file.parent_id, file.location)
+                settings.STORAGE_IMPL.rm(file.parent_id, file.location)
                 if not FileService.delete(file):
                     return get_json_result(message="Database error (File removal)!", code=500)
 
@@ -614,10 +614,10 @@ def get(tenant_id, file_id):
         if not e:
             return get_json_result(message="Document not found!", code=404)
 
-        blob = STORAGE_IMPL.get(file.parent_id, file.location)
+        blob = settings.STORAGE_IMPL.get(file.parent_id, file.location)
         if not blob:
             b, n = File2DocumentService.get_storage_address(file_id=file_id)
-            blob = STORAGE_IMPL.get(b, n)
+            blob = settings.STORAGE_IMPL.get(b, n)
 
         response = flask.make_response(blob)
         ext = re.search(r"\.([^.]+)$", file.name)

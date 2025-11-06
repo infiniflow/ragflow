@@ -23,7 +23,6 @@ from flask import request, jsonify
 from flask_login import current_user, login_user
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
-from api import settings
 from api.common.exceptions import AdminException, UserNotFoundError
 from api.db.init_data import encode_to_base64
 from api.db.services import UserService
@@ -32,6 +31,7 @@ from api.utils.crypt import decrypt
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.connection_utils import construct_response
+from common import settings
 
 
 def setup_auth(login_manager):

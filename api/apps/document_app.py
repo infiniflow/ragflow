@@ -47,8 +47,7 @@ from common.constants import RetCode, VALID_TASK_STATUS, ParserType, TaskStatus
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search, rag_tokenizer
-from rag.utils.storage_factory import STORAGE_IMPL
-from common import globals
+from common import settings
 
 
 @manager.route("/upload", methods=["POST"])  # noqa: F821
@@ -119,9 +118,9 @@ def web_crawl():
             raise RuntimeError("This type of file has not been supported yet!")
 
         location = filename
-        while STORAGE_IMPL.obj_exist(kb_id, location):
+        while settings.STORAGE_IMPL.obj_exist(kb_id, location):
             location += "_"
-        STORAGE_IMPL.put(kb_id, location, blob)
+        settings.STORAGE_IMPL.put(kb_id, location, blob)
         doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
@@ -367,7 +366,7 @@ def change_status():
                 continue
 
             status_int = int(status)
-            if not globals.docStoreConn.update({"doc_id": doc_id}, {"available_int": status_int}, search.index_name(kb.tenant_id), doc.kb_id):
+            if not settings.docStoreConn.update({"doc_id": doc_id}, {"available_int": status_int}, search.index_name(kb.tenant_id), doc.kb_id):
                 result[doc_id] = {"error": "Database error (docStore update)!"}
             result[doc_id] = {"status": status}
         except Exception as e:
@@ -432,8 +431,8 @@ def run():
             DocumentService.update_by_id(id, info)
             if req.get("delete", False):
                 TaskService.filter_delete([Task.doc_id == id])
-                if globals.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
-                    globals.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
+                if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+                    settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
 
             if str(req["run"]) == TaskStatus.RUNNING.value:
                 doc = doc.to_dict()
@@ -479,8 +478,8 @@ def rename():
             "title_tks": title_tks,
             "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
         }
-        if globals.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
-            globals.docStoreConn.update(
+        if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+            settings.docStoreConn.update(
                 {"doc_id": req["doc_id"]},
                 es_body,
                 search.index_name(tenant_id),
@@ -501,7 +500,7 @@ def get(doc_id):
             return get_data_error_result(message="Document not found!")
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
-        response = flask.make_response(STORAGE_IMPL.get(b, n))
+        response = flask.make_response(settings.STORAGE_IMPL.get(b, n))
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())
         ext = ext.group(1) if ext else None
@@ -541,8 +540,8 @@ def change_parser():
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
-            if globals.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
-                globals.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+            if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+                settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
     try:
         if "pipeline_id" in req and req["pipeline_id"] != "":
@@ -577,7 +576,7 @@ def get_image(image_id):
         if len(arr) != 2:
             return get_data_error_result(message="Image not found.")
         bkt, nm = image_id.split("-")
-        response = flask.make_response(STORAGE_IMPL.get(bkt, nm))
+        response = flask.make_response(settings.STORAGE_IMPL.get(bkt, nm))
         response.headers.set("Content-Type", "image/JPEG")
         return response
     except Exception as e:

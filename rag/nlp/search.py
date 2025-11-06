@@ -22,12 +22,12 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 from rag.prompts.generator import relevant_chunks_with_toc
-from rag.settings import TAG_FLD, PAGERANK_FLD
 from rag.nlp import rag_tokenizer, query
 import numpy as np
 from rag.utils.doc_store_conn import DocStoreConnection, MatchDenseExpr, FusionExpr, OrderByExpr
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
+from common.constants import PAGERANK_FLD, TAG_FLD
 
 
 def index_name(uid): return f"ragflow_{uid}"

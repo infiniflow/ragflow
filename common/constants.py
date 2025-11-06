@@ -18,7 +18,7 @@ from enum import Enum, IntEnum
 from strenum import StrEnum
 
 SERVICE_CONF = "service_conf.yaml"
-
+RAG_FLOW_SERVICE_NAME = "ragflow"
 
 class CustomEnum(Enum):
     @classmethod
@@ -137,6 +137,14 @@ class MCPServerType(StrEnum):
 
 VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
 
+class Storage(Enum):
+    MINIO = 1
+    AZURE_SPN = 2
+    AZURE_SAS = 3
+    AWS_S3 = 4
+    OSS = 5
+    OPENDAL = 6
+
 # environment
 # ENV_STRONG_TEST_COUNT = "STRONG_TEST_COUNT"
 # ENV_RAGFLOW_SECRET_KEY = "RAGFLOW_SECRET_KEY"
@@ -181,3 +189,8 @@ VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
 # ENV_MAX_CONCURRENT_MINIO = "MAX_CONCURRENT_MINIO"
 # ENV_WORKER_HEARTBEAT_TIMEOUT = "WORKER_HEARTBEAT_TIMEOUT"
 # ENV_TRACE_MALLOC_ENABLED = "TRACE_MALLOC_ENABLED"
+
+PAGERANK_FLD = "pagerank_fea"
+SVR_QUEUE_NAME = "rag_flow_svr_queue"
+SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
+TAG_FLD = "tag_feas"

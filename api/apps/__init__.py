@@ -33,7 +33,7 @@ from api.utils import commands
 from flask_mail import Mail
 from flask_session import Session
 from flask_login import LoginManager
-from api import settings
+from common import settings
 from api.utils.api_utils import server_error_response
 from api.constants import API_VERSION
 

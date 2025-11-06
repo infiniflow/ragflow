@@ -26,7 +26,7 @@ from routes import admin_bp
 from common.log_utils import init_root_logger
 from common.constants import SERVICE_CONF
 from common.config_utils import show_configs
-from api import settings
+from common import settings
 from config import load_configurations, SERVICE_CONFIGS
 from auth import init_default_admin, setup_auth
 from flask_session import Session
@@ -67,7 +67,7 @@ if __name__ == '__main__':
             port=9381,
             application=app,
             threaded=True,
-            use_reloader=True,
+            use_reloader=False,
             use_debugger=True,
         )
     except Exception:

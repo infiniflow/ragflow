@@ -40,14 +40,13 @@ from api.utils.api_utils import server_error_response, get_data_error_result, ge
 from api.utils.file_utils import filename_type, thumbnail
 from rag.app.tag import label_question
 from rag.prompts.generator import keyword_extraction
-from rag.utils.storage_factory import STORAGE_IMPL
 from common.time_utils import current_timestamp, datetime_format
 
 from api.db.services.canvas_service import UserCanvasService
 from agent.canvas import Canvas
 from functools import partial
 from pathlib import Path
-from common import globals
+from common import settings
 
 
 @manager.route('/new_token', methods=['POST'])  # noqa: F821
@@ -428,10 +427,10 @@ def upload():
                 message="This type of file has not been supported yet!")
 
         location = filename
-        while STORAGE_IMPL.obj_exist(kb_id, location):
+        while settings.STORAGE_IMPL.obj_exist(kb_id, location):
             location += "_"
         blob = request.files['file'].read()
-        STORAGE_IMPL.put(kb_id, location, blob)
+        settings.STORAGE_IMPL.put(kb_id, location, blob)
         doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
@@ -538,7 +537,7 @@ def list_chunks():
             )
         kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
 
-        res = globals.retriever.chunk_list(doc_id, tenant_id, kb_ids)
+        res = settings.retriever.chunk_list(doc_id, tenant_id, kb_ids)
         res = [
             {
                 "content": res_item["content_with_weight"],
@@ -564,7 +563,7 @@ def get_chunk(chunk_id):
     try:
         tenant_id = objs[0].tenant_id
         kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
-        chunk = globals.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
+        chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), kb_ids)
         if chunk is None:
             return server_error_response(Exception("Chunk not found"))
         k = []
@@ -699,7 +698,7 @@ def document_rm():
             FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
             File2DocumentService.delete_by_document_id(doc_id)
 
-            STORAGE_IMPL.rm(b, n)
+            settings.STORAGE_IMPL.rm(b, n)
         except Exception as e:
             errors += str(e)
 
@@ -792,7 +791,7 @@ def completion_faq():
                 if ans["reference"]["chunks"][chunk_idx]["img_id"]:
                     try:
                         bkt, nm = ans["reference"]["chunks"][chunk_idx]["img_id"].split("-")
-                        response = STORAGE_IMPL.get(bkt, nm)
+                        response = settings.STORAGE_IMPL.get(bkt, nm)
                         data_type_picture["url"] = base64.b64encode(response).decode('utf-8')
                         data.append(data_type_picture)
                         break
@@ -837,7 +836,7 @@ def completion_faq():
             if ans["reference"]["chunks"][chunk_idx]["img_id"]:
                 try:
                     bkt, nm = ans["reference"]["chunks"][chunk_idx]["img_id"].split("-")
-                    response = STORAGE_IMPL.get(bkt, nm)
+                    response = settings.STORAGE_IMPL.get(bkt, nm)
                     data_type_picture["url"] = base64.b64encode(response).decode('utf-8')
                     data.append(data_type_picture)
                     break
@@ -886,7 +885,7 @@ def retrieval():
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kbs[0].tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
-        ranks = globals.retriever.retrieval(question, embd_mdl, kbs[0].tenant_id, kb_ids, page, size,
+        ranks = settings.retriever.retrieval(question, embd_mdl, kbs[0].tenant_id, kb_ids, page, size,
                                                similarity_threshold, vector_similarity_weight, top,
                                                doc_ids, rerank_mdl=rerank_mdl, highlight= highlight,
                                                rank_feature=label_question(question, kbs))

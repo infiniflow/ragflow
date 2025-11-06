@@ -26,7 +26,6 @@ from flask import redirect, request, session, make_response
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from api import settings
 from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
 from api.db.db_models import TenantLLM
@@ -58,7 +57,7 @@ from api.utils.web_utils import (
     hash_code,
     captcha_key,
 )
-from common import globals
+from common import settings
 
 
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
@@ -624,7 +623,7 @@ def user_register(user_id, user):
         "id": user_id,
         "name": user["nickname"] + "‘s Kingdom",
         "llm_id": settings.CHAT_MDL,
-        "embd_id": globals.EMBEDDING_MDL,
+        "embd_id": settings.EMBEDDING_MDL,
         "asr_id": settings.ASR_MDL,
         "parser_ids": settings.PARSERS,
         "img2txt_id": settings.IMAGE2TEXT_MDL,

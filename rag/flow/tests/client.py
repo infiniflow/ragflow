@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import trio
 
-from api import settings
+from common import settings
 from rag.flow.pipeline import Pipeline
 
 
