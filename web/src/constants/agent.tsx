@@ -76,7 +76,6 @@ export enum Operator {
   Relevant = 'Relevant',
   RewriteQuestion = 'RewriteQuestion',
   KeywordExtract = 'KeywordExtract',
-  Baidu = 'Baidu',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
   PubMed = 'PubMed',
@@ -85,7 +84,6 @@ export enum Operator {
   Bing = 'Bing',
   GoogleScholar = 'GoogleScholar',
   GitHub = 'GitHub',
-  BaiduFanyi = 'BaiduFanyi',
   QWeather = 'QWeather',
   ExeSQL = 'ExeSQL',
   Switch = 'Switch',
@@ -111,6 +109,7 @@ export enum Operator {
   SearXNG = 'SearXNG',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
+  VariableAssigner = 'VariableAssigner',
   File = 'File', // pipeline
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',

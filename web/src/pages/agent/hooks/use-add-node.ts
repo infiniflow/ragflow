@@ -12,8 +12,6 @@ import {
   initialAgentValues,
   initialAkShareValues,
   initialArXivValues,
-  initialBaiduFanyiValues,
-  initialBaiduValues,
   initialBeginValues,
   initialBingValues,
   initialCategorizeValues,
@@ -50,6 +48,7 @@ import {
   initialTokenizerValues,
   initialTuShareValues,
   initialUserFillUpValues,
+  initialVariableAssignerValues,
   initialWaitingDialogueValues,
   initialWenCaiValues,
   initialWikipediaValues,
@@ -86,7 +85,6 @@ export const useInitializeOperatorParams = () => {
         llm_id: llmId,
       },
       [Operator.DuckDuckGo]: initialDuckValues,
-      [Operator.Baidu]: initialBaiduValues,
       [Operator.Wikipedia]: initialWikipediaValues,
       [Operator.PubMed]: initialPubMedValues,
       [Operator.ArXiv]: initialArXivValues,
@@ -95,7 +93,6 @@ export const useInitializeOperatorParams = () => {
       [Operator.GoogleScholar]: initialGoogleScholarValues,
       [Operator.SearXNG]: initialSearXNGValues,
       [Operator.GitHub]: initialGithubValues,
-      [Operator.BaiduFanyi]: initialBaiduFanyiValues,
       [Operator.QWeather]: initialQWeatherValues,
       [Operator.ExeSQL]: initialExeSqlValues,
       [Operator.Switch]: initialSwitchValues,
@@ -131,6 +128,7 @@ export const useInitializeOperatorParams = () => {
         prompts: t('flow.prompts.user.summary'),
       },
       [Operator.DataOperations]: initialDataOperationsValues,
+      [Operator.VariableAssigner]: initialVariableAssignerValues,
     };
   }, [llmId]);
 

@@ -66,106 +66,6 @@ export const AgentOperatorList = [
   Operator.Agent,
 ];
 
-export const componentMenuList = [
-  {
-    name: Operator.Retrieval,
-  },
-  {
-    name: Operator.Categorize,
-  },
-  {
-    name: Operator.Message,
-  },
-
-  {
-    name: Operator.RewriteQuestion,
-  },
-  {
-    name: Operator.KeywordExtract,
-  },
-  {
-    name: Operator.Switch,
-  },
-  {
-    name: Operator.Iteration,
-  },
-  {
-    name: Operator.Code,
-  },
-  {
-    name: Operator.WaitingDialogue,
-  },
-  {
-    name: Operator.Agent,
-  },
-  {
-    name: Operator.Note,
-  },
-  {
-    name: Operator.DuckDuckGo,
-  },
-  {
-    name: Operator.Baidu,
-  },
-  {
-    name: Operator.Wikipedia,
-  },
-  {
-    name: Operator.PubMed,
-  },
-  {
-    name: Operator.ArXiv,
-  },
-  {
-    name: Operator.Google,
-  },
-  {
-    name: Operator.Bing,
-  },
-  {
-    name: Operator.GoogleScholar,
-  },
-  {
-    name: Operator.GitHub,
-  },
-  {
-    name: Operator.BaiduFanyi,
-  },
-  {
-    name: Operator.QWeather,
-  },
-  {
-    name: Operator.ExeSQL,
-  },
-  {
-    name: Operator.WenCai,
-  },
-  {
-    name: Operator.AkShare,
-  },
-  {
-    name: Operator.YahooFinance,
-  },
-  {
-    name: Operator.Jin10,
-  },
-  {
-    name: Operator.TuShare,
-  },
-  {
-    name: Operator.Crawler,
-  },
-  {
-    name: Operator.Invoke,
-  },
-  {
-    name: Operator.Email,
-  },
-  {
-    name: Operator.SearXNG,
-  },
-];
-
 export const DataOperationsOperatorOptions = [
   ComparisonOperator.Equal,
   ComparisonOperator.NotEqual,
@@ -281,11 +181,6 @@ export const initialSearXNGValues = {
   },
 };
 
-export const initialBaiduValues = {
-  top_n: 10,
-  ...initialQueryBaseValues,
-};
-
 export const initialWikipediaValues = {
   top_n: 10,
   language: 'en',
@@ -383,13 +278,6 @@ export const initialGithubValues = {
       type: 'Array<Object>',
     },
   },
-};
-
-export const initialBaiduFanyiValues = {
-  appid: 'xxx',
-  secret_key: 'xxx',
-  trans_type: 'translate',
-  ...initialQueryBaseValues,
 };
 
 export const initialQWeatherValues = {
@@ -717,6 +605,8 @@ export const initialDataOperationsValues = {
   },
 };
 
+export const initialVariableAssignerValues = {};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -757,7 +647,6 @@ export const RestrictedUpstreamMap = {
     Operator.Message,
     Operator.Relevant,
   ],
-  [Operator.Baidu]: [Operator.Begin, Operator.Retrieval],
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
   [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
@@ -766,7 +655,6 @@ export const RestrictedUpstreamMap = {
   [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
-  [Operator.BaiduFanyi]: [Operator.Begin, Operator.Retrieval],
   [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
   [Operator.SearXNG]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
@@ -798,6 +686,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
+  [Operator.VariableAssigner]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -809,7 +698,6 @@ export const NodeMap = {
   [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.KeywordExtract]: 'keywordNode',
   [Operator.DuckDuckGo]: 'ragNode',
-  [Operator.Baidu]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
   [Operator.PubMed]: 'ragNode',
   [Operator.ArXiv]: 'ragNode',
@@ -817,7 +705,6 @@ export const NodeMap = {
   [Operator.Bing]: 'ragNode',
   [Operator.GoogleScholar]: 'ragNode',
   [Operator.GitHub]: 'ragNode',
-  [Operator.BaiduFanyi]: 'ragNode',
   [Operator.QWeather]: 'ragNode',
   [Operator.SearXNG]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
@@ -849,6 +736,7 @@ export const NodeMap = {
   [Operator.HierarchicalMerger]: 'splitterNode',
   [Operator.Extractor]: 'contextNode',
   [Operator.DataOperations]: 'dataOperationsNode',
+  [Operator.VariableAssigner]: 'variableAssignerNode',
 };
 
 export enum BeginQueryType {
