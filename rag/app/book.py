@@ -20,7 +20,7 @@ from io import BytesIO
 
 from deepdoc.parser.utils import get_text
 from rag.app import naive
-from rag.app.naive import plaintext_parser, PARSERS
+from rag.app.naive import by_plaintext, PARSERS
 from rag.nlp import bullets_category, is_english,remove_contents_table, \
     hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, \
     tokenize_chunks
@@ -102,10 +102,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
 
         name = layout_recognizer.strip().lower()
-        parser = PARSERS.get(name, plaintext_parser)
+        parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
 
-        sections, tables, _ = parser(
+        sections, tables, pdf_parser = parser(
             filename = filename,
             binary = binary,
             from_page = from_page,
