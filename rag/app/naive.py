@@ -500,7 +500,7 @@ class Markdown(MarkdownParser):
 
         return images if images else None
 
-    def __call__(self, filename, binary=None, separate_tables=True,delimiter=None):
+    def __call__(self, filename, binary=None, separate_tables=True, delimiter=None):
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
@@ -598,7 +598,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         _SerializedRelationships.load_from_xml = load_from_xml_v2
         sections, tables = Docx()(filename, binary)
 
-        tables=vision_figure_parser_docx_wrapper(sections=sections,tbls=tables,callback=callback,**kwargs)
+        tables = vision_figure_parser_docx_wrapper(sections=sections, tbls=tables, callback=callback, **kwargs)
 
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
@@ -700,7 +700,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
-        sections, tables = markdown_parser(filename, binary, separate_tables=False,delimiter=parser_config.get("delimiter", "\n!?;。；！？"))
+        sections, tables = markdown_parser(filename, binary, separate_tables=False, delimiter=parser_config.get("delimiter", "\n!?;。；！？"))
 
         try:
             vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)

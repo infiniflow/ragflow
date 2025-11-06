@@ -414,9 +414,6 @@ class Parser(ProcessBase):
 
         parse_method = conf.get("parse_method", "deepdoc")
 
-        # Check file extension to determine if it's old PPT format
-        file_ext = name.split(".")[-1].lower() if "." in name else ""
-
         # Handle TCADP parser
         if parse_method.lower() == "tcadp parser":
             table_result_type = conf.get("table_result_type", "1")
