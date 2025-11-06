@@ -28,7 +28,7 @@ from api.db.services.connector_service import SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
-from common.data_source import BlobStorageConnector
+from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector
 import logging
 import os
 from datetime import datetime, timezone
@@ -47,6 +47,8 @@ task_limiter = trio.Semaphore(MAX_CONCURRENT_TASKS)
 
 
 class SyncBase:
+    SOURCE_NAME: str = None
+
     def __init__(self, conf: dict) -> None:
         self.conf = conf
 
@@ -67,7 +69,7 @@ class SyncBase:
                         docs = [{
                             "id": doc.id,
                             "connector_id": task["connector_id"],
-                            "source": FileSource.S3,
+                            "source": self.SOURCE_NAME,
                             "semantic_identifier": doc.semantic_identifier,
                             "extension": doc.extension,
                             "size_bytes": doc.size_bytes,
@@ -76,7 +78,7 @@ class SyncBase:
                         } for doc in document_batch]
 
                         e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-                        err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{FileSource.S3}/{task['connector_id']}")
+                        err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}")
                         SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
                         doc_num += len(docs)
 
@@ -98,6 +100,8 @@ class SyncBase:
 
 
 class S3(SyncBase):
+    SOURCE_NAME: str = FileSource.S3
+
     async def _generate(self, task: dict):
         self.connector = BlobStorageConnector(
             bucket_type=self.conf.get("bucket_type", "s3"),
@@ -109,14 +113,17 @@ class S3(SyncBase):
             else  self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
 
         begin_info = "totally" if task["reindex"]=="1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
-        logging.info("Connect to {}: {} {}".format(self.conf.get("bucket_type", "s3"),
+        logging.info("Connect to {}: {}(prefix/{}) {}".format(self.conf.get("bucket_type", "s3"),
                                                                   self.conf["bucket_name"],
+                                                                  self.conf.get("prefix", ""),
                                                                   begin_info
                                                                   ))
         return document_batch_generator
 
 
 class Confluence(SyncBase):
+    SOURCE_NAME: str = FileSource.CONFLUENCE
+
     async def _generate(self, task: dict):
         from common.data_source.interfaces import StaticCredentialsProvider
         from common.data_source.config import DocumentSource
@@ -131,10 +138,7 @@ class Confluence(SyncBase):
         credentials_provider = StaticCredentialsProvider(
             tenant_id=task["tenant_id"],
             connector_name=DocumentSource.CONFLUENCE,
-            credential_json={
-                "confluence_username": self.conf["username"],
-                "confluence_access_token": self.conf["access_token"],
-            },
+            credential_json=self.conf["credentials"]
         )
         self.connector.set_credentials_provider(credentials_provider)
 
@@ -155,52 +159,83 @@ class Confluence(SyncBase):
         )
 
         logging.info("Connect to Confluence: {} {}".format(self.conf["wiki_base"], begin_info))
-        return document_generator
+        return [document_generator]
 
 
 class Notion(SyncBase):
+    SOURCE_NAME: str = FileSource.NOTION
 
     async def _generate(self, task: dict):
-        pass
+        self.connector = NotionConnector(root_page_id=self.conf["root_page_id"])
+        self.connector.load_credentials(self.conf["credentials"])
+        document_generator = self.connector.load_from_state() if task["reindex"]=="1" or not task["poll_range_start"] \
+            else  self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+
+        begin_info = "totally" if task["reindex"]=="1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
+        logging.info("Connect to Notion: root({}) {}".format(self.conf["root_page_id"], begin_info))
+        return document_generator
 
 
 class Discord(SyncBase):
+    SOURCE_NAME: str = FileSource.DISCORD
 
     async def _generate(self, task: dict):
-        pass
+        server_ids: str | None = self.conf.get("server_ids", None)
+        # "channel1,channel2"
+        channel_names: str | None = self.conf.get("channel_names", None)
+
+        self.connector = DiscordConnector(
+            server_ids=server_ids.split(",") if server_ids else [],
+            channel_names=channel_names.split(",") if channel_names else [],
+            start_date=datetime(1970, 1, 1, tzinfo=timezone.utc).strftime("%Y-%m-%d"),
+            batch_size=self.conf.get("batch_size", 1024)
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+        document_generator = self.connector.load_from_state() if task["reindex"]=="1" or not task["poll_range_start"] \
+            else  self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+
+        begin_info = "totally" if task["reindex"]=="1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
+        logging.info("Connect to Discord: servers({}),  channel({}) {}".format(server_ids, channel_names, begin_info))
+        return document_generator
 
 
 class Gmail(SyncBase):
+    SOURCE_NAME: str = FileSource.GMAIL
 
     async def _generate(self, task: dict):
         pass
 
 
 class GoogleDriver(SyncBase):
+    SOURCE_NAME: str = FileSource.GOOGLE_DRIVER
 
     async def _generate(self, task: dict):
         pass
 
 
 class Jira(SyncBase):
+    SOURCE_NAME: str = FileSource.JIRA
 
     async def _generate(self, task: dict):
         pass
 
 
 class SharePoint(SyncBase):
+    SOURCE_NAME: str = FileSource.SHAREPOINT
 
     async def _generate(self, task: dict):
         pass
 
 
 class Slack(SyncBase):
+    SOURCE_NAME: str = FileSource.SLACK
 
     async def _generate(self, task: dict):
         pass
 
 
 class Teams(SyncBase):
+    SOURCE_NAME: str = FileSource.TEAMS
 
     async def _generate(self, task: dict):
         pass
@@ -221,7 +256,7 @@ func_factory = {
 
 async def dispatch_tasks():
     async with trio.open_nursery() as nursery:
-        for task in SyncLogsService.list_sync_tasks():
+        for task in SyncLogsService.list_sync_tasks()[0]:
             if task["poll_range_start"]:
                 task["poll_range_start"] = task["poll_range_start"].astimezone(timezone.utc)
             if task["poll_range_end"]:
