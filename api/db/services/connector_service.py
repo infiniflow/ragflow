@@ -260,7 +260,7 @@ class Connector2KbService(CommonService):
                 continue
             cls.filter_delete([cls.model.kb_id==kb_id, cls.model.connector_id==conn_id])
             e, conn = ConnectorService.get_by_id(conn_id)
-            SyncLogsService.filter_update([SyncLogs.connector_id==conn_id, SyncLogs.kb_id==kb_id, SyncLogs.status==TaskStatus.SCHEDULE], {"status": TaskStatus.CANCEL})
+            SyncLogsService.filter_update([SyncLogs.connector_id==conn_id, SyncLogs.kb_id==kb_id, SyncLogs.status.in_([TaskStatus.SCHEDULE, TaskStatus.RUNNING])], {"status": TaskStatus.CANCEL})
             docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}")
             err = FileService.delete_docs([d.id for d in docs], tenant_id)
             if err:
