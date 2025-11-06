@@ -201,6 +201,7 @@ class KnowledgebaseService(CommonService):
         # will get all permitted kb, be cautious.
         fields = [
             cls.model.name,
+            cls.model.avatar,
             cls.model.language,
             cls.model.permission,
             cls.model.doc_num,
