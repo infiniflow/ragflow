@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import emoji
 import os
 from datetime import datetime, timezone
 from typing import Any, AsyncIterable, Iterable
@@ -61,7 +60,7 @@ def _convert_message_to_document(
     return Document(
         id=f"{_DISCORD_DOC_ID_PREFIX}{message.id}",
         source=DocumentSource.DISCORD,
-        semantic_identifier=emoji.replace_emoji(semantic_identifier, replace=''),
+        semantic_identifier=semantic_identifier,
         doc_updated_at=doc_updated_at,
         blob=message.content.encode("utf-8"),
         extension="txt",
