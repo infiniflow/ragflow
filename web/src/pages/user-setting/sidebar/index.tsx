@@ -11,22 +11,24 @@ import {
 } from '@/hooks/use-user-setting-request';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
-import { Banknote, Box, Cog, Unplug, User, Users } from 'lucide-react';
+import { t } from 'i18next';
+import { Banknote, Box, Cog, Server, Unplug, User, Users } from 'lucide-react';
 import { useEffect } from 'react';
 import { useHandleMenuClick } from './hooks';
 
 const menuItems = [
-  { icon: User, label: 'Profile', key: Routes.Profile },
-  { icon: Users, label: 'Team', key: Routes.Team },
-  { icon: Box, label: 'Model Providers', key: Routes.Model },
-  { icon: Unplug, label: 'API', key: Routes.Api },
+  { icon: User, label: t('setting.profile'), key: Routes.Profile },
+  { icon: Users, label: t('setting.team'), key: Routes.Team },
+  { icon: Box, label: t('setting.model'), key: Routes.Model },
+  { icon: Unplug, label: t('setting.api'), key: Routes.Api },
   // {
   //   icon: MessageSquareQuote,
   //   label: 'Prompt Templates',
   //   key: Routes.Profile,
   // },
   // { icon: TextSearch, label: 'Retrieval Templates', key: Routes.Profile },
-  { icon: Cog, label: 'System', key: Routes.System },
+  { icon: Server, label: t('setting.dataSources'), key: Routes.DataSource },
+  { icon: Cog, label: t('setting.system'), key: Routes.System },
   // { icon: Banknote, label: 'Plan', key: Routes.Plan },
   { icon: Banknote, label: 'MCP', key: Routes.Mcp },
 ];
@@ -101,7 +103,7 @@ export function SideBar() {
             logout();
           }}
         >
-          Log Out
+          {t('setting.logout')}
         </Button>
       </div>
     </aside>
