@@ -32,17 +32,15 @@ import threading
 import uuid
 
 from werkzeug.serving import run_simple
-from api import settings
 from api.apps import app, smtp_mail_server
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
 from common.file_utils import get_project_base_directory
-
+from common import settings
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data
 from api.versions import get_ragflow_version
 from common.config_utils import show_configs
-from rag.settings import print_rag_settings
 from rag.utils.mcp_tool_call_conn import shutdown_all_mcp_sessions
 from rag.utils.redis_conn import RedisDistributedLock
 
@@ -92,7 +90,7 @@ if __name__ == '__main__':
     )
     show_configs()
     settings.init_settings()
-    print_rag_settings()
+    settings.print_rag_settings()
 
     if RAGFLOW_DEBUGPY_LISTEN > 0:
         logging.info(f"debugpy listen on {RAGFLOW_DEBUGPY_LISTEN}")

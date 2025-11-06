@@ -25,7 +25,6 @@ import trio
 from langfuse import Langfuse
 from peewee import fn
 from agentic_reasoning import DeepResearcher
-from api import settings
 from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
@@ -44,7 +43,7 @@ from rag.prompts.generator import chunks_format, citation_prompt, cross_language
 from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
 from common.string_utils import remove_redundant_spaces
-from common import globals
+from common import settings
 
 
 class DialogService(CommonService):
@@ -373,7 +372,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         chat_mdl.bind_tools(toolcall_session, tools)
     bind_models_ts = timer()
 
-    retriever = globals.retriever
+    retriever = settings.retriever
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else []
     if "doc_ids" in messages[-1]:
@@ -665,7 +664,7 @@ Please write the SQL, only SQL, without any other explanations or text.
 
         logging.debug(f"{question} get SQL(refined): {sql}")
         tried_times += 1
-        return globals.retriever.sql_retrieval(sql, format="json"), sql
+        return settings.retriever.sql_retrieval(sql, format="json"), sql
 
     tbl, sql = get_table()
     if tbl is None:
@@ -759,7 +758,7 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
     embedding_list = list(set([kb.embd_id for kb in kbs]))
 
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
-    retriever = globals.retriever if not is_knowledge_graph else settings.kg_retriever
+    retriever = settings.retriever if not is_knowledge_graph else settings.kg_retriever
 
     embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embedding_list[0])
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, chat_llm_name)
@@ -855,7 +854,7 @@ def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
             if not doc_ids:
                 doc_ids = None
 
-    ranks = globals.retriever.retrieval(
+    ranks = settings.retriever.retrieval(
         question=question,
         embd_mdl=embd_mdl,
         tenant_ids=tenant_ids,

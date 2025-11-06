@@ -24,7 +24,6 @@ import copy
 from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
 from elastic_transport import ConnectionTimeout
-from rag.settings import TAG_FLD, PAGERANK_FLD
 from common.decorator import singleton
 from common.file_utils import get_project_base_directory
 from common.misc_utils import convert_bytes
@@ -32,7 +31,8 @@ from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr,
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer
 from common.float_utils import get_float
-from common import globals
+from common import settings
+from common.constants import PAGERANK_FLD, TAG_FLD
 
 ATTEMPT_TIME = 2
 
@@ -43,17 +43,17 @@ logger = logging.getLogger('ragflow.es_conn')
 class ESConnection(DocStoreConnection):
     def __init__(self):
         self.info = {}
-        logger.info(f"Use Elasticsearch {globals.ES['hosts']} as the doc engine.")
+        logger.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
         for _ in range(ATTEMPT_TIME):
             try:
                 if self._connect():
                     break
             except Exception as e:
-                logger.warning(f"{str(e)}. Waiting Elasticsearch {globals.ES['hosts']} to be healthy.")
+                logger.warning(f"{str(e)}. Waiting Elasticsearch {settings.ES['hosts']} to be healthy.")
                 time.sleep(5)
 
         if not self.es.ping():
-            msg = f"Elasticsearch {globals.ES['hosts']} is unhealthy in 120s."
+            msg = f"Elasticsearch {settings.ES['hosts']} is unhealthy in 120s."
             logger.error(msg)
             raise Exception(msg)
         v = self.info.get("version", {"number": "8.11.3"})
@@ -68,14 +68,14 @@ class ESConnection(DocStoreConnection):
             logger.error(msg)
             raise Exception(msg)
         self.mapping = json.load(open(fp_mapping, "r"))
-        logger.info(f"Elasticsearch {globals.ES['hosts']} is healthy.")
+        logger.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
 
     def _connect(self):
         self.es = Elasticsearch(
-            globals.ES["hosts"].split(","),
-            basic_auth=(globals.ES["username"], globals.ES[
-                "password"]) if "username" in globals.ES and "password" in globals.ES else None,
-            verify_certs= globals.ES.get("verify_certs", False),
+            settings.ES["hosts"].split(","),
+            basic_auth=(settings.ES["username"], settings.ES[
+                "password"]) if "username" in settings.ES and "password" in settings.ES else None,
+            verify_certs= settings.ES.get("verify_certs", False),
             timeout=600 )
         if self.es:
             self.info = self.es.info()

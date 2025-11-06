@@ -36,7 +36,7 @@ import signal
 import trio
 import faulthandler
 from common.constants import FileSource, TaskStatus
-from api import settings
+from common import settings
 from api.versions import get_ragflow_version
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.utils import load_all_docs_from_checkpoint_connector

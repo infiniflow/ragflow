@@ -36,7 +36,7 @@ from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
-from rag.utils.storage_factory import STORAGE_IMPL
+from common import settings
 
 
 class ParserParam(ProcessParamBase):
@@ -588,7 +588,7 @@ class Parser(ProcessBase):
         name = from_upstream.name
         if self._canvas._doc_id:
             b, n = File2DocumentService.get_storage_address(doc_id=self._canvas._doc_id)
-            blob = STORAGE_IMPL.get(b, n)
+            blob = settings.STORAGE_IMPL.get(b, n)
         else:
             blob = FileService.get_blob(from_upstream.file["created_by"], from_upstream.file["id"])
 
@@ -606,4 +606,4 @@ class Parser(ProcessBase):
         outs = self.output()
         async with trio.open_nursery() as nursery:
             for d in outs.get("json", []):
-                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())
+                nursery.start_soon(image2id, d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())

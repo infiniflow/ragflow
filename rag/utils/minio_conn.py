@@ -21,7 +21,7 @@ from minio.commonconfig import CopySource
 from minio.error import S3Error
 from io import BytesIO
 from common.decorator import singleton
-from common import globals
+from common import settings
 
 
 @singleton
@@ -38,14 +38,14 @@ class RAGFlowMinio:
             pass
 
         try:
-            self.conn = Minio(globals.MINIO["host"],
-                              access_key=globals.MINIO["user"],
-                              secret_key=globals.MINIO["password"],
+            self.conn = Minio(settings.MINIO["host"],
+                              access_key=settings.MINIO["user"],
+                              secret_key=settings.MINIO["password"],
                               secure=False
                               )
         except Exception:
             logging.exception(
-                "Fail to connect %s " % globals.MINIO["host"])
+                "Fail to connect %s " % settings.MINIO["host"])
 
     def __close__(self):
         del self.conn

@@ -20,18 +20,18 @@ import time
 from common.decorator import singleton
 from azure.identity import ClientSecretCredential, AzureAuthorityHosts
 from azure.storage.filedatalake import FileSystemClient
-from common import globals
+from common import settings
 
 
 @singleton
 class RAGFlowAzureSpnBlob:
     def __init__(self):
         self.conn = None
-        self.account_url = os.getenv('ACCOUNT_URL', globals.AZURE["account_url"])
-        self.client_id = os.getenv('CLIENT_ID', globals.AZURE["client_id"])
-        self.secret = os.getenv('SECRET', globals.AZURE["secret"])
-        self.tenant_id = os.getenv('TENANT_ID', globals.AZURE["tenant_id"])
-        self.container_name = os.getenv('CONTAINER_NAME', globals.AZURE["container_name"])
+        self.account_url = os.getenv('ACCOUNT_URL', settings.AZURE["account_url"])
+        self.client_id = os.getenv('CLIENT_ID', settings.AZURE["client_id"])
+        self.secret = os.getenv('SECRET', settings.AZURE["secret"])
+        self.tenant_id = os.getenv('TENANT_ID', settings.AZURE["tenant_id"])
+        self.container_name = os.getenv('CONTAINER_NAME', settings.AZURE["container_name"])
         self.__open__()
 
     def __open__(self):
