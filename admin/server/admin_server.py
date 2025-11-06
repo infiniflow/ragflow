@@ -31,6 +31,7 @@ from config import load_configurations, SERVICE_CONFIGS
 from auth import init_default_admin, setup_auth
 from flask_session import Session
 from flask_login import LoginManager
+from common.versions import get_ragflow_version
 
 stop_event = threading.Event()
 
@@ -52,6 +53,7 @@ if __name__ == '__main__':
         os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
     )
     Session(app)
+    logging.info(f'RAGFlow version: {get_ragflow_version()}')
     show_configs()
     login_manager = LoginManager()
     login_manager.init_app(app)
