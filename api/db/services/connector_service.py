@@ -262,11 +262,13 @@ class Connector2KbService(CommonService):
             e, conn = ConnectorService.get_by_id(conn_id)
             if not e:
                 continue
-            SyncLogsService.filter_delete([SyncLogs.connector_id==conn_id, SyncLogs.kb_id==kb_id])
-            docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}")
-            err = FileService.delete_docs([d.id for d in docs], tenant_id)
-            if err:
-                errs.append(err)
+            #SyncLogsService.filter_delete([SyncLogs.connector_id==conn_id, SyncLogs.kb_id==kb_id])
+            # Do not delete docs while unlinking.
+            SyncLogsService.filter_update([SyncLogs.connector_id==conn_id, SyncLogs.kb_id==kb_id, SyncLogs.status.in_([TaskStatus.SCHEDULE, TaskStatus.RUNNING])], {"status": TaskStatus.CANCEL})
+            #docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}")
+            #err = FileService.delete_docs([d.id for d in docs], tenant_id)
+            #if err:
+            #    errs.append(err)
         return "\n".join(errs)
 
     @classmethod
