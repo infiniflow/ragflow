@@ -23,6 +23,7 @@ from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from typing import Dict, List, Any
 from lark import Lark, Transformer, Tree
 import requests
+import getpass
 
 GRAMMAR = r"""
 start: command
@@ -359,7 +360,7 @@ class AdminCLI(Cmd):
             if single_command:
                 admin_passwd = arguments['password']
             else:
-                admin_passwd = input(f"password for {self.admin_account}: ").strip()
+                admin_passwd = getpass.getpass(f"password for {self.admin_account}: ").strip()
             try:
                 self.admin_password = encrypt(admin_passwd)
                 response = self.session.post(url, json={'email': self.admin_account, 'password': self.admin_password})
