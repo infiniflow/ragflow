@@ -1,4 +1,10 @@
 import BackButton from '@/components/back-button';
+import {
+  DynamicForm,
+  DynamicFormRef,
+  FormFieldConfig,
+  FormFieldType,
+} from '@/components/dynamic-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
@@ -8,12 +14,6 @@ import { debounce } from 'lodash';
 import { CirclePause, Repeat } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
-import {
-  DynamicForm,
-  DynamicFormRef,
-  FormFieldConfig,
-  FormFieldType,
-} from '../component/dynamic-form';
 import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
@@ -112,7 +112,7 @@ const SourceDetailPage = () => {
           <div className="flex items-center  gap-1 w-full relative">
             <Input {...fieldProps} type={FormFieldType.Number} />
             <span className="absolute right-0 -translate-x-3 text-text-secondary italic ">
-              minutes
+              seconds
             </span>
           </div>
         ),

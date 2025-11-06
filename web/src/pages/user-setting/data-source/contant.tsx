@@ -1,12 +1,12 @@
+import { FormFieldType } from '@/components/dynamic-form';
 import SvgIcon from '@/components/svg-icon';
 import { t } from 'i18next';
-import { FormFieldType } from './component/dynamic-form';
 
 export enum DataSourceKey {
+  CONFLUENCE = 'confluence',
   S3 = 's3',
   NOTION = 'notion',
   DISCORD = 'discord',
-  //   CONFLUENNCE = 'confluence',
   //   GMAIL = 'gmail',
   //   GOOGLE_DRIVER = 'google_driver',
   //   JIRA = 'jira',
@@ -19,17 +19,22 @@ export const DataSourceInfo = {
   [DataSourceKey.S3]: {
     name: 'S3',
     description: t(`setting.${DataSourceKey.S3}Description`),
-    icon: <SvgIcon name={'data-source/s3'} width={28} />,
+    icon: <SvgIcon name={'data-source/s3'} width={38} />,
   },
   [DataSourceKey.NOTION]: {
     name: 'Notion',
     description: t(`setting.${DataSourceKey.NOTION}Description`),
-    icon: <SvgIcon name={'data-source/notion'} width={28} />,
+    icon: <SvgIcon name={'data-source/notion'} width={38} />,
   },
   [DataSourceKey.DISCORD]: {
     name: 'Discord',
     description: t(`setting.${DataSourceKey.DISCORD}Description`),
-    icon: <SvgIcon name={'data-source/discord'} width={28} />,
+    icon: <SvgIcon name={'data-source/discord'} width={38} />,
+  },
+  [DataSourceKey.CONFLUENCE]: {
+    name: 'Confluence',
+    description: t(`setting.${DataSourceKey.CONFLUENCE}Description`),
+    icon: <SvgIcon name={'data-source/confluence'} width={38} />,
   },
 };
 
@@ -71,7 +76,7 @@ export const DataSourceFormFields = {
     {
       label: 'AWS Secret Access Key',
       name: 'config.credentials.aws_secret_access_key',
-      type: FormFieldType.Text,
+      type: FormFieldType.Password,
       required: true,
     },
     {
@@ -103,7 +108,7 @@ export const DataSourceFormFields = {
     {
       label: 'Notion Integration Token',
       name: 'config.credentials.notion_integration_token',
-      type: FormFieldType.Text,
+      type: FormFieldType.Password,
       required: true,
     },
     {
@@ -117,7 +122,7 @@ export const DataSourceFormFields = {
     {
       label: 'Discord Bot Token',
       name: 'config.credentials.discord_bot_token',
-      type: FormFieldType.Text,
+      type: FormFieldType.Password,
       required: true,
     },
     {
@@ -131,6 +136,38 @@ export const DataSourceFormFields = {
       name: 'config.channels',
       type: FormFieldType.Tag,
       required: false,
+    },
+  ],
+
+  [DataSourceKey.CONFLUENCE]: [
+    {
+      label: 'Confluence Username',
+      name: 'config.credentials.confluence_username',
+      type: FormFieldType.Text,
+      required: true,
+      tooltip: 'A descriptive name for the connector.',
+    },
+    {
+      label: 'Confluence Access Token',
+      name: 'config.credentials.confluence_access_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Wiki Base URL',
+      name: 'config.wiki_base',
+      type: FormFieldType.Text,
+      required: false,
+      tooltip:
+        'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
+    },
+    {
+      label: 'Is Cloud',
+      name: 'config.is_cloud',
+      type: FormFieldType.Checkbox,
+      required: false,
+      tooltip:
+        'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
     },
   ],
 };
@@ -167,6 +204,18 @@ export const DataSourceFormDefaultValues = {
       channels: [],
       credentials: {
         discord_bot_token: '',
+      },
+    },
+  },
+  [DataSourceKey.CONFLUENCE]: {
+    name: '',
+    source: DataSourceKey.CONFLUENCE,
+    config: {
+      wiki_base: '',
+      is_cloud: true,
+      credentials: {
+        confluence_username: '',
+        confluence_access_token: '',
       },
     },
   },

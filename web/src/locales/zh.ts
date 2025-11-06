@@ -674,6 +674,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
     },
     setting: {
+      addDataSourceModalTital: '创建你的 {{name}} 链接',
+      deleteSourceModalTitle: '删除数据源链接',
+      deleteSourceModalContent: `
+      <p>您确定要删除此数据源链接吗？</p>`,
+      deleteSourceModalConfirmText: '确认',
       errorMsg: '错误信息',
       newDocs: '新文档',
       timeStarted: '开始时间',

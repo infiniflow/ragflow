@@ -60,6 +60,7 @@ export interface FormFieldConfig {
   render?: (fieldProps: any) => React.ReactNode;
   horizontal?: boolean;
   onChange?: (value: any) => void;
+  tooltip?: React.ReactNode;
 }
 
 // Component props interface
@@ -287,7 +288,6 @@ const DynamicForm = {
           ...generateDefaultValues(fields),
           ...formDefaultValues,
         };
-        console.log('generateDefaultValues', fields, value);
         return value;
       }, [fields, formDefaultValues]);
 
@@ -334,6 +334,7 @@ const DynamicForm = {
               label={field.label}
               required={field.required}
               horizontal={field.horizontal}
+              tooltip={field.tooltip}
             >
               {(fieldProps) => {
                 const finalFieldProps = field.onChange
@@ -358,6 +359,7 @@ const DynamicForm = {
                 label={field.label}
                 required={field.required}
                 horizontal={field.horizontal}
+                tooltip={field.tooltip}
               >
                 {(fieldProps) => {
                   const finalFieldProps = field.onChange
@@ -387,6 +389,7 @@ const DynamicForm = {
                 label={field.label}
                 required={field.required}
                 horizontal={field.horizontal}
+                tooltip={field.tooltip}
               >
                 {(fieldProps) => {
                   const finalFieldProps = field.onChange
@@ -419,14 +422,30 @@ const DynamicForm = {
                 name={field.name as any}
                 render={({ field: formField }) => (
                   <FormItem
-                    className={cn('flex items-center', {
+                    className={cn('flex items-center w-full', {
                       'flex-row items-start space-x-3 space-y-0':
                         !field.horizontal,
                     })}
                   >
                     {field.label && !field.horizontal && (
                       <div className="space-y-1 leading-none">
-                        <FormLabel className="font-normal">
+                        <FormLabel
+                          className="font-normal"
+                          tooltip={field.tooltip}
+                        >
+                          {field.label}{' '}
+                          {field.required && (
+                            <span className="text-destructive">*</span>
+                          )}
+                        </FormLabel>
+                      </div>
+                    )}
+                    {field.label && field.horizontal && (
+                      <div className="space-y-1 leading-none w-1/4">
+                        <FormLabel
+                          className="font-normal"
+                          tooltip={field.tooltip}
+                        >
                           {field.label}{' '}
                           {field.required && (
                             <span className="text-destructive">*</span>
@@ -435,24 +454,17 @@ const DynamicForm = {
                       </div>
                     )}
                     <FormControl>
-                      <Checkbox
-                        checked={formField.value}
-                        onCheckedChange={(checked) => {
-                          formField.onChange(checked);
-                          field.onChange?.(checked);
-                        }}
-                      />
-                    </FormControl>
-                    {field.label && field.horizontal && (
-                      <div className="space-y-1 leading-none">
-                        <FormLabel className="font-normal">
-                          {field.label}{' '}
-                          {field.required && (
-                            <span className="text-destructive">*</span>
-                          )}
-                        </FormLabel>
+                      <div className={cn({ 'w-full': field.horizontal })}>
+                        <Checkbox
+                          checked={formField.value}
+                          onCheckedChange={(checked) => {
+                            formField.onChange(checked);
+                            field.onChange?.(checked);
+                          }}
+                        />
                       </div>
-                    )}
+                    </FormControl>
+
                     <FormMessage />
                   </FormItem>
                 )}
@@ -466,6 +478,7 @@ const DynamicForm = {
                 label={field.label}
                 required={field.required}
                 horizontal={field.horizontal}
+                tooltip={field.tooltip}
               >
                 {(fieldProps) => {
                   const finalFieldProps = field.onChange
@@ -494,6 +507,7 @@ const DynamicForm = {
                 label={field.label}
                 required={field.required}
                 horizontal={field.horizontal}
+                tooltip={field.tooltip}
               >
                 {(fieldProps) => {
                   const finalFieldProps = field.onChange
@@ -609,117 +623,3 @@ const DynamicForm = {
 };
 
 export { DynamicForm };
-
-/**
- * Usage Example 1: Basic Form
- *
- * <DynamicForm
- *   fields={[
- *     {
- *       name: "username",
- *       label: "Username",
- *       type: FormFieldType.Text,
- *       required: true,
- *       placeholder: "Please enter username"
- *     },
- *     {
- *       name: "email",
- *       label: "Email",
- *       type: FormFieldType.Email,
- *       required: true,
- *       placeholder: "Please enter email address"
- *     }
- *   ]}
- *   onSubmit={(data) => {
- *     console.log(data); // { username: "...", email: "..." }
- *   }}
- * />
- *
- * Usage Example 2: Nested Object Form
- *
- * <DynamicForm
- *   fields={[
- *     {
- *       name: "user.name",
- *       label: "Name",
- *       type: FormFieldType.Text,
- *       required: true,
- *       placeholder: "Please enter name"
- *     },
- *     {
- *       name: "user.email",
- *       label: "Email",
- *       type: FormFieldType.Email,
- *       required: true,
- *       placeholder: "Please enter email address"
- *     },
- *     {
- *       name: "user.profile.age",
- *       label: "Age",
- *       type: FormFieldType.Number,
- *       required: true,
- *       validation: {
- *         min: 18,
- *         max: 100,
- *         message: "Age must be between 18 and 100"
- *       }
- *     },
- *     {
- *       name: "user.profile.bio",
- *       label: "Bio",
- *       type: FormFieldType.Textarea,
- *       placeholder: "Please briefly introduce yourself"
- *     },
- *     {
- *       name: "settings.notifications",
- *       label: "Enable Notifications",
- *       type: FormFieldType.Checkbox
- *     }
- *   ]}
- *   onSubmit={(data) => {
- *     console.log(data);
- *     // {
- *     //   user: {
- *     //     name: "...",
- *     //     email: "...",
- *     //     profile: {
- *     //       age: ...,
- *     //       bio: "..."
- *     //     }
- *     //   },
- *     //   settings: {
- *     //     notifications: true/false
- *     //   }
- *     // }
- *   }}
- * />
- *
- * Usage Example 3: Tag Type Form
- *
- * <DynamicForm
- *   fields={[
- *     {
- *       name: "skills",
- *       label: "Skill Tags",
- *       type: FormFieldType.Tag,
- *       required: true,
- *       placeholder: "Enter skill and press Enter to add tag"
- *     },
- *     {
- *       name: "user.hobbies",
- *       label: "Hobbies",
- *       type: FormFieldType.Tag,
- *       placeholder: "Enter hobby and press Enter to add tag"
- *     }
- *   ]}
- *   onSubmit={(data) => {
- *     console.log(data);
- *     // {
- *     //   skills: ["JavaScript", "React", "TypeScript"],
- *     //   user: {
- *     //     hobbies: ["Reading", "Swimming", "Travel"]
- *     //   }
- *     // }
- *   }}
- * />
- */

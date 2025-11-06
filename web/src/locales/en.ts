@@ -683,6 +683,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      addDataSourceModalTital: 'Create your {{name}} connector',
+      deleteSourceModalTitle: 'Delete data source',
+      deleteSourceModalContent: `
+      <p>Are you sure you want to delete this data source link?</p>`,
+      deleteSourceModalConfirmText: 'Comfirm',
       errorMsg: 'Error message',
       newDocs: 'New Docs',
       timeStarted: 'Time started',
