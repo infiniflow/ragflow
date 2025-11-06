@@ -189,14 +189,12 @@ def _manage_async_retrieval(
         async with Client(intents=intents, proxy=proxy_url) as cli:
             asyncio.create_task(coro=cli.start(token))
             await cli.wait_until_ready()
-            print("connected ...", flush=True)
 
             filtered_channels: list[TextChannel] = await _fetch_filtered_channels(
                 discord_client=cli,
                 server_ids=server_ids,
                 channel_names=channel_names,
             )
-            print("connected ...", filtered_channels, flush=True)
 
             for channel in filtered_channels:
                 async for doc in _fetch_documents_from_channel(
@@ -204,6 +202,7 @@ def _manage_async_retrieval(
                     start_time=start_time,
                     end_time=end_time,
                 ):
+                    print(doc)
                     yield doc
 
     def run_and_yield() -> Iterable[Document]:
@@ -257,6 +256,29 @@ class DiscordConnector(LoadConnector, PollConnector):
         end: datetime | None = None,
     ) -> GenerateDocumentsOutput:
         doc_batch = []
+        def merge_batch():
+            nonlocal doc_batch
+            id = doc_batch[0].id
+            min_updated_at = doc_batch[0].doc_updated_at
+            max_updated_at = doc_batch[-1].doc_updated_at
+            blob = b''
+            size_bytes = 0
+            for d in doc_batch:
+                min_updated_at = min(min_updated_at, d.doc_updated_at)
+                max_updated_at = max(max_updated_at, d.doc_updated_at)
+                blob += b'\n\n' + d.blob
+                size_bytes += d.size_bytes
+
+            return Document(
+                id=id,
+                source=DocumentSource.DISCORD,
+                semantic_identifier=f"{min_updated_at} -> {max_updated_at}",
+                doc_updated_at=max_updated_at,
+                blob=blob,
+                extension="txt",
+                size_bytes=size_bytes,
+            )
+
         for doc in _manage_async_retrieval(
             token=self.discord_bot_token,
             requested_start_date_string=self.requested_start_date_string,
@@ -267,11 +289,11 @@ class DiscordConnector(LoadConnector, PollConnector):
         ):
             doc_batch.append(doc)
             if len(doc_batch) >= self.batch_size:
-                yield doc_batch
+                yield [merge_batch()]
                 doc_batch = []
 
         if doc_batch:
-            yield doc_batch
+            yield [merge_batch()]
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self._discord_bot_token = credentials["discord_bot_token"]

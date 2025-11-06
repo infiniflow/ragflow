@@ -48,6 +48,7 @@ import {
   initialTokenizerValues,
   initialTuShareValues,
   initialUserFillUpValues,
+  initialVariableAggregatorValues,
   initialVariableAssignerValues,
   initialWaitingDialogueValues,
   initialWenCaiValues,
@@ -129,6 +130,7 @@ export const useInitializeOperatorParams = () => {
       },
       [Operator.DataOperations]: initialDataOperationsValues,
       [Operator.VariableAssigner]: initialVariableAssignerValues,
+      [Operator.VariableAggregator]: initialVariableAggregatorValues,
     };
   }, [llmId]);
 
