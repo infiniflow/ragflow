@@ -248,7 +248,7 @@ export default function DatasetSettings() {
                   />
                 )}
 
-                <Divider />
+                {/* <Divider /> */}
                 {parseType === 1 && <ChunkMethodForm />}
 
                 {/* <LinkDataPipeline

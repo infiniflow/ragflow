@@ -1,7 +1,8 @@
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
-import { Search } from 'lucide-react';
+import { Eye, EyeOff, Search } from 'lucide-react';
+import { useState } from 'react';
 
 export interface InputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -13,6 +14,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     const isControlled = value !== undefined;
     const { defaultValue, ...restProps } = props;
     const inputValue = isControlled ? value : defaultValue;
+    const [showPassword, setShowPassword] = useState(false);
     const handleChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
       if (type === 'number') {
         const numValue = e.target.value === '' ? '' : Number(e.target.value);
@@ -28,17 +30,32 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       }
     };
     return (
-      <input
-        type={type}
-        className={cn(
-          'flex h-8 w-full rounded-md border border-input bg-bg-input px-2 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-text-primary',
-          className,
+      <div className="relative w-full">
+        <input
+          type={type === 'password' && showPassword ? 'text' : type}
+          className={cn(
+            'flex h-8 w-full rounded-md border border-input bg-bg-input px-2 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-text-primary',
+            className,
+          )}
+          ref={ref}
+          value={inputValue ?? ''}
+          onChange={handleChange}
+          {...restProps}
+        />
+        {type === 'password' && (
+          <button
+            type="button"
+            className="absolute inset-y-0 right-0 pr-3 flex items-center"
+            onClick={() => setShowPassword(!showPassword)}
+          >
+            {showPassword ? (
+              <EyeOff className="h-4 w-4 text-text-secondary" />
+            ) : (
+              <Eye className="h-4 w-4 text-text-secondary" />
+            )}
+          </button>
         )}
-        ref={ref}
-        value={inputValue ?? ''}
-        onChange={handleChange}
-        {...restProps}
-      />
+      </div>
     );
   },
 );
