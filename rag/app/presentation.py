@@ -24,7 +24,7 @@ from rag.nlp import tokenize, is_english
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, PptParser, PlainParser
 from PyPDF2 import PdfReader as pdf2_read
-from rag.app.naive import plaintext_parser, PARSERS
+from rag.app.naive import by_plaintext, PARSERS
 
 class Ppt(PptParser):
     def __call__(self, fnm, from_page, to_page, callback=None):
@@ -131,7 +131,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
 
         name = layout_recognizer.strip().lower()
-        parser = PARSERS.get(name, plaintext_parser)
+        parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
 
         sections, _, _ = parser(
