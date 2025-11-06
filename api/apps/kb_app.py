@@ -38,7 +38,7 @@ from api.utils.api_utils import get_json_result
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.utils.redis_conn import REDIS_CONN
-from rag.utils.doc_store_conn import OrderByExpr  
+from rag.utils.doc_store_conn import OrderByExpr
 from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType, PAGERANK_FLD
 from common import settings
 
@@ -52,7 +52,7 @@ def create():
         tenant_id = current_user.id,
         parser_id = req.pop("parser_id", None),
         **req
-    )        
+    )
 
     try:
         if not KnowledgebaseService.save(**req):
@@ -571,7 +571,7 @@ def trace_graphrag():
 
     ok, task = TaskService.get_by_id(task_id)
     if not ok:
-        return get_error_data_result(message="GraphRAG Task Not Found or Error Occurred")
+        return get_json_result(data={})
 
     return get_json_result(data=task.to_dict())
 
@@ -780,14 +780,14 @@ def check_embedding():
 
     def _to_1d(x):
         a = np.asarray(x, dtype=np.float32)
-        return a.reshape(-1)  
+        return a.reshape(-1)
 
     def _cos_sim(a, b, eps=1e-12):
         a = _to_1d(a)
         b = _to_1d(b)
         na = np.linalg.norm(a)
         nb = np.linalg.norm(b)
-        if na < eps or nb < eps: 
+        if na < eps or nb < eps:
             return 0.0
         return float(np.dot(a, b) / (na * nb))
 
@@ -825,7 +825,7 @@ def check_embedding():
                 indexNames=index_nm, knowledgebaseIds=[kb_id]
             )
             ids = docStoreConn.getChunkIds(res1)
-            if not ids: 
+            if not ids:
                 continue
 
             cid = ids[0]
@@ -869,7 +869,7 @@ def check_embedding():
             continue
 
         try:
-            qv, _ = emb_mdl.encode_queries(txt)  
+            qv, _ = emb_mdl.encode_queries(txt)
             sim = _cos_sim(qv, ck["vector"])
         except Exception:
             return get_error_data_result(message="embedding failure")

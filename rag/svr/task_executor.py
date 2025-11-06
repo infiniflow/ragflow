@@ -65,6 +65,7 @@ from common.token_utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from graphrag.utils import chat_limiter
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
+from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
 
@@ -127,9 +128,7 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-class TaskCanceledException(Exception):
-    def __init__(self, msg):
-        self.msg = msg
+
 
 
 def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing..."):
