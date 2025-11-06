@@ -17,7 +17,6 @@
 from flask import request
 from flask_login import login_required, current_user
 
-from api import settings
 from api.apps import smtp_mail_server
 from api.db import UserTenantRole
 from api.db.db_models import UserTenant
@@ -28,6 +27,7 @@ from common.misc_utils import get_uuid
 from common.time_utils import delta_seconds
 from api.utils.api_utils import get_json_result, validate_request, server_error_response, get_data_error_result
 from api.utils.web_utils import send_invite_email
+from common import settings
 
 
 @manager.route("/<tenant_id>/user/list", methods=["GET"])  # noqa: F821

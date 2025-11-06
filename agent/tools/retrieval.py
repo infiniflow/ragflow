@@ -24,8 +24,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.dialog_service import meta_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api import settings
-from common import globals
+from common import settings
 from common.connection_utils import timeout
 from rag.app.tag import label_question
 from rag.prompts.generator import cross_languages, kb_prompt, gen_meta_filter
@@ -171,7 +170,7 @@ class Retrieval(ToolBase, ABC):
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
-            kbinfos = globals.retriever.retrieval(
+            kbinfos = settings.retriever.retrieval(
                 query,
                 embd_mdl,
                 [kb.tenant_id for kb in kbs],
@@ -187,7 +186,7 @@ class Retrieval(ToolBase, ABC):
             )
             if self._param.toc_enhance:
                 chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT)
-                cks = globals.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs], chat_mdl, self._param.top_n)
+                cks = settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs], chat_mdl, self._param.top_n)
                 if cks:
                     kbinfos["chunks"] = cks
             if self._param.use_kg:

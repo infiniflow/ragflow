@@ -34,7 +34,6 @@ from flask import (
 )
 from peewee import OperationalError
 
-from api import settings
 from common.constants import ActiveEnum
 from api.db.db_models import APIToken
 from api.utils.json_encode import CustomJSONEncoder
@@ -42,7 +41,7 @@ from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_
 from api.db.services.tenant_llm_service import LLMFactoriesService
 from common.connection_utils import timeout
 from common.constants import RetCode
-
+from common import settings
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 

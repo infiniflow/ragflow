@@ -27,6 +27,7 @@ interface IProps {
 const SystemSetting = ({ onOk, loading }: IProps) => {
   const { systemSetting: initialValues, allOptions } =
     useFetchSystemModelSettingOnMount();
+  const { t: tcommon } = useTranslate('common');
   const { t } = useTranslate('setting');
 
   const [formData, setFormData] = useState({
@@ -159,7 +160,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
           value={value}
           options={options}
           onChange={(value) => handleFieldChange(id, value)}
-          placeholder={t('common:selectPlaceholder')}
+          placeholder={tcommon('selectPlaceholder')}
         />
       </div>
     );

@@ -20,12 +20,11 @@ from flask import request, jsonify
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api import settings
 from api.utils.api_utils import validate_request, build_error_result, apikey_required
 from rag.app.tag import label_question
 from api.db.services.dialog_service import meta_filter, convert_conditions
 from common.constants import RetCode, LLMType
-from common import globals
+from common import settings
 
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required
@@ -138,7 +137,7 @@ def retrieval(tenant_id):
         # print("doc_ids", doc_ids)
         if not doc_ids and metadata_condition is not None:
             doc_ids = ['-999']
-        ranks = globals.retriever.retrieval(
+        ranks = settings.retriever.retrieval(
             question,
             embd_mdl,
             kb.tenant_id,

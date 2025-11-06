@@ -36,7 +36,7 @@ import signal
 import trio
 import faulthandler
 from common.constants import FileSource, TaskStatus
-from api import settings
+from common import settings
 from api.versions import get_ragflow_version
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.utils import load_all_docs_from_checkpoint_connector
@@ -89,7 +89,7 @@ class SyncBase:
                 ''.join(traceback.format_exception_only(None, ex)).strip(),
                 ''.join(traceback.format_exception(None, ex, ex.__traceback__)).strip()
             ])
-            SyncLogsService.update_by_id(task["id"], {"status": TaskStatus.FAIL, "full_exception_trace": msg})
+            SyncLogsService.update_by_id(task["id"], {"status": TaskStatus.FAIL, "full_exception_trace": msg, "error_msg": str(ex)})
 
         SyncLogsService.schedule(task["connector_id"], task["kb_id"], task["poll_range_start"])
 

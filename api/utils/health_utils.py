@@ -17,13 +17,11 @@ import os
 import requests
 from timeit import default_timer as timer
 
-from api import settings
 from api.db.db_models import DB
 from rag.utils.redis_conn import REDIS_CONN
-from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.es_conn import ESConnection
 from rag.utils.infinity_conn import InfinityConnection
-from common import globals
+from common import settings
 
 
 def _ok_nok(ok: bool) -> str:
@@ -52,7 +50,7 @@ def check_redis() -> tuple[bool, dict]:
 def check_doc_engine() -> tuple[bool, dict]:
     st = timer()
     try:
-        meta = globals.docStoreConn.health()
+        meta = settings.docStoreConn.health()
         # treat any successful call as ok
         return True, {"elapsed": f"{(timer() - st) * 1000.0:.1f}", **(meta or {})}
     except Exception as e:
@@ -62,7 +60,7 @@ def check_doc_engine() -> tuple[bool, dict]:
 def check_storage() -> tuple[bool, dict]:
     st = timer()
     try:
-        STORAGE_IMPL.health()
+        settings.STORAGE_IMPL.health()
         return True, {"elapsed": f"{(timer() - st) * 1000.0:.1f}"}
     except Exception as e:
         return False, {"elapsed": f"{(timer() - st) * 1000.0:.1f}", "error": str(e)}
@@ -120,7 +118,7 @@ def get_mysql_status():
 def check_minio_alive():
     start_time = timer()
     try:
-        response = requests.get(f'http://{globals.MINIO["host"]}/minio/health/live')
+        response = requests.get(f'http://{settings.MINIO["host"]}/minio/health/live')
         if response.status_code == 200:
             return {"status": "alive", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
         else:
