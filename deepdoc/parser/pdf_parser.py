@@ -48,6 +48,21 @@ if LOCK_KEY_pdfplumber not in sys.modules:
 
 
 class RAGFlowPdfParser:
+    UPPER_ALPHA_RANGE = "A-Z"
+    LOWER_ALPHA_RANGE = "a-z"
+
+    def _upper_range(self) -> str:
+        return self.UPPER_ALPHA_RANGE
+
+    def _lower_range(self) -> str:
+        return self.LOWER_ALPHA_RANGE
+
+    def _letter_range(self) -> str:
+        return f"{self._upper_range()}{self._lower_range()}"
+
+    def _alphanumeric_range(self) -> str:
+        return f"0-9{self._letter_range()}"
+
     def __init__(self, **kwargs):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
@@ -120,7 +135,7 @@ class RAGFlowPdfParser:
             r"[零一二三四五六七八九十百]+[、是 　]",
             r"[\(（][零一二三四五六七八九十百]+[）\)]",
             r"[\(（][0-9]+[）\)]",
-            r"[0-9]+(、|\.[　 ]|）|\.[^0-9./a-zA-Z_%><-]{4,})",
+            rf"[0-9]+(、|\.[　 ]|）|\.[^0-9./{self._letter_range()}_%><-]{{4,}})",
             r"[0-9]+\.[0-9.]+(、|\.[ 　])",
             r"[⚫•➢①② ]",
         ]
@@ -133,7 +148,11 @@ class RAGFlowPdfParser:
         LEN = 6
         tks_down = rag_tokenizer.tokenize(down["text"][:LEN]).split()
         tks_up = rag_tokenizer.tokenize(up["text"][-LEN:]).split()
-        tks_all = up["text"][-LEN:].strip() + (" " if re.match(r"[a-zA-Z0-9]+", up["text"][-1] + down["text"][0]) else "") + down["text"][:LEN].strip()
+        tks_all = (
+            up["text"][-LEN:].strip()
+            + (" " if re.match(rf"[{self._alphanumeric_range()}]+", up["text"][-1] + down["text"][0]) else "")
+            + down["text"][:LEN].strip()
+        )
         tks_all = rag_tokenizer.tokenize(tks_all).split()
         fea = [
             up.get("R", -1) == down.get("R", -1),
@@ -144,7 +163,7 @@ class RAGFlowPdfParser:
             down["layout_type"] == "text",
             up["layout_type"] == "table",
             down["layout_type"] == "table",
-            True if re.search(r"([。？！；!?;+)）]|[a-z]\.)$", up["text"]) else False,
+            True if re.search(rf"([。？！；!?;+)）]|[{self._lower_range()}]\.)$", up["text"]) else False,
             True if re.search(r"[，：‘“、0-9（+-]$", up["text"]) else False,
             True if re.search(r"(^.?[/,?;:\]，。；：’”？！》】）-])", down["text"]) else False,
             True if re.match(r"[\(（][^\(\)（）]+[）\)]$", up["text"]) else False,
@@ -152,9 +171,9 @@ class RAGFlowPdfParser:
             True if re.search(r"[，,][^。.]+$", up["text"]) else False,
             True if re.search(r"[\(（][^\)）]+$", up["text"]) and re.search(r"[\)）]", down["text"]) else False,
             self._match_proj(down),
-            True if re.match(r"[A-Z]", down["text"]) else False,
-            True if re.match(r"[A-Z]", up["text"][-1]) else False,
-            True if re.match(r"[a-z0-9]", up["text"][-1]) else False,
+            True if re.match(rf"[{self._upper_range()}]", down["text"]) else False,
+            True if re.match(rf"[{self._upper_range()}]", up["text"][-1]) else False,
+            True if re.match(rf"[{self._lower_range()}0-9]", up["text"][-1]) else False,
             True if re.match(r"[0-9.%,-]+$", down["text"]) else False,
             up["text"].strip()[-2:] == down["text"].strip()[-2:] if len(up["text"].strip()) > 1 and len(down["text"].strip()) > 1 else False,
             up["x0"] > down["x1"],
@@ -187,7 +206,7 @@ class RAGFlowPdfParser:
     def _has_color(self, o):
         if o.get("ncs", "") == "DeviceGray":
             if o["stroking_color"] and o["stroking_color"][0] == 1 and o["non_stroking_color"] and o["non_stroking_color"][0] == 1:
-                if re.match(r"[a-zT_\[\]\(\)-]+", o.get("text", "")):
+                if re.match(rf"[{self._letter_range()}T_\[\]\(\)-]+", o.get("text", "")):
                     return False
         return True
 
@@ -316,7 +335,7 @@ class RAGFlowPdfParser:
             m_ht = np.mean([c["height"] for c in b["chars"]])
             for c in Recognizer.sort_Y_firstly(b["chars"], m_ht):
                 if c["text"] == " " and b["text"]:
-                    if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
+                    if re.match(rf"[0-9{self._letter_range()}а-яА-Я,.?;:!%%]", b["text"][-1]):
                         b["text"] += " "
                 else:
                     b["text"] += c["text"]
@@ -649,7 +668,7 @@ class RAGFlowPdfParser:
                 c["text"] = c["text"].strip()
                 if not c["text"]:
                     continue
-                if t["text"] and re.match(r"[0-9\.a-zA-Z]+$", t["text"][-1] + c["text"][-1]):
+                if t["text"] and re.match(rf"[0-9\.{self._letter_range()}]+$", t["text"][-1] + c["text"][-1]):
                     t["text"] += " "
                 t["text"] += c["text"]
                 t["x0"] = min(t["x0"], c["x0"])
@@ -672,7 +691,7 @@ class RAGFlowPdfParser:
                 i += 1
                 continue
             findit = True
-            eng = re.match(r"[0-9a-zA-Z :'.-]{5,}", self.boxes[i]["text"].strip())
+            eng = re.match(rf"[0-9{self._letter_range()} :'.-]{{5,}}", self.boxes[i]["text"].strip())
             self.boxes.pop(i)
             if i >= len(self.boxes):
                 break
@@ -1071,7 +1090,10 @@ class RAGFlowPdfParser:
 
         logging.debug("Images converted.")
         self.is_english = [
-            re.search(r"[a-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join(random.choices([c["text"] for c in self.page_chars[i]], k=min(100, len(self.page_chars[i])))))
+            re.search(
+                rf"[{self._alphanumeric_range()},/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{{30,}}",
+                "".join(random.choices([c["text"] for c in self.page_chars[i]], k=min(100, len(self.page_chars[i])))),
+            )
             for i in range(len(self.page_chars))
         ]
         if sum([1 if e else 0 for e in self.is_english]) > len(self.page_images) / 2:
@@ -1085,7 +1107,7 @@ class RAGFlowPdfParser:
                 if (
                     chars[j]["text"]
                     and chars[j + 1]["text"]
-                    and re.match(r"[0-9a-zA-Z,.:;!%]+", chars[j]["text"] + chars[j + 1]["text"])
+                    and re.match(rf"[0-9{self._letter_range()},.:;!%]+", chars[j]["text"] + chars[j + 1]["text"])
                     and chars[j + 1]["x0"] - chars[j]["x1"] >= min(chars[j + 1]["width"], chars[j]["width"]) / 2
                 ):
                     chars[j]["text"] += " "
@@ -1128,7 +1150,10 @@ class RAGFlowPdfParser:
 
         if not self.is_english and not any([c for c in self.page_chars]) and self.boxes:
             bxes = [b for bxs in self.boxes for b in bxs]
-            self.is_english = re.search(r"[\na-zA-Z0-9,/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{30,}", "".join([b["text"] for b in random.choices(bxes, k=min(30, len(bxes)))]))
+            self.is_english = re.search(
+                rf"[\n{self._alphanumeric_range()},/¸;:'\[\]\(\)!@#$%^&*\"?<>._-]{{30,}}",
+                "".join([b["text"] for b in random.choices(bxes, k=min(30, len(bxes)))]),
+            )
 
         logging.debug(f"Is it English: {self.is_english}")
 
@@ -1311,6 +1336,13 @@ class RAGFlowPdfParser:
             pn += 1
             poss.append((pn, bx["x0"], bx["x1"], top, min(bott, self.page_images[pn - 1].size[1] / ZM)))
         return poss
+
+
+class PdfParserVietnamese(RAGFlowPdfParser):
+    """Vietnamese-specific PDF parser with extended alphabet support."""
+
+    UPPER_ALPHA_RANGE = "A-ZÀ-Ỹ"
+    LOWER_ALPHA_RANGE = "a-zà-ỹ"
 
 
 class PlainParser:

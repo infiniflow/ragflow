@@ -21,10 +21,10 @@ import re
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
 from common.constants import ParserType
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
-from deepdoc.parser import PdfParser, PlainParser
+from deepdoc.parser import PdfParser, PdfParserVietnamese, PlainParser
 import numpy as np
 
-class Pdf(PdfParser):
+class _PaperPdfBase:
     def __init__(self):
         self.model_speciess = ParserType.PAPER.value
         super().__init__()
@@ -137,6 +137,14 @@ class Pdf(PdfParser):
         }
 
 
+class Pdf(_PaperPdfBase, PdfParser):
+    """Default paper parser."""
+
+
+class PdfVietnamese(_PaperPdfBase, PdfParserVietnamese):
+    """Vietnamese-optimized paper parser."""
+
+
 def chunk(filename, binary=None, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
     """
@@ -147,7 +155,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         "parser_config", {
             "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
+        layout_choice = parser_config.get("layout_recognize", "DeepDOC")
+        if layout_choice == "Plain Text":
             pdf_parser = PlainParser()
             paper = {
                 "title": filename,
@@ -157,7 +166,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 "tables": []
             }
         else:
-            pdf_parser = Pdf()
+            pdf_parser = PdfVietnamese() if layout_choice == "DeepDOCVN" else Pdf()
             paper = pdf_parser(filename if not binary else binary,
                                from_page=from_page, to_page=to_page, callback=callback)
         tbls=paper["tables"]

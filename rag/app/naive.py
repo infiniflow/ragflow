@@ -31,7 +31,17 @@ from tika import parser
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
-from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
+from deepdoc.parser import (
+    DocxParser,
+    ExcelParser,
+    HtmlParser,
+    JsonParser,
+    MarkdownElementExtractor,
+    MarkdownParser,
+    PdfParser,
+    PdfParserVietnamese,
+    TxtParser,
+)
 from deepdoc.parser.figure_parser import VisionFigureParser,vision_figure_parser_docx_wrapper,vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.mineru_parser import MinerUParser
@@ -304,12 +314,20 @@ class Docx(DocxParser):
                 docx_file.close()
 
 
-class Pdf(PdfParser):
+class _PdfBase:
     def __init__(self):
         super().__init__()
 
-    def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None, separate_tables_figures=False):
+    def __call__(
+        self,
+        filename,
+        binary=None,
+        from_page=0,
+        to_page=100000,
+        zoomin=3,
+        callback=None,
+        separate_tables_figures=False,
+    ):
         start = timer()
         first_start = start
         callback(msg="OCR started")
@@ -318,7 +336,7 @@ class Pdf(PdfParser):
             zoomin,
             from_page,
             to_page,
-            callback
+            callback,
         )
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
@@ -340,14 +358,22 @@ class Pdf(PdfParser):
             self._concat_downward()
             logging.info("layouts cost: {}s".format(timer() - first_start))
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls, figures
-        else:
-            tbls = self._extract_table_figure(True, zoomin, True, True)
-            self._naive_vertical_merge()
-            self._concat_downward()
-            self._final_reading_order_merge()
-            # self._filter_forpages()
-            logging.info("layouts cost: {}s".format(timer() - first_start))
-            return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
+
+        tbls = self._extract_table_figure(True, zoomin, True, True)
+        self._naive_vertical_merge()
+        self._concat_downward()
+        self._final_reading_order_merge()
+        # self._filter_forpages()
+        logging.info("layouts cost: {}s".format(timer() - first_start))
+        return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
+
+
+class Pdf(_PdfBase, PdfParser):
+    """Default DeepDOC parser."""
+
+
+class PdfVietnamese(_PdfBase, PdfParserVietnamese):
+    """Vietnamese-optimized DeepDOC parser."""
 
 
 class Markdown(MarkdownParser):
@@ -537,8 +563,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
         callback(0.1, "Start to parse.")
 
-        if layout_recognizer == "DeepDOC":
-            pdf_parser = Pdf()
+        if layout_recognizer in {"DeepDOC", "DeepDOCVN"}:
+            pdf_parser = Pdf() if layout_recognizer == "DeepDOC" else PdfVietnamese()
             sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
             tables=vision_figure_parser_pdf_wrapper(tbls=tables,callback=callback,**kwargs)
 

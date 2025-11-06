@@ -27,6 +27,7 @@ import { useFetchKnowledgeConfigurationOnMount } from './hooks';
 import { SavingButton } from './saving-button';
 const enum DocumentType {
   DeepDOC = 'DeepDOC',
+  DeepDOCVN = 'DeepDOCVN',
   PlainText = 'Plain Text',
 }
 

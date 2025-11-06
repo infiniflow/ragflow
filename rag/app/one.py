@@ -22,14 +22,25 @@ import re
 from deepdoc.parser.utils import get_text
 from rag.app import naive
 from rag.nlp import rag_tokenizer, tokenize
-from deepdoc.parser import PdfParser, ExcelParser, PlainParser, HtmlParser
+from deepdoc.parser import PdfParser, PdfParserVietnamese, ExcelParser, PlainParser, HtmlParser
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
 
 
-class Pdf(PdfParser):
-    def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None):
+class _OnePdfBase:
+    def __init__(self):
+        super().__init__()
+
+    def __call__(
+        self,
+        filename,
+        binary=None,
+        from_page=0,
+        to_page=100000,
+        zoomin=3,
+        callback=None,
+    ):
         from timeit import default_timer as timer
+
         start = timer()
         callback(msg="OCR started")
         self.__images__(
@@ -37,7 +48,7 @@ class Pdf(PdfParser):
             zoomin,
             from_page,
             to_page,
-            callback
+            callback,
         )
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
@@ -56,10 +67,21 @@ class Pdf(PdfParser):
         tbls = self._extract_table_figure(True, zoomin, True, True)
         self._concat_downward()
 
-        sections = [(b["text"], self.get_position(b, zoomin))
-                    for i, b in enumerate(self.boxes)]
-        return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (
-            x[-1][0][0], x[-1][0][3], x[-1][0][1]))], tbls
+        sections = [(b["text"], self.get_position(b, zoomin)) for b in self.boxes]
+        return [
+            (txt, "")
+            for txt, _ in sorted(
+                sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1])
+            )
+        ], tbls
+
+
+class Pdf(_OnePdfBase, PdfParser):
+    """Default single-chunk PDF parser."""
+
+
+class PdfVietnamese(_OnePdfBase, PdfParserVietnamese):
+    """Vietnamese-optimized single-chunk parser."""
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
@@ -83,9 +105,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
+        layout_choice = parser_config.get("layout_recognize", "DeepDOC")
+        if layout_choice == "Plain Text":
             pdf_parser = PlainParser()
+        elif layout_choice == "DeepDOCVN":
+            pdf_parser = PdfVietnamese()
+        else:
+            pdf_parser = Pdf()
         sections, tbls = pdf_parser(
             filename if not binary else binary, to_page=to_page, callback=callback)
         tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
