@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/table';
 import { RunningStatusMap } from '@/constants/knowledge';
 import { RunningStatus } from '@/pages/dataset/dataset/constant';
+import { Routes } from '@/routes';
 import { formatDate } from '@/utils/date';
 import {
   HoverCard,
@@ -30,84 +31,99 @@ import {
 import { t } from 'i18next';
 import { pick } from 'lodash';
 import { Eye } from 'lucide-react';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useNavigate } from 'umi';
 import { useLogListDataSource } from '../hooks';
 
-const columns: ColumnDef<any>[] = [
-  {
-    accessorKey: 'update_date',
-    header: t('setting.timeStarted'),
-    cell: ({ row }) => (
-      <div className="flex items-center gap-2 text-text-primary">
-        {row.original.update_date ? formatDate(row.original.update_date) : '-'}
-      </div>
-    ),
-  },
-  {
-    accessorKey: 'status',
-    header: t('knowledgeDetails.status'),
-    cell: ({ row }) => (
-      <FileStatusBadge
-        status={row.original.status as RunningStatus}
-        name={RunningStatusMap[row.original.status as RunningStatus]}
-        className="!w-20"
-      />
-    ),
-  },
-  {
-    accessorKey: 'kb_name',
-    header: t('knowledgeDetails.dataset'),
-    cell: ({ row }) => {
-      return (
+const columns = ({
+  handleToDataSetDetail,
+}: {
+  handleToDataSetDetail: (id: string) => void;
+}) => {
+  return [
+    {
+      accessorKey: 'update_date',
+      header: t('setting.timeStarted'),
+      cell: ({ row }) => (
         <div className="flex items-center gap-2 text-text-primary">
-          <RAGFlowAvatar
-            avatar={row.original.avatar}
-            name={row.original.kb_name}
-            className="size-4"
-          />
-          {row.original.kb_name}
+          {row.original.update_date
+            ? formatDate(row.original.update_date)
+            : '-'}
         </div>
-      );
+      ),
     },
-  },
-  {
-    accessorKey: 'new_docs_indexed',
-    header: t('setting.newDocs'),
-  },
-
-  {
-    id: 'operations',
-    header: t('setting.errorMsg'),
-    cell: ({ row }) => (
-      <div className="flex gap-1 items-center">
-        {row.original.error_msg}
-        {row.original.error_msg && (
-          <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <HoverCard>
-              <HoverCardTrigger>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="p-1"
-                  // onClick={() => {
-                  //   showLog(row, LogTabs.FILE_LOGS);
-                  // }}
-                >
-                  <Eye />
-                </Button>
-              </HoverCardTrigger>
-              <HoverCardContent className="w-[40vw] max-h-[40vh] overflow-auto bg-bg-base z-[999] px-3 py-2 rounded-md border border-border-default">
-                <div className="space-y-2">
-                  {row.original.full_exception_trace}
-                </div>
-              </HoverCardContent>
-            </HoverCard>
+    {
+      accessorKey: 'status',
+      header: t('knowledgeDetails.status'),
+      cell: ({ row }) => (
+        <FileStatusBadge
+          status={row.original.status as RunningStatus}
+          name={RunningStatusMap[row.original.status as RunningStatus]}
+          className="!w-20"
+        />
+      ),
+    },
+    {
+      accessorKey: 'kb_name',
+      header: t('knowledgeDetails.dataset'),
+      cell: ({ row }) => {
+        return (
+          <div
+            className="flex items-center gap-2 text-text-primary cursor-pointer"
+            onClick={() => {
+              console.log('handleToDataSetDetail', row.original.kb_id);
+              handleToDataSetDetail(row.original.kb_id);
+            }}
+          >
+            <RAGFlowAvatar
+              avatar={row.original.avatar}
+              name={row.original.kb_name}
+              className="size-4"
+            />
+            {row.original.kb_name}
           </div>
-        )}
-      </div>
-    ),
-  },
-];
+        );
+      },
+    },
+    {
+      accessorKey: 'new_docs_indexed',
+      header: t('setting.newDocs'),
+    },
+
+    {
+      id: 'operations',
+      header: t('setting.errorMsg'),
+      cell: ({ row }) => (
+        <div className="flex gap-1 items-center">
+          {row.original.error_msg}
+          {row.original.error_msg && (
+            <div className="flex justify-start space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <HoverCard>
+                <HoverCardTrigger>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="p-1"
+                    // onClick={() => {
+                    //   showLog(row, LogTabs.FILE_LOGS);
+                    // }}
+                  >
+                    <Eye />
+                  </Button>
+                </HoverCardTrigger>
+                <HoverCardContent className="w-[40vw] max-h-[40vh] overflow-auto bg-bg-base z-[999] px-3 py-2 rounded-md border border-border-default">
+                  <div className="space-y-2">
+                    {row.original.full_exception_trace}
+                  </div>
+                </HoverCardContent>
+              </HoverCard>
+            </div>
+          )}
+        </div>
+      ),
+    },
+  ] as ColumnDef<any>[];
+};
 
 // const paginationInit = {
 //   current: 1,
@@ -117,6 +133,7 @@ const columns: ColumnDef<any>[] = [
 export const DataSourceLogsTable = () => {
   // const [pagination, setPagination] = useState(paginationInit);
   const { data, pagination, setPagination } = useLogListDataSource();
+  const navigate = useNavigate();
   const currentPagination = useMemo(
     () => ({
       pageIndex: (pagination.current || 1) - 1,
@@ -125,9 +142,17 @@ export const DataSourceLogsTable = () => {
     [pagination],
   );
 
+  const handleToDataSetDetail = useCallback(
+    (id: string) => {
+      console.log('handleToDataSetDetail', id);
+      navigate(`${Routes.DatasetBase}${Routes.DataSetSetting}/${id}`);
+    },
+    [navigate],
+  );
+
   const table = useReactTable<any>({
     data: data || [],
-    columns,
+    columns: columns({ handleToDataSetDetail }),
     manualPagination: true,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),

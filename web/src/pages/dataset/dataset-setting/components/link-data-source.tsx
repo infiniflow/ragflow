@@ -1,10 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IConnector } from '@/interfaces/database/knowledge';
 import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
-import { omit } from 'lodash';
-import { Link, Settings2, Unlink } from 'lucide-react';
+import { Link, Settings, Unlink } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import LinkDataSourceModal from './link-data-source-modal';
@@ -26,7 +26,12 @@ interface DataSourceItemProps extends IDataSourceNodeProps {
 
 const DataSourceItem = (props: DataSourceItemProps) => {
   const { t } = useTranslation();
-  const { name, icon, openLinkModalFunc, unbindFunc } = props;
+  const { id, name, icon, openLinkModalFunc, unbindFunc } = props;
+
+  const { navigateToDataSourceDetail } = useNavigatePage();
+  const toDetail = (id: string) => {
+    navigateToDataSourceDetail(id);
+  };
   const openUnlinkModal = () => {
     Modal.show({
       visible: true,
@@ -74,11 +79,14 @@ const DataSourceItem = (props: DataSourceItemProps) => {
           variant={'transparent'}
           className="border-none"
           type="button"
-          onClick={() =>
-            openLinkModalFunc?.(true, { ...omit(props, ['openLinkModalFunc']) })
-          }
+          onClick={() => {
+            toDetail(id);
+          }}
+          // onClick={() =>
+          //   openLinkModalFunc?.(true, { ...omit(props, ['openLinkModalFunc']) })
+          // }
         >
-          <Settings2 />
+          <Settings />
         </Button>
         <>
           <Button

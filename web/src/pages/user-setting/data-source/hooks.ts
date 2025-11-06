@@ -114,17 +114,24 @@ export const useLogListDataSource = () => {
   const [currentQueryParameters] = useSearchParams();
   const id = currentQueryParameters.get('id');
 
-  const { data, isFetching } = useQuery<IDataSource[]>({
-    queryKey: ['data-source-logs', id, pagination],
-    queryFn: async () => {
-      const { data } = await getDataSourceLogs(id as string, {
-        page_size: pagination.pageSize,
-        page: pagination.current,
-      });
-      return data.data;
+  const { data, isFetching } = useQuery<{ logs: IDataSource[]; total: number }>(
+    {
+      queryKey: ['data-source-logs', id, pagination],
+      queryFn: async () => {
+        const { data } = await getDataSourceLogs(id as string, {
+          page_size: pagination.pageSize,
+          page: pagination.current,
+        });
+        return data.data;
+      },
     },
-  });
-  return { data, isFetching, pagination, setPagination };
+  );
+  return {
+    data: data?.logs,
+    isFetching,
+    pagination: { ...pagination, total: data?.total },
+    setPagination,
+  };
 };
 
 export const useDeleteDataSource = () => {
