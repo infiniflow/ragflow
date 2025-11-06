@@ -34,7 +34,7 @@ class GithubOAuthClient(OAuthClient):
 
     def fetch_user_info(self, access_token, **kwargs):
         """
-        Fetch github user info.
+        Fetch GitHub user info.
         """
         user_info = {}
         try:

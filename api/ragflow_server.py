@@ -39,7 +39,7 @@ from common.file_utils import get_project_base_directory
 from common import settings
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data
-from api.versions import get_ragflow_version
+from common.versions import get_ragflow_version
 from common.config_utils import show_configs
 from rag.utils.mcp_tool_call_conn import shutdown_all_mcp_sessions
 from rag.utils.redis_conn import RedisDistributedLock

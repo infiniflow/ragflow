@@ -24,6 +24,7 @@ from responses import success_response, error_response
 from services import UserMgr, ServiceMgr, UserServiceMgr
 from roles import RoleMgr
 from api.common.exceptions import AdminException
+from common.versions import get_ragflow_version
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
 
@@ -366,6 +367,16 @@ def update_user_role(user_name: str):
 def get_user_permission(user_name: str):
     try:
         res = RoleMgr.get_user_permission(user_name)
+        return success_response(res)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+@admin_bp.route('/version', methods=['GET'])
+@login_required
+@check_admin_auth
+def show_version():
+    try:
+        res = {"version": get_ragflow_version()}
         return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)
