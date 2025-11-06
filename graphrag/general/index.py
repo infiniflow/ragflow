@@ -488,7 +488,7 @@ async def resolve_entities(
     er = EntityResolution(
         llm_bdl,
     )
-    reso = await er(graph, subgraph_nodes, callback=callback)
+    reso = await er(graph, subgraph_nodes, callback=callback, task_id=task_id)
     graph = reso.graph
     change = reso.change
     callback(msg=f"Graph resolution removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges.")
@@ -522,7 +522,7 @@ async def extract_community(
     ext = CommunityReportsExtractor(
         llm_bdl,
     )
-    cr = await ext(graph, callback=callback)
+    cr = await ext(graph, callback=callback, task_id=task_id)
 
     if task_id and has_canceled(task_id):
         callback(msg=f"Task {task_id} cancelled during community extraction.")

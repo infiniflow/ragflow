@@ -62,7 +62,7 @@ class Extractor:
         self._entity_types = entity_types or DEFAULT_ENTITY_TYPES
 
     @timeout(60 * 20)
-    def _chat(self, system, history, gen_conf={}):
+    def _chat(self, system, history, gen_conf={}, task_id=""):
         hist = deepcopy(history)
         conf = deepcopy(gen_conf)
         response = get_llm_cache(self._llm.llm_name, system, hist, conf)
@@ -71,6 +71,12 @@ class Extractor:
         _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.92))
         response = ""
         for attempt in range(3):
+
+            if task_id:
+                if has_canceled(task_id):
+                    logging.info(f"Task {task_id} cancelled during entity resolution candidate processing.")
+                    raise TaskCanceledException(f"Task {task_id} was cancelled")
+
             try:
                 response = self._llm.chat(system_msg[0]["content"], hist, conf)
                 response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
@@ -105,20 +111,22 @@ class Extractor:
         self.callback = callback
         start_ts = trio.current_time()
 
-        async def extract_all(doc_id, chunks, max_concurrency=MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK):
+        async def extract_all(doc_id, chunks, max_concurrency=MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK, task_id=""):
             out_results = []
             error_count = 0
             max_errors = 3
 
             limiter = trio.Semaphore(max_concurrency)
 
-            async def worker(chunk_key_dp: tuple[str, str], idx: int, total: int):
+            async def worker(chunk_key_dp: tuple[str, str], idx: int, total: int, task_id=""):
                 nonlocal error_count
                 async with limiter:
+
                     if task_id and has_canceled(task_id):
                         raise TaskCanceledException(f"Task {task_id} was cancelled during entity extraction")
+
                     try:
-                        await self._process_single_content(chunk_key_dp, idx, total, out_results)
+                        await self._process_single_content(chunk_key_dp, idx, total, out_results, task_id)
                     except Exception as e:
                         error_count += 1
                         error_msg = f"Error processing chunk {idx + 1}/{total}: {str(e)}"
@@ -131,7 +139,7 @@ class Extractor:
 
             async with trio.open_nursery() as nursery:
                 for i, ck in enumerate(chunks):
-                    nursery.start_soon(worker, (doc_id, ck), i, len(chunks))
+                    nursery.start_soon(worker, (doc_id, ck), i, len(chunks), task_id)
 
             if error_count > 0:
                 warning_msg = f"Completed with {error_count} errors (out of {len(chunks)} chunks processed)"
@@ -144,7 +152,7 @@ class Extractor:
         if task_id and has_canceled(task_id):
             raise TaskCanceledException(f"Task {task_id} was cancelled before entity extraction")
 
-        out_results = await extract_all(doc_id, chunks, max_concurrency=MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK)
+        out_results = await extract_all(doc_id, chunks, max_concurrency=MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK, task_id=task_id)
 
         if task_id and has_canceled(task_id):
             raise TaskCanceledException(f"Task {task_id} was cancelled after entity extraction")
@@ -170,7 +178,7 @@ class Extractor:
 
         async with trio.open_nursery() as nursery:
             for en_nm, ents in maybe_nodes.items():
-                nursery.start_soon(self._merge_nodes, en_nm, ents, all_entities_data, task_id=task_id)
+                nursery.start_soon(self._merge_nodes, en_nm, ents, all_entities_data, task_id)
 
         if task_id and has_canceled(task_id):
             raise TaskCanceledException(f"Task {task_id} was cancelled after nodes merging")
@@ -188,7 +196,7 @@ class Extractor:
 
         async with trio.open_nursery() as nursery:
             for (src, tgt), rels in maybe_edges.items():
-                nursery.start_soon(self._merge_edges, src, tgt, rels, all_relationships_data, task_id=task_id)
+                nursery.start_soon(self._merge_edges, src, tgt, rels, all_relationships_data, task_id)
 
         if task_id and has_canceled(task_id):
             raise TaskCanceledException(f"Task {task_id} was cancelled after relationships merging")
@@ -207,7 +215,7 @@ class Extractor:
 
         return all_entities_data, all_relationships_data
 
-    async def _merge_nodes(self, entity_name: str, entities: list[dict], all_relationships_data, task_id: str = ""):
+    async def _merge_nodes(self, entity_name: str, entities: list[dict], all_relationships_data, task_id=""):
         if task_id and has_canceled(task_id):
             raise TaskCanceledException(f"Task {task_id} was cancelled during merge nodes")
 
@@ -229,7 +237,7 @@ class Extractor:
         node_data["entity_name"] = entity_name
         all_relationships_data.append(node_data)
 
-    async def _merge_edges(self, src_id: str, tgt_id: str, edges_data: list[dict], all_relationships_data=None, task_id: str = ""):
+    async def _merge_edges(self, src_id: str, tgt_id: str, edges_data: list[dict], all_relationships_data=None, task_id=""):
         if not edges_data:
             return
         weight = sum([edge["weight"] for edge in edges_data])
@@ -240,7 +248,7 @@ class Extractor:
         edge_data = dict(src_id=src_id, tgt_id=tgt_id, description=description, keywords=keywords, weight=weight, source_id=source_id)
         all_relationships_data.append(edge_data)
 
-    async def _merge_graph_nodes(self, graph: nx.Graph, nodes: list[str], change: GraphChange, task_id: str = ""):
+    async def _merge_graph_nodes(self, graph: nx.Graph, nodes: list[str], change: GraphChange, task_id=""):
         if task_id and has_canceled(task_id):
             raise TaskCanceledException(f"Task {task_id} was cancelled during merge graph nodes")
 
@@ -279,7 +287,7 @@ class Extractor:
         node0_attrs["description"] = await self._handle_entity_relation_summary(nodes[0], node0_attrs["description"], task_id=task_id)
         graph.nodes[nodes[0]].update(node0_attrs)
 
-    async def _handle_entity_relation_summary(self, entity_or_relation_name: str, description: str, task_id: str = "") -> str:
+    async def _handle_entity_relation_summary(self, entity_or_relation_name: str, description: str, task_id="") -> str:
         if task_id and has_canceled(task_id):
             raise TaskCanceledException(f"Task {task_id} was cancelled during summary handling")
 
@@ -301,5 +309,5 @@ class Extractor:
             raise TaskCanceledException(f"Task {task_id} was cancelled during summary handling")
 
         async with chat_limiter:
-            summary = await trio.to_thread.run_sync(self._chat, "", [{"role": "user", "content": use_prompt}])
+            summary = await trio.to_thread.run_sync(self._chat, "", [{"role": "user", "content": use_prompt}], {}, task_id)
         return summary
