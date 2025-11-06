@@ -20,7 +20,9 @@ import numpy as np
 from sklearn.mixture import GaussianMixture
 import trio
 
+from api.db.services.task_service import has_canceled
 from common.connection_utils import timeout
+from common.exceptions import TaskCanceledException
 from graphrag.utils import (
     get_llm_cache,
     get_embed_cache,
@@ -75,18 +77,24 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         await trio.to_thread.run_sync(lambda: set_embed_cache(self._embd_model.llm_name, txt, embds))
         return embds
 
-    def _get_optimal_clusters(self, embeddings: np.ndarray, random_state: int):
+    def _get_optimal_clusters(self, embeddings: np.ndarray, random_state: int, task_id: str = ""):
         max_clusters = min(self._max_cluster, len(embeddings))
         n_clusters = np.arange(1, max_clusters)
         bics = []
         for n in n_clusters:
+
+            if task_id:
+                if has_canceled(task_id):
+                    logging.info(f"Task {task_id} cancelled during get optimal clusters.")
+                    raise TaskCanceledException(f"Task {task_id} was cancelled")
+
             gm = GaussianMixture(n_components=n, random_state=random_state)
             gm.fit(embeddings)
             bics.append(gm.bic(embeddings))
         optimal_clusters = n_clusters[np.argmin(bics)]
         return optimal_clusters
 
-    async def __call__(self, chunks, random_state, callback=None):
+    async def __call__(self, chunks, random_state, callback=None, task_id: str = ""):
         if len(chunks) <= 1:
             return []
         chunks = [(s, a) for s, a in chunks if s and len(a) > 0]
@@ -96,6 +104,12 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         @timeout(60*20)
         async def summarize(ck_idx: list[int]):
             nonlocal chunks
+
+            if task_id:
+                if has_canceled(task_id):
+                    logging.info(f"Task {task_id} cancelled during RAPTOR summarization.")
+                    raise TaskCanceledException(f"Task {task_id} was cancelled")
+
             texts = [chunks[i][0] for i in ck_idx]
             len_per_chunk = int(
                 (self._llm_model.max_length - self._max_token) / len(texts)
@@ -104,6 +118,11 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 [truncate(t, max(1, len_per_chunk)) for t in texts]
             )
             async with chat_limiter:
+
+                if task_id and has_canceled(task_id):
+                    logging.info(f"Task {task_id} cancelled before RAPTOR LLM call.")
+                    raise TaskCanceledException(f"Task {task_id} was cancelled")
+
                 cnt = await self._chat(
                     "You're a helpful assistant.",
                     [
@@ -122,11 +141,22 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     cnt,
                 )
                 logging.debug(f"SUM: {cnt}")
+
+                if task_id and has_canceled(task_id):
+                    logging.info(f"Task {task_id} cancelled before RAPTOR embedding.")
+                    raise TaskCanceledException(f"Task {task_id} was cancelled")
+
                 embds = await self._embedding_encode(cnt)
                 chunks.append((cnt, embds))
 
         labels = []
         while end - start > 1:
+
+            if task_id:
+                if has_canceled(task_id):
+                    logging.info(f"Task {task_id} cancelled during RAPTOR layer processing.")
+                    raise TaskCanceledException(f"Task {task_id} was cancelled")
+
             embeddings = [embd for _, embd in chunks[start:end]]
             if len(embeddings) == 2:
                 await summarize([start, start + 1])
@@ -148,7 +178,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 n_components=min(12, len(embeddings) - 2),
                 metric="cosine",
             ).fit_transform(embeddings)
-            n_clusters = self._get_optimal_clusters(reduced_embeddings, random_state)
+            n_clusters = self._get_optimal_clusters(reduced_embeddings, random_state, task_id=task_id)
             if n_clusters == 1:
                 lbls = [0 for _ in range(len(reduced_embeddings))]
             else:
@@ -162,6 +192,11 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 for c in range(n_clusters):
                     ck_idx = [i + start for i in range(len(lbls)) if lbls[i] == c]
                     assert len(ck_idx) > 0
+
+                    if task_id and has_canceled(task_id):
+                        logging.info(f"Task {task_id} cancelled before RAPTOR cluster processing.")
+                        raise TaskCanceledException(f"Task {task_id} was cancelled")
+
                     nursery.start_soon(summarize, ck_idx)
 
             assert len(chunks) - end == n_clusters, "{} vs. {}".format(
