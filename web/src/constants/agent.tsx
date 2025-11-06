@@ -110,6 +110,7 @@ export enum Operator {
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
   VariableAssigner = 'VariableAssigner',
+  VariableAggregator = 'VariableAggregator',
   File = 'File', // pipeline
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',

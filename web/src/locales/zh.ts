@@ -1471,6 +1471,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       variableAssigner: '变量赋值器',
       variableAssignerDescription:
         '此组件对数据对象执行操作，包括提取、筛选和编辑数据中的键和值。',
+      variableAggregator: '变量聚合',
+      variableAggregatorDescription: `将多路分支的变量聚合为一个变量，以实现下游节点统一配置。
+变量聚合节点（原变量赋值节点）是工作流程中的一个关键节点，它负责整合不同分支的输出结果，确保无论哪个分支被执行，其结果都能通过一个统一的变量来引用和访问。这在多分支的情况下非常有用，可将不同分支下相同作用的变量映射为一个输出变量，避免下游节点重复定义。`,
       inputVariables: '输入变量',
       addVariable: '新增变量',
       runningHintText: '正在运行中...🕞',

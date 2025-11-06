@@ -22,7 +22,6 @@ export enum AgentDialogueMode {
 }
 
 import { ModelVariableType } from '@/constants/knowledge';
-import i18n from '@/locales/config';
 import { t } from 'i18next';
 
 // DuckDuckGo's channel options
@@ -107,14 +106,6 @@ export const initialRetrievalValues = {
 export const initialBeginValues = {
   mode: AgentDialogueMode.Conversational,
   prologue: `Hi! I'm your assistant. What can I do for you?`,
-};
-
-export const initialGenerateValues = {
-  ...initialLlmBaseValues,
-  prompt: i18n.t('flow.promptText'),
-  cite: true,
-  message_history_window_size: 12,
-  parameters: [],
 };
 
 export const initialRewriteQuestionValues = {
@@ -607,6 +598,8 @@ export const initialDataOperationsValues = {
 
 export const initialVariableAssignerValues = {};
 
+export const initialVariableAggregatorValues = {};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -737,6 +730,7 @@ export const NodeMap = {
   [Operator.Extractor]: 'contextNode',
   [Operator.DataOperations]: 'dataOperationsNode',
   [Operator.VariableAssigner]: 'variableAssignerNode',
+  [Operator.VariableAggregator]: 'variableAggregatorNode',
 };
 
 export enum BeginQueryType {

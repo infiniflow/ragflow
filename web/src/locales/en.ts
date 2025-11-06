@@ -1550,6 +1550,10 @@ This delimiter is used to split the input text into several text pieces echo of 
       variableAssigner: 'Variable assigner',
       variableAssignerDescription:
         'This component performs operations on Data objects, including extracting, filtering, and editing keys and values in the Data.',
+      variableAggregator: 'Variable aggregator',
+      variableAggregatorDescription: `This process aggregates variables from multiple branches into a single variable to achieve unified configuration for downstream nodes.
+
+The variable aggregation node (originally the variable assignment node) is a crucial node in the workflow. It is responsible for integrating the output results of different branches, ensuring that regardless of which branch is executed, its result can be referenced and accessed through a unified variable. This is extremely useful in multi-branch scenarios, as it maps variables with the same function across different branches to a single output variable, avoiding redundant definitions in downstream nodes.`,
       inputVariables: 'Input variables',
       runningHintText: 'is running...🕞',
       openingSwitch: 'Opening switch',

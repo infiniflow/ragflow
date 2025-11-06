@@ -80,6 +80,7 @@ export function AccordionOperators({
               Operator.StringTransform,
               Operator.DataOperations,
               Operator.VariableAssigner,
+              Operator.VariableAggregator,
             ]}
             isCustomDropdown={isCustomDropdown}
             mousePosition={mousePosition}
