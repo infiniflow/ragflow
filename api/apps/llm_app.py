@@ -128,7 +128,7 @@ def add_llm():
     api_key = req.get("api_key", "x")
     llm_name = req.get("llm_name")
 
-    if factory not in get_allowed_llm_factories():
+    if factory not in [f.name for f in get_allowed_llm_factories()]:
         return get_data_error_result(message=f"LLM factory {factory} is not allowed")
 
     def apikey_json(keys):
