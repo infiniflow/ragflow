@@ -81,6 +81,7 @@ class SyncLogsService(CommonService):
             cls.model.poll_range_end,
             cls.model.new_docs_indexed,
             cls.model.total_docs_indexed,
+            cls.model.error_msg,
             cls.model.full_exception_trace,
             cls.model.error_count,
             Connector.name,
