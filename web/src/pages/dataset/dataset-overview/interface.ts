@@ -49,7 +49,7 @@ export interface IFileLogItem {
   process_duration: number;
   progress: number;
   progress_msg: string;
-  source_from: string;
+  source_type: string;
   status: string;
   task_type: string;
   tenant_id: string;
