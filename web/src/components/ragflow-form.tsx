@@ -36,7 +36,7 @@ export function RAGFlowFormItem({
       render={({ field }) => (
         <FormItem
           className={cn({
-            'flex items-center': horizontal,
+            'flex items-center w-full': horizontal,
           })}
         >
           {label && (
