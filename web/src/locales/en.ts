@@ -1547,6 +1547,9 @@ This delimiter is used to split the input text into several text pieces echo of 
       codeDescription: 'It allows developers to write custom Python logic.',
       dataOperations: 'Data operations',
       dataOperationsDescription: 'Perform various operations on a Data object.',
+      variableAssigner: 'Variable assigner',
+      variableAssignerDescription:
+        'This component performs operations on Data objects, including extracting, filtering, and editing keys and values in the Data.',
       inputVariables: 'Input variables',
       runningHintText: 'is running...🕞',
       openingSwitch: 'Opening switch',

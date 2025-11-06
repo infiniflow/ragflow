@@ -72,6 +72,7 @@ import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
 import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
+import { VariableAssignerNode } from './node/variable-assigner-node';
 
 export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
@@ -98,6 +99,7 @@ export const nodeTypes: NodeTypes = {
   splitterNode: SplitterNode,
   contextNode: ExtractorNode,
   dataOperationsNode: DataOperationsNode,
+  variableAssignerNode: VariableAssignerNode,
 };
 
 const edgeTypes = {

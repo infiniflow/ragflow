@@ -2,8 +2,6 @@ import { Operator } from '../constant';
 import AgentForm from '../form/agent-form';
 import AkShareForm from '../form/akshare-form';
 import ArXivForm from '../form/arxiv-form';
-import BaiduFanyiForm from '../form/baidu-fanyi-form';
-import BaiduForm from '../form/baidu-form';
 import BeginForm from '../form/begin-form';
 import BingForm from '../form/bing-form';
 import CategorizeForm from '../form/categorize-form';
@@ -72,9 +70,6 @@ export const FormConfigMap = {
   [Operator.Agent]: {
     component: AgentForm,
   },
-  [Operator.Baidu]: {
-    component: BaiduForm,
-  },
   [Operator.DuckDuckGo]: {
     component: DuckDuckGoForm,
   },
@@ -101,9 +96,6 @@ export const FormConfigMap = {
   },
   [Operator.GitHub]: {
     component: GithubForm,
-  },
-  [Operator.BaiduFanyi]: {
-    component: BaiduFanyiForm,
   },
   [Operator.QWeather]: {
     component: QWeatherForm,

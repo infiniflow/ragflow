@@ -1468,6 +1468,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       codeDescription: '它允许开发人员编写自定义 Python 逻辑。',
       dataOperations: '数据操作',
       dataOperationsDescription: '对数据对象执行各种操作。',
+      variableAssigner: '变量赋值器',
+      variableAssignerDescription:
+        '此组件对数据对象执行操作，包括提取、筛选和编辑数据中的键和值。',
       inputVariables: '输入变量',
       addVariable: '新增变量',
       runningHintText: '正在运行中...🕞',
