@@ -872,7 +872,7 @@ class AdminCLI(Cmd):
                 f"Fail to show user: {user_name_str} permission, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_version(self, command):
-        print(f"show_version")
+        print("show_version")
         url = f'http://{self.host}:{self.port}/api/v1/admin/version'
         response = self.session.get(url)
         res_json = response.json()
