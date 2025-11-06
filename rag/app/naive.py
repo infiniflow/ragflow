@@ -38,7 +38,7 @@ from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
 
-def DeepDOC_parser(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
+def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     callback = callback
     binary = binary
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
@@ -55,7 +55,7 @@ def DeepDOC_parser(filename, binary=None, from_page=0, to_page=100000, lang="Chi
     return sections, tables, pdf_parser
 
 
-def MinerU_parser(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
+def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
     mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
     pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
@@ -75,7 +75,7 @@ def MinerU_parser(filename, binary=None, from_page=0, to_page=100000, lang="Chin
     return sections, tables, pdf_parser
 
 
-def Docling_parser(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
+def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     pdf_parser = DoclingParser()
 
     if not pdf_parser.check_installation():
@@ -92,7 +92,7 @@ def Docling_parser(filename, binary=None, from_page=0, to_page=100000, lang="Chi
     return sections, tables, pdf_parser
 
 
-def TCADP_parser(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
+def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     tcadp_parser = TCADPParser()
 
     if not tcadp_parser.check_installation():
@@ -109,7 +109,7 @@ def TCADP_parser(filename, binary=None, from_page=0, to_page=100000, lang="Chine
     return sections, tables, tcadp_parser
 
 
-def plaintext_parser(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
     if kwargs.get("layout_recognizer", "") == "Plain Text":
         pdf_parser = PlainParser()
     else:
@@ -126,11 +126,11 @@ def plaintext_parser(filename, binary=None, from_page=0, to_page=100000, callbac
 
 
 PARSERS = {
-    "deepdoc":  DeepDOC_parser,
-    "mineru":   MinerU_parser,
-    "docling":  Docling_parser,
-    "tcadp":    TCADP_parser,
-    "plaintext": plaintext_parser,  # default
+    "deepdoc":  by_deepdoc,
+    "mineru":   by_mineru,
+    "docling":  by_docling,
+    "tcadp":    by_tcadp,
+    "plaintext": by_plaintext,  # default
 }
 
 
