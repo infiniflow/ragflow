@@ -5,12 +5,11 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { isEmpty, toLower } from 'lodash';
-import { ReactNode, useMemo } from 'react';
+import { ReactNode } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { JsonSchemaDataType } from '../../constant';
-import { useBuildQueryVariableOptions } from '../../hooks/use-get-begin-query';
+import { useFilterQueryVariableOptionsByTypes } from '../../hooks/use-get-begin-query';
 import { GroupedSelectWithSecondaryMenu } from './select-with-secondary-menu';
 
 type QueryVariableProps = {
@@ -31,22 +30,7 @@ export function QueryVariable({
   const { t } = useTranslation();
   const form = useFormContext();
 
-  const nextOptions = useBuildQueryVariableOptions();
-
-  const finalOptions = useMemo(() => {
-    return !isEmpty(types)
-      ? nextOptions.map((x) => {
-          return {
-            ...x,
-            options: x.options.filter(
-              (y) =>
-                types?.some((x) => toLower(y.type).includes(x)) ||
-                y.type === undefined, // agent structured output
-            ),
-          };
-        })
-      : nextOptions;
-  }, [nextOptions, types]);
+  const finalOptions = useFilterQueryVariableOptionsByTypes(types);
 
   return (
     <FormField

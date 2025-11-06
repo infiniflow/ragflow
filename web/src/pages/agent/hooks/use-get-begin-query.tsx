@@ -4,12 +4,14 @@ import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { buildNodeOutputOptions } from '@/utils/canvas-util';
 import { DefaultOptionType } from 'antd/es/select';
 import { t } from 'i18next';
+import { isEmpty, toLower } from 'lodash';
 import get from 'lodash/get';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   AgentDialogueMode,
   BeginId,
   BeginQueryType,
+  JsonSchemaDataType,
   Operator,
   VariableType,
 } from '../constant';
@@ -169,6 +171,29 @@ export function useBuildQueryVariableOptions(n?: RAGFlowNodeType) {
   }, [data.dsl?.globals, options]);
 
   return nextOptions;
+}
+
+export function useFilterQueryVariableOptionsByTypes(
+  types?: JsonSchemaDataType[],
+) {
+  const nextOptions = useBuildQueryVariableOptions();
+
+  const filteredOptions = useMemo(() => {
+    return !isEmpty(types)
+      ? nextOptions.map((x) => {
+          return {
+            ...x,
+            options: x.options.filter(
+              (y) =>
+                types?.some((x) => toLower(y.type).includes(x)) ||
+                y.type === undefined, // agent structured output
+            ),
+          };
+        })
+      : nextOptions;
+  }, [nextOptions, types]);
+
+  return filteredOptions;
 }
 
 export function useBuildComponentIdOptions(nodeId?: string, parentId?: string) {
