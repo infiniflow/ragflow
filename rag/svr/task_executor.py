@@ -69,6 +69,7 @@ from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.utils import chat_limiter
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common import globals
+from common.exceptions import TaskCanceledException
 
 BATCH_SIZE = 64
 
@@ -129,9 +130,7 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-class TaskCanceledException(Exception):
-    def __init__(self, msg):
-        self.msg = msg
+
 
 
 def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing..."):
