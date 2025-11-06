@@ -623,7 +623,8 @@ class DocumentService(CommonService):
         cls.update_by_id(
             docid, {"progress": random.random() * 1 / 100.,
                     "progress_msg": "Task is queued...",
-                    "process_begin_at": get_format_time()
+                    "process_begin_at": get_format_time(),
+                    "run": TaskStatus.RUNNING.value
                     })
 
     @classmethod
