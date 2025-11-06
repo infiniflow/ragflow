@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { JsonSchemaDataType } from '@/pages/agent/constant';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
 import { Variable } from 'lucide-react';
 import { ReactNode, useCallback, useState } from 'react';
@@ -54,6 +55,7 @@ type IProps = {
   value?: string;
   onChange?: (value?: string) => void;
   placeholder?: ReactNode;
+  types?: JsonSchemaDataType[];
 } & PromptContentProps &
   Pick<VariablePickerMenuPluginProps, 'extraOptions' | 'baseOptions'>;
 
@@ -127,6 +129,7 @@ export function PromptEditor({
   multiLine = true,
   extraOptions,
   baseOptions,
+  types,
 }: IProps) {
   const { t } = useTranslation();
   const initialConfig: InitialConfigType = {
@@ -179,6 +182,7 @@ export function PromptEditor({
           value={value}
           extraOptions={extraOptions}
           baseOptions={baseOptions}
+          types={types}
         ></VariablePickerMenuPlugin>
         <PasteHandlerPlugin />
         <VariableOnChangePlugin
