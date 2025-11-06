@@ -23,6 +23,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { cn } from '@/lib/utils';
 
+import Spotlight from '@/components/spotlight';
 import { TableEmpty } from '@/components/table-skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -59,19 +60,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-import {
-  listServices,
-  showServiceDetails,
-  type AdminService,
-} from '@/services/admin-service';
+import { listServices, showServiceDetails } from '@/services/admin-service';
 
 import {
   EMPTY_DATA,
   createColumnFilterFn,
   createFuzzySearchFn,
-  getColumnFilter,
   getSortIcon,
-  setColumnFilter,
 } from './utils';
 
 import ServiceDetail from './service-detail';
@@ -97,22 +92,18 @@ function AdminServiceStatus() {
   const [itemToMakeAction, setItemToMakeAction] =
     useState<AdminService.ListServicesItem | null>(null);
 
-  const { data: servicesList, isPending } = useQuery({
+  const { data: servicesList } = useQuery({
     queryKey: ['admin/listServices'],
     queryFn: async () => (await listServices()).data.data,
+    retry: false,
   });
 
-  const {
-    data: serviceDetails,
-    isPending: isServiceDetailsPending,
-    error: serviceDetailsError,
-  } = useQuery({
+  const { data: serviceDetails, error: serviceDetailsError } = useQuery({
     queryKey: ['admin/serviceDetails', itemToMakeAction?.id],
     queryFn: async () =>
-      (await showServiceDetails(itemToMakeAction?.id!)).data.data,
+      (await showServiceDetails(itemToMakeAction!?.id)).data.data,
     enabled: !!(itemToMakeAction && detailModalOpen),
     retry: false,
-    refetchInterval: Infinity,
   });
 
   const columnDefs = useMemo(
@@ -161,11 +152,11 @@ function AdminServiceStatus() {
                 alive: 'bg-state-success-5 text-state-success',
                 timeout: 'bg-state-error-5 text-state-error',
                 fail: 'bg-gray-500/5 text-text-disable',
-              }[cell.getValue<string>()],
+              }[cell.getValue()],
             )}
           >
             <LucideDot className="size-[1em] stroke-[8] mr-1" />
-            {cell.getValue()}
+            {t(`admin.${cell.getValue()}`)}
           </Badge>
         ),
         enableSorting: false,
@@ -202,7 +193,7 @@ function AdminServiceStatus() {
         ),
       }),
     ],
-    [],
+    [t],
   );
 
   const table = useReactTable({
@@ -225,7 +216,9 @@ function AdminServiceStatus() {
 
   return (
     <>
-      <Card className="h-full border border-border-button bg-transparent rounded-xl">
+      <Card className="!shadow-none relative h-full border border-border-button bg-transparent rounded-xl">
+        <Spotlight />
+
         <ScrollArea className="size-full">
           <CardHeader className="space-y-0 flex flex-row justify-between items-center">
             <CardTitle>{t('admin.serviceStatus')}</CardTitle>
@@ -254,14 +247,15 @@ function AdminServiceStatus() {
 
                       <RadioGroup
                         value={
-                          (getColumnFilter(table, 'service_type')
-                            ?.value as string) ?? ''
+                          table
+                            .getColumn('service_type')!
+                            ?.getFilterValue() as string
                         }
-                        onValueChange={(value) =>
-                          setColumnFilter(table, 'service_type', value)
+                        onValueChange={
+                          table.getColumn('service_type')!?.setFilterValue
                         }
                       >
-                        <Label className="space-x-2">
+                        <Label className="flex items-center space-x-2">
                           <RadioGroupItem
                             className="bg-bg-input border-border-button"
                             value=""
@@ -270,7 +264,10 @@ function AdminServiceStatus() {
                         </Label>
 
                         {SERVICE_TYPE_FILTER_OPTIONS.map(({ label, value }) => (
-                          <Label key={value} className="space-x-2">
+                          <Label
+                            key={value}
+                            className="flex items-center space-x-2"
+                          >
                             <RadioGroupItem
                               className="bg-bg-input border-border-button"
                               value={value}

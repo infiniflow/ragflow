@@ -25,7 +25,6 @@ from flask import request, Response
 from flask_login import login_required, current_user
 
 from agent.component import LLM
-from api import settings
 from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
@@ -34,7 +33,7 @@ from api.db.services.pipeline_operation_log_service import PipelineOperationLogS
 from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID, TaskService
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
-from api.settings import RetCode
+from common.constants import RetCode
 from common.misc_utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
@@ -46,6 +45,7 @@ from api.utils.file_utils import filename_type, read_potential_broken_pdf
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
+from common import settings
 
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821

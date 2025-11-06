@@ -27,9 +27,9 @@ from ollama import Client
 from openai import OpenAI
 from zhipuai import ZhipuAI
 
-from api.utils.log_utils import log_exception
-from rag.utils import num_tokens_from_string, truncate
-from api import settings
+from common.log_utils import log_exception
+from common.token_utils import num_tokens_from_string, truncate
+from common import settings
 import logging
 
 

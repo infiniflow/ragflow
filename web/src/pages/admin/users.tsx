@@ -25,6 +25,7 @@ import {
 import { cn } from '@/lib/utils';
 import { rsaPsw } from '@/utils';
 
+import Spotlight from '@/components/spotlight';
 import { TableEmpty } from '@/components/table-skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -84,7 +85,6 @@ import {
   updateUserPassword,
   updateUserRole,
   updateUserStatus,
-  type AdminService,
 } from '@/services/admin-service';
 
 import {
@@ -130,7 +130,7 @@ function AdminUserManagement() {
     retry: false,
   });
 
-  const { data: usersList, isPending } = useQuery({
+  const { data: usersList } = useQuery({
     queryKey: ['admin/listUsers'],
     queryFn: async () => (await listUsers()).data.data,
     retry: false,
@@ -341,13 +341,7 @@ function AdminUserManagement() {
         ),
       }),
     ],
-    [
-      roleList,
-      t,
-      navigate,
-      updateUserStatusMutation.isPending,
-      updateUserRoleMutation.isPending,
-    ],
+    [t, updateUserRoleMutation, roleList, updateUserStatusMutation, navigate],
   );
 
   const table = useReactTable({
@@ -364,7 +358,9 @@ function AdminUserManagement() {
 
   return (
     <>
-      <Card className="h-full border border-border-button bg-transparent rounded-xl overflow-x-hidden overflow-y-auto">
+      <Card className="!shadow-none relative h-full border border-border-button bg-transparent rounded-xl overflow-x-hidden overflow-y-auto">
+        <Spotlight />
+
         <ScrollArea className="size-full">
           <CardHeader className="space-y-0 flex flex-row justify-between items-center">
             <CardTitle>{t('admin.userManagement')}</CardTitle>
@@ -403,13 +399,16 @@ function AdminUserManagement() {
                               table.getColumn('role')?.setFilterValue(value)
                             }
                           >
-                            <Label className="space-x-2">
+                            <Label className="flex items-center space-x-2">
                               <RadioGroupItem value="" />
                               <span>{t('admin.all')}</span>
                             </Label>
 
                             {roleList?.map(({ id, role_name }) => (
-                              <Label key={id} className="space-x-2">
+                              <Label
+                                key={id}
+                                className="flex items-center space-x-2"
+                              >
                                 <RadioGroupItem
                                   className="bg-bg-input border-border-button"
                                   value={role_name}
@@ -436,7 +435,10 @@ function AdminUserManagement() {
                         }
                       >
                         {STATUS_FILTER_OPTIONS.map(({ label, value }) => (
-                          <Label key={value} className="space-x-2">
+                          <Label
+                            key={value}
+                            className="flex items-center space-x-2"
+                          >
                             <RadioGroupItem
                               className="bg-bg-input border-border-button"
                               value={value}

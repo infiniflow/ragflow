@@ -25,8 +25,7 @@ import trio
 from langfuse import Langfuse
 from peewee import fn
 from agentic_reasoning import DeepResearcher
-from api import settings
-from api.db import LLMType, ParserType, StatusEnum
+from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
@@ -41,9 +40,10 @@ from rag.app.tag import label_question
 from rag.nlp.search import index_name
 from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, \
     gen_meta_filter, PROMPT_JINJA_ENV, ASK_SUMMARY
-from rag.utils import num_tokens_from_string
+from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
 from common.string_utils import remove_redundant_spaces
+from common import settings
 
 
 class DialogService(CommonService):
@@ -293,12 +293,13 @@ def meta_filter(metas: dict, filters: list[dict]):
     def filter_out(v2docs, operator, value):
         ids = []
         for input, docids in v2docs.items():
-            try:
-                input = float(input)
-                value = float(value)
-            except Exception:
-                input = str(input)
-                value = str(value)
+            if operator in ["=", "≠", ">", "<", "≥", "≤"]:
+                try:
+                    input = float(input)
+                    value = float(value)
+                except Exception:
+                    input = str(input)
+                    value = str(value)
 
             for conds in [
                 (operator == "contains", str(value).lower() in str(input).lower()),

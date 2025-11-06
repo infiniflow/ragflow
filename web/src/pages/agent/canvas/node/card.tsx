@@ -61,15 +61,17 @@ export function CardWithForm() {
 
 type LabelCardProps = {
   className?: string;
-} & PropsWithChildren;
+} & PropsWithChildren &
+  React.HTMLAttributes<HTMLElement>;
 
-export function LabelCard({ children, className }: LabelCardProps) {
+export function LabelCard({ children, className, ...props }: LabelCardProps) {
   return (
     <div
       className={cn(
         'bg-bg-card rounded-sm p-1 text-text-secondary text-xs',
         className,
       )}
+      {...props}
     >
       {children}
     </div>

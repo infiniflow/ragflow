@@ -18,7 +18,7 @@ import logging
 import random
 from collections import Counter
 
-from rag.utils import num_tokens_from_string
+from common.token_utils import num_tokens_from_string
 from . import rag_tokenizer
 import re
 import copy

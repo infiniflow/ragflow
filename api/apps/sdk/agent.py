@@ -15,15 +15,19 @@
 #
 
 import json
+import logging
 import time
 from typing import Any, cast
+
+from agent.canvas import Canvas
+from api.db import CanvasCategory
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.user_canvas_version import UserCanvasVersionService
-from api.settings import RetCode
+from common.constants import RetCode
 from common.misc_utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_error_data_result, get_json_result, token_required
 from api.utils.api_utils import get_result
-from flask import request
+from flask import request, Response
 
 
 @manager.route('/agents', methods=['GET'])  # noqa: F821
@@ -127,3 +131,49 @@ def delete_agent(tenant_id: str, agent_id: str):
 
     UserCanvasService.delete_by_id(agent_id)
     return get_json_result(data=True)
+
+
+@manager.route('/webhook/<agent_id>', methods=['POST'])  # noqa: F821
+@token_required
+def webhook(tenant_id: str, agent_id: str):
+    req = request.json
+    if not UserCanvasService.accessible(req["id"], tenant_id):
+        return get_json_result(
+            data=False, message='Only owner of canvas authorized for this operation.',
+            code=RetCode.OPERATING_ERROR)
+
+    e, cvs = UserCanvasService.get_by_id(req["id"])
+    if not e:
+        return get_data_error_result(message="canvas not found.")
+
+    if not isinstance(cvs.dsl, str):
+        cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
+
+    if cvs.canvas_category == CanvasCategory.DataFlow:
+        return get_data_error_result(message="Dataflow can not be triggered by webhook.")
+
+    try:
+        canvas = Canvas(cvs.dsl, tenant_id, agent_id)
+    except Exception as e:
+        return get_json_result(
+            data=False, message=str(e),
+            code=RetCode.EXCEPTION_ERROR)
+
+    def sse():
+        nonlocal canvas
+        try:
+            for ans in canvas.run(query=req.get("query", ""), files=req.get("files", []), user_id=req.get("user_id", tenant_id), webhook_payload=req):
+                yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+
+            cvs.dsl = json.loads(str(canvas))
+            UserCanvasService.update_by_id(req["id"], cvs.to_dict())
+        except Exception as e:
+            logging.exception(e)
+            yield "data:" + json.dumps({"code": 500, "message": str(e), "data": False}, ensure_ascii=False) + "\n\n"
+
+    resp = Response(sse(), mimetype="text/event-stream")
+    resp.headers.add_header("Cache-control", "no-cache")
+    resp.headers.add_header("Connection", "keep-alive")
+    resp.headers.add_header("X-Accel-Buffering", "no")
+    resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
+    return resp

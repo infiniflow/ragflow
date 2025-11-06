@@ -31,7 +31,6 @@ import * as ReactDOM from 'react-dom';
 import { $createVariableNode } from './variable-node';
 
 import {
-  useFilterStructuredOutputByValue,
   useFindAgentStructuredOutputLabel,
   useShowSecondaryMenu,
 } from '@/pages/agent/hooks/use-build-structured-output';
@@ -88,8 +87,6 @@ function VariablePickerMenuItem({
     option: VariableOption | VariableInnerOption,
   ) => void;
 }) {
-  const filterStructuredOutput = useFilterStructuredOutputByValue();
-
   const showSecondaryMenu = useShowSecondaryMenu();
 
   return (
@@ -107,8 +104,6 @@ function VariablePickerMenuItem({
             const shouldShowSecondary = showSecondaryMenu(x.value, x.label);
 
             if (shouldShowSecondary) {
-              const filteredStructuredOutput = filterStructuredOutput(x.value);
-
               return (
                 <StructuredOutputSecondaryMenu
                   key={x.value}
@@ -119,7 +114,6 @@ function VariablePickerMenuItem({
                       ...y,
                     } as VariableInnerOption)
                   }
-                  filteredStructuredOutput={filteredStructuredOutput}
                 ></StructuredOutputSecondaryMenu>
               );
             }

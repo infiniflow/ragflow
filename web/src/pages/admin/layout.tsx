@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import message from '@/components/ui/message';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
-import adminService from '@/services/admin-service';
+import { logout } from '@/services/admin-service';
 import authorizationUtil from '@/utils/authorization-util';
 import { useMutation } from '@tanstack/react-query';
 import {
@@ -60,7 +60,7 @@ const AdminLayout = () => {
   const logoutMutation = useMutation({
     mutationKey: ['adminLogout'],
     mutationFn: async () => {
-      await adminService.logout();
+      await logout();
 
       message.success(t('message.logout'));
       authorizationUtil.removeAll();

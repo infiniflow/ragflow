@@ -22,12 +22,12 @@ import trio
 import numpy as np
 from PIL import Image
 
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from common.misc_utils import get_uuid
-from api.utils.base64_image import image2id
+from rag.utils.base64_image import image2id
 from deepdoc.parser import ExcelParser
 from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
@@ -36,7 +36,7 @@ from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
-from rag.utils.storage_factory import STORAGE_IMPL
+from common import settings
 
 
 class ParserParam(ProcessParamBase):
@@ -224,8 +224,9 @@ class Parser(ProcessBase):
             mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
             mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
             pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
-            if not pdf_parser.check_installation():
-                raise RuntimeError("MinerU not found. Please install it via: pip install -U 'mineru[core]'.")
+            ok, reason = pdf_parser.check_installation()
+            if not ok:
+                raise RuntimeError(f"MinerU not found or server not accessible: {reason}. Please install it via: pip install -U 'mineru[core]'.")
 
             lines, _ = pdf_parser.parse_pdf(
                 filepath=name,
@@ -464,14 +465,27 @@ class Parser(ProcessBase):
             if "body" in target_fields:
                 body_text, body_html = [], []
                 def _add_content(m, content_type):
+                    def _decode_payload(payload, charset, target_list):
+                        try:
+                            target_list.append(payload.decode(charset))
+                        except (UnicodeDecodeError, LookupError):
+                            for enc in ["utf-8", "gb2312", "gbk", "gb18030", "latin1"]:
+                                try:
+                                    target_list.append(payload.decode(enc))
+                                    break
+                                except UnicodeDecodeError:
+                                    continue
+                            else:
+                                target_list.append(payload.decode("utf-8", errors="ignore"))
+
                     if content_type == "text/plain":
-                        body_text.append(
-                            m.get_payload(decode=True).decode(m.get_content_charset())
-                        )
+                        payload = msg.get_payload(decode=True)
+                        charset = msg.get_content_charset() or "utf-8"
+                        _decode_payload(payload, charset, body_text)
                     elif content_type == "text/html":
-                        body_html.append(
-                            m.get_payload(decode=True).decode(m.get_content_charset())
-                        )
+                        payload = msg.get_payload(decode=True)
+                        charset = msg.get_content_charset() or "utf-8"
+                        _decode_payload(payload, charset, body_html)
                     elif "multipart" in content_type:
                         if m.is_multipart():
                             for part in m.iter_parts():
@@ -574,7 +588,7 @@ class Parser(ProcessBase):
         name = from_upstream.name
         if self._canvas._doc_id:
             b, n = File2DocumentService.get_storage_address(doc_id=self._canvas._doc_id)
-            blob = STORAGE_IMPL.get(b, n)
+            blob = settings.STORAGE_IMPL.get(b, n)
         else:
             blob = FileService.get_blob(from_upstream.file["created_by"], from_upstream.file["id"])
 
@@ -592,4 +606,4 @@ class Parser(ProcessBase):
         outs = self.output()
         async with trio.open_nursery() as nursery:
             for d in outs.get("json", []):
-                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())
+                nursery.start_soon(image2id, d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())

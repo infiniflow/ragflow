@@ -23,7 +23,7 @@ from ragflow_sdk import DataSet, RAGFlow
 from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
-
+from configs import DEFAULT_PARSER_CONFIG
 
 @pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
@@ -586,14 +586,7 @@ class TestDatasetCreate:
     def test_parser_config_empty(self, client):
         excepted_value = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         parser_config_o = DataSet.ParserConfig(client, {})
         payload = {"name": "parser_config_empty", "parser_config": parser_config_o}
@@ -604,14 +597,7 @@ class TestDatasetCreate:
     def test_parser_config_unset(self, client):
         excepted_value = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         payload = {"name": "parser_config_unset"}
         dataset = client.create_dataset(**payload)
@@ -621,14 +607,7 @@ class TestDatasetCreate:
     def test_parser_config_none(self, client):
         excepted_value = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         payload = {"name": "parser_config_empty", "parser_config": None}
         dataset = client.create_dataset(**payload)

@@ -6,8 +6,10 @@ import {
   AgentGlobals,
   AgentGlobalsSysQueryWithBrace,
   CodeTemplateStrMap,
+  ComparisonOperator,
   Operator,
   ProgrammingLanguage,
+  SwitchOperatorOptions,
   initialLlmBaseValues,
 } from '@/constants/agent';
 export { Operator } from '@/constants/agent';
@@ -35,8 +37,6 @@ export enum PromptRole {
 }
 
 import {
-  Circle,
-  CircleSlash2,
   CloudUpload,
   ListOrdered,
   OptionIcon,
@@ -126,9 +126,6 @@ export const componentMenuList = [
     name: Operator.GoogleScholar,
   },
   {
-    name: Operator.DeepL,
-  },
-  {
     name: Operator.GitHub,
   },
   {
@@ -169,27 +166,12 @@ export const componentMenuList = [
   },
 ];
 
-export const SwitchOperatorOptions = [
-  { value: '=', label: 'equal', icon: 'equal' },
-  { value: '≠', label: 'notEqual', icon: 'not-equals' },
-  { value: '>', label: 'gt', icon: 'Less' },
-  { value: '≥', label: 'ge', icon: 'Greater-or-equal' },
-  { value: '<', label: 'lt', icon: 'Less' },
-  { value: '≤', label: 'le', icon: 'less-or-equal' },
-  { value: 'contains', label: 'contains', icon: 'Contains' },
-  { value: 'not contains', label: 'notContains', icon: 'not-contains' },
-  { value: 'start with', label: 'startWith', icon: 'list-start' },
-  { value: 'end with', label: 'endWith', icon: 'list-end' },
-  {
-    value: 'empty',
-    label: 'empty',
-    icon: <Circle className="size-4" />,
-  },
-  {
-    value: 'not empty',
-    label: 'notEmpty',
-    icon: <CircleSlash2 className="size-4" />,
-  },
+export const DataOperationsOperatorOptions = [
+  ComparisonOperator.Equal,
+  ComparisonOperator.NotEqual,
+  ComparisonOperator.Contains,
+  ComparisonOperator.StartWith,
+  ComparisonOperator.EndWith,
 ];
 
 export const SwitchElseTo = 'end_cpn_ids';
@@ -386,11 +368,6 @@ export const initialGoogleScholarValues = {
       type: 'Array<Object>',
     },
   },
-};
-
-export const initialDeepLValues = {
-  top_n: 5,
-  auth_key: 'relevance',
 };
 
 export const initialGithubValues = {
@@ -617,10 +594,7 @@ export const initialAgentValues = {
       type: 'string',
       value: '',
     },
-    [AgentStructuredOutputField]: {
-      type: 'Object Array String Number Boolean',
-      value: '',
-    },
+    [AgentStructuredOutputField]: {},
   },
 };
 
@@ -723,6 +697,26 @@ export const initialPlaceholderValues = {
   // It's just a visual placeholder
 };
 
+export enum Operations {
+  SelectKeys = 'select_keys',
+  LiteralEval = 'literal_eval',
+  Combine = 'combine',
+  FilterValues = 'filter_values',
+  AppendOrUpdate = 'append_or_update',
+  RemoveKeys = 'remove_keys',
+  RenameKeys = 'rename_keys',
+}
+
+export const initialDataOperationsValues = {
+  query: [],
+  operations: Operations.SelectKeys,
+  outputs: {
+    result: {
+      type: 'Array<Object>',
+    },
+  },
+};
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -771,7 +765,6 @@ export const RestrictedUpstreamMap = {
   [Operator.Google]: [Operator.Begin, Operator.Retrieval],
   [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
-  [Operator.DeepL]: [Operator.Begin, Operator.Retrieval],
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
   [Operator.BaiduFanyi]: [Operator.Begin, Operator.Retrieval],
   [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
@@ -798,11 +791,13 @@ export const RestrictedUpstreamMap = {
   [Operator.UserFillUp]: [Operator.Begin],
   [Operator.Tool]: [Operator.Begin],
   [Operator.Placeholder]: [Operator.Begin],
-  [Operator.Parser]: [Operator.Begin],
+  [Operator.DataOperations]: [Operator.Begin],
+  [Operator.Parser]: [Operator.Begin], // pipeline
   [Operator.Splitter]: [Operator.Begin],
   [Operator.HierarchicalMerger]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
+  [Operator.File]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -821,7 +816,6 @@ export const NodeMap = {
   [Operator.Google]: 'ragNode',
   [Operator.Bing]: 'ragNode',
   [Operator.GoogleScholar]: 'ragNode',
-  [Operator.DeepL]: 'ragNode',
   [Operator.GitHub]: 'ragNode',
   [Operator.BaiduFanyi]: 'ragNode',
   [Operator.QWeather]: 'ragNode',
@@ -854,6 +848,7 @@ export const NodeMap = {
   [Operator.Splitter]: 'splitterNode',
   [Operator.HierarchicalMerger]: 'splitterNode',
   [Operator.Extractor]: 'contextNode',
+  [Operator.DataOperations]: 'dataOperationsNode',
 };
 
 export enum BeginQueryType {
@@ -929,3 +924,11 @@ export const HALF_PLACEHOLDER_NODE_HEIGHT =
 export const DROPDOWN_HORIZONTAL_OFFSET = 28;
 export const DROPDOWN_VERTICAL_OFFSET = 74;
 export const PREVENT_CLOSE_DELAY = 300;
+
+export enum JsonSchemaDataType {
+  String = 'string',
+  Number = 'number',
+  Boolean = 'boolean',
+  Array = 'array',
+  Object = 'object',
+}

@@ -1,44 +1,42 @@
 import { JSONSchema } from '@/components/jsonjoy-builder';
-import { Operator } from '@/constants/agent';
-import { isPlainObject } from 'lodash';
+import { get, isPlainObject } from 'lodash';
+import { JsonSchemaDataType } from '../constant';
 
-export function filterAgentStructuredOutput(
-  structuredOutput: JSONSchema,
-  operator?: string,
+export function hasSpecificTypeChild(
+  data: Record<string, any> | Array<any>,
+  types: string[] = [],
 ) {
-  if (typeof structuredOutput === 'boolean') {
-    return structuredOutput;
-  }
-  if (
-    structuredOutput.properties &&
-    isPlainObject(structuredOutput.properties)
-  ) {
-    const filterByPredicate = (predicate: (value: JSONSchema) => boolean) => {
-      const properties = Object.entries({
-        ...structuredOutput.properties,
-      }).reduce(
-        (pre, [key, value]) => {
-          if (predicate(value)) {
-            pre[key] = value;
-          }
-          return pre;
-        },
-        {} as Record<string, JSONSchema>,
-      );
-
-      return { ...structuredOutput, properties };
-    };
-
-    if (operator === Operator.Iteration) {
-      return filterByPredicate(
-        (value) => typeof value !== 'boolean' && value.type === 'array',
-      );
-    } else {
-      return filterByPredicate(
-        (value) => typeof value !== 'boolean' && value.type !== 'array',
-      );
+  if (Array.isArray(data)) {
+    for (const value of data) {
+      if (isPlainObject(value) && types.some((x) => x === value.type)) {
+        return true;
+      }
+      if (hasSpecificTypeChild(value, types)) {
+        return true;
+      }
     }
   }
 
-  return structuredOutput;
+  if (isPlainObject(data)) {
+    for (const value of Object.values(data)) {
+      if (isPlainObject(value) && types.some((x) => x === value.type)) {
+        return true;
+      }
+
+      if (hasSpecificTypeChild(value, types)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+export function hasArrayChild(data: Record<string, any> | Array<any>) {
+  return hasSpecificTypeChild(data, [JsonSchemaDataType.Array]);
+}
+
+export function hasJsonSchemaChild(data: JSONSchema) {
+  const properties = get(data, 'properties') ?? {};
+  return isPlainObject(properties) && Object.keys(properties).length > 0;
 }

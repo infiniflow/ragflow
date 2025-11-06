@@ -17,7 +17,7 @@ from graphrag.general.extractor import ENTITY_EXTRACTION_MAX_GLEANINGS, Extracto
 from graphrag.light.graph_prompt import PROMPTS
 from graphrag.utils import chat_limiter, pack_user_ass_to_openai_messages, split_string_by_multi_markers
 from rag.llm.chat_model import Base as CompletionLLM
-from rag.utils import num_tokens_from_string
+from common.token_utils import num_tokens_from_string
 
 
 @dataclass
