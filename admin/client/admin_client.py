@@ -52,6 +52,7 @@ sql_command: list_services
            | revoke_permission
            | alter_user_role
            | show_user_permission
+           | show_version
 
 // meta command definition
 meta_command: "\\" meta_command_name [meta_args]
@@ -93,6 +94,7 @@ FOR: "FOR"i
 RESOURCES: "RESOURCES"i
 ON: "ON"i
 SET: "SET"i
+VERSION: "VERSION"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -120,6 +122,8 @@ grant_permission: GRANT action_list ON identifier TO ROLE identifier ";"
 revoke_permission: REVOKE action_list ON identifier FROM ROLE identifier ";"
 alter_user_role: ALTER USER quoted_string SET ROLE identifier ";"
 show_user_permission: SHOW USER PERMISSION quoted_string ";"
+
+show_version: SHOW VERSION ";"
 
 action_list: identifier ("," identifier)*
 
@@ -246,6 +250,9 @@ class AdminTransformer(Transformer):
     def show_user_permission(self, items):
         user_name = items[3]
         return {"type": "show_user_permission", "user_name": user_name}
+
+    def show_version(self, items):
+        return {"type": "show_version"}
 
     def action_list(self, items):
         return items
@@ -556,6 +563,8 @@ class AdminCLI(Cmd):
                 self._alter_user_role(command_dict)
             case 'show_user_permission':
                 self._show_user_permission(command_dict)
+            case 'show_version':
+                self._show_version(command_dict)
             case 'meta':
                 self._handle_meta_command(command_dict)
             case _:
@@ -861,6 +870,16 @@ class AdminCLI(Cmd):
         else:
             print(
                 f"Fail to show user: {user_name_str} permission, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _show_version(self, command):
+        print("show_version")
+        url = f'http://{self.host}:{self.port}/api/v1/admin/version'
+        response = self.session.get(url)
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json['data'])
+        else:
+            print(f"Fail to show version, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_meta_command(self, command):
         meta_command = command['command']

@@ -29,7 +29,7 @@ from api.utils.api_utils import (
     server_error_response,
     generate_confirmation_token,
 )
-from api.versions import get_ragflow_version
+from common.versions import get_ragflow_version
 from common.time_utils import current_timestamp, datetime_format
 from timeit import default_timer as timer
 

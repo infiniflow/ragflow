@@ -15,6 +15,7 @@
 #
 import logging
 from datetime import datetime
+from typing import Tuple, List
 
 from anthropic import BaseModel
 from peewee import SQL, fn
@@ -71,7 +72,7 @@ class SyncLogsService(CommonService):
     model = SyncLogs
 
     @classmethod
-    def list_sync_tasks(cls, connector_id=None, page_number=None, items_per_page=15):
+    def list_sync_tasks(cls, connector_id=None, page_number=None, items_per_page=15) -> Tuple[List[dict], int]:
         fields = [
             cls.model.id,
             cls.model.connector_id,
@@ -113,10 +114,11 @@ class SyncLogsService(CommonService):
             )
 
         query = query.distinct().order_by(cls.model.update_time.desc())
+        totbal = query.count()
         if page_number:
             query = query.paginate(page_number, items_per_page)
 
-        return list(query.dicts())
+        return list(query.dicts()), totbal
 
     @classmethod
     def start(cls, id, connector_id):
@@ -130,6 +132,14 @@ class SyncLogsService(CommonService):
 
     @classmethod
     def schedule(cls, connector_id, kb_id, poll_range_start=None, reindex=False, total_docs_indexed=0):
+        try:
+            if cls.model.select().where(cls.model.kb_id == kb_id, cls.model.connector_id == connector_id).count() > 100:
+                rm_ids = [m.id for m in cls.model.select(cls.model.id).where(cls.model.kb_id == kb_id, cls.model.connector_id == connector_id).order_by(cls.model.update_time.asc()).limit(70)]
+                deleted = cls.model.delete().where(cls.model.id.in_(rm_ids)).execute()
+                logging.info(f"[SyncLogService] Cleaned {deleted} old logs.")
+        except Exception as e:
+            logging.exception(e)
+
         try:
             e = cls.query(kb_id=kb_id, connector_id=connector_id, status=TaskStatus.SCHEDULE)
             if e:
@@ -185,11 +195,10 @@ class SyncLogsService(CommonService):
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)
-        if not err:
-            kb_table_num_map = {}
-            for doc, _ in doc_blob_pairs:
-                DocumentService.run(tenant_id, doc, kb_table_num_map)
-                doc_ids.append(doc["id"])
+        kb_table_num_map = {}
+        for doc, _ in doc_blob_pairs:
+            DocumentService.run(tenant_id, doc, kb_table_num_map)
+            doc_ids.append(doc["id"])
 
         return errs, doc_ids
 
