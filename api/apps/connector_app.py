@@ -73,7 +73,8 @@ def get_connector(connector_id):
 @login_required
 def list_logs(connector_id):
     req = request.args.to_dict(flat=True)
-    return get_json_result(data=SyncLogsService.list_sync_tasks(connector_id, int(req.get("page", 1)), int(req.get("page_size", 15))))
+    arr, total = SyncLogsService.list_sync_tasks(connector_id, int(req.get("page", 1)), int(req.get("page_size", 15)))
+    return get_json_result(data={"total": total, "logs": arr})
 
 
 @manager.route("/<connector_id>/resume", methods=["PUT"])  # noqa: F821

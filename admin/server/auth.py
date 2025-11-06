@@ -24,7 +24,7 @@ from flask_login import current_user, login_user
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 from api.common.exceptions import AdminException, UserNotFoundError
-from api.db.init_data import encode_to_base64
+from api.common.base64 import encode_to_base64
 from api.db.services import UserService
 from common.constants import ActiveEnum, StatusEnum
 from api.utils.crypt import decrypt

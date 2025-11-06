@@ -2,8 +2,6 @@ import { Operator } from '../constant';
 import AgentForm from '../form/agent-form';
 import AkShareForm from '../form/akshare-form';
 import ArXivForm from '../form/arxiv-form';
-import BaiduFanyiForm from '../form/baidu-fanyi-form';
-import BaiduForm from '../form/baidu-form';
 import BeginForm from '../form/begin-form';
 import BingForm from '../form/bing-form';
 import CategorizeForm from '../form/categorize-form';
@@ -40,6 +38,7 @@ import TokenizerForm from '../form/tokenizer-form';
 import ToolForm from '../form/tool-form';
 import TuShareForm from '../form/tushare-form';
 import UserFillUpForm from '../form/user-fill-up-form';
+import VariableAssignerForm from '../form/variable-assigner-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
@@ -72,9 +71,6 @@ export const FormConfigMap = {
   [Operator.Agent]: {
     component: AgentForm,
   },
-  [Operator.Baidu]: {
-    component: BaiduForm,
-  },
   [Operator.DuckDuckGo]: {
     component: DuckDuckGoForm,
   },
@@ -101,9 +97,6 @@ export const FormConfigMap = {
   },
   [Operator.GitHub]: {
     component: GithubForm,
-  },
-  [Operator.BaiduFanyi]: {
-    component: BaiduFanyiForm,
   },
   [Operator.QWeather]: {
     component: QWeatherForm,
@@ -189,5 +182,8 @@ export const FormConfigMap = {
   },
   [Operator.DataOperations]: {
     component: DataOperationsForm,
+  },
+  [Operator.VariableAssigner]: {
+    component: VariableAssignerForm,
   },
 };
