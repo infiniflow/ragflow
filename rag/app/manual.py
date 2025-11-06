@@ -26,7 +26,7 @@ from deepdoc.parser import PdfParser, DocxParser
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
 from docx import Document
 from PIL import Image
-from rag.app.naive import plaintext_parser, PARSERS
+from rag.app.naive import by_plaintext, PARSERS
 
 class Pdf(PdfParser):
     def __init__(self):
@@ -202,7 +202,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
 
         name = layout_recognizer.strip().lower()
-        pdf_parser = PARSERS.get(name, plaintext_parser)
+        pdf_parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
 
         sections, tbls, pdf_parser = pdf_parser(

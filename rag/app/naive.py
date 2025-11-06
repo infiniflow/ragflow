@@ -631,7 +631,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
 
         name = layout_recognizer.strip().lower()
-        parser = PARSERS.get(name, plaintext_parser)
+        parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
 
         sections, tables, pdf_parser = parser(
