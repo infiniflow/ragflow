@@ -4,7 +4,6 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#   "huggingface-hub",
 #   "nltk",
 # ]
 # ///
@@ -38,13 +37,6 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             ["https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chrome-linux64.zip", "chrome-linux64-121-0-6167-85"],
             ["https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chromedriver-linux64.zip", "chromedriver-linux64-121-0-6167-85"],
         ]
-
-
-repos = [
-    "InfiniFlow/text_concat_xgb_v1.0",
-    "InfiniFlow/deepdoc",
-    "InfiniFlow/huqie",
-]
 
 
 if __name__ == "__main__":
