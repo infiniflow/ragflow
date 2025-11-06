@@ -164,7 +164,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         parser = PARSERS.get(name, plaintext_parser)
         callback(0.1, "Start to parse.")
 
-        raw_sections, tables, _ = parser(
+        raw_sections, tables, pdf_parser = parser(
             filename = filename,
             binary = binary,
             from_page = from_page,
