@@ -30,11 +30,12 @@ import * as ReactDOM from 'react-dom';
 
 import { $createVariableNode } from './variable-node';
 
+import { JsonSchemaDataType } from '@/pages/agent/constant';
 import {
   useFindAgentStructuredOutputLabel,
   useShowSecondaryMenu,
 } from '@/pages/agent/hooks/use-build-structured-output';
-import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
+import { useFilterQueryVariableOptionsByTypes } from '@/pages/agent/hooks/use-get-begin-query';
 import { PromptIdentity } from '../../agent-form/use-build-prompt-options';
 import { StructuredOutputSecondaryMenu } from '../structured-output-secondary-menu';
 import { ProgrammaticTag } from './constant';
@@ -80,9 +81,11 @@ function VariablePickerMenuItem({
   index,
   option,
   selectOptionAndCleanUp,
+  types,
 }: {
   index: number;
   option: VariableOption;
+  types?: JsonSchemaDataType[];
   selectOptionAndCleanUp: (
     option: VariableOption | VariableInnerOption,
   ) => void;
@@ -108,6 +111,7 @@ function VariablePickerMenuItem({
                 <StructuredOutputSecondaryMenu
                   key={x.value}
                   data={x}
+                  types={types}
                   click={(y) =>
                     selectOptionAndCleanUp({
                       ...x,
@@ -149,11 +153,13 @@ export type VariablePickerMenuPluginProps = {
   value?: string;
   extraOptions?: VariablePickerMenuOptionType[];
   baseOptions?: VariablePickerMenuOptionType[];
+  types?: JsonSchemaDataType[];
 };
 export default function VariablePickerMenuPlugin({
   value,
   extraOptions,
   baseOptions,
+  types,
 }: VariablePickerMenuPluginProps): JSX.Element {
   const [editor] = useLexicalComposerContext();
 
@@ -180,7 +186,7 @@ export default function VariablePickerMenuPlugin({
 
   const [queryString, setQueryString] = React.useState<string | null>('');
 
-  let options = useBuildQueryVariableOptions();
+  let options = useFilterQueryVariableOptionsByTypes(types);
 
   if (baseOptions) {
     options = baseOptions as typeof options;
@@ -379,6 +385,7 @@ export default function VariablePickerMenuPlugin({
                       index={i}
                       key={option.key}
                       option={option}
+                      types={types}
                       selectOptionAndCleanUp={selectOptionAndCleanUp}
                     />
                   ))}

@@ -58,6 +58,7 @@ function InnerToolNode({
             const mcp = x as unknown as IAgentForm['mcp'][number];
             return (
               <ToolCard
+                key={mcp.mcp_id}
                 onClick={handleClick(mcp.mcp_id)}
                 className="cursor-pointer"
                 data-tool={x.mcp_id}
@@ -70,6 +71,7 @@ function InnerToolNode({
           const tool = x as unknown as IAgentForm['tools'][number];
           return (
             <ToolCard
+              key={tool.component_name}
               onClick={handleClick(tool.component_name)}
               className="cursor-pointer"
               data-tool={tool.component_name}
