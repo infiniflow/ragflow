@@ -27,9 +27,12 @@ export function useBuildSwitchOperatorOptions(
   const { t } = useTranslation();
 
   const switchOperatorOptions = useMemo(() => {
-    return SwitchOperatorOptions.filter((x) =>
-      subset.some((y) => y === x.value),
-    ).map((x) => ({
+    const filteredOptions =
+      subset.length > 0
+        ? SwitchOperatorOptions.filter((x) => subset.some((y) => y === x.value))
+        : SwitchOperatorOptions;
+
+    return filteredOptions.map((x) => ({
       value: x.value,
       icon: (
         <LogicalOperatorIcon
@@ -39,7 +42,7 @@ export function useBuildSwitchOperatorOptions(
       ),
       label: t(`flow.switchOperatorOptions.${x.label}`),
     }));
-  }, [t]);
+  }, [subset, t]);
 
   return switchOperatorOptions;
 }
