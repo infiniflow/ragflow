@@ -191,7 +191,7 @@ class SyncLogsService(CommonService):
                 return self.blob
 
         errs = []
-        files = [FileObj(filename=d["semantic_identifier"]+f".{d['extension']}", blob=d["blob"]) for d in docs]
+        files = [FileObj(filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"]) for d in docs]
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)
