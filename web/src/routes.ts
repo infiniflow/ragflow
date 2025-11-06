@@ -27,6 +27,8 @@ export enum Routes {
   System = '/system',
   Model = '/model',
   Prompt = '/prompt',
+  DataSource = '/data-source',
+  DataSourceDetailPage = '/data-source-detail-page',
   ProfileMcp = `${ProfileSetting}${Mcp}`,
   ProfileTeam = `${ProfileSetting}${Team}`,
   ProfilePlan = `${ProfileSetting}${Plan}`,
@@ -400,7 +402,17 @@ const routes = [
         path: `/user-setting${Routes.Mcp}`,
         component: `@/pages${Routes.ProfileMcp}`,
       },
+      {
+        path: `/user-setting${Routes.DataSource}`,
+        component: `@/pages/user-setting${Routes.DataSource}`,
+      },
     ],
+  },
+
+  {
+    path: `/user-setting${Routes.DataSource}${Routes.DataSourceDetailPage}`,
+    component: `@/pages/user-setting${Routes.DataSource}${Routes.DataSourceDetailPage}`,
+    layout: false,
   },
 
   // Admin routes

@@ -76,6 +76,16 @@ export const formSchema = z
       })
       .optional(),
     pagerank: z.number(),
+    connectors: z
+      .array(
+        z.object({
+          id: z.string().optional(),
+          name: z.string().optional(),
+          source: z.string().optional(),
+          ststus: z.string().optional(),
+        }),
+      )
+      .optional(),
     // icon: z.array(z.instanceof(File)),
   })
   .superRefine((data, ctx) => {

@@ -1,0 +1,41 @@
+import { cn } from '@/lib/utils';
+import { ArrowBigLeft } from 'lucide-react';
+import React from 'react';
+import { useNavigate } from 'umi';
+import { Button } from '../ui/button';
+
+interface BackButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  to?: string;
+}
+
+const BackButton: React.FC<BackButtonProps> = ({
+  to,
+  className,
+  children,
+  ...props
+}) => {
+  const navigate = useNavigate();
+
+  const handleClick = () => {
+    if (to) {
+      navigate(to);
+    } else {
+      navigate(-1);
+    }
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      className={cn('gap-2 bg-bg-card border border-border-default', className)}
+      onClick={handleClick}
+      {...props}
+    >
+      <ArrowBigLeft className="h-4 w-4" />
+      {children || 'Back'}
+    </Button>
+  );
+};
+
+export default BackButton;

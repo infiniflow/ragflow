@@ -260,6 +260,9 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      dataSource: '数据源',
+      linkSourceSetTip: '管理与此数据集的数据源链接',
+      linkDataSource: '链接数据源',
       tocExtractionTip:
         '对于已有的chunk生成层级结构的目录信息（每个文件一个目录）。在查询时，激活`目录增强`后，系统会用大模型去判断用户问题和哪些目录项相关，从而找到相关的chunk。',
       deleteGenerateModalContent: `
@@ -671,6 +674,16 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
     },
     setting: {
+      errorMsg: '错误信息',
+      newDocs: '新文档',
+      timeStarted: '开始时间',
+      log: '日志',
+      s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
+      discordDescription: ' 连接你的 Discord 服务器以访问和分析聊天数据。',
+      notionDescription: ' 同步 Notion 页面与数据库，用于知识检索。',
+      availableSourcesDescription: '选择要添加的数据源',
+      availableSources: '可用数据源',
+      datasourceDescription: '管理您的数据源和连接',
       save: '保存',
       search: '搜索',
       availableModels: '可选模型',
@@ -688,6 +701,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       passwordDescription: '请输入您当前的密码以更改您的密码。',
       model: '模型提供商',
       systemModelDescription: '请在开始之前完成这些设置',
+      dataSources: '数据源',
       team: '团队',
       system: '系统',
       logout: '登出',
@@ -1731,6 +1745,10 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       <p>尚未解析的文件将不再被处理。</p> <br/>
       <p>你确定要继续吗?</p> `,
       unlinkPipelineModalConfirmText: '解绑',
+      unlinkSourceModalTitle: '取消链接数据源',
+      unlinkSourceModalContent: `
+      <p>您确定要取消链接此数据源吗？</p>`,
+      unlinkSourceModalConfirmText: '取消链接',
     },
     datasetOverview: {
       downloadTip: '正在从数据源下载文件。',

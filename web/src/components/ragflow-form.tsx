@@ -39,7 +39,7 @@ export function RAGFlowFormItem({
         <FormItem
           className={cn(
             {
-              'flex items-center': horizontal,
+              'flex items-center w-full': horizontal,
             },
             className,
           )}

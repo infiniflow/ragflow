@@ -1,6 +1,12 @@
 import { RunningStatus } from '@/constants/knowledge';
+import { DataSourceKey } from '@/pages/user-setting/data-source/contant';
 import { TreeData } from '@antv/g6/lib/types';
-
+export interface IConnector {
+  id: string;
+  name: string;
+  status: RunningStatus;
+  source: DataSourceKey;
+}
 // knowledge base
 export interface IKnowledge {
   avatar?: any;
@@ -35,6 +41,7 @@ export interface IKnowledge {
   mindmap_task_id?: string;
   graphrag_task_finish_at: string;
   graphrag_task_id: string;
+  connectors: IConnector[];
 }
 
 export interface IKnowledgeResult {

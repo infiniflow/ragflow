@@ -13,6 +13,7 @@ export enum RunningStatus {
   CANCEL = '2', // need to refresh
   DONE = '3', // need to refresh
   FAIL = '4', // need to refresh
+  SCHEDULE = '5',
 }
 
 export const RunningStatusMap = {
@@ -21,6 +22,7 @@ export const RunningStatusMap = {
   [RunningStatus.CANCEL]: 'Cancel',
   [RunningStatus.DONE]: 'Success',
   [RunningStatus.FAIL]: 'Failed',
+  [RunningStatus.SCHEDULE]: 'Schedule',
 };
 
 export enum ModelVariableType {

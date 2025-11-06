@@ -34,6 +34,14 @@ export default {
   enable_llm: `${api_host}/llm/enable_llm`,
   deleteFactory: `${api_host}/llm/delete_factory`,
 
+  // data source
+  dataSourceSet: `${api_host}/connector/set`,
+  dataSourceList: `${api_host}/connector/list`,
+  dataSourceDel: (id: string) => `${api_host}/connector/${id}/rm`,
+  dataSourceResume: (id: string) => `${api_host}/connector/${id}/resume`,
+  dataSourceLogs: (id: string) => `${api_host}/connector/${id}/logs`,
+  dataSourceDetail: (id: string) => `${api_host}/connector/${id}`,
+
   // plugin
   llm_tools: `${api_host}/plugin/llm_tools`,
 
