@@ -48,17 +48,10 @@ def DeepDOC_parser(filename, binary=None, from_page=0, to_page=100000, lang="Chi
         to_page=to_page,
         callback=callback
     )
-    print("\n\n")
-    for text, tag in sections:
-        print(f"[Section] {text} \n")
-
 
     tables = vision_figure_parser_pdf_wrapper(tbls=tables,
                                               callback=callback,
                                               **kwargs)
-    print("\n\n")
-    for tbl in tables:
-        print(f"[Table] {tbl} \n")
     return sections, tables, pdf_parser
 
 
