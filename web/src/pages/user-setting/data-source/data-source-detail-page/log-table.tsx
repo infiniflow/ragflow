@@ -145,7 +145,7 @@ export const DataSourceLogsTable = () => {
   const handleToDataSetDetail = useCallback(
     (id: string) => {
       console.log('handleToDataSetDetail', id);
-      navigate(`${Routes.DatasetBase}${Routes.DataSetSetting}/${id}`);
+      navigate(`${Routes.DatasetBase}${Routes.DatasetBase}/${id}`);
     },
     [navigate],
   );

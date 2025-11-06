@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IConnector } from '@/interfaces/database/knowledge';
+import { delSourceModal } from '@/pages/user-setting/data-source/component/delete-source-modal';
 import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { Link, Settings, Unlink } from 'lucide-react';
@@ -26,7 +27,7 @@ interface DataSourceItemProps extends IDataSourceNodeProps {
 
 const DataSourceItem = (props: DataSourceItemProps) => {
   const { t } = useTranslation();
-  const { id, name, icon, openLinkModalFunc, unbindFunc } = props;
+  const { id, name, icon, unbindFunc } = props;
 
   const { navigateToDataSourceDetail } = useNavigatePage();
   const toDetail = (id: string) => {
@@ -71,7 +72,7 @@ const DataSourceItem = (props: DataSourceItemProps) => {
   return (
     <div className="flex items-center justify-between gap-1 px-2 rounded-md border ">
       <div className="flex items-center gap-1">
-        {icon}
+        <div className="w-6 h-6 flex-shrink-0">{icon}</div>
         <div>{name}</div>
       </div>
       <div className="flex gap-1 items-center">
@@ -94,7 +95,12 @@ const DataSourceItem = (props: DataSourceItemProps) => {
             variant={'transparent'}
             className="border-none"
             onClick={() => {
-              openUnlinkModal();
+              // openUnlinkModal();
+              delSourceModal({
+                data: props,
+                type: 'unlink',
+                onOk: (data) => unbindFunc?.(data as DataSourceItemProps),
+              });
             }}
           >
             <Unlink />

@@ -66,7 +66,7 @@ export const AddedSourceCard = (props: IAddedSourceCardProps) => {
               <div
                 key={item.id}
                 className={cn(
-                  'flex flex-row items-center justify-between rounded-md bg-bg-input px-2 py-1 cursor-pointer',
+                  'flex flex-row items-center justify-between rounded-md bg-bg-card px-2 py-1 cursor-pointer',
                   // { hidden: item.name.indexOf(filterString) <= -1 },
                 )}
                 onClick={() => {

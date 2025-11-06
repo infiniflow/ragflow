@@ -1,9 +1,9 @@
+import { DynamicForm, FormFieldConfig } from '@/components/dynamic-form';
 import { Modal } from '@/components/ui/modal/modal';
 import { IModalProps } from '@/interfaces/common';
 import { useEffect, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { DynamicForm, FormFieldConfig } from './component/dynamic-form';
 import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
@@ -39,7 +39,12 @@ const AddDataSourceModal = ({
 
   return (
     <Modal
-      title={t('setting.add')}
+      title={
+        <div className="flex flex-col">
+          {sourceData?.icon}
+          {t('setting.addDataSourceModalTital', { name: sourceData?.name })}
+        </div>
+      }
       open={visible || false}
       onOpenChange={(open) => !open && hideModal?.()}
       // onOk={() => handleOk()}

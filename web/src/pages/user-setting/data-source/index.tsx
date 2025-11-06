@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardTitle } from '@/components/ui/card';
 import { useTranslation } from 'react-i18next';
 
 import Spotlight from '@/components/spotlight';
@@ -12,20 +12,16 @@ import { useAddDataSource, useListDataSource } from './hooks';
 import { IDataSorceInfo } from './interface';
 const dataSourceTemplates = [
   {
+    id: DataSourceKey.CONFLUENCE,
+    name: DataSourceInfo[DataSourceKey.CONFLUENCE].name,
+    description: DataSourceInfo[DataSourceKey.CONFLUENCE].description,
+    icon: DataSourceInfo[DataSourceKey.CONFLUENCE].icon,
+  },
+  {
     id: DataSourceKey.S3,
     name: DataSourceInfo[DataSourceKey.S3].name,
     description: DataSourceInfo[DataSourceKey.S3].description,
     icon: DataSourceInfo[DataSourceKey.S3].icon,
-    list: [
-      {
-        id: '1',
-        name: 'S3 Bucket 1',
-      },
-      {
-        id: '2',
-        name: 'S3 Bucket 1',
-      },
-    ],
   },
   {
     id: DataSourceKey.DISCORD,
@@ -94,16 +90,16 @@ const DataSource = () => {
     <div className="w-full flex flex-col gap-4  relative ">
       <Spotlight />
 
-      <Card className="bg-transparent border-none px-0">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pt-4 pb-0">
-          <CardTitle className="text-2xl font-medium">
-            {t('setting.dataSources')}
-            <div className="text-sm text-text-secondary">
-              {t('setting.datasourceDescription')}
-            </div>
-          </CardTitle>
-        </CardHeader>
-      </Card>
+      {/* <Card className="bg-transparent border-none px-0"> */}
+      <section className="flex flex-row items-center justify-between space-y-0 px-4 pt-4 pb-0">
+        <div className="text-2xl font-medium">
+          {t('setting.dataSources')}
+          <div className="text-sm text-text-secondary">
+            {t('setting.datasourceDescription')}
+          </div>
+        </div>
+      </section>
+      {/* </Card> */}
       <Separator className="border-border-button bg-border-button " />
       <div className=" flex flex-col gap-4 p-4 max-h-[calc(100vh-120px)] overflow-y-auto overflow-x-hidden scrollbar-auto">
         <div className="flex flex-col gap-3">
@@ -111,8 +107,8 @@ const DataSource = () => {
             <AddedSourceCard key={index} {...item} />
           ))}
         </div>
-        <Card className="bg-transparent border-none mt-8">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 p-0 pb-4">
+        <section className="bg-transparent border-none mt-8">
+          <header className="flex flex-row items-center justify-between space-y-0 p-0 pb-4">
             {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
             <CardTitle className="text-2xl font-semibold">
               {t('setting.availableSources')}
@@ -120,16 +116,16 @@ const DataSource = () => {
                 {t('setting.availableSourcesDescription')}
               </div>
             </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
+          </header>
+          <main className="p-0">
             {/* <TenantTable searchTerm={searchTerm}></TenantTable> */}
             <div className="grid sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4 3xl:grid-cols-4 gap-4">
               {dataSourceTemplates.map((item, index) => (
                 <AbailableSourceCard {...item} key={index} />
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </main>
+        </section>
       </div>
 
       {addingModalVisible && (
