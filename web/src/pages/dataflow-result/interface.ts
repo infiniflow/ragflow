@@ -126,8 +126,17 @@ export interface IPipelineFileLogDetail {
 }
 
 export interface IChunk {
+  available_int?: number; // Whether to enable, 0: not enabled, 1: enabled
+  chunk_id?: string;
+  content_with_weight?: string;
+  doc_id?: string;
+  doc_name?: string;
+  image_id?: string;
+  important_kwd?: string[];
+  question_kwd?: string[]; // keywords
+  tag_kwd?: string[];
   positions: number[][];
-  image_id: string;
+  tag_feas?: Record<string, number>;
   text: string;
 }
 
@@ -139,6 +148,6 @@ export interface NavigateToDataflowResultProps {
   [PipelineResultSearchParams.AgentTitle]?: string;
   [PipelineResultSearchParams.IsReadOnly]?: string;
   [PipelineResultSearchParams.Type]: string;
-  [PipelineResultSearchParams.CreatedBy]: string;
-  [PipelineResultSearchParams.DocumentExtension]: string;
+  [PipelineResultSearchParams.CreatedBy]?: string;
+  [PipelineResultSearchParams.DocumentExtension]?: string;
 }

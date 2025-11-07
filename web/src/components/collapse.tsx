@@ -5,7 +5,12 @@ import {
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { CollapsibleProps } from '@radix-ui/react-collapsible';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  ListChevronsDownUp,
+  ListChevronsUpDown,
+} from 'lucide-react';
 import * as React from 'react';
 import {
   PropsWithChildren,
@@ -14,7 +19,6 @@ import {
   useEffect,
   useState,
 } from 'react';
-import { IconFontFill } from './icon-font';
 
 type CollapseProps = Omit<CollapsibleProps, 'title'> & {
   title?: ReactNode;
@@ -51,21 +55,26 @@ export function Collapse({
       onOpenChange={handleOpenChange}
       disabled={disabled}
     >
-      <CollapsibleTrigger className="w-full">
-        <section className="flex justify-between items-center pb-2">
+      <CollapsibleTrigger className={'w-full'}>
+        <section className="flex justify-between items-center">
           <div className="flex items-center gap-1">
-            <IconFontFill
-              name={`more`}
-              className={cn('size-4', {
-                'rotate-90': !currentOpen,
+            {currentOpen ? (
+              <ListChevronsUpDown className="size-4" />
+            ) : (
+              <ListChevronsDownUp className="size-4 text-text-secondary" />
+            )}
+            <div
+              className={cn('text-text-secondary', {
+                'text-text-primary': open,
               })}
-            ></IconFontFill>
-            {title}
+            >
+              {title}
+            </div>
           </div>
           <div>{rightContent}</div>
         </section>
       </CollapsibleTrigger>
-      <CollapsibleContent>{children}</CollapsibleContent>
+      <CollapsibleContent className="pt-5">{children}</CollapsibleContent>
     </Collapsible>
   );
 }
@@ -94,7 +103,7 @@ export function NodeCollapsible<T extends any[]>({
     >
       {nextItems.slice(0, 3).map(children)}
       <CollapsibleContent className={nextClassName}>
-        {nextItems.slice(3).map(children)}
+        {nextItems.slice(3).map((x, idx) => children(x, idx + 3))}
       </CollapsibleContent>
       {nextItems.length > 3 && (
         <CollapsibleTrigger

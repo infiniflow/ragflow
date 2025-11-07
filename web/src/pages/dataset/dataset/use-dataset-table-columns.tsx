@@ -11,6 +11,7 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useSetDocumentStatus } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
+import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
 import { formatDate } from '@/utils/date';
 import { ColumnDef } from '@tanstack/table-core';
 import { ArrowUpDown } from 'lucide-react';
@@ -117,6 +118,19 @@ export function useDatasetTableColumns({
       cell: ({ row }) => (
         <div className="lowercase">
           {formatDate(row.getValue('create_time'))}
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'source_from',
+      header: t('source'),
+      cell: ({ row }) => (
+        <div className="text-text-primary">
+          {row.original.source_type
+            ? DataSourceInfo[
+                row.original.source_type as keyof typeof DataSourceInfo
+              ]?.icon || t('localUpload')
+            : t('localUpload')}
         </div>
       ),
     },

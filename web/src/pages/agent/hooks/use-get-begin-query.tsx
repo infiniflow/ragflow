@@ -4,12 +4,14 @@ import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { buildNodeOutputOptions } from '@/utils/canvas-util';
 import { DefaultOptionType } from 'antd/es/select';
 import { t } from 'i18next';
+import { isEmpty, toLower } from 'lodash';
 import get from 'lodash/get';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   AgentDialogueMode,
   BeginId,
   BeginQueryType,
+  JsonSchemaDataType,
   Operator,
   VariableType,
 } from '../constant';
@@ -18,6 +20,7 @@ import { buildBeginInputListFromObject } from '../form/begin-form/utils';
 import { BeginQuery } from '../interface';
 import OperatorIcon from '../operator-icon';
 import useGraphStore from '../store';
+import { useFindAgentStructuredOutputTypeByValue } from './use-build-structured-output';
 
 export function useSelectBeginNodeDataInputs() {
   const getNode = useGraphStore((state) => state.getNode);
@@ -171,6 +174,29 @@ export function useBuildQueryVariableOptions(n?: RAGFlowNodeType) {
   return nextOptions;
 }
 
+export function useFilterQueryVariableOptionsByTypes(
+  types?: JsonSchemaDataType[],
+) {
+  const nextOptions = useBuildQueryVariableOptions();
+
+  const filteredOptions = useMemo(() => {
+    return !isEmpty(types)
+      ? nextOptions.map((x) => {
+          return {
+            ...x,
+            options: x.options.filter(
+              (y) =>
+                types?.some((x) => toLower(y.type).includes(x)) ||
+                y.type === undefined, // agent structured output
+            ),
+          };
+        })
+      : nextOptions;
+  }, [nextOptions, types]);
+
+  return filteredOptions;
+}
+
 export function useBuildComponentIdOptions(nodeId?: string, parentId?: string) {
   const nodes = useGraphStore((state) => state.nodes);
 
@@ -238,7 +264,7 @@ export const useGetComponentLabelByValue = (nodeId: string) => {
   return getLabel;
 };
 
-export function useGetVariableLabelByValue(nodeId: string) {
+export function useFlattenQueryVariableOptions(nodeId?: string) {
   const { getNode } = useGraphStore((state) => state);
   const nextOptions = useBuildQueryVariableOptions(getNode(nodeId));
 
@@ -248,11 +274,34 @@ export function useGetVariableLabelByValue(nodeId: string) {
     }, []);
   }, [nextOptions]);
 
-  const getLabel = useCallback(
+  return flattenOptions;
+}
+
+export function useGetVariableLabelOrTypeByValue(nodeId?: string) {
+  const flattenOptions = useFlattenQueryVariableOptions(nodeId);
+  const findAgentStructuredOutputTypeByValue =
+    useFindAgentStructuredOutputTypeByValue();
+
+  const getItem = useCallback(
     (val?: string) => {
-      return flattenOptions.find((x) => x.value === val)?.label;
+      return flattenOptions.find((x) => x.value === val);
     },
     [flattenOptions],
   );
-  return getLabel;
+
+  const getLabel = useCallback(
+    (val?: string) => {
+      return getItem(val)?.label;
+    },
+    [getItem],
+  );
+
+  const getType = useCallback(
+    (val?: string) => {
+      return getItem(val)?.type || findAgentStructuredOutputTypeByValue(val);
+    },
+    [findAgentStructuredOutputTypeByValue, getItem],
+  );
+
+  return { getLabel, getType };
 }

@@ -23,10 +23,15 @@ import traceback
 from werkzeug.serving import run_simple
 from flask import Flask
 from routes import admin_bp
-from api.utils.log_utils import init_root_logger
-from api.constants import SERVICE_CONF
-from api import settings
+from common.log_utils import init_root_logger
+from common.constants import SERVICE_CONF
+from common.config_utils import show_configs
+from common import settings
 from config import load_configurations, SERVICE_CONFIGS
+from auth import init_default_admin, setup_auth
+from flask_session import Session
+from flask_login import LoginManager
+from common.versions import get_ragflow_version
 
 stop_event = threading.Event()
 
@@ -42,7 +47,19 @@ if __name__ == '__main__':
 
     app = Flask(__name__)
     app.register_blueprint(admin_bp)
+    app.config["SESSION_PERMANENT"] = False
+    app.config["SESSION_TYPE"] = "filesystem"
+    app.config["MAX_CONTENT_LENGTH"] = int(
+        os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
+    )
+    Session(app)
+    logging.info(f'RAGFlow version: {get_ragflow_version()}')
+    show_configs()
+    login_manager = LoginManager()
+    login_manager.init_app(app)
     settings.init_settings()
+    setup_auth(login_manager)
+    init_default_admin()
     SERVICE_CONFIGS.configs = load_configurations(SERVICE_CONF)
 
     try:
@@ -52,7 +69,7 @@ if __name__ == '__main__':
             port=9381,
             application=app,
             threaded=True,
-            use_reloader=True,
+            use_reloader=False,
             use_debugger=True,
         )
     except Exception:

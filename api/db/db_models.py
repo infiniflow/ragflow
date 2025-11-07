@@ -21,6 +21,7 @@ import os
 import sys
 import time
 import typing
+from datetime import datetime, timezone
 from enum import Enum
 from functools import wraps
 
@@ -30,22 +31,15 @@ from peewee import InterfaceError, OperationalError, BigIntegerField, BooleanFie
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 
-from api import settings, utils
-from api.db import ParserType, SerializedType
-from api.utils.json import json_dumps, json_loads
+from api import utils
+from api.db import SerializedType
+from api.utils.json_encode import json_dumps, json_loads
 from api.utils.configs import deserialize_b64, serialize_b64
 
-
-def singleton(cls, *args, **kw):
-    instances = {}
-
-    def _singleton():
-        key = str(cls) + str(os.getpid())
-        if key not in instances:
-            instances[key] = cls(*args, **kw)
-        return instances[key]
-
-    return _singleton
+from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
+from common.decorator import singleton
+from common.constants import ParserType
+from common import settings
 
 
 CONTINUOUS_FIELD_TYPE = {IntegerField, FloatField, DateTimeField}
@@ -189,7 +183,7 @@ class BaseModel(Model):
                         for i, v in enumerate(f_v):
                             if isinstance(v, str) and f_n in auto_date_timestamp_field():
                                 # time type: %Y-%m-%d %H:%M:%S
-                                f_v[i] = utils.date_string_to_timestamp(v)
+                                f_v[i] = date_string_to_timestamp(v)
                         lt_value = f_v[0]
                         gt_value = f_v[1]
                         if lt_value is not None and gt_value is not None:
@@ -218,9 +212,9 @@ class BaseModel(Model):
     @classmethod
     def insert(cls, __data=None, **insert):
         if isinstance(__data, dict) and __data:
-            __data[cls._meta.combined["create_time"]] = utils.current_timestamp()
+            __data[cls._meta.combined["create_time"]] = current_timestamp()
         if insert:
-            insert["create_time"] = utils.current_timestamp()
+            insert["create_time"] = current_timestamp()
 
         return super().insert(__data, **insert)
 
@@ -231,11 +225,11 @@ class BaseModel(Model):
         if not normalized:
             return {}
 
-        normalized[cls._meta.combined["update_time"]] = utils.current_timestamp()
+        normalized[cls._meta.combined["update_time"]] = current_timestamp()
 
         for f_n in AUTO_DATE_TIMESTAMP_FIELD_PREFIX:
             if {f"{f_n}_time", f"{f_n}_date"}.issubset(cls._meta.combined.keys()) and cls._meta.combined[f"{f_n}_time"] in normalized and normalized[cls._meta.combined[f"{f_n}_time"]] is not None:
-                normalized[cls._meta.combined[f"{f_n}_date"]] = utils.timestamp_to_date(normalized[cls._meta.combined[f"{f_n}_time"]])
+                normalized[cls._meta.combined[f"{f_n}_date"]] = timestamp_to_date(normalized[cls._meta.combined[f"{f_n}_time"]])
 
         return normalized
 
@@ -331,9 +325,9 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                 # 08006: connection_failure
                 # 08003: connection_does_not_exist
                 # 08000: connection_exception
-                error_messages = ['connection', 'server closed', 'connection refused', 
+                error_messages = ['connection', 'server closed', 'connection refused',
                                 'no connection to the server', 'terminating connection']
-                
+
                 should_retry = any(msg in str(e).lower() for msg in error_messages)
 
                 if should_retry and attempt < self.max_retries:
@@ -366,7 +360,7 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
             except (OperationalError, InterfaceError) as e:
                 error_messages = ['connection', 'server closed', 'connection refused',
                                 'no connection to the server', 'terminating connection']
-                
+
                 should_retry = any(msg in str(e).lower() for msg in error_messages)
 
                 if should_retry and attempt < self.max_retries:
@@ -377,6 +371,7 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                     time.sleep(self.retry_delay * (2 ** attempt))
                 else:
                     raise
+        return None
 
 
 class PooledDatabase(Enum):
@@ -394,7 +389,7 @@ class BaseDataBase:
     def __init__(self):
         database_config = settings.DATABASE.copy()
         db_name = database_config.pop("name")
-        
+
         pool_config = {
             'max_retries': 5,
             'retry_delay': 1,
@@ -711,6 +706,7 @@ class TenantLLM(DataBaseModel):
     api_base = CharField(max_length=255, null=True, help_text="API Base")
     max_tokens = IntegerField(default=8192, index=True)
     used_tokens = IntegerField(default=0, index=True)
+    status = CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
         return self.llm_name
@@ -1044,6 +1040,77 @@ class PipelineOperationLog(DataBaseModel):
         db_table = "pipeline_operation_log"
 
 
+class Connector(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, help_text="Search name", index=False)
+    source = CharField(max_length=128, null=False, help_text="Data source", index=True)
+    input_type = CharField(max_length=128, null=False, help_text="poll/event/..", index=True)
+    config = JSONField(null=False, default={})
+    refresh_freq = IntegerField(default=0, index=False)
+    prune_freq = IntegerField(default=0, index=False)
+    timeout_secs = IntegerField(default=3600, index=False)
+    indexing_start = DateTimeField(null=True, index=True)
+    status = CharField(max_length=16, null=True, help_text="schedule", default="schedule", index=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        db_table = "connector"
+
+
+class Connector2Kb(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    connector_id = CharField(max_length=32, null=False, index=True)
+    kb_id = CharField(max_length=32, null=False, index=True)
+    auto_parse = CharField(max_length=1, null=False, default="1", index=False)
+
+    class Meta:
+        db_table = "connector2kb"
+
+
+class DateTimeTzField(CharField):
+    field_type = 'VARCHAR'
+
+    def db_value(self, value: datetime|None) -> str|None:
+        if value is not None:
+            if value.tzinfo is not None:
+                return value.isoformat()
+            else:
+                return value.replace(tzinfo=timezone.utc).isoformat()
+        return value
+
+    def python_value(self, value: str|None) -> datetime|None:
+        if value is not None:
+            dt = datetime.fromisoformat(value)
+            if dt.tzinfo is None:
+                import pytz
+                return dt.replace(tzinfo=pytz.UTC)
+            return dt
+        return value
+
+
+class SyncLogs(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    connector_id = CharField(max_length=32, index=True)
+    status = CharField(max_length=128, null=False, help_text="Processing status", index=True)
+    from_beginning = CharField(max_length=1, null=True, help_text="", default="0", index=False)
+    new_docs_indexed = IntegerField(default=0, index=False)
+    total_docs_indexed = IntegerField(default=0, index=False)
+    docs_removed_from_index = IntegerField(default=0, index=False)
+    error_msg = TextField(null=False, help_text="process message", default="")
+    error_count = IntegerField(default=0, index=False)
+    full_exception_trace = TextField(null=True, help_text="process message", default="")
+    time_started = DateTimeField(null=True, index=True)
+    poll_range_start = DateTimeTzField(max_length=255, null=True, index=True)
+    poll_range_end = DateTimeTzField(max_length=255, null=True, index=True)
+    kb_id = CharField(max_length=32, null=False, index=True)
+
+    class Meta:
+        db_table = "sync_logs"
+
+
 def migrate_db():
     logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
@@ -1210,6 +1277,14 @@ def migrate_db():
         pass
     try:
         migrate(migrator.alter_column_type("tenant_llm", "api_key", TextField(null=True, help_text="API KEY")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False)))
     except Exception:
         pass
     logging.disable(logging.NOTSET)

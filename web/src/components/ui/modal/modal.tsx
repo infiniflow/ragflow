@@ -116,7 +116,10 @@ const Modal: ModalType = ({
             type="button"
             disabled={confirmLoading || disabled}
             onClick={() => handleOk()}
-            className="px-2 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+            className={cn(
+              'px-2 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90',
+              { 'cursor-not-allowed': disabled },
+            )}
           >
             {confirmLoading && (
               <Loader className="inline-block mr-2 h-4 w-4 animate-spin" />
@@ -137,6 +140,7 @@ const Modal: ModalType = ({
       </div>
     );
   }, [
+    disabled,
     footer,
     cancelText,
     t,
@@ -155,7 +159,7 @@ const Modal: ModalType = ({
           onClick={() => maskClosable && onOpenChange?.(false)}
         >
           <DialogPrimitive.Content
-            className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-colors-background-neutral-standard rounded-lg shadow-lg border transition-all focus-visible:!outline-none`}
+            className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-bg-base rounded-lg shadow-lg border border-border-default transition-all focus-visible:!outline-none`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* title */}

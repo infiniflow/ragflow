@@ -227,8 +227,8 @@
             "llm": [
                 {
                     "llm_name": "qwen3-8b",
-                    "tags": "LLM,CHAT,131k",
-                    "max_tokens": 131000,
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
@@ -241,15 +241,15 @@
                 },
                 {
                     "llm_name": "qwen3-32b",
-                    "tags": "LLM,CHAT,131k",
-                    "max_tokens": 131000,
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
-                    "llm_name": "kimi-k2-instruct",
-                    "tags": "LLM,CHAT,128K",
-                    "max_tokens": 128000,
+                    "llm_name": "kimi-k2-instruct-0905",
+                    "tags": "LLM,CHAT,256K",
+                    "max_tokens": 256000,
                     "model_type": "chat",
                     "is_tools": true
                 },
@@ -278,6 +278,48 @@
                     "llm_name": "deepseek-v3.1",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "hunyuan-a13b-instruct",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-next-80b-a3b-instruct",
+                    "tags": "LLM,CHAT,1024k",
+                    "max_tokens": 1024000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v3.2-exp",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v3.1-terminus",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-vl-235b-a22b-instruct",
+                    "tags": "LLM,CHAT,262k",
+                    "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-vl-30b-a3b-instruct",
+                    "tags": "LLM,CHAT,262k",
+                    "max_tokens": 262000,
                     "model_type": "chat",
                     "is_tools": true
                 }
@@ -933,20 +975,6 @@
             "llm": []
         },
         {
-            "name": "Youdao",
-            "logo": "",
-            "tags": "TEXT EMBEDDING",
-            "status": "1",
-            "llm": [
-                {
-                    "llm_name": "maidalun1020/bce-embedding-base_v1",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 512,
-                    "model_type": "embedding"
-                }
-            ]
-        },
-        {
             "name": "DeepSeek",
             "logo": "",
             "tags": "LLM",
@@ -1099,15 +1127,27 @@
             ]
         },
         {
-            "name": "BAAI",
+            "name": "Builtin",
             "logo": "",
             "tags": "TEXT EMBEDDING",
             "status": "1",
             "llm": [
                 {
-                    "llm_name": "BAAI/bge-large-zh-v1.5",
-                    "tags": "TEXT EMBEDDING,",
-                    "max_tokens": 1024,
+                    "llm_name": "BAAI/bge-small-en-v1.5",
+                    "tags": "TEXT EMBEDDING,512",
+                    "max_tokens": 512,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "BAAI/bge-m3",
+                    "tags": "TEXT EMBEDDING,8k",
+                    "max_tokens": 8192,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "Qwen/Qwen3-Embedding-0.6B",
+                    "tags": "TEXT EMBEDDING,32k",
+                    "max_tokens": 32768,
                     "model_type": "embedding"
                 }
             ]
@@ -1345,35 +1385,35 @@
                     "llm_name": "gemini-2.5-flash",
                     "tags": "LLM,CHAT,1024K,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-pro",
                     "tags": "LLM,CHAT,IMAGE2TEXT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.5-flash-lite",
                     "tags": "LLM,CHAT,1024K,IMAGE2TEXT",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.0-flash",
                     "tags": "LLM,CHAT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {
                     "llm_name": "gemini-2.0-flash-lite",
                     "tags": "LLM,CHAT,1024K",
                     "max_tokens": 1048576,
-                    "model_type": "chat",
+                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {
@@ -2987,7 +3027,7 @@
                     "tags": "LLM,CHAT,IMAGE2TEXT,32k",
                     "max_tokens": 32000,
                     "model_type": "image2text",
-                    "is_tools": true
+                    "is_tools": false
                 },
                 {
                     "llm_name": "THUDM/GLM-Z1-32B-0414",

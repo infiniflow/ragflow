@@ -13,17 +13,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from functools import partial
+import json
 import os
 import re
 from abc import ABC
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.db import LLMType
+from common.constants import LLMType
+from api.db.services.document_service import DocumentService
+from api.db.services.dialog_service import meta_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api import settings
-from api.utils.api_utils import timeout
+from common import settings
+from common.connection_utils import timeout
 from rag.app.tag import label_question
-from rag.prompts.generator import cross_languages, kb_prompt
+from rag.prompts.generator import cross_languages, kb_prompt, gen_meta_filter
 
 
 class RetrievalParam(ToolParamBase):
@@ -58,6 +62,7 @@ class RetrievalParam(ToolParamBase):
         self.use_kg = False
         self.cross_languages = []
         self.toc_enhance = False
+        self.meta_data_filter={}
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
@@ -117,6 +122,49 @@ class Retrieval(ToolBase, ABC):
         vars = self.get_input_elements_from_text(kwargs["query"])
         vars = {k:o["value"] for k,o in vars.items()}
         query = self.string_format(kwargs["query"], vars)
+        
+        doc_ids=[]
+        if self._param.meta_data_filter!={}:
+            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            if self._param.meta_data_filter.get("method") == "auto":
+                chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT)
+                filters = gen_meta_filter(chat_mdl, metas, query)
+                doc_ids.extend(meta_filter(metas, filters))
+                if not doc_ids:
+                    doc_ids = None
+            elif self._param.meta_data_filter.get("method") == "manual":
+                filters=self._param.meta_data_filter["manual"]
+                for flt in filters:
+                    pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z:0-9_.-]+|sys\.[a-z_]+)\} *\}*")
+                    s = flt["value"]
+                    out_parts = []
+                    last = 0
+
+                    for m in pat.finditer(s):
+                        out_parts.append(s[last:m.start()])
+                        key = m.group(1)
+                        v = self._canvas.get_variable_value(key)
+                        if v is None:
+                            rep = ""
+                        elif isinstance(v, partial):
+                            buf = []
+                            for chunk in v():
+                                buf.append(chunk)
+                            rep = "".join(buf)
+                        elif isinstance(v, str):
+                            rep = v
+                        else:
+                            rep = json.dumps(v, ensure_ascii=False)
+
+                        out_parts.append(rep)
+                        last = m.end()
+
+                    out_parts.append(s[last:])
+                    flt["value"] = "".join(out_parts)
+                doc_ids.extend(meta_filter(metas, filters))
+                if not doc_ids:
+                    doc_ids = None
+
         if self._param.cross_languages:
             query = cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)
 
@@ -131,6 +179,7 @@ class Retrieval(ToolBase, ABC):
                 self._param.top_n,
                 self._param.similarity_threshold,
                 1 - self._param.keywords_similarity_weight,
+                doc_ids=doc_ids,
                 aggs=False,
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),

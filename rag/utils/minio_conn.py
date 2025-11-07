@@ -20,8 +20,8 @@ from minio import Minio
 from minio.commonconfig import CopySource
 from minio.error import S3Error
 from io import BytesIO
-from rag import settings
-from rag.utils import singleton
+from common.decorator import singleton
+from common import settings
 
 
 @singleton

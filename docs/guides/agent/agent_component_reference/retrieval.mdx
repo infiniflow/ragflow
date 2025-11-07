@@ -47,7 +47,7 @@ By default, a combination of weighted keyword similarity and weighted vector cos
 As a starter, you can skip this step to stay with the default retrieval method.
 
 :::caution WARNING
-Using a rerank model will *significantly* increase the system's response time. If you must use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with **docker-compose-gpu.yml**.
+Using a rerank model will *significantly* increase the system's response time.
 :::
 
 ### 5. Enable cross-language search
@@ -87,9 +87,9 @@ RAGFlow employs a combination of weighted keyword similarity and weighted vector
 
 Defaults to 0.2.
 
-### Keyword similarity weight
+### Vector similarity weight
 
-This parameter sets the weight of keyword similarity in the combined similarity score. The total of the two weights must equal 1.0. Its default value is 0.7, which means the weight of vector similarity in the combined search is 1 - 0.7 = 0.3.
+This parameter sets the weight of vector similarity in the composite similarity score. The total of the two weights must equal 1.0. Its default value is 0.3, which means the weight of keyword similarity in a combined search is 1 - 0.3 = 0.7.
 
 ### Top N
 
@@ -140,6 +140,5 @@ The global variable name for the output of the **Retrieval** component, which ca
 
 Go through the checklist below for best performance:
 
-- Leave the **Rerank model** field empty.
-- If you must use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with **docker-compose-gpu.yml**.
+- Leave the **Rerank model** field empty to disable rerank.
 - Disable **Use knowledge graph**.

@@ -15,12 +15,12 @@
 #
 import time
 from uuid import uuid4
-from api.db import StatusEnum
+from common.constants import StatusEnum
 from api.db.db_models import Conversation, DB
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from api.db.services.dialog_service import DialogService, chat
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 import json
 
 from rag.prompts.generator import chunks_format

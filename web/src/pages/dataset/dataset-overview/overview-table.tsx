@@ -11,11 +11,18 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { cn } from '@/lib/utils';
 import { PipelineResultSearchParams } from '@/pages/dataflow-result/constant';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
+import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import {
   ColumnDef,
@@ -77,43 +84,54 @@ export const getFileLogsTableColumns = (
     {
       accessorKey: 'fileName',
       header: t('fileName'),
+      meta: { cellClassName: 'max-w-[20vw]' },
       cell: ({ row }) => (
-        <div
-          className="flex items-center gap-2 text-text-primary"
-          // onClick={navigateToDataflowResult(
-          //   row.original.id,
-          //   row.original.kb_id,
-          // )}
-        >
-          <FileIcon name={row.original.fileName}></FileIcon>
-          {row.original.fileName}
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex gap-2 cursor-pointer">
+              <FileIcon name={row.original.document_name}></FileIcon>
+              <span className={cn('truncate')}>
+                {row.original.document_name}
+              </span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{row.original.document_name}</p>
+          </TooltipContent>
+        </Tooltip>
       ),
     },
     {
       accessorKey: 'source_from',
       header: t('source'),
+      meta: { cellClassName: 'max-w-[10vw]' },
       cell: ({ row }) => (
         <div className="text-text-primary">
-          {row.original.source_from || t('localUpload')}
+          {row.original.source_from
+            ? DataSourceInfo[
+                row.original.source_from as keyof typeof DataSourceInfo
+              ].icon
+            : t('localUpload')}
         </div>
       ),
     },
     {
       accessorKey: 'pipeline_title',
       header: t('dataPipeline'),
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2 text-text-primary">
-          <RAGFlowAvatar
-            avatar={row.original.avatar}
-            name={row.original.pipeline_title}
-            className="size-4"
-          />
-          {row.original.pipeline_title === 'naive'
-            ? 'general'
-            : row.original.pipeline_title}
-        </div>
-      ),
+      cell: ({ row }) => {
+        const title = row.original.pipeline_title;
+        const pipelineTitle = title === 'naive' ? 'general' : title;
+        return (
+          <div className="flex items-center gap-2 text-text-primary">
+            <RAGFlowAvatar
+              avatar={row.original.avatar}
+              name={pipelineTitle}
+              className="size-4"
+            />
+            {pipelineTitle}
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'process_begin_at',
@@ -311,7 +329,6 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   data,
   pagination,
   setPagination,
-  loading,
   active = LogTabs.FILE_LOGS,
 }) => {
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -328,13 +345,13 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       fileName: row.original.document_name,
       source: row.original.source_from,
       task: row.original?.task_type,
-      status: row.original.statusName,
+      status: row.original.status as RunningStatus,
       startDate: formatDate(row.original.process_begin_at),
       duration: formatSecondsToHumanReadable(
         row.original.process_duration || 0,
       ),
       details: row.original.progress_msg,
-    };
+    } as unknown as IFileLogItem;
     console.log('logDetail', logDetail);
     setLogInfo(logDetail);
     setIsModalVisible(true);

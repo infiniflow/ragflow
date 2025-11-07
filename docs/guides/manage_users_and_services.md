@@ -46,7 +46,7 @@ The Admin CLI and Admin Service form a client-server architectural suite for RAG
 2. Install ragflow-cli.
 
    ```bash
-   pip install ragflow-cli==0.21.0
+   pip install ragflow-cli==0.21.1
    ```
 
 3. Launch the CLI client:
@@ -72,7 +72,7 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 
 ### Service manage commands
 
- `LIST SERVICES;`
+`LIST SERVICES;`
 
 - Lists all available services within the RAGFlow system.
 
@@ -82,6 +82,11 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 
 - Shows detailed status information for the service identified by **id**.
 - [Example](#example-show-service)
+
+`SHOW VERSION;`
+
+- Shows RAGFlow version.
+- [Example](#example-show-version)
 
 ### User Management Commands
 
@@ -232,6 +237,18 @@ Service redis is alive. Detail:
 | 0               | 2                 | 1                         | 10.41                   | 7.2.4         | standalone  | 10446                    | 30.84G              | 1.10M       |
 +-----------------+-------------------+---------------------------+-------------------------+---------------+-------------+--------------------------+---------------------+-------------+
 ```
+<span id="example-show-version"></span>
+
+- Show RAGFlow version
+
+```
+admin> show version;
++-----------------------+
+| version               |
++-----------------------+
+| v0.21.0-241-gc6cf58d5 |
++-----------------------+
+```
 
 <span id="example-list-users"></span>
 
@@ -348,7 +365,7 @@ Listing all agents of user: lynn_inf@hotmail.com
 +-----------------+-------------+------------+-----------------+
 | canvas_category | canvas_type | permission | title           |
 +-----------------+-------------+------------+-----------------+
-| agent_canvas    | None        | team       | research_helper |
+| agent           | None        | team       | research_helper |
 +-----------------+-------------+------------+-----------------+
 ```
 

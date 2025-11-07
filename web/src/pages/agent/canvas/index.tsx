@@ -13,6 +13,7 @@ import {
   NodeTypes,
   Position,
   ReactFlow,
+  ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { NotebookPen } from 'lucide-react';
@@ -27,11 +28,7 @@ import {
 } from '../context';
 
 import FormSheet from '../form-sheet/next';
-import {
-  useHandleDrop,
-  useSelectCanvasData,
-  useValidateConnection,
-} from '../hooks';
+import { useSelectCanvasData, useValidateConnection } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
@@ -56,20 +53,27 @@ import { RagNode } from './node';
 import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
-import { InnerNextStepDropdown } from './node/dropdown/next-step-dropdown';
-import { GenerateNode } from './node/generate-node';
+import { DataOperationsNode } from './node/data-operations-node';
+import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
+import { ExtractorNode } from './node/extractor-node';
+import { FileNode } from './node/file-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
 import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
+import ParserNode from './node/parser-node';
 import { PlaceholderNode } from './node/placeholder-node';
 import { RelevantNode } from './node/relevant-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
+import { SplitterNode } from './node/splitter-node';
 import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
+import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
+import { VariableAggregatorNode } from './node/variable-aggregator-node';
+import { VariableAssignerNode } from './node/variable-assigner-node';
 
 export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
@@ -79,7 +83,6 @@ export const nodeTypes: NodeTypes = {
   relevantNode: RelevantNode,
   noteNode: NoteNode,
   switchNode: SwitchNode,
-  generateNode: GenerateNode,
   retrievalNode: RetrievalNode,
   messageNode: MessageNode,
   rewriteNode: RewriteNode,
@@ -91,6 +94,14 @@ export const nodeTypes: NodeTypes = {
   iterationStartNode: IterationStartNode,
   agentNode: AgentNode,
   toolNode: ToolNode,
+  fileNode: FileNode,
+  parserNode: ParserNode,
+  tokenizerNode: TokenizerNode,
+  splitterNode: SplitterNode,
+  contextNode: ExtractorNode,
+  dataOperationsNode: DataOperationsNode,
+  variableAssignerNode: VariableAssignerNode,
+  variableAggregatorNode: VariableAggregatorNode,
 };
 
 const edgeTypes = {
@@ -116,8 +127,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   } = useSelectCanvasData();
   const isValidConnection = useValidateConnection();
 
-  const { onDrop, onDragOver, setReactFlowInstance, reactFlowInstance } =
-    useHandleDrop();
+  const [reactFlowInstance, setReactFlowInstance] =
+    useState<ReactFlowInstance<any, any>>();
 
   const {
     onNodeClick,
@@ -194,8 +205,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     getConnectionStartContext,
     shouldPreventClose,
     onMove,
+    nodeId,
   } = useConnectionDrag(
-    reactFlowInstance,
     originalOnConnect,
     showModal,
     hideModal,
@@ -205,6 +216,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     removePlaceholderNode,
     clearActiveDropdown,
     checkAndRemoveExistingPlaceholder,
+    reactFlowInstance,
   );
 
   const onPaneClick = useCallback(() => {
@@ -239,6 +251,19 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       >
         <defs>
           <marker
+            fill="rgb(var(--accent-primary))"
+            id="selected-marker"
+            viewBox="0 0 40 40"
+            refX="8"
+            refY="5"
+            markerUnits="strokeWidth"
+            markerWidth="20"
+            markerHeight="20"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" />
+          </marker>
+          <marker
             fill="var(--text-disabled)"
             id="logo"
             viewBox="0 0 40 40"
@@ -264,11 +289,9 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           onConnect={handleConnect}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
-          onDrop={onDrop}
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}
           onMove={onMove}
-          onDragOver={onDragOver}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
           onInit={setReactFlowInstance}
@@ -289,7 +312,11 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         >
           <AgentBackground></AgentBackground>
           <Spotlight className="z-0" opcity={0.7} coverage={70} />
-          <Controls position={'bottom-center'} orientation="horizontal">
+          <Controls
+            position={'bottom-center'}
+            orientation="horizontal"
+            className="bg-bg-base px-4 py-2 h-auto w-auto [&>button]:bg-transparent [&>button]:border-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:p-0 [&>button]:size-4 gap-2.5 rounded-md"
+          >
             <ControlButton>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -312,7 +339,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
               }
             }
           >
-            <InnerNextStepDropdown
+            <NextStepDropdown
               hideModal={() => {
                 removePlaceholderNode();
                 hideModal();
@@ -320,9 +347,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
               }}
               position={dropdownPosition}
               onNodeCreated={onNodeCreated}
+              nodeId={nodeId}
             >
               <span></span>
-            </InnerNextStepDropdown>
+            </NextStepDropdown>
           </HandleContext.Provider>
         )}
       </AgentInstanceContext.Provider>

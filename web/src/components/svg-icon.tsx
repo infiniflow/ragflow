@@ -4,6 +4,7 @@ import Icon, { UserOutlined } from '@ant-design/icons';
 import { IconComponentProps } from '@ant-design/icons/lib/components/Icon';
 import { Avatar } from 'antd';
 import { AvatarSize } from 'antd/es/avatar/AvatarContext';
+import { useIsDarkTheme } from './theme-provider';
 
 const importAll = (requireContext: __WebpackModuleApi.RequireContext) => {
   const list = requireContext.keys().map((key) => {
@@ -65,6 +66,34 @@ export const LlmIcon = ({
   return icon ? (
     <SvgIcon
       name={`llm/${icon}`}
+      width={width}
+      height={height}
+      imgClass={imgClass}
+    ></SvgIcon>
+  ) : (
+    <Avatar shape="square" size={size} icon={<UserOutlined />} />
+  );
+};
+
+export const HomeIcon = ({
+  name,
+  height = '32',
+  width = '32',
+  size = 'large',
+  imgClass,
+}: {
+  name: string;
+  height?: string;
+  width?: string;
+  size?: AvatarSize;
+  imgClass?: string;
+}) => {
+  const isDark = useIsDarkTheme();
+  const icon = isDark ? name : `${name}-bri`;
+
+  return icon ? (
+    <SvgIcon
+      name={`home-icon/${icon}`}
       width={width}
       height={height}
       imgClass={imgClass}

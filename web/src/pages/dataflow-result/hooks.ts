@@ -4,7 +4,6 @@ import { useCreateChunk, useDeleteChunk } from '@/hooks/chunk-hooks';
 import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useFetchMessageTrace } from '@/hooks/use-agent-request';
-import { IChunk } from '@/interfaces/database/knowledge';
 import kbService from '@/services/knowledge-service';
 import { formatSecondsToHumanReadable } from '@/utils/date';
 import { buildChunkHighlights } from '@/utils/document-util';
@@ -20,7 +19,7 @@ import {
   PipelineResultSearchParams,
   TimelineNodeType,
 } from './constant';
-import { IDslComponent, IPipelineFileLogDetail } from './interface';
+import { IChunk, IDslComponent, IPipelineFileLogDetail } from './interface';
 
 export const useFetchPipelineFileLogDetail = ({
   isAgent = false,
@@ -64,7 +63,6 @@ export const useHandleChunkCardClick = () => {
   const [selectedChunk, setSelectedChunk] = useState<IChunk>();
 
   const handleChunkCardClick = useCallback((chunk: IChunk) => {
-    console.log('click-chunk-->', chunk);
     setSelectedChunk(chunk);
   }, []);
 
@@ -75,7 +73,9 @@ export const useGetChunkHighlights = (selectedChunk?: IChunk) => {
   const [size, setSize] = useState({ width: 849, height: 1200 });
 
   const highlights: IHighlight[] = useMemo(() => {
-    return selectedChunk ? buildChunkHighlights(selectedChunk, size) : [];
+    return selectedChunk
+      ? buildChunkHighlights(selectedChunk as any, size)
+      : [];
   }, [selectedChunk, size]);
 
   const setWidthAndHeight = useCallback((width: number, height: number) => {
@@ -345,10 +345,10 @@ export const useSummaryInfo = (
         const { output_format, parse_method } = setups;
         const res = [];
         if (parse_method) {
-          res.push(`${t('dataflow.parserMethod')}: ${parse_method}`);
+          res.push(`${t('dataflowParser.parserMethod')}: ${parse_method}`);
         }
         if (output_format) {
-          res.push(`${t('dataflow.outputFormat')}: ${output_format}`);
+          res.push(`${t('dataflowParser.outputFormat')}: ${output_format}`);
         }
         return res.join(' ');
       }

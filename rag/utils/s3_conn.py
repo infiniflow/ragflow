@@ -20,8 +20,9 @@ from botocore.exceptions import ClientError
 from botocore.config import Config
 import time
 from io import BytesIO
-from rag.utils import singleton
-from rag import settings
+from common.decorator import singleton
+from common import settings
+
 
 @singleton
 class RAGFlowS3:

@@ -18,7 +18,7 @@
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
-from api.utils.log_utils import init_root_logger
+from common.log_utils import init_root_logger
 from plugin import GlobalPluginManager
 init_root_logger("ragflow_server")
 
@@ -32,12 +32,11 @@ import threading
 import uuid
 
 from werkzeug.serving import run_simple
-from api import settings
 from api.apps import app, smtp_mail_server
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
-from api import utils
-
+from common.file_utils import get_project_base_directory
+from common import settings
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data, init_superuser
 from api.versions import get_ragflow_version
@@ -88,11 +87,11 @@ if __name__ == '__main__':
         f'RAGFlow version: {get_ragflow_version()}'
     )
     logging.info(
-        f'project base: {utils.file_utils.get_project_base_directory()}'
+        f'project base: {get_project_base_directory()}'
     )
     show_configs()
     settings.init_settings()
-    print_rag_settings()
+    settings.print_rag_settings()
 
     if RAGFLOW_DEBUGPY_LISTEN > 0:
         logging.info(f"debugpy listen on {RAGFLOW_DEBUGPY_LISTEN}")

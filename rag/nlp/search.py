@@ -22,11 +22,12 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 from rag.prompts.generator import relevant_chunks_with_toc
-from rag.settings import TAG_FLD, PAGERANK_FLD
-from rag.utils import rmSpace, get_float
 from rag.nlp import rag_tokenizer, query
 import numpy as np
 from rag.utils.doc_store_conn import DocStoreConnection, MatchDenseExpr, FusionExpr, OrderByExpr
+from common.string_utils import remove_redundant_spaces
+from common.float_utils import get_float
+from common.constants import PAGERANK_FLD, TAG_FLD
 
 
 def index_name(uid): return f"ragflow_{uid}"
@@ -72,9 +73,12 @@ class Dealer:
     def search(self, req, idx_names: str | list[str],
                kb_ids: list[str],
                emb_mdl=None,
-               highlight: bool | list = False,
+               highlight: bool | list | None = None,
                rank_feature: dict | None = None
                ):
+        if highlight is None:
+            highlight = False
+
         filters = self.get_filters(req)
         orderBy = OrderByExpr()
 
@@ -339,7 +343,7 @@ class Dealer:
             ins_tw.append(tks)
 
         tksim = self.qryr.token_similarity(keywords, ins_tw)
-        vtsim, _ = rerank_mdl.similarity(query, [rmSpace(" ".join(tks)) for tks in ins_tw])
+        vtsim, _ = rerank_mdl.similarity(query, [remove_redundant_spaces(" ".join(tks)) for tks in ins_tw])
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
 
@@ -380,7 +384,7 @@ class Dealer:
                                                    rank_feature=rank_feature)
         else:
             lower_case_doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
-            if lower_case_doc_engine == "elasticsearch":
+            if lower_case_doc_engine in ["elasticsearch","opensearch"]:
                 # ElasticSearch doesn't normalize each way score before fusion.
                 sim, tsim, vsim = self.rerank(
                     sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
@@ -388,12 +392,15 @@ class Dealer:
             else:
                 # Don't need rerank here since Infinity normalizes each way score before fusion.
                 sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
+                sim = [s if s is not None else 0. for s in sim]
                 tsim = sim
                 vsim = sim
         # Already paginated in search function
-        begin = ((page % (RERANK_LIMIT//page_size)) - 1) * page_size
+        max_pages = RERANK_LIMIT // page_size
+        page_index = (page % max_pages) - 1
+        begin = max(page_index * page_size, 0)
         sim = sim[begin : begin + page_size]
-        sim_np = np.array(sim)
+        sim_np = np.array(sim, dtype=np.float64)
         idx = np.argsort(sim_np * -1)
         dim = len(sres.query_vector)
         vector_column = f"q_{dim}_vec"
@@ -401,7 +408,7 @@ class Dealer:
         filtered_count = (sim_np >= similarity_threshold).sum()
         ranks["total"] = int(filtered_count) # Convert from np.int64 to Python int otherwise JSON serializable error
         for i in idx:
-            if sim[i] < similarity_threshold:
+            if np.float64(sim[i]) < similarity_threshold:
                 break
 
             id = sres.ids[i]
@@ -436,7 +443,7 @@ class Dealer:
             }
             if highlight and sres.highlight:
                 if id in sres.highlight:
-                    d["highlight"] = rmSpace(sres.highlight[id])
+                    d["highlight"] = remove_redundant_spaces(sres.highlight[id])
                 else:
                     d["highlight"] = d["content_with_weight"]
             ranks["chunks"].append(d)

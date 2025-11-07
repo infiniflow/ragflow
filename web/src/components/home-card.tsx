@@ -24,13 +24,12 @@ export function HomeCard({
 }: IProps) {
   return (
     <Card
-      className="bg-bg-card  border-colors-outline-neutral-standard"
       onClick={() => {
         // navigateToSearch(data?.id);
         onClick?.();
       }}
     >
-      <CardContent className="p-4 flex gap-2 items-start group h-full">
+      <CardContent className="p-4 flex gap-2 items-start group h-full w-full hover:shadow-md">
         <div className="flex justify-between mb-4">
           <RAGFlowAvatar
             className="w-[32px] h-[32px]"

@@ -17,15 +17,14 @@ import logging
 
 from flask import request, jsonify
 
-from api.db import LLMType
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api import settings
 from api.utils.api_utils import validate_request, build_error_result, apikey_required
 from rag.app.tag import label_question
 from api.db.services.dialog_service import meta_filter, convert_conditions
-
+from common.constants import RetCode, LLMType
+from common import settings
 
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required
@@ -129,7 +128,7 @@ def retrieval(tenant_id):
 
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
-            return build_error_result(message="Knowledgebase not found!", code=settings.RetCode.NOT_FOUND)
+            return build_error_result(message="Knowledgebase not found!", code=RetCode.NOT_FOUND)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
         print(metadata_condition)
@@ -179,7 +178,7 @@ def retrieval(tenant_id):
         if str(e).find("not_found") > 0:
             return build_error_result(
                 message='No chunk found! Check the chunk status please!',
-                code=settings.RetCode.NOT_FOUND
+                code=RetCode.NOT_FOUND
             )
         logging.exception(e)
-        return build_error_result(message=str(e), code=settings.RetCode.SERVER_ERROR)
+        return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)

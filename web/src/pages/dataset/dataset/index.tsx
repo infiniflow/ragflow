@@ -12,7 +12,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
+import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { Upload } from 'lucide-react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DatasetTable } from './dataset-table';
 import Generate from './generate-button/generate';
@@ -41,6 +43,14 @@ export default function Dataset() {
     handleFilterSubmit,
     loading,
   } = useFetchDocumentList();
+
+  const refreshCount = useMemo(() => {
+    return documents.findIndex((doc) => doc.run === '1') + documents.length;
+  }, [documents]);
+
+  const { data: dataSetData } = useFetchKnowledgeBaseConfiguration({
+    refreshCount,
+  });
   const { filters, onOpenChange } = useSelectDatasetFilters();
 
   const {
@@ -62,7 +72,7 @@ export default function Dataset() {
   return (
     <>
       <div className="absolute top-4 right-5">
-        <Generate />
+        <Generate disabled={!(dataSetData.chunk_num > 0)} />
       </div>
       <section className="p-5 min-w-[880px]">
         <ListFilterBar
@@ -76,7 +86,7 @@ export default function Dataset() {
           leftPanel={
             <div className="items-start">
               <div className="pb-1">{t('knowledgeDetails.subbarFiles')}</div>
-              <div className="text-text-sub-title-invert text-sm">
+              <div className="text-text-secondary text-sm">
                 {t('knowledgeDetails.datasetDescription')}
               </div>
             </div>

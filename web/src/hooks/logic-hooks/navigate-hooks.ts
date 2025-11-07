@@ -1,3 +1,4 @@
+import { AgentCategory, AgentQuery } from '@/constants/agent';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
@@ -70,15 +71,8 @@ export const useNavigatePage = () => {
   }, [navigate]);
 
   const navigateToAgent = useCallback(
-    (id: string) => () => {
-      navigate(`${Routes.Agent}/${id}`);
-    },
-    [navigate],
-  );
-
-  const navigateToDataflow = useCallback(
-    (id: string) => () => {
-      navigate(`${Routes.DataFlow}/${id}`);
+    (id: string, category?: AgentCategory) => () => {
+      navigate(`${Routes.Agent}/${id}?${AgentQuery.Category}=${category}`);
     },
     [navigate],
   );
@@ -147,12 +141,21 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToDataSourceDetail = useCallback(
+    (id?: string) => {
+      navigate(
+        `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}?id=${id}`,
+      );
+    },
+    [navigate],
+  );
+
   const navigateToDataflowResult = useCallback(
     (props: NavigateToDataflowResultProps) => () => {
       let params: string[] = [];
       Object.keys(props).forEach((key) => {
-        if (props[key]) {
-          params.push(`${key}=${props[key]}`);
+        if (props[key as keyof typeof props]) {
+          params.push(`${key}=${props[key as keyof typeof props]}`);
         }
       });
       navigate(
@@ -184,7 +187,7 @@ export const useNavigatePage = () => {
     navigateToAgentList,
     navigateToOldProfile,
     navigateToDataflowResult,
-    navigateToDataflow,
     navigateToDataFile,
+    navigateToDataSourceDetail,
   };
 };

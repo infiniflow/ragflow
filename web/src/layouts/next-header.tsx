@@ -116,9 +116,13 @@ export function Header() {
         />
       </div>
       <Segmented
+        rounded="xxxl"
+        sizeType="xl"
+        buttonSize="xl"
         options={options}
         value={pathname}
         onChange={handleChange}
+        activeClassName="text-bg-base bg-metallic-gradient border-b-[#00BEB4] border-b-2"
       ></Segmented>
       <div className="flex items-center gap-5 text-text-badge">
         <a

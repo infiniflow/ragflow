@@ -1,5 +1,4 @@
 import { PlusOutlined } from '@ant-design/icons';
-import { TweenOneGroup } from 'rc-tween-one';
 import React, { useEffect, useRef, useState } from 'react';
 
 import { X } from 'lucide-react';
@@ -16,7 +15,7 @@ interface EditTagsProps {
 }
 
 const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
-  ({ value = [], onChange }: EditTagsProps, ref) => {
+  ({ value = [], onChange }: EditTagsProps) => {
     const [inputVisible, setInputVisible] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
@@ -57,7 +56,7 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
         <HoverCard key={tag}>
           <HoverCardContent side="top">{tag}</HoverCardContent>
           <HoverCardTrigger asChild>
-            <div className="w-fit flex items-center justify-center gap-2 border-dashed border px-1 rounded-sm bg-bg-card">
+            <div className="w-fit flex items-center justify-center gap-2 border-dashed border px-2 py-1 rounded-sm bg-bg-card">
               <div className="flex gap-2 items-center">
                 <div className="max-w-80 overflow-hidden text-ellipsis">
                   {tag}
@@ -84,11 +83,11 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
 
     return (
       <div>
-        {inputVisible ? (
+        {inputVisible && (
           <Input
             ref={inputRef}
             type="text"
-            className="h-8 bg-bg-card"
+            className="h-8 bg-bg-card mb-1"
             value={inputValue}
             onChange={handleInputChange}
             onBlur={handleInputConfirm}
@@ -98,36 +97,20 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
               }
             }}
           />
-        ) : (
-          <Button
-            variant="dashed"
-            className="w-fit flex items-center justify-center gap-2 bg-bg-card"
-            onClick={showInput}
-            style={tagPlusStyle}
-          >
-            <PlusOutlined />
-          </Button>
         )}
-        {Array.isArray(tagChild) && tagChild.length > 0 && (
-          <TweenOneGroup
-            className="flex gap-2 flex-wrap mt-2"
-            enter={{
-              scale: 0.8,
-              opacity: 0,
-              type: 'from',
-              duration: 100,
-            }}
-            onEnd={(e) => {
-              if (e.type === 'appear' || e.type === 'enter') {
-                (e.target as any).style = 'display: inline-block';
-              }
-            }}
-            leave={{ opacity: 0, width: 0, scale: 0, duration: 200 }}
-            appear={false}
-          >
-            {tagChild}
-          </TweenOneGroup>
-        )}
+        <div className="flex gap-2 py-1">
+          {Array.isArray(tagChild) && tagChild.length > 0 && <>{tagChild}</>}
+          {!inputVisible && (
+            <Button
+              variant="dashed"
+              className="w-fit flex items-center justify-center gap-2 bg-bg-card"
+              onClick={showInput}
+              style={tagPlusStyle}
+            >
+              <PlusOutlined />
+            </Button>
+          )}
+        </div>
       </div>
     );
   },

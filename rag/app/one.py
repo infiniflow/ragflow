@@ -15,15 +15,15 @@
 #
 
 import logging
-from tika import parser
 from io import BytesIO
 import re
 
 from deepdoc.parser.utils import get_text
 from rag.app import naive
 from rag.nlp import rag_tokenizer, tokenize
-from deepdoc.parser import PdfParser, ExcelParser, PlainParser, HtmlParser
-
+from deepdoc.parser import PdfParser, ExcelParser, HtmlParser
+from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper
+from rag.app.naive import by_plaintext, PARSERS
 
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
@@ -57,13 +57,8 @@ class Pdf(PdfParser):
 
         sections = [(b["text"], self.get_position(b, zoomin))
                     for i, b in enumerate(self.boxes)]
-        for (img, rows), poss in tbls:
-            if not rows:
-                continue
-            sections.append((rows if isinstance(rows, str) else rows[0],
-                             [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
         return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (
-            x[-1][0][0], x[-1][0][3], x[-1][0][1]))], None
+            x[-1][0][0], x[-1][0][3], x[-1][0][1]))], tbls
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
@@ -80,17 +75,46 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections, tbls = naive.Docx()(filename, binary)
+        tbls=vision_figure_parser_docx_wrapper(sections=sections,tbls=tbls,callback=callback,**kwargs)
         sections = [s for s, _ in sections if s]
         for (_, html), _ in tbls:
             sections.append(html)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
-            pdf_parser = PlainParser()
-        sections, _ = pdf_parser(
-            filename if not binary else binary, to_page=to_page, callback=callback)
+        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+
+        if isinstance(layout_recognizer, bool):
+            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
+
+        name = layout_recognizer.strip().lower()
+        parser = PARSERS.get(name, by_plaintext)
+        callback(0.1, "Start to parse.")
+
+        sections, tbls, pdf_parser = parser(
+            filename = filename,
+            binary = binary,
+            from_page = from_page,
+            to_page = to_page,
+            lang = lang,
+            callback = callback,
+            pdf_cls = Pdf,
+            **kwargs
+        )
+
+        if not sections and not tbls:
+            return []
+
+        if name in ["tcadp", "docling", "mineru"]:
+            parser_config["chunk_token_num"] = 0
+        
+        callback(0.8, "Finish parsing.")
+        
+        for (img, rows), poss in tbls:
+            if not rows:
+                continue
+            sections.append((rows if isinstance(rows, str) else rows[0],
+                             [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
         sections = [s for s, _ in sections if s]
 
     elif re.search(r"\.xlsx?$", filename, re.IGNORECASE):

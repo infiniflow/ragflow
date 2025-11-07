@@ -23,7 +23,7 @@ from typing import Any
 from agent.component.base import ComponentBase, ComponentParamBase
 from jinja2 import Template as Jinja2Template
 
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class MessageParam(ComponentParamBase):
@@ -48,6 +48,9 @@ class MessageParam(ComponentParamBase):
 
 class Message(ComponentBase):
     component_name = "Message"
+
+    def get_input_elements(self) -> dict[str, Any]:
+        return self.get_input_elements_from_text("".join(self._param.content))
 
     def get_kwargs(self, script:str, kwargs:dict = {}, delimiter:str=None) -> tuple[str, dict[str, str | list | Any]]:
         for k,v in self.get_input_elements_from_text(script).items():

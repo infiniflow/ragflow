@@ -9,15 +9,31 @@ import { removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
-import { curry, get, intersectionWith, isEqual, omit, sample } from 'lodash';
+import {
+  curry,
+  get,
+  intersectionWith,
+  isEmpty,
+  isEqual,
+  omit,
+  sample,
+} from 'lodash';
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import {
   CategorizeAnchorPointPositions,
+  FileType,
+  FileTypeSuffixMap,
+  NoCopyOperatorsList,
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
 } from './constant';
+import { DataOperationsFormSchemaType } from './form/data-operations-form';
+import { ExtractorFormSchemaType } from './form/extractor-form';
+import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-form';
+import { ParserFormSchemaType } from './form/parser-form';
+import { SplitterFormSchemaType } from './form/splitter-form';
 import { BeginQuery, IPosition } from './interface';
 
 function buildAgentExceptionGoto(edges: Edge[], nodeId: string) {
@@ -63,10 +79,7 @@ const buildComponentDownstreamOrUpstream = (
 
 const removeUselessDataInTheOperator = curry(
   (operatorName: string, params: Record<string, unknown>) => {
-    if (
-      operatorName === Operator.Generate ||
-      operatorName === Operator.Categorize
-    ) {
+    if (operatorName === Operator.Categorize) {
       return removeUselessFieldsFromValues(params, '');
     }
     return params;
@@ -169,6 +182,101 @@ export function hasSubAgent(edges: Edge[], nodeId?: string) {
   return !!edge;
 }
 
+// Because the array of react-hook-form must be object data,
+// it needs to be converted into a simple data type array required by the backend
+function transformObjectArrayToPureArray(
+  list: Array<Record<string, any>>,
+  field: string,
+) {
+  return Array.isArray(list)
+    ? list.filter((x) => !isEmpty(x[field])).map((y) => y[field])
+    : [];
+}
+
+function transformParserParams(params: ParserFormSchemaType) {
+  const setups = params.setups.reduce<
+    Record<string, ParserFormSchemaType['setups'][0]>
+  >((pre, cur) => {
+    if (cur.fileFormat) {
+      let filteredSetup: Partial<
+        ParserFormSchemaType['setups'][0] & { suffix: string[] }
+      > = {
+        output_format: cur.output_format,
+        suffix: FileTypeSuffixMap[cur.fileFormat as FileType],
+      };
+
+      switch (cur.fileFormat) {
+        case FileType.PDF:
+          filteredSetup = {
+            ...filteredSetup,
+            parse_method: cur.parse_method,
+            lang: cur.lang,
+          };
+          break;
+        case FileType.Image:
+          filteredSetup = {
+            ...filteredSetup,
+            parse_method: cur.parse_method,
+            lang: cur.lang,
+            system_prompt: cur.system_prompt,
+          };
+          break;
+        case FileType.Email:
+          filteredSetup = {
+            ...filteredSetup,
+            fields: cur.fields,
+          };
+          break;
+        case FileType.Video:
+        case FileType.Audio:
+          filteredSetup = {
+            ...filteredSetup,
+            llm_id: cur.llm_id,
+          };
+          break;
+        default:
+          break;
+      }
+
+      pre[cur.fileFormat] = filteredSetup;
+    }
+    return pre;
+  }, {});
+
+  return { ...params, setups };
+}
+
+function transformSplitterParams(params: SplitterFormSchemaType) {
+  return {
+    ...params,
+    overlapped_percent: Number(params.overlapped_percent) / 100,
+    delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
+  };
+}
+
+function transformHierarchicalMergerParams(
+  params: HierarchicalMergerFormSchemaType,
+) {
+  const levels = params.levels.map((x) =>
+    transformObjectArrayToPureArray(x.expressions, 'expression'),
+  );
+
+  return { ...params, hierarchy: Number(params.hierarchy), levels };
+}
+
+function transformExtractorParams(params: ExtractorFormSchemaType) {
+  return { ...params, prompts: [{ content: params.prompts, role: 'user' }] };
+}
+
+function transformDataOperationsParams(params: DataOperationsFormSchemaType) {
+  return {
+    ...params,
+    select_keys: params?.select_keys?.map((x) => x.name),
+    remove_keys: params?.remove_keys?.map((x) => x.name),
+    query: params.query.map((x) => x.input),
+  };
+}
+
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
   nodes: RAGFlowNodeType[],
@@ -199,6 +307,24 @@ export const buildDslComponentsByGraph = (
         }
         case Operator.Categorize:
           params = buildCategorize(edges, nodes, id);
+          break;
+
+        case Operator.Parser:
+          params = transformParserParams(params);
+          break;
+
+        case Operator.Splitter:
+          params = transformSplitterParams(params);
+          break;
+
+        case Operator.HierarchicalMerger:
+          params = transformHierarchicalMergerParams(params);
+          break;
+        case Operator.Extractor:
+          params = transformExtractorParams(params);
+          break;
+        case Operator.DataOperations:
+          params = transformDataOperationsParams(params);
           break;
 
         default:
@@ -403,6 +529,10 @@ export const needsSingleStepDebugging = (label: string) => {
   return !NoDebugOperatorsList.some((x) => (label as Operator) === x);
 };
 
+export function showCopyIcon(label: string) {
+  return !NoCopyOperatorsList.some((x) => (label as Operator) === x);
+}
+
 // Get the coordinates of the node relative to the Iteration node
 export function getRelativePositionToIterationNode(
   nodes: RAGFlowNodeType[],
@@ -464,7 +594,9 @@ export function convertToStringArray(
   return list.map((x) => x.value);
 }
 
-export function convertToObjectArray(list: Array<string | number | boolean>) {
+export function convertToObjectArray<T extends string | number | boolean>(
+  list: Array<T>,
+) {
   if (!Array.isArray(list)) {
     return [];
   }
@@ -488,7 +620,7 @@ export const buildCategorizeListFromObject = (
   // Categorize's to field has two data sources, with edges as the data source.
   // Changes in the edge or to field need to be synchronized to the form field.
   return Object.keys(categorizeItem)
-    .reduce<Array<ICategorizeItem>>((pre, cur) => {
+    .reduce<Array<Omit<ICategorizeItem, 'uuid'>>>((pre, cur) => {
       // synchronize edge data to the to field
 
       pre.push({

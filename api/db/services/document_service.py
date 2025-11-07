@@ -26,21 +26,20 @@ import trio
 import xxhash
 from peewee import fn, Case, JOIN
 
-from api import settings
 from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
-from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole, CanvasCategory
+from api.db import FileType, UserTenantRole, CanvasCategory
 from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas, \
     User
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils import current_timestamp, get_format_time, get_uuid
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, get_format_time
+from common.constants import LLMType, ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME
 from rag.nlp import rag_tokenizer, search
-from rag.settings import get_svr_queue_name, SVR_CONSUMER_GROUP_NAME
 from rag.utils.redis_conn import REDIS_CONN
-from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr
-
+from common import settings
 
 class DocumentService(CommonService):
     model = Document
@@ -79,7 +78,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_list(cls, kb_id, page_number, items_per_page,
-                 orderby, desc, keywords, id, name):
+                 orderby, desc, keywords, id, name, suffix=None, run = None):
         fields = cls.get_cls_model_fields()
         docs = cls.model.select(*[*fields, UserCanvas.title]).join(File2Document, on = (File2Document.document_id == cls.model.id))\
             .join(File, on = (File.id == File2Document.file_id))\
@@ -96,6 +95,10 @@ class DocumentService(CommonService):
             docs = docs.where(
                 fn.LOWER(cls.model.name).contains(keywords.lower())
             )
+        if suffix:
+            docs = docs.where(cls.model.suffix.in_(suffix))
+        if run:
+            docs = docs.where(cls.model.run.in_(run))
         if desc:
             docs = docs.order_by(cls.model.getter_by(orderby).desc())
         else:
@@ -312,11 +315,11 @@ class DocumentService(CommonService):
                 all_chunk_ids.extend(chunk_ids)
                 page += 1
             for cid in all_chunk_ids:
-                if STORAGE_IMPL.obj_exist(doc.kb_id, cid):
-                    STORAGE_IMPL.rm(doc.kb_id, cid)
+                if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
+                    settings.STORAGE_IMPL.rm(doc.kb_id, cid)
             if doc.thumbnail and not doc.thumbnail.startswith(IMG_BASE64_PREFIX):
-                if STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
-                    STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
+                if settings.STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
+                    settings.STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
             settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
             graph_source = settings.docStoreConn.getFields(
@@ -620,7 +623,8 @@ class DocumentService(CommonService):
         cls.update_by_id(
             docid, {"progress": random.random() * 1 / 100.,
                     "progress_msg": "Task is queued...",
-                    "process_begin_at": get_format_time()
+                    "process_begin_at": get_format_time(),
+                    "run": TaskStatus.RUNNING.value
                     })
 
     @classmethod
@@ -667,9 +671,11 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def _sync_progress(cls, docs:list[dict]):
+        from api.db.services.task_service import TaskService
+
         for d in docs:
             try:
-                tsks = Task.query(doc_id=d["id"], order_by=Task.create_time)
+                tsks = TaskService.query(doc_id=d["id"], order_by=Task.create_time)
                 if not tsks:
                     continue
                 msg = []
@@ -787,21 +793,46 @@ class DocumentService(CommonService):
             "cancelled": int(cancelled),
         }
 
-def queue_raptor_o_graphrag_tasks(doc, ty, priority, fake_doc_id="", doc_ids=[]):
+    @classmethod
+    def run(cls, tenant_id:str, doc:dict, kb_table_num_map:dict):
+        from api.db.services.task_service import queue_dataflow, queue_tasks
+        from api.db.services.file2document_service import File2DocumentService
+
+        doc["tenant_id"] = tenant_id
+        doc_parser = doc.get("parser_id", ParserType.NAIVE)
+        if doc_parser == ParserType.TABLE:
+            kb_id = doc.get("kb_id")
+            if not kb_id:
+                return
+            if kb_id not in kb_table_num_map:
+                count = DocumentService.count_by_kb_id(kb_id=kb_id, keywords="", run_status=[TaskStatus.DONE], types=[])
+                kb_table_num_map[kb_id] = count
+                if kb_table_num_map[kb_id] <= 0:
+                    KnowledgebaseService.delete_field_map(kb_id)
+        if doc.get("pipeline_id", ""):
+            queue_dataflow(tenant_id, flow_id=doc["pipeline_id"], task_id=get_uuid(), doc_id=doc["id"])
+        else:
+            bucket, name = File2DocumentService.get_storage_address(doc_id=doc["id"])
+            queue_tasks(doc, bucket, name, 0)
+
+
+def queue_raptor_o_graphrag_tasks(sample_doc_id, ty, priority, fake_doc_id="", doc_ids=[]):
     """
     You can provide a fake_doc_id to bypass the restriction of tasks at the knowledgebase level.
     Optionally, specify a list of doc_ids to determine which documents participate in the task.
     """
-    chunking_config = DocumentService.get_chunking_config(doc["id"])
+    assert ty in ["graphrag", "raptor", "mindmap"], "type should be graphrag, raptor or mindmap"
+
+    chunking_config = DocumentService.get_chunking_config(sample_doc_id["id"])
     hasher = xxhash.xxh64()
     for field in sorted(chunking_config.keys()):
         hasher.update(str(chunking_config[field]).encode("utf-8"))
 
     def new_task():
-        nonlocal doc
+        nonlocal sample_doc_id
         return {
             "id": get_uuid(),
-            "doc_id": fake_doc_id if fake_doc_id else doc["id"],
+            "doc_id": sample_doc_id["id"],
             "from_page": 100000000,
             "to_page": 100000000,
             "task_type": ty,
@@ -816,15 +847,15 @@ def queue_raptor_o_graphrag_tasks(doc, ty, priority, fake_doc_id="", doc_ids=[])
     task["digest"] = hasher.hexdigest()
     bulk_insert_into_db(Task, [task], True)
 
-    if ty in ["graphrag", "raptor", "mindmap"]:
-        task["doc_ids"] = doc_ids
-        DocumentService.begin2parse(doc["id"])
-    assert REDIS_CONN.queue_product(get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
+    task["doc_id"] = fake_doc_id
+    task["doc_ids"] = doc_ids
+    DocumentService.begin2parse(sample_doc_id["id"])
+    assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
     return task["id"]
 
 
 def get_queue_length(priority):
-    group_info = REDIS_CONN.queue_info(get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
+    group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
     if not group_info:
         return 0
     return int(group_info.get("lag", 0) or 0)
@@ -906,7 +937,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             else:
                 d["image"].save(output_buffer, format='JPEG')
 
-            STORAGE_IMPL.put(kb.id, d["id"], output_buffer.getvalue())
+            settings.STORAGE_IMPL.put(kb.id, d["id"], output_buffer.getvalue())
             d["img_id"] = "{}-{}".format(kb.id, d["id"])
             d.pop("image", None)
             docs.append(d)
@@ -953,7 +984,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
                     "content_with_weight": mind_map,
                     "knowledge_graph_kwd": "mind_map"
                 })
-            except Exception as e:
+            except Exception:
                 logging.exception("Mind map generation error")
 
         vects = embedding(doc_id, [c["content_with_weight"] for c in cks])

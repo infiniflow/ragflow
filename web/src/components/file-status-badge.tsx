@@ -8,9 +8,10 @@ interface StatusBadgeProps {
   // status: 'Success' | 'Failed' | 'Running' | 'Pending';
   status: RunningStatus;
   name?: string;
+  className?: string;
 }
 
-const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name }) => {
+const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name, className }) => {
   const getStatusColor = () => {
     // #3ba05c  → rgb(59, 160, 92)   // state-success
     // #d8494b  → rgb(216, 73, 75)   // state-error
@@ -51,7 +52,7 @@ const FileStatusBadge: FC<StatusBadgeProps> = ({ status, name }) => {
 
   return (
     <span
-      className={`inline-flex items-center w-[75px] px-2 py-1 rounded-full text-xs font-medium ${getStatusColor()}`}
+      className={`inline-flex items-center w-[75px] px-2 py-1 rounded-full text-xs font-medium ${getStatusColor()} ${className}`}
     >
       <div className={`w-1 h-1 mr-1 rounded-full ${getBgStatusColor()}`}></div>
       {name || ''}

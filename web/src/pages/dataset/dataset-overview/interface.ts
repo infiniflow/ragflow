@@ -49,7 +49,8 @@ export interface IFileLogItem {
   process_duration: number;
   progress: number;
   progress_msg: string;
-  source_from: string;
+  source_type?: string;
+  source_from?: string;
   status: string;
   task_type: string;
   tenant_id: string;
@@ -57,6 +58,6 @@ export interface IFileLogItem {
   update_time: number;
 }
 export interface IFileLogList {
-  logs: IFileLogItem[];
+  logs: Array<IFileLogItem & DocumentLog>;
   total: number;
 }

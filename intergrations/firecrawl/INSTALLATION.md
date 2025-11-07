@@ -131,7 +131,7 @@ python example_usage.py
 
 ```bash
 # Check RAGFlow server logs
-docker logs ragflow-server
+docker logs docker-ragflow-cpu-1
 
 # Look for messages like:
 # "Firecrawl plugin loaded successfully"
