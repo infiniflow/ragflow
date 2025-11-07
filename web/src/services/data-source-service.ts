@@ -21,8 +21,11 @@ const dataSourceService = registerServer<keyof typeof methods>(
 export const deleteDataSource = (id: string) =>
   request.post(api.dataSourceDel(id));
 export const dataSourceResume = (id: string, data: { resume: boolean }) => {
-  console.log('api.dataSourceResume(id)', data);
   return request.put(api.dataSourceResume(id), { data });
+};
+
+export const dataSourceRebuild = (id: string, data: { kb_id: string }) => {
+  return request.put(api.dataSourceRebuild(id), { data });
 };
 
 export const getDataSourceLogs = (id: string, params?: any) =>

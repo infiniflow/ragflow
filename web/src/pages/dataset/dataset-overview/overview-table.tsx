@@ -107,9 +107,9 @@ export const getFileLogsTableColumns = (
       meta: { cellClassName: 'max-w-[10vw]' },
       cell: ({ row }) => (
         <div className="text-text-primary">
-          {row.original.source_type
+          {row.original.source_from
             ? DataSourceInfo[
-                row.original.source_type as keyof typeof DataSourceInfo
+                row.original.source_from as keyof typeof DataSourceInfo
               ].icon
             : t('localUpload')}
         </div>

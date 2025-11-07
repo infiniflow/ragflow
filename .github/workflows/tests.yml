@@ -74,7 +74,7 @@ jobs:
                 fi
               fi
             fi
-          else
+          elif [[ "$GITHUB_EVENT_NAME" = "pull_request" ]]; then
             PR_NUMBER=${{ github.event.pull_request.number }}
             PR_SHA_FP=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/PR_${PR_NUMBER}
             # Calculate the hash of the current workspace content

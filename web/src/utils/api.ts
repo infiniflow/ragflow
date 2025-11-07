@@ -39,6 +39,7 @@ export default {
   dataSourceList: `${api_host}/connector/list`,
   dataSourceDel: (id: string) => `${api_host}/connector/${id}/rm`,
   dataSourceResume: (id: string) => `${api_host}/connector/${id}/resume`,
+  dataSourceRebuild: (id: string) => `${api_host}/connector/${id}/rebuild`,
   dataSourceLogs: (id: string) => `${api_host}/connector/${id}/logs`,
   dataSourceDetail: (id: string) => `${api_host}/connector/${id}`,
 
