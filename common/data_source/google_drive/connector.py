@@ -1236,7 +1236,7 @@ if __name__ == "__main__":
     try:
         # Get credentials from environment
         email = os.environ.get("GOOGLE_DRIVE_PRIMARY_ADMIN_EMAIL", "yongtengrey@gmail.com")
-        creds = get_credentials_from_env(email, oauth=False)
+        creds = get_credentials_from_env(email, oauth=True)
         print("Credentials loaded successfully")
         print(f"{creds=}")
 
@@ -1254,7 +1254,6 @@ if __name__ == "__main__":
         print("Credentials loaded into connector successfully")
 
         print("Google Drive connector is ready to use!")
-
         max_fsize = 0
         biggest_fsize = 0
         num_errors = 0
@@ -1278,4 +1277,6 @@ if __name__ == "__main__":
 
     except Exception as e:
         print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
