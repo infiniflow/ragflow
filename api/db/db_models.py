@@ -1064,6 +1064,7 @@ class Connector2Kb(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     connector_id = CharField(max_length=32, null=False, index=True)
     kb_id = CharField(max_length=32, null=False, index=True)
+    auto_parse = CharField(max_length=1, null=False, default="1", index=False)
 
     class Meta:
         db_table = "connector2kb"
@@ -1280,6 +1281,10 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False)))
     except Exception:
         pass
     logging.disable(logging.NOTSET)
