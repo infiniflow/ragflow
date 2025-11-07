@@ -292,7 +292,7 @@ class NotionConnector(LoadConnector, PollConnector):
                 blob=blob,
                 source=DocumentSource.NOTION,
                 semantic_identifier=page_title,
-                extension="txt",
+                extension=".txt",
                 size_bytes=len(blob),
                 doc_updated_at=datetime_from_string(page.last_edited_time)
             )
