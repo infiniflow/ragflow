@@ -18,6 +18,7 @@ type QueryVariableProps = {
   label?: ReactNode;
   hideLabel?: boolean;
   className?: string;
+  onChange?: (value: string) => void;
 };
 
 export function QueryVariable({
@@ -26,6 +27,7 @@ export function QueryVariable({
   label,
   hideLabel = false,
   className,
+  onChange,
 }: QueryVariableProps) {
   const { t } = useTranslation();
   const form = useFormContext();
@@ -46,7 +48,11 @@ export function QueryVariable({
           <FormControl>
             <GroupedSelectWithSecondaryMenu
               options={finalOptions}
-              {...field}
+              value={field.value}
+              onChange={(val) => {
+                field.onChange(val);
+                onChange?.(val);
+              }}
               // allowClear
               types={types}
             ></GroupedSelectWithSecondaryMenu>
