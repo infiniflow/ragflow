@@ -641,6 +641,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             to_page = to_page,
             lang = lang,
             callback = callback,
+            layout_recognizer = layout_recognizer,
             **kwargs
         )
 
