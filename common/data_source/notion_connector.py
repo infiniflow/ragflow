@@ -253,6 +253,8 @@ class NotionConnector(LoadConnector, PollConnector):
         all_child_page_ids: list[str] = []
 
         for page in pages:
+            if isinstance(page, dict):
+                page = NotionPage(**page)
             if page.id in self.indexed_pages:
                 logging.debug(f"Already indexed page with ID '{page.id}'. Skipping.")
                 continue
