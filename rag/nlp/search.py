@@ -384,7 +384,7 @@ class Dealer:
                                                    rank_feature=rank_feature)
         else:
             lower_case_doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
-            if lower_case_doc_engine == "elasticsearch":
+            if lower_case_doc_engine in ["elasticsearch","opensearch"]:
                 # ElasticSearch doesn't normalize each way score before fusion.
                 sim, tsim, vsim = self.rerank(
                     sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
