@@ -1,6 +1,5 @@
 import logging
 from collections.abc import Generator
-from datetime import datetime, timezone
 from typing import Any, Optional
 from retry import retry
 
@@ -33,7 +32,7 @@ from common.data_source.utils import (
     batch_generator,
     fetch_notion_data,
     properties_to_str,
-    filter_pages_by_time
+    filter_pages_by_time, datetime_from_string
 )
 
 
@@ -293,9 +292,9 @@ class NotionConnector(LoadConnector, PollConnector):
                 blob=blob,
                 source=DocumentSource.NOTION,
                 semantic_identifier=page_title,
-                extension="txt",
+                extension=".txt",
                 size_bytes=len(blob),
-                doc_updated_at=datetime.fromisoformat(page.last_edited_time).astimezone(timezone.utc)
+                doc_updated_at=datetime_from_string(page.last_edited_time)
             )
 
         if self.recursive_index_enabled and all_child_page_ids:

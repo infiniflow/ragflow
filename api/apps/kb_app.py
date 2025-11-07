@@ -122,7 +122,7 @@ def update():
         if not e:
             return get_data_error_result(
                 message="Database error (Knowledgebase rename)!")
-        errors = Connector2KbService.link_connectors(kb.id, [conn["id"] for conn in connectors], current_user.id)
+        errors = Connector2KbService.link_connectors(kb.id, [conn for conn in connectors], current_user.id)
         if errors:
             logging.error("Link KB errors: ", errors)
         kb = kb.to_dict()
