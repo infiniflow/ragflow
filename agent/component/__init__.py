@@ -54,6 +54,6 @@ def component_class(class_name):
         try:
             return getattr(importlib.import_module(module_name), class_name)
         except Exception as e:
-            logging.warning(f"Can't import module: {module_name}, error: {e}")
+            # logging.warning(f"Can't import module: {module_name}, error: {e}")
             pass
     assert False, f"Can't import {class_name}"
