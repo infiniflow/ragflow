@@ -274,6 +274,8 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      baseInfo: 'Basic Info',
+      gobalIndex: 'Global Index',
       dataSource: 'Data Source',
       linkSourceSetTip: 'Manage data source linkage with this dataset',
       linkDataSource: 'Link Data Source',
@@ -304,7 +306,7 @@ export default {
       dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
-      parseType: 'Ingestion pipeline',
+      parseType: 'Parse Type',
       manualSetup: 'Choose pipeline',
       builtIn: 'Built-in',
       titleDescription:

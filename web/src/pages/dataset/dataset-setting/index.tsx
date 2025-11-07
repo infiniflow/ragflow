@@ -219,9 +219,14 @@ export default function DatasetSettings() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 ">
             <div className="w-[768px] h-[calc(100vh-240px)] pr-1 overflow-y-auto scrollbar-auto">
               <MainContainer className="text-text-secondary">
+                <div className="text-base font-medium text-text-primary">
+                  {t('knowledgeConfiguration.baseInfo')}
+                </div>
                 <GeneralForm></GeneralForm>
                 <Divider />
-
+                <div className="text-base font-medium text-text-primary">
+                  {t('knowledgeConfiguration.gobalIndex')}
+                </div>
                 <GraphRagItems
                   className="border-none p-0"
                   data={graphRagGenerateData as IGenerateLogButtonProps}
@@ -235,6 +240,9 @@ export default function DatasetSettings() {
                   onDelete={() => handleDeletePipelineTask(GenerateType.Raptor)}
                 ></RaptorFormFields>
                 <Divider />
+                <div className="text-base font-medium text-text-primary">
+                  {t('knowledgeConfiguration.dataPipeline')}
+                </div>
                 <ParseTypeItem line={1} />
                 {parseType === 1 && (
                   <ChunkMethodItem line={1}></ChunkMethodItem>

@@ -49,7 +49,8 @@ export interface IFileLogItem {
   process_duration: number;
   progress: number;
   progress_msg: string;
-  source_type: string;
+  source_type?: string;
+  source_from?: string;
   status: string;
   task_type: string;
   tenant_id: string;

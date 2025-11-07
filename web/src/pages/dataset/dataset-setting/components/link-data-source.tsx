@@ -1,9 +1,16 @@
+import { IconFontFill } from '@/components/icon-font';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IConnector } from '@/interfaces/database/knowledge';
 import { delSourceModal } from '@/pages/user-setting/data-source/component/delete-source-modal';
 import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
+import { useDataSourceRebuild } from '@/pages/user-setting/data-source/hooks';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { Link, Settings, Unlink } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -27,9 +34,10 @@ interface DataSourceItemProps extends IDataSourceNodeProps {
 
 const DataSourceItem = (props: DataSourceItemProps) => {
   const { t } = useTranslation();
-  const { id, name, icon, unbindFunc } = props;
+  const { id, name, icon, source, unbindFunc } = props;
 
   const { navigateToDataSourceDetail } = useNavigatePage();
+  const { handleRebuild } = useDataSourceRebuild();
   const toDetail = (id: string) => {
     navigateToDataSourceDetail(id);
   };
@@ -70,15 +78,34 @@ const DataSourceItem = (props: DataSourceItemProps) => {
   };
 
   return (
-    <div className="flex items-center justify-between gap-1 px-2 rounded-md border ">
+    <div className="flex items-center justify-between gap-1 px-2 h-10 rounded-md border group hover:bg-bg-card">
       <div className="flex items-center gap-1">
         <div className="w-6 h-6 flex-shrink-0">{icon}</div>
+        <div className="text-base text-text-primary">
+          {DataSourceInfo[source].name}
+        </div>
         <div>{name}</div>
       </div>
-      <div className="flex gap-1 items-center">
+      <div className="flex items-center">
+        <Tooltip>
+          <TooltipTrigger>
+            <Button
+              variant={'transparent'}
+              className="border-none hidden group-hover:block"
+              type="button"
+              onClick={() => {
+                handleRebuild({ source_id: id });
+              }}
+            >
+              {/* <Settings /> */}
+              <IconFontFill name="reparse" className="text-text-primary" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>9999</TooltipContent>
+        </Tooltip>
         <Button
           variant={'transparent'}
-          className="border-none"
+          className="border-none hidden group-hover:block"
           type="button"
           onClick={() => {
             toDetail(id);
@@ -93,7 +120,7 @@ const DataSourceItem = (props: DataSourceItemProps) => {
           <Button
             type="button"
             variant={'transparent'}
-            className="border-none"
+            className="border-none hidden group-hover:block"
             onClick={() => {
               // openUnlinkModal();
               delSourceModal({
@@ -151,9 +178,12 @@ const LinkDataSource = (props: ILinkDataSourceProps) => {
   return (
     <div className="flex flex-col gap-2">
       <section className="flex flex-col">
-        <div className="flex items-center gap-1 text-text-primary text-sm">
+        <div className="text-base font-medium text-text-primary">
           {t('knowledgeConfiguration.dataSource')}
         </div>
+        {/* <div className="flex items-center gap-1 text-text-primary text-sm">
+          {t('knowledgeConfiguration.dataSource')}
+        </div> */}
         <div className="flex justify-between items-center">
           <div className="text-center text-xs text-text-secondary">
             {t('knowledgeConfiguration.linkSourceSetTip')}
