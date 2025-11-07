@@ -88,6 +88,17 @@ def resume(connector_id):
     return get_json_result(data=True)
 
 
+@manager.route("/<connector_id>/rebuild", methods=["PUT"])  # noqa: F821
+@login_required
+@validate_request("kb_id")
+def rebuild(connector_id):
+    req = request.json
+    err = ConnectorService.rebuild(connector_id, req["kb_id"], current_user.id)
+    if err:
+        return get_json_result(data=False, message=err, code=RetCode.SERVER_ERROR)
+    return get_json_result(data=True)
+
+
 @manager.route("/<connector_id>/link", methods=["POST"])  # noqa: F821
 @validate_request("kb_ids")
 @login_required

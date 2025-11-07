@@ -54,7 +54,6 @@ class ConnectorService(CommonService):
             SyncLogsService.update_by_id(task["id"], task)
         ConnectorService.update_by_id(connector_id, {"status": status})
 
-
     @classmethod
     def list(cls, tenant_id):
         fields = [
@@ -66,6 +65,15 @@ class ConnectorService(CommonService):
         return list(cls.model.select(*fields).where(
             cls.model.tenant_id == tenant_id
         ).dicts())
+
+    @classmethod
+    def rebuild(cls, kb_id:str, connector_id: str, tenant_id:str):
+        e, conn = cls.get_by_id(connector_id)
+        if not e:
+            return
+        SyncLogsService.filter_delete([SyncLogs.connector_id==connector_id, SyncLogs.kb_id==kb_id])
+        docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}")
+        return FileService.delete_docs([d.id for d in docs], tenant_id)
 
 
 class SyncLogsService(CommonService):
@@ -214,33 +222,6 @@ class Connector2KbService(CommonService):
     model = Connector2Kb
 
     @classmethod
-    def link_kb(cls, conn_id:str, kb_ids: list[str], tenant_id:str):
-        arr = cls.query(connector_id=conn_id)
-        old_kb_ids = [a.kb_id for a in arr]
-        for kb_id in kb_ids:
-            if kb_id in old_kb_ids:
-                continue
-            cls.save(**{
-                "id": get_uuid(),
-                "connector_id": conn_id,
-                "kb_id": kb_id
-            })
-            SyncLogsService.schedule(conn_id, kb_id, reindex=True)
-
-        errs = []
-        e, conn = ConnectorService.get_by_id(conn_id)
-        for kb_id in old_kb_ids:
-            if kb_id in kb_ids:
-                continue
-            cls.filter_delete([cls.model.kb_id==kb_id, cls.model.connector_id==conn_id])
-            SyncLogsService.filter_update([SyncLogs.connector_id==conn_id, SyncLogs.kb_id==kb_id, SyncLogs.status==TaskStatus.SCHEDULE], {"status": TaskStatus.CANCEL})
-            docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}")
-            err = FileService.delete_docs([d.id for d in docs], tenant_id)
-            if err:
-                errs.append(err)
-        return "\n".join(errs)
-
-    @classmethod
     def link_connectors(cls, kb_id:str, connector_ids: list[str], tenant_id:str):
         arr = cls.query(kb_id=kb_id)
         old_conn_ids = [a.connector_id for a in arr]
@@ -285,4 +266,6 @@ class Connector2KbService(CommonService):
                         cls.model.kb_id==kb_id
                     ).dicts()
         )
+
+
 
