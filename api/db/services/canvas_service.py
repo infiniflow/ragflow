@@ -67,6 +67,7 @@ class UserCanvasService(CommonService):
         # will get all permitted agents, be cautious
         fields = [
             cls.model.id,
+            cls.model.avatar,
             cls.model.title,
             cls.model.permission,
             cls.model.canvas_type,
