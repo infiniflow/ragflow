@@ -34,11 +34,10 @@ from flask_mail import Mail
 from flask_session import Session
 from flask_login import LoginManager, UserMixin
 from common import settings
-from api.utils.api_utils import server_error_response, get_json_result
+from api.utils.api_utils import server_error_response
 from api.constants import API_VERSION
 from flask import request as flask_request
 from api.db.db_models import APIToken
-from common.constants import RetCode
 
 __all__ = ["app"]
 
