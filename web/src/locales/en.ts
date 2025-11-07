@@ -274,6 +274,10 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      rebuildTip:
+        'Re-downloads files from the linked data source and parses them again.',
+      baseInfo: 'Basic Info',
+      gobalIndex: 'Global Index',
       dataSource: 'Data Source',
       linkSourceSetTip: 'Manage data source linkage with this dataset',
       linkDataSource: 'Link Data Source',
@@ -304,7 +308,7 @@ export default {
       dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
-      parseType: 'Ingestion pipeline',
+      parseType: 'Parse Type',
       manualSetup: 'Choose pipeline',
       builtIn: 'Built-in',
       titleDescription:
@@ -692,6 +696,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       newDocs: 'New Docs',
       timeStarted: 'Time started',
       log: 'Log',
+      confluenceDescription:
+        'Integrate your Confluence workspace to search documentation.',
       s3Description:
         'Connect to your AWS S3 bucket to import and sync stored files.',
       discordDescription:
