@@ -1,4 +1,6 @@
 import {
+  DSL,
+  GobalVariableType,
   IAgentForm,
   ICategorizeForm,
   ICategorizeItem,
@@ -344,6 +346,28 @@ export const buildDslComponentsByGraph = (
     });
 
   return components;
+};
+
+export const buildDslGobalVariables = (
+  dsl: DSL,
+  gobalVariables?: Record<string, GobalVariableType>,
+) => {
+  if (!gobalVariables) {
+    return { globals: dsl.globals, variables: dsl.variables || {} };
+  }
+
+  let gobalVariablesTemp = {};
+  Object.keys(gobalVariables).forEach((key) => {
+    gobalVariablesTemp = {
+      ['env.' + key]: gobalVariables[key].value,
+    };
+  });
+
+  const gobalVariablesResult = {
+    ...dsl.globals,
+    ...gobalVariablesTemp,
+  };
+  return { globals: gobalVariablesResult, variables: gobalVariables };
 };
 
 export const receiveMessageError = (res: any) =>
