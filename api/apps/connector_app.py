@@ -99,17 +99,6 @@ def rebuild(connector_id):
     return get_json_result(data=True)
 
 
-@manager.route("/<connector_id>/link", methods=["POST"])  # noqa: F821
-@validate_request("kb_ids")
-@login_required
-def link_kb(connector_id):
-    req = request.json
-    errors = Connector2KbService.link_kb(connector_id, req["kb_ids"], current_user.id)
-    if errors:
-        return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
-    return get_json_result(data=True)
-
-
 @manager.route("/<connector_id>/rm", methods=["POST"])  # noqa: F821
 @login_required
 def rm_connector(connector_id):

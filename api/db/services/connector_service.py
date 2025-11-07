@@ -99,6 +99,7 @@ class SyncLogsService(CommonService):
             Connector.timeout_secs,
             Knowledgebase.name.alias("kb_name"),
             Knowledgebase.avatar.alias("kb_avatar"),
+            Connector2Kb.auto_parse,
             cls.model.from_beginning.alias("reindex"),
             cls.model.status
         ]
@@ -187,7 +188,7 @@ class SyncLogsService(CommonService):
             .where(cls.model.id == id).execute()
 
     @classmethod
-    def duplicate_and_parse(cls, kb, docs, tenant_id, src):
+    def duplicate_and_parse(cls, kb, docs, tenant_id, src, auto_parse=True):
         if not docs:
             return None
 
@@ -203,10 +204,13 @@ class SyncLogsService(CommonService):
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)
+
         kb_table_num_map = {}
         for doc, _ in doc_blob_pairs:
-            DocumentService.run(tenant_id, doc, kb_table_num_map)
             doc_ids.append(doc["id"])
+            if not auto_parse or auto_parse == "0":
+                continue
+            DocumentService.run(tenant_id, doc, kb_table_num_map)
 
         return errs, doc_ids
 
