@@ -130,9 +130,14 @@ const columns = ({
 //   pageSize: 10,
 //   total: 0,
 // };
-export const DataSourceLogsTable = () => {
+export const DataSourceLogsTable = ({
+  refresh_freq,
+}: {
+  refresh_freq: number | false;
+}) => {
   // const [pagination, setPagination] = useState(paginationInit);
-  const { data, pagination, setPagination } = useLogListDataSource();
+  const { data, pagination, setPagination } =
+    useLogListDataSource(refresh_freq);
   const navigate = useNavigate();
   const currentPagination = useMemo(
     () => ({

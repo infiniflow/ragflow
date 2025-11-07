@@ -110,14 +110,15 @@ export const useAddDataSource = () => {
   };
 };
 
-export const useLogListDataSource = () => {
+export const useLogListDataSource = (refresh_freq: number | false) => {
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const [currentQueryParameters] = useSearchParams();
   const id = currentQueryParameters.get('id');
 
   const { data, isFetching } = useQuery<{ logs: IDataSource[]; total: number }>(
     {
-      queryKey: ['data-source-logs', id, pagination],
+      queryKey: ['data-source-logs', id, pagination, refresh_freq],
+      refetchInterval: refresh_freq ? refresh_freq * 60 * 1000 : false,
       queryFn: async () => {
         const { data } = await getDataSourceLogs(id as string, {
           page_size: pagination.pageSize,

@@ -183,7 +183,7 @@ const SourceDetailPage = () => {
           </div>
           <section className="flex flex-col gap-2 mt-6">
             <div className="text-2xl text-text-primary">{t('setting.log')}</div>
-            <DataSourceLogsTable />
+            <DataSourceLogsTable refresh_freq={detail?.refresh_freq || false} />
           </section>
         </CardContent>
       </Card>

@@ -1,6 +1,5 @@
 import { IconFontFill } from '@/components/icon-font';
 import { Button } from '@/components/ui/button';
-import { Modal } from '@/components/ui/modal/modal';
 import {
   Tooltip,
   TooltipContent,
@@ -41,41 +40,6 @@ const DataSourceItem = (props: DataSourceItemProps) => {
   const toDetail = (id: string) => {
     navigateToDataSourceDetail(id);
   };
-  const openUnlinkModal = () => {
-    Modal.show({
-      visible: true,
-      className: '!w-[560px]',
-      title: t('dataflowParser.unlinkSourceModalTitle'),
-      children: (
-        <div
-          className="text-sm text-text-secondary"
-          dangerouslySetInnerHTML={{
-            __html: t('dataflowParser.unlinkSourceModalContent'),
-          }}
-        ></div>
-      ),
-      onVisibleChange: () => {
-        Modal.hide();
-      },
-      footer: (
-        <div className="flex justify-end gap-2">
-          <Button variant={'outline'} onClick={() => Modal.hide()}>
-            {t('dataflowParser.changeStepModalCancelText')}
-          </Button>
-          <Button
-            variant={'secondary'}
-            className="!bg-state-error text-bg-base"
-            onClick={() => {
-              unbindFunc?.(props);
-              Modal.hide();
-            }}
-          >
-            {t('dataflowParser.unlinkSourceModalConfirmText')}
-          </Button>
-        </div>
-      ),
-    });
-  };
 
   return (
     <div className="flex items-center justify-between gap-1 px-2 h-10 rounded-md border group hover:bg-bg-card">
@@ -101,7 +65,9 @@ const DataSourceItem = (props: DataSourceItemProps) => {
               <IconFontFill name="reparse" className="text-text-primary" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>9999</TooltipContent>
+          <TooltipContent>
+            {t('knowledgeConfiguration.rebuildTip')}
+          </TooltipContent>
         </Tooltip>
         <Button
           variant={'transparent'}

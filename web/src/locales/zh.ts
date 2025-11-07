@@ -260,6 +260,7 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      rebuildTip: '从所有已关联的数据源重新下载文件并再次解析。',
       baseInfo: '基础信息',
       gobalIndex: '全局索引',
       dataSource: '数据源',
@@ -685,6 +686,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       newDocs: '新文档',
       timeStarted: '开始时间',
       log: '日志',
+      confluenceDescription: '连接你的 Confluence 工作区以搜索文档内容。',
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
       discordDescription: ' 连接你的 Discord 服务器以访问和分析聊天数据。',
       notionDescription: ' 同步 Notion 页面与数据库，用于知识检索。',
