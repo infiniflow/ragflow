@@ -26,7 +26,6 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
   AgentExceptionMethod,
-  JsonSchemaDataType,
   NodeHandleId,
   VariableType,
   initialAgentValues,
@@ -158,7 +157,6 @@ function AgentForm({ node }: INextOperatorForm) {
                     placeholder={t('flow.messagePlaceholder')}
                     showToolbar={true}
                     extraOptions={extraOptions}
-                    types={[JsonSchemaDataType.String]}
                   ></PromptEditor>
                 </FormControl>
               </FormItem>
@@ -176,7 +174,6 @@ function AgentForm({ node }: INextOperatorForm) {
                       <PromptEditor
                         {...field}
                         showToolbar={true}
-                        types={[JsonSchemaDataType.String]}
                       ></PromptEditor>
                     </section>
                   </FormControl>
