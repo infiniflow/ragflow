@@ -755,6 +755,15 @@ class DocumentService(CommonService):
             .where((cls.model.kb_id == kb_id) & (cls.model.run == TaskStatus.CANCEL))
             .scalar()
         )
+        downloaded = (
+            cls.model.select(fn.COUNT(1))
+            .where(
+                cls.model.kb_id == kb_id,
+                cls.model.run == TaskStatus.CANCEL,
+                cls.model.source_type != "local"
+            )
+            .scalar()
+        )
 
         row = (
             cls.model.select(
@@ -791,6 +800,7 @@ class DocumentService(CommonService):
             "finished": int(row["finished"]),
             "failed": int(row["failed"]),
             "cancelled": int(cancelled),
+            "downloaded": int(downloaded)
         }
 
     @classmethod
