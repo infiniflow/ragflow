@@ -464,7 +464,7 @@ class GPUStackCV(GptV4):
 
 
 class LocalCV(Base):
-    _FACTORY_NAME = "Moonshot"
+    _FACTORY_NAME = "Local"
 
     def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
         pass
@@ -975,3 +975,12 @@ class GoogleCV(AnthropicCV, GeminiCV):
         else:
             for ans in GeminiCV.chat_streamly(self, system, history, gen_conf, images):
                 yield ans
+
+
+class MoonshotCV(GptV4):
+    _FACTORY_NAME = "Moonshot"
+
+    def __init__(self, key, model_name="moonshot-v1-8k-vision-preview", lang="Chinese", base_url="https://api.moonshot.cn/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.moonshot.cn/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
