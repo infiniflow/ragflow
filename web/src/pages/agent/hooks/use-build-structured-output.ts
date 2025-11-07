@@ -153,3 +153,24 @@ export function useFindAgentStructuredOutputTypeByValue() {
 
   return findAgentStructuredOutputTypeByValue;
 }
+
+export function useFindAgentStructuredOutputLabelByValue() {
+  const { getNode } = useGraphStore((state) => state);
+
+  const findAgentStructuredOutputLabel = useCallback(
+    (value?: string) => {
+      if (value) {
+        const operatorName = getNode(getNodeId(value ?? ''))?.data.name;
+
+        if (operatorName) {
+          return operatorName + ' / ' + value?.split('@').at(1);
+        }
+      }
+
+      return '';
+    },
+    [getNode],
+  );
+
+  return findAgentStructuredOutputLabel;
+}
