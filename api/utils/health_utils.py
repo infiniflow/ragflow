@@ -13,6 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+from datetime import datetime
+import json
 import os
 import requests
 from timeit import default_timer as timer
@@ -158,6 +161,26 @@ def check_ragflow_server_alive():
         return {
             "status": "timeout",
             "message": f"error: {str(e)}",
+        }
+
+
+def check_task_executor_alive():
+    task_executor_heartbeats = {}
+    try:
+        task_executors = REDIS_CONN.smembers("TASKEXE")
+        now = datetime.now().timestamp()
+        for task_executor_id in task_executors:
+            heartbeats = REDIS_CONN.zrangebyscore(task_executor_id, now - 60 * 30, now)
+            heartbeats = [json.loads(heartbeat) for heartbeat in heartbeats]
+            task_executor_heartbeats[task_executor_id] = heartbeats
+        if task_executor_heartbeats:
+            return {"status": "alive", "message": task_executor_heartbeats}
+        else:
+            return {"status": "timeout", "message": "Not found any task executor."}
+    except Exception as e:
+        return {
+            "status": "timeout",
+            "message": f"error: {str(e)}"
         }
 
 
