@@ -58,7 +58,17 @@ const DataSource = () => {
     icon,
   }: IDataSorceInfo) => {
     return (
-      <div className="p-[10px] border border-border-button rounded-lg relative group hover:bg-bg-card">
+      <div
+        className="p-[10px] border border-border-button rounded-lg relative group hover:bg-bg-card"
+        onClick={() =>
+          showAddingModal({
+            id,
+            name,
+            description,
+            icon,
+          })
+        }
+      >
         <div className="flex gap-2">
           <div className="w-6 h-6">{icon}</div>
           <div className="flex flex-1 flex-col items-start gap-2">
@@ -67,17 +77,7 @@ const DataSource = () => {
           </div>
         </div>
         <div className=" absolute top-2 right-2">
-          <Button
-            onClick={() =>
-              showAddingModal({
-                id,
-                name,
-                description,
-                icon,
-              })
-            }
-            className=" rounded-md px-1 text-bg-base gap-1 bg-text-primary text-xs py-0 h-6 items-center hidden group-hover:flex"
-          >
+          <Button className=" rounded-md px-1 text-bg-base gap-1 bg-text-primary text-xs py-0 h-6 items-center hidden group-hover:flex">
             <Plus size={12} />
             {t('setting.add')}
           </Button>
