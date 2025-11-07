@@ -9,8 +9,11 @@ on:
       - 'docs/**'
       - '*.md'
       - '*.mdx'
-  pull_request:
-    types: [ labeled, synchronize, reopened ]
+  # The only difference between pull_request and pull_request_target is the context in which the workflow runs:
+  # — pull_request_target workflows use the workflow files from the default branch, and secrets are available.
+  # — pull_request workflows use the workflow files from the pull request branch, and secrets are unavailable.
+  pull_request_target:
+    types: [ synchronize, ready_for_review ]
     paths-ignore:
       - 'docs/**'
       - '*.md'
@@ -28,7 +31,7 @@ jobs:
     name: ragflow_tests
     # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
     # https://github.com/orgs/community/discussions/26261
-    if: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci') }}
+    if: ${{ github.event_name != 'pull_request_target' || contains(github.event.pull_request.labels.*.name, 'ci') }}
     runs-on: [ "self-hosted", "ragflow-test" ]
     steps:
       # https://github.com/hmarr/debug-action
@@ -37,19 +40,20 @@ jobs:
       - name: Ensure workspace ownership
         run: |
           echo "Workflow triggered by ${{ github.event_name }}"
-          echo "chown -R $USER $GITHUB_WORKSPACE" && sudo chown -R $USER $GITHUB_WORKSPACE
+          echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
 
       # https://github.com/actions/checkout/issues/1781
       - name: Check out code
         uses: actions/checkout@v4
         with:
+          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
           fetch-depth: 0
           fetch-tags: true
 
       - name: Check workflow duplication
-        if: ${{ !cancelled() && !failure() && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci')) }}
+        if: ${{ !cancelled() && !failure() }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" != "pull_request" && "$GITHUB_EVENT_NAME" != "schedule" ]]; then
+          if [[ ${GITHUB_EVENT_NAME} != "pull_request_target" && ${GITHUB_EVENT_NAME} != "schedule" ]]; then
             HEAD=$(git rev-parse HEAD)
             # Find a PR that introduced a given commit
             gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
@@ -67,14 +71,14 @@ jobs:
                   gh run cancel ${GITHUB_RUN_ID}
                   while true; do
                     status=$(gh run view ${GITHUB_RUN_ID} --json status -q .status)
-                    [ "$status" = "completed" ] && break
+                    [ "${status}" = "completed" ] && break
                     sleep 5
                   done
                   exit 1
                 fi
               fi
             fi
-          elif [[ "$GITHUB_EVENT_NAME" = "pull_request" ]]; then
+          elif [[ ${GITHUB_EVENT_NAME} == "pull_request_target" ]]; then
             PR_NUMBER=${{ github.event.pull_request.number }}
             PR_SHA_FP=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/PR_${PR_NUMBER}
             # Calculate the hash of the current workspace content
@@ -93,18 +97,18 @@ jobs:
 
       - name: Build ragflow:nightly
         run: |
-          RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-$HOME}
+          RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
           RAGFLOW_IMAGE=infiniflow/ragflow:${GITHUB_RUN_ID}
-          echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> $GITHUB_ENV
+          echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> ${GITHUB_ENV}
           sudo docker pull ubuntu:22.04
           sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t ${RAGFLOW_IMAGE} .
-          if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
+          if [[ ${GITHUB_EVENT_NAME} == "schedule" ]]; then
             export HTTP_API_TEST_LEVEL=p3
           else
             export HTTP_API_TEST_LEVEL=p2
           fi
-          echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> $GITHUB_ENV
-          echo "RAGFLOW_CONTAINER=${GITHUB_RUN_ID}-ragflow-cpu-1" >> $GITHUB_ENV
+          echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_ENV}
+          echo "RAGFLOW_CONTAINER=${GITHUB_RUN_ID}-ragflow-cpu-1" >> ${GITHUB_ENV}
 
       - name: Start ragflow:nightly
         run: |
@@ -154,7 +158,7 @@ jobs:
           echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env
           echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env
           echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> docker/.env
-          echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> $GITHUB_ENV
+          echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
           uv sync --python 3.10 --only-group test --no-default-groups --frozen && uv pip install sdk/python
