@@ -1931,6 +1931,7 @@ Important structured information may include: names, dates, locations, events, k
       roles: 'Roles',
       monitoring: 'Monitoring',
 
+      back: 'Back',
       active: 'Active',
       inactive: 'Inactive',
       enable: 'Enable',
@@ -1956,6 +1957,7 @@ Important structured information may include: names, dates, locations, events, k
       lastUpdateTime: 'Last update time',
 
       isAnonymous: 'Is Anonymous',
+      isSuperuser: 'Is Superuser',
 
       deleteUser: 'Delete user',
       deleteUserConfirmation: 'Are you sure you want to delete this user?',

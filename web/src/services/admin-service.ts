@@ -101,6 +101,8 @@ request.interceptors.response.use(
 );
 
 const {
+  getSystemVersion: _getSystemVersion,
+
   adminLogin,
   adminLogout,
   adminListUsers,
@@ -257,15 +259,5 @@ export const importWhitelistFromExcel = (file: File) => {
   return request.post<ResponseData<never>>(adminImportWhitelist, fd);
 };
 
-export default {
-  login,
-  logout,
-  listUsers,
-  createUser,
-  getUserDetails,
-  updateUserStatus,
-  updateUserPassword,
-  deleteUser,
-  listUserDatasets,
-  listUserAgents,
-};
+export const getSystemVersion = () =>
+  request.get<ResponseData<string>>(_getSystemVersion);

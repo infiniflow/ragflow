@@ -23,7 +23,7 @@ export type RAGFlowPaginationType = {
 
 export function RAGFlowPagination({
   current = 1,
-  pageSize = 10,
+  pageSize = 5,
   total = 0,
   onChange,
   showSizeChanger = true,
@@ -172,13 +172,14 @@ export function RAGFlowPagination({
           </PaginationItem>
         </PaginationContent>
       </Pagination>
+
       {showSizeChanger && (
         <RAGFlowSelect
           options={sizeChangerOptions}
           value={currentPageSize}
           onChange={handlePageSizeChange}
-          triggerClassName="bg-bg-card"
-        ></RAGFlowSelect>
+          triggerClassName="bg-bg-card border-transparent"
+        />
       )}
     </section>
   );

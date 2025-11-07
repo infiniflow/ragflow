@@ -3,14 +3,17 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { Eye, EyeOff, Search } from 'lucide-react';
 import { useState } from 'react';
+import { Button } from './button';
 
 export interface InputProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
   value?: string | number | readonly string[] | undefined;
+  prefix?: React.ReactNode;
+  suffix?: React.ReactNode;
 }
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, value, onChange, ...props }, ref) => {
+  ({ className, type, value, onChange, prefix, suffix, ...props }, ref) => {
     const isControlled = value !== undefined;
     const { defaultValue, ...restProps } = props;
     const inputValue = isControlled ? value : defaultValue;
@@ -29,99 +32,80 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         onChange?.(e);
       }
     };
-    return (
-      <>
-        {type !== 'password' && (
-          <input
-            type={type === 'password' && showPassword ? 'text' : type}
-            className={cn(
-              'flex h-8 w-full rounded-md border border-input bg-bg-input px-2 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-text-primary',
-              className,
-            )}
-            ref={ref}
-            value={inputValue ?? ''}
-            onChange={handleChange}
-            {...restProps}
-          />
+
+    const isPasswordInput = type === 'password';
+
+    const inputEl = (
+      <input
+        ref={ref}
+        type={isPasswordInput && showPassword ? 'text' : type}
+        className={cn(
+          'flex h-8 w-full rounded-md border-0.5 border-input bg-bg-input px-3 py-2 outline-none text-sm text-text-primary',
+          'file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-text-disabled',
+          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-primary',
+          'disabled:cursor-not-allowed disabled:opacity-50 transition-colors',
+          {
+            'pl-12': !!prefix,
+            'pr-12': !!suffix || isPasswordInput,
+            'pr-24': !!suffix && isPasswordInput,
+          },
+          className,
         )}
-        {type === 'password' && (
-          <div className="relative w-full">
-            <input
-              type={type === 'password' && showPassword ? 'text' : type}
-              className={cn(
-                'flex h-8 w-full rounded-md border border-input bg-bg-input px-2 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-text-primary',
-                className,
-              )}
-              ref={ref}
-              value={inputValue ?? ''}
-              onChange={handleChange}
-              {...restProps}
-            />
-            <button
+        value={inputValue ?? ''}
+        onChange={handleChange}
+        {...restProps}
+      />
+    );
+
+    if (prefix || suffix || isPasswordInput) {
+      return (
+        <div className="relative">
+          {prefix && (
+            <span className="absolute left-0 top-[50%] translate-y-[-50%]">
+              {prefix}
+            </span>
+          )}
+          {inputEl}
+          {suffix && (
+            <span
+              className={cn('absolute right-0 top-[50%] translate-y-[-50%]', {
+                'right-14': isPasswordInput,
+              })}
+            >
+              {suffix}
+            </span>
+          )}
+          {isPasswordInput && (
+            <Button
+              variant="transparent"
               type="button"
-              className="absolute inset-y-0 right-0 pr-3 flex items-center"
+              className="border-0 absolute right-1 top-[50%] translate-y-[-50%]"
               onClick={() => setShowPassword(!showPassword)}
             >
               {showPassword ? (
-                <EyeOff className="h-4 w-4 text-text-secondary" />
+                <EyeOff className="size-[1em]" />
               ) : (
-                <Eye className="h-4 w-4 text-text-secondary" />
+                <Eye className="size-[1em]" />
               )}
-            </button>
-          </div>
-        )}
-      </>
-    );
+            </Button>
+          )}
+        </div>
+      );
+    }
+
+    return inputEl;
   },
 );
+
 Input.displayName = 'Input';
 
-export interface ExpandedInputProps extends Omit<InputProps, 'prefix'> {
-  prefix?: React.ReactNode;
-  suffix?: React.ReactNode;
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+export interface ExpandedInputProps extends InputProps {}
 
-const ExpandedInput = ({
-  suffix,
-  prefix,
-  className,
-  ...props
-}: ExpandedInputProps) => {
-  return (
-    <div className="relative">
-      <span
-        className={cn({
-          ['absolute left-3 top-[50%] translate-y-[-50%]']: prefix,
-        })}
-      >
-        {prefix}
-      </span>
-      <Input
-        className={cn(
-          { 'pr-8': !!suffix, 'pl-8': !!prefix },
-          'bg-bg-base',
-          className,
-        )}
-        {...props}
-      ></Input>
-      <span
-        className={cn({
-          ['absolute right-3 top-[50%] translate-y-[-50%]']: suffix,
-        })}
-      >
-        {suffix}
-      </span>
-    </div>
-  );
-};
+const ExpandedInput = Input;
 
 const SearchInput = (props: InputProps) => {
-  return (
-    <ExpandedInput
-      prefix={<Search className="size-3.5" />}
-      {...props}
-    ></ExpandedInput>
-  );
+  return <Input {...props} prefix={<Search className="ml-3 size-[1em]" />} />;
 };
 
 type Value = string | readonly string[] | number | undefined;
