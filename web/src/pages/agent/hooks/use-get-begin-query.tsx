@@ -20,6 +20,7 @@ import { buildBeginInputListFromObject } from '../form/begin-form/utils';
 import { BeginQuery } from '../interface';
 import OperatorIcon from '../operator-icon';
 import useGraphStore from '../store';
+import { useFindAgentStructuredOutputTypeByValue } from './use-build-structured-output';
 
 export function useSelectBeginNodeDataInputs() {
   const getNode = useGraphStore((state) => state.getNode);
@@ -263,7 +264,7 @@ export const useGetComponentLabelByValue = (nodeId: string) => {
   return getLabel;
 };
 
-export function useGetVariableLabelByValue(nodeId: string) {
+export function useFlattenQueryVariableOptions(nodeId?: string) {
   const { getNode } = useGraphStore((state) => state);
   const nextOptions = useBuildQueryVariableOptions(getNode(nodeId));
 
@@ -273,11 +274,34 @@ export function useGetVariableLabelByValue(nodeId: string) {
     }, []);
   }, [nextOptions]);
 
-  const getLabel = useCallback(
+  return flattenOptions;
+}
+
+export function useGetVariableLabelOrTypeByValue(nodeId?: string) {
+  const flattenOptions = useFlattenQueryVariableOptions(nodeId);
+  const findAgentStructuredOutputTypeByValue =
+    useFindAgentStructuredOutputTypeByValue();
+
+  const getItem = useCallback(
     (val?: string) => {
-      return flattenOptions.find((x) => x.value === val)?.label;
+      return flattenOptions.find((x) => x.value === val);
     },
     [flattenOptions],
   );
-  return getLabel;
+
+  const getLabel = useCallback(
+    (val?: string) => {
+      return getItem(val)?.label;
+    },
+    [getItem],
+  );
+
+  const getType = useCallback(
+    (val?: string) => {
+      return getItem(val)?.type || findAgentStructuredOutputTypeByValue(val);
+    },
+    [findAgentStructuredOutputTypeByValue, getItem],
+  );
+
+  return { getLabel, getType };
 }

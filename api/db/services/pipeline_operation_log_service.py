@@ -159,7 +159,7 @@ class PipelineOperationLogService(CommonService):
             document_name=document.name,
             document_suffix=document.suffix,
             document_type=document.type,
-            source_from="",  # TODO: add in the future
+            source_from=document.source_type.split("/")[0],
             progress=document.progress,
             progress_msg=document.progress_msg,
             process_begin_at=document.process_begin_at,
