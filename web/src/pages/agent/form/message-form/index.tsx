@@ -14,7 +14,6 @@ import { memo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { JsonSchemaDataType } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { PromptEditor } from '../components/prompt-editor';
@@ -63,11 +62,9 @@ function MessageForm({ node }: INextOperatorForm) {
                     render={({ field }) => (
                       <FormItem className="flex-1">
                         <FormControl>
-                          {/* <Textarea {...field}> </Textarea> */}
                           <PromptEditor
                             {...field}
                             placeholder={t('flow.messagePlaceholder')}
-                            types={[JsonSchemaDataType.String]}
                           ></PromptEditor>
                         </FormControl>
                       </FormItem>

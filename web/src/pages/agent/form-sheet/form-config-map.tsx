@@ -38,6 +38,7 @@ import TokenizerForm from '../form/tokenizer-form';
 import ToolForm from '../form/tool-form';
 import TuShareForm from '../form/tushare-form';
 import UserFillUpForm from '../form/user-fill-up-form';
+import VariableAggregatorForm from '../form/variable-aggregator-form';
 import VariableAssignerForm from '../form/variable-assigner-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
@@ -185,5 +186,9 @@ export const FormConfigMap = {
   },
   [Operator.VariableAssigner]: {
     component: VariableAssignerForm,
+  },
+
+  [Operator.VariableAggregator]: {
+    component: VariableAggregatorForm,
   },
 };
