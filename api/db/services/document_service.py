@@ -759,7 +759,6 @@ class DocumentService(CommonService):
             cls.model.select(fn.COUNT(1))
             .where(
                 cls.model.kb_id == kb_id,
-                cls.model.run == TaskStatus.CANCEL,
                 cls.model.source_type != "local"
             )
             .scalar()
