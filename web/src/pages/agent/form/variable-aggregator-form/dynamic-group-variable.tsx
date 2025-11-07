@@ -5,6 +5,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
 import { QueryVariable } from '../components/query-variable';
+import { NameInput } from './name-input';
 
 type DynamicGroupVariableProps = {
   name: string;
@@ -36,9 +37,17 @@ export function DynamicGroupVariable({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <RAGFlowFormItem name={`${name}.group_name`} className="w-32">
+            {(field) => (
+              <NameInput
+                value={field.value}
+                onChange={field.onChange}
+              ></NameInput>
+            )}
+          </RAGFlowFormItem>
+          {/* Use a hidden form to store data types; otherwise, data loss may occur. */}
+          <RAGFlowFormItem name={`${name}.type`} className="hidden">
             <Input></Input>
           </RAGFlowFormItem>
-
           <Button
             variant={'ghost'}
             type="button"
@@ -72,6 +81,14 @@ export function DynamicGroupVariable({
               className="flex-1 min-w-0"
               hideLabel
               types={firstType && fields.length > 1 ? [firstType] : []}
+              onChange={(val) => {
+                const type = getType(val);
+                if (type && index === 0) {
+                  form.setValue(`${name}.type`, type, {
+                    shouldDirty: true,
+                  });
+                }
+              }}
             ></QueryVariable>
             <Button
               variant={'ghost'}

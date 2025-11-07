@@ -598,7 +598,7 @@ export const initialDataOperationsValues = {
 
 export const initialVariableAssignerValues = {};
 
-export const initialVariableAggregatorValues = {};
+export const initialVariableAggregatorValues = { outputs: {}, groups: [] };
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },

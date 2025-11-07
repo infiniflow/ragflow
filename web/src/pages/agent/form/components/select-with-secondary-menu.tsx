@@ -209,8 +209,12 @@ export function GroupedSelectWithSecondaryMenu({
                         onChange?.(option.value);
                         setOpen(false);
                       }}
+                      className="flex items-center justify-between"
                     >
-                      {option.label}
+                      <span> {option.label}</span>
+                      <span className="text-text-secondary">
+                        {get(option, 'type')}
+                      </span>
                     </CommandItem>
                   );
                 })}

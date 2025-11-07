@@ -112,9 +112,12 @@ export function StructuredOutputSecondaryMenu({
       <HoverCardTrigger asChild>
         <li
           onClick={handleMenuClick}
-          className="hover:bg-bg-card py-1 px-2 text-text-primary rounded-sm text-sm flex justify-between items-center"
+          className="hover:bg-bg-card py-1 px-2 text-text-primary rounded-sm text-sm flex justify-between items-center gap-2"
         >
-          {data.label} <ChevronRight className="size-3.5 text-text-secondary" />
+          <div className="flex justify-between flex-1">
+            {data.label} <span className="text-text-secondary">object</span>
+          </div>
+          <ChevronRight className="size-3.5 text-text-secondary" />
         </li>
       </HoverCardTrigger>
       <HoverCardContent
