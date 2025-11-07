@@ -193,7 +193,8 @@ jobs:
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
         run: |
-          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
+          sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
 
       - name: Start ragflow:nightly
         run: |
@@ -230,5 +231,9 @@ jobs:
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
         run: |
-          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v
-          sudo docker rmi -f ${RAGFLOW_IMAGE:-NO_IMAGE} || true
+          # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
+          sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} down -v || true
+          sudo docker ps -a --filter "label=com.docker.compose.project=${GITHUB_RUN_ID}" -q | xargs -r sudo docker rm -f
+          if [[ -n ${RAGFLOW_IMAGE} ]]; then
+            sudo docker rmi -f ${RAGFLOW_IMAGE}
+          fi
