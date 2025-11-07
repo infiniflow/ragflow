@@ -41,7 +41,6 @@ from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data, init_superuser
 from api.versions import get_ragflow_version
 from api.utils.configs import show_configs
-from rag.settings import print_rag_settings
 from rag.utils.mcp_tool_call_conn import shutdown_all_mcp_sessions
 from rag.utils.redis_conn import RedisDistributedLock
 
