@@ -19,7 +19,7 @@ from flask import request
 from flask_login import login_required, current_user
 
 from api.db import InputType
-from api.db.services.connector_service import ConnectorService, Connector2KbService, SyncLogsService
+from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.utils.api_utils import get_json_result, validate_request, get_data_error_result
 from common.misc_utils import get_uuid
 from common.constants import RetCode, TaskStatus
