@@ -78,7 +78,7 @@ class SyncBase:
                         } for doc in document_batch]
 
                         e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-                        err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}")
+                        err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
                         SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
                         doc_num += len(docs)
 
