@@ -4,7 +4,7 @@ import { LogicalOperatorIcon } from '@/hooks/logic-hooks/use-build-operator-opti
 import { ISwitchCondition, ISwitchNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import { memo, useCallback } from 'react';
-import { useGetVariableLabelByValue } from '../../hooks/use-get-begin-query';
+import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
 import { CommonHandle, LeftEndHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
 import NodeHeader from './node-header';
@@ -27,7 +27,7 @@ const ConditionBlock = ({
   nodeId,
 }: { condition: ISwitchCondition } & { nodeId: string }) => {
   const items = condition?.items ?? [];
-  const getLabel = useGetVariableLabelByValue(nodeId);
+  const { getLabel } = useGetVariableLabelOrTypeByValue(nodeId);
 
   const renderOperatorIcon = useCallback((operator?: string) => {
     const item = SwitchOperatorOptions.find((x) => x.value === operator);
