@@ -146,7 +146,10 @@ def get_redis_info():
 def check_ragflow_server_alive():
     start_time = timer()
     try:
-        response = requests.get(f'http://{settings.HOST_IP}:{settings.HOST_PORT}/v1/system/ping')
+        url = f'http://{settings.HOST_IP}:{settings.HOST_PORT}/v1/system/ping'
+        if '0.0.0.0' in url:
+            url.replace('0.0.0.0', '127.0.0.1')
+        response = requests.get(url)
         if response.status_code == 200:
             return {"status": "alive", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
         else:
