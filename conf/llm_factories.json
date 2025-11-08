@@ -892,7 +892,7 @@
         {
             "name": "Moonshot",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
             "status": "1",
             "llm": [
                 {
@@ -917,6 +917,20 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "kimi-k2-thinking",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k2-thinking-turbo",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "kimi-k2-turbo-preview",
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 262144,
@@ -932,23 +946,44 @@
                 },
                 {
                     "llm_name": "moonshot-v1-8k",
-                    "tags": "LLM,CHAT,",
-                    "max_tokens": 7900,
+                    "tags": "LLM,CHAT,8k",
+                    "max_tokens": 8192,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
                     "llm_name": "moonshot-v1-32k",
-                    "tags": "LLM,CHAT,",
+                    "tags": "LLM,CHAT,32k",
                     "max_tokens": 32768,
                     "model_type": "chat",
                     "is_tools": true
                 },
                 {
                     "llm_name": "moonshot-v1-128k",
-                    "tags": "LLM,CHAT",
-                    "max_tokens": 128000,
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 131072,
                     "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "moonshot-v1-8k-vision-preview",
+                    "tags": "LLM,IMAGE2TEXT,8k",
+                    "max_tokens": 8192,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "moonshot-v1-32k-vision-preview",
+                    "tags": "LLM,IMAGE2TEXT,32k",
+                    "max_tokens": 32768,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "moonshot-v1-128k-vision-preview",
+                    "tags": "LLM,IMAGE2TEXT,128k",
+                    "max_tokens": 131072,
+                    "model_type": "image2text",
                     "is_tools": true
                 },
                 {
