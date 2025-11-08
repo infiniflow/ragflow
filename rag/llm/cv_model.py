@@ -125,7 +125,6 @@ class Base(ABC):
             b64 = base64.b64encode(data).decode("utf-8")
             return b64
         with BytesIO() as buffered:
-            fmt = "jpeg"
             try:
                 image.save(buffered, format="JPEG")
             except Exception:
@@ -133,7 +132,6 @@ class Base(ABC):
                 buffered.seek(0)
                 buffered.truncate()
                 image.save(buffered, format="PNG")
-                fmt = "png"
             data = buffered.getvalue()
             b64 = base64.b64encode(data).decode("utf-8")
         return b64
@@ -640,7 +638,7 @@ class GeminiCV(Base):
         )
 
         if image is bytes:
-            with BytesIO(img) as bio:
+            with BytesIO(image) as bio:
                 with open(bio) as img:
                     input = [prompt, img]
                     res = self.model.generate_content(input)
@@ -658,7 +656,7 @@ class GeminiCV(Base):
         vision_prompt = prompt if prompt else vision_llm_describe_prompt()
 
         if image is bytes:
-            with BytesIO(img) as bio:
+            with BytesIO(image) as bio:
                 with open(bio) as img:
                     input = [vision_prompt, img]
                     res = self.model.generate_content(input)
