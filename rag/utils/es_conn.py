@@ -24,8 +24,6 @@ import copy
 from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch_dsl import UpdateByQuery, Q, Search, Index
 from elastic_transport import ConnectionTimeout
-from rag import settings
-from rag.settings import TAG_FLD, PAGERANK_FLD
 from common.decorator import singleton
 from common.file_utils import get_project_base_directory
 from common.misc_utils import convert_bytes
@@ -33,6 +31,8 @@ from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr,
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer
 from common.float_utils import get_float
+from common import settings
+from common.constants import PAGERANK_FLD, TAG_FLD
 
 ATTEMPT_TIME = 2
 
@@ -75,9 +75,8 @@ class ESConnection(DocStoreConnection):
             settings.ES["hosts"].split(","),
             basic_auth=(settings.ES["username"], settings.ES[
                 "password"]) if "username" in settings.ES and "password" in settings.ES else None,
-            verify_certs=False,
-            timeout=600
-        )
+            verify_certs= settings.ES.get("verify_certs", False),
+            timeout=600 )
         if self.es:
             self.info = self.es.info()
             return True

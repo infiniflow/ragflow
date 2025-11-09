@@ -1,4 +1,5 @@
 import { setInitialChatVariableEnabledFieldValue } from '@/utils/chat';
+import { Circle, CircleSlash2 } from 'lucide-react';
 import { ChatVariableEnabledField, variableEnabledFieldMap } from './chat';
 
 export enum ProgrammingLanguage {
@@ -75,7 +76,6 @@ export enum Operator {
   Relevant = 'Relevant',
   RewriteQuestion = 'RewriteQuestion',
   KeywordExtract = 'KeywordExtract',
-  Baidu = 'Baidu',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
   PubMed = 'PubMed',
@@ -83,9 +83,7 @@ export enum Operator {
   Google = 'Google',
   Bing = 'Bing',
   GoogleScholar = 'GoogleScholar',
-  DeepL = 'DeepL',
   GitHub = 'GitHub',
-  BaiduFanyi = 'BaiduFanyi',
   QWeather = 'QWeather',
   ExeSQL = 'ExeSQL',
   Switch = 'Switch',
@@ -110,6 +108,9 @@ export enum Operator {
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
   Placeholder = 'Placeholder',
+  DataOperations = 'DataOperations',
+  VariableAssigner = 'VariableAssigner',
+  VariableAggregator = 'VariableAggregator',
   File = 'File', // pipeline
   Parser = 'Parser',
   Tokenizer = 'Tokenizer',
@@ -117,3 +118,53 @@ export enum Operator {
   HierarchicalMerger = 'HierarchicalMerger',
   Extractor = 'Extractor',
 }
+
+export enum ComparisonOperator {
+  Equal = '=',
+  NotEqual = '≠',
+  GreatThan = '>',
+  GreatEqual = '≥',
+  LessThan = '<',
+  LessEqual = '≤',
+  Contains = 'contains',
+  NotContains = 'not contains',
+  StartWith = 'start with',
+  EndWith = 'end with',
+  Empty = 'empty',
+  NotEmpty = 'not empty',
+}
+
+export const SwitchOperatorOptions = [
+  { value: ComparisonOperator.Equal, label: 'equal', icon: 'equal' },
+  { value: ComparisonOperator.NotEqual, label: 'notEqual', icon: 'not-equals' },
+  { value: ComparisonOperator.GreatThan, label: 'gt', icon: 'Less' },
+  {
+    value: ComparisonOperator.GreatEqual,
+    label: 'ge',
+    icon: 'Greater-or-equal',
+  },
+  { value: ComparisonOperator.LessThan, label: 'lt', icon: 'Less' },
+  { value: ComparisonOperator.LessEqual, label: 'le', icon: 'less-or-equal' },
+  { value: ComparisonOperator.Contains, label: 'contains', icon: 'Contains' },
+  {
+    value: ComparisonOperator.NotContains,
+    label: 'notContains',
+    icon: 'not-contains',
+  },
+  {
+    value: ComparisonOperator.StartWith,
+    label: 'startWith',
+    icon: 'list-start',
+  },
+  { value: ComparisonOperator.EndWith, label: 'endWith', icon: 'list-end' },
+  {
+    value: ComparisonOperator.Empty,
+    label: 'empty',
+    icon: <Circle className="size-4" />,
+  },
+  {
+    value: ComparisonOperator.NotEmpty,
+    label: 'notEmpty',
+    icon: <CircleSlash2 className="size-4" />,
+  },
+];

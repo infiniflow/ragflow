@@ -22,6 +22,7 @@ import {
   LucideUserPen,
 } from 'lucide-react';
 
+import Spotlight from '@/components/spotlight';
 import { TableEmpty } from '@/components/table-skeleton';
 import { Button } from '@/components/ui/button';
 import {
@@ -58,7 +59,6 @@ import {
   importWhitelistFromExcel,
   listWhitelist,
   updateWhitelistEntry,
-  type AdminService,
 } from '@/services/admin-service';
 
 import { EMPTY_DATA, createFuzzySearchFn, getSortIcon } from './utils';
@@ -67,8 +67,6 @@ import useCreateEmailForm from './forms/email-form';
 import useImportExcelForm, {
   ImportExcelFormData,
 } from './forms/import-excel-form';
-
-// #endregion
 
 const columnHelper = createColumnHelper<AdminService.ListWhitelistItem>();
 const globalFilterFn = createFuzzySearchFn<AdminService.ListWhitelistItem>([
@@ -233,7 +231,9 @@ function AdminWhitelist() {
 
   return (
     <>
-      <Card className="!shadow-none h-full border border-border-button bg-transparent rounded-xl overflow-x-hidden overflow-y-auto">
+      <Card className="!shadow-none relative h-full border border-border-button bg-transparent rounded-xl overflow-x-hidden overflow-y-auto">
+        <Spotlight />
+
         <ScrollArea className="size-full">
           <CardHeader className="space-y-0 flex flex-row justify-between items-center">
             <CardTitle>{t('admin.whitelistManagement')}</CardTitle>

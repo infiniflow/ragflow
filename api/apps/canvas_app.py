@@ -25,7 +25,6 @@ from flask import request, Response
 from flask_login import login_required, current_user
 
 from agent.component import LLM
-from api import settings
 from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
@@ -34,7 +33,7 @@ from api.db.services.pipeline_operation_log_service import PipelineOperationLogS
 from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID, TaskService
 from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
-from api.settings import RetCode
+from common.constants import RetCode
 from common.misc_utils import get_uuid
 from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
 from agent.canvas import Canvas
@@ -46,6 +45,7 @@ from api.utils.file_utils import filename_type, read_potential_broken_pdf
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
+from common import settings
 
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
@@ -410,22 +410,22 @@ def test_db_connect():
             ibm_db.close(conn)
             return get_json_result(data="Database Connection Successful!")
         elif req["db_type"] == 'trino':
-            def _parse_catalog_schema(db: str):
-                if not db:
+            def _parse_catalog_schema(db_name: str):
+                if not db_name:
                     return None, None
-                if "." in db:
-                    c, s = db.split(".", 1)
-                elif "/" in db:
-                    c, s = db.split("/", 1)
+                if "." in db_name:
+                    catalog_name, schema_name = db_name.split(".", 1)
+                elif "/" in db_name:
+                    catalog_name, schema_name = db_name.split("/", 1)
                 else:
-                    c, s = db, "default"
-                return c, s
+                    catalog_name, schema_name = db_name, "default"
+                return catalog_name, schema_name
             try:
                 import trino
                 import os
                 from trino.auth import BasicAuthentication
-            except Exception:
-                return server_error_response("Missing dependency 'trino'. Please install: pip install trino")
+            except Exception as e:
+                return server_error_response(f"Missing dependency 'trino'. Please install: pip install trino, detail: {e}")
 
             catalog, schema = _parse_catalog_schema(req["database"])
             if not catalog:
@@ -479,7 +479,6 @@ def getlistversion(canvas_id):
 @login_required
 def getversion( version_id):
     try:
-
         e, version = UserCanvasVersionService.get_by_id(version_id)
         if version:
             return get_json_result(data=version.to_dict())
@@ -546,11 +545,11 @@ def trace():
     cvs_id = request.args.get("canvas_id")
     msg_id = request.args.get("message_id")
     try:
-        bin = REDIS_CONN.get(f"{cvs_id}-{msg_id}-logs")
-        if not bin:
+        binary = REDIS_CONN.get(f"{cvs_id}-{msg_id}-logs")
+        if not binary:
             return get_json_result(data={})
 
-        return get_json_result(data=json.loads(bin.encode("utf-8")))
+        return get_json_result(data=json.loads(binary.encode("utf-8")))
     except Exception as e:
         logging.exception(e)
 

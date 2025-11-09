@@ -29,6 +29,7 @@ from rag.utils.doc_store_conn import OrderByExpr
 
 from rag.nlp.search import Dealer, index_name
 from common.float_utils import get_float
+from common import settings
 
 
 class KGSearch(Dealer):
@@ -313,9 +314,8 @@ class KGSearch(Dealer):
 
 
 if __name__ == "__main__":
-    from api import settings
     import argparse
-    from api.db import LLMType
+    from common.constants import LLMType
     from api.db.services.knowledgebase_service import KnowledgebaseService
     from api.db.services.llm_service import LLMBundle
     from api.db.services.user_service import TenantService

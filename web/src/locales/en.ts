@@ -274,6 +274,13 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      rebuildTip:
+        'Re-downloads files from the linked data source and parses them again.',
+      baseInfo: 'Basic Info',
+      gobalIndex: 'Global Index',
+      dataSource: 'Data Source',
+      linkSourceSetTip: 'Manage data source linkage with this dataset',
+      linkDataSource: 'Link Data Source',
       tocExtraction: 'TOC Enhance',
       tocExtractionTip:
         " For existing chunks, generate a hierarchical table of contents (one directory per file). During queries, when Directory Enhancement is activated, the system will use a large model to determine which directory items are relevant to the user's question, thereby identifying the relevant chunks.",
@@ -301,7 +308,7 @@ export default {
       dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
-      parseType: 'Ingestion pipeline',
+      parseType: 'Parse Type',
       manualSetup: 'Choose pipeline',
       builtIn: 'Built-in',
       titleDescription:
@@ -671,7 +678,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       addCondition: 'Add Condition',
       meta: {
         disabled: 'Disabled',
-        automatic: 'Automatic',
+        auto: 'Automatic',
         manual: 'Manual',
       },
       cancel: 'Cancel',
@@ -680,6 +687,26 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      addDataSourceModalTital: 'Create your {{name}} connector',
+      deleteSourceModalTitle: 'Delete data source',
+      deleteSourceModalContent: `
+      <p>Are you sure you want to delete this data source link?</p>`,
+      deleteSourceModalConfirmText: 'Comfirm',
+      errorMsg: 'Error message',
+      newDocs: 'New Docs',
+      timeStarted: 'Time started',
+      log: 'Log',
+      confluenceDescription:
+        'Integrate your Confluence workspace to search documentation.',
+      s3Description:
+        'Connect to your AWS S3 bucket to import and sync stored files.',
+      discordDescription:
+        'Link your Discord server to access and analyze chat data.',
+      notionDescription:
+        'Sync pages and databases from Notion for knowledge retrieval.',
+      availableSourcesDescription: 'Select a data source to add',
+      availableSources: 'Available Sources',
+      datasourceDescription: 'Manage your data source and connections',
       save: 'Save',
       search: 'Search',
       availableModels: 'Available models',
@@ -697,6 +724,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Please enter your current password to change your password.',
       model: 'Model providers',
       systemModelDescription: 'Please complete these settings before beginning',
+      dataSources: 'Data Sources',
       team: 'Team',
       system: 'System',
       logout: 'Log out',
@@ -1528,6 +1556,15 @@ This delimiter is used to split the input text into several text pieces echo of 
       knowledgeBaseVars: 'Knowledge base variables',
       code: 'Code',
       codeDescription: 'It allows developers to write custom Python logic.',
+      dataOperations: 'Data operations',
+      dataOperationsDescription: 'Perform various operations on a Data object.',
+      variableAssigner: 'Variable assigner',
+      variableAssignerDescription:
+        'This component performs operations on Data objects, including extracting, filtering, and editing keys and values in the Data.',
+      variableAggregator: 'Variable aggregator',
+      variableAggregatorDescription: `This process aggregates variables from multiple branches into a single variable to achieve unified configuration for downstream nodes.
+
+The variable aggregation node (originally the variable assignment node) is a crucial node in the workflow. It is responsible for integrating the output results of different branches, ensuring that regardless of which branch is executed, its result can be referenced and accessed through a unified variable. This is extremely useful in multi-branch scenarios, as it maps variables with the same function across different branches to a single output variable, avoiding redundant definitions in downstream nodes.`,
       inputVariables: 'Input variables',
       runningHintText: 'is running...🕞',
       openingSwitch: 'Opening switch',
@@ -1726,6 +1763,16 @@ Important structured information may include: names, dates, locations, events, k
         configuration: 'Configuration',
         structuredOutput: 'Structured output',
       },
+      operations: 'Operations',
+      operationsOptions: {
+        selectKeys: 'Select keys',
+        literalEval: 'Literal eval',
+        combine: 'Combine',
+        filterValues: 'Filter values',
+        appendOrUpdate: 'Append or update',
+        removeKeys: 'Remove keys',
+        renameKeys: 'Rename keys',
+      },
     },
     llmTools: {
       bad_calculator: {
@@ -1825,12 +1872,16 @@ Important structured information may include: names, dates, locations, events, k
       changeStepModalConfirmText: 'Switch Anyway',
       changeStepModalCancelText: 'Cancel',
       unlinkPipelineModalTitle: 'Unlink Ingestion pipeline',
+      unlinkPipelineModalConfirmText: 'Unlink',
       unlinkPipelineModalContent: `
       <p>Once unlinked, this Dataset will no longer be connected to the current Ingestion pipeline.</p>
       <p>Files that are already being parsed  will continue until completion</p>
       <p>Files that are not yet parsed will no longer be processed</p> <br/>
       <p>Are you sure you want to proceed?</p> `,
-      unlinkPipelineModalConfirmText: 'Unlink',
+      unlinkSourceModalTitle: 'Unlink data source',
+      unlinkSourceModalContent: `
+      <p>Are you sure to unlink this data source ？</p>`,
+      unlinkSourceModalConfirmText: 'Unlink',
     },
     datasetOverview: {
       downloadTip: 'Files being downloaded from data sources. ',
@@ -1968,6 +2019,10 @@ Important structured information may include: names, dates, locations, events, k
       deleteRole: 'Delete role',
       deleteRoleConfirmation:
         'Are you sure you want to delete this role? This action cannot be undone.',
+
+      alive: 'Alive',
+      timeout: 'Timeout',
+      fail: 'Fail',
     },
   },
 };

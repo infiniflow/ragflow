@@ -74,15 +74,15 @@ class Session(Base):
                 json_data = res.json()
             except ValueError:
                 raise Exception(f"Invalid response {res}")
-            yield self._structure_answer(json_data)
+            yield self._structure_answer(json_data["data"])
         
 
     def _structure_answer(self, json_data):
         if self.__session_type == "agent":
-           answer = json_data["data"]["data"]["content"]
+           answer = json_data["data"]["content"]
         elif self.__session_type == "chat":
-            answer =json_data["data"]["answer"]
-        reference = json_data["data"].get("reference", {})
+            answer = json_data["answer"]
+        reference = json_data.get("reference", {})
         temp_dict = {
             "content": answer,
             "role": "assistant"

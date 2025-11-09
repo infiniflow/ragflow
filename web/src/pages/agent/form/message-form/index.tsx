@@ -62,7 +62,6 @@ function MessageForm({ node }: INextOperatorForm) {
                     render={({ field }) => (
                       <FormItem className="flex-1">
                         <FormControl>
-                          {/* <Textarea {...field}> </Textarea> */}
                           <PromptEditor
                             {...field}
                             placeholder={t('flow.messagePlaceholder')}

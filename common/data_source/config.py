@@ -44,6 +44,7 @@ class DocumentSource(str, Enum):
     CONFLUENCE = "confluence"
     GOOGLE_DRIVE = "google_drive"
     GMAIL = "gmail"
+    DISCORD = "discord"
 
 
 class FileOrigin(str, Enum):

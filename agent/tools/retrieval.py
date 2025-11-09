@@ -19,13 +19,13 @@ import os
 import re
 from abc import ABC
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.document_service import DocumentService
 from api.db.services.dialog_service import meta_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api import settings
-from api.utils.api_utils import timeout
+from common import settings
+from common.connection_utils import timeout
 from rag.app.tag import label_question
 from rag.prompts.generator import cross_languages, kb_prompt, gen_meta_filter
 

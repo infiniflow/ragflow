@@ -50,6 +50,16 @@ from common.data_source.models import BasicExpertInfo, Document
 
 
 def datetime_from_string(datetime_string: str) -> datetime:
+    datetime_string = datetime_string.strip()
+
+    # Handle the case where the datetime string ends with 'Z' (Zulu time)
+    if datetime_string.endswith('Z'):
+        datetime_string = datetime_string[:-1] + '+00:00'
+
+    # Handle timezone format "+0000" -> "+00:00"
+    if datetime_string.endswith('+0000'):
+        datetime_string = datetime_string[:-5] + '+00:00'
+
     datetime_object = datetime.fromisoformat(datetime_string)
 
     if datetime_object.tzinfo is None:
@@ -469,19 +479,19 @@ def get_file_ext(file_name: str) -> str:
     return os.path.splitext(file_name)[1].lower()
 
 
-def is_accepted_file_ext(file_ext: str, extension_type: str) -> bool:
-    """Check if file extension is accepted"""
-    # Simplified file extension check
-    image_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp"}
+def is_accepted_file_ext(file_ext: str, extension_type: OnyxExtensionType) -> bool:
+    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'}
     text_extensions = {".txt", ".md", ".mdx", ".conf", ".log", ".json", ".csv", ".tsv", ".xml", ".yml", ".yaml", ".sql"}
     document_extensions = {".pdf", ".docx", ".pptx", ".xlsx", ".eml", ".epub", ".html"}
 
-    if extension_type == "multimedia":
-        return file_ext in image_extensions
-    elif extension_type == "text":
-        return file_ext in text_extensions
-    elif extension_type == "document":
-        return file_ext in document_extensions
+    if extension_type & OnyxExtensionType.Multimedia and file_ext in image_extensions:
+        return True
+
+    if extension_type & OnyxExtensionType.Plain and file_ext in text_extensions:
+        return True
+
+    if extension_type & OnyxExtensionType.Document and file_ext in document_extensions:
+        return True
 
     return False
 

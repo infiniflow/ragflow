@@ -25,13 +25,12 @@ from infinity.common import ConflictType, InfinityException, SortType
 from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
 from infinity.errors import ErrorCode
-from rag import settings
-from rag.settings import PAGERANK_FLD, TAG_FLD
 from common.decorator import singleton
 import pandas as pd
 from common.file_utils import get_project_base_directory
 from rag.nlp import is_english
-
+from common.constants import PAGERANK_FLD, TAG_FLD
+from common import settings
 from rag.utils.doc_store_conn import (
     DocStoreConnection,
     MatchExpr,

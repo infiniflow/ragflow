@@ -17,7 +17,7 @@
 
 import re
 from werkzeug.security import check_password_hash
-from api.db import ActiveEnum
+from common.constants import ActiveEnum
 from api.db.services import UserService
 from api.db.joint_services.user_account_service import create_new_user, delete_user_data
 from api.db.services.canvas_service import UserCanvasService
@@ -52,6 +52,7 @@ class UserMgr:
         result = []
         for user in users:
             result.append({
+                'avatar': user.avatar,
                 'email': user.email,
                 'language': user.language,
                 'last_login_time': user.last_login_time,
@@ -170,7 +171,8 @@ class UserServiceMgr:
         return [{
             'title': r['title'],
             'permission': r['permission'],
-            'canvas_category': r['canvas_category'].split('_')[0]
+            'canvas_category': r['canvas_category'].split('_')[0],
+            'avatar': r['avatar']
         } for r in res]
 
 

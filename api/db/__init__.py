@@ -13,19 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from enum import Enum
+
 from enum import IntEnum
 from strenum import StrEnum
-
-
-class StatusEnum(Enum):
-    VALID = "1"
-    INVALID = "0"
-
-
-class ActiveEnum(Enum):
-    ACTIVE = "1"
-    INACTIVE = "0"
 
 
 class UserTenantRole(StrEnum):
@@ -56,66 +46,6 @@ class FileType(StrEnum):
 
 VALID_FILE_TYPES = {FileType.PDF, FileType.DOC, FileType.VISUAL, FileType.AURAL, FileType.VIRTUAL, FileType.FOLDER, FileType.OTHER}
 
-class LLMType(StrEnum):
-    CHAT = 'chat'
-    EMBEDDING = 'embedding'
-    SPEECH2TEXT = 'speech2text'
-    IMAGE2TEXT = 'image2text'
-    RERANK = 'rerank'
-    TTS    = 'tts'
-
-
-class ChatStyle(StrEnum):
-    CREATIVE = 'Creative'
-    PRECISE = 'Precise'
-    EVENLY = 'Evenly'
-    CUSTOM = 'Custom'
-
-
-class TaskStatus(StrEnum):
-    UNSTART = "0"
-    RUNNING = "1"
-    CANCEL = "2"
-    DONE = "3"
-    FAIL = "4"
-    SCHEDULE = "5"
-
-
-VALID_TASK_STATUS     = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL, TaskStatus.SCHEDULE}
-
-
-class ParserType(StrEnum):
-    PRESENTATION = "presentation"
-    LAWS = "laws"
-    MANUAL = "manual"
-    PAPER = "paper"
-    RESUME = "resume"
-    BOOK = "book"
-    QA = "qa"
-    TABLE = "table"
-    NAIVE = "naive"
-    PICTURE = "picture"
-    ONE = "one"
-    AUDIO = "audio"
-    EMAIL = "email"
-    KG = "knowledge_graph"
-    TAG = "tag"
-
-
-class FileSource(StrEnum):
-    LOCAL = ""
-    KNOWLEDGEBASE = "knowledgebase"
-    S3 = "s3"
-    NOTION = "notion"
-    DISCORD = "discord"
-    CONFLUENNCE = "confluence"
-    GMAIL = "gmail"
-    GOOGLE_DRIVER = "google_driver"
-    JIRA = "jira"
-    SHAREPOINT = "sharepoint"
-    SLACK = "slack"
-    TEAMS = "teams"
-
 
 class InputType(StrEnum):
     LOAD_STATE = "load_state"  # e.g. loading a current full state or a save state, such as from a file
@@ -124,24 +54,9 @@ class InputType(StrEnum):
     SLIM_RETRIEVAL = "slim_retrieval"
 
 
-class CanvasType(StrEnum):
-    ChatBot = "chatbot"
-    DocBot = "docbot"
-
-
 class CanvasCategory(StrEnum):
     Agent = "agent_canvas"
     DataFlow = "dataflow_canvas"
-
-VALID_CANVAS_CATEGORIES = {CanvasCategory.Agent, CanvasCategory.DataFlow}
-
-
-class MCPServerType(StrEnum):
-    SSE = "sse"
-    STREAMABLE_HTTP = "streamable-http"
-
-
-VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
 
 
 class PipelineTaskType(StrEnum):

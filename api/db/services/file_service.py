@@ -21,18 +21,19 @@ from pathlib import Path
 from flask_login import current_user
 from peewee import fn
 
-from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileSource, FileType, ParserType, TaskStatus
+from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileType
 from api.db.db_models import DB, Document, File, File2Document, Knowledgebase, Task
 from api.db.services import duplicate_name
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from common.misc_utils import get_uuid
+from common.constants import TaskStatus, FileSource, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService
 from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img
 from rag.llm.cv_model import GptV4
-from rag.utils.storage_factory import STORAGE_IMPL
+from common import settings
 
 
 class FileService(CommonService):
@@ -439,13 +440,13 @@ class FileService(CommonService):
                     raise RuntimeError("This type of file has not been supported yet!")
 
                 location = filename
-                while STORAGE_IMPL.obj_exist(kb.id, location):
+                while settings.STORAGE_IMPL.obj_exist(kb.id, location):
                     location += "_"
 
                 blob = file.read()
                 if filetype == FileType.PDF.value:
                     blob = read_potential_broken_pdf(blob)
-                STORAGE_IMPL.put(kb.id, location, blob)
+                settings.STORAGE_IMPL.put(kb.id, location, blob)
 
                 doc_id = get_uuid()
 
@@ -453,7 +454,7 @@ class FileService(CommonService):
                 thumbnail_location = ""
                 if img is not None:
                     thumbnail_location = f"thumbnail_{doc_id}.png"
-                    STORAGE_IMPL.put(kb.id, thumbnail_location, img)
+                    settings.STORAGE_IMPL.put(kb.id, thumbnail_location, img)
 
                 doc = {
                     "id": doc_id,
@@ -533,12 +534,12 @@ class FileService(CommonService):
     @staticmethod
     def get_blob(user_id, location):
         bname = f"{user_id}-downloads"
-        return STORAGE_IMPL.get(bname, location)
+        return settings.STORAGE_IMPL.get(bname, location)
 
     @staticmethod
     def put_blob(user_id, location, blob):
         bname = f"{user_id}-downloads"
-        return STORAGE_IMPL.put(bname, location, blob)
+        return settings.STORAGE_IMPL.put(bname, location, blob)
 
     @classmethod
     @DB.connection_context()
@@ -569,7 +570,7 @@ class FileService(CommonService):
                     deleted_file_count = FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
                 File2DocumentService.delete_by_document_id(doc_id)
                 if deleted_file_count > 0:
-                    STORAGE_IMPL.rm(b, n)
+                    settings.STORAGE_IMPL.rm(b, n)
 
                 doc_parser = doc.parser_id
                 if doc_parser == ParserType.TABLE:

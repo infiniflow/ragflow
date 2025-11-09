@@ -20,7 +20,7 @@ import re
 import numpy as np
 from PIL import Image
 
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from deepdoc.vision import OCR
 from rag.nlp import rag_tokenizer, tokenize
@@ -97,7 +97,13 @@ def vision_llm_chunk(binary, vision_model, prompt=None, callback=None):
 
     try:
         with io.BytesIO() as img_binary:
-            img.save(img_binary, format="JPEG")
+            try:
+                img.save(img_binary, format="JPEG")
+            except Exception:
+                img_binary.seek(0)
+                img_binary.truncate()
+                img.save(img_binary, format="PNG")
+                
             img_binary.seek(0)
             ans = clean_markdown_block(vision_model.describe_with_prompt(img_binary.read(), prompt))
             txt += "\n" + ans

@@ -19,10 +19,19 @@ import json
 import uuid
 
 import valkey as redis
-from rag import settings
 from common.decorator import singleton
+from common import settings
 from valkey.lock import Lock
 import trio
+
+REDIS = {}
+try:
+    REDIS = settings.decrypt_database_config(name="redis")
+except Exception:
+    try:
+        REDIS = settings.get_base_config("redis", {})
+    except Exception:
+        REDIS = {}
 
 class RedisMsg:
     def __init__(self, consumer, queue_name, group_name, msg_id, message):
@@ -61,7 +70,7 @@ class RedisDB:
 
     def __init__(self):
         self.REDIS = None
-        self.config = settings.REDIS
+        self.config = REDIS
         self.__open__()
 
     def register_scripts(self) -> None:

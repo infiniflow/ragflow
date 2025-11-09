@@ -21,7 +21,8 @@ from botocore.config import Config
 import time
 from io import BytesIO
 from common.decorator import singleton
-from rag import settings
+from common import settings
+
 
 @singleton
 class RAGFlowS3:
