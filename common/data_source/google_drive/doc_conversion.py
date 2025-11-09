@@ -1,10 +1,12 @@
 import io
 import logging
-from datetime import datetime
+import mimetypes
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlparse, urlunparse
 
-from googleapiclient.errors import HttpError  # type: ignore  # type: ignore  # type: ignore
+from googleapiclient.errors import HttpError  # type: ignore  # type: ignore
 from googleapiclient.http import MediaIoBaseDownload  # type: ignore
 from pydantic import BaseModel
 
@@ -30,6 +32,13 @@ GOOGLE_MIME_TYPES_TO_EXPORT = {
     GDriveMimeType.SPREADSHEET.value: "text/csv",
     GDriveMimeType.PPT.value: "text/plain",
 }
+
+GOOGLE_NATIVE_EXPORT_TARGETS: dict[str, tuple[str, str]] = {
+    GDriveMimeType.DOC.value: ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"),
+    GDriveMimeType.SPREADSHEET.value: ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"),
+    GDriveMimeType.PPT.value: ("application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx"),
+}
+GOOGLE_NATIVE_EXPORT_FALLBACK: tuple[str, str] = ("application/pdf", ".pdf")
 
 ACCEPTED_PLAIN_TEXT_FILE_EXTENSIONS = [
     ".txt",
@@ -288,6 +297,64 @@ def is_gdrive_image_mime_type(mime_type: str) -> bool:
     return is_valid_image_type(mime_type)
 
 
+def _get_extension_from_file(file: GoogleDriveFileType, mime_type: str, fallback: str = ".bin") -> str:
+    file_name = file.get("name") or ""
+    if file_name:
+        suffix = Path(file_name).suffix
+        if suffix:
+            return suffix
+
+    file_extension = file.get("fileExtension")
+    if file_extension:
+        return f".{file_extension.lstrip('.')}"
+
+    guessed = mimetypes.guess_extension(mime_type or "")
+    if guessed:
+        return guessed
+
+    return fallback
+
+
+def _download_file_blob(
+    service: GoogleDriveService,
+    file: GoogleDriveFileType,
+    size_threshold: int,
+    allow_images: bool,
+) -> tuple[bytes, str] | None:
+    mime_type = file.get("mimeType", "")
+    file_id = file.get("id")
+    if not file_id:
+        logging.warning("Encountered Google Drive file without id.")
+        return None
+
+    if is_gdrive_image_mime_type(mime_type) and not allow_images:
+        logging.debug(f"Skipping image {file.get('name')} because allow_images is False.")
+        return None
+
+    blob: bytes = b""
+    extension = ".bin"
+    try:
+        if mime_type in GOOGLE_NATIVE_EXPORT_TARGETS:
+            export_mime, extension = GOOGLE_NATIVE_EXPORT_TARGETS[mime_type]
+            request = service.files().export_media(fileId=file_id, mimeType=export_mime)
+            blob = _download_request(request, file_id, size_threshold)
+        elif mime_type.startswith("application/vnd.google-apps"):
+            export_mime, extension = GOOGLE_NATIVE_EXPORT_FALLBACK
+            request = service.files().export_media(fileId=file_id, mimeType=export_mime)
+            blob = _download_request(request, file_id, size_threshold)
+        else:
+            extension = _get_extension_from_file(file, mime_type)
+            blob = download_request(service, file_id, size_threshold)
+    except HttpError as e:
+        raise
+
+    if not blob:
+        return None
+    if not extension:
+        extension = _get_extension_from_file(file, mime_type)
+    return blob, extension
+
+
 def download_request(service: GoogleDriveService, file_id: str, size_threshold: int) -> bytes:
     """
     Download the file from Google Drive.
@@ -455,19 +522,13 @@ def _convert_drive_item_to_document(
     """
     Main entry point for converting a Google Drive file => Document object.
     """
-    sections = []
-
-    # Only construct these services when needed
     def _get_drive_service() -> GoogleDriveService:
         return get_drive_service(creds, user_email=retriever_email)
 
-    def _get_docs_service() -> GoogleDocsService:
-        return get_google_docs_service(creds, user_email=retriever_email)
-
     doc_id = "unknown"
+    link = file.get(WEB_VIEW_LINK_KEY)
 
     try:
-        # skip shortcuts or folders
         if file.get("mimeType") in [DRIVE_SHORTCUT_TYPE, DRIVE_FOLDER_TYPE]:
             logging.info("Skipping shortcut/folder.")
             return None
@@ -483,59 +544,38 @@ def _convert_drive_item_to_document(
                     logging.warning(f"{file.get('name')} exceeds size threshold of {size_threshold}. Skipping.")
                     return None
 
-        # If it's a Google Doc, we might do advanced parsing
-        if file.get("mimeType") == GDriveMimeType.DOC.value:
-            try:
-                logging.debug(f"starting advanced parsing for {file.get('name')}")
-                # get_document_sections is the advanced approach for Google Docs
-                doc_sections = get_document_sections(
-                    docs_service=_get_docs_service(),
-                    doc_id=file.get("id", ""),
-                )
-                if doc_sections:
-                    sections = cast(list[TextSection | ImageSection], doc_sections)
-                    if any(SMART_CHIP_CHAR in section.text for section in doc_sections):
-                        logging.debug(f"found smart chips in {file.get('name')}, aligning with basic sections")
-                        basic_sections = _download_and_extract_sections_basic(file, _get_drive_service(), allow_images, size_threshold)
-                        sections = align_basic_advanced(basic_sections, doc_sections)
+        blob_and_ext = _download_file_blob(
+            service=_get_drive_service(),
+            file=file,
+            size_threshold=size_threshold,
+            allow_images=allow_images,
+        )
 
-            except Exception as e:
-                logging.warning(f"Error in advanced parsing: {e}. Falling back to basic extraction.")
-        # Not Google Doc, attempt basic extraction
-        else:
-            sections = _download_and_extract_sections_basic(file, _get_drive_service(), allow_images, size_threshold)
+        if blob_and_ext is None:
+            logging.info(f"Skipping file {file.get('name')} due to incompatible type or download failure.")
+            return None
 
-        # If we still don't have any sections, skip this file
-        if not sections:
-            logging.warning(f"No content extracted from {file.get('name')}. Skipping.")
+        blob, extension = blob_and_ext
+        if not blob:
+            logging.warning(f"Failed to download {file.get('name')}. Skipping.")
             return None
 
         doc_id = onyx_document_id_from_drive_file(file)
-        def _get_external_access_for_raw_gdrive_file(*args, **kwargs):
-            return None
-        external_access = (
-            _get_external_access_for_raw_gdrive_file(
-                file=file,
-                company_domain=permission_sync_context.google_domain,
-                # try both retriever_email and primary_admin_email if necessary
-                retriever_drive_service=_get_drive_service(),
-                admin_drive_service=get_drive_service(creds, user_email=permission_sync_context.primary_admin_email),
-            )
-            if permission_sync_context
-            else None
-        )
+        modified_time = file.get("modifiedTime")
+        try:
+            doc_updated_at = datetime.fromisoformat(modified_time.replace("Z", "+00:00")) if modified_time else datetime.now(timezone.utc)
+        except ValueError:
+            logging.warning(f"Failed to parse modifiedTime for {file.get('name')}, defaulting to current time.")
+            doc_updated_at = datetime.now(timezone.utc)
 
-        # Create the document
         return Document(
             id=doc_id,
-            sections=sections,
             source=DocumentSource.GOOGLE_DRIVE,
             semantic_identifier=file.get("name", ""),
-            metadata={
-                "owner_names": ", ".join(owner.get("displayName", "") for owner in file.get("owners", [])),
-            },
-            doc_updated_at=datetime.fromisoformat(file.get("modifiedTime", "").replace("Z", "+00:00")),
-            external_access=external_access,
+            blob=blob,
+            extension=extension,
+            size_bytes=len(blob),
+            doc_updated_at=doc_updated_at,
         )
     except Exception as e:
         doc_id = "unknown"
@@ -544,7 +584,7 @@ def _convert_drive_item_to_document(
         except Exception as e2:
             logging.warning(f"Error getting document id from file: {e2}")
 
-        file_name = file.get("name")
+        file_name = file.get("name", doc_id)
         error_str = f"Error converting file '{file_name}' to Document as {retriever_email}: {e}"
         if isinstance(e, HttpError) and e.status_code == 403:
             logging.warning(f"Uncommon permissions error while downloading file. User {retriever_email} was able to see file {file_name} but cannot download it.")
@@ -553,7 +593,7 @@ def _convert_drive_item_to_document(
         return ConnectorFailure(
             failed_document=DocumentFailure(
                 document_id=doc_id,
-                document_link=(sections[0].link if sections else None),  # TODO: see if this is the best way to get a link
+                document_link=link,
             ),
             failed_entity=None,
             failure_message=error_str,
