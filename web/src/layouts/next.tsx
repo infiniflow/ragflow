@@ -3,9 +3,9 @@ import { Header } from './next-header';
 
 export default function NextLayout() {
   return (
-    <section className="h-full flex flex-col">
-      <Header></Header>
+    <main className="h-full flex flex-col">
+      <Header />
       <Outlet />
-    </section>
+    </main>
   );
 }
