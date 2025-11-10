@@ -21,14 +21,15 @@ import re
 import secrets
 import time
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Match
 
-from flask import redirect, request, session, make_response
+from flask import redirect, request, session, make_response, Response
 from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
-from api.db.db_models import TenantLLM
+from api.db.db_models import TenantLLM, User
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import get_init_tenant_llm
 from api.db.services.tenant_llm_service import TenantLLMService
@@ -748,6 +749,333 @@ def user_add():
         return get_json_result(
             data=False,
             message=f"User registration failure, error: {str(e)}",
+            code=RetCode.EXCEPTION_ERROR,
+        )
+
+
+@manager.route("/create", methods=["POST"])  # noqa: F821
+# @login_required
+@validate_request("nickname", "email", "password")
+def create_user() -> Response:
+    """
+    Create a new user.
+    ---
+    tags:
+      - User
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        description: User creation details.
+        required: true
+        schema:
+          type: object
+          properties:
+            nickname:
+              type: string
+              description: User nickname.
+            email:
+              type: string
+              description: User email.
+            password:
+              type: string
+              description: User password (encrypted).
+            is_superuser:
+              type: boolean
+              description: Whether the user should be a superuser (admin).
+              default: false
+    responses:
+      200:
+        description: User created successfully.
+        schema:
+          type: object
+          properties:
+            id:
+              type: string
+              description: User ID.
+            email:
+              type: string
+              description: User email.
+            nickname:
+              type: string
+              description: User nickname.
+      400:
+        description: Invalid request or email already exists.
+        schema:
+          type: object
+      500:
+        description: Server error during user creation.
+        schema:
+          type: object
+"""
+    req: Dict[str, Any] = request.json
+    email_address: str = req["email"]
+
+    # Validate the email address
+    email_match: Optional[Match[str]] = re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", email_address)
+    if not email_match:
+        return get_json_result(
+            data=False,
+            message=f"Invalid email address: {email_address}!",
+            code=RetCode.OPERATING_ERROR,
+        )
+
+    # Check if the email address is already used
+    existing_users: Any = UserService.query(email=email_address)
+    if existing_users:
+        return get_json_result(
+            data=False,
+            message=f"Email: {email_address} has already registered!",
+            code=RetCode.OPERATING_ERROR,
+        )
+
+    # Construct user info data
+    nickname: str = req["nickname"]
+    is_superuser: bool = req.get("is_superuser", False)
+    
+    try:
+        password: str = decrypt(req["password"])
+    except BaseException:
+        return get_json_result(
+            data=False,
+            code=RetCode.SERVER_ERROR,
+            message="Fail to decrypt password",
+        )
+
+    user_dict: Dict[str, Any] = {
+        "access_token": get_uuid(),
+        "email": email_address,
+        "nickname": nickname,
+        "password": password,
+        "login_channel": "password",
+        "last_login_time": get_format_time(),
+        "is_superuser": is_superuser,
+    }
+
+    user_id: str = get_uuid()
+    try:
+        users: Any = user_register(user_id, user_dict)
+        if not users:
+            raise Exception(f"Fail to create user {email_address}.")
+        users_list: List[User] = list(users)
+        if len(users_list) > 1:
+            raise Exception(f"Same email: {email_address} exists!")
+        
+        user: User = users_list[0]
+        return get_json_result(
+            data=user.to_dict(),
+            message=f"User {nickname} created successfully!",
+        )
+    except Exception as e:
+        rollback_user_registration(user_id)
+        logging.exception(e)
+        return get_json_result(
+            data=False,
+            message=f"User creation failure, error: {str(e)}",
+            code=RetCode.EXCEPTION_ERROR,
+        )
+
+
+@manager.route("/update", methods=["PUT"])  # noqa: F821
+# @login_required
+@validate_request()
+def update_user() -> Response:
+    """
+    Update an existing user.
+    ---
+    tags:
+      - User
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        description: User update details.
+        required: true
+        schema:
+          type: object
+          properties:
+            user_id:
+              type: string
+              description: User ID to update (optional if email is provided).
+            email:
+              type: string
+              description: User email to identify the user (optional if user_id is provided). If user_id is provided, this can be used as new_email.
+            new_email:
+              type: string
+              description: New email address (optional). Use this to update email when identifying user by user_id.
+            nickname:
+              type: string
+              description: New nickname (optional).
+            password:
+              type: string
+              description: New password (encrypted, optional).
+            is_superuser:
+              type: boolean
+              description: Whether the user should be a superuser (optional).
+    responses:
+      200:
+        description: User updated successfully.
+        schema:
+          type: object
+          properties:
+            id:
+              type: string
+              description: User ID.
+            email:
+              type: string
+              description: User email.
+            nickname:
+              type: string
+              description: User nickname.
+      400:
+        description: Invalid request or user not found.
+        schema:
+          type: object
+      500:
+        description: Server error during user update.
+        schema:
+          type: object
+    """
+    req: Dict[str, Any] = request.json
+    user_id: Optional[str] = req.get("user_id")
+    email: Optional[str] = req.get("email")
+    identified_by_user_id: bool = bool(user_id)
+    
+    # Validate that either user_id or email is provided
+    if not user_id and not email:
+        return get_json_result(
+            data=False,
+            message="Either user_id or email must be provided!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    
+    # Find the user by user_id or email
+    user: Optional[User] = None
+    
+    if user_id:
+        user = UserService.filter_by_id(user_id)
+    elif email:
+        # Validate the email address format
+        email_match: Optional[Match[str]] = re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", email)
+        if not email_match:
+            return get_json_result(
+                data=False,
+                message=f"Invalid email address: {email}!",
+                code=RetCode.OPERATING_ERROR,
+            )
+        
+        users: Any = UserService.query(email=email)
+        users_list: List[User] = list(users)
+        if not users_list:
+            return get_json_result(
+                data=False,
+                message=f"User with email: {email} not found!",
+                code=RetCode.DATA_ERROR,
+            )
+        if len(users_list) > 1:
+            return get_json_result(
+                data=False,
+                message=f"Multiple users found with email: {email}!",
+                code=RetCode.DATA_ERROR,
+            )
+        user = users_list[0]
+        user_id = user.id
+    
+    if not user:
+        return get_json_result(
+            data=False,
+            message="User not found!",
+            code=RetCode.DATA_ERROR,
+        )
+    
+    # Build update dictionary
+    update_dict: Dict[str, Any] = {}
+    
+    # Handle nickname update
+    # Allow empty nickname (empty string is a valid value)
+    if "nickname" in req:
+        nickname: Any = req.get("nickname")
+        # Only skip if explicitly None, allow empty strings
+        if nickname is not None:
+            update_dict["nickname"] = nickname
+    
+    # Handle password update
+    if "password" in req and req["password"]:
+        try:
+            password: str = decrypt(req["password"])
+            update_dict["password"] = generate_password_hash(password)
+        except BaseException:
+            return get_json_result(
+                data=False,
+                code=RetCode.SERVER_ERROR,
+                message="Fail to decrypt password",
+            )
+    
+    # Handle email update
+    # If user_id was used to identify, "email" in req can be the new email
+    # Otherwise, use "new_email" field
+    new_email: Optional[str] = None
+    if identified_by_user_id and "email" in req and req["email"]:
+        new_email = req["email"]
+    elif "new_email" in req and req["new_email"]:
+        new_email = req["new_email"]
+    
+    if new_email:
+        # Validate the new email address format
+        email_match: Optional[Match[str]] = re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", new_email)
+        if not email_match:
+            return get_json_result(
+                data=False,
+                message=f"Invalid email address: {new_email}!",
+                code=RetCode.OPERATING_ERROR,
+            )
+        
+        # Check if the new email is already used by another user
+        existing_users: Any = UserService.query(email=new_email)
+        existing_users_list: List[User] = list(existing_users)
+        if existing_users_list and existing_users_list[0].id != user_id:
+            return get_json_result(
+                data=False,
+                message=f"Email: {new_email} is already in use by another user!",
+                code=RetCode.OPERATING_ERROR,
+            )
+        update_dict["email"] = new_email
+    
+    # Handle is_superuser update
+    if "is_superuser" in req:
+        is_superuser: bool = req.get("is_superuser", False)
+        update_dict["is_superuser"] = is_superuser
+    
+    # If no fields to update, return error
+    if not update_dict:
+        return get_json_result(
+            data=False,
+            message="No valid fields to update!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    
+    # Update the user
+    try:
+        UserService.update_user(user_id, update_dict)
+        # Fetch updated user
+        updated_user: Optional[User] = UserService.filter_by_id(user_id)
+        if not updated_user:
+            return get_json_result(
+                data=False,
+                message="User updated but could not retrieve updated data!",
+                code=RetCode.EXCEPTION_ERROR,
+            )
+        return get_json_result(
+            data=updated_user.to_dict(),
+            message=f"User {updated_user.nickname} updated successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(
+            data=False,
+            message=f"User update failure, error: {str(e)}",
             code=RetCode.EXCEPTION_ERROR,
         )
 

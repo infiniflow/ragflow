@@ -144,6 +144,7 @@ dependencies = [
     "markdownify>=1.2.0",
     "captcha>=0.7.1",
     "pip>=25.2",
+    "ruff>=0.14.4",
 ]
 
 [dependency-groups]
