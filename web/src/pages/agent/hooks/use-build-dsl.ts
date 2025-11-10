@@ -1,16 +1,20 @@
 import { useFetchAgent } from '@/hooks/use-agent-request';
+import { GobalVariableType } from '@/interfaces/database/agent';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { useCallback } from 'react';
 import { Operator } from '../constant';
 import useGraphStore from '../store';
-import { buildDslComponentsByGraph } from '../utils';
+import { buildDslComponentsByGraph, buildDslGobalVariables } from '../utils';
 
 export const useBuildDslData = () => {
   const { data } = useFetchAgent();
   const { nodes, edges } = useGraphStore((state) => state);
 
   const buildDslData = useCallback(
-    (currentNodes?: RAGFlowNodeType[]) => {
+    (
+      currentNodes?: RAGFlowNodeType[],
+      otherParam?: { gobalVariables: Record<string, GobalVariableType> },
+    ) => {
       const nodesToProcess = currentNodes ?? nodes;
 
       // Filter out placeholder nodes and related edges
@@ -37,8 +41,13 @@ export const useBuildDslData = () => {
         data.dsl.components,
       );
 
+      const gobalVariables = buildDslGobalVariables(
+        data.dsl,
+        otherParam?.gobalVariables,
+      );
       return {
         ...data.dsl,
+        ...gobalVariables,
         graph: { nodes: filteredNodes, edges: filteredEdges },
         components: dslComponents,
       };

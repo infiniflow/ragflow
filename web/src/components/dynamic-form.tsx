@@ -70,6 +70,10 @@ interface DynamicFormProps<T extends FieldValues> {
   className?: string;
   children?: React.ReactNode;
   defaultValues?: DefaultValues<T>;
+  onFieldUpdate?: (
+    fieldName: string,
+    updatedField: Partial<FormFieldConfig>,
+  ) => void;
 }
 
 // Form ref interface
@@ -77,6 +81,8 @@ export interface DynamicFormRef {
   submit: () => void;
   getValues: () => any;
   reset: (values?: any) => void;
+  watch: (field: string, callback: (value: any) => void) => () => void;
+  updateFieldType: (fieldName: string, newType: FormFieldType) => void;
 }
 
 // Generate Zod validation schema based on field configurations
@@ -277,6 +283,7 @@ const DynamicForm = {
         className = '',
         children,
         defaultValues: formDefaultValues = {} as DefaultValues<T>,
+        onFieldUpdate,
       }: DynamicFormProps<T>,
       ref: React.Ref<any>,
     ) => {
@@ -311,6 +318,29 @@ const DynamicForm = {
         setError: form.setError,
         clearErrors: form.clearErrors,
         trigger: form.trigger,
+        watch: (field: string, callback: (value: any) => void) => {
+          const { unsubscribe } = form.watch((values: any) => {
+            if (values && values[field] !== undefined) {
+              callback(values[field]);
+            }
+          });
+          return unsubscribe;
+        },
+
+        onFieldUpdate: (
+          fieldName: string,
+          updatedField: Partial<FormFieldConfig>,
+        ) => {
+          setTimeout(() => {
+            if (onFieldUpdate) {
+              onFieldUpdate(fieldName, updatedField);
+            } else {
+              console.warn(
+                'onFieldUpdate prop is not provided. Cannot update field type.',
+              );
+            }
+          }, 0);
+        },
       }));
 
       useEffect(() => {
