@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/sheet';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchAgent } from '@/hooks/use-agent-request';
-import { GobalVariableType } from '@/interfaces/database/agent';
+import { GlobalVariableType } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import { Trash2 } from 'lucide-react';
@@ -86,7 +86,7 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
     const param = {
       ...(data.dsl?.variables || {}),
       [value.name]: value,
-    } as Record<string, GobalVariableType>;
+    } as Record<string, GlobalVariableType>;
 
     const res = await saveGraph(undefined, {
       gobalVariables: param,
@@ -101,7 +101,7 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
   const handleDeleteGobalVariable = async (key: string) => {
     const param = {
       ...(data.dsl?.variables || {}),
-    } as Record<string, GobalVariableType>;
+    } as Record<string, GlobalVariableType>;
     delete param[key];
     const res = await saveGraph(undefined, {
       gobalVariables: param,
