@@ -59,7 +59,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
 
     if (prefix || suffix || isPasswordInput) {
       return (
-        <div className="relative w-full">
+        <div className="relative">
           {prefix && (
             <span className="absolute left-0 top-[50%] translate-y-[-50%]">
               {prefix}
