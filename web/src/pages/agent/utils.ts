@@ -356,15 +356,19 @@ export const buildDslGobalVariables = (
     return { globals: dsl.globals, variables: dsl.variables || {} };
   }
 
-  let gobalVariablesTemp = {};
+  let gobalVariablesTemp: Record<string, any> = {};
+  let gobalSystem: Record<string, any> = {};
+  Object.keys(dsl.globals)?.forEach((key) => {
+    if (key.indexOf('sys') > -1) {
+      gobalSystem[key] = dsl.globals[key];
+    }
+  });
   Object.keys(gobalVariables).forEach((key) => {
-    gobalVariablesTemp = {
-      ['env.' + key]: gobalVariables[key].value,
-    };
+    gobalVariablesTemp['env.' + key] = gobalVariables[key].value;
   });
 
   const gobalVariablesResult = {
-    ...dsl.globals,
+    ...gobalSystem,
     ...gobalVariablesTemp,
   };
   return { globals: gobalVariablesResult, variables: gobalVariables };

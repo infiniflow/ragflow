@@ -550,11 +550,13 @@ const DynamicForm = {
                       }
                     : fieldProps;
                   return (
-                    <Input
-                      {...finalFieldProps}
-                      type={field.type}
-                      placeholder={field.placeholder}
-                    />
+                    <div className="w-full">
+                      <Input
+                        {...finalFieldProps}
+                        type={field.type}
+                        placeholder={field.placeholder}
+                      />
+                    </div>
                   );
                 }}
               </RAGFlowFormItem>
