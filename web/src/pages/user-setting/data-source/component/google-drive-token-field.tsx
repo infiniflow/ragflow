@@ -58,7 +58,7 @@ const GoogleDriveTokenField = ({
           placeholder ||
           '{ "token": "...", "refresh_token": "...", "client_id": "...", ... }'
         }
-        className="min-h-[120px]"
+        className="min-h-[120px] max-h-60 overflow-y-auto"
       />
       <Upload.Dragger {...uploadProps} className="!py-4">
         <p className="ant-upload-drag-icon">
