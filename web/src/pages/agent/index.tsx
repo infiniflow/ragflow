@@ -218,7 +218,7 @@ export default function Agent() {
             onClick={() => showGobalParamSheet()}
             loading={loading}
           >
-            {t('flow.gobalVariable')}
+            {t('flow.conversationVariable')}
           </ButtonLoading>
           <Button variant={'secondary'} onClick={handleButtonRunClick}>
             <CirclePlay />

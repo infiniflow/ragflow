@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import { useTranslate } from '@/hooks/common-hooks';
 import { TimezoneList } from '@/pages/user-setting/constants';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -122,20 +123,22 @@ const ProfilePage: FC = () => {
   //   };
 
   return (
-    <div className="h-full w-full text-text-secondary p-5 relative">
+    <div className="h-full w-full text-text-secondary relative flex flex-col gap-4">
       <Spotlight />
       {/* Header */}
-      <header className="flex flex-col gap-1 justify-between items-start mb-6">
-        <h1 className="text-2xl font-bold text-text-primary">{t('profile')}</h1>
-        <div className="text-sm text-text-secondary mb-6">
+      <header className="flex flex-col gap-1 justify-between items-start px-4 pt-4 pb-0">
+        <div className="text-2xl font-medium text-text-primary">
+          {t('profile')}
+        </div>
+        <div className="text-sm text-text-secondary ">
           {t('profileDescription')}
         </div>
       </header>
-
+      <Separator className="border-border-button bg-border-button h-[0.5px]" />
       {/* Main Content */}
-      <div className="max-w-3xl space-y-11 w-3/4">
+      <div className="max-w-3xl space-y-11 w-3/4 p-7">
         {/* Name */}
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-4 ">
           <label className="w-[190px] text-sm font-medium">
             {t('username')}
           </label>

@@ -1,5 +1,5 @@
 import { useFetchAgent } from '@/hooks/use-agent-request';
-import { GobalVariableType } from '@/interfaces/database/agent';
+import { GlobalVariableType } from '@/interfaces/database/agent';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { useCallback } from 'react';
 import { Operator } from '../constant';
@@ -13,7 +13,7 @@ export const useBuildDslData = () => {
   const buildDslData = useCallback(
     (
       currentNodes?: RAGFlowNodeType[],
-      otherParam?: { gobalVariables: Record<string, GobalVariableType> },
+      otherParam?: { gobalVariables: Record<string, GlobalVariableType> },
     ) => {
       const nodesToProcess = currentNodes ?? nodes;
 
