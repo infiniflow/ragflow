@@ -36,7 +36,6 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
   const { hideModal } = props;
   const { data, refetch } = useFetchAgent();
   const [fields, setFields] = useState<FormFieldConfig[]>(GobalFormFields);
-  const [watchType, setWatchType] = useState<string | undefined>();
   const { visible, showModal, hideModal: hideAddModal } = useSetModalState();
   const [defaultValues, setDefaultValues] = useState<FieldValues>(
     GobalVariableFormDefaultValues,
@@ -79,28 +78,6 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
       };
     }
   }, [fields]);
-
-  // useEffect(() => {
-  //   const fieldsCopy = cloneDeep(GobalFormFields);
-  //   let valueField = fieldsCopy.find((item) => item.name === 'value');
-
-  //   // const field = [
-  //   //   ...GobalFormFields,
-  //   //   {
-  //   //     ...valueField,
-  //   //     type: TypeMaps[watchType as keyof typeof TypeMaps],
-  //   //   },
-  //   // ] as FormFieldConfig[];
-  //   if (valueField) {
-  //     valueField.type = TypeMaps[watchType as keyof typeof TypeMaps];
-  //   }
-  //   // valueField = {...valueField, type : TypeMaps[watchType as keyof typeof TypeMaps]};
-  //   console.log(fieldsCopy);
-  //   // setFields(fieldsCopy);
-  //   handleFieldUpdate('value', {
-  //     type: TypeMaps[watchType as keyof typeof TypeMaps],
-  //   });
-  // }, [watchType]);
 
   const { saveGraph, loading } = useSaveGraph();
 
