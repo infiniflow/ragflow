@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 
+import { FileUploader } from '@/components/file-uploader';
 import message from '@/components/ui/message';
 import { Textarea } from '@/components/ui/textarea';
-import { InboxOutlined } from '@ant-design/icons';
-import { RcFile, Upload, UploadFile, UploadProps } from 'antd';
+import { FileMimeType } from '@/constants/common';
 
 type GoogleDriveTokenFieldProps = {
   value?: string;
@@ -16,37 +16,29 @@ const GoogleDriveTokenField = ({
   onChange,
   placeholder,
 }: GoogleDriveTokenFieldProps) => {
-  const [fileList, setFileList] = useState<UploadFile[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
 
-  const handleFile = async (file: RcFile) => {
-    try {
-      const text = await file.text();
-      JSON.parse(text);
-      onChange(text);
-      message.success('JSON uploaded');
-      setFileList([file as UploadFile]);
-    } catch (error) {
-      message.error('Invalid JSON file.');
-      return Upload.LIST_IGNORE;
-    } finally {
-      // noop
-    }
-    return false;
-  };
-
-  const uploadProps: UploadProps = useMemo(
-    () => ({
-      accept: '.json,application/json',
-      maxCount: 1,
-      multiple: false,
-      beforeUpload: handleFile,
-      onRemove: () => {
-        setFileList([]);
-      },
-      fileList,
-      showUploadList: true,
-    }),
-    [fileList],
+  const handleValueChange = useMemo(
+    () => (nextFiles: File[]) => {
+      if (!nextFiles.length) {
+        setFiles([]);
+        return;
+      }
+      const file = nextFiles[nextFiles.length - 1];
+      file
+        .text()
+        .then((text) => {
+          JSON.parse(text);
+          onChange(text);
+          setFiles([file]);
+          message.success('JSON uploaded');
+        })
+        .catch(() => {
+          message.error('Invalid JSON file.');
+          setFiles([]);
+        });
+    },
+    [onChange],
   );
 
   return (
@@ -60,15 +52,13 @@ const GoogleDriveTokenField = ({
         }
         className="min-h-[120px] max-h-60 overflow-y-auto"
       />
-      <Upload.Dragger {...uploadProps} className="!py-4">
-        <p className="ant-upload-drag-icon">
-          <InboxOutlined />
-        </p>
-        <p className="ant-upload-text">Click or drag a JSON file to upload</p>
-        <p className="ant-upload-hint">
-          The file content will be stored directly as OAuth tokens.
-        </p>
-      </Upload.Dragger>
+      <FileUploader
+        className="py-4"
+        value={files}
+        onValueChange={handleValueChange}
+        accept={{ '*.json': [FileMimeType.Json] }}
+        maxFileCount={1}
+      />
     </div>
   );
 };
