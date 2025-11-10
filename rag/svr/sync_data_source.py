@@ -63,6 +63,8 @@ class SyncBase:
                     if task["poll_range_start"]:
                         next_update = task["poll_range_start"]
                     for document_batch in document_batch_generator:
+                        if not document_batch:
+                            continue
                         min_update = min([doc.doc_updated_at for doc in document_batch])
                         max_update = max([doc.doc_updated_at for doc in document_batch])
                         next_update = max([next_update, max_update])
