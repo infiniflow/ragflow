@@ -163,8 +163,7 @@
     "tailwindcss": "^3",
     "terser-webpack-plugin": "^5.3.11",
     "ts-node": "^10.9.2",
-    "typescript": "^5.0.3",
-    "umi-plugin-icons": "^0.1.1"
+    "typescript": "^5.0.3"
   },
   "engines": {
     "node": ">=18.20.4"

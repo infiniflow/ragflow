@@ -14,7 +14,6 @@ export default defineConfig({
   routes,
   publicPath: '/',
   esbuildMinifyIIFE: true,
-  icons: {},
   hash: true,
   favicons: ['/logo.svg'],
   headScripts: [{ src: '/iconfont.js', defer: true }],
