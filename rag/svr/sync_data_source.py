@@ -258,6 +258,14 @@ func_factory = {
 
 async def dispatch_tasks():
     async with trio.open_nursery() as nursery:
+        while True:
+            try:
+                list(SyncLogsService.list_sync_tasks()[0])
+                break
+            except Exception as e:
+                logging.warning(f"DB is not ready yet: {e}")
+                await trio.sleep(3)
+
         for task in SyncLogsService.list_sync_tasks()[0]:
             if task["poll_range_start"]:
                 task["poll_range_start"] = task["poll_range_start"].astimezone(timezone.utc)
