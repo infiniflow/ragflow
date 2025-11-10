@@ -10,13 +10,13 @@ import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { INextOperatorForm } from '../../interface';
 import {
   QWeatherLangOptions,
   QWeatherTimePeriodOptions,
   QWeatherTypeOptions,
   QWeatherUserTypeOptions,
-} from '../../constant';
-import { INextOperatorForm } from '../../interface';
+} from '../../options';
 import { DynamicInputVariable } from '../components/next-dynamic-input-variable';
 
 enum FormFieldName {

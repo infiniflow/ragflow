@@ -12,23 +12,39 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo } from 'react';
+import { t } from 'i18next';
+import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { Output, OutputType } from '../components/output';
+import {
+  TavilySearchDepth,
+  TavilyTopic,
+  initialTavilyValues,
+} from '../../constant';
+import { INextOperatorForm } from '../../interface';
+import { buildOutputList } from '../../utils/build-output-list';
+import { ApiKeyField } from '../components/api-key-field';
+import { FormWrapper } from '../components/form-wrapper';
+import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { DynamicDomain } from './dynamic-domain';
-import { SearchDepth, Topic, defaultValues, useValues } from './use-values';
+import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
-const TavilyForm = () => {
-  const values = useValues();
+export const TavilyFormSchema = {
+  api_key: z.string(),
+};
+
+const outputList = buildOutputList(initialTavilyValues.outputs);
+
+function TavilyForm({ node }: INextOperatorForm) {
+  const values = useValues(node);
 
   const FormSchema = z.object({
-    api_key: z.string(),
+    ...TavilyFormSchema,
     query: z.string(),
-    search_depth: z.enum([SearchDepth.Advanced, SearchDepth.Basic]),
-    topic: z.enum([Topic.News, Topic.General]),
+    search_depth: z.enum([TavilySearchDepth.Advanced, TavilySearchDepth.Basic]),
+    topic: z.enum([TavilyTopic.News, TavilyTopic.General]),
     max_results: z.coerce.number(),
     days: z.coerce.number(),
     include_answer: z.boolean(),
@@ -44,41 +60,13 @@ const TavilyForm = () => {
     resolver: zodResolver(FormSchema),
   });
 
-  const outputList = useMemo(() => {
-    return Object.entries(defaultValues.outputs).reduce<OutputType[]>(
-      (pre, [key, val]) => {
-        pre.push({ title: key, type: val.type });
-        return pre;
-      },
-      [],
-    );
-  }, []);
-
-  useWatchFormChange(form);
+  useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>
-      <form
-        className="space-y-5 px-5 "
-        autoComplete="off"
-        onSubmit={(e) => {
-          e.preventDefault();
-        }}
-      >
+      <FormWrapper>
         <FormContainer>
-          <FormField
-            control={form.control}
-            name="api_key"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Api Key</FormLabel>
-                <FormControl>
-                  <Input type="password" {...field}></Input>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <ApiKeyField></ApiKeyField>
         </FormContainer>
         <FormContainer>
           <QueryVariable></QueryVariable>
@@ -87,12 +75,12 @@ const TavilyForm = () => {
             name="search_depth"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Search Depth</FormLabel>
+                <FormLabel>{t('flow.searchDepth')}</FormLabel>
                 <FormControl>
                   <RAGFlowSelect
                     placeholder="shadcn"
                     {...field}
-                    options={buildOptions(SearchDepth)}
+                    options={buildOptions(TavilySearchDepth, t, 'flow')}
                   />
                 </FormControl>
                 <FormMessage />
@@ -104,12 +92,12 @@ const TavilyForm = () => {
             name="topic"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Topic</FormLabel>
+                <FormLabel>{t('flow.tavilyTopic')}</FormLabel>
                 <FormControl>
                   <RAGFlowSelect
                     placeholder="shadcn"
                     {...field}
-                    options={buildOptions(Topic)}
+                    options={buildOptions(TavilyTopic, t, 'flow')}
                   />
                 </FormControl>
                 <FormMessage />
@@ -121,7 +109,7 @@ const TavilyForm = () => {
             name="max_results"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Max Results</FormLabel>
+                <FormLabel>{t('flow.maxResults')}</FormLabel>
                 <FormControl>
                   <Input type={'number'} {...field}></Input>
                 </FormControl>
@@ -134,7 +122,7 @@ const TavilyForm = () => {
             name="days"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Days</FormLabel>
+                <FormLabel>{t('flow.days')}</FormLabel>
                 <FormControl>
                   <Input type={'number'} {...field}></Input>
                 </FormControl>
@@ -147,7 +135,7 @@ const TavilyForm = () => {
             name="include_answer"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Include Answer</FormLabel>
+                <FormLabel>{t('flow.includeAnswer')}</FormLabel>
                 <FormControl>
                   <Switch
                     checked={field.value}
@@ -163,7 +151,7 @@ const TavilyForm = () => {
             name="include_raw_content"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Include Raw Content</FormLabel>
+                <FormLabel>{t('flow.includeRawContent')}</FormLabel>
                 <FormControl>
                   <Switch
                     checked={field.value}
@@ -179,7 +167,7 @@ const TavilyForm = () => {
             name="include_images"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Include Images</FormLabel>
+                <FormLabel>{t('flow.includeImages')}</FormLabel>
                 <FormControl>
                   <Switch
                     checked={field.value}
@@ -195,7 +183,7 @@ const TavilyForm = () => {
             name="include_image_descriptions"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Include Image Descriptions</FormLabel>
+                <FormLabel>{t('flow.includeImageDescriptions')}</FormLabel>
                 <FormControl>
                   <Switch
                     checked={field.value}
@@ -208,19 +196,19 @@ const TavilyForm = () => {
           />
           <DynamicDomain
             name="include_domains"
-            label={'Include Domains'}
+            label={t('flow.includeDomains')}
           ></DynamicDomain>
           <DynamicDomain
             name="exclude_domains"
-            label={'Exclude Domains'}
+            label={t('flow.ExcludeDomains')}
           ></DynamicDomain>
         </FormContainer>
-      </form>
+      </FormWrapper>
       <div className="p-5">
         <Output list={outputList}></Output>
       </div>
     </Form>
   );
-};
+}
 
-export default TavilyForm;
+export default memo(TavilyForm);

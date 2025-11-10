@@ -5,7 +5,7 @@ slug: /http_api_reference
 
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](../guides/models/llm_api_key_setup.md).
+A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 ---
 
@@ -79,87 +79,66 @@ curl --request POST \
 Stream:
 
 ```json
-{
-    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+data:{
+    "id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728",
     "choices": [
         {
             "delta": {
-                "content": "This is a test. If you have any specific questions or need information, feel",
+                "content": "Hello! It seems like you're just greeting me. If you have a specific",
                 "role": "assistant",
                 "function_call": null,
-                "tool_calls": null
+                "tool_calls": null,
+                "reasoning_content": null
             },
             "finish_reason": null,
             "index": 0,
             "logprobs": null
         }
     ],
-    "created": 1740543996,
+    "created": 1755084508,
     "model": "model",
     "object": "chat.completion.chunk",
     "system_fingerprint": "",
     "usage": null
 }
-// omit duplicated information
-{"choices":[{"delta":{"content":" free to ask, and I will do my best to provide an answer based on","role":"assistant"}}]}
-{"choices":[{"delta":{"content":" the knowledge I have. If your question is unrelated to the provided knowledge base,","role":"assistant"}}]}
-{"choices":[{"delta":{"content":" I will let you know.","role":"assistant"}}]}
-// the last chunk
-{
-    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
-    "choices": [
-        {
-            "delta": {
-                "content": null,
-                "role": "assistant",
-                "function_call": null,
-                "tool_calls": null
-            },
-            "finish_reason": "stop",
-            "index": 0,
-            "logprobs": null
-        }
-    ],
-    "created": 1740543996,
-    "model": "model",
-    "object": "chat.completion.chunk",
-    "system_fingerprint": "",
-    "usage": {
-        "prompt_tokens": 18,
-        "completion_tokens": 225,
-        "total_tokens": 243
-    }
-}
+
+data:{"id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728", "choices": [{"delta": {"content": " question or need information, feel free to ask, and I'll do my best", "role": "assistant", "function_call": null, "tool_calls": null, "reasoning_content": null}, "finish_reason": null, "index": 0, "logprobs": null}], "created": 1755084508, "model": "model", "object": "chat.completion.chunk", "system_fingerprint": "", "usage": null}
+
+data:{"id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728", "choices": [{"delta": {"content": " to assist you based on the knowledge base provided.", "role": "assistant", "function_call": null, "tool_calls": null, "reasoning_content": null}, "finish_reason": null, "index": 0, "logprobs": null}], "created": 1755084508, "model": "model", "object": "chat.completion.chunk", "system_fingerprint": "", "usage": null}
+
+data:{"id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728", "choices": [{"delta": {"content": null, "role": "assistant", "function_call": null, "tool_calls": null, "reasoning_content": null}, "finish_reason": "stop", "index": 0, "logprobs": null}], "created": 1755084508, "model": "model", "object": "chat.completion.chunk", "system_fingerprint": "", "usage": {"prompt_tokens": 5, "completion_tokens": 188, "total_tokens": 193}}
+
+data:[DONE]
 ```
 
 Non-stream:
 
 ```json
 {
-    "choices":[
+    "choices": [
         {
-            "finish_reason":"stop",
-            "index":0,
-            "logprobs":null,
-            "message":{
-                "content":"This is a test. If you have any specific questions or need information, feel free to ask, and I will do my best to provide an answer based on the knowledge I have. If your question is unrelated to the provided knowledge base, I will let you know.",
-                "role":"assistant"
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+                "content": "Hello! I'm your smart assistant. What can I do for you?",
+                "role": "assistant"
             }
         }
     ],
-    "created":1740543499,
-    "id":"chatcmpl-3a9c3572f29311efa69751e139332ced",
-    "model":"model",
-    "object":"chat.completion",
-    "usage":{
-        "completion_tokens":246,
-        "completion_tokens_details":{
-            "accepted_prediction_tokens":246,
-            "reasoning_tokens":18,
-            "rejected_prediction_tokens":0
+    "created": 1755084403,
+    "id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728",
+    "model": "model",
+    "object": "chat.completion",
+    "usage": {
+        "completion_tokens": 55,
+        "completion_tokens_details": {
+            "accepted_prediction_tokens": 55,
+            "reasoning_tokens": 5,
+            "rejected_prediction_tokens": 0
         },
-        "prompt_tokens":18,
-        "total_tokens":264
+        "prompt_tokens": 5,
+        "total_tokens": 60
     }
 }
 ```
@@ -211,101 +190,198 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*
+- `model` (*Body parameter*) `string`, *Required*  
   The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
-- `messages` (*Body parameter*) `list[object]`, *Required*
+- `messages` (*Body parameter*) `list[object]`, *Required*  
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
 
-- `stream` (*Body parameter*) `boolean`
+- `stream` (*Body parameter*) `boolean`  
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
+
+- `session_id` (*Body parameter*) `string`  
+  Agent session id.
 
 #### Response
 
 Stream:
 
 ```json
-{
-    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+...
+
+data: {
+    "id": "c39f6f9c83d911f0858253708ecb6573",
+    "object": "chat.completion.chunk",
+    "model": "d1f79142831f11f09cc51795b9eb07c0",
     "choices": [
         {
             "delta": {
-                "content": "This is a test. If you have any specific questions or need information, feel",
-                "role": "assistant",
-                "function_call": null,
-                "tool_calls": null
+                "content": " terminal"
             },
             "finish_reason": null,
-            "index": 0,
-            "logprobs": null
+            "index": 0
         }
-    ],
-    "created": 1740543996,
-    "model": "model",
-    "object": "chat.completion.chunk",
-    "system_fingerprint": "",
-    "usage": null
+    ]
 }
-// omit duplicated information
-{"choices":[{"delta":{"content":" free to ask, and I will do my best to provide an answer based on","role":"assistant"}}]}
-{"choices":[{"delta":{"content":" the knowledge I have. If your question is unrelated to the provided knowledge base,","role":"assistant"}}]}
-{"choices":[{"delta":{"content":" I will let you know.","role":"assistant"}}]}
-// the last chunk
-{
-    "id": "chatcmpl-3a9c3572f29311efa69751e139332ced",
+
+data: {
+    "id": "c39f6f9c83d911f0858253708ecb6573",
+    "object": "chat.completion.chunk",
+    "model": "d1f79142831f11f09cc51795b9eb07c0",
     "choices": [
         {
             "delta": {
-                "content": null,
-                "role": "assistant",
-                "function_call": null,
-                "tool_calls": null
+                "content": "."
             },
-            "finish_reason": "stop",
-            "index": 0,
-            "logprobs": null
+            "finish_reason": null,
+            "index": 0
         }
-    ],
-    "created": 1740543996,
-    "model": "model",
-    "object": "chat.completion.chunk",
-    "system_fingerprint": "",
-    "usage": {
-        "prompt_tokens": 18,
-        "completion_tokens": 225,
-        "total_tokens": 243
-    }
+    ]
 }
+
+data: {
+    "id": "c39f6f9c83d911f0858253708ecb6573",
+    "object": "chat.completion.chunk",
+    "model": "d1f79142831f11f09cc51795b9eb07c0",
+    "choices": [
+        {
+            "delta": {
+                "content": "",
+                "reference": {
+                    "chunks": {
+                        "20": {
+                            "id": "4b8935ac0a22deb1",
+                            "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
+                            "document_id": "4bdd2ff65e1511f0907f09f583941b45",
+                            "document_name": "INSTALL22.md",
+                            "dataset_id": "456ce60c5e1511f0907f09f583941b45",
+                            "image_id": "",
+                            "positions": [
+                                [
+                                    12,
+                                    11,
+                                    11,
+                                    11,
+                                    11
+                                ]
+                            ],
+                            "url": null,
+                            "similarity": 0.5697155305154673,
+                            "vector_similarity": 0.7323851005515574,
+                            "term_similarity": 0.5000000005,
+                            "doc_type": ""
+                        }
+                    },
+                    "doc_aggs": {
+                        "INSTALL22.md": {
+                            "doc_name": "INSTALL22.md",
+                            "doc_id": "4bdd2ff65e1511f0907f09f583941b45",
+                            "count": 3
+                        },
+                        "INSTALL.md": {
+                            "doc_name": "INSTALL.md",
+                            "doc_id": "4bd7fdd85e1511f0907f09f583941b45",
+                            "count": 2
+                        },
+                        "INSTALL(1).md": {
+                            "doc_name": "INSTALL(1).md",
+                            "doc_id": "4bdfb42e5e1511f0907f09f583941b45",
+                            "count": 2
+                        },
+                        "INSTALL3.md": {
+                            "doc_name": "INSTALL3.md",
+                            "doc_id": "4bdab5825e1511f0907f09f583941b45",
+                            "count": 1
+                        }
+                    }
+                }
+            },
+            "finish_reason": null,
+            "index": 0
+        }
+    ]
+}
+
+data: [DONE]
 ```
 
 Non-stream:
 
 ```json
 {
-    "choices":[
+    "choices": [
         {
-            "finish_reason":"stop",
-            "index":0,
-            "logprobs":null,
-            "message":{
-                "content":"This is a test. If you have any specific questions or need information, feel free to ask, and I will do my best to provide an answer based on the knowledge I have. If your question is unrelated to the provided knowledge base, I will let you know.",
-                "role":"assistant"
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+                "content": "\nTo install Neovim, the process varies depending on your operating system:\n\n### For Windows:\n1. **Download from GitHub**: \n   - Visit the [Neovim releases page](https://github.com/neovim/neovim/releases)\n   - Download the latest Windows installer (nvim-win64.msi)\n   - Run the installer and follow the prompts\n\n2. **Using winget** (Windows Package Manager):\n...",
+                "reference": {
+                    "chunks": {
+                        "20": {
+                            "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
+                            "dataset_id": "456ce60c5e1511f0907f09f583941b45",
+                            "doc_type": "",
+                            "document_id": "4bdd2ff65e1511f0907f09f583941b45",
+                            "document_name": "INSTALL22.md",
+                            "id": "4b8935ac0a22deb1",
+                            "image_id": "",
+                            "positions": [
+                                [
+                                    12,
+                                    11,
+                                    11,
+                                    11,
+                                    11
+                                ]
+                            ],
+                            "similarity": 0.5697155305154673,
+                            "term_similarity": 0.5000000005,
+                            "url": null,
+                            "vector_similarity": 0.7323851005515574
+                        }
+                    },
+                    "doc_aggs": {
+                        "INSTALL(1).md": {
+                            "count": 2,
+                            "doc_id": "4bdfb42e5e1511f0907f09f583941b45",
+                            "doc_name": "INSTALL(1).md"
+                        },
+                        "INSTALL.md": {
+                            "count": 2,
+                            "doc_id": "4bd7fdd85e1511f0907f09f583941b45",
+                            "doc_name": "INSTALL.md"
+                        },
+                        "INSTALL22.md": {
+                            "count": 3,
+                            "doc_id": "4bdd2ff65e1511f0907f09f583941b45",
+                            "doc_name": "INSTALL22.md"
+                        },
+                        "INSTALL3.md": {
+                            "count": 1,
+                            "doc_id": "4bdab5825e1511f0907f09f583941b45",
+                            "doc_name": "INSTALL3.md"
+                        }
+                    }
+                },
+                "role": "assistant"
             }
         }
     ],
-    "created":1740543499,
-    "id":"chatcmpl-3a9c3572f29311efa69751e139332ced",
-    "model":"model",
-    "object":"chat.completion",
-    "usage":{
-        "completion_tokens":246,
-        "completion_tokens_details":{
-            "accepted_prediction_tokens":246,
-            "reasoning_tokens":18,
-            "rejected_prediction_tokens":0
+    "created": null,
+    "id": "c39f6f9c83d911f0858253708ecb6573",
+    "model": "d1f79142831f11f09cc51795b9eb07c0",
+    "object": "chat.completion",
+    "param": null,
+    "usage": {
+        "completion_tokens": 415,
+        "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "reasoning_tokens": 0,
+            "rejected_prediction_tokens": 0
         },
-        "prompt_tokens":18,
-        "total_tokens":264
+        "prompt_tokens": 6,
+        "total_tokens": 421
     }
 }
 ```
@@ -410,7 +486,7 @@ curl --request POST \
       - Minimum: `0`
       - Maximum: `10`
     - `"chunk_token_num"`: `int`
-      - Defaults to `128`
+      - Defaults to `512`
       - Minimum: `1`
       - Maximum: `2048`
     - `"delimiter"`: `string`
@@ -420,7 +496,7 @@ curl --request POST \
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
     - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
-      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
       - Minimum: `1`
@@ -631,7 +707,7 @@ curl --request PUT \
       - Minimum: `0`
       - Maximum: `10`
     - `"chunk_token_num"`: `int`
-      - Defaults to `128`
+      - Defaults to `512`
       - Minimum: `1`
       - Maximum: `2048`
     - `"delimiter"`: `string`
@@ -641,7 +717,7 @@ curl --request PUT \
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
     - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
-      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunk Method
+      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
       - Minimum: `1`
@@ -754,7 +830,136 @@ Success:
             "update_time": 1728533243536,
             "vector_similarity_weight": 0.3
         }
-    ]
+    ],
+    "total": 1
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "The dataset doesn't exist"
+}
+```
+
+ ---
+
+### Get knowledge graph
+
+**GET** `/api/v1/datasets/{dataset_id}/knowledge_graph`
+
+Retrieves the knowledge graph of a specified dataset.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/knowledge_graph`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/datasets/{dataset_id}/knowledge_graph \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the target dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "graph": {
+            "directed": false,
+            "edges": [
+                {
+                    "description": "The notice is a document issued to convey risk warnings and operational alerts.<SEP>The notice is a specific instance of a notification document issued under the risk warning framework.",
+                    "keywords": ["9", "8"],
+                    "source": "notice",
+                    "source_id": ["8a46cdfe4b5c11f0a5281a58e595aa1c"],
+                    "src_id": "xxx",
+                    "target": "xxx",
+                    "tgt_id": "xxx",
+                    "weight": 17.0
+                }
+            ],
+            "graph": {
+                "source_id": ["8a46cdfe4b5c11f0a5281a58e595aa1c", "8a7eb6424b5c11f0a5281a58e595aa1c"]
+            },
+            "multigraph": false,
+            "nodes": [
+                {
+                    "description": "xxx",
+                    "entity_name": "xxx",
+                    "entity_type": "ORGANIZATION",
+                    "id": "xxx",
+                    "pagerank": 0.10804906590624092,
+                    "rank": 3,
+                    "source_id": ["8a7eb6424b5c11f0a5281a58e595aa1c"]
+                }
+            ]
+        },
+        "mind_map": {}
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "The dataset doesn't exist"
+}
+```
+
+---
+
+### Delete knowledge graph
+
+**DELETE** `/api/v1/datasets/{dataset_id}/knowledge_graph`
+
+Removes the knowledge graph of a specified dataset.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/datasets/{dataset_id}/knowledge_graph`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/datasets/{dataset_id}/knowledge_graph \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the target dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
 }
 ```
 
@@ -874,14 +1079,14 @@ Updates configurations for a specified document.
 
 ```bash
 curl --request PUT \
-     --url http://{address}/api/v1/datasets/{dataset_id}/info/{document_id} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --header 'Content-Type: application/json' \
      --data '
      {
           "name": "manual.txt", 
           "chunk_method": "manual", 
-          "parser_config": {"chunk_token_count": 128}
+          "parser_config": {"chunk_token_num": 128}
      }'
 
 ```
@@ -910,7 +1115,7 @@ curl --request PUT \
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
-    - `"chunk_token_count"`: Defaults to `256`.
+    - `"chunk_token_num"`: Defaults to `256`.
     - `"layout_recognize"`: Defaults to `true`.
     - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
@@ -993,23 +1198,24 @@ Failure:
 
 ### List documents
 
-**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
+**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}`
 
 Lists documents in a specified dataset.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}`
+- URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
-##### Request example
+##### Request examples
 
+**A basic request with pagination:**
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name} \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents?page=1&page_size=10 \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -1031,6 +1237,34 @@ curl --request GET \
   Indicates whether the retrieved documents should be sorted in descending order. Defaults to `true`.
 - `id`: (*Filter parameter*), `string`  
   The ID of the document to retrieve.
+- `create_time_from`: (*Filter parameter*), `integer`  
+  Unix timestamp for filtering documents created after this time. 0 means no filter. Defaults to `0`.
+- `create_time_to`: (*Filter parameter*), `integer`  
+  Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to `0`.
+- `suffix`: (*Filter parameter*), `array[string]`  
+  Filter by file suffix. Supports multiple values, e.g., `pdf`, `txt`, and `docx`. Defaults to all suffixes.
+- `run`: (*Filter parameter*), `array[string]`  
+  Filter by document processing status. Supports numeric, text, and mixed formats:  
+  - Numeric format: `["0", "1", "2", "3", "4"]`
+  - Text format: `[UNSTART, RUNNING, CANCEL, DONE, FAIL]`
+  - Mixed format: `[UNSTART, 1, DONE]` (mixing numeric and text formats)
+  - Status mapping:
+    - `0` / `UNSTART`: Document not yet processed
+    - `1` / `RUNNING`: Document is currently being processed
+    - `2` / `CANCEL`: Document processing was cancelled
+    - `3` / `DONE`: Document processing completed successfully
+    - `4` / `FAIL`: Document processing failed  
+  Defaults to all statuses.
+
+##### Usage examples
+
+**A request with multiple filtering parameters**
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?suffix=pdf&run=DONE&page=1&page_size=10' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
 
 #### Response
 
@@ -1058,10 +1292,10 @@ Success:
                 },
                 "chunk_method": "naive",
                 "process_begin_at": null,
-                "process_duation": 0.0,
+                "process_duration": 0.0,
                 "progress": 0.0,
                 "progress_msg": "",
-                "run": "0",
+                "run": "UNSTART",
                 "size": 7,
                 "source_type": "local",
                 "status": "1",
@@ -1072,7 +1306,7 @@ Success:
                 "update_time": 1728897061948
             }
         ],
-        "total": 1
+        "total_datasets": 1
     }
 }
 ```
@@ -1417,7 +1651,7 @@ Success:
                 }
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",
-            "process_duation": 0.54213,
+            "process_duration": 0.54213,
             "progress": 0.0,
             "progress_msg": "Task dispatched...",
             "run": "2",
@@ -1600,6 +1834,8 @@ Retrieves chunks from specified datasets.
   - `"rerank_id"`: `string`  
   - `"keyword"`: `boolean`  
   - `"highlight"`: `boolean`
+  - `"cross_languages"`: `list[string]`
+  - `"metadata_condition"`: `object`
 
 ##### Request example
 
@@ -1612,7 +1848,21 @@ curl --request POST \
      {
           "question": "What is advantage of ragflow?",
           "dataset_ids": ["b2a62730759d11ef987d0242ac120004"],
-          "document_ids": ["77df9ef4759a11ef8bdd0242ac120004"]
+          "document_ids": ["77df9ef4759a11ef8bdd0242ac120004"],
+          "metadata_condition": {
+            "conditions": [
+              {
+                "name": "author",
+                "comparison_operator": "=",
+                "value": "Toby"
+              },
+              {
+                "name": "url",
+                "comparison_operator": "not contains",
+                "value": "amd"
+              }
+            ]
+          }
      }'
 ```
 
@@ -1644,6 +1894,27 @@ curl --request POST \
   Specifies whether to enable highlighting of matched terms in the results:  
   - `true`: Enable highlighting of matched terms.
   - `false`: Disable highlighting of matched terms (default).
+- `"cross_languages"`: (*Body parameter*) `list[string]`  
+  The languages that should be translated into, in order to achieve keywords retrievals in different languages.
+- `"metadata_condition"`: (*Body parameter*), `object`  
+  The metadata condition used for filtering chunks:  
+  - `"conditions"`: (*Body parameter*), `array`  
+    A list of metadata filter conditions.  
+    - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
+    - `comparison_operator`: `string` - The comparison operator. Can be one of: 
+      - `"contains"`
+      - `"not contains"`
+      - `"start with"`
+      - `"empty"`
+      - `"not empty"`
+      - `"="`
+      - `"≠"`
+      - `">"`
+      - `"<"`
+      - `"≥"`
+      - `"≤"`
+    - `"value"`: `string` - The value to compare.
+
 
 #### Response
 
@@ -1799,7 +2070,7 @@ Success:
         "prompt": {
             "empty_response": "Sorry! No relevant content was found in the knowledge base!",
             "keywords_similarity_weight": 0.3,
-            "opener": "Hi! I'm your assistant, what can I do for you?",
+            "opener": "Hi! I'm your assistant. What can I do for you?",
             "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n ",
             "rerank_model": "",
             "similarity_threshold": 0.2,
@@ -2044,7 +2315,7 @@ Success:
             "prompt": {
                 "empty_response": "Sorry! No relevant content was found in the knowledge base!",
                 "keywords_similarity_weight": 0.3,
-                "opener": "Hi! I'm your assistant, what can I do for you?",
+                "opener": "Hi! I'm your assistant. What can I do for you?",
                 "prompt": "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\" Answers need to consider chat history.\n",
                 "rerank_model": "",
                 "similarity_threshold": 0.2,
@@ -2439,7 +2710,7 @@ data:{
     "code": 0,
     "message": "",
     "data": {
-        "answer": "Hi! I'm your assistant, what can I do for you?",
+        "answer": "Hi! I'm your assistant. What can I do for you?",
         "reference": {},
         "audio_binary": null,
         "id": null,
@@ -2500,9 +2771,11 @@ data:{
                     "document_name": "1.txt",
                     "dataset_id": "8e83e57a884611ef9d760242ac120006",
                     "image_id": "",
+                    "url": null,
                     "similarity": 0.7,
                     "vector_similarity": 0.0,
                     "term_similarity": 1.0,
+                    "doc_type": [],
                     "positions": [
                         ""
                     ]
@@ -2517,6 +2790,7 @@ data:{
             ]
         },
         "prompt": "xxxxxxxxxxx",
+        "created_at": 1755055623.6401553,
         "id": "a84c5dd4-97b4-4624-8c3b-974012c8000d",
         "session_id": "82b0ab2a9c1911ef9d870242ac120006"
     }
@@ -2540,6 +2814,10 @@ Failure:
 
 ### Create session with agent
 
+:::danger DEPRECATED
+This method is deprecated and not recommended. You can still call it but be mindful that calling `Converse with agent` will automatically generate a session ID for the associated agent.
+:::
+
 **POST** `/api/v1/agents/{agent_id}/sessions`
 
 Creates a session with an agent.
@@ -2549,12 +2827,12 @@ Creates a session with an agent.
 - Method: POST
 - URL: `/api/v1/agents/{agent_id}/sessions?user_id={user_id}`
 - Headers:
-  - `'content-Type: application/json' or 'multipart/form-data'`
+  - `'content-Type: application/json'
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - the required parameters:`str`
   - other parameters:
-    The parameters specified in the **Begin** component.
+    The variables specified in the **Begin** component.
 
 ##### Request example
 
@@ -2569,34 +2847,11 @@ curl --request POST \
      }'
 ```
 
-If the **Begin** component in your agent takes required parameters:
-
-```bash
-curl --request POST \
-     --url http://{address}/api/v1/agents/{agent_id}/sessions \
-     --header 'Content-Type: application/json' \
-     --header 'Authorization: Bearer <YOUR_API_KEY>' \
-     --data '{
-            "lang":"Japanese",
-            "file":"Who are you"
-     }'
-```
-
-If the **Begin** component in your agent takes required file parameters:
-
-```bash
-curl --request POST \
-     --url http://{address}/api/v1/agents/{agent_id}/sessions?user_id={user_id} \
-     --header 'Content-Type: multipart/form-data' \
-     --header 'Authorization: Bearer <YOUR_API_KEY>' \
-     --form '<FILE_KEY>=@./test1.png'    
-```
-
 ##### Request parameters
 
 - `agent_id`: (*Path parameter*)  
   The ID of the associated agent.
-- `user_id`: (*Filter parameter*)
+- `user_id`: (*Filter parameter*)  
   The optional user-defined ID for parsing docs (especially images) when creating a session while uploading files.
 
 #### Response
@@ -2607,101 +2862,190 @@ Success:
 {
     "code": 0,
     "data": {
-        "agent_id": "b4a39922b76611efaa1a0242ac120006",
+        "agent_id": "dbb4ed366e8611f09690a55a6daec4ef",
         "dsl": {
-            "answer": [],
             "components": {
-                "Answer:GreenReadersDrum": {
+                "Message:EightyJobsAsk": {
                     "downstream": [],
                     "obj": {
-                        "component_name": "Answer",
-                        "inputs": [],
-                        "output": null,
-                        "params": {}
+                        "component_name": "Message",
+                        "params": {
+                            "content": [
+                                "{begin@var1}{begin@var2}"
+                            ],
+                            "debug_inputs": {},
+                            "delay_after_error": 2.0,
+                            "description": "",
+                            "exception_default_value": null,
+                            "exception_goto": null,
+                            "exception_method": null,
+                            "inputs": {},
+                            "max_retries": 0,
+                            "message_history_window_size": 22,
+                            "outputs": {
+                                "content": {
+                                    "type": "str",
+                                    "value": null
+                                }
+                            },
+                            "stream": true
+                        }
                     },
-                    "upstream": []
+                    "upstream": [
+                        "begin"
+                    ]
                 },
                 "begin": {
-                    "downstream": [],
+                    "downstream": [
+                        "Message:EightyJobsAsk"
+                    ],
                     "obj": {
                         "component_name": "Begin",
-                        "inputs": [],
-                        "output": {},
-                        "params": {}
+                        "params": {
+                            "debug_inputs": {},
+                            "delay_after_error": 2.0,
+                            "description": "",
+                            "enablePrologue": true,
+                            "enable_tips": true,
+                            "exception_default_value": null,
+                            "exception_goto": null,
+                            "exception_method": null,
+                            "inputs": {
+                                "var1": {
+                                    "name": "var1",
+                                    "optional": false,
+                                    "options": [],
+                                    "type": "line",
+                                    "value": null
+                                },
+                                "var2": {
+                                    "name": "var2",
+                                    "optional": false,
+                                    "options": [],
+                                    "type": "line",
+                                    "value": null
+                                }
+                            },
+                            "max_retries": 0,
+                            "message_history_window_size": 22,
+                            "mode": "conversational",
+                            "outputs": {},
+                            "prologue": "Hi! I'm your assistant. What can I do for you?",
+                            "tips": "Please fill in the form"
+                        }
                     },
                     "upstream": []
                 }
             },
-            "embed_id": "",
+            "globals": {
+                "sys.conversation_turns": 0,
+                "sys.files": [],
+                "sys.query": "",
+                "sys.user_id": ""
+            },
             "graph": {
-                "edges": [],
+                "edges": [
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__beginstart-Message:EightyJobsAskend",
+                        "markerEnd": "logo",
+                        "source": "begin",
+                        "sourceHandle": "start",
+                        "style": {
+                            "stroke": "rgba(151, 154, 171, 1)",
+                            "strokeWidth": 1
+                        },
+                        "target": "Message:EightyJobsAsk",
+                        "targetHandle": "end",
+                        "type": "buttonEdge",
+                        "zIndex": 1001
+                    }
+                ],
                 "nodes": [
                     {
                         "data": {
+                            "form": {
+                                "enablePrologue": true,
+                                "inputs": {
+                                    "var1": {
+                                        "name": "var1",
+                                        "optional": false,
+                                        "options": [],
+                                        "type": "line"
+                                    },
+                                    "var2": {
+                                        "name": "var2",
+                                        "optional": false,
+                                        "options": [],
+                                        "type": "line"
+                                    }
+                                },
+                                "mode": "conversational",
+                                "prologue": "Hi! I'm your assistant. What can I do for you?"
+                            },
                             "label": "Begin",
                             "name": "begin"
                         },
                         "dragging": false,
-                        "height": 44,
                         "id": "begin",
-                        "position": {
-                            "x": 53.25688640427177,
-                            "y": 198.37155679786412
+                        "measured": {
+                            "height": 112,
+                            "width": 200
                         },
-                        "positionAbsolute": {
-                            "x": 53.25688640427177,
-                            "y": 198.37155679786412
+                        "position": {
+                            "x": 270.64098070942583,
+                            "y": -56.320928437811176
                         },
                         "selected": false,
                         "sourcePosition": "left",
                         "targetPosition": "right",
-                        "type": "beginNode",
-                        "width": 200
+                        "type": "beginNode"
                     },
                     {
                         "data": {
-                            "form": {},
-                            "label": "Answer",
-                            "name": "dialog_0"
+                            "form": {
+                                "content": [
+                                    "{begin@var1}{begin@var2}"
+                                ]
+                            },
+                            "label": "Message",
+                            "name": "Message_0"
                         },
                         "dragging": false,
-                        "height": 44,
-                        "id": "Answer:GreenReadersDrum",
+                        "id": "Message:EightyJobsAsk",
+                        "measured": {
+                            "height": 57,
+                            "width": 200
+                        },
                         "position": {
-                            "x": 360.43473114516974,
-                            "y": 207.29298425089348
+                            "x": 279.5,
+                            "y": 190
                         },
-                        "positionAbsolute": {
-                            "x": 360.43473114516974,
-                            "y": 207.29298425089348
-                        },
-                        "selected": false,
+                        "selected": true,
                         "sourcePosition": "right",
                         "targetPosition": "left",
-                        "type": "logicNode",
-                        "width": 200
+                        "type": "messageNode"
                     }
                 ]
             },
             "history": [],
+            "memory": [],
             "messages": [],
-            "path": [
-                [
-                    "begin"
-                ],
-                []
-            ],
-            "reference": []
+            "path": [],
+            "retrieval": [],
+            "task_id": "dbb4ed366e8611f09690a55a6daec4ef"
         },
-        "id": "2581031eb7a311efb5200242ac120005",
+        "id": "0b02fe80780e11f084adcfdc3ed1d902",
         "message": [
             {
-                "content": "Hi! I'm your smart assistant. What can I do for you?",
+                "content": "Hi! I'm your assistant. What can I do for you?",
                 "role": "assistant"
             }
         ],
         "source": "agent",
-        "user_id": "69736c5e723611efb51b0242ac120007"
+        "user_id": "c3fb861af27a11efa69751e139332ced"
     }
 }
 ```
@@ -2728,12 +3072,8 @@ Asks a specified agent a question to start an AI-powered conversation.
 - In streaming mode, not all responses include a reference, as this depends on the system's judgement.
 - In streaming mode, the last message is an empty message:
 
-  ```json
-  data:
-  {
-    "code": 0,
-    "data": true
-  }
+  ```
+  [DONE]
   ```
 
 :::
@@ -2748,18 +3088,17 @@ Asks a specified agent a question to start an AI-powered conversation.
 - Body:
   - `"question"`: `string`
   - `"stream"`: `boolean`
-  - `"session_id"`: `string`
-  - `"user_id"`: `string`(optional)
-  - `"sync_dsl"`: `boolean` (optional)
-  - other parameters: `string`
+  - `"session_id"`: `string` (optional)
+  - `"inputs"`: `object` (optional)
+  - `"user_id"`: `string` (optional)
 
 :::info IMPORTANT
-You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) agent component.
+You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) component.
 :::
 
 ##### Request example
 
-- If the **Begin** component does not take parameters, the following code will create a session.
+- If the **Begin** component does not take parameters:
 
 ```bash
 curl --request POST \
@@ -2768,10 +3107,12 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
+        "question": "Hello",
+        "stream": false,
      }'
 ```
 
-- If the **Begin** component takes parameters, the following code will create a session.  
+- If the **Begin** component takes parameters, include their values in the body of `"inputs"` as follows:  
 
 ```bash
 curl --request POST \
@@ -2779,10 +3120,32 @@ curl --request POST \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
-     {
-          "lang":"English",
-          "file":"How is the weather tomorrow?"
-     }'
+    {
+        "question": "Hello",
+        "stream": false,
+        "inputs": {
+            "line_var": {
+                "type": "line",
+                "value": "I am line_var"
+            },
+            "int_var": {
+                "type": "integer",
+                "value": 1
+            },
+            "paragraph_var": {
+                "type": "paragraph",
+                "value": "a\nb\nc"
+            },
+            "option_var": {
+                "type": "options",
+                "value": "option 2"
+            },
+            "boolean_var": {
+                "type": "boolean",
+                "value": true
+            }
+        }
+    }'
 ```
 
 The following code will execute the completion process
@@ -2812,149 +3175,344 @@ curl --request POST \
   - `false`: Disable streaming.
 - `"session_id"`: (*Body Parameter*)  
   The ID of the session. If it is not provided, a new session will be generated.
+- `"inputs"`: (*Body Parameter*)  
+  Variables specified in the **Begin** component.  
 - `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
-- `"sync_dsl"`: (*Body parameter*), `boolean`
-  Whether to synchronize the changes to existing sessions when an agent is modified, defaults to `false`.
-- Other parameters: (*Body Parameter*)  
-  Parameters specified in the **Begin** component.
+
+:::tip NOTE
+For now, this method does *not* support a file type input/variable. As a workaround, use the following to upload a file to an agent:  
+`http://{address}/v1/canvas/upload/{agent_id}`  
+*You will get a corresponding file ID from its response body.*
+:::
 
 #### Response
 
-success without `session_id` provided and with no parameters specified in the **Begin** component:
+success without `session_id` provided and with no variables specified in the **Begin** component:
+
+Stream:
 
 ```json
-data:{
-    "code": 0,
-    "message": "",
-    "data": {
-        "answer": "Hi! I'm your smart assistant. What can I do for you?",
-        "reference": {},
-        "id": "31e6091d-88d4-441b-ac65-eae1c055be7b",
-        "session_id": "2987ad3eb85f11efb2a70242ac120005"
-    }
-}
-data:{
-    "code": 0,
-    "message": "",
-    "data": true
-}
-```
+...
 
-Success without `session_id` provided and with parameters specified in the **Begin** component:
-
-```json
-data:{
-    "code": 0,
-    "message": "",
+data: {
+    "event": "message",
+    "message_id": "cecdcb0e83dc11f0858253708ecb6573",
+    "created_at": 1756364483,
+    "task_id": "d1f79142831f11f09cc51795b9eb07c0",
     "data": {
-        "session_id": "eacb36a0bdff11ef97120242ac120006",
-        "answer": "",
-        "reference": [],
-        "param": [
-            {
-                "key": "lang",
-                "name": "Target Language",
-                "optional": false,
-                "type": "line",
-                "value": "English"
+        "content": " themes"
+    },
+    "session_id": "cd097ca083dc11f0858253708ecb6573"
+}
+
+data: {
+    "event": "message",
+    "message_id": "cecdcb0e83dc11f0858253708ecb6573",
+    "created_at": 1756364483,
+    "task_id": "d1f79142831f11f09cc51795b9eb07c0",
+    "data": {
+        "content": "."
+    },
+    "session_id": "cd097ca083dc11f0858253708ecb6573"
+}
+
+data: {
+    "event": "message_end",
+    "message_id": "cecdcb0e83dc11f0858253708ecb6573",
+    "created_at": 1756364483,
+    "task_id": "d1f79142831f11f09cc51795b9eb07c0",
+    "data": {
+        "reference": {
+            "chunks": {
+                "20": {
+                    "id": "4b8935ac0a22deb1",
+                    "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
+                    "document_id": "4bdd2ff65e1511f0907f09f583941b45",
+                    "document_name": "INSTALL22.md",
+                    "dataset_id": "456ce60c5e1511f0907f09f583941b45",
+                    "image_id": "",
+                    "positions": [
+                        [
+                            12,
+                            11,
+                            11,
+                            11,
+                            11
+                        ]
+                    ],
+                    "url": null,
+                    "similarity": 0.5705525104787287,
+                    "vector_similarity": 0.7351750337624289,
+                    "term_similarity": 0.5000000005,
+                    "doc_type": ""
+                }
             },
-            {
-                "key": "file",
-                "name": "Files",
-                "optional": false,
-                "type": "file",
-                "value": "How is the weather tomorrow?"
-            },
-            {
-                "key": "hhyt",
-                "name": "hhty",
-                "optional": true,
-                "type": "line"
+            "doc_aggs": {
+                "INSTALL22.md": {
+                    "doc_name": "INSTALL22.md",
+                    "doc_id": "4bdd2ff65e1511f0907f09f583941b45",
+                    "count": 3
+                },
+                "INSTALL.md": {
+                    "doc_name": "INSTALL.md",
+                    "doc_id": "4bd7fdd85e1511f0907f09f583941b45",
+                    "count": 2
+                },
+                "INSTALL(1).md": {
+                    "doc_name": "INSTALL(1).md",
+                    "doc_id": "4bdfb42e5e1511f0907f09f583941b45",
+                    "count": 2
+                },
+                "INSTALL3.md": {
+                    "doc_name": "INSTALL3.md",
+                    "doc_id": "4bdab5825e1511f0907f09f583941b45",
+                    "count": 1
+                }
             }
-        ]
-    }
+        }
+    },
+    "session_id": "cd097ca083dc11f0858253708ecb6573"
 }
-data:
+
+data:[DONE]
 ```
 
-Success with parameters specified in the **Begin** component:
+Non-stream:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "created_at": 1756363177,
+        "data": {
+            "content": "\nTo install Neovim, the process varies depending on your operating system:\n\n### For macOS:\nUsing Homebrew:\n```bash\nbrew install neovim\n```\n\n### For Linux (Debian/Ubuntu):\n```bash\nsudo apt update\nsudo apt install neovim\n```\n\nFor other Linux distributions, you can use their respective package managers or build from source.\n\n### For Windows:\n1. Download the latest Windows installer from the official Neovim GitHub releases page\n2. Run the installer and follow the prompts\n3. Add Neovim to your PATH if not done automatically\n\n### From source (Unix-like systems):\n```bash\ngit clone https://github.com/neovim/neovim.git\ncd neovim\nmake CMAKE_BUILD_TYPE=Release\nsudo make install\n```\n\nAfter installation, you can verify it by running `nvim --version` in your terminal.",
+            "created_at": 18129.044975627,
+            "elapsed_time": 10.0157331670016,
+            "inputs": {
+                "var1": {
+                    "value": "I am var1"
+                },
+                "var2": {
+                    "value": "I am var2"
+                }
+            },
+            "outputs": {
+                "_created_time": 18129.502422278,
+                "_elapsed_time": 0.00013378599760471843,
+                "content": "\nTo install Neovim, the process varies depending on your operating system:\n\n### For macOS:\nUsing Homebrew:\n```bash\nbrew install neovim\n```\n\n### For Linux (Debian/Ubuntu):\n```bash\nsudo apt update\nsudo apt install neovim\n```\n\nFor other Linux distributions, you can use their respective package managers or build from source.\n\n### For Windows:\n1. Download the latest Windows installer from the official Neovim GitHub releases page\n2. Run the installer and follow the prompts\n3. Add Neovim to your PATH if not done automatically\n\n### From source (Unix-like systems):\n```bash\ngit clone https://github.com/neovim/neovim.git\ncd neovim\nmake CMAKE_BUILD_TYPE=Release\nsudo make install\n```\n\nAfter installation, you can verify it by running `nvim --version` in your terminal."
+            },
+            "reference": {
+                "chunks": {
+                    "20": {
+                        "content": "```cd /usr/ports/editors/neovim/ && make install```## Android[Termux](https://github.com/termux/termux-app) offers a Neovim package.",
+                        "dataset_id": "456ce60c5e1511f0907f09f583941b45",
+                        "doc_type": "",
+                        "document_id": "4bdd2ff65e1511f0907f09f583941b45",
+                        "document_name": "INSTALL22.md",
+                        "id": "4b8935ac0a22deb1",
+                        "image_id": "",
+                        "positions": [
+                            [
+                                12,
+                                11,
+                                11,
+                                11,
+                                11
+                            ]
+                        ],
+                        "similarity": 0.5705525104787287,
+                        "term_similarity": 0.5000000005,
+                        "url": null,
+                        "vector_similarity": 0.7351750337624289
+                    }
+                },
+                "doc_aggs": {
+                    "INSTALL(1).md": {
+                        "count": 2,
+                        "doc_id": "4bdfb42e5e1511f0907f09f583941b45",
+                        "doc_name": "INSTALL(1).md"
+                    },
+                    "INSTALL.md": {
+                        "count": 2,
+                        "doc_id": "4bd7fdd85e1511f0907f09f583941b45",
+                        "doc_name": "INSTALL.md"
+                    },
+                    "INSTALL22.md": {
+                        "count": 3,
+                        "doc_id": "4bdd2ff65e1511f0907f09f583941b45",
+                        "doc_name": "INSTALL22.md"
+                    },
+                    "INSTALL3.md": {
+                        "count": 1,
+                        "doc_id": "4bdab5825e1511f0907f09f583941b45",
+                        "doc_name": "INSTALL3.md"
+                    }
+                }
+            }
+        },
+        "event": "workflow_finished",
+        "message_id": "c4692a2683d911f0858253708ecb6573",
+        "session_id": "c39f6f9c83d911f0858253708ecb6573",
+        "task_id": "d1f79142831f11f09cc51795b9eb07c0"
+    }
+}
+```
+
+Success without `session_id` provided and with variables specified in the **Begin** component:
+
+Stream:
 
 ```json
 data:{
-    "code": 0,
-    "message": "",
+    "event": "message",
+    "message_id": "0e273472783711f0806e1a6272e682d8",
+    "created_at": 1755083830,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
     "data": {
-        "answer": "How",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
+        "content": "Hello"
+    },
+    "session_id": "0e0d1542783711f0806e1a6272e682d8"
+}
+
+data:{
+    "event": "message",
+    "message_id": "0e273472783711f0806e1a6272e682d8",
+    "created_at": 1755083830,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
+    "data": {
+        "content": "!"
+    },
+    "session_id": "0e0d1542783711f0806e1a6272e682d8"
+}
+
+data:{
+    "event": "message",
+    "message_id": "0e273472783711f0806e1a6272e682d8",
+    "created_at": 1755083830,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
+    "data": {
+        "content": " How"
+    },
+    "session_id": "0e0d1542783711f0806e1a6272e682d8"
+}
+
+...
+
+data:[DONE]
+```
+
+Non-stream:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "created_at": 1755083779,
+        "data": {
+            "created_at": 547400.868004651,
+            "elapsed_time": 3.5037803899031132,
+            "inputs": {
+                "boolean_var": {
+                    "type": "boolean",
+                    "value": true
+                },
+                "int_var": {
+                    "type": "integer",
+                    "value": 1
+                },
+                "line_var": {
+                    "type": "line",
+                    "value": "I am line_var"
+                },
+                "option_var": {
+                    "type": "options",
+                    "value": "option 2"
+                },
+                "paragraph_var": {
+                    "type": "paragraph",
+                    "value": "a\nb\nc"
+                }
+            },
+            "outputs": {
+                "_created_time": 547400.869271305,
+                "_elapsed_time": 0.0001251999055966735,
+                "content": "Hello there! How can I assist you today?"
+            }
+        },
+        "event": "workflow_finished",
+        "message_id": "effdad8c783611f089261a6272e682d8",
+        "session_id": "efe523b6783611f089261a6272e682d8",
+        "task_id": "99ee29d6783511f09c921a6272e682d8"
     }
 }
+```
+
+Success with variables specified in the **Begin** component:
+
+Stream:
+
+```json
 data:{
-    "code": 0,
-    "message": "",
+    "event": "message",
+    "message_id": "5b62e790783711f0bc531a6272e682d8",
+    "created_at": 1755083960,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
     "data": {
-        "answer": "How is",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
-    }
+        "content": "Hello"
+    },
+    "session_id": "979e450c781d11f095cb729e3aa55728"
 }
+
 data:{
-    "code": 0,
-    "message": "",
+    "event": "message",
+    "message_id": "5b62e790783711f0bc531a6272e682d8",
+    "created_at": 1755083960,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
     "data": {
-        "answer": "How is the",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
-    }
+        "content": "!"
+    },
+    "session_id": "979e450c781d11f095cb729e3aa55728"
 }
+
 data:{
-    "code": 0,
-    "message": "",
+    "event": "message",
+    "message_id": "5b62e790783711f0bc531a6272e682d8",
+    "created_at": 1755083960,
+    "task_id": "99ee29d6783511f09c921a6272e682d8",
     "data": {
-        "answer": "How is the weather",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
-    }
+        "content": " You"
+    },
+    "session_id": "979e450c781d11f095cb729e3aa55728"
 }
-data:{
+
+...
+
+data:[DONE]
+```
+
+Non-stream:
+
+```json
+{
     "code": 0,
-    "message": "",
     "data": {
-        "answer": "How is the weather tomorrow",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
+        "created_at": 1755084029,
+        "data": {
+            "created_at": 547650.750818867,
+            "elapsed_time": 1.6227330720284954,
+            "inputs": {},
+            "outputs": {
+                "_created_time": 547650.752800839,
+                "_elapsed_time": 9.628792759031057e-05,
+                "content": "Hello! It appears you've sent another \"Hello\" without additional context. I'm here and ready to respond to any requests or questions you may have. Is there something specific you'd like to discuss or learn about?"
+            }
+        },
+        "event": "workflow_finished",
+        "message_id": "84eec534783711f08db41a6272e682d8",
+        "session_id": "979e450c781d11f095cb729e3aa55728",
+        "task_id": "99ee29d6783511f09c921a6272e682d8"
     }
-}
-data:{
-    "code": 0,
-    "message": "",
-    "data": {
-        "answer": "How is the weather tomorrow?",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
-    }
-}
-data:{
-    "code": 0,
-    "message": "",
-    "data": {
-        "answer": "How is the weather tomorrow?",
-        "reference": {},
-        "id": "0379ac4c-b26b-4a44-8b77-99cebf313fdf",
-        "session_id": "4399c7d0b86311efac5b0242ac120005"
-    }
-}
-data:{
-    "code": 0,
-    "message": "",
-    "data": true
 }
 ```
 
@@ -3222,11 +3780,13 @@ Failure:
 
 ### Generate related questions
 
-**POST** `/v1/sessions/related_questions`
+**POST** `/api/v1/sessions/related_questions`
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
-This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find the it in the Request Headers in your browser easily.
+This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find the it in the Request Headers in your browser easily as shown below:
+
+![Image](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/login_token.jpg)
 
 :::tip NOTE
 The chat model autonomously determines the number of questions to generate based on the instruction, typically between five and ten.
@@ -3235,23 +3795,25 @@ The chat model autonomously determines the number of questions to generate based
 #### Request
 
 - Method: POST
-- URL: `/v1/sessions/related_questions`
+- URL: `/api/v1/sessions/related_questions`
 - Headers:
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body:
   - `"question"`: `string`
+  - `"industry"`: `string`
 
 ##### Request example
 
 ```bash
 curl --request POST \
-     --url http://{address}/v1/sessions/related_questions \
+     --url http://{address}/api/v1/sessions/related_questions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_LOGIN_TOKEN>' \
      --data '
      {
-          "question": "What are the key advantages of Neovim over Vim?"
+          "question": "What are the key advantages of Neovim over Vim?",
+          "industry": "software_development"
      }'
 ```
 
@@ -3259,6 +3821,8 @@ curl --request POST \
 
 - `"question"`: (*Body Parameter*), `string`
   The original user question.
+- `"industry"`: (*Body Parameter*), `string`
+  Industry of the question.
 
 #### Response
 
@@ -3307,7 +3871,7 @@ Lists agents.
 #### Request
 
 - Method: GET
-- URL: `/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={agent_name}&id={agent_id}`
+- URL: `/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&title={agent_name}&id={agent_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -3315,7 +3879,7 @@ Lists agents.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&name={agent_name}&id={agent_id} \
+     --url http://{address}/api/v1/agents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&title={agent_name}&id={agent_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -3333,7 +3897,7 @@ curl --request GET \
   Indicates whether the retrieved agents should be sorted in descending order. Defaults to `true`.
 - `id`: (*Filter parameter*), `string`  
   The ID of the agent to retrieve.
-- `name`: (*Filter parameter*), `string`  
+- `title`: (*Filter parameter*), `string`  
   The name of the agent to retrieve.
 
 #### Response
@@ -3596,3 +4160,77 @@ Failure:
 ```
 
 ---
+
+### System
+---
+### Check system health
+
+**GET** `/v1/system/healthz`
+
+Check the health status of RAGFlow’s dependencies (database, Redis, document engine, object storage).
+
+#### Request
+
+- Method: GET
+- URL: `/v1/system/healthz`
+- Headers:
+  - 'Content-Type: application/json'
+  (no Authorization required)
+
+##### Request example
+
+```bash
+curl --request GET
+     --url http://{address}/v1/system/healthz
+     --header 'Content-Type: application/json'
+```
+
+##### Request parameters
+
+- `address`: (*Path parameter*), string  
+  The host and port of the backend service (e.g., `localhost:7897`).
+
+---
+
+#### Responses
+
+- **200 OK** – All services healthy
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "db": "ok",
+  "redis": "ok",
+  "doc_engine": "ok",
+  "storage": "ok",
+  "status": "ok"
+}
+```
+
+- **500 Internal Server Error** – At least one service unhealthy
+
+```http
+HTTP/1.1 500 INTERNAL SERVER ERROR
+Content-Type: application/json
+
+{
+  "db": "ok",
+  "redis": "nok",
+  "doc_engine": "ok",
+  "storage": "ok",
+  "status": "nok",
+  "_meta": {
+    "redis": {
+      "elapsed": "5.2",
+      "error": "Lost connection!"
+    }
+  }
+}
+```
+
+Explanation:  
+- Each service is reported as "ok" or "nok".  
+- The top-level `status` reflects overall health.  
+- If any service is "nok", detailed error info appears in `_meta`.  

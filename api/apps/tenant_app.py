@@ -18,12 +18,14 @@ from flask import request
 from flask_login import login_required, current_user
 
 from api import settings
+from api.apps import smtp_mail_server
 from api.db import UserTenantRole, StatusEnum
 from api.db.db_models import UserTenant
 from api.db.services.user_service import UserTenantService, UserService
 
 from api.utils import get_uuid, delta_seconds
 from api.utils.api_utils import get_json_result, validate_request, server_error_response, get_data_error_result
+from api.utils.web_utils import send_invite_email
 
 
 @manager.route("/<tenant_id>/user/list", methods=["GET"])  # noqa: F821
@@ -68,7 +70,8 @@ def create(tenant_id):
             return get_data_error_result(message=f"{invite_user_email} is already in the team.")
         if user_tenant_role == UserTenantRole.OWNER:
             return get_data_error_result(message=f"{invite_user_email} is the owner of the team.")
-        return get_data_error_result(message=f"{invite_user_email} is in the team, but the role: {user_tenant_role} is invalid.")
+        return get_data_error_result(
+            message=f"{invite_user_email} is in the team, but the role: {user_tenant_role} is invalid.")
 
     UserTenantService.save(
         id=get_uuid(),
@@ -77,6 +80,20 @@ def create(tenant_id):
         invited_by=current_user.id,
         role=UserTenantRole.INVITE,
         status=StatusEnum.VALID.value)
+
+    if smtp_mail_server and settings.SMTP_CONF:
+        from threading import Thread
+
+        user_name = ""
+        _, user = UserService.get_by_id(current_user.id)
+        if user:
+            user_name = user.nickname
+
+        Thread(
+            target=send_invite_email,
+            args=(invite_user_email, settings.MAIL_FRONTEND_URL, tenant_id, user_name or current_user.email),
+            daemon=True
+        ).start()
 
     usr = invite_users[0].to_dict()
     usr = {k: v for k, v in usr.items() if k in ["id", "avatar", "email", "nickname"]}
@@ -116,7 +133,8 @@ def tenant_list():
 @login_required
 def agree(tenant_id):
     try:
-        UserTenantService.filter_update([UserTenant.tenant_id == tenant_id, UserTenant.user_id == current_user.id], {"role": UserTenantRole.NORMAL})
+        UserTenantService.filter_update([UserTenant.tenant_id == tenant_id, UserTenant.user_id == current_user.id],
+                                        {"role": UserTenantRole.NORMAL})
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

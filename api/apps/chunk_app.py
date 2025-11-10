@@ -15,27 +15,27 @@
 #
 import datetime
 import json
-
-from flask import request
-from flask_login import login_required, current_user
-
-from rag.app.qa import rmPrefix, beAdoc
-from rag.app.tag import label_question
-from rag.nlp import search, rag_tokenizer
-from rag.prompts import keyword_extraction, cross_languages
-from rag.settings import PAGERANK_FLD
-from rag.utils import rmSpace
-from api.db import LLMType, ParserType
-from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMBundle
-from api.db.services.user_service import UserTenantService
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from api.db.services.document_service import DocumentService
-from api import settings
-from api.utils.api_utils import get_json_result
-import xxhash
 import re
 
+import xxhash
+from flask import request
+from flask_login import current_user, login_required
+
+from api import settings
+from api.db import LLMType, ParserType
+from api.db.services.dialog_service import meta_filter
+from api.db.services.document_service import DocumentService
+from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.llm_service import LLMBundle
+from api.db.services.search_service import SearchService
+from api.db.services.user_service import UserTenantService
+from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
+from rag.app.qa import beAdoc, rmPrefix
+from rag.app.tag import label_question
+from rag.nlp import rag_tokenizer, search
+from rag.prompts.generator import gen_meta_filter, cross_languages, keyword_extraction
+from rag.settings import PAGERANK_FLD
+from rag.utils import rmSpace
 
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
@@ -60,7 +60,7 @@ def list_chunk():
         }
         if "available_int" in req:
             query["available_int"] = int(req["available_int"])
-        sres = settings.retrievaler.search(query, search.index_name(tenant_id), kb_ids, highlight=True)
+        sres = settings.retriever.search(query, search.index_name(tenant_id), kb_ids, highlight=["content_ltks"])
         res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
         for id in sres.ids:
             d = {
@@ -92,6 +92,7 @@ def list_chunk():
 def get():
     chunk_id = request.args["chunk_id"]
     try:
+        chunk = None
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:
             return get_data_error_result(message="Tenant not found!")
@@ -129,9 +130,13 @@ def set():
     d["content_ltks"] = rag_tokenizer.tokenize(req["content_with_weight"])
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     if "important_kwd" in req:
+        if not isinstance(req["important_kwd"], list):
+            return get_data_error_result(message="`important_kwd` should be a list")
         d["important_kwd"] = req["important_kwd"]
         d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_kwd"]))
     if "question_kwd" in req:
+        if not isinstance(req["question_kwd"], list):
+            return get_data_error_result(message="`question_kwd` should be a list")
         d["question_kwd"] = req["question_kwd"]
         d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["question_kwd"]))
     if "tag_kwd" in req:
@@ -201,8 +206,10 @@ def rm():
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
             return get_data_error_result(message="Document not found!")
-        if not settings.docStoreConn.delete({"id": req["chunk_ids"]}, search.index_name(current_user.id), doc.kb_id):
-            return get_data_error_result(message="Index updating failure")
+        if not settings.docStoreConn.delete({"id": req["chunk_ids"]},
+                                            search.index_name(DocumentService.get_tenant_id(req["doc_id"])),
+                                            doc.kb_id):
+            return get_data_error_result(message="Chunk deleting failure")
         deleted_chunk_ids = req["chunk_ids"]
         chunk_number = len(deleted_chunk_ids)
         DocumentService.decrement_chunk_num(doc.id, doc.kb_id, 1, chunk_number, 0)
@@ -224,11 +231,19 @@ def create():
          "content_with_weight": req["content_with_weight"]}
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["important_kwd"] = req.get("important_kwd", [])
-    d["important_tks"] = rag_tokenizer.tokenize(" ".join(req.get("important_kwd", [])))
+    if not isinstance(d["important_kwd"], list):
+        return get_data_error_result(message="`important_kwd` is required to be a list")
+    d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
     d["question_kwd"] = req.get("question_kwd", [])
-    d["question_tks"] = rag_tokenizer.tokenize("\n".join(req.get("question_kwd", [])))
+    if not isinstance(d["question_kwd"], list):
+        return get_data_error_result(message="`question_kwd` is required to be a list")
+    d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
     d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
     d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
+    if "tag_feas" in req:
+        d["tag_feas"] = req["tag_feas"]
+    if "tag_feas" in req:
+        d["tag_feas"] = req["tag_feas"]
 
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
@@ -275,13 +290,30 @@ def retrieval_test():
     kb_ids = req["kb_id"]
     if isinstance(kb_ids, str):
         kb_ids = [kb_ids]
+    if not kb_ids:
+        return get_json_result(data=False, message='Please specify dataset firstly.',
+                               code=settings.RetCode.DATA_ERROR)
+
     doc_ids = req.get("doc_ids", [])
-    similarity_threshold = float(req.get("similarity_threshold", 0.0))
-    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
     langs = req.get("cross_languages", [])
     tenant_ids = []
+
+    if req.get("search_id", ""):
+        search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
+        meta_data_filter = search_config.get("meta_data_filter", {})
+        metas = DocumentService.get_meta_by_kbs(kb_ids)
+        if meta_data_filter.get("method") == "auto":
+            chat_mdl = LLMBundle(current_user.id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
+            filters = gen_meta_filter(chat_mdl, metas, question)
+            doc_ids.extend(meta_filter(metas, filters))
+            if not doc_ids:
+                doc_ids = None
+        elif meta_data_filter.get("method") == "manual":
+            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"]))
+            if not doc_ids:
+                doc_ids = None
 
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
@@ -314,13 +346,16 @@ def retrieval_test():
             question += keyword_extraction(chat_mdl, question)
 
         labels = label_question(question, [kb])
-        ranks = settings.retrievaler.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
-                               similarity_threshold, vector_similarity_weight, top,
-                               doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"),
+        ranks = settings.retriever.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
+                               float(req.get("similarity_threshold", 0.0)),
+                               float(req.get("vector_similarity_weight", 0.3)),
+                               top,
+                               doc_ids, rerank_mdl=rerank_mdl,
+                                             highlight=req.get("highlight", False),
                                rank_feature=labels
                                )
         if use_kg:
-            ck = settings.kg_retrievaler.retrieval(question,
+            ck = settings.kg_retriever.retrieval(question,
                                                    tenant_ids,
                                                    kb_ids,
                                                    embd_mdl,
@@ -350,7 +385,7 @@ def knowledge_graph():
         "doc_ids": [doc_id],
         "knowledge_graph_kwd": ["graph", "mind_map"]
     }
-    sres = settings.retrievaler.search(req, search.index_name(tenant_id), kb_ids)
+    sres = settings.retriever.search(req, search.index_name(tenant_id), kb_ids)
     obj = {"graph": {}, "mind_map": {}}
     for id in sres.ids[:2]:
         ty = sres.field[id]["knowledge_graph_kwd"]

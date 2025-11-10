@@ -13,37 +13,40 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from functools import partial
-import pandas as pd
-from agent.component.base import ComponentBase, ComponentParamBase
+from agent.component.fillup import UserFillUpParam, UserFillUp
 
 
-class BeginParam(ComponentParamBase):
+class BeginParam(UserFillUpParam):
 
     """
     Define the Begin component parameters.
     """
     def __init__(self):
         super().__init__()
+        self.mode = "conversational"
         self.prologue = "Hi! I'm your smart assistant. What can I do for you?"
-        self.query = []
 
     def check(self):
-        return True
+        self.check_valid_value(self.mode, "The 'mode' should be either `conversational` or `task`", ["conversational", "task"])
+
+    def get_input_form(self) -> dict[str, dict]:
+        return getattr(self, "inputs")
 
 
-class Begin(ComponentBase):
+class Begin(UserFillUp):
     component_name = "Begin"
 
-    def _run(self, history, **kwargs):
-        if kwargs.get("stream"):
-            return partial(self.stream_output)
-        return pd.DataFrame([{"content": self._param.prologue}])
+    def _invoke(self, **kwargs):
+        for k, v in kwargs.get("inputs", {}).items():
+            if isinstance(v, dict) and v.get("type", "").lower().find("file") >=0:
+                if v.get("optional") and v.get("value", None) is None:
+                    v = None
+                else:
+                    v = self._canvas.get_files([v["value"]])
+            else:
+                v = v.get("value")
+            self.set_output(k, v)
+            self.set_input_value(k, v)
 
-    def stream_output(self):
-        res = {"content": self._param.prologue}
-        yield res
-        self.set_output(self.be_output(res))
-
-
-
+    def thoughts(self) -> str:
+        return ""

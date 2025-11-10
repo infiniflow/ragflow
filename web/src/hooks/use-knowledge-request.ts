@@ -1,17 +1,22 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
+import message from '@/components/ui/message';
 import {
   IKnowledge,
+  IKnowledgeGraph,
   IKnowledgeResult,
   INextTestingResult,
 } from '@/interfaces/database/knowledge';
 import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
-import kbService, { listDataset } from '@/services/knowledge-service';
+import kbService, {
+  deleteKnowledgeGraph,
+  getKnowledgeGraph,
+  listDataset,
+} from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'umi';
+import { useParams, useSearchParams } from 'umi';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -24,12 +29,16 @@ export const enum KnowledgeApiAction {
   DeleteKnowledge = 'deleteKnowledge',
   SaveKnowledge = 'saveKnowledge',
   FetchKnowledgeDetail = 'fetchKnowledgeDetail',
+  FetchKnowledgeGraph = 'fetchKnowledgeGraph',
+  FetchMetadata = 'fetchMetadata',
+  FetchKnowledgeList = 'fetchKnowledgeList',
+  RemoveKnowledgeGraph = 'removeKnowledgeGraph',
 }
 
-export const useKnowledgeBaseId = () => {
+export const useKnowledgeBaseId = (): string => {
   const { id } = useParams();
 
-  return id;
+  return (id as string) || '';
 };
 
 export const useTestRetrieval = () => {
@@ -66,12 +75,14 @@ export const useTestRetrieval = () => {
       chunks: [],
       doc_aggs: [],
       total: 0,
+      isRuned: false,
     },
     enabled: false,
     gcTime: 0,
     queryFn: async () => {
       const { data } = await kbService.retrieval_test(queryParams);
-      return data?.data ?? {};
+      const result = data?.data ?? {};
+      return { ...result, isRuned: true };
     },
   });
 
@@ -133,7 +144,7 @@ export const useFetchNextKnowledgeListByPage = () => {
 
   const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
     (e) => {
-      // setPagination({ page: 1 }); // TODO: 这里导致重复请求
+      // setPagination({ page: 1 }); // TODO: This results in repeated requests
       handleInputChange(e);
     },
     [handleInputChange],
@@ -228,8 +239,14 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
   return { data, loading, saveKnowledgeConfiguration: mutateAsync };
 };
 
-export const useFetchKnowledgeBaseConfiguration = (refreshCount?: number) => {
+export const useFetchKnowledgeBaseConfiguration = (props?: {
+  isEdit?: boolean;
+  refreshCount?: number;
+}) => {
+  const { isEdit = true, refreshCount } = props || { isEdit: true };
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const knowledgeBaseId = searchParams.get('id') || id;
 
   let queryKey: (KnowledgeApiAction | number)[] = [
     KnowledgeApiAction.FetchKnowledgeDetail,
@@ -243,12 +260,97 @@ export const useFetchKnowledgeBaseConfiguration = (refreshCount?: number) => {
     initialData: {} as IKnowledge,
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await kbService.get_kb_detail({
-        kb_id: id,
-      });
+      if (isEdit) {
+        const { data } = await kbService.get_kb_detail({
+          kb_id: knowledgeBaseId,
+        });
+        return data?.data ?? {};
+      } else {
+        return {};
+      }
+    },
+  });
+
+  return { data, loading };
+};
+
+export function useFetchKnowledgeGraph() {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<IKnowledgeGraph>({
+    queryKey: [KnowledgeApiAction.FetchKnowledgeGraph, knowledgeBaseId],
+    initialData: { graph: {}, mind_map: {} } as IKnowledgeGraph,
+    enabled: !!knowledgeBaseId,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getKnowledgeGraph(knowledgeBaseId);
+      return data?.data;
+    },
+  });
+
+  return { data, loading };
+}
+
+export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
+  const { data, isFetching: loading } = useQuery<
+    Record<string, Record<string, string[]>>
+  >({
+    queryKey: [KnowledgeApiAction.FetchMetadata, kbIds],
+    initialData: {},
+    enabled: kbIds.length > 0,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await kbService.getMeta({ kb_ids: kbIds.join(',') });
       return data?.data ?? {};
     },
   });
 
   return { data, loading };
+}
+
+export const useRemoveKnowledgeGraph = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [KnowledgeApiAction.RemoveKnowledgeGraph],
+    mutationFn: async () => {
+      const { data } = await deleteKnowledgeGraph(knowledgeBaseId);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.deleted`));
+        queryClient.invalidateQueries({
+          queryKey: [KnowledgeApiAction.FetchKnowledgeGraph],
+        });
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, removeKnowledgeGraph: mutateAsync };
+};
+
+export const useFetchKnowledgeList = (
+  shouldFilterListWithoutDocument: boolean = false,
+): {
+  list: IKnowledge[];
+  loading: boolean;
+} => {
+  const { data, isFetching: loading } = useQuery({
+    queryKey: [KnowledgeApiAction.FetchKnowledgeList],
+    initialData: [],
+    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
+    queryFn: async () => {
+      const { data } = await listDataset();
+      const list = data?.data?.kbs ?? [];
+      return shouldFilterListWithoutDocument
+        ? list.filter((x: IKnowledge) => x.chunk_num > 0)
+        : list;
+    },
+  });
+
+  return { list: data, loading };
 };

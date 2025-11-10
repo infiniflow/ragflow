@@ -13,8 +13,12 @@ import {
   Switch,
 } from 'antd';
 import omit from 'lodash/omit';
+import { useEffect } from 'react';
 
-type FieldType = IAddLlmRequestBody & { vision: boolean };
+type FieldType = IAddLlmRequestBody & {
+  vision: boolean;
+  provider_order?: string;
+};
 
 const { Option } = Select;
 
@@ -36,6 +40,7 @@ const llmFactoryToUrlMap = {
     'https://huggingface.co/docs/text-embeddings-inference/quick_tour',
   [LLMFactory.GPUStack]: 'https://docs.gpustack.ai/latest/quickstart',
   [LLMFactory.VLLM]: 'https://docs.vllm.ai/en/latest/',
+  [LLMFactory.TokenPony]: 'https://docs.tokenpony.cn/#/',
 };
 type LlmFactory = keyof typeof llmFactoryToUrlMap;
 
@@ -45,16 +50,16 @@ const OllamaModal = ({
   onOk,
   loading,
   llmFactory,
-}: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
+  editMode = false,
+  initialValues,
+}: IModalProps<IAddLlmRequestBody> & {
+  llmFactory: string;
+  editMode?: boolean;
+  initialValues?: Partial<IAddLlmRequestBody>;
+}) => {
   const [form] = Form.useForm<FieldType>();
 
   const { t } = useTranslate('setting');
-
-  const handleKeyDown = async (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      await handleOk();
-    }
-  };
 
   const handleOk = async () => {
     const values = await form.validateFields();
@@ -73,6 +78,29 @@ const OllamaModal = ({
 
     onOk?.(data);
   };
+
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      await handleOk();
+    }
+  };
+
+  useEffect(() => {
+    if (visible && editMode && initialValues) {
+      const formValues = {
+        llm_name: initialValues.llm_name,
+        model_type: initialValues.model_type,
+        api_base: initialValues.api_base,
+        max_tokens: initialValues.max_tokens || 8192,
+        api_key: '',
+        ...initialValues,
+      };
+      form.setFieldsValue(formValues);
+    } else if (visible && !editMode) {
+      form.resetFields();
+    }
+  }, [visible, editMode, initialValues, form]);
+
   const url =
     llmFactoryToUrlMap[llmFactory as LlmFactory] ||
     'https://github.com/infiniflow/ragflow/blob/main/docs/guides/models/deploy_local_llm.mdx';
@@ -81,6 +109,11 @@ const OllamaModal = ({
       { value: 'embedding', label: 'embedding' },
       { value: 'chat', label: 'chat' },
       { value: 'rerank', label: 'rerank' },
+    ],
+    [LLMFactory.LMStudio]: [
+      { value: 'chat', label: 'chat' },
+      { value: 'embedding', label: 'embedding' },
+      { value: 'image2text', label: 'image2text' },
     ],
     [LLMFactory.Xinference]: [
       { value: 'chat', label: 'chat' },
@@ -98,6 +131,10 @@ const OllamaModal = ({
       { value: 'speech2text', label: 'sequence2text' },
       { value: 'tts', label: 'tts' },
     ],
+    [LLMFactory.OpenRouter]: [
+      { value: 'chat', label: 'chat' },
+      { value: 'image2text', label: 'image2text' },
+    ],
     Default: [
       { value: 'chat', label: 'chat' },
       { value: 'embedding', label: 'embedding' },
@@ -110,7 +147,11 @@ const OllamaModal = ({
   };
   return (
     <Modal
-      title={t('addLlmTitle', { name: llmFactory })}
+      title={
+        editMode
+          ? t('editLlmTitle', { name: llmFactory })
+          : t('addLlmTitle', { name: llmFactory })
+      }
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}
@@ -199,6 +240,16 @@ const OllamaModal = ({
             onKeyDown={handleKeyDown}
           />
         </Form.Item>
+        {llmFactory === LLMFactory.OpenRouter && (
+          <Form.Item<FieldType>
+            label="Provider Order"
+            name="provider_order"
+            tooltip="Comma-separated provider list, e.g. Groq,Fireworks"
+            rules={[]}
+          >
+            <Input placeholder="Groq,Fireworks" onKeyDown={handleKeyDown} />
+          </Form.Item>
+        )}
 
         <Form.Item noStyle dependencies={['model_type']}>
           {({ getFieldValue }) =>

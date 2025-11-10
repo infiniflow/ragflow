@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.19.1"
+version = "0.21.1"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -24,7 +24,7 @@ dependencies = [
     "chardet==5.2.0",
     "cn2an==0.5.22",
     "cohere==5.6.2",
-    "Crawl4AI==0.3.8",
+    "Crawl4AI>=0.3.8",
     "dashscope==1.20.11",
     "deepl==1.18.0",
     "demjson3==3.0.6",
@@ -34,6 +34,7 @@ dependencies = [
     "elastic-transport==8.12.0",
     "elasticsearch==8.12.1",
     "elasticsearch-dsl==8.12.0",
+    "extract-msg>=0.39.0",
     "filelock==3.15.4",
     "flask==3.0.3",
     "flask-cors==5.0.0",
@@ -43,9 +44,9 @@ dependencies = [
     "groq==0.9.0",
     "hanziconv==0.3.2",
     "html-text==0.6.2",
-    "httpx==0.27.0",
+    "httpx[socks]>=0.28.1,<0.29.0",
     "huggingface-hub>=0.25.0,<0.26.0",
-    "infinity-sdk==0.6.0-dev3",
+    "infinity-sdk==0.6.1",
     "infinity-emb>=0.0.66,<0.0.67",
     "itsdangerous==2.1.2",
     "json-repair==0.35.0",
@@ -55,10 +56,10 @@ dependencies = [
     "mistralai==0.4.2",
     "nltk==3.9.1",
     "numpy>=1.26.0,<2.0.0",
-    "ollama==0.2.1",
+    "ollama>=0.5.0",
     "onnxruntime==1.19.2; sys_platform == 'darwin' or platform_machine != 'x86_64'",
     "onnxruntime-gpu==1.19.2; sys_platform != 'darwin' and platform_machine == 'x86_64'",
-    "openai==1.45.0",
+    "openai>=1.45.0",
     "opencv-python==4.10.0.84",
     "opencv-python-headless==4.10.0.84",
     "openpyxl>=3.1.0,<4.0.0",
@@ -73,7 +74,7 @@ dependencies = [
     "pyclipper==1.3.0.post5",
     "pycryptodomex==3.20.0",
     "pymysql>=1.1.1,<2.0.0",
-    "pypdf>=5.0.0,<6.0.0",
+    "pypdf==6.0.0",
     "python-dotenv==1.0.1",
     "python-dateutil==2.8.2",
     "python-pptx>=1.0.2,<2.0.0",
@@ -101,8 +102,9 @@ dependencies = [
     "tika==2.6.0",
     "tiktoken==0.7.0",
     "umap_learn==0.5.6",
-    "vertexai==1.64.0",
-    "volcengine==1.0.146",
+    "vertexai==1.70.0",
+    "google-genai>=1.41.0,<2.0.0",
+    "volcengine==1.0.194",
     "voyageai==0.2.3",
     "webdriver-manager==4.0.1",
     "werkzeug==3.0.6",
@@ -110,25 +112,31 @@ dependencies = [
     "word2number==1.1",
     "xgboost==1.6.0",
     "xpinyin==0.7.6",
-    "yfinance==0.1.96",
+    "yfinance==0.2.65",
     "zhipuai==2.0.1",
-    "ruamel-yaml>=0.18.6,<0.19.0",
-    "google-generativeai>=0.8.1,<0.9.0",
+    "google-generativeai>=0.8.1,<0.9.0", # Needed for cv_model and embedding_model
     "python-docx>=1.1.2,<2.0.0",
     "pypdf2>=3.0.1,<4.0.0",
     "graspologic>=3.4.1,<4.0.0",
-    "pymysql>=1.1.1,<2.0.0",
     "mini-racer>=0.12.4,<0.13.0",
     "pyodbc>=5.2.0,<6.0.0",
-    "pyicu>=2.13.1,<3.0.0",
+    "pyicu>=2.15.3,<3.0.0",
     "flasgger>=0.9.7.1,<0.10.0",
     "xxhash>=3.5.0,<4.0.0",
     "trio>=0.29.0",
     "langfuse>=2.60.0",
     "debugpy>=1.8.13",
-    "mcp>=1.6.0",
+    "mcp>=1.9.4",
     "opensearch-py==2.7.1",
     "pluginlib==0.9.4",
+    "click>=8.1.8",
+    "python-calamine>=0.4.0",
+    "litellm>=1.74.15.post1",
+    "flask-mail>=0.10.0",
+    "lark>=1.2.2",
+    "mammoth>=1.11.0",
+    "markdownify>=1.2.0",
+    "captcha>=0.7.1",
 ]
 
 [project.optional-dependencies]
@@ -154,6 +162,9 @@ test = [
     "requests-toolbelt>=1.0.0",
 ]
 
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
 [tool.setuptools]
 packages = [
     'agent',
@@ -166,9 +177,6 @@ packages = [
     'rag',
     'sdk.python.ragflow_sdk',
 ]
-
-[[tool.uv.index]]
-url = "https://mirrors.aliyun.com/pypi/simple"
 
 [tool.ruff]
 line-length = 200

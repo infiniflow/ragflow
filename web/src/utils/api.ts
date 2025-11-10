@@ -1,4 +1,5 @@
 let api_host = `/v1`;
+const ExternalApi = `/api`;
 
 export { api_host };
 
@@ -43,6 +44,19 @@ export default {
   get_kb_detail: `${api_host}/kb/detail`,
   getKnowledgeGraph: (knowledgeId: string) =>
     `${api_host}/kb/${knowledgeId}/knowledge_graph`,
+  getMeta: `${api_host}/kb/get_meta`,
+  getKnowledgeBasicInfo: `${api_host}/kb/basic_info`,
+  // data pipeline log
+  fetchDataPipelineLog: `${api_host}/kb/list_pipeline_logs`,
+  get_pipeline_detail: `${api_host}/kb/pipeline_log_detail`,
+  fetchPipelineDatasetLogs: `${api_host}/kb/list_pipeline_dataset_logs`,
+  runGraphRag: `${api_host}/kb/run_graphrag`,
+  traceGraphRag: `${api_host}/kb/trace_graphrag`,
+  runRaptor: `${api_host}/kb/run_raptor`,
+  traceRaptor: `${api_host}/kb/trace_raptor`,
+  unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
+    `${api_host}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
+  pipelineRerun: `${api_host}/canvas/rerun`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
@@ -78,6 +92,7 @@ export default {
   upload_and_parse: `${api_host}/document/upload_and_parse`,
   parse: `${api_host}/document/parse`,
   setMeta: `${api_host}/document/set_meta`,
+  get_dataset_filter: `${api_host}/document/filter`,
 
   // chat
   setDialog: `${api_host}/dialog/set`,
@@ -106,6 +121,11 @@ export default {
   completeExternalConversation: `${api_host}/api/completion`,
   uploadAndParseExternal: `${api_host}/api/document/upload_and_parse`,
 
+  // next chat
+  listNextDialog: `${api_host}/dialog/next`,
+  fetchExternalChatInfo: (id: string) =>
+    `${ExternalApi}${api_host}/chatbots/${id}/info`,
+
   // file manager
   listFile: `${api_host}/file/list`,
   uploadFile: `${api_host}/file/upload`,
@@ -130,7 +150,6 @@ export default {
   // flow
   listTemplates: `${api_host}/canvas/templates`,
   listCanvas: `${api_host}/canvas/list`,
-  listCanvasTeam: `${api_host}/canvas/listteam`,
   getCanvas: `${api_host}/canvas/get`,
   getCanvasSSE: `${api_host}/canvas/getsse`,
   removeCanvas: `${api_host}/canvas/rm`,
@@ -143,4 +162,52 @@ export default {
   testDbConnect: `${api_host}/canvas/test_db_connect`,
   getInputElements: `${api_host}/canvas/input_elements`,
   debug: `${api_host}/canvas/debug`,
+  uploadCanvasFile: `${api_host}/canvas/upload`,
+  trace: `${api_host}/canvas/trace`,
+  // agent
+  inputForm: `${api_host}/canvas/input_form`,
+  fetchVersionList: (id: string) => `${api_host}/canvas/getlistversion/${id}`,
+  fetchVersion: (id: string) => `${api_host}/canvas/getversion/${id}`,
+  fetchCanvas: (id: string) => `${api_host}/canvas/get/${id}`,
+  fetchAgentAvatar: (id: string) => `${api_host}/canvas/getsse/${id}`,
+  uploadAgentFile: (id?: string) => `${api_host}/canvas/upload/${id}`,
+  fetchAgentLogs: (canvasId: string) =>
+    `${api_host}/canvas/${canvasId}/sessions`,
+  fetchExternalAgentInputs: (canvasId: string) =>
+    `${ExternalApi}${api_host}/agentbots/${canvasId}/inputs`,
+  prompt: `${api_host}/canvas/prompts`,
+  cancelDataflow: (id: string) => `${api_host}/canvas/cancel/${id}`,
+  downloadFile: `${api_host}/canvas/download`,
+
+  // mcp server
+  listMcpServer: `${api_host}/mcp_server/list`,
+  getMcpServer: `${api_host}/mcp_server/detail`,
+  createMcpServer: `${api_host}/mcp_server/create`,
+  updateMcpServer: `${api_host}/mcp_server/update`,
+  deleteMcpServer: `${api_host}/mcp_server/rm`,
+  importMcpServer: `${api_host}/mcp_server/import`,
+  exportMcpServer: `${api_host}/mcp_server/export`,
+  listMcpServerTools: `${api_host}/mcp_server/list_tools`,
+  testMcpServerTool: `${api_host}/mcp_server/test_tool`,
+  cacheMcpServerTool: `${api_host}/mcp_server/cache_tools`,
+  testMcpServer: `${api_host}/mcp_server/test_mcp`,
+
+  // next-search
+  createSearch: `${api_host}/search/create`,
+  getSearchList: `${api_host}/search/list`,
+  deleteSearch: `${api_host}/search/rm`,
+  getSearchDetail: `${api_host}/search/detail`,
+  getSearchDetailShare: `${ExternalApi}${api_host}/searchbots/detail`,
+  updateSearchSetting: `${api_host}/search/update`,
+  askShare: `${ExternalApi}${api_host}/searchbots/ask`,
+  mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
+  getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,
+  retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
+
+  // data pipeline
+  fetchDataflow: (id: string) => `${api_host}/dataflow/get/${id}`,
+  setDataflow: `${api_host}/dataflow/set`,
+  removeDataflow: `${api_host}/dataflow/rm`,
+  listDataflow: `${api_host}/dataflow/list`,
+  runDataflow: `${api_host}/dataflow/run`,
 };

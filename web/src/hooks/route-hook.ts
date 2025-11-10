@@ -29,6 +29,7 @@ export const useGetKnowledgeSearchParams = () => {
   const [currentQueryParameters] = useSearchParams();
 
   return {
+    type: currentQueryParameters.get(KnowledgeSearchParams.Type) || '',
     documentId:
       currentQueryParameters.get(KnowledgeSearchParams.DocumentId) || '',
     knowledgeId:
@@ -85,6 +86,6 @@ export const useSetPaginationParams = () => {
   return {
     setPaginationParams,
     page: Number(queryParameters.get('page')) || 1,
-    size: Number(queryParameters.get('size')) || 10,
+    size: Number(queryParameters.get('size')) || 50,
   };
 };

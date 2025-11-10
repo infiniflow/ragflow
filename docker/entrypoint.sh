@@ -11,6 +11,7 @@ function usage() {
     echo "  --disable-webserver             Disables the web server (nginx + ragflow_server)."
     echo "  --disable-taskexecutor          Disables task executor workers."
     echo "  --enable-mcpserver              Enables the MCP server."
+    echo "  --enable-adminserver            Enables the Admin server."
     echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
     echo "  --consumer-no-end=<num>         End range for consumers (if using range-based)."
     echo "  --workers=<num>                 Number of task executors to run (if range is not used)."
@@ -21,12 +22,14 @@ function usage() {
     echo "  $0 --disable-webserver --consumer-no-beg=0 --consumer-no-end=5"
     echo "  $0 --disable-webserver --workers=2 --host-id=myhost123"
     echo "  $0 --enable-mcpserver"
+    echo "  $0 --enable-adminserver"
     exit 1
 }
 
 ENABLE_WEBSERVER=1 # Default to enable web server
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
 ENABLE_MCP_SERVER=0
+ENABLE_ADMIN_SERVER=0 # Default close admin server
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
@@ -37,6 +40,9 @@ MCP_BASE_URL="http://127.0.0.1:9380"
 MCP_SCRIPT_PATH="/ragflow/mcp/server/server.py"
 MCP_MODE="self-host"
 MCP_HOST_API_KEY=""
+MCP_TRANSPORT_SSE_FLAG="--transport-sse-enabled"
+MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--transport-streamable-http-enabled"
+MCP_JSON_RESPONSE_FLAG="--json-response"
 
 # -----------------------------------------------------------------------------
 # Host ID logic:
@@ -67,6 +73,10 @@ for arg in "$@"; do
       ENABLE_MCP_SERVER=1
       shift
       ;;
+    --enable-adminserver)
+      ENABLE_ADMIN_SERVER=1
+      shift
+      ;;
     --mcp-host=*)
       MCP_HOST="${arg#*=}"
       shift
@@ -89,6 +99,18 @@ for arg in "$@"; do
       ;;
     --mcp-script-path=*)
       MCP_SCRIPT_PATH="${arg#*=}"
+      shift
+      ;;
+    --no-transport-sse-enabled)
+      MCP_TRANSPORT_SSE_FLAG="--no-transport-sse-enabled"
+      shift
+      ;;
+    --no-transport-streamable-http-enabled)
+      MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--no-transport-streamable-http-enabled"
+      shift
+      ;;
+    --no-json-response)
+      MCP_JSON_RESPONSE_FLAG="--no-json-response"
       shift
       ;;
     --consumer-no-beg=*)
@@ -148,9 +170,12 @@ function start_mcp_server() {
     "$PY" "${MCP_SCRIPT_PATH}" \
         --host="${MCP_HOST}" \
         --port="${MCP_PORT}" \
-        --base_url="${MCP_BASE_URL}" \
+        --base-url="${MCP_BASE_URL}" \
         --mode="${MCP_MODE}" \
-        --api_key="${MCP_HOST_API_KEY}" &
+        --api-key="${MCP_HOST_API_KEY}" \
+        "${MCP_TRANSPORT_SSE_FLAG}" \
+        "${MCP_TRANSPORT_STREAMABLE_HTTP_FLAG}" \
+        "${MCP_JSON_RESPONSE_FLAG}" &
 }
 
 # -----------------------------------------------------------------------------
@@ -167,6 +192,12 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     done &
 fi
 
+if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
+    echo "Starting admin_server..."
+    while true; do
+        "$PY" admin/server/admin_server.py
+    done &
+fi
 
 if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
     start_mcp_server

@@ -16,21 +16,25 @@
 
 import logging
 import re
+import os
 from functools import reduce
 from io import BytesIO
 from timeit import default_timer as timer
-
 from docx import Document
 from docx.image.exceptions import InvalidImageStreamError, UnexpectedEndOfFileError, UnrecognizedImageError
-from markdown import markdown 
+from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
+from docx.opc.oxml import parse_xml
+from markdown import markdown
 from PIL import Image
 from tika import parser
 
 from api.db import LLMType
 from api.db.services.llm_service import LLMBundle
-from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownParser, PdfParser, TxtParser
-from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_figure_data_wrapper
+from api.utils.file_utils import extract_embed_file
+from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
+from deepdoc.parser.figure_parser import VisionFigureParser,vision_figure_parser_docx_wrapper,vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
+from deepdoc.parser.mineru_parser import MinerUParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
 
 
@@ -39,34 +43,43 @@ class Docx(DocxParser):
         pass
 
     def get_picture(self, document, paragraph):
-        img = paragraph._element.xpath('.//pic:pic')
-        if not img:
+        imgs = paragraph._element.xpath('.//pic:pic')
+        if not imgs:
             return None
-        img = img[0]
-        embed = img.xpath('.//a:blip/@r:embed')
-        if not embed:
-            return None
-        embed = embed[0]
-        related_part = document.part.related_parts[embed]
-        try:
-            image_blob = related_part.image.blob
-        except UnrecognizedImageError:
-            logging.info("Unrecognized image format. Skipping image.")
-            return None
-        except UnexpectedEndOfFileError:
-            logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
-            return None
-        except InvalidImageStreamError:
-            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-            return None
-        except UnicodeDecodeError:
-            logging.info("The recognized image stream appears to be corrupted. Skipping image.")
-            return None
-        try:
-            image = Image.open(BytesIO(image_blob)).convert('RGB')
-            return image
-        except Exception:
-            return None
+        res_img = None
+        for img in imgs:
+            embed = img.xpath('.//a:blip/@r:embed')
+            if not embed:
+                continue
+            embed = embed[0]
+            try:
+                related_part = document.part.related_parts[embed]
+                image_blob = related_part.image.blob
+            except UnrecognizedImageError:
+                logging.info("Unrecognized image format. Skipping image.")
+                continue
+            except UnexpectedEndOfFileError:
+                logging.info("EOF was unexpectedly encountered while reading an image stream. Skipping image.")
+                continue
+            except InvalidImageStreamError:
+                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+                continue
+            except UnicodeDecodeError:
+                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+                continue
+            except Exception:
+                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+                continue
+            try:
+                image = Image.open(BytesIO(image_blob)).convert('RGB')
+                if res_img is None:
+                    res_img = image
+                else:
+                    res_img = concat_img(res_img, image)
+            except Exception:
+                continue
+
+        return res_img
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
@@ -76,15 +89,15 @@ class Docx(DocxParser):
         """Get the hierarchical title structure before the table"""
         import re
         from docx.text.paragraph import Paragraph
-        
+
         titles = []
         blocks = []
-        
+
         # Get document name from filename parameter
         doc_name = re.sub(r"\.[a-zA-Z]+$", "", filename)
         if not doc_name:
             doc_name = "Untitled Document"
-            
+
         # Collect all document blocks while maintaining document order
         try:
             # Iterate through all paragraphs and tables in document order
@@ -97,7 +110,7 @@ class Docx(DocxParser):
         except Exception as e:
             logging.error(f"Error collecting blocks: {e}")
             return ""
-            
+
         # Find the target table position
         target_table_pos = -1
         table_count = 0
@@ -107,21 +120,21 @@ class Docx(DocxParser):
                     target_table_pos = pos
                     break
                 table_count += 1
-                
+
         if target_table_pos == -1:
             return ""  # Target table not found
-            
+
         # Find the nearest heading paragraph in reverse order
         nearest_title = None
         for i in range(len(blocks)-1, -1, -1):
             block_type, pos, block = blocks[i]
             if pos >= target_table_pos:  # Skip blocks after the table
                 continue
-                
+
             if block_type != 'p':
                 continue
-                
-            if block.style and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
+
+            if block.style and block.style.name and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
                 try:
                     level_match = re.search(r"(\d+)", block.style.name)
                     if level_match:
@@ -133,12 +146,12 @@ class Docx(DocxParser):
                                 break
                 except Exception as e:
                     logging.error(f"Error parsing heading level: {e}")
-        
+
         if nearest_title:
             # Add current title
             titles.append(nearest_title)
             current_level = nearest_title[0]
-            
+
             # Find all parent headings, allowing cross-level search
             while current_level > 1:
                 found = False
@@ -146,17 +159,17 @@ class Docx(DocxParser):
                     block_type, pos, block = blocks[i]
                     if pos >= target_table_pos:  # Skip blocks after the table
                         continue
-                        
+
                     if block_type != 'p':
                         continue
-                        
+
                     if block.style and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
                         try:
                             level_match = re.search(r"(\d+)", block.style.name)
                             if level_match:
                                 level = int(level_match.group(1))
                                 # Find any heading with a higher level
-                                if level < current_level:  
+                                if level < current_level:
                                     title_text = block.text.strip()
                                     if title_text:  # Avoid empty titles
                                         titles.append((level, title_text))
@@ -165,16 +178,16 @@ class Docx(DocxParser):
                                         break
                         except Exception as e:
                             logging.error(f"Error parsing parent heading: {e}")
-                            
+
                 if not found:  # Break if no parent heading is found
                     break
-            
+
             # Sort by level (ascending, from highest to lowest)
             titles.sort(key=lambda x: x[0])
             # Organize titles (from highest to lowest)
             hierarchy = [doc_name] + [t[1] for t in titles]
             return " > ".join(hierarchy)
-            
+
         return ""
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000):
@@ -226,21 +239,67 @@ class Docx(DocxParser):
             for r in tb.rows:
                 html += "<tr>"
                 i = 0
-                while i < len(r.cells):
-                    span = 1
-                    c = r.cells[i]
-                    for j in range(i + 1, len(r.cells)):
-                        if c.text == r.cells[j].text:
-                            span += 1
-                            i = j
-                        else:
-                            break
-                    i += 1
-                    html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                try:
+                    while i < len(r.cells):
+                        span = 1
+                        c = r.cells[i]
+                        for j in range(i + 1, len(r.cells)):
+                            if c.text == r.cells[j].text:
+                                span += 1
+                                i = j
+                            else:
+                                break
+                        i += 1
+                        html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                except Exception as e:
+                    logging.warning(f"Error parsing table, ignore: {e}")
                 html += "</tr>"
             html += "</table>"
             tbls.append(((None, html), ""))
         return new_line, tbls
+
+    def to_markdown(self, filename=None, binary=None, inline_images: bool = True):
+        """
+        This function uses mammoth, licensed under the BSD 2-Clause License.
+        """
+
+        import base64
+        import uuid
+
+        import mammoth
+        from markdownify import markdownify
+
+        docx_file = BytesIO(binary) if binary else open(filename, "rb")
+
+        def _convert_image_to_base64(image):
+            try:
+                with image.open() as image_file:
+                    image_bytes = image_file.read()
+                encoded = base64.b64encode(image_bytes).decode("utf-8")
+                base64_url = f"data:{image.content_type};base64,{encoded}"
+
+                alt_name = "image"
+                alt_name = f"img_{uuid.uuid4().hex[:8]}"
+
+                return {"src": base64_url, "alt": alt_name}
+            except Exception as e:
+                logging.warning(f"Failed to convert image to base64: {e}")
+                return {"src": "", "alt": "image"}
+
+        try:
+            if inline_images:
+                result = mammoth.convert_to_html(docx_file, convert_image=mammoth.images.img_element(_convert_image_to_base64))
+            else:
+                result = mammoth.convert_to_html(docx_file)
+
+            html = result.value
+
+            markdown_text = markdownify(html)
+            return markdown_text
+
+        finally:
+            if not binary:
+                docx_file.close()
 
 
 class Pdf(PdfParser):
@@ -271,7 +330,7 @@ class Pdf(PdfParser):
         callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
 
         start = timer()
-        self._text_merge()
+        self._text_merge(zoomin=zoomin)
         callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
 
         if separate_tables_figures:
@@ -281,8 +340,9 @@ class Pdf(PdfParser):
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls, figures
         else:
             tbls = self._extract_table_figure(True, zoomin, True, True)
-            # self._naive_vertical_merge()
+            self._naive_vertical_merge()
             self._concat_downward()
+            self._final_reading_order_merge()
             # self._filter_forpages()
             logging.info("layouts cost: {}s".format(timer() - first_start))
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
@@ -298,13 +358,13 @@ class Markdown(MarkdownParser):
             text = sections[0]
         else:
             return []
-        
+
         from bs4 import BeautifulSoup
         html_content = markdown(text)
         soup = BeautifulSoup(html_content, 'html.parser')
         html_images = [img.get('src') for img in soup.find_all('img') if img.get('src')]
         return html_images
-    
+
     def get_pictures(self, text):
         """Download and open all images from markdown text."""
         import requests
@@ -313,38 +373,61 @@ class Markdown(MarkdownParser):
         # Find all image URLs in text
         for url in image_urls:
             try:
-                response = requests.get(url, stream=True, timeout=30)
-                if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
-                    img = Image.open(BytesIO(response.content)).convert('RGB')
+                # check if the url is a local file or a remote URL
+                if url.startswith(('http://', 'https://')):
+                    # For remote URLs, download the image
+                    response = requests.get(url, stream=True, timeout=30)
+                    if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
+                        img = Image.open(BytesIO(response.content)).convert('RGB')
+                        images.append(img)
+                else:
+                    # For local file paths, open the image directly
+                    from pathlib import Path
+                    local_path = Path(url)
+                    if not local_path.exists():
+                        logging.warning(f"Local image file not found: {url}")
+                        continue
+                    img = Image.open(url).convert('RGB')
                     images.append(img)
             except Exception as e:
                 logging.error(f"Failed to download/open image from {url}: {e}")
                 continue
-                    
+
         return images if images else None
 
-    def __call__(self, filename, binary=None):
+    def __call__(self, filename, binary=None, separate_tables=True):
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
         else:
             with open(filename, "r") as f:
                 txt = f.read()
-        remainder, tables = self.extract_tables_and_remainder(f'{txt}\n')
-        sections = []
+
+        remainder, tables = self.extract_tables_and_remainder(f'{txt}\n', separate_tables=separate_tables)
+
+        extractor = MarkdownElementExtractor(txt)
+        element_sections = extractor.extract_elements()
+        sections = [(element, "") for element in element_sections]
+
         tbls = []
-        for sec in remainder.split("\n"):
-            if sec.strip().find("#") == 0:
-                sections.append((sec, ""))
-            elif sections and sections[-1][0].strip().find("#") == 0:
-                sec_, _ = sections.pop(-1)
-                sections.append((sec_ + "\n" + sec, ""))
-            else:
-                sections.append((sec, ""))
         for table in tables:
             tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
         return sections, tbls
 
+def load_from_xml_v2(baseURI, rels_item_xml):
+    """
+    Return |_SerializedRelationships| instance loaded with the
+    relationships contained in *rels_item_xml*. Returns an empty
+    collection if *rels_item_xml* is |None|.
+    """
+    srels = _SerializedRelationships()
+    if rels_item_xml is not None:
+        rels_elm = parse_xml(rels_item_xml)
+        for rel_elm in rels_elm.Relationship_lst:
+            if rel_elm.target_ref in ('../NULL', 'NULL'):
+                continue
+            srels._srels.append(_SerializedRelationship(baseURI, rel_elm))
+    return srels
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
           lang="Chinese", callback=None, **kwargs):
@@ -354,11 +437,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         Successive text will be sliced into pieces using 'delimiter'.
         Next, these successive pieces are merge into chunks whose token number is no more than 'Max token number'.
     """
+    
 
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config", {
-            "chunk_token_num": 128, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     doc = {
         "docnm_kwd": filename,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -367,25 +451,37 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     res = []
     pdf_parser = None
     section_images = None
+
+    is_root = kwargs.get("is_root", True)
+    embed_res = []
+    if is_root:
+        # Only extract embedded files at the root call
+        embeds = []
+        if binary is not None:
+            embeds = extract_embed_file(binary)
+        else:
+            raise Exception("Embedding extraction from file path is not supported.")
+        
+        # Recursively chunk each embedded file and collect results
+        for embed_filename, embed_bytes in embeds:
+            try:
+                sub_res = chunk(embed_filename, binary=embed_bytes, lang=lang, callback=callback, is_root=False, **kwargs) or []
+                embed_res.extend(sub_res)
+            except Exception as e:
+                if callback:
+                    callback(0.05, f"Failed to chunk embed {embed_filename}: {e}")
+                continue
+
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
 
-        try:
-            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-            callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
-        except Exception:
-            vision_model = None
+        
 
+        # fix "There is no item named 'word/NULL' in the archive", referring to https://github.com/python-openxml/python-docx/issues/1105#issuecomment-1298075246
+        _SerializedRelationships.load_from_xml = load_from_xml_v2
         sections, tables = Docx()(filename, binary)
 
-        if vision_model:
-            figures_data = vision_figure_parser_figure_data_wrapper(sections)
-            try:
-                docx_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
-                boosted_figures = docx_vision_parser(callback=callback)
-                tables.extend(boosted_figures)
-            except Exception as e:
-                callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
+        tables=vision_figure_parser_docx_wrapper(sections=sections,tbls=tables,callback=callback,**kwargs)
 
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
@@ -398,10 +494,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 "delimiter", "\n!?。；！？"))
 
         if kwargs.get("section_only", False):
+            chunks.extend(embed_res)
             return chunks
 
         res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
+        res.extend(embed_res)
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
@@ -412,29 +510,28 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         if layout_recognizer == "DeepDOC":
             pdf_parser = Pdf()
-
-            try:
-                vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
-                callback(0.15, "Visual model detected. Attempting to enhance figure extraction...")
-            except Exception:
-                vision_model = None
-
-            if vision_model:
-                sections, tables, figures = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback, separate_tables_figures=True)
-                callback(0.5, "Basic parsing complete. Proceeding with figure enhancement...")
-                try:
-                    pdf_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=figures, **kwargs)
-                    boosted_figures = pdf_vision_parser(callback=callback)
-                    tables.extend(boosted_figures)
-                except Exception as e:
-                    callback(0.6, f"Visual model error: {e}. Skipping figure parsing enhancement.")
-                    tables.extend(figures)
-            else:
-                sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+            sections, tables = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
+            tables=vision_figure_parser_pdf_wrapper(tbls=tables,callback=callback,**kwargs)
 
             res = tokenize_table(tables, doc, is_english)
             callback(0.8, "Finish parsing.")
 
+        elif layout_recognizer == "MinerU":
+            mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
+            pdf_parser = MinerUParser(mineru_path=mineru_executable)
+            if not pdf_parser.check_installation():
+                callback(-1, "MinerU not found.")
+                return res
+
+            sections, tables = pdf_parser.parse_pdf(
+                filepath=filename,
+                binary=binary,
+                callback=callback,
+                output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
+                delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+            )
+            parser_config["chunk_token_num"] = 0
+            callback(0.8, "Finish parsing.")
         else:
             if layout_recognizer == "Plain Text":
                 pdf_parser = PlainParser()
@@ -454,6 +551,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
         else:
             sections = [(_, "") for _ in excel_parser(binary) if _]
+        parser_config["chunk_token_num"] = 12800
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -465,29 +563,43 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
-        sections, tables = markdown_parser(filename, binary)
-        
-        # Process images for each section
-        section_images = []
-        for section_text, _ in sections:
-            images = markdown_parser.get_pictures(section_text) if section_text else None
-            if images:
-                # If multiple images found, combine them using concat_img
-                combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
-                section_images.append(combined_image)
-            else:
-                section_images.append(None)
-                
+        sections, tables = markdown_parser(filename, binary, separate_tables=False)
+
+        try:
+            vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
+        except Exception:
+            vision_model = None
+
+        if vision_model:
+            # Process images for each section
+            section_images = []
+            for idx, (section_text, _) in enumerate(sections):
+                images = markdown_parser.get_pictures(section_text) if section_text else None
+
+                if images:
+                    # If multiple images found, combine them using concat_img
+                    combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
+                    section_images.append(combined_image)
+                    markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data= [((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
+                    boosted_figures = markdown_vision_parser(callback=callback)
+                    sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
+                else:
+                    section_images.append(None)
+        else:
+            logging.warning("No visual model detected. Skipping figure parsing enhancement.")
+
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(htm|html)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections = HtmlParser()(filename, binary)
+        chunk_token_num = int(parser_config.get("chunk_token_num", 128))
+        sections = HtmlParser()(filename, binary, chunk_token_num)
         sections = [(_, "") for _ in sections if _]
         callback(0.8, "Finish parsing.")
 
-    elif re.search(r"\.json$", filename, re.IGNORECASE):
+    elif re.search(r"\.(json|jsonl|ldjson)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         chunk_token_num = int(parser_config.get("chunk_token_num", 128))
         sections = JsonParser(chunk_token_num)(binary)
@@ -506,7 +618,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             callback(0.8, f"tika.parser got empty content from {filename}.")
             logging.warning(f"tika.parser got empty content from {filename}.")
             return []
-
     else:
         raise NotImplementedError(
             "file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
@@ -523,8 +634,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                                             "chunk_token_num", 128)), parser_config.get(
                                             "delimiter", "\n!?。；！？"))
         if kwargs.get("section_only", False):
+            chunks.extend(embed_res)
             return chunks
-        
+
         res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
     else:
         chunks = naive_merge(
@@ -532,11 +644,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 "chunk_token_num", 128)), parser_config.get(
                 "delimiter", "\n!?。；！？"))
         if kwargs.get("section_only", False):
+            chunks.extend(embed_res)
             return chunks
 
         res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
-    
+
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
+    if embed_res:
+        res.extend(embed_res)
     return res
 
 

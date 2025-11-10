@@ -5,7 +5,27 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-const Popover = PopoverPrimitive.Root;
+const Popover = (props: PopoverPrimitive.PopoverProps) => {
+  const { children, open: openState, onOpenChange } = props;
+  const [open, setOpen] = React.useState(true);
+  React.useEffect(() => {
+    setOpen(!!openState);
+  }, [openState]);
+  const handleOnOpenChange = React.useCallback(
+    (e: boolean) => {
+      if (onOpenChange) {
+        onOpenChange?.(e);
+      }
+      setOpen(e);
+    },
+    [onOpenChange],
+  );
+  return (
+    <PopoverPrimitive.Root open={open} onOpenChange={handleOnOpenChange}>
+      {children}
+    </PopoverPrimitive.Root>
+  );
+};
 
 const PopoverTrigger = PopoverPrimitive.Trigger;
 

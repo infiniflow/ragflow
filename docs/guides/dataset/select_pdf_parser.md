@@ -1,5 +1,5 @@
 ---
-sidebar_position: 1
+sidebar_position: -4
 slug: /select_pdf_parser
 ---
 
@@ -25,9 +25,9 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
     - **One**
 - To use a third-party visual model for parsing PDFs, ensure you have set a default img2txt model under **Set default models** on the **Model providers** page.
 
-## Procedure
+## Quickstart
 
-1. On your knowledge base's **Configuration** page, select a chunking method, say **General**.
+1. On your dataset's **Configuration** page, select a chunking method, say **General**.
 
    _The **PDF parser** dropdown menu appears._
 
@@ -35,7 +35,30 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
 
   - DeepDoc: (Default) The default visual model performing OCR, TSR, and DLR tasks on PDFs, which can be time-consuming.
   - Naive: Skip OCR, TSR, and DLR tasks if *all* your PDFs are plain text.
+  - MinerU: An experimental feature.
   - A third-party visual model provided by a specific model provider.
+
+:::danger IMPORTANG
+MinerU PDF document parsing is available starting from v0.21.1. To use this feature, follow these steps:
+
+1. Before deploying ragflow-server, update your **docker/.env** file:  
+   - Enable `HF_ENDPOINT=https://hf-mirror.com`
+   - Add a MinerU entry: `MINERU_EXECUTABLE=/ragflow/uv_tools/.venv/bin/mineru`
+
+2. Start the ragflow-server and run the following commands inside the container:  
+
+```bash
+mkdir uv_tools
+cd uv_tools
+uv venv .venv
+source .venv/bin/activate
+uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
+```
+
+3. Restart the ragflow-server.
+4. In the web UI, navigate to the **Configuration** page of your dataset. Click **Built-in** in the **Ingestion pipeline** section, select a chunking method from the **Built-in** dropdown, which supports PDF parsing, and slect **MinerU** in **PDF parser**.
+5. If you use a custom ingestion pipeline instead, you must also complete the first three steps before selecting **MinerU** in the **Parsing method** section of the **Parser** component.
+:::
 
 :::caution WARNING
 Third-party visual models are marked **Experimental**, because we have not fully tested these models for the aforementioned data extraction tasks.

@@ -16,7 +16,7 @@ const PromptManagement = () => {
       <div className="mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold">Prompt templates</h1>
-          <Button variant={'tertiary'} size={'sm'}>
+          <Button size={'sm'}>
             <Plus className="mr-2 h-4 w-4" />
             Create template
           </Button>

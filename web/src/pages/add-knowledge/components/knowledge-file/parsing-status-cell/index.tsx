@@ -61,9 +61,9 @@ const PopoverContent = ({ record }: IProps) => {
       children: record.process_begin_at,
     },
     {
-      key: 'process_duation',
+      key: 'process_duration',
       label: t('processDuration'),
-      children: `${record.process_duation.toFixed(2)} s`,
+      children: `${record.process_duration.toFixed(2)} s`,
     },
     {
       key: 'progress_msg',
@@ -124,8 +124,8 @@ export const ParsingStatusCell = ({ record }: IProps) => {
         onConfirm={handleOperationIconClick(true)}
         onCancel={handleOperationIconClick(false)}
         disabled={record.chunk_num === 0}
-        okText={t('common.ok')}
-        cancelText={t('common.cancel')}
+        okText={t('common.yes')}
+        cancelText={t('common.no')}
       >
         <div
           className={classNames(styles.operationIcon)}

@@ -49,6 +49,15 @@ export enum LLMFactory {
   SentenceTransformers = 'sentence-transformers',
   GPUStack = 'GPUStack',
   VLLM = 'VLLM',
+  GiteeAI = 'GiteeAI',
+  Ai302 = '302.AI',
+  DeepInfra = 'DeepInfra',
+  Grok = 'Grok',
+  XAI = 'xAI',
+  TokenPony = 'TokenPony',
+  Meituan = 'Meituan',
+  CometAPI = 'CometAPI',
+  DeerAPI = 'DeerAPI',
 }
 
 // Please lowercase the file name
@@ -103,4 +112,13 @@ export const IconMap = {
   [LLMFactory.SentenceTransformers]: 'sentence-transformers',
   [LLMFactory.GPUStack]: 'gpustack',
   [LLMFactory.VLLM]: 'vllm',
+  [LLMFactory.GiteeAI]: 'gitee-ai',
+  [LLMFactory.Ai302]: 'ai302',
+  [LLMFactory.DeepInfra]: 'deepinfra',
+  [LLMFactory.Grok]: 'grok',
+  [LLMFactory.XAI]: 'xai',
+  [LLMFactory.TokenPony]: 'token-pony',
+  [LLMFactory.Meituan]: 'longcat',
+  [LLMFactory.CometAPI]: 'cometapi',
+  [LLMFactory.DeerAPI]: 'deerapi',
 };

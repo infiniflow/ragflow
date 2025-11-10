@@ -13,22 +13,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
 from pathlib import Path
 
 import requests
-from configs import HOST_ADDRESS
+from configs import HOST_ADDRESS, VERSION
 from requests_toolbelt import MultipartEncoder
 from utils.file_utils import create_txt_file
 
 HEADERS = {"Content-Type": "application/json"}
-DATASETS_API_URL = "/api/v1/datasets"
-FILE_API_URL = "/api/v1/datasets/{dataset_id}/documents"
-FILE_CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/chunks"
-CHUNK_API_URL = "/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks"
-CHAT_ASSISTANT_API_URL = "/api/v1/chats"
-SESSION_WITH_CHAT_ASSISTANT_API_URL = "/api/v1/chats/{chat_id}/sessions"
-SESSION_WITH_AGENT_API_URL = "/api/v1/agents/{agent_id}/sessions"
+DATASETS_API_URL = f"/api/{VERSION}/datasets"
+FILE_API_URL = f"/api/{VERSION}/datasets/{{dataset_id}}/documents"
+FILE_CHUNK_API_URL = f"/api/{VERSION}/datasets/{{dataset_id}}/chunks"
+CHUNK_API_URL = f"/api/{VERSION}/datasets/{{dataset_id}}/documents/{{document_id}}/chunks"
+CHAT_ASSISTANT_API_URL = f"/api/{VERSION}/chats"
+SESSION_WITH_CHAT_ASSISTANT_API_URL = f"/api/{VERSION}/chats/{{chat_id}}/sessions"
+SESSION_WITH_AGENT_API_URL = f"/api/{VERSION}/agents/{{agent_id}}/sessions"
 
 
 # DATASET MANAGEMENT

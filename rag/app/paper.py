@@ -18,11 +18,11 @@ import logging
 import copy
 import re
 
+from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
 from api.db import ParserType
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks
 from deepdoc.parser import PdfParser, PlainParser
 import numpy as np
-
 
 class Pdf(PdfParser):
     def __init__(self):
@@ -143,8 +143,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         Only pdf is supported.
         The abstract of the paper will be sliced as an entire chunk, and will not be sliced partly.
     """
+    parser_config = kwargs.get(
+        "parser_config", {
+            "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        if kwargs.get("parser_config", {}).get("layout_recognize", "DeepDOC") == "Plain Text":
+        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
             pdf_parser = PlainParser()
             paper = {
                 "title": filename,
@@ -157,6 +160,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             pdf_parser = Pdf()
             paper = pdf_parser(filename if not binary else binary,
                                from_page=from_page, to_page=to_page, callback=callback)
+        tbls=paper["tables"]
+        tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
+        paper["tables"] = tbls
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")
 

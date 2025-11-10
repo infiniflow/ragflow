@@ -1,9 +1,11 @@
+import message from '@/components/ui/message';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IChunk, IKnowledgeFile } from '@/interfaces/database/knowledge';
 import kbService from '@/services/knowledge-service';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { IChunkListResult } from './chunk-hooks';
 import {
   useGetPaginationWithRouter,
@@ -11,7 +13,9 @@ import {
 } from './logic-hooks';
 import { useGetKnowledgeSearchParams } from './route-hook';
 
-export const useFetchNextChunkList = (): ResponseGetType<{
+export const useFetchNextChunkList = (
+  enabled = true,
+): ResponseGetType<{
   data: IChunk[];
   total: number;
   documentInfo: IKnowledgeFile;
@@ -35,6 +39,7 @@ export const useFetchNextChunkList = (): ResponseGetType<{
     placeholderData: (previousData: any) =>
       previousData ?? { data: [], total: 0, documentInfo: {} }, // https://github.com/TanStack/query/issues/8183
     gcTime: 0,
+    enabled,
     queryFn: async () => {
       const { data } = await kbService.chunk_list({
         doc_id: documentId,
@@ -88,4 +93,28 @@ export const useFetchNextChunkList = (): ResponseGetType<{
     available,
     handleSetAvailable,
   };
+};
+
+export const useSwitchChunk = () => {
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['switchChunk'],
+    mutationFn: async (params: {
+      chunk_ids?: string[];
+      available_int?: number;
+      doc_id: string;
+    }) => {
+      const { data } = await kbService.switch_chunk(params);
+      if (data.code === 0) {
+        message.success(t('message.modified'));
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, switchChunk: mutateAsync };
 };

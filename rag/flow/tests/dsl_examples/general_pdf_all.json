@@ -1,0 +1,139 @@
+{
+  "components": {
+    "File": {
+        "obj":{
+            "component_name": "File",
+            "params": {
+            }
+        },
+        "downstream": ["Parser:0"],
+        "upstream": []
+    },
+    "Parser:0": {
+        "obj": {
+            "component_name": "Parser",
+            "params": {
+              "setups": {
+                "pdf": {
+                  "parse_method": "deepdoc",
+                  "vlm_name": "",
+                  "lang": "Chinese",
+                  "suffix": [
+                    "pdf"
+                  ],
+                  "output_format": "json"
+                },
+                "spreadsheet": {
+                  "suffix": [
+                    "xls",
+                    "xlsx",
+                    "csv"
+                  ],
+                  "output_format": "html"
+                },
+                "word": {
+                  "suffix": [
+                    "doc",
+                    "docx"
+                  ],
+                  "output_format": "json"
+                },
+                "slides": {
+                    "parse_method": "presentation",
+                    "suffix": [
+                        "pptx"
+                    ],
+                    "output_format": "json"
+                },
+                "markdown": {
+                  "suffix": [
+                    "md",
+                    "markdown"
+                  ],
+                  "output_format": "json"
+                },
+                "text": {
+                  "suffix": ["txt"],
+                  "output_format": "json"
+                },
+                "image": {
+                  "parse_method": "vlm",
+                  "llm_id":"glm-4.5v",
+                  "lang": "Chinese",
+                  "suffix": [
+                    "jpg",
+                    "jpeg",
+                    "png",
+                    "gif"
+                  ],
+                  "output_format": "text"
+                },
+                "audio": {
+                  "suffix": [
+                    "da",
+                    "wave",
+                    "wav",
+                    "mp3",
+                    "aac",
+                    "flac",
+                    "ogg",
+                    "aiff",
+                    "au",
+                    "midi",
+                    "wma",
+                    "realaudio",
+                    "vqf",
+                    "oggvorbis",
+                    "ape"
+                  ],
+                  "lang": "Chinese",
+                  "llm_id": "SenseVoiceSmall",
+                  "output_format": "json"
+                },
+                "email": {
+                  "suffix": [
+                    "msg"
+                  ],
+                  "fields": [
+                    "from",
+                    "to",
+                    "cc",
+                    "bcc",
+                    "date",
+                    "subject",
+                    "body",
+                    "attachments"
+                  ],
+                  "output_format": "json"
+                }
+              }
+          }
+        },
+        "downstream": ["Splitter:0"],
+        "upstream": ["Begin"]
+    },
+    "Splitter:0": {
+        "obj": {
+            "component_name": "Splitter",
+            "params": {
+              "chunk_token_size": 512,
+              "delimiters": ["\n"],
+              "overlapped_percent": 0
+            }
+        },
+        "downstream": ["Tokenizer:0"],
+        "upstream": ["Parser:0"]
+    },
+    "Tokenizer:0": {
+        "obj": {
+            "component_name": "Tokenizer",
+            "params": {
+            }
+        },
+        "downstream": [],
+        "upstream": ["Chunker:0"]
+    }
+  },
+  "path": []
+}
+

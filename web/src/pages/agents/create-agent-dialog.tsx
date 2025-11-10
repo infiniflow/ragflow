@@ -6,25 +6,31 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { IModalProps } from '@/interfaces/common';
 import { TagRenameId } from '@/pages/add-knowledge/constant';
 import { useTranslation } from 'react-i18next';
-import { CreateAgentForm } from './create-agent-form';
+import { CreateAgentForm, CreateAgentFormProps } from './create-agent-form';
+
+type CreateAgentDialogProps = CreateAgentFormProps;
 
 export function CreateAgentDialog({
   hideModal,
   onOk,
   loading,
-}: IModalProps<any>) {
+  shouldChooseAgent,
+}: CreateAgentDialogProps) {
   const { t } = useTranslation();
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{t('flow.createGraph')}</DialogTitle>
         </DialogHeader>
-        <CreateAgentForm hideModal={hideModal} onOk={onOk}></CreateAgentForm>
+        <CreateAgentForm
+          hideModal={hideModal}
+          onOk={onOk}
+          shouldChooseAgent={shouldChooseAgent}
+        ></CreateAgentForm>
         <DialogFooter>
           <ButtonLoading type="submit" form={TagRenameId} loading={loading}>
             {t('common.save')}

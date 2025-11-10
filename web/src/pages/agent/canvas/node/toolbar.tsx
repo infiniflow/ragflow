@@ -5,14 +5,19 @@ import {
 } from '@/components/xyflow/tooltip-node';
 import { Position } from '@xyflow/react';
 import { Copy, Play, Trash2 } from 'lucide-react';
-import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
+import {
+  HTMLAttributes,
+  MouseEventHandler,
+  PropsWithChildren,
+  useCallback,
+} from 'react';
 import { Operator } from '../../constant';
 import { useDuplicateNode } from '../../hooks';
 import useGraphStore from '../../store';
 
-function IconWrapper({ children }: PropsWithChildren) {
+function IconWrapper({ children, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className="p-1.5 bg-text-title rounded-sm cursor-pointer">
+    <div className="p-1.5 bg-text-title rounded-sm cursor-pointer" {...props}>
       {children}
     </div>
   );
@@ -22,15 +27,24 @@ type ToolBarProps = {
   selected?: boolean | undefined;
   label: string;
   id: string;
+  showRun?: boolean;
+  showCopy?: boolean;
 } & PropsWithChildren;
 
-export function ToolBar({ selected, children, label, id }: ToolBarProps) {
+export function ToolBar({
+  selected,
+  children,
+  label,
+  id,
+  showRun = true,
+  showCopy = true,
+}: ToolBarProps) {
   const deleteNodeById = useGraphStore((store) => store.deleteNodeById);
   const deleteIterationNodeById = useGraphStore(
     (store) => store.deleteIterationNodeById,
   );
 
-  const deleteNode: MouseEventHandler<SVGElement> = useCallback(
+  const deleteNode: MouseEventHandler<HTMLDivElement> = useCallback(
     (e) => {
       e.stopPropagation();
       if (label === Operator.Iteration) {
@@ -44,7 +58,7 @@ export function ToolBar({ selected, children, label, id }: ToolBarProps) {
 
   const duplicateNode = useDuplicateNode();
 
-  const handleDuplicate: MouseEventHandler<SVGElement> = useCallback(
+  const handleDuplicate: MouseEventHandler<HTMLDivElement> = useCallback(
     (e) => {
       e.stopPropagation();
       duplicateNode(id, label);
@@ -54,18 +68,22 @@ export function ToolBar({ selected, children, label, id }: ToolBarProps) {
 
   return (
     <TooltipNode selected={selected}>
-      <TooltipTrigger>{children}</TooltipTrigger>
+      <TooltipTrigger className="h-full">{children}</TooltipTrigger>
 
       <TooltipContent position={Position.Top}>
         <section className="flex gap-2 items-center">
-          <IconWrapper>
-            <Play className="size-3.5" />
-          </IconWrapper>
-          <IconWrapper>
-            <Copy className="size-3.5" onClick={handleDuplicate} />
-          </IconWrapper>
-          <IconWrapper>
-            <Trash2 className="size-3.5" onClick={deleteNode} />
+          {showRun && (
+            <IconWrapper>
+              <Play className="size-3.5" data-play />
+            </IconWrapper>
+          )}
+          {showCopy && (
+            <IconWrapper onClick={handleDuplicate}>
+              <Copy className="size-3.5" />
+            </IconWrapper>
+          )}
+          <IconWrapper onClick={deleteNode}>
+            <Trash2 className="size-3.5" />
           </IconWrapper>
         </section>
       </TooltipContent>

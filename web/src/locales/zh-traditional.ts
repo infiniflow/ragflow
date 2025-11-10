@@ -69,7 +69,7 @@ export default {
       setting: '用戶設置',
       logout: '登出',
       fileManager: '文件管理',
-      flow: 'Agent',
+      flow: '智能體',
       search: '搜尋',
       welcome: '歡迎來到',
     },
@@ -205,6 +205,7 @@ export default {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
       name: '知識庫名稱',
       photo: '知識庫圖片',
+      photoTip: '你可以上傳4MB的文件',
       description: '描述',
       language: '文件語言',
       languageMessage: '請輸入語言',
@@ -308,7 +309,7 @@ export default {
 
 <p>請注意您需要指定的條目類型。</p>`,
       tag: `<p>使用「Tag」分塊方法的知識庫用作標籤集。其他知識庫可以使用它來標記自己的塊，對這些知識庫的查詢也將使用此標籤集進行標記。</p>
-<p>使用「Tag」作為分塊方法的知識庫<b>不</b>參與 RAG 過程。</p>
+<p>標籤集<b>不會</b>直接參與 RAG 過程。</p>
 <p>標籤知識庫中的每個塊都是一個獨立的描述-標籤對。</p>
 
 <p>支援的檔案格式包括<b>XLSX</b>和<b>CSV/TXT</b>檔案格式。</p>
@@ -395,6 +396,11 @@ export default {
       mind: '心智圖',
       question: '問題',
       questionTip: `如果存在給定的問題，則區塊的嵌入將基於它們。`,
+      chunkResult: '切片結果',
+      chunkResultTip: `查看用於嵌入和召回的切片段落`,
+      enable: '啟用',
+      disable: '禁用',
+      delete: '删除',
     },
     chat: {
       newConversation: '新會話',
@@ -448,6 +454,7 @@ export default {
       improvise: '即興創作',
       precise: '精確',
       balance: '平衡',
+      custom: '自定義',
       freedomTip: `“精確”意味著法學碩士會保守並謹慎地回答你的問題。“即興發揮”意味著你希望法學碩士能夠自由地暢所欲言。“平衡”是謹慎與自由之間的平衡。`,
       temperature: '溫度',
       temperatureMessage: '溫度是必填項',
@@ -521,7 +528,7 @@ export default {
       useKnowledgeGraph提示:
         '它將檢索相關實體、關係和社區報告的描述，這將增強多跳和複雜問題的推理。',
       keyword: '關鍵字分析',
-      keywordTip: `應用LLM分析使用者的問題，提取在相關性計算中需要強調的關鍵字。`,
+      keywordTip: `應用LLM分析使用者的問題，提取在相關性計算中需要強調的關鍵字。對於長查詢效果良好，但會增加回應時間。`,
       reasoning: '推理',
       reasoningTip:
         '在問答過程中是否啟用推理工作流程，例如Deepseek-R1或OpenAI o1等模型所採用的方式。啟用後，該功能允許模型存取外部知識，並借助思維鏈推理等技術逐步解決複雜問題。通過將問題分解為可處理的步驟，這種方法增強了模型提供準確回答的能力，從而在需要邏輯推理和多步思考的任務上表現更優。',
@@ -535,6 +542,7 @@ export default {
     setting: {
       profile: '概述',
       avatar: '头像',
+      avatarTip: '這會在你的個人主頁展示',
       profileDescription: '在此更新您的照片和個人詳細信息。',
       maxTokens: '最大token數',
       maxTokensMessage: '最大token數是必填項',
@@ -567,6 +575,7 @@ export default {
       currentPassword: '當前密碼',
       currentPasswordMessage: '請輸入當前密碼',
       newPassword: '新密碼',
+      changePassword: '修改密碼',
       newPasswordMessage: '請輸入新密碼',
       newPasswordDescription: '您的新密碼必須超過 8 個字符。',
       confirmPassword: '確認新密碼',
@@ -580,9 +589,13 @@ export default {
       apiKeyMessage: '請輸入api key（如果是本地部署的模型，請忽略它）',
       apiKeyTip: 'API key可以通過註冊相應的LLM供應商來獲取。',
       showMoreModels: '展示更多模型',
+      hideModels: '隱藏模型',
       baseUrl: 'base-url',
       baseUrlTip:
         '如果您的 API 密鑰來自 OpenAI，請忽略它。任何其他中間提供商都會提供帶有 API 密鑰的基本 URL。',
+      tongyiBaseUrlTip:
+        '中國用戶無需填寫或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。國際用戶請使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      tongyiBaseUrlPlaceholder: '（僅國際用戶，請參閱提示）',
       modify: '修改',
       systemModelSettings: '設定預設模型',
       chatModel: '聊天模型',
@@ -671,7 +684,7 @@ export default {
         '請輸入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 區域',
       GoogleRegionMessage: '請輸入 Google Cloud 區域',
-      modelProvidersWarn: `請先在<b>設定>模型提供者</b>中新增嵌入模型和LLM。然後，在「系統模型設定」中設定它們。`,
+      modelProvidersWarn: `請先在<b>設定>模型提供者</b>中新增嵌入模型和LLM。然後，在「設定預設模型」中設定它們。`,
       add: '添加',
       updateDate: '更新日期',
       role: '角色',
@@ -754,6 +767,23 @@ export default {
       destinationFolder: '目標資料夾',
     },
     flow: {
+      line: '單行文本',
+      paragraph: '段落文字',
+      options: '選項',
+      file: '文件',
+      integer: '數字',
+      boolean: '布爾值',
+      multimodalModels: '多模態模型',
+      textOnlyModels: '進文本模型',
+      allModels: '所有模型',
+      codeExecDescription: '用 Python 或者 Javascript 編寫自定義邏輯',
+      stringTransformDescription:
+        '修改文本内容，目前支持文本分割、文本拼接操作',
+      foundation: '基礎',
+      tools: '工具',
+      dataManipulation: '數據操控',
+      flow: '流程',
+      dialog: '對話',
       cite: '引用',
       citeTip: 'citeTip',
       name: '名稱',
@@ -795,7 +825,7 @@ export default {
       promptText: `請總結以下段落。注意數字，不要胡編亂造。段落如下：
 {input}
 以上就是你需要總結的內容。`,
-      createGraph: '建立 Agent',
+      createGraph: '創建智能體',
       createFromTemplates: '從模板創建',
       retrieval: '知識檢索',
       generate: '生成回答',
@@ -818,6 +848,9 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         '此元件用於從 www.duckduckgo.com 取得搜尋結果。通常，它作為知識庫的補充。 Top N 指定您需要採用的搜尋結果數。',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        '該組件通過您提供的 SearXNG 實例地址進行搜索。請設置 Top N 和實例 URL。',
       channel: '頻道',
       channelTip: '針對該組件的輸入進行文字搜尋或新聞搜索',
       text: '文字',
@@ -1008,7 +1041,7 @@ export default {
       },
       operator: '操作符',
       value: '值',
-      useTemplate: '使用該模板',
+      useTemplate: '使用',
       wenCai: '問財',
       queryType: '查詢類型',
       wenCaiDescription:
@@ -1120,6 +1153,8 @@ export default {
       headers: '請求頭',
       cleanHtml: '清除 HTML',
       cleanHtmlTip: '如果回應是 HTML 格式並且只需要主要內容，請將其開啟。',
+      invalidUrl:
+        '必須是有效的 URL 或包含變量佔位符的 URL，格式為 {variable_name} 或 {component@variable}',
       reference: '引用',
       input: '輸入',
       output: '輸出',
@@ -1175,6 +1210,20 @@ export default {
       file: '文件',
       knowledge: '知識',
       chat: '聊天',
+    },
+    modal: {
+      okText: '確認',
+      cancelText: '取消',
+    },
+    search: {
+      createSearch: '新建查詢',
+      searchGreeting: '今天我能為你做些什麽？',
+      profile: '隱藏個人資料',
+      locale: '語言',
+      embedCode: '嵌入代碼',
+      id: 'ID',
+      copySuccess: '複製成功',
+      welcomeBack: '歡迎回來',
     },
   },
 };

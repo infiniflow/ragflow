@@ -1,6 +1,7 @@
 'use client';
 
 import { FormContainer } from '@/components/form-container';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { BlockButton, Button } from '@/components/ui/button';
 import {
   FormControl,
@@ -16,23 +17,24 @@ import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useBuildVariableOptions } from '../../hooks/use-get-begin-query';
+import { useBuildQueryVariableOptions } from '../../hooks/use-get-begin-query';
 
 interface IProps {
   node?: RAGFlowNodeType;
   name?: string;
+  isOutputs: boolean;
 }
 
 export const TypeOptions = [
   'String',
   'Number',
   'Boolean',
-  'Array[String]',
-  'Array[Number]',
+  'Array<String>',
+  'Array<Number>',
   'Object',
 ].map((x) => ({ label: x, value: x }));
 
-export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
+export function DynamicVariableForm({ name = 'arguments', isOutputs }: IProps) {
   const { t } = useTranslation();
   const form = useFormContext();
 
@@ -41,19 +43,19 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
     control: form.control,
   });
 
-  const valueOptions = useBuildVariableOptions(node?.id, node?.parentId);
+  const nextOptions = useBuildQueryVariableOptions();
 
   return (
     <div className="space-y-5">
       {fields.map((field, index) => {
         const typeField = `${name}.${index}.name`;
         return (
-          <div key={field.id} className="flex items-center gap-2">
+          <div key={field.id} className="flex w-full items-center gap-2">
             <FormField
               control={form.control}
               name={typeField}
               render={({ field }) => (
-                <FormItem className="w-2/5">
+                <FormItem className="flex-1 overflow-hidden">
                   <FormControl>
                     <BlurInput
                       {...field}
@@ -64,20 +66,25 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
                 </FormItem>
               )}
             />
-            <Separator className="w-3 text-text-sub-title" />
+            <Separator className="w-3 text-text-secondary" />
             <FormField
               control={form.control}
-              name={`${name}.${index}.component_id`}
+              name={`${name}.${index}.type`}
               render={({ field }) => (
-                <FormItem className="flex-1">
+                <FormItem className="flex-1 overflow-hidden">
                   <FormControl>
-                    <RAGFlowSelect
-                      placeholder={t('common.pleaseSelect')}
-                      options={
-                        name === 'arguments' ? valueOptions : TypeOptions
-                      }
-                      {...field}
-                    ></RAGFlowSelect>
+                    {isOutputs ? (
+                      <RAGFlowSelect
+                        placeholder={t('common.pleaseSelect')}
+                        options={TypeOptions}
+                        {...field}
+                      ></RAGFlowSelect>
+                    ) : (
+                      <SelectWithSearch
+                        options={nextOptions}
+                        {...field}
+                      ></SelectWithSearch>
+                    )}
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -89,9 +96,7 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
           </div>
         );
       })}
-      <BlockButton
-        onClick={() => append({ name: '', component_id: undefined })}
-      >
+      <BlockButton onClick={() => append({ name: '', type: undefined })}>
         {t('flow.addVariable')}
       </BlockButton>
     </div>
@@ -99,19 +104,24 @@ export function DynamicVariableForm({ node, name = 'arguments' }: IProps) {
 }
 
 export function VariableTitle({ title }: { title: ReactNode }) {
-  return <div className="font-medium text-text-title pb-2">{title}</div>;
+  return <div className="font-medium text-text-primary pb-2">{title}</div>;
 }
 
 export function DynamicInputVariable({
   node,
   name,
   title,
+  isOutputs = false,
 }: IProps & { title: ReactNode }) {
   return (
     <section>
       <VariableTitle title={title}></VariableTitle>
       <FormContainer>
-        <DynamicVariableForm node={node} name={name}></DynamicVariableForm>
+        <DynamicVariableForm
+          node={node}
+          name={name}
+          isOutputs={isOutputs}
+        ></DynamicVariableForm>
       </FormContainer>
     </section>
   );

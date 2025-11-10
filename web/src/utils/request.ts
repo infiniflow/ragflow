@@ -11,7 +11,7 @@ import { convertTheKeysOfTheObjectToSnake } from './common-util';
 
 const FAILED_TO_FETCH = 'Failed to fetch';
 
-const RetcodeMessage = {
+export const RetcodeMessage = {
   200: i18n.t('message.200'),
   201: i18n.t('message.201'),
   202: i18n.t('message.202'),
@@ -29,7 +29,7 @@ const RetcodeMessage = {
   503: i18n.t('message.503'),
   504: i18n.t('message.504'),
 };
-type ResultCode =
+export type ResultCode =
   | 200
   | 201
   | 202

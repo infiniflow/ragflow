@@ -500,9 +500,14 @@ export default {
       apiKeyTip:
         'A chave da API pode ser obtida registrando-se no fornecedor correspondente do LLM.',
       showMoreModels: 'Mostrar mais modelos',
+      hideModels: 'Ocultar modelos',
       baseUrl: 'URL Base',
       baseUrlTip:
         'Se sua chave da API for do OpenAI, ignore isso. Outros provedores intermediários fornecerão essa URL base com a chave da API.',
+      tongyiBaseUrlTip:
+        'Para usuários chineses, não é necessário preencher ou usar https://dashscope.aliyuncs.com/compatible-mode/v1. Para usuários internacionais, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      tongyiBaseUrlPlaceholder:
+        '(Apenas para usuários internacionais, consulte a dica)',
       modify: 'Modificar',
       systemModelSettings: 'Definir modelos padrão',
       chatModel: 'Modelo de chat',
@@ -725,6 +730,9 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         'Um componente que realiza buscas no duckduckgo.com, permitindo especificar o número de resultados de pesquisa usando TopN. Ele complementa as bases de conhecimento existentes.',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'Um componente que realiza buscas via URL da instância SearXNG que você fornece. Especifique TopN e URL da instância.',
       channel: 'Canal',
       channelTip: `Realize uma busca por texto ou por notícias na entrada do componente`,
       text: 'Texto',
@@ -1058,6 +1066,8 @@ export default {
       cleanHtml: 'Limpar HTML',
       cleanHtmlTip:
         'Se a resposta for formatada em HTML e apenas o conteúdo principal for desejado, ative esta opção.',
+      invalidUrl:
+        'Deve ser uma URL válida ou uma URL com marcadores de posição de variáveis no formato {nome_variável} ou {componente@variável}',
 
       reference: 'Referência',
       input: 'Entrada',

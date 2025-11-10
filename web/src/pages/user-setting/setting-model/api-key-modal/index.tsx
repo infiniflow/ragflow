@@ -2,13 +2,14 @@ import { IModalManagerChildrenProps } from '@/components/modal-manager';
 import { LLMFactory } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Modal } from 'antd';
-import { useEffect } from 'react';
+import { KeyboardEventHandler, useCallback, useEffect } from 'react';
 import { ApiKeyPostBody } from '../../interface';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   loading: boolean;
   initialValue: string;
   llmFactory: string;
+  editMode?: boolean;
   onOk: (postBody: ApiKeyPostBody) => void;
   showModal?(): void;
 }
@@ -19,7 +20,11 @@ type FieldType = {
   group_id?: string;
 };
 
-const modelsWithBaseUrl = [LLMFactory.OpenAI, LLMFactory.AzureOpenAI];
+const modelsWithBaseUrl = [
+  LLMFactory.OpenAI,
+  LLMFactory.AzureOpenAI,
+  LLMFactory.TongYiQianWen,
+];
 
 const ApiKeyModal = ({
   visible,
@@ -27,22 +32,26 @@ const ApiKeyModal = ({
   llmFactory,
   loading,
   initialValue,
+  editMode = false,
   onOk,
 }: IProps) => {
   const [form] = Form.useForm();
   const { t } = useTranslate('setting');
 
-  const handleOk = async () => {
+  const handleOk = useCallback(async () => {
     const ret = await form.validateFields();
 
     return onOk(ret);
-  };
+  }, [form, onOk]);
 
-  const handleKeyDown = async (e) => {
-    if (e.key === 'Enter') {
-      await handleOk();
-    }
-  };
+  const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = useCallback(
+    async (e) => {
+      if (e.key === 'Enter') {
+        await handleOk();
+      }
+    },
+    [handleOk],
+  );
 
   useEffect(() => {
     if (visible) {
@@ -52,7 +61,7 @@ const ApiKeyModal = ({
 
   return (
     <Modal
-      title={t('modify')}
+      title={editMode ? t('editModel') : t('modify')}
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}
@@ -79,10 +88,30 @@ const ApiKeyModal = ({
           <Form.Item<FieldType>
             label={t('baseUrl')}
             name="base_url"
+            tooltip={
+              llmFactory === LLMFactory.TongYiQianWen
+                ? t('tongyiBaseUrlTip')
+                : t('baseUrlTip')
+            }
+          >
+            <Input
+              placeholder={
+                llmFactory === LLMFactory.TongYiQianWen
+                  ? t('tongyiBaseUrlPlaceholder')
+                  : 'https://api.openai.com/v1'
+              }
+              onKeyDown={handleKeyDown}
+            />
+          </Form.Item>
+        )}
+        {llmFactory?.toLowerCase() === 'Anthropic'.toLowerCase() && (
+          <Form.Item<FieldType>
+            label={t('baseUrl')}
+            name="base_url"
             tooltip={t('baseUrlTip')}
           >
             <Input
-              placeholder="https://api.openai.com/v1"
+              placeholder="https://api.anthropic.com/v1"
               onKeyDown={handleKeyDown}
             />
           </Form.Item>

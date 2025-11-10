@@ -87,7 +87,7 @@ class RAGFlowPptParser:
                 break
             texts = []
             for shape in sorted(
-                    slide.shapes, key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left)):
+                    slide.shapes, key=lambda x: ((x.top if x.top is not None else 0) // 10, x.left if x.left is not None else 0)):
                 try:
                     txt = self.__extract(shape)
                     if txt:

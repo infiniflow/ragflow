@@ -7,11 +7,14 @@ Reference:
 
 import logging
 import json
+import os
 import re
 from typing import Callable
 from dataclasses import dataclass
 import networkx as nx
 import pandas as pd
+
+from api.utils.api_utils import timeout
 from graphrag.general import leiden
 from graphrag.general.community_report_prompt import COMMUNITY_REPORT_PROMPT
 from graphrag.general.extractor import Extractor
@@ -49,6 +52,7 @@ class CommunityReportsExtractor(Extractor):
         self._max_report_length = max_report_length or 1500
 
     async def __call__(self, graph: nx.Graph, callback: Callable | None = None):
+        enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
         for node_degree in graph.degree:
             graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
 
@@ -57,6 +61,7 @@ class CommunityReportsExtractor(Extractor):
         res_str = []
         res_dict = []
         over, token_count = 0, 0
+        @timeout(120)
         async def extract_community_report(community):
             nonlocal res_str, res_dict, over, token_count
             cm_id, cm = community
@@ -87,11 +92,10 @@ class CommunityReportsExtractor(Extractor):
                 "relation_df": rela_df.to_csv(index_label="id")
             }
             text = perform_variable_replacements(self._extraction_prompt, variables=prompt_variables)
-            gen_conf = {"temperature": 0.3}
             async with chat_limiter:
                 try:
-                    with trio.move_on_after(120) as cancel_scope:
-                        response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
+                    with trio.move_on_after(180 if enable_timeout_assertion else 1000000000) as cancel_scope:
+                        response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], {})
                     if cancel_scope.cancelled_caught:
                         logging.warning("extract_community_report._chat timeout, skipping...")
                         return

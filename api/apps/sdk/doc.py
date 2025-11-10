@@ -32,13 +32,15 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.llm_service import LLMBundle, TenantLLMService
+from api.db.services.llm_service import LLMBundle
+from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.task_service import TaskService, queue_tasks
+from api.db.services.dialog_service import meta_filter, convert_conditions
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
-from rag.prompts import keyword_extraction
+from rag.prompts.generator import cross_languages, keyword_extraction
 from rag.utils import rmSpace
 from rag.utils.storage_factory import STORAGE_IMPL
 
@@ -300,7 +302,7 @@ def update_doc(tenant_id, dataset_id, document_id):
                 doc.kb_id,
                 doc.token_num * -1,
                 doc.chunk_num * -1,
-                doc.process_duation * -1,
+                doc.process_duration * -1,
             )
             if not e:
                 return get_error_data_result(message="Document not found!")
@@ -456,6 +458,32 @@ def list_docs(dataset_id, tenant_id):
         required: false
         default: true
         description: Order in descending.
+      - in: query
+        name: create_time_from
+        type: integer
+        required: false
+        default: 0
+        description: Unix timestamp for filtering documents created after this time. 0 means no filter.
+      - in: query
+        name: create_time_to
+        type: integer
+        required: false
+        default: 0
+        description: Unix timestamp for filtering documents created before this time. 0 means no filter.
+      - in: query
+        name: suffix
+        type: array
+        items:
+          type: string
+        required: false
+        description: Filter by file suffix (e.g., ["pdf", "txt", "docx"]).
+      - in: query
+        name: run
+        type: array
+        items:
+          type: string
+        required: false
+        description: Filter by document run status. Supports both numeric ("0", "1", "2", "3", "4") and text formats ("UNSTART", "RUNNING", "CANCEL", "DONE", "FAIL").
       - in: header
         name: Authorization
         type: string
@@ -498,52 +526,62 @@ def list_docs(dataset_id, tenant_id):
                     description: Processing status.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
-    id = request.args.get("id")
-    name = request.args.get("name")
+      return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
-    if id and not DocumentService.query(id=id, kb_id=dataset_id):
-        return get_error_data_result(message=f"You don't own the document {id}.")
+    q = request.args
+    document_id = q.get("id")  
+    name        = q.get("name")
+
+    if document_id and not DocumentService.query(id=document_id, kb_id=dataset_id):
+        return get_error_data_result(message=f"You don't own the document {document_id}.")
     if name and not DocumentService.query(name=name, kb_id=dataset_id):
         return get_error_data_result(message=f"You don't own the document {name}.")
 
-    page = int(request.args.get("page", 1))
-    keywords = request.args.get("keywords", "")
-    page_size = int(request.args.get("page_size", 30))
-    orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc") == "False":
-        desc = False
-    else:
-        desc = True
-    docs, tol = DocumentService.get_list(dataset_id, page, page_size, orderby, desc, keywords, id, name)
+    page        = int(q.get("page", 1))
+    page_size   = int(q.get("page_size", 30))  
+    orderby     = q.get("orderby", "create_time")
+    desc        = str(q.get("desc", "true")).strip().lower() != "false"
+    keywords    = q.get("keywords", "")
 
-    # rename key's name
-    renamed_doc_list = []
-    for doc in docs:
-        key_mapping = {
-            "chunk_num": "chunk_count",
-            "kb_id": "dataset_id",
-            "token_num": "token_count",
-            "parser_id": "chunk_method",
-        }
-        run_mapping = {
-            "0": "UNSTART",
-            "1": "RUNNING",
-            "2": "CANCEL",
-            "3": "DONE",
-            "4": "FAIL",
-        }
-        renamed_doc = {}
-        for key, value in doc.items():
-            if key == "run":
-                renamed_doc["run"] = run_mapping.get(str(value))
-            new_key = key_mapping.get(key, key)
-            renamed_doc[new_key] = value
-            if key == "run":
-                renamed_doc["run"] = run_mapping.get(value)
-        renamed_doc_list.append(renamed_doc)
-    return get_result(data={"total": tol, "docs": renamed_doc_list})
+    # filters - align with OpenAPI parameter names
+    suffix               = q.getlist("suffix") 
+    run_status           = q.getlist("run")   
+    create_time_from     = int(q.get("create_time_from", 0))  
+    create_time_to       = int(q.get("create_time_to", 0))    
 
+    # map run status (accept text or numeric) - align with API parameter
+    run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
+    run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
+
+    docs, total = DocumentService.get_list(
+        dataset_id, page, page_size, orderby, desc, keywords, document_id, name, suffix, run_status_converted
+    )
+
+    # time range filter (0 means no bound)
+    if create_time_from or create_time_to:
+        docs = [
+            d for d in docs
+            if (create_time_from == 0 or d.get("create_time", 0) >= create_time_from)
+            and (create_time_to == 0 or d.get("create_time", 0) <= create_time_to)
+        ]
+
+    # rename keys + map run status back to text for output
+    key_mapping = {
+        "chunk_num": "chunk_count",
+        "kb_id": "dataset_id", 
+        "token_num": "token_count",
+        "parser_id": "chunk_method",
+    }
+    run_status_numeric_to_text = {"0": "UNSTART", "1": "RUNNING", "2": "CANCEL", "3": "DONE", "4": "FAIL"}
+
+    output_docs = []
+    for d in docs:
+        renamed_doc = {key_mapping.get(k, k): v for k, v in d.items()}
+        if "run" in d:
+            renamed_doc["run"] = run_status_numeric_to_text.get(str(d["run"]), d["run"])
+        output_docs.append(renamed_doc)
+
+    return get_result(data={"total": total, "docs": output_docs})
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
 @token_required
@@ -957,7 +995,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
         _ = Chunk(**final_chunk)
 
     elif settings.docStoreConn.indexExist(search.index_name(tenant_id), dataset_id):
-        sres = settings.retrievaler.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None, highlight=True)
+        sres = settings.retriever.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None, highlight=True)
         res["total"] = sres.total
         for id in sres.ids:
             d = {
@@ -1326,6 +1364,9 @@ def retrieval_test(tenant_id):
             highlight:
               type: boolean
               description: Whether to highlight matched content.
+            metadata_condition:
+              type: object
+              description: metadata filter condition.
       - in: header
         name: Authorization
         type: string
@@ -1382,12 +1423,17 @@ def retrieval_test(tenant_id):
     question = req["question"]
     doc_ids = req.get("document_ids", [])
     use_kg = req.get("use_kg", False)
+    langs = req.get("cross_languages", [])
     if not isinstance(doc_ids, list):
         return get_error_data_result("`documents` should be a list")
     doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
     for doc_id in doc_ids:
         if doc_id not in doc_ids_list:
             return get_error_data_result(f"The datasets don't own the document {doc_id}")
+    if not doc_ids:
+        metadata_condition = req.get("metadata_condition", {})
+        metas = DocumentService.get_meta_by_kbs(kb_ids)
+        doc_ids = meta_filter(metas, convert_conditions(metadata_condition))
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
@@ -1406,11 +1452,14 @@ def retrieval_test(tenant_id):
         if req.get("rerank_id"):
             rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
 
+        if langs:
+            question = cross_languages(kb.tenant_id, None, question, langs)
+
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             question += keyword_extraction(chat_mdl, question)
 
-        ranks = settings.retrievaler.retrieval(
+        ranks = settings.retriever.retrieval(
             question,
             embd_mdl,
             tenant_ids,
@@ -1426,7 +1475,7 @@ def retrieval_test(tenant_id):
             rank_feature=label_question(question, kbs),
         )
         if use_kg:
-            ck = settings.kg_retrievaler.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
+            ck = settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 

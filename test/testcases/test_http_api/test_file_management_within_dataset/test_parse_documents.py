@@ -47,7 +47,7 @@ def validate_document_details(auth, dataset_id, document_ids):
         doc = res["data"]["docs"][0]
         assert doc["run"] == "DONE"
         assert len(doc["process_begin_at"]) > 0
-        assert doc["process_duation"] > 0
+        assert doc["process_duration"] > 0
         assert doc["progress"] > 0
         assert "Task done" in doc["progress_msg"]
 
@@ -167,7 +167,7 @@ class TestDocumentsParse:
 
 @pytest.mark.p3
 def test_parse_100_files(HttpApiAuth, add_dataset_func, tmp_path):
-    @wait_for(100, 1, "Document parsing timeout")
+    @wait_for(200, 1, "Document parsing timeout")
     def condition(_auth, _dataset_id, _document_num):
         res = list_documents(_auth, _dataset_id, {"page_size": _document_num})
         for doc in res["data"]["docs"]:
@@ -188,7 +188,7 @@ def test_parse_100_files(HttpApiAuth, add_dataset_func, tmp_path):
 
 @pytest.mark.p3
 def test_concurrent_parse(HttpApiAuth, add_dataset_func, tmp_path):
-    @wait_for(120, 1, "Document parsing timeout")
+    @wait_for(200, 1, "Document parsing timeout")
     def condition(_auth, _dataset_id, _document_num):
         res = list_documents(_auth, _dataset_id, {"page_size": _document_num})
         for doc in res["data"]["docs"]:

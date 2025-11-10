@@ -310,7 +310,7 @@ def mdQuestionLevel(s):
     return (len(match.group(0)), s.lstrip('#').lstrip()) if match else (0, s)
 
 
-def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
         Excel and csv(txt) format files are supported.
         If the file is in excel format, there should be 2 column question and answer without header.
@@ -410,7 +410,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         callback(0.1, "Start to parse.")
         pdf_parser = Pdf()
         qai_list, tbls = pdf_parser(filename if not binary else binary,
-                                    from_page=0, to_page=10000, callback=callback)
+                                    from_page=from_page, to_page=to_page, callback=callback)
         for q, a, image, poss in qai_list:
             res.append(beAdocPdf(deepcopy(doc), q, a, eng, image, poss))
         return res

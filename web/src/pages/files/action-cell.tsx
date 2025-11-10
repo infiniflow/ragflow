@@ -21,8 +21,9 @@ import {
   UseHandleConnectToKnowledgeReturnType,
   UseRenameCurrentFileReturnType,
 } from './hooks';
+import { useHandleDeleteFile } from './use-delete-file';
 import { UseMoveDocumentShowType } from './use-move-file';
-import { isFolderType } from './util';
+import { isFolderType, isKnowledgeBaseType } from './util';
 
 type IProps = Pick<CellContext<IFile, unknown>, 'row'> &
   Pick<UseHandleConnectToKnowledgeReturnType, 'showConnectToKnowledgeModal'> &
@@ -40,6 +41,7 @@ export function ActionCell({
   const { downloadFile } = useDownloadFile();
   const isFolder = isFolderType(record.type);
   const extension = getExtension(record.name);
+  const isKnowledgeBase = isKnowledgeBaseType(record.source_type);
 
   const handleShowConnectToKnowledgeModal = useCallback(() => {
     showConnectToKnowledgeModal(record);
@@ -60,25 +62,51 @@ export function ActionCell({
     showMoveFileModal([record.id]);
   }, [record, showMoveFileModal]);
 
+  const { handleRemoveFile } = useHandleDeleteFile();
+
+  const onRemoveFile = useCallback(() => {
+    handleRemoveFile([documentId]);
+  }, [handleRemoveFile, documentId]);
+
   return (
-    <section className="flex gap-4 items-center text-text-sub-title-invert">
-      <Button
-        variant="ghost"
-        size={'sm'}
-        onClick={handleShowConnectToKnowledgeModal}
-      >
-        <Link2 />
-      </Button>
-      <Button variant="ghost" size={'sm'} onClick={handleShowMoveFileModal}>
-        <FolderInput />
-      </Button>
-
-      <Button variant="ghost" size={'sm'} onClick={handleShowFileRenameModal}>
-        <FolderPen />
-      </Button>
-
+    <section className="flex gap-4 items-center text-text-sub-title-invert opacity-0 group-hover:opacity-100 transition-opacity">
+      {isKnowledgeBase || (
+        <Button
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
+          size={'sm'}
+          onClick={handleShowConnectToKnowledgeModal}
+        >
+          <Link2 />
+        </Button>
+      )}
+      {isKnowledgeBase || (
+        <Button
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
+          size={'sm'}
+          onClick={handleShowMoveFileModal}
+        >
+          <FolderInput />
+        </Button>
+      )}
+      {isKnowledgeBase || (
+        <Button
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
+          size={'sm'}
+          onClick={handleShowFileRenameModal}
+        >
+          <FolderPen />
+        </Button>
+      )}
       {isFolder || (
-        <Button variant={'ghost'} size={'sm'} onClick={onDownloadDocument}>
+        <Button
+          variant="transparent"
+          className="border-none hover:bg-bg-card text-text-primary"
+          size={'sm'}
+          onClick={onDownloadDocument}
+        >
           <ArrowDownToLine />
         </Button>
       )}
@@ -89,7 +117,11 @@ export function ActionCell({
           documentName={record.name}
           className="text-text-sub-title-invert"
         >
-          <Button variant={'ghost'} size={'sm'}>
+          <Button
+            variant="transparent"
+            className="border-none hover:bg-bg-card text-text-primary"
+            size={'sm'}
+          >
             <Eye />
           </Button>
         </NewDocumentLink>
@@ -97,7 +129,8 @@ export function ActionCell({
 
       {/* <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size={'sm'}>
+          <Button variant="transparent"
+        className="border-none" size={'sm'}>
             <EllipsisVertical />
           </Button>
         </DropdownMenuTrigger>
@@ -117,11 +150,17 @@ export function ActionCell({
           )}
         </DropdownMenuContent>
       </DropdownMenu> */}
-      <ConfirmDeleteDialog>
-        <Button variant="ghost" size={'sm'}>
-          <Trash2 />
-        </Button>
-      </ConfirmDeleteDialog>
+      {isKnowledgeBase || (
+        <ConfirmDeleteDialog onOk={onRemoveFile}>
+          <Button
+            variant="transparent"
+            className="border-none hover:bg-bg-card text-text-primary"
+            size={'sm'}
+          >
+            <Trash2 />
+          </Button>
+        </ConfirmDeleteDialog>
+      )}
     </section>
   );
 }

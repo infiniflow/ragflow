@@ -30,29 +30,19 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 Each RAGFlow release is available in two editions:
 
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.19.1-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.19.1`
+- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.21.1-slim`
+- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.21.1`
 
 ---
 
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `v0.19.1-slim` and `v0.19.1`:  
+RAGFlow offers two Docker image editions, `v0.21.1-slim` and `v0.21.1`:  
   
-- `infiniflow/ragflow:v0.19.1-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.19.1`: The RAGFlow Docker image with embedding models including:
-  - Built-in embedding models:
-    - `BAAI/bge-large-zh-v1.5`
-    - `maidalun1020/bce-embedding-base_v1`
-  - Embedding models that will be downloaded once you select them in the RAGFlow UI:
-    - `BAAI/bge-base-en-v1.5`
-    - `BAAI/bge-large-en-v1.5`
-    - `BAAI/bge-small-en-v1.5`
-    - `BAAI/bge-small-zh-v1.5`
-    - `jinaai/jina-embeddings-v2-base-en`
-    - `jinaai/jina-embeddings-v2-small-en`
-    - `nomic-ai/nomic-embed-text-v1.5`
-    - `sentence-transformers/all-MiniLM-L6-v2`
+- `infiniflow/ragflow:v0.21.1-slim` (default): The RAGFlow Docker image without embedding models.  
+- `infiniflow/ragflow:v0.21.1`: The RAGFlow Docker image with the following built-in embedding models:
+  - `BAAI/bge-large-zh-v1.5`
+  - `maidalun1020/bce-embedding-base_v1`
 
 ---
 
@@ -498,7 +488,7 @@ To switch your document engine from Elasticsearch to [Infinity](https://github.c
 
 ### Where are my uploaded files stored in RAGFlow's image?
 
-All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a knowledge base, it is located at `<knowledgebase_id>/filename`.
+All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a dataset, it is located at `<knowledgebase_id>/filename`.
 
 ---
 
@@ -507,3 +497,40 @@ All uploaded files are stored in Minio, RAGFlow's object storage solution. For i
 You can control the batch size for document parsing and embedding by setting the environment variables `DOC_BULK_SIZE` and `EMBEDDING_BATCH_SIZE`. Increasing these values may improve throughput for large-scale data processing, but will also increase memory usage. Adjust them according to your hardware resources.
 
 ---
+
+### How to accelerate the question-answering speed of my chat assistant?
+
+See [here](./guides/chat/best_practices/accelerate_question_answering.mdx).
+
+---
+
+### How to accelerate the question-answering speed of my Agent?
+
+See [here](./guides/agent/best_practices/accelerate_agent_question_answering.md).
+
+---
+
+### How to use MinerU to parse PDF documents?
+
+MinerU PDF document parsing is available starting from v0.21.1. To use this feature, follow these steps:
+
+1. Before deploying ragflow-server, update your **docker/.env** file:  
+   - Enable `HF_ENDPOINT=https://hf-mirror.com`
+   - Add a MinerU entry: `MINERU_EXECUTABLE=/ragflow/uv_tools/.venv/bin/mineru`
+
+2. Start the ragflow-server and run the following commands inside the container:  
+
+```bash
+mkdir uv_tools
+cd uv_tools
+uv venv .venv
+source .venv/bin/activate
+uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
+```
+
+3. Restart the ragflow-server.
+4. In the web UI, navigate to the **Configuration** page of your dataset. Click **Built-in** in the **Ingestion pipeline** section, select a chunking method from the **Built-in** dropdown, which supports PDF parsing, and slect **MinerU** in **PDF parser**.
+5. If you use a custom ingestion pipeline instead, you must also complete the first three steps before selecting **MinerU** in the **Parsing method** section of the **Parser** component.
+
+
+

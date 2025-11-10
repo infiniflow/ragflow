@@ -3,6 +3,7 @@ include:
 
 services:
   ragflow:
+    platform: linux/amd64
     depends_on:
       mysql:
         condition: service_healthy

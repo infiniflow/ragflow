@@ -14,14 +14,13 @@
 #  limitations under the License.
 #
 import logging
-import os
 import re
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from flask_login import current_user
 from peewee import fn
 
-from api.constants import FILE_NAME_LEN_LIMIT
 from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileSource, FileType, ParserType
 from api.db.db_models import DB, Document, File, File2Document, Knowledgebase
 from api.db.services import duplicate_name
@@ -30,6 +29,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.utils import get_uuid
 from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img
+from rag.llm.cv_model import GptV4
 from rag.utils.storage_factory import STORAGE_IMPL
 
 
@@ -163,6 +163,23 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_all_file_ids_by_tenant_id(cls, tenant_id):
+        fields = [cls.model.id]
+        files = cls.model.select(*fields).where(cls.model.tenant_id == tenant_id)
+        files.order_by(cls.model.create_time.asc())
+        offset, limit = 0, 100
+        res = []
+        while True:
+            file_batch = files.offset(offset).limit(limit)
+            _temp = list(file_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
+
+    @classmethod
+    @DB.connection_context()
     def create_folder(cls, file, parent_id, name, count):
         # Recursively create folder structure
         # Args:
@@ -227,10 +244,13 @@ class FileService(CommonService):
         #     tenant_id: Tenant ID
         # Returns:
         #     Knowledge base folder dictionary
-        for root in cls.model.select().where((cls.model.tenant_id == tenant_id), (cls.model.parent_id == cls.model.id)):
-            for folder in cls.model.select().where((cls.model.tenant_id == tenant_id), (cls.model.parent_id == root.id), (cls.model.name == KNOWLEDGEBASE_FOLDER_NAME)):
-                return folder.to_dict()
-        assert False, "Can't find the KB folder. Database init error."
+        root_folder = cls.get_root_folder(tenant_id)
+        root_id = root_folder["id"]
+        kb_folder = cls.model.select().where((cls.model.tenant_id == tenant_id), (cls.model.parent_id == root_id), (cls.model.name == KNOWLEDGEBASE_FOLDER_NAME)).first()
+        if not kb_folder:
+            kb_folder = cls.new_a_file_from_kb(tenant_id, KNOWLEDGEBASE_FOLDER_NAME, root_id)
+            return kb_folder
+        return kb_folder.to_dict()
 
     @classmethod
     @DB.connection_context()
@@ -410,12 +430,7 @@ class FileService(CommonService):
         err, files = [], []
         for file in file_objs:
             try:
-                MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
-                if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(kb.tenant_id) >= MAX_FILE_NUM_PER_USER:
-                    raise RuntimeError("Exceed the maximum file number of a free user!")
-                if len(file.filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-                    raise RuntimeError(f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.")
-
+                DocumentService.check_doc_health(kb.tenant_id, file.filename)
                 filename = duplicate_name(DocumentService.query, name=file.filename, kb_id=kb.id)
                 filetype = filename_type(filename)
                 if filetype == FileType.OTHER.value:
@@ -442,10 +457,12 @@ class FileService(CommonService):
                     "id": doc_id,
                     "kb_id": kb.id,
                     "parser_id": self.get_parser(filetype, filename, kb.parser_id),
+                    "pipeline_id": kb.pipeline_id,
                     "parser_config": kb.parser_config,
                     "created_by": user_id,
                     "type": filetype,
                     "name": filename,
+                    "suffix": Path(filename).suffix.lstrip("."),
                     "location": location,
                     "size": len(blob),
                     "thumbnail": thumbnail_location,
@@ -459,8 +476,31 @@ class FileService(CommonService):
 
         return err, files
 
+    @classmethod
+    @DB.connection_context()
+    def list_all_files_by_parent_id(cls, parent_id):
+        try:
+            files = cls.model.select().where((cls.model.parent_id == parent_id) & (cls.model.id != parent_id))
+            return list(files)
+        except Exception:
+            logging.exception("list_by_parent_id failed")
+            raise RuntimeError("Database error (list_by_parent_id)!")
+
     @staticmethod
     def parse_docs(file_objs, user_id):
+        exe = ThreadPoolExecutor(max_workers=12)
+        threads = []
+        for file in file_objs:
+            threads.append(exe.submit(FileService.parse, file.filename, file.read(), False))
+
+        res = []
+        for th in threads:
+            res.append(th.result())
+
+        return "\n\n".join(res)
+
+    @staticmethod
+    def parse(filename, blob, img_base64=True, tenant_id=None):
         from rag.app import audio, email, naive, picture, presentation
 
         def dummy(prog=None, msg=""):
@@ -468,19 +508,12 @@ class FileService(CommonService):
 
         FACTORY = {ParserType.PRESENTATION.value: presentation, ParserType.PICTURE.value: picture, ParserType.AUDIO.value: audio, ParserType.EMAIL.value: email}
         parser_config = {"chunk_token_num": 16096, "delimiter": "\n!?;。；！？", "layout_recognize": "Plain Text"}
-        exe = ThreadPoolExecutor(max_workers=12)
-        threads = []
-        for file in file_objs:
-            kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": user_id}
-            filetype = filename_type(file.filename)
-            blob = file.read()
-            threads.append(exe.submit(FACTORY.get(FileService.get_parser(filetype, file.filename, ""), naive).chunk, file.filename, blob, **kwargs))
-
-        res = []
-        for th in threads:
-            res.append("\n".join([ck["content_with_weight"] for ck in th.result()]))
-
-        return "\n\n".join(res)
+        kwargs = {"lang": "English", "callback": dummy, "parser_config": parser_config, "from_page": 0, "to_page": 100000, "tenant_id": current_user.id if current_user else tenant_id}
+        file_type = filename_type(filename)
+        if img_base64 and file_type == FileType.VISUAL.value:
+            return GptV4.image2base64(blob)
+        cks = FACTORY.get(FileService.get_parser(filename_type(filename), filename, ""), naive).chunk(filename, blob, **kwargs)
+        return "\n".join([ck["content_with_weight"] for ck in cks])
 
     @staticmethod
     def get_parser(doc_type, filename, default):
@@ -490,6 +523,16 @@ class FileService(CommonService):
             return ParserType.AUDIO.value
         if re.search(r"\.(ppt|pptx|pages)$", filename):
             return ParserType.PRESENTATION.value
-        if re.search(r"\.(eml)$", filename):
+        if re.search(r"\.(msg|eml)$", filename):
             return ParserType.EMAIL.value
         return default
+
+    @staticmethod
+    def get_blob(user_id, location):
+        bname = f"{user_id}-downloads"
+        return STORAGE_IMPL.get(bname, location)
+
+    @staticmethod
+    def put_blob(user_id, location, blob):
+        bname = f"{user_id}-downloads"
+        return STORAGE_IMPL.put(bname, location, blob)

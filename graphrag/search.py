@@ -23,7 +23,7 @@ import trio
 
 from api.utils import get_uuid
 from graphrag.query_analyze_prompt import PROMPTS
-from graphrag.utils import get_entity_type2sampels, get_llm_cache, set_llm_cache, get_relation
+from graphrag.utils import get_entity_type2samples, get_llm_cache, set_llm_cache, get_relation
 from rag.utils import num_tokens_from_string, get_float
 from rag.utils.doc_store_conn import OrderByExpr
 
@@ -42,10 +42,10 @@ class KGSearch(Dealer):
         return response
 
     def query_rewrite(self, llm, question, idxnms, kb_ids):
-        ty2ents = trio.run(lambda: get_entity_type2sampels(idxnms, kb_ids))
+        ty2ents = trio.run(lambda: get_entity_type2samples(idxnms, kb_ids))
         hint_prompt = PROMPTS["minirag_query2kwd"].format(query=question,
                                                           TYPE_POOL=json.dumps(ty2ents, ensure_ascii=False, indent=2))
-        result = self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {"temperature": .5})
+        result = self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {})
         try:
             keywords_data = json_repair.loads(result)
             type_keywords = keywords_data.get("answer_type_keywords", [])
@@ -274,7 +274,7 @@ class KGSearch(Dealer):
         return {
                 "chunk_id": get_uuid(),
                 "content_ltks": "",
-                "content_with_weight": ents + relas + self._community_retrival_([n for n, _ in ents_from_query], filters, kb_ids, idxnms,
+                "content_with_weight": ents + relas + self._community_retrieval_([n for n, _ in ents_from_query], filters, kb_ids, idxnms,
                                                         comm_topn, max_token),
                 "doc_id": "",
                 "docnm_kwd": "Related content in Knowledge Graph",
@@ -288,7 +288,7 @@ class KGSearch(Dealer):
                 "positions": [],
             }
 
-    def _community_retrival_(self, entities, condition, kb_ids, idxnms, topn, max_token):
+    def _community_retrieval_(self, entities, condition, kb_ids, idxnms, topn, max_token):
         ## Community retrieval
         fields = ["docnm_kwd", "content_with_weight"]
         odr = OrderByExpr()

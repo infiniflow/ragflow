@@ -81,6 +81,7 @@ const VolcEngineModal = ({
           <Select placeholder={t('modelTypeMessage')}>
             <Option value="chat">chat</Option>
             <Option value="embedding">embedding</Option>
+            <Option value="image2text">image2text</Option>
           </Select>
         </Form.Item>
         <Form.Item<FieldType>
@@ -113,7 +114,7 @@ const VolcEngineModal = ({
               type: 'number',
               message: t('maxTokensInvalidMessage'),
             },
-            ({ getFieldValue }) => ({
+            ({}) => ({
               validator(_, value) {
                 if (value < 0) {
                   return Promise.reject(new Error(t('maxTokensMinMessage')));
