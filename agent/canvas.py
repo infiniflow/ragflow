@@ -256,18 +256,19 @@ class Canvas(Graph):
             self.retrieval = []
             self.memory = []
         for k in self.globals.keys():
-            if isinstance(self.globals[k], str):
-                self.globals[k] = ""
-            elif isinstance(self.globals[k], int):
-                self.globals[k] = 0
-            elif isinstance(self.globals[k], float):
-                self.globals[k] = 0
-            elif isinstance(self.globals[k], list):
-                self.globals[k] = []
-            elif isinstance(self.globals[k], dict):
-                self.globals[k] = {}
-            else:
-                self.globals[k] = None
+            if k.startswith("sys."):
+                if isinstance(self.globals[k], str):
+                    self.globals[k] = ""
+                elif isinstance(self.globals[k], int):
+                    self.globals[k] = 0
+                elif isinstance(self.globals[k], float):
+                    self.globals[k] = 0
+                elif isinstance(self.globals[k], list):
+                    self.globals[k] = []
+                elif isinstance(self.globals[k], dict):
+                    self.globals[k] = {}
+                else:
+                    self.globals[k] = None
 
     def run(self, **kwargs):
         st = time.perf_counter()
