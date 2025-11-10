@@ -694,6 +694,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '通过 OAuth 连接 Google Drive，并同步指定的文件夹或云端硬盘。',
       google_driveTokenTip:
         '请上传由 OAuth helper 或 Google Cloud Console 导出的 OAuth token JSON。也支持上传 “installed” 或 “web” 类型的 client_secret JSON。若为首次同步，将自动弹出浏览器完成 OAuth 授权流程；如果该 JSON 已包含 refresh token，将会被自动复用。',
+      google_drivePrimaryAdminTip: '拥有相应 Drive 访问权限的管理员邮箱。',
+      google_driveMyDriveEmailsTip:
+        '需要索引其 “我的云端硬盘” 的邮箱，多个邮箱用逗号分隔（建议包含管理员）。',
+      google_driveSharedFoldersTip:
+        '需要同步的 Google Drive 文件夹链接，多个链接用逗号分隔。',
       availableSourcesDescription: '选择要添加的数据源',
       availableSources: '可用数据源',
       datasourceDescription: '管理您的数据源和连接',

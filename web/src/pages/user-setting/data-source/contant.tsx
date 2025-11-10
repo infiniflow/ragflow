@@ -183,7 +183,7 @@ export const DataSourceFormFields = {
       type: FormFieldType.Text,
       required: true,
       placeholder: 'admin@example.com',
-      tooltip: 'Email that has access to the Drive content.',
+      tooltip: t('setting.google_drivePrimaryAdminTip'),
     },
     {
       label: 'OAuth Token JSON',
@@ -205,8 +205,7 @@ export const DataSourceFormFields = {
       type: FormFieldType.Text,
       required: true,
       placeholder: 'user1@example.com,user2@example.com',
-      tooltip:
-        'Comma-separated emails whose “My Drive” should be indexed (include the admin email).',
+      tooltip: t('setting.google_driveMyDriveEmailsTip'),
     },
     {
       label: 'Shared Folder URLs',
@@ -215,7 +214,7 @@ export const DataSourceFormFields = {
       required: true,
       placeholder:
         'https://drive.google.com/drive/folders/XXXXX,https://drive.google.com/drive/folders/YYYYY',
-      tooltip: 'Comma-separated Google Drive folder links to crawl.',
+      tooltip: t('setting.google_driveSharedFoldersTip'),
     },
     // The fields below are intentionally disabled for now. Uncomment them when we
     // reintroduce shared drive controls or advanced impersonation options.
