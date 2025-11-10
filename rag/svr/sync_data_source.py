@@ -260,7 +260,7 @@ async def dispatch_tasks():
     async with trio.open_nursery() as nursery:
         while True:
             try:
-                tmp = list(SyncLogsService.list_sync_tasks()[0])
+                list(SyncLogsService.list_sync_tasks()[0])
                 break
             except Exception as e:
                 logging.warning(f"DB is not ready yet: {e}")
