@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
 import { formatDate } from '@/utils/date';
 import { ColumnDef } from '@tanstack/table-core';
-import { ArrowUpDown } from 'lucide-react';
+import { ArrowUpDown, MonitorUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DatasetActionCell } from './dataset-action-cell';
 import { ParsingStatusCell } from './parsing-status-cell';
@@ -126,11 +126,20 @@ export function useDatasetTableColumns({
       header: t('source'),
       cell: ({ row }) => (
         <div className="text-text-primary">
-          {row.original.source_type
-            ? DataSourceInfo[
-                row.original.source_type as keyof typeof DataSourceInfo
-              ]?.icon || t('localUpload')
-            : t('localUpload')}
+          {row.original.source_type === 'local' ||
+          row.original.source_type === '' ? (
+            <div className="bg-accent-primary-5 w-6 h-6 rounded-full flex items-center justify-center">
+              <MonitorUp className="text-accent-primary" size={16} />
+            </div>
+          ) : (
+            <div className="w-6 h-6 flex items-center justify-center">
+              {
+                DataSourceInfo[
+                  row.original.source_type as keyof typeof DataSourceInfo
+                ].icon
+              }
+            </div>
+          )}
         </div>
       ),
     },

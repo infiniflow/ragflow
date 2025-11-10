@@ -47,7 +47,7 @@ const UserSetting = () => {
         <div
           className={cn(
             styles.outletWrapper,
-            'flex flex-1 border border-border-button rounded-lg',
+            'flex flex-1 border-[0.5px] border-border-button rounded-lg',
           )}
         >
           <Outlet></Outlet>

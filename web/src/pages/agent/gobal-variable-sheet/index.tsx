@@ -81,31 +81,34 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
 
   const { saveGraph, loading } = useSaveGraph();
 
-  const handleSubmit = (value: FieldValues) => {
+  const handleSubmit = async (value: FieldValues) => {
     const param = {
       ...(data.dsl?.variables || {}),
       [value.name]: value,
     } as Record<string, GobalVariableType>;
-    saveGraph(undefined, {
+
+    const res = await saveGraph(undefined, {
       gobalVariables: param,
     });
-    if (!loading) {
-      setTimeout(() => {
-        refetch();
-      }, 500);
+
+    if (res.code === 0) {
+      refetch();
     }
     hideAddModal();
   };
 
-  const handleDeleteGobalVariable = (key: string) => {
+  const handleDeleteGobalVariable = async (key: string) => {
     const param = {
       ...(data.dsl?.variables || {}),
     } as Record<string, GobalVariableType>;
     delete param[key];
-    saveGraph(undefined, {
+    const res = await saveGraph(undefined, {
       gobalVariables: param,
     });
-    refetch();
+    console.log('delete gobal variable-->', res);
+    if (res.code === 0) {
+      refetch();
+    }
   };
 
   const handleEditGobalVariable = (item: FieldValues) => {
