@@ -457,7 +457,7 @@ class Canvas(Graph):
                     if o.component_name.lower() == "userfillup":
                         another_inputs.update(o.get_input_elements())
                         if o.get_param("enable_tips"):
-                            tips = o.get_param("tips")
+                            tips = o.output("tips")
                 self.path = path
                 yield decorate("user_inputs", {"inputs": another_inputs, "tips": tips})
                 return
