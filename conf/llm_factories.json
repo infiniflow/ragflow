@@ -5,6 +5,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TTS,TEXT RE-RANK,SPEECH2TEXT,MODERATION",
             "status": "1",
+            "rank": 999999990,
             "llm": [
                 {
                     "llm_name": "gpt-5",

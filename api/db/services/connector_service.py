@@ -72,7 +72,7 @@ class ConnectorService(CommonService):
         if not e:
             return
         SyncLogsService.filter_delete([SyncLogs.connector_id==connector_id, SyncLogs.kb_id==kb_id])
-        docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}")
+        docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}", kb_id=kb_id)
         err = FileService.delete_docs([d.id for d in docs], tenant_id)
         SyncLogsService.schedule(connector_id, kb_id, reindex=True)
         return err

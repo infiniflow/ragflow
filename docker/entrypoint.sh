@@ -167,7 +167,9 @@ function task_exe() {
     JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
     while true; do
         LD_PRELOAD="$JEMALLOC_PATH" \
-        "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"
+        "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"  &
+        wait;
+        sleep 1;
     done
 }
 
@@ -238,21 +240,27 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     echo "Starting ragflow_server..."
     while true; do
-        "$PY" api/ragflow_server.py
+        "$PY" api/ragflow_server.py &
+        wait;
+        sleep 1;
     done &
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
     while true; do
-        "$PY" rag/svr/sync_data_source.py
+        "$PY" rag/svr/sync_data_source.py &
+        wait;
+        sleep 1;
     done &
 fi
 
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     echo "Starting admin_server..."
     while true; do
-        "$PY" admin/server/admin_server.py
+        "$PY" admin/server/admin_server.py &
+        wait;
+        sleep 1;
     done &
 fi
 

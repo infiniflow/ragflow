@@ -478,12 +478,14 @@ class Markdown(MarkdownParser):
         images = []
         # Find all image URLs in text
         for url in image_urls:
+            if not url:
+                continue
             try:
                 # check if the url is a local file or a remote URL
                 if url.startswith(('http://', 'https://')):
                     # For remote URLs, download the image
                     response = requests.get(url, stream=True, timeout=30)
-                    if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
+                    if response.status_code == 200 and response.headers['Content-Type'] and response.headers['Content-Type'].startswith('image/'):
                         img = Image.open(BytesIO(response.content)).convert('RGB')
                         images.append(img)
                 else:
