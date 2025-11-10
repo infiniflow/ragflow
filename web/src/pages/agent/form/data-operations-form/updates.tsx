@@ -47,16 +47,9 @@ export function Updates({
                 <KeyInput></KeyInput>
               </RAGFlowFormItem>
               <Separator className="w-2" />
-              {name === 'updates' && (
-                <RAGFlowFormItem name={valueFieldAlias} className="flex-1">
-                  <PromptEditor showToolbar={false} multiLine={false} />
-                </RAGFlowFormItem>
-              )}
-              {name === 'rename_keys' && (
-                <RAGFlowFormItem name={valueFieldAlias} className="flex-1">
-                  <KeyInput />
-                </RAGFlowFormItem>
-              )}
+              <RAGFlowFormItem name={valueFieldAlias} className="flex-1">
+                <PromptEditor showToolbar={false} multiLine={false} />
+              </RAGFlowFormItem>
               <Button variant={'ghost'} onClick={() => remove(index)}>
                 <X />
               </Button>
