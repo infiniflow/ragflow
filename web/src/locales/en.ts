@@ -1997,6 +1997,7 @@ Important structured information may include: names, dates, locations, events, k
 
       extraInfo: 'Extra information',
       serviceDetail: `Service {{name}} detail`,
+      taskExecutorDetail: 'Task executor detail',
 
       whitelistManagement: 'Whitelist management',
       exportAsExcel: 'Export Excel',
