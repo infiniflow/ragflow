@@ -20,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { useTranslate } from '@/hooks/common-hooks';
 import { TimezoneList } from '@/pages/user-setting/constants';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -29,6 +28,10 @@ import { Loader2Icon, PenLine } from 'lucide-react';
 import { FC, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import {
+  ProfileSettingWrapperCard,
+  UserSettingHeader,
+} from '../components/user-setting-header';
 import { EditType, modalTitle, useProfile } from './hooks/use-profile';
 
 const baseSchema = z.object({
@@ -123,18 +126,17 @@ const ProfilePage: FC = () => {
   //   };
 
   return (
-    <div className="h-full w-full text-text-secondary relative flex flex-col gap-4">
+    // <div className="h-full w-full text-text-secondary relative flex flex-col gap-4">
+    <ProfileSettingWrapperCard
+      header={
+        <UserSettingHeader
+          name={t('profile')}
+          description={t('profileDescription')}
+        />
+      }
+    >
       <Spotlight />
-      {/* Header */}
-      <header className="flex flex-col gap-1 justify-between items-start px-4 pt-4 pb-0">
-        <div className="text-2xl font-medium text-text-primary">
-          {t('profile')}
-        </div>
-        <div className="text-sm text-text-secondary ">
-          {t('profileDescription')}
-        </div>
-      </header>
-      <Separator className="border-border-button bg-border-button h-[0.5px]" />
+
       {/* Main Content */}
       <div className="max-w-3xl space-y-11 w-3/4 p-7">
         {/* Name */}
@@ -411,7 +413,8 @@ const ProfilePage: FC = () => {
           </Form>
         </Modal>
       )}
-    </div>
+    </ProfileSettingWrapperCard>
+    // </div>
   );
 };
 

@@ -217,8 +217,8 @@ export const DataSourceLogsTable = ({
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
+              <TableCell colSpan={5} className="h-24 text-center">
+                {t('common.noData')}
               </TableCell>
             </TableRow>
           )}

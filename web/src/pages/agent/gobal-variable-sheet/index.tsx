@@ -3,6 +3,7 @@ import {
   DynamicForm,
   DynamicFormRef,
   FormFieldConfig,
+  FormFieldType,
 } from '@/components/dynamic-form';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
@@ -112,6 +113,23 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
   };
 
   const handleEditGobalVariable = (item: FieldValues) => {
+    fields.forEach((field) => {
+      if (field.name === 'value') {
+        switch (item.type) {
+          // [TypesWithArray.String]: FormFieldType.Textarea,
+          // [TypesWithArray.Number]: FormFieldType.Number,
+          // [TypesWithArray.Boolean]: FormFieldType.Checkbox,
+          case TypesWithArray.Boolean:
+            field.type = FormFieldType.Checkbox;
+            break;
+          case TypesWithArray.Number:
+            field.type = FormFieldType.Number;
+            break;
+          default:
+            field.type = FormFieldType.Textarea;
+        }
+      }
+    });
     setDefaultValues(item);
     showModal();
   };

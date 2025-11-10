@@ -260,6 +260,7 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      autoParse: '自动解析',
       rebuildTip: '从所有已关联的数据源重新下载文件并再次解析。',
       baseInfo: '基础信息',
       gobalIndex: '全局索引',
