@@ -1,3 +1,4 @@
+import { KeyInput } from '@/components/key-input';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
@@ -114,9 +115,9 @@ export const SchemaPropertyEditor: React.FC<SchemaPropertyEditorProps> = ({
           <div className="flex items-center gap-2 grow min-w-0 overflow-visible">
             <div className="flex items-center gap-2 min-w-0 grow overflow-visible">
               {isEditingName ? (
-                <Input
+                <KeyInput
                   value={tempName}
-                  onChange={(e) => setTempName(e.target.value)}
+                  onChange={setTempName}
                   onBlur={handleNameSubmit}
                   onKeyDown={(e) => e.key === 'Enter' && handleNameSubmit()}
                   className="h-8 text-sm font-medium min-w-[120px] max-w-full z-10"

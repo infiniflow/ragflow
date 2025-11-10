@@ -45,7 +45,7 @@ export interface DSL {
   messages?: Message[];
   reference?: IReference[];
   globals: Record<string, any>;
-  variables: Record<string, GobalVariableType>;
+  variables: Record<string, GlobalVariableType>;
   retrieval: IReference[];
 }
 
@@ -285,7 +285,7 @@ export interface IPipeLineListRequest {
   canvas_category?: AgentCategory;
 }
 
-export interface GobalVariableType {
+export interface GlobalVariableType {
   name: string;
   value: any;
   description: string;

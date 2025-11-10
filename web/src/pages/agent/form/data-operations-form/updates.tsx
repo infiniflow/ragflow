@@ -1,3 +1,4 @@
+import { KeyInput } from '@/components/key-input';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -5,7 +6,6 @@ import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
-import { KeyInput } from '../components/key-input';
 import { PromptEditor } from '../components/prompt-editor';
 
 type SelectKeysProps = {

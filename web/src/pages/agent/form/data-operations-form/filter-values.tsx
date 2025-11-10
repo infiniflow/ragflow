@@ -1,3 +1,4 @@
+import { KeyInput } from '@/components/key-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,6 @@ import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { DataOperationsOperatorOptions } from '../../constant';
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
-import { KeyInput } from '../components/key-input';
 import { PromptEditor } from '../components/prompt-editor';
 
 type SelectKeysProps = {
