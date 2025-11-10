@@ -62,7 +62,7 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
 
     if not pdf_parser.check_installation():
         callback(-1, "MinerU not found.")
-        return None, None
+        return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
@@ -80,7 +80,7 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
 
     if not pdf_parser.check_installation():
         callback(-1, "Docling not found.")
-        return None, None
+        return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
@@ -97,7 +97,7 @@ def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese",
 
     if not tcadp_parser.check_installation():
         callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
-        return None, None
+        return None, None, tcadp_parser
 
     sections, tables = tcadp_parser.parse_pdf(
         filepath=filename,
