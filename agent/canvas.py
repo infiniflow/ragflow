@@ -28,8 +28,8 @@ from agent.component.base import ComponentBase
 from api.db.services.file_service import FileService
 from api.db.services.task_service import has_canceled
 from common.misc_utils import get_uuid, hash_str2int
+from common.exceptions import TaskCanceledException
 from rag.prompts.generator import chunks_format
-from rag.svr.task_executor import TaskCanceledException
 from rag.utils.redis_conn import REDIS_CONN
 
 class Graph:
@@ -199,7 +199,7 @@ class Graph:
         if not rest:
             return root_val
         return self.get_variable_param_value(root_val,rest)
-    
+
     def get_variable_param_value(self, obj: Any, path: str) -> Any:
         cur = obj
         if not path:
