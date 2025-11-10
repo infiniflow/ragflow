@@ -303,7 +303,9 @@ class QWenCV(GptV4):
                 return call_api()
             except Exception as e2:
                 raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
-
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
 
 
 class HunyuanCV(GptV4):
