@@ -1,6 +1,6 @@
 import {
   DSL,
-  GobalVariableType,
+  GlobalVariableType,
   IAgentForm,
   ICategorizeForm,
   ICategorizeItem,
@@ -350,7 +350,7 @@ export const buildDslComponentsByGraph = (
 
 export const buildDslGobalVariables = (
   dsl: DSL,
-  gobalVariables?: Record<string, GobalVariableType>,
+  gobalVariables?: Record<string, GlobalVariableType>,
 ) => {
   if (!gobalVariables) {
     return { globals: dsl.globals, variables: dsl.variables || {} };
