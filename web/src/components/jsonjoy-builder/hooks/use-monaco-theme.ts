@@ -1,5 +1,5 @@
+import { useIsDarkTheme } from '@/components/theme-provider';
 import type * as Monaco from 'monaco-editor';
-import { useEffect, useState } from 'react';
 import type { JSONSchema } from '../types/json-schema.js';
 
 export interface MonacoEditorOptions {
@@ -63,36 +63,37 @@ export const defaultEditorOptions: MonacoEditorOptions = {
 };
 
 export function useMonacoTheme() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  // const [isDarkTheme, setisDarkTheme] = useState(false);
+  const isDarkTheme = useIsDarkTheme();
 
   // Check for dark mode by examining CSS variables
-  useEffect(() => {
-    const checkDarkMode = () => {
-      // Get the current background color value
-      const backgroundColor = getComputedStyle(document.documentElement)
-        .getPropertyValue('--background')
-        .trim();
+  // useEffect(() => {
+  //   const checkDarkMode = () => {
+  //     // Get the current background color value
+  //     const backgroundColor = getComputedStyle(document.documentElement)
+  //       .getPropertyValue('--background')
+  //       .trim();
 
-      // If the background color HSL has a low lightness value, it's likely dark mode
-      const isDark =
-        backgroundColor.includes('222.2') ||
-        backgroundColor.includes('84% 4.9%');
+  //     // If the background color HSL has a low lightness value, it's likely dark mode
+  //     const isDark =
+  //       backgroundColor.includes('222.2') ||
+  //       backgroundColor.includes('84% 4.9%');
 
-      setIsDarkMode(isDark);
-    };
+  //     setisDarkTheme(isDark);
+  //   };
 
-    // Check initially
-    checkDarkMode();
+  //   // Check initially
+  //   checkDarkMode();
 
-    // Set up a mutation observer to detect theme changes
-    const observer = new MutationObserver(checkDarkMode);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class', 'style'],
-    });
+  //   // Set up a mutation observer to detect theme changes
+  //   const observer = new MutationObserver(checkDarkMode);
+  //   observer.observe(document.documentElement, {
+  //     attributes: true,
+  //     attributeFilter: ['class', 'style'],
+  //   });
 
-    return () => observer.disconnect();
-  }, []);
+  //   return () => observer.disconnect();
+  // }, []);
 
   const defineMonacoThemes = (monaco: typeof Monaco) => {
     // Define custom light theme that matches app colors
@@ -199,8 +200,8 @@ export function useMonacoTheme() {
   };
 
   return {
-    isDarkMode,
-    currentTheme: isDarkMode ? 'appDarkTheme' : 'appLightTheme',
+    isDarkTheme,
+    currentTheme: isDarkTheme ? 'appDarkTheme' : 'appLightTheme',
     defineMonacoThemes,
     configureJsonDefaults,
     defaultEditorOptions,
