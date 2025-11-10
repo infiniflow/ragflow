@@ -12,6 +12,8 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import os
+import requests
 import concurrent
 # from beartype import BeartypeConf
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
@@ -975,8 +977,16 @@ async def report_status():
                 PENDING_TASKS = int(group_info.get("pending", 0))
                 LAG_TASKS = int(group_info.get("lag", 0))
 
+            pid = os.getpid()
+            try:
+                resp = requests.get('https://httpbin.org/ip', timeout=5)
+                ip_address = resp.json()["origin"]
+            except Exception as e:
+                ip_address = "Unknown"
             current = copy.deepcopy(CURRENT_TASKS)
             heartbeat = json.dumps({
+                "ip_address": ip_address,
+                "pid": pid,
                 "name": CONSUMER_NAME,
                 "now": now.astimezone().isoformat(timespec="milliseconds"),
                 "boot_at": BOOT_AT,

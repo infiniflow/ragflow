@@ -303,8 +303,8 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 pass
             case "task_executor":
                 name: str = 'task_executor'
-                host: str = v.get('host')
-                port: int = v.get('port')
+                host: str = v.get('host', '')
+                port: int = v.get('port', 0)
                 message_queue_type: str = v.get('message_queue_type')
                 config = TaskExecutorConfig(id=id_count, name=name, host=host, port=port, message_queue_type=message_queue_type,
                                             service_type="task_executor", detail_func_name="check_task_executor_alive")
