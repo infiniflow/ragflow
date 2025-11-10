@@ -1,11 +1,11 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
+import { KeyInput } from '../components/key-input';
 import { PromptEditor } from '../components/prompt-editor';
 
 type SelectKeysProps = {
@@ -44,7 +44,7 @@ export function Updates({
           return (
             <div key={field.id} className="flex items-center gap-2">
               <RAGFlowFormItem name={keyFieldAlias} className="flex-1">
-                <Input></Input>
+                <KeyInput></KeyInput>
               </RAGFlowFormItem>
               <Separator className="w-2" />
               <RAGFlowFormItem name={valueFieldAlias} className="flex-1">

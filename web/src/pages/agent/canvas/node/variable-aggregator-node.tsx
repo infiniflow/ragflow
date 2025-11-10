@@ -22,7 +22,7 @@ export function VariableAggregatorNode({
               <span className="text-text-secondary">{x.type}</span>
             </div>
             <div className="space-y-1">
-              {x.variables.map((y, index) => (
+              {x.variables?.map((y, index) => (
                 <LabelCard key={index} className="truncate">
                   {getLabel(y.value)}
                 </LabelCard>

@@ -35,7 +35,7 @@ function VariableAggregatorForm({ node }: INextOperatorForm) {
   });
 
   const appendItem = useCallback(() => {
-    append({ group_name: `Group ${fields.length}`, variables: [] });
+    append({ group_name: `Group${fields.length}`, variables: [] });
   }, [append, fields.length]);
 
   const outputList = buildOutputList(

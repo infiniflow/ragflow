@@ -21,8 +21,10 @@ export const useHandleNameChange = (previousName: string) => {
     return name;
   }, [form, name, previousName]);
 
-  const handleNameChange = useCallback((e: ChangeEvent<any>) => {
-    setName(e.target.value);
+  const handleNameChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const filteredValue = value.replace(/[^a-zA-Z0-9_]/g, '');
+    setName(filteredValue);
   }, []);
 
   useEffect(() => {

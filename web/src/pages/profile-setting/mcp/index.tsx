@@ -80,12 +80,12 @@ export default function McpServer() {
                 )}
                 {t(`mcp.${isSelectionMode ? 'exitBulkManage' : 'bulkManage'}`)}
               </Button>
-              <Button variant={'secondary'} onClick={showEditModal('')}>
-                <Plus className="size-3.5" /> {t('mcp.addMCP')}
-              </Button>
-              <Button onClick={showImportModal}>
+              <Button variant={'secondary'} onClick={showImportModal}>
                 <Download className="size-3.5" />
                 {t('mcp.import')}
+              </Button>
+              <Button onClick={showEditModal('')}>
+                <Plus className="size-3.5" /> {t('mcp.addMCP')}
               </Button>
             </div>
           </section>
