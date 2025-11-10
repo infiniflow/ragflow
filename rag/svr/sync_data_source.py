@@ -212,8 +212,8 @@ class Gmail(SyncBase):
         pass
 
 
-class GoogleDriver(SyncBase):
-    SOURCE_NAME: str = FileSource.GOOGLE_DRIVER
+class GoogleDrive(SyncBase):
+    SOURCE_NAME: str = FileSource.GOOGLE_DRIVE
 
     async def _generate(self, task: dict):
         connector_kwargs = {
@@ -333,7 +333,7 @@ func_factory = {
     FileSource.DISCORD: Discord,
     FileSource.CONFLUENCE: Confluence,
     FileSource.GMAIL: Gmail,
-    FileSource.GOOGLE_DRIVER: GoogleDriver,
+    FileSource.GOOGLE_DRIVE: GoogleDrive,
     FileSource.JIRA: Jira,
     FileSource.SHAREPOINT: SharePoint,
     FileSource.SLACK: Slack,
