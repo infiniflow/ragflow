@@ -197,8 +197,7 @@ export const DataSourceFormFields = {
           placeholder='{ "token": "...", "refresh_token": "...", ... }'
         />
       ),
-      tooltip:
-        'Upload the OAuth token JSON exported from the OAuth helper or Google Cloud console. If you upload an "installed" or "web" client_secret JSON, the first sync will open a browser window to complete the OAuth consent flow. If the JSON already contains a refresh token, the system will reuse it automatically.',
+      tooltip: t('setting.google_driveTokenTip'),
     },
     {
       label: 'My Drive Emails',
