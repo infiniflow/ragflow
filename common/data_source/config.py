@@ -42,6 +42,8 @@ class DocumentSource(str, Enum):
     OCI_STORAGE = "oci_storage"
     SLACK = "slack"
     CONFLUENCE = "confluence"
+    GOOGLE_DRIVE = "google_drive"
+    GMAIL = "gmail"
     DISCORD = "discord"
 
 
@@ -98,22 +100,6 @@ SIZE_THRESHOLD_BUFFER = 64
 NOTION_CONNECTOR_DISABLE_RECURSIVE_PAGE_LOOKUP = (
     os.environ.get("NOTION_CONNECTOR_DISABLE_RECURSIVE_PAGE_LOOKUP", "").lower()
     == "true"
-)
-
-# This is the Oauth token
-DB_CREDENTIALS_DICT_TOKEN_KEY = "google_tokens"
-# This is the service account key
-DB_CREDENTIALS_DICT_SERVICE_ACCOUNT_KEY = "google_service_account_key"
-# The email saved for both auth types
-DB_CREDENTIALS_PRIMARY_ADMIN_KEY = "google_primary_admin"
-
-USER_FIELDS = "nextPageToken, users(primaryEmail)"
-
-# Error message substrings
-MISSING_SCOPES_ERROR_STR = "client not authorized for any of the scopes requested"
-
-SCOPE_INSTRUCTIONS = (
-    "You have upgraded RAGFlow without updating the Google Auth scopes. "
 )
 
 SLIM_BATCH_SIZE = 100
@@ -182,6 +168,10 @@ CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE = cast(
 # https://developer.atlassian.com/cloud/confluence/cql-fields/#created
 CONFLUENCE_TIMEZONE_OFFSET = float(
     os.environ.get("CONFLUENCE_TIMEZONE_OFFSET", get_current_tz_offset())
+)
+
+GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD = int(
+    os.environ.get("GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
 )
 
 OAUTH_SLACK_CLIENT_ID = os.environ.get("OAUTH_SLACK_CLIENT_ID", "")

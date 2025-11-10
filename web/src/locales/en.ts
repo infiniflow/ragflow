@@ -704,6 +704,16 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Link your Discord server to access and analyze chat data.',
       notionDescription:
         'Sync pages and databases from Notion for knowledge retrieval.',
+      google_driveDescription:
+        'Connect your Google Drive via OAuth and sync specific folders or drives.',
+      google_driveTokenTip:
+        'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
+      google_drivePrimaryAdminTip:
+        'Email address that has access to the Drive content being synced.',
+      google_driveMyDriveEmailsTip:
+        'Comma-separated emails whose “My Drive” contents should be indexed (include the primary admin).',
+      google_driveSharedFoldersTip:
+        'Comma-separated Google Drive folder links to crawl.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available Sources',
       datasourceDescription: 'Manage your data source and connections',

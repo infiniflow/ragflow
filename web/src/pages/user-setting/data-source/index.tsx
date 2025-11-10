@@ -24,6 +24,12 @@ const dataSourceTemplates = [
     icon: DataSourceInfo[DataSourceKey.S3].icon,
   },
   {
+    id: DataSourceKey.GOOGLE_DRIVE,
+    name: DataSourceInfo[DataSourceKey.GOOGLE_DRIVE].name,
+    description: DataSourceInfo[DataSourceKey.GOOGLE_DRIVE].description,
+    icon: DataSourceInfo[DataSourceKey.GOOGLE_DRIVE].icon,
+  },
+  {
     id: DataSourceKey.DISCORD,
     name: DataSourceInfo[DataSourceKey.DISCORD].name,
     description: DataSourceInfo[DataSourceKey.DISCORD].description,

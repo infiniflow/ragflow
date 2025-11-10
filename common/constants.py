@@ -113,7 +113,7 @@ class FileSource(StrEnum):
     DISCORD = "discord"
     CONFLUENCE = "confluence"
     GMAIL = "gmail"
-    GOOGLE_DRIVER = "google_driver"
+    GOOGLE_DRIVE = "google_drive"
     JIRA = "jira"
     SHAREPOINT = "sharepoint"
     SLACK = "slack"
