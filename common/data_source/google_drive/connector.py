@@ -7,7 +7,6 @@ import os
 import sys
 import threading
 from collections.abc import Callable, Generator, Iterator
-from datetime import datetime
 from enum import Enum
 from functools import partial
 from typing import Any, Protocol, cast
@@ -33,6 +32,7 @@ from common.data_source.google_drive.file_retrieval import (
 from common.data_source.google_drive.model import DriveRetrievalStage, GoogleDriveCheckpoint, GoogleDriveFileType, RetrievedDriveFile, StageCompletion
 from common.data_source.google_util.auth import get_google_creds
 from common.data_source.google_util.constant import DB_CREDENTIALS_PRIMARY_ADMIN_KEY, MISSING_SCOPES_ERROR_STR, USER_FIELDS
+from common.data_source.google_util.oauth_flow import ensure_oauth_token_dict
 from common.data_source.google_util.resource import GoogleDriveService, get_admin_service, get_drive_service
 from common.data_source.google_util.util import GoogleFields, execute_paginated_retrieval, get_file_owners
 from common.data_source.google_util.util_threadpool_concurrency import ThreadSafeDict
@@ -42,7 +42,7 @@ from common.data_source.interfaces import (
     SlimConnectorWithPermSync,
 )
 from common.data_source.models import CheckpointOutput, ConnectorFailure, Document, EntityFailure, GenerateSlimDocumentOutput, SecondsSinceUnixEpoch
-from common.data_source.utils import parallel_yield, run_functions_tuples_in_parallel
+from common.data_source.utils import datetime_from_string, parallel_yield, run_functions_tuples_in_parallel
 
 MAX_DRIVE_WORKERS = int(os.environ.get("MAX_DRIVE_WORKERS", 4))
 SHARED_DRIVE_PAGES_PER_CHECKPOINT = 2
@@ -788,7 +788,7 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
             logging.debug(f"Updating checkpoint for file: {file.drive_file.get('name')}. Seen: {document_id in checkpoint.all_retrieved_file_ids}")
             checkpoint.completion_map[file.user_email].update(
                 stage=file.completion_stage,
-                completed_until=datetime.fromisoformat(file.drive_file[GoogleFields.MODIFIED_TIME.value]).timestamp(),
+                completed_until=datetime_from_string(file.drive_file[GoogleFields.MODIFIED_TIME.value]).timestamp(),
                 current_folder_or_drive_id=file.parent_id,
             )
             if document_id not in checkpoint.all_retrieved_file_ids:
@@ -1149,9 +1149,13 @@ def get_credentials_from_env(email: str, oauth: bool = False) -> dict:
 
     try:
         credential_dict = json.loads(raw_credential_string)
-        refried_credential_string = json.dumps(credential_dict)
     except json.JSONDecodeError:
         raise ValueError("Invalid JSON in Google Drive credentials")
+
+    if oauth:
+        credential_dict = ensure_oauth_token_dict(credential_dict, DocumentSource.GOOGLE_DRIVE)
+
+    refried_credential_string = json.dumps(credential_dict)
 
     DB_CREDENTIALS_DICT_TOKEN_KEY = "google_tokens"
     DB_CREDENTIALS_DICT_SERVICE_ACCOUNT_KEY = "google_service_account_key"
@@ -1233,6 +1237,8 @@ def yield_all_docs_from_checkpoint_connector(
 if __name__ == "__main__":
     import time
 
+    logging.basicConfig(level=logging.DEBUG)
+
     try:
         # Get credentials from environment
         email = os.environ.get("GOOGLE_DRIVE_PRIMARY_ADMIN_EMAIL", "yongtengrey@gmail.com")
@@ -1241,12 +1247,12 @@ if __name__ == "__main__":
         print(f"{creds=}")
 
         connector = GoogleDriveConnector(
-            include_shared_drives=True,
+            include_shared_drives=False,
             shared_drive_urls=None,
             include_my_drives=True,
-            my_drive_emails=None,
-            shared_folder_urls=None,
-            include_files_shared_with_me=True,
+            my_drive_emails="yongtengrey@gmail.com",
+            shared_folder_urls="https://drive.google.com/drive/folders/1fAKwbmf3U2oM139ZmnOzgIZHGkEwnpfy",
+            include_files_shared_with_me=False,
             specific_user_emails=None,
         )
         print("GoogleDriveConnector initialized successfully")
@@ -1257,6 +1263,7 @@ if __name__ == "__main__":
         max_fsize = 0
         biggest_fsize = 0
         num_errors = 0
+        docs_processed = 0
         start_time = time.time()
         with open("stats.txt", "w") as f:
             for num, doc_or_failure in enumerate(yield_all_docs_from_checkpoint_connector(connector, 0, time.time())):
@@ -1266,17 +1273,20 @@ if __name__ == "__main__":
                     f.write(f"Time so far: {time.time() - start_time:.2f} seconds\n")
                     f.write(f"Docs per minute: {num / (time.time() - start_time) * 60:.2f}\n")
                     biggest_fsize = max(biggest_fsize, max_fsize)
-                    max_fsize = 0
                 if isinstance(doc_or_failure, Document):
-                    max_fsize = max(max_fsize, sys.getsizeof(doc_or_failure))
+                    docs_processed += 1
+                    max_fsize = max(max_fsize, doc_or_failure.size_bytes)
+                    print(f"{doc_or_failure=}")
                 elif isinstance(doc_or_failure, ConnectorFailure):
                     num_errors += 1
             print(f"Num errors: {num_errors}")
             print(f"Biggest file size: {biggest_fsize / 1000_000:.2f} MB")
             print(f"Time taken: {time.time() - start_time:.2f} seconds")
+            print(f"Total documents produced: {docs_processed}")
 
     except Exception as e:
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
