@@ -43,7 +43,8 @@ class OIDCClient(OAuthClient):
         self.jwks_uri = config['jwks_uri']
 
 
-    def _load_oidc_metadata(self, issuer):
+    @staticmethod
+    def _load_oidc_metadata(issuer):
         """
         Load OIDC metadata from `/.well-known/openid-configuration`.
         """

@@ -13,11 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from agent.component.message import MessageParam, Message
 
-from agent.component.base import ComponentBase, ComponentParamBase
 
+class UserFillUpParam(MessageParam):
 
-class UserFillUpParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.enable_tips = True
@@ -27,13 +27,16 @@ class UserFillUpParam(ComponentParamBase):
         return True
 
 
-class UserFillUp(ComponentBase):
+class UserFillUp(Message):
     component_name = "UserFillUp"
 
     def _invoke(self, **kwargs):
         if self.check_if_canceled("UserFillUp processing"):
             return
 
+        if self._param.enable_tips:
+            tips, kwargs = self.get_kwargs(self._param.tips)
+            self.set_output("tips", tips)
         for k, v in kwargs.get("inputs", {}).items():
             if self.check_if_canceled("UserFillUp processing"):
                 return

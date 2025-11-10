@@ -77,13 +77,6 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
-  const navigateToDataflow = useCallback(
-    (id: string) => () => {
-      navigate(`${Routes.DataFlow}/${id}`);
-    },
-    [navigate],
-  );
-
   const navigateToAgentLogs = useCallback(
     (id: string) => () => {
       navigate(`${Routes.AgentLogPage}/${id}`);
@@ -148,12 +141,21 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToDataSourceDetail = useCallback(
+    (id?: string) => {
+      navigate(
+        `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}?id=${id}`,
+      );
+    },
+    [navigate],
+  );
+
   const navigateToDataflowResult = useCallback(
     (props: NavigateToDataflowResultProps) => () => {
       let params: string[] = [];
       Object.keys(props).forEach((key) => {
-        if (props[key]) {
-          params.push(`${key}=${props[key]}`);
+        if (props[key as keyof typeof props]) {
+          params.push(`${key}=${props[key as keyof typeof props]}`);
         }
       });
       navigate(
@@ -185,7 +187,7 @@ export const useNavigatePage = () => {
     navigateToAgentList,
     navigateToOldProfile,
     navigateToDataflowResult,
-    navigateToDataflow,
     navigateToDataFile,
+    navigateToDataSourceDetail,
   };
 };

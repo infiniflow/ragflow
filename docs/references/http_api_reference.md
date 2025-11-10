@@ -1124,6 +1124,10 @@ curl --request PUT \
   - If `"chunk_method"` is `"qa"`, `"manuel"`, `"paper"`, `"book"`, `"laws"`, or `"presentation"`, the `"parser_config"` object contains the following attribute:
     - `"raptor"`: RAPTOR-specific settings. Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
+- `"enabled"`: (*Body parameter*), `integer`  
+  Whether the document should be **available** in the knowledge base.  
+  - `1` → （available）  
+  - `0` → （unavailable）  
 
 #### Response
 
@@ -1836,7 +1840,7 @@ Retrieves chunks from specified datasets.
   - `"highlight"`: `boolean`
   - `"cross_languages"`: `list[string]`
   - `"metadata_condition"`: `object`
-
+  - `"use_kg"`: `boolean`
 ##### Request example
 
 ```bash
@@ -1884,6 +1888,8 @@ curl --request POST \
   The weight of vector cosine similarity. Defaults to `0.3`. If x represents the weight of vector cosine similarity, then (1 - x) is the term similarity weight.
 - `"top_k"`: (*Body parameter*), `integer`  
   The number of chunks engaged in vector cosine computation. Defaults to `1024`.
+- `"use_kg"`: (*Body parameter*), `boolean`  
+  The search includes text chunks related to the knowledge graph of the selected dataset to handle complex multi-hop queries. Defaults to `False`.
 - `"rerank_id"`: (*Body parameter*), `integer`  
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`  

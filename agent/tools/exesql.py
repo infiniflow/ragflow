@@ -22,7 +22,7 @@ import pymysql
 import psycopg2
 import pyodbc
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class ExeSQLParam(ToolParamBase):

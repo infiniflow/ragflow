@@ -27,7 +27,7 @@ from agent.component import component_class
 from agent.component.base import ComponentBase
 from api.db.services.file_service import FileService
 from api.db.services.task_service import has_canceled
-from api.utils import get_uuid, hash_str2int
+from common.misc_utils import get_uuid, hash_str2int
 from rag.prompts.generator import chunks_format
 from rag.svr.task_executor import TaskCanceledException
 from rag.utils.redis_conn import REDIS_CONN
@@ -156,6 +156,33 @@ class Graph:
     def get_tenant_id(self):
         return self._tenant_id
 
+    def get_value_with_variable(self,value: str) -> Any:
+        pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z:0-9_.-]+|sys\.[a-z_]+)\} *\}*")
+        out_parts = []
+        last = 0
+
+        for m in pat.finditer(value):
+            out_parts.append(value[last:m.start()])
+            key = m.group(1)
+            v = self.get_variable_value(key)
+            if v is None:
+                rep = ""
+            elif isinstance(v, partial):
+                buf = []
+                for chunk in v():
+                    buf.append(chunk)
+                rep = "".join(buf)
+            elif isinstance(v, str):
+                rep = v
+            else:
+                rep = json.dumps(v, ensure_ascii=False)
+
+            out_parts.append(rep)
+            last = m.end()
+
+        out_parts.append(value[last:])
+        return("".join(out_parts))
+
     def get_variable_value(self, exp: str) -> Any:
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
         if exp.find("@") < 0:
@@ -164,7 +191,32 @@ class Graph:
         cpn = self.get_component(cpn_id)
         if not cpn:
             raise Exception(f"Can't find variable: '{cpn_id}@{var_nm}'")
-        return cpn["obj"].output(var_nm)
+        parts = var_nm.split(".", 1)
+        root_key = parts[0]
+        rest = parts[1] if len(parts) > 1 else ""
+        root_val = cpn["obj"].output(root_key)
+
+        if not rest:
+            return root_val
+        return self.get_variable_param_value(root_val,rest)
+    
+    def get_variable_param_value(self, obj: Any, path: str) -> Any:
+        cur = obj
+        if not path:
+            return cur
+        for key in path.split('.'):
+            if cur is None:
+                return None
+            if isinstance(cur, str):
+                try:
+                    cur = json.loads(cur)
+                except Exception:
+                    return None
+            if isinstance(cur, dict):
+                cur = cur.get(key)
+            else:
+                cur = getattr(cur, key, None)
+        return cur
 
     def is_canceled(self) -> bool:
         return has_canceled(self.task_id)
@@ -239,6 +291,14 @@ class Canvas(Graph):
         for k, cpn in self.components.items():
             self.components[k]["obj"].reset(True)
 
+        if kwargs.get("webhook_payload"):
+            for k, cpn in self.components.items():
+                if self.components[k]["obj"].component_name.lower() == "webhook":
+                    for kk, vv in kwargs["webhook_payload"].items():
+                        self.components[k]["obj"].set_output(kk, vv)
+
+            self.components[k]["obj"].reset(True)
+
         for k in kwargs.keys():
             if k in ["query", "user_id", "files"] and kwargs[k]:
                 if k == "files":
@@ -280,12 +340,21 @@ class Canvas(Graph):
 
             with ThreadPoolExecutor(max_workers=5) as executor:
                 thr = []
-                for i in range(f, t):
+                i = f
+                while i < t:
                     cpn = self.get_component_obj(self.path[i])
                     if cpn.component_name.lower() in ["begin", "userfillup"]:
                         thr.append(executor.submit(cpn.invoke, inputs=kwargs.get("inputs", {})))
+                        i += 1
                     else:
-                        thr.append(executor.submit(cpn.invoke, **cpn.get_input()))
+                        for _, ele in cpn.get_input_elements().items():
+                            if isinstance(ele, dict) and ele.get("_cpn_id") and ele.get("_cpn_id") not in self.path[:i]:
+                                self.path.pop(i)
+                                t -= 1
+                                break
+                        else:
+                            thr.append(executor.submit(cpn.invoke, **cpn.get_input()))
+                            i += 1
                 for t in thr:
                     t.result()
 
@@ -315,6 +384,7 @@ class Canvas(Graph):
                     "thoughts": self.get_component_thoughts(self.path[i])
                 })
             _run_batch(idx, to)
+            to = len(self.path)
             # post processing of components invocation
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])
@@ -411,7 +481,7 @@ class Canvas(Graph):
                     if o.component_name.lower() == "userfillup":
                         another_inputs.update(o.get_input_elements())
                         if o.get_param("enable_tips"):
-                            tips = o.get_param("tips")
+                            tips = o.output("tips")
                 self.path = path
                 yield decorate("user_inputs", {"inputs": another_inputs, "tips": tips})
                 return

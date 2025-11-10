@@ -39,6 +39,13 @@ export default defineConfig({
   ],
   proxy: [
     {
+      context: ['/api/v1/admin'],
+      target: 'http://127.0.0.1:9381/',
+      changeOrigin: true,
+      ws: true,
+      logger: console,
+    },
+    {
       context: ['/api', '/v1'],
       target: 'http://127.0.0.1:9380/',
       changeOrigin: true,

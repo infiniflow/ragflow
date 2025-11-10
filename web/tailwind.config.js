@@ -27,6 +27,9 @@ module.exports = {
       '4xl': '1980px',
     },
     extend: {
+      borderWidth: {
+        0.5: '0.5px',
+      },
       colors: {
         border: 'var(--border-default)',
         input: 'hsl(var(--input))',
@@ -75,7 +78,9 @@ module.exports = {
         'bg-list': {
           DEFAULT: 'rgb(var(--bg-list) / <alpha-value>)',
         },
-        'text-primary': 'var(--text-primary)',
+        'text-primary': {
+          DEFAULT: 'rgb(var(--text-primary) / <alpha-value>)',
+        },
         'text-secondary': 'var(--text-secondary)',
         'text-disabled': 'var(--text-disabled)',
         'text-input-tip': 'var(--text-input-tip)',
@@ -175,7 +180,7 @@ module.exports = {
       },
       backgroundImage: {
         'metallic-gradient':
-          'linear-gradient(104deg, var(--text-primary) 30%, var(--metallic) 50%, var(--text-primary) 70%)',
+          'linear-gradient(104deg, rgb(var(--text-primary)) 30%, var(--metallic) 50%, rgb(var(--text-primary)) 70%)',
       },
       borderRadius: {
         lg: `var(--radius)`,

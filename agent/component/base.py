@@ -25,7 +25,7 @@ from typing import Any, List, Union
 import pandas as pd
 import trio
 from agent import settings
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
@@ -528,6 +528,7 @@ class ComponentBase(ABC):
     def get_param(self, name):
         if hasattr(self._param, name):
             return getattr(self._param, name)
+        return None
 
     def debug(self, **kwargs):
         return self._invoke(**kwargs)
@@ -535,7 +536,7 @@ class ComponentBase(ABC):
     def get_parent(self) -> Union[object, None]:
         pid = self._canvas.get_component(self._id).get("parent_id")
         if not pid:
-            return
+            return None
         return self._canvas.get_component(pid)["obj"]
 
     def get_upstream(self) -> List[str]:
@@ -560,7 +561,7 @@ class ComponentBase(ABC):
 
     def exception_handler(self):
         if not self._param.exception_method:
-            return
+            return None
         return {
             "goto": self._param.exception_goto,
             "default_value": self._param.exception_default_value

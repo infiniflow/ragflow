@@ -20,7 +20,7 @@ import peewee
 
 from api.db.db_models import DB, TenantLangfuse
 from api.db.services.common_service import CommonService
-from api.utils import current_timestamp, datetime_format
+from common.time_utils import current_timestamp, datetime_format
 
 
 class TenantLangfuseService(CommonService):

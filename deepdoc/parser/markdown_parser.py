@@ -70,6 +70,17 @@ class RAGFlowMarkdownParser:
             )
             working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables)
 
+        # Replace any TAGS e.g. <table ...> to <table>
+        TAGS = ["table", "td", "tr", "th", "tbody", "thead", "div"]
+        table_with_attributes_pattern = re.compile(
+            rf"<(?:{'|'.join(TAGS)})[^>]*>", re.IGNORECASE
+        )
+        def replace_tag(m):
+            tag_name = re.match(r"<(\w+)", m.group()).group(1)
+            return "<{}>".format(tag_name)
+
+        working_text = re.sub(table_with_attributes_pattern, replace_tag, working_text)
+
         if "<table>" in working_text.lower():  # for optimize performance
             # HTML table extraction - handle possible html/body wrapper tags
             html_table_pattern = re.compile(
@@ -117,11 +128,24 @@ class MarkdownElementExtractor:
         self.markdown_content = markdown_content
         self.lines = markdown_content.split("\n")
 
-    def extract_elements(self):
+    def get_delimiters(self,delimiters):
+        toks = re.findall(r"`([^`]+)`", delimiters)
+        toks = sorted(set(toks), key=lambda x: -len(x))
+        return "|".join(re.escape(t) for t in toks if t)
+    
+    def extract_elements(self,delimiter=None):
         """Extract individual elements (headers, code blocks, lists, etc.)"""
         sections = []
 
         i = 0
+        dels=""
+        if delimiter:
+            dels = self.get_delimiters(delimiter)
+        if len(dels) > 0:
+            text = "\n".join(self.lines)
+            parts = re.split(dels, text)
+            sections = [p.strip() for p in parts if p and p.strip()]
+            return sections
         while i < len(self.lines):
             line = self.lines[i]
 

@@ -45,7 +45,7 @@ class TestUpdateChunk:
         "payload, expected_code, expected_message",
         [
             ({"content_with_weight": None}, 100, "TypeError('expected string or bytes-like object')"),
-            ({"content_with_weight": ""}, 0, ""),
+            ({"content_with_weight": ""}, 100, """Exception('Error: 413 - {"error":"Input validation error: `inputs` cannot be empty","error_type":"Validation"}')"""),
             ({"content_with_weight": 1}, 100, "TypeError('expected string or bytes-like object')"),
             ({"content_with_weight": "update chunk"}, 0, ""),
             ({"content_with_weight": " "}, 0, ""),
@@ -103,7 +103,7 @@ class TestUpdateChunk:
         "payload, expected_code, expected_message",
         [
             ({"question_kwd": ["a", "b", "c"]}, 0, ""),
-            ({"question_kwd": [""]}, 0, ""),
+            ({"question_kwd": [""]}, 100, """Exception('Error: 413 - {"error":"Input validation error: `inputs` cannot be empty","error_type":"Validation"}')"""),
             ({"question_kwd": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
             ({"question_kwd": ["a", "a"]}, 0, ""),
             ({"question_kwd": "abc"}, 102, "`question_kwd` should be a list"),
