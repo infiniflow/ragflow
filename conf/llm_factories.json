@@ -2974,13 +2974,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "Pro/deepseek-ai/DeepSeek-V3-1226",
-                    "tags": "LLM,CHAT,64k",
-                    "max_tokens": 64000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
                     "llm_name": "Pro/deepseek-ai/DeepSeek-V3.1",
                     "tags": "LLM,CHAT,160k",
                     "max_tokens": 160000,
@@ -3017,20 +3010,6 @@
                 },
                 {
                     "llm_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "Pro/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
                     "model_type": "chat",
@@ -3093,13 +3072,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "THUDM/chatglm3-6b",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
                     "llm_name": "Pro/THUDM/glm-4-9b-chat",
                     "tags": "LLM,CHAT,128k",
                     "max_tokens": 128000,
@@ -3119,13 +3091,6 @@
                     "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
-                },
-                {
-                    "llm_name": "Qwen/QwQ-32B-Preview",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": false
                 },
                 {
                     "llm_name": "Qwen/Qwen2.5-Coder-32B-Instruct",
@@ -3191,13 +3156,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "internlm/internlm2_5-20b-chat",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
                     "llm_name": "internlm/internlm2_5-7b-chat",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
@@ -3227,13 +3185,6 @@
                 },
                 {
                     "llm_name": "Pro/Qwen/Qwen2-7B-Instruct",
-                    "tags": "LLM,CHAT,32k",
-                    "max_tokens": 32000,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "Pro/Qwen/Qwen2-1.5B-Instruct",
                     "tags": "LLM,CHAT,32k",
                     "max_tokens": 32000,
                     "model_type": "chat",
