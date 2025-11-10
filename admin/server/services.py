@@ -192,6 +192,10 @@ class ServiceMgr:
                     config_dict['status'] = 'timeout'
             except Exception:
                 config_dict['status'] = 'timeout'
+            if not config_dict['host']:
+                config_dict['host'] = '-'
+            if not config_dict['port']:
+                config_dict['port'] = '-'
             result.append(config_dict)
         return result
 

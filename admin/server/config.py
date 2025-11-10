@@ -183,11 +183,13 @@ class RAGFlowServerConfig(BaseConfig):
 
 
 class TaskExecutorConfig(BaseConfig):
+    message_queue_type: str
 
     def to_dict(self) -> dict[str, Any]:
         result = super().to_dict()
         if 'extra' not in result:
             result['extra'] = dict()
+        result['extra']['message_queue_type'] = self.message_queue_type
         return result
 
 
@@ -299,6 +301,15 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 id_count += 1
             case "admin":
                 pass
+            case "task_executor":
+                name: str = 'task_executor'
+                host: str = v.get('host', '')
+                port: int = v.get('port', 0)
+                message_queue_type: str = v.get('message_queue_type')
+                config = TaskExecutorConfig(id=id_count, name=name, host=host, port=port, message_queue_type=message_queue_type,
+                                            service_type="task_executor", detail_func_name="check_task_executor_alive")
+                configurations.append(config)
+                id_count += 1
             case _:
                 logging.warning(f"Unknown configuration key: {k}")
                 continue
