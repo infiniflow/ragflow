@@ -15,6 +15,7 @@ from common.data_source.google_util.constant import (
     GOOGLE_SCOPES,
     GoogleOAuthAuthenticationMethod,
 )
+from common.data_source.google_util.oauth_flow import ensure_oauth_token_dict
 
 
 def sanitize_oauth_credentials(oauth_creds: OAuthCredentials) -> str:
@@ -61,6 +62,17 @@ def get_google_creds(
         credentials_dict_str = credentials[DB_CREDENTIALS_DICT_TOKEN_KEY]
         credentials_dict = json.loads(credentials_dict_str)
 
+        regenerated_from_client_secret = False
+        if "client_id" not in credentials_dict or "client_secret" not in credentials_dict or "refresh_token" not in credentials_dict:
+            try:
+                credentials_dict = ensure_oauth_token_dict(credentials_dict, source)
+            except Exception as exc:
+                raise PermissionError(
+                    "Google Drive OAuth credentials are incomplete. Please finish the OAuth flow to generate access tokens."
+                ) from exc
+            credentials_dict_str = json.dumps(credentials_dict)
+            regenerated_from_client_secret = True
+
         # only send what get_google_oauth_creds needs
         authorized_user_info = {}
 
@@ -82,7 +94,8 @@ def get_google_creds(
 
         # tell caller to update token stored in DB if the refresh token changed
         if oauth_creds:
-            if oauth_creds.refresh_token != authorized_user_info["refresh_token"]:
+            should_persist = regenerated_from_client_secret or oauth_creds.refresh_token != authorized_user_info["refresh_token"]
+            if should_persist:
                 # if oauth_interactive, sanitize the credentials so they don't get stored in the db
                 if authentication_method == GoogleOAuthAuthenticationMethod.OAUTH_INTERACTIVE:
                     oauth_creds_json_str = sanitize_oauth_credentials(oauth_creds)
