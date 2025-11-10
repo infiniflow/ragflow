@@ -41,6 +41,7 @@ import { PromptEditor } from '../components/prompt-editor';
 import { QueryVariable } from '../components/query-variable';
 import { AgentTools, Agents } from './agent-tools';
 import { StructuredOutputDialog } from './structured-output-dialog';
+import { StructuredOutputPanel } from './structured-output-panel';
 import { useBuildPromptExtraPromptOptions } from './use-build-prompt-options';
 import { useShowStructuredOutputDialog } from './use-show-structured-output-dialog';
 import { useValues } from './use-values';
@@ -275,13 +276,16 @@ function AgentForm({ node }: INextOperatorForm) {
             </section>
           </Collapse>
           <Output list={outputList}></Output>
-          <section>
+          <section className="space-y-2">
             <div className="flex justify-between items-center">
-              structured_output
+              {t('flow.structuredOutput.structuredOutput')}
               <Button variant={'outline'} onClick={showStructuredOutputDialog}>
                 {t('flow.structuredOutput.configuration')}
               </Button>
             </div>
+            <StructuredOutputPanel
+              value={initialStructuredOutput}
+            ></StructuredOutputPanel>
           </section>
         </FormWrapper>
       </Form>
