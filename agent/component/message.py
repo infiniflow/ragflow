@@ -99,7 +99,7 @@ class Message(ComponentBase):
                 continue
 
             v = self._canvas.get_variable_value(exp)
-            if not v:
+            if v is None:
                 v = ""
             if isinstance(v, partial):
                 cnt = ""
