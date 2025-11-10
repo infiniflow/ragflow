@@ -49,7 +49,7 @@ function Radio({ value, checked, disabled, onChange, children }: RadioProps) {
       <span
         className={cn(
           'flex h-4 w-4 items-center justify-center rounded-full border border-border transition-colors',
-          'peer ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          'peer outline-none focus-visible:border-border-button',
           isChecked && 'border-primary bg-primary/10',
           mergedDisabled && 'border-muted',
         )}

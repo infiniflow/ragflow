@@ -2,6 +2,9 @@ import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import { useIsDarkTheme } from '../theme-provider';
 
+import noDataIcon from './no data bri.svg';
+import noDataIconDark from './no data.svg';
+
 type EmptyProps = {
   className?: string;
   children?: React.ReactNode;
@@ -9,6 +12,14 @@ type EmptyProps = {
 
 const EmptyIcon = () => {
   const isDarkTheme = useIsDarkTheme();
+
+  return (
+    <img
+      className="h-20"
+      src={isDarkTheme ? noDataIconDark : noDataIcon}
+      alt={t('common.noData')}
+    />
+  );
 
   return (
     <svg
@@ -67,13 +78,14 @@ const Empty = (props: EmptyProps) => {
   return (
     <div
       className={cn(
-        'flex flex-col justify-center items-center text-center gap-3',
+        'flex flex-col justify-center items-center text-center gap-2',
         className,
       )}
     >
       <EmptyIcon />
+
       {!children && (
-        <div className="empty-text mt-4 text-text-secondary">
+        <div className="empty-text text-text-secondary">
           {t('common.noData')}
         </div>
       )}

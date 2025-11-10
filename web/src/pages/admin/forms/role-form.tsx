@@ -18,12 +18,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs-underlined';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import { listResources } from '@/services/admin-service';
 import { PERMISSION_TYPES, formMergeDefaultValues } from '../utils';
@@ -106,12 +101,12 @@ export const CreateRoleForm = ({
           <Label>{t('admin.resources')}</Label>
 
           <Tabs defaultValue={resourceTypes?.[0]} className="w-full mt-2">
-            <TabsList className="p-0 mb-2 gap-4 bg-transparent">
+            <TabsList className="p-0 mb-2 gap-4 bg-transparent justify-start">
               {resourceTypes?.map((resourceType) => (
                 <TabsTrigger
                   key={resourceType}
                   value={resourceType}
-                  className="text-text-secondary !border-border-button data-[state=active]:bg-bg-card data-[state=active]:text-text-primary"
+                  className="text-text-secondary border-0.5 border-border-button data-[state=active]:bg-bg-card"
                 >
                   {t(`admin.resourceType.${resourceType.toLowerCase()}`)}
                 </TabsTrigger>

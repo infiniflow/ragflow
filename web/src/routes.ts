@@ -418,50 +418,50 @@ const routes = [
   // Admin routes
   {
     path: Routes.Admin,
-    component: `@/pages/admin`,
     layout: false,
-  },
-  {
-    path: `${Routes.AdminUserManagement}/:id`,
-    layout: false,
-    wrappers: ['@/wrappers/authAdmin'],
-    component: `@/pages/admin/user-detail`,
-  },
-  {
-    path: Routes.Admin,
-    component: `@/pages/admin/layout`,
-    layout: false,
+    component: `@/pages/admin/layouts/root-layout`,
     routes: [
       {
-        path: Routes.AdminServices,
-        component: `@/pages/admin/service-status`,
-        wrappers: ['@/wrappers/authAdmin'],
+        path: '',
+        component: `@/pages/admin/login`,
       },
       {
-        path: Routes.AdminUserManagement,
-        component: `@/pages/admin/users`,
-        wrappers: ['@/wrappers/authAdmin'],
+        path: `${Routes.AdminUserManagement}/:id`,
+        wrappers: ['@/pages/admin/wrappers/authorized'],
+        component: `@/pages/admin/user-detail`,
       },
+      {
+        path: Routes.Admin,
+        component: `@/pages/admin/layouts/navigation-layout`,
+        wrappers: ['@/pages/admin/wrappers/authorized'],
+        routes: [
+          {
+            path: Routes.AdminServices,
+            component: `@/pages/admin/service-status`,
+          },
+          {
+            path: Routes.AdminUserManagement,
+            component: `@/pages/admin/users`,
+          },
 
-      ...(IS_ENTERPRISE
-        ? [
-            {
-              path: Routes.AdminWhitelist,
-              component: `@/pages/admin/whitelist`,
-              wrappers: ['@/wrappers/authAdmin'],
-            },
-            {
-              path: Routes.AdminRoles,
-              component: `@/pages/admin/roles`,
-              wrappers: ['@/wrappers/authAdmin'],
-            },
-            {
-              path: Routes.AdminMonitoring,
-              component: `@/pages/admin/monitoring`,
-              wrappers: ['@/wrappers/authAdmin'],
-            },
-          ]
-        : []),
+          ...(IS_ENTERPRISE
+            ? [
+                {
+                  path: Routes.AdminWhitelist,
+                  component: `@/pages/admin/whitelist`,
+                },
+                {
+                  path: Routes.AdminRoles,
+                  component: `@/pages/admin/roles`,
+                },
+                {
+                  path: Routes.AdminMonitoring,
+                  component: `@/pages/admin/monitoring`,
+                },
+              ]
+            : []),
+        ],
+      },
     ],
   },
 ];

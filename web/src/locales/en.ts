@@ -1931,13 +1931,14 @@ Important structured information may include: names, dates, locations, events, k
       roles: 'Roles',
       monitoring: 'Monitoring',
 
+      back: 'Back',
       active: 'Active',
       inactive: 'Inactive',
       enable: 'Enable',
       disable: 'Disable',
       all: 'All',
       actions: 'Actions',
-      newUser: 'New User',
+      newUser: 'New user',
       email: 'Email',
       name: 'Name',
       nickname: 'Nickname',
@@ -1956,6 +1957,7 @@ Important structured information may include: names, dates, locations, events, k
       lastUpdateTime: 'Last update time',
 
       isAnonymous: 'Is Anonymous',
+      isSuperuser: 'Is Superuser',
 
       deleteUser: 'Delete user',
       deleteUserConfirmation: 'Are you sure you want to delete this user?',
@@ -1990,7 +1992,7 @@ Important structured information may include: names, dates, locations, events, k
       deleteWhitelistEmailConfirmation:
         'Are you sure you want to delete this email from whitelist? This action cannot be undone.',
 
-      importWhitelist: 'Import whitelist (excel)',
+      importWhitelist: 'Import whitelist (Excel)',
       importSelectExcelFile: 'Excel file (.xlsx)',
       importOverwriteExistingEmails: 'Overwrite existing emails',
       importInvalidExcelFile: 'Please select a valid Excel file',

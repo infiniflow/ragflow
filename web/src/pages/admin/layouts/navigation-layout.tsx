@@ -1,10 +1,9 @@
-import { Button } from '@/components/ui/button';
-import message from '@/components/ui/message';
-import { cn } from '@/lib/utils';
-import { Routes } from '@/routes';
-import { logout } from '@/services/admin-service';
-import authorizationUtil from '@/utils/authorization-util';
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { NavLink, Outlet, useNavigate } from 'umi';
+
 import { useMutation } from '@tanstack/react-query';
+
 import {
   LucideMonitor,
   LucideServerCrash,
@@ -12,13 +11,18 @@ import {
   LucideUserCog,
   LucideUserStar,
 } from 'lucide-react';
-import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { NavLink, Outlet, useNavigate } from 'umi';
-import ThemeSwitch from './components/theme-switch';
-import { IS_ENTERPRISE } from './utils';
 
-const AdminLayout = () => {
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { Routes } from '@/routes';
+import { logout } from '@/services/admin-service';
+
+import authorizationUtil from '@/utils/authorization-util';
+
+import ThemeSwitch from '../components/theme-switch';
+import { IS_ENTERPRISE } from '../utils';
+
+const AdminNavigationLayout = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
@@ -61,8 +65,6 @@ const AdminLayout = () => {
     mutationKey: ['adminLogout'],
     mutationFn: async () => {
       await logout();
-
-      message.success(t('message.logout'));
       authorizationUtil.removeAll();
       navigate(Routes.Admin);
     },
@@ -90,6 +92,7 @@ const AdminLayout = () => {
                       'hover:bg-bg-card focus:bg-bg-card focus-visible:bg-bg-card',
                       'hover:text-text-primary focus:text-text-primary focus-visible:text-text-primary',
                       'active:text-text-primary',
+                      'transition-colors',
                       {
                         'bg-bg-card text-text-primary': isActive,
                       },
@@ -105,14 +108,18 @@ const AdminLayout = () => {
         </nav>
 
         <div className="mt-auto space-y-4">
-          <div className="text-right">
+          <div className="flex justify-between items-center">
+            <span className="text-accent-primary">
+              vmm.ss.rr-nnn-commithash
+            </span>
+
             <ThemeSwitch />
           </div>
 
           <Button
             size="lg"
             variant="transparent"
-            className="block w-full dark:border-border-button"
+            block
             onClick={() => logoutMutation.mutate()}
           >
             {t('header.logout')}
@@ -127,4 +134,4 @@ const AdminLayout = () => {
   );
 };
 
-export default AdminLayout;
+export default AdminNavigationLayout;

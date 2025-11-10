@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'umi';
 
-import { LucideArrowLeft, LucideDot, LucideUser2 } from 'lucide-react';
+import { LucideArrowLeft, LucideDot } from 'lucide-react';
 
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -13,11 +13,10 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 
-import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 
+import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import Spotlight from '@/components/spotlight';
-import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -27,16 +26,11 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
+  // TableHead,
+  // TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs-underlined';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import {
   getUserDetails,
@@ -44,8 +38,12 @@ import {
   listUserDatasets,
 } from '@/services/admin-service';
 
+import { TableEmpty } from '@/components/table-skeleton';
 import EnterpriseFeature from './components/enterprise-feature';
-import { getSortIcon, parseBooleanish } from './utils';
+import {
+  // getSortIcon,
+  parseBooleanish,
+} from './utils';
 
 const ASSET_NAMES = ['dataset', 'flow'];
 
@@ -62,6 +60,20 @@ function UserDatasetTable(props: {
     () => [
       datasetColumnHelper.accessor('name', {
         header: t('admin.name'),
+        cell: ({ row, cell }) => (
+          <div className="flex items-center gap-2">
+            <RAGFlowAvatar
+              avatar={row.original.avatar}
+              name={cell.getValue()}
+            />
+            <span>{cell.getValue()}</span>
+          </div>
+        ),
+      }),
+      // #region
+      /*
+      datasetColumnHelper.accessor('name', {
+        header: t('admin.name'),
         enableSorting: false,
       }),
       datasetColumnHelper.accessor('status', {
@@ -69,20 +81,15 @@ function UserDatasetTable(props: {
         cell: ({ cell }) => {
           return (
             <Badge
-              variant="secondary"
-              className={cn(
-                'font-normal text-sm pl-2',
-                parseBooleanish(cell.getValue())
-                  ? 'bg-state-success-5 text-state-success'
-                  : 'bg-state-error-5 text-state-error',
-              )}
+              variant={parseBooleanish(cell.getValue()) ? 'success' : 'destructive'}
+              className="pl-[.35em]"
             >
               <LucideDot className="size-[1em] stroke-[8] mr-1" />
               {t(
                 parseBooleanish(cell.getValue())
                   ? 'admin.active'
                   : 'admin.inactive',
-              )}
+              )}"
             </Badge>
           );
         },
@@ -111,6 +118,8 @@ function UserDatasetTable(props: {
         header: t('admin.permission'),
         enableSorting: false,
       }),
+      */
+      // #endregion
     ],
     [t],
   );
@@ -121,12 +130,14 @@ function UserDatasetTable(props: {
 
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+
+    enableSorting: false,
   });
 
   return (
     <section className="space-y-4">
       <Table>
-        <TableHeader>
+        {/* <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
@@ -152,7 +163,8 @@ function UserDatasetTable(props: {
               ))}
             </TableRow>
           ))}
-        </TableHeader>
+        </TableHeader> */}
+
         <TableBody>
           {table.getRowModel().rows?.length ? (
             table.getRowModel().rows.map((row) => (
@@ -165,14 +177,7 @@ function UserDatasetTable(props: {
               </TableRow>
             ))
           ) : (
-            <TableRow>
-              <TableCell
-                colSpan={table.getAllColumns().length}
-                className="h-24 text-center"
-              >
-                {t('common.noData')}
-              </TableCell>
-            </TableRow>
+            <TableEmpty columnsLength={columnDefs.length} />
           )}
         </TableBody>
       </Table>
@@ -199,6 +204,20 @@ function UserAgentTable(props: { data?: AdminService.ListUserAgentItem[] }) {
     () => [
       agentColumnHelper.accessor('title', {
         header: t('admin.agentTitle'),
+        cell: ({ row, cell }) => (
+          <div className="flex items-center gap-2">
+            <RAGFlowAvatar
+              avatar={row.original.avatar}
+              name={cell.getValue()}
+            />
+            <span>{cell.getValue()}</span>
+          </div>
+        ),
+      }),
+      // #region
+      /*
+      agentColumnHelper.accessor('title', {
+        header: t('admin.agentTitle'),
       }),
       agentColumnHelper.accessor('permission', {
         header: t('admin.permission'),
@@ -206,6 +225,8 @@ function UserAgentTable(props: { data?: AdminService.ListUserAgentItem[] }) {
       agentColumnHelper.accessor('canvas_category', {
         header: t('admin.canvasCategory'),
       }),
+      */
+      // #endregion
     ],
     [t],
   );
@@ -216,12 +237,14 @@ function UserAgentTable(props: { data?: AdminService.ListUserAgentItem[] }) {
 
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+
+    enableSorting: false,
   });
 
   return (
     <section className="space-y-4">
       <Table>
-        <TableHeader>
+        {/* <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
@@ -232,20 +255,13 @@ function UserAgentTable(props: { data?: AdminService.ListUserAgentItem[] }) {
                         header.column.columnDef.header,
                         header.getContext(),
                       )}
-                      {/* {header.column.getCanFilter() && (
-                            <Button
-                              variant="ghost"
-                            >
-                              <LucideFilter />
-                            </Button>
-                          )} */}
                     </>
                   )}
                 </TableHead>
               ))}
             </TableRow>
           ))}
-        </TableHeader>
+        </TableHeader> */}
 
         <TableBody>
           {table.getRowModel().rows?.length ? (
@@ -259,14 +275,7 @@ function UserAgentTable(props: { data?: AdminService.ListUserAgentItem[] }) {
               </TableRow>
             ))
           ) : (
-            <TableRow key="empty">
-              <TableCell
-                colSpan={table.getAllColumns().length}
-                className="h-24 text-center"
-              >
-                {t('common.noData')}
-              </TableCell>
-            </TableRow>
+            <TableEmpty columnsLength={columnDefs.length} />
           )}
         </TableBody>
       </Table>
@@ -319,32 +328,28 @@ function AdminUserDetail() {
           onClick={() => navigate(`${Routes.AdminUserManagement}`)}
         >
           <LucideArrowLeft />
-          <span>{t('admin.userManagement')}</span>
+          <span>{t('admin.back')}</span>
         </Button>
       </nav>
 
-      <Card className="!shadow-none relative h-0 basis-0 grow flex flex-col bg-transparent border dark:border-border-button overflow-hidden">
+      <Card className="!shadow-none relative h-0 basis-0 grow flex flex-col bg-transparent border-0.5 border-border-button overflow-hidden">
         <Spotlight />
 
-        <CardHeader className="pb-10 border-b dark:border-border-button space-y-8">
+        <CardHeader className="pb-10 border-b-0.5 dark:border-border-button space-y-8">
           <section className="flex items-center gap-4 text-base">
-            <Avatar className="justify-center items-center bg-bg-group uppercase">
-              {detail?.email
-                .split('@')[0]
-                .replace(/[^0-9a-z]/gi, '')
-                .slice(0, 2) || <LucideUser2 />}
-            </Avatar>
+            <RAGFlowAvatar
+              avatar={detail?.avatar}
+              name={detail?.email}
+              isPerson
+            />
 
             <span>{detail?.email}</span>
 
             <Badge
-              variant="secondary"
-              className={cn(
-                'font-normal text-sm pl-2',
-                parseBooleanish(detail?.is_active)
-                  ? 'bg-state-success-5 text-state-success'
-                  : '',
-              )}
+              variant={
+                parseBooleanish(detail?.is_active) ? 'success' : 'destructive'
+              }
+              className="pl-[.5em]"
             >
               <LucideDot className="size-[1em] stroke-[8] mr-1" />
               {t(
@@ -355,11 +360,11 @@ function AdminUserDetail() {
             </Badge>
 
             <EnterpriseFeature>
-              {() => (
-                <Badge variant="secondary" className="font-normal text-sm">
-                  {detail?.role}
-                </Badge>
-              )}
+              {() =>
+                detail?.role && (
+                  <Badge variant="secondary">{detail?.role}</Badge>
+                )
+              }
             </EnterpriseFeature>
           </section>
 
@@ -398,16 +403,23 @@ function AdminUserDetail() {
               </div>
               <div>{t(detail?.is_anonymous ? 'admin.yes' : 'admin.no')}</div>
             </div>
+
+            <div>
+              <div className="text-sm text-text-secondary mb-2">
+                {t('admin.isSuperuser')}
+              </div>
+              <div>{t(detail?.is_superuser ? 'admin.yes' : 'admin.no')}</div>
+            </div>
           </section>
         </CardHeader>
 
         <CardContent className="h-0 basis-0 grow pt-6">
           <Tabs className="h-full flex flex-col" defaultValue="dataset">
-            <TabsList className="p-0 mb-2 gap-4 bg-transparent">
+            <TabsList className="p-0 mb-2 gap-4 bg-transparent justify-start">
               {ASSET_NAMES.map((name) => (
                 <TabsTrigger
                   key={name}
-                  className="border-border-button data-[state=active]:bg-bg-card"
+                  className="text-text-secondary border-0.5 border-border-button data-[state=active]:bg-bg-card"
                   value={name}
                 >
                   {t(`header.${name}`)}

@@ -1,4 +1,5 @@
 import { useIsDarkTheme } from '@/components/theme-provider';
+import { cn } from '@/lib/utils';
 import { parseColorToRGB } from '@/utils/common-util';
 import React from 'react';
 
@@ -36,7 +37,7 @@ const Spotlight: React.FC<SpotlightProps> = ({
       : '194, 221, 243';
   return (
     <div
-      className={`absolute inset-0  opacity-80 ${className} rounded-lg`}
+      className={cn('absolute inset-0 opacity-80 rounded-lg', className)}
       style={{
         backdropFilter: 'blur(30px)',
         zIndex: -1,

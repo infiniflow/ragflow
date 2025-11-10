@@ -1,10 +1,8 @@
 import { type AxiosResponseHeaders } from 'axios';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'umi';
-
-import { LucideEye, LucideEyeOff } from 'lucide-react';
 
 import { useMutation } from '@tanstack/react-query';
 
@@ -12,7 +10,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
 import Spotlight from '@/components/spotlight';
-import { ButtonLoading } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -42,8 +40,6 @@ function AdminLogin() {
   const navigate = useNavigate();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
   const { isLogin } = useAuth();
-
-  const [showPassword, setShowPassword] = useState(false);
 
   const loginMutation = useMutation({
     mutationKey: ['adminLogin'],
@@ -113,7 +109,7 @@ function AdminLogin() {
 
   return (
     <ScrollArea className="w-screen h-screen">
-      <div className="relative">
+      <div className="relative h-max min-h-[100vh]">
         <Spotlight opcity={0.4} coverage={60} color="rgb(128, 255, 248)" />
         <Spotlight
           opcity={0.3}
@@ -143,9 +139,9 @@ function AdminLogin() {
           </h1>
         </div>
 
-        <div className="flex items-center justify-center w-screen min-h-[1050px]">
-          <div className="w-full max-w-[540px]">
-            <Card className="w-full bg-bg-component backdrop-blur-sm rounded-2xl border border-border-button">
+        <div className="flex items-center justify-center w-screen">
+          <div className="w-full max-w-[540px] mt-72 mb-48">
+            <Card className="w-full bg-bg-component rounded-2xl shadow-none backdrop-blur-sm">
               <CardContent className="px-10 pt-14 pb-10">
                 <Form {...form}>
                   <form
@@ -164,7 +160,7 @@ function AdminLogin() {
 
                           <FormControl>
                             <Input
-                              className="h-10 px-2.5"
+                              className="h-10"
                               placeholder={t('emailPlaceholder')}
                               autoComplete="email"
                               {...field}
@@ -184,26 +180,13 @@ function AdminLogin() {
                           <FormLabel required>{t('passwordLabel')}</FormLabel>
 
                           <FormControl>
-                            <div className="relative">
-                              <Input
-                                className="h-10 px-2.5"
-                                type={showPassword ? 'text' : 'password'}
-                                placeholder={t('passwordPlaceholder')}
-                                autoComplete="password"
-                                {...field}
-                              />
-                              <button
-                                type="button"
-                                className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                                onClick={() => setShowPassword(!showPassword)}
-                              >
-                                {showPassword ? (
-                                  <LucideEyeOff className="h-4 w-4 text-gray-500" />
-                                ) : (
-                                  <LucideEye className="h-4 w-4 text-gray-500" />
-                                )}
-                              </button>
-                            </div>
+                            <Input
+                              {...field}
+                              className="h-10"
+                              type="password"
+                              placeholder={t('passwordPlaceholder')}
+                              autoComplete="password"
+                            />
                           </FormControl>
 
                           <FormMessage />
@@ -218,10 +201,10 @@ function AdminLogin() {
                         <FormItem className="!mt-5">
                           <FormLabel
                             className={cn(
-                              'flex items-center hover:text-text-primary',
+                              'transition-colors',
                               field.value
                                 ? 'text-text-primary'
-                                : 'text-text-disabled',
+                                : 'text-text-secondary',
                             )}
                           >
                             <FormControl>
@@ -241,19 +224,17 @@ function AdminLogin() {
               </CardContent>
 
               <CardFooter className="px-10 pt-8 pb-14">
-                <ButtonLoading
+                <Button
                   form={formId}
+                  variant="highlighted"
                   size="lg"
-                  className="
-                    w-full h-10
-                    bg-metallic-gradient border-b-[#00BEB4] border-b-2
-                    hover:bg-metallic-gradient hover:border-b-[#02bcdd]
-                  "
+                  block
                   type="submit"
+                  className="font-medium"
                   loading={loading}
                 >
                   {t('login')}
-                </ButtonLoading>
+                </Button>
               </CardFooter>
             </Card>
 
