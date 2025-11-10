@@ -690,6 +690,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
       discordDescription: ' 连接你的 Discord 服务器以访问和分析聊天数据。',
       notionDescription: ' 同步 Notion 页面与数据库，用于知识检索。',
+      google_driveDescription:
+        ' 通过 OAuth 连接 Google Drive，并同步指定的文件夹或云端硬盘。',
       availableSourcesDescription: '选择要添加的数据源',
       availableSources: '可用数据源',
       datasourceDescription: '管理您的数据源和连接',

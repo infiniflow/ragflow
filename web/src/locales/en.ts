@@ -704,6 +704,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Link your Discord server to access and analyze chat data.',
       notionDescription:
         'Sync pages and databases from Notion for knowledge retrieval.',
+      google_driveDescription:
+        'Connect your Google Drive via OAuth and sync specific folders or drives.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available Sources',
       datasourceDescription: 'Manage your data source and connections',
