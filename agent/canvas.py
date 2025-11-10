@@ -154,7 +154,7 @@ class Graph:
         return self._tenant_id
 
     def get_value_with_variable(self,value: str) -> Any:
-        pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z:0-9_.-]+|sys\.[a-z_]+)\} *\}*")
+        pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z:0-9_.-]+|sys\.[A-Za-z:0-9_.-]+)\} *\}*")
         out_parts = []
         last = 0
 
@@ -202,6 +202,7 @@ class Graph:
         if not path:
             return cur
         for key in path.split('.'):
+            print(f"{key=}",flush=True)
             if cur is None:
                 return None
             if isinstance(cur, str):
