@@ -13,8 +13,8 @@ from pydantic import BaseModel
 from common.data_source.config import DocumentSource, FileOrigin
 from common.data_source.google_drive.constant import DRIVE_FOLDER_TYPE, DRIVE_SHORTCUT_TYPE
 from common.data_source.google_drive.model import GDriveMimeType, GoogleDriveFileType
-from common.data_source.google_drive.section_extraction import HEADING_DELIMITER, get_document_sections
-from common.data_source.google_util.resource import GoogleDocsService, GoogleDriveService, get_drive_service, get_google_docs_service
+from common.data_source.google_drive.section_extraction import HEADING_DELIMITER
+from common.data_source.google_util.resource import GoogleDriveService, get_drive_service
 from common.data_source.models import ConnectorFailure, Document, DocumentFailure, ImageSection, SlimDocument, TextSection
 from common.data_source.utils import get_file_ext
 
@@ -124,90 +124,6 @@ def onyx_document_id_from_drive_file(file: GoogleDriveFileType) -> str:
     return urlunparse(parsed_url)
 
 
-# def get_external_access_for_raw_gdrive_file(
-#     file: GoogleDriveFileType,
-#     company_domain: str,
-#     retriever_drive_service: GoogleDriveService | None,
-#     admin_drive_service: GoogleDriveService,
-# ) -> ExternalAccess:
-#     """
-#     Get the external access for a raw Google Drive file.
-#
-#     Assumes the file we retrieved has EITHER `permissions` or `permission_ids`
-#     """
-#     doc_id = file.get("id")
-#     if not doc_id:
-#         raise ValueError("No doc_id found in file")
-#
-#     permissions = file.get("permissions")
-#     permission_ids = file.get("permissionIds")
-#     drive_id = file.get("driveId")
-#
-#     permissions_list: list[GoogleDrivePermission] = []
-#     if permissions:
-#         permissions_list = [GoogleDrivePermission.from_drive_permission(p) for p in permissions]
-#     elif permission_ids:
-#
-#         def _get_permissions(
-#             drive_service: GoogleDriveService,
-#         ) -> list[GoogleDrivePermission]:
-#             return get_permissions_by_ids(
-#                 drive_service=drive_service,
-#                 doc_id=doc_id,
-#                 permission_ids=permission_ids,
-#             )
-#
-#         permissions_list = _get_permissions(retriever_drive_service or admin_drive_service)
-#         if len(permissions_list) != len(permission_ids) and retriever_drive_service:
-#             logger.warning(f"Failed to get all permissions for file {doc_id} with retriever service, trying admin service")
-#             backup_permissions_list = _get_permissions(admin_drive_service)
-#             permissions_list = _merge_permissions_lists([permissions_list, backup_permissions_list])
-#
-#     folder_ids_to_inherit_permissions_from: set[str] = set()
-#     user_emails: set[str] = set()
-#     group_emails: set[str] = set()
-#     public = False
-#
-#     for permission in permissions_list:
-#         # if the permission is inherited, do not add it directly to the file
-#         # instead, add the folder ID as a group that has access to the file
-#         # we will then handle mapping that folder to the list of Onyx users
-#         # in the group sync job
-#         # NOTE: this doesn't handle the case where a folder initially has no
-#         # permissioning, but then later that folder is shared with a user or group.
-#         # We could fetch all ancestors of the file to get the list of folders that
-#         # might affect the permissions of the file, but this will get replaced with
-#         # an audit-log based approach in the future so not doing it now.
-#         if permission.inherited_from:
-#             folder_ids_to_inherit_permissions_from.add(permission.inherited_from)
-#
-#         if permission.type == PermissionType.USER:
-#             if permission.email_address:
-#                 user_emails.add(permission.email_address)
-#             else:
-#                 logger.error(f"Permission is type `user` but no email address is provided for document {doc_id}\n {permission}")
-#         elif permission.type == PermissionType.GROUP:
-#             # groups are represented as email addresses within Drive
-#             if permission.email_address:
-#                 group_emails.add(permission.email_address)
-#             else:
-#                 logger.error(f"Permission is type `group` but no email address is provided for document {doc_id}\n {permission}")
-#         elif permission.type == PermissionType.DOMAIN and company_domain:
-#             if permission.domain == company_domain:
-#                 public = True
-#             else:
-#                 logger.warning(f"Permission is type domain but does not match company domain:\n {permission}")
-#         elif permission.type == PermissionType.ANYONE:
-#             public = True
-#
-#     group_ids = group_emails | folder_ids_to_inherit_permissions_from | ({drive_id} if drive_id is not None else set())
-#
-#     return ExternalAccess(
-#         external_user_emails=user_emails,
-#         external_user_group_ids=group_ids,
-#         is_public=public,
-#     )
-
 def _find_nth(haystack: str, needle: str, n: int, start: int = 0) -> int:
     start = haystack.find(needle, start)
     while start >= 0 and n > 1:
@@ -215,9 +131,8 @@ def _find_nth(haystack: str, needle: str, n: int, start: int = 0) -> int:
         n -= 1
     return start
 
-def align_basic_advanced(
-    basic_sections: list[TextSection | ImageSection], adv_sections: list[TextSection]
-) -> list[TextSection | ImageSection]:
+
+def align_basic_advanced(basic_sections: list[TextSection | ImageSection], adv_sections: list[TextSection]) -> list[TextSection | ImageSection]:
     """Align the basic sections with the advanced sections.
     In particular, the basic sections contain all content of the file,
     including smart chips like dates and doc links. The advanced sections
@@ -231,9 +146,7 @@ def align_basic_advanced(
     if len(adv_sections) <= 1:
         return basic_sections  # no benefit from aligning
 
-    basic_full_text = "".join(
-        [section.text for section in basic_sections if isinstance(section, TextSection)]
-    )
+    basic_full_text = "".join([section.text for section in basic_sections if isinstance(section, TextSection)])
     new_sections: list[TextSection | ImageSection] = []
     heading_start = 0
     for adv_ind in range(1, len(adv_sections)):
@@ -241,9 +154,7 @@ def align_basic_advanced(
         # retrieve the longest part of the heading that is not a smart chip
         heading_key = max(heading.split(SMART_CHIP_CHAR), key=len).strip()
         if heading_key == "":
-            logging.warning(
-                f"Cannot match heading: {heading}, its link will come from the following section"
-            )
+            logging.warning(f"Cannot match heading: {heading}, its link will come from the following section")
             continue
         heading_offset = heading.find(heading_key)
 
@@ -251,14 +162,9 @@ def align_basic_advanced(
         heading_count = adv_sections[adv_ind - 1].text.count(heading_key)
 
         prev_start = heading_start
-        heading_start = (
-            _find_nth(basic_full_text, heading_key, heading_count, start=prev_start)
-            - heading_offset
-        )
+        heading_start = _find_nth(basic_full_text, heading_key, heading_count, start=prev_start) - heading_offset
         if heading_start < 0:
-            logging.warning(
-                f"Heading key {heading_key} from heading {heading} not found in basic text"
-            )
+            logging.warning(f"Heading key {heading_key} from heading {heading} not found in basic text")
             heading_start = prev_start
             continue
 
@@ -270,9 +176,7 @@ def align_basic_advanced(
         )
 
     # handle last section
-    new_sections.append(
-        TextSection(link=adv_sections[-1].link, text=basic_full_text[heading_start:])
-    )
+    new_sections.append(TextSection(link=adv_sections[-1].link, text=basic_full_text[heading_start:]))
     return new_sections
 
 
@@ -345,7 +249,7 @@ def _download_file_blob(
         else:
             extension = _get_extension_from_file(file, mime_type)
             blob = download_request(service, file_id, size_threshold)
-    except HttpError as e:
+    except HttpError:
         raise
 
     if not blob:
@@ -500,8 +404,10 @@ def _download_and_extract_sections_basic(
         return []
 
     try:
+
         def extract_file_text(*args, **kwargs):
             return "extract_file_text"
+
         text = extract_file_text(io.BytesIO(response_call()), file_name)
         return [TextSection(link=link, text=text)]
     except Exception as e:
@@ -522,6 +428,7 @@ def _convert_drive_item_to_document(
     """
     Main entry point for converting a Google Drive file => Document object.
     """
+
     def _get_drive_service() -> GoogleDriveService:
         return get_drive_service(creds, user_email=retriever_email)
 
@@ -670,8 +577,10 @@ def build_slim_document(
         return None
 
     owner_email = cast(str | None, file.get("owners", [{}])[0].get("emailAddress"))
+
     def _get_external_access_for_raw_gdrive_file(*args, **kwargs):
         return None
+
     external_access = (
         _get_external_access_for_raw_gdrive_file(
             file=file,
