@@ -930,6 +930,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      variableNameMessage: '名称只能包含字母和下划线',
+      variableDescription: '变量的描述',
+      defaultValue: '默认值',
+      gobalVariable: '全局变量',
       recommended: '推荐',
       customerSupport: '客户支持',
       marketing: '营销',

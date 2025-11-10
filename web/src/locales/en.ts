@@ -981,6 +981,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      variableNameMessage:
+        'Variable name can only contain letters and underscores',
+      variableDescription: 'Variable Description',
+      defaultValue: 'Default Value',
+      gobalVariable: 'Global Variable',
       recommended: 'Recommended',
       customerSupport: 'Customer Support',
       marketing: 'Marketing',
