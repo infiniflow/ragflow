@@ -32,6 +32,7 @@ declare module AdminService {
   };
 
   export type UserDetail = {
+    avatar?: string;
     create_date: string;
     email: string;
     is_active: '0' | '1';
@@ -46,6 +47,7 @@ declare module AdminService {
   };
 
   export type ListUserDatasetItem = {
+    avatar?: string;
     chunk_num: number;
     create_date: string;
     doc_num: number;
@@ -58,6 +60,7 @@ declare module AdminService {
   };
 
   export type ListUserAgentItem = {
+    avatar?: string;
     canvas_category: 'agent';
     permission: 'string';
     title: string;
