@@ -202,7 +202,6 @@ class Graph:
         if not path:
             return cur
         for key in path.split('.'):
-            print(f"{key=}",flush=True)
             if cur is None:
                 return None
             if isinstance(cur, str):
