@@ -1107,6 +1107,150 @@ def update_user() -> Response:
         )
 
 
+@manager.route("/list", methods=["GET"])  # noqa: F821
+# @login_required
+def list_users() -> Response:
+    """
+    List all users.
+
+    ---
+    tags:
+      - User
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: query
+        name: page
+        type: integer
+        description: Page number for pagination (optional).
+        required: false
+      - in: query
+        name: page_size
+        type: integer
+        description: Number of items per page (optional).
+        required: false
+      - in: query
+        name: email
+        type: string
+        description: Filter by email address (optional).
+        required: false
+    responses:
+      200:
+        description: Users retrieved successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: User ID.
+                  email:
+                    type: string
+                    description: User email.
+                  nickname:
+                    type: string
+                    description: User nickname.
+                  is_superuser:
+                    type: boolean
+                    description: Whether the user is a superuser.
+            total:
+              type: integer
+              description: Total number of users.
+      500:
+        description: Server error during user listing.
+        schema:
+          type: object
+    """
+    try:
+        # Get query parameters
+        page: Optional[int] = None
+        page_size: Optional[int] = None
+        email_filter: Optional[str] = None
+
+        if request.args:
+            page_str: Optional[str] = request.args.get("page")
+            if page_str:
+                try:
+                    page = int(page_str)
+                except ValueError:
+                    return get_json_result(
+                        data=False,
+                        message="Invalid page parameter!",
+                        code=RetCode.ARGUMENT_ERROR,
+                    )
+
+            page_size_str: Optional[str] = request.args.get("page_size")
+            if page_size_str:
+                try:
+                    page_size = int(page_size_str)
+                except ValueError:
+                    return get_json_result(
+                        data=False,
+                        message="Invalid page_size parameter!",
+                        code=RetCode.ARGUMENT_ERROR,
+                    )
+
+            email_filter = request.args.get("email")
+
+        # Query users
+        if email_filter:
+            # Validate email format if provided
+            email_match: Optional[Match[str]] = re.match(
+                r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", email_filter
+            )
+            if not email_match:
+                return get_json_result(
+                    data=False,
+                    message=f"Invalid email address: {email_filter}!",
+                    code=RetCode.OPERATING_ERROR,
+                )
+            users_query = UserService.query(email=email_filter)
+            users_list: List[User] = list(users_query)
+        else:
+            users_list: List[User] = UserService.get_all_users()
+
+        # Convert users to dictionaries
+        users_data: List[Dict[str, Any]] = [
+            user.to_dict() for user in users_list
+        ]
+
+        # Apply pagination if requested
+        total: int = len(users_data)
+        if page is not None and page_size is not None:
+            if page < 1:
+                return get_json_result(
+                    data=False,
+                    message="Page number must be greater than 0!",
+                    code=RetCode.ARGUMENT_ERROR,
+                )
+            if page_size < 1:
+                return get_json_result(
+                    data=False,
+                    message="Page size must be greater than 0!",
+                    code=RetCode.ARGUMENT_ERROR,
+                )
+
+            start_idx: int = (page - 1) * page_size
+            end_idx: int = start_idx + page_size
+            users_data = users_data[start_idx:end_idx]
+
+        return get_json_result(
+            data=users_data,
+            message=f"Retrieved {len(users_data)} user(s) successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(
+            data=False,
+            message=f"User listing failure, error: {str(e)}",
+            code=RetCode.EXCEPTION_ERROR,
+        )
+
+
 @manager.route("/tenant_info", methods=["GET"])  # noqa: F821
 @login_required
 def tenant_info():

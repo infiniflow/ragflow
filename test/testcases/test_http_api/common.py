@@ -263,3 +263,9 @@ def update_user(auth, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{USER_API_URL}/update"
     res = requests.put(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
+
+
+def list_users(auth, params=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{USER_API_URL}/list"
+    res = requests.get(url=url, headers=headers, auth=auth, params=params)
+    return res.json()
