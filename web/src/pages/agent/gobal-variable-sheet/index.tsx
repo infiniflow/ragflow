@@ -142,7 +142,7 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
         >
           <SheetHeader className="p-5">
             <SheetTitle className="flex items-center gap-2.5">
-              {t('flow.gobalVariable')}
+              {t('flow.globalVariable')}
             </SheetTitle>
           </SheetHeader>
 
@@ -203,7 +203,7 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
           </div>
         </SheetContent>
         <Modal
-          title={t('flow.add') + t('flow.gobalVariable')}
+          title={t('flow.add') + t('flow.globalVariable')}
           open={visible}
           onCancel={hideAddModal}
           showfooter={false}
