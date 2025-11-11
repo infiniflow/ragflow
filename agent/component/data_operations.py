@@ -47,6 +47,7 @@ class DataOperations(ComponentBase,ABC):
             inputs = [inputs]
         for input_ref in inputs:
             input_object=self._canvas.get_variable_value(input_ref)
+            self.set_input_value(input_ref, input_object)
             if input_object is None:
                 continue
             if isinstance(input_object,dict):
