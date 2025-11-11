@@ -236,6 +236,7 @@ class Connector2KbService(CommonService):
             conn_id = conn["id"]
             connector_ids.append(conn_id)
             if conn_id in old_conn_ids:
+                cls.update_by_id(conn_id, {"auto_parse": conn.get("auto_parse", "1")})
                 continue
             cls.save(**{
                 "id": get_uuid(),
