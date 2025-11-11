@@ -1131,7 +1131,6 @@ export default {
       },
       addVariable: 'Adicionar variável',
       variableSettings: 'Configurações da variável',
-      globalVariables: 'Variáveis globais',
       systemPrompt: 'Prompt do sistema',
       addCategory: 'Adicionar categoria',
       categoryName: 'Nome da categoria',

@@ -6,7 +6,7 @@ import { DefaultOptionType } from 'antd/es/select';
 import { t } from 'i18next';
 import { isEmpty, toLower } from 'lodash';
 import get from 'lodash/get';
-import { MessageCircleCode } from 'lucide-react';
+import { MessageSquareCode } from 'lucide-react';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   AgentDialogueMode,
@@ -162,7 +162,7 @@ export function useBuildConversationVariableOptions() {
           return {
             label: keyWithPrefix,
             parentLabel: <span>{t('flow.conversationVariable')}</span>,
-            icon: <MessageCircleCode className="size-3" />,
+            icon: <MessageSquareCode className="size-3" />,
             value: keyWithPrefix,
             type: value.type,
           };

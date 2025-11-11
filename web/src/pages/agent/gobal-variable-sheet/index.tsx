@@ -5,7 +5,7 @@ import {
   FormFieldConfig,
   FormFieldType,
 } from '@/components/dynamic-form';
-import { Button } from '@/components/ui/button';
+import { BlockButton, Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import {
   Sheet,
@@ -142,13 +142,12 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
         >
           <SheetHeader className="p-5">
             <SheetTitle className="flex items-center gap-2.5">
-              {t('flow.gobalVariable')}
+              {t('flow.conversationVariable')}
             </SheetTitle>
           </SheetHeader>
 
           <div className="px-5 pb-5">
-            <Button
-              variant={'secondary'}
+            <BlockButton
               onClick={() => {
                 setFields(GobalFormFields);
                 setDefaultValues(GobalVariableFormDefaultValues);
@@ -156,7 +155,7 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
               }}
             >
               {t('flow.add')}
-            </Button>
+            </BlockButton>
           </div>
 
           <div className="flex flex-col gap-2 px-5 ">
@@ -203,7 +202,7 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
           </div>
         </SheetContent>
         <Modal
-          title={t('flow.add') + t('flow.gobalVariable')}
+          title={t('flow.add') + t('flow.conversationVariable')}
           open={visible}
           onCancel={hideAddModal}
           showfooter={false}
