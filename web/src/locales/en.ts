@@ -1064,10 +1064,10 @@ Example: general/v2/`,
       exceptionMethod: 'Exception method',
       maxRounds: 'Max reflection rounds',
       delayEfterError: 'Delay after error',
-      maxRetries: 'Max reflection rounds',
+      maxRetries: 'Max retry rounds',
       advancedSettings: 'Advanced Settings',
       addTools: 'Add Tools',
-      sysPromptDefultValue: `
+      sysPromptDefaultValue: `
       <role>
         You are a helpful assistant, an AI assistant specialized in problem-solving for the user.
         If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.
@@ -1524,7 +1524,6 @@ This delimiter is used to split the input text into several text pieces echo of 
       },
       addVariable: 'Add variable',
       variableSettings: 'Variable settings',
-      globalVariables: 'Global variables',
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
       addCategory: 'Add category',

@@ -759,7 +759,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       confirmPasswordMessage: '请确认新密码',
       confirmPasswordNonMatchMessage: '您输入的新密码不匹配！',
       cancel: '取消',
-      addedModels: '添加了的模型',
+      addedModels: '已添加的模型',
       modelsToBeAdded: '待添加的模型',
       addTheModel: '添加',
       apiKey: 'API-Key',
@@ -1011,10 +1011,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       exceptionMethod: '异常处理方法',
       maxRounds: '最大反思轮数',
       delayEfterError: '错误后延迟',
-      maxRetries: '最大反思轮数',
+      maxRetries: '最大重试轮数',
       advancedSettings: '高级设置',
       addTools: '添加工具',
-      sysPromptDefultValue: `
+      sysPromptDefaultValue: `
 <role>
   你是一名乐于助人的助手，一名专注于为用户解决问题的 AI 助手。
   如果用户指定了特定领域，你需要在该领域展现专业性；如果没有，则以通用助手的方式工作。

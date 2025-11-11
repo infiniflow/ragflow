@@ -212,7 +212,7 @@ function AgentForm({ node }: INextOperatorForm) {
                   <FormItem className="flex-1">
                     <FormLabel>{t('flow.maxRetries')}</FormLabel>
                     <FormControl>
-                      <NumberInput {...field} max={8}></NumberInput>
+                      <NumberInput {...field} max={8} min={0}></NumberInput>
                     </FormControl>
                   </FormItem>
                 )}
@@ -237,7 +237,7 @@ function AgentForm({ node }: INextOperatorForm) {
                     <FormItem className="flex-1">
                       <FormLabel>{t('flow.maxRounds')}</FormLabel>
                       <FormControl>
-                        <NumberInput {...field}></NumberInput>
+                        <NumberInput {...field} min={0}></NumberInput>
                       </FormControl>
                     </FormItem>
                   )}
