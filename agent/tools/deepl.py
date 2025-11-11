@@ -46,10 +46,15 @@ class DeepL(ComponentBase, ABC):
     component_name = "DeepL"
 
     def _run(self, history, **kwargs):
+        if self.check_if_canceled("DeepL processing"):
+            return
         ans = self.get_input()
         ans = " - ".join(ans["content"]) if "content" in ans else ""
         if not ans:
             return DeepL.be_output("")
+
+        if self.check_if_canceled("DeepL processing"):
+            return
 
         try:
             translator = deepl.Translator(self._param.auth_key)
@@ -58,4 +63,6 @@ class DeepL(ComponentBase, ABC):
 
             return DeepL.be_output(result.text)
         except Exception as e:
+            if self.check_if_canceled("DeepL processing"):
+                return
             DeepL.be_output("**Error**:" + str(e))

@@ -35,6 +35,9 @@ class UserFillUp(ComponentBase):
     component_name = "UserFillUp"
 
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("UserFillUp processing"):
+            return
+
         if self._param.enable_tips:
             content = self._param.tips
             for k, v in self.get_input_elements_from_text(self._param.tips).items():
@@ -58,9 +61,9 @@ class UserFillUp(ComponentBase):
 
             self.set_output("tips", content)
         for k, v in kwargs.get("inputs", {}).items():
+            if self.check_if_canceled("UserFillUp processing"):
+                return
             self.set_output(k, v)
 
     def thoughts(self) -> str:
         return "Waiting for your input..."
-
-

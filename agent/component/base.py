@@ -417,6 +417,20 @@ class ComponentBase(ABC):
         self._param = param
         self._param.check()
 
+    def is_canceled(self) -> bool:
+        return self._canvas.is_canceled()
+
+    def check_if_canceled(self, message: str = "") -> bool:
+        if self.is_canceled():
+            task_id = getattr(self._canvas, 'task_id', 'unknown')
+            log_message = f"Task {task_id} has been canceled"
+            if message:
+                log_message += f" during {message}"
+            logging.info(log_message)
+            self.set_output("_ERROR", "Task has been canceled")
+            return True
+        return False
+
     def invoke(self, **kwargs) -> dict[str, Any]:
         self.set_output("_created_time", time.perf_counter())
         try:
