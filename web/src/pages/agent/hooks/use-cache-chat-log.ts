@@ -73,6 +73,10 @@ export function useCacheChatLog() {
     [messageIdPool],
   );
 
+  const currentTaskId = useMemo(() => {
+    return eventList.at(-1)?.task_id;
+  }, [eventList]);
+
   return {
     eventList,
     currentEventListWithoutMessage,
@@ -84,5 +88,6 @@ export function useCacheChatLog() {
     filterEventListByMessageId,
     setCurrentMessageId,
     currentMessageId,
+    currentTaskId,
   };
 }
