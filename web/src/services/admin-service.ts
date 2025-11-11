@@ -134,6 +134,8 @@ const {
   adminUpdateWhitelistEntry,
   adminDeleteWhitelistEntry,
   adminImportWhitelist,
+
+  adminGetSystemVersion,
 } = api;
 
 type ResponseData<D = NonNullable<unknown>> = {
@@ -257,15 +259,5 @@ export const importWhitelistFromExcel = (file: File) => {
   return request.post<ResponseData<never>>(adminImportWhitelist, fd);
 };
 
-export default {
-  login,
-  logout,
-  listUsers,
-  createUser,
-  getUserDetails,
-  updateUserStatus,
-  updateUserPassword,
-  deleteUser,
-  listUserDatasets,
-  listUserAgents,
-};
+export const getSystemVersion = () =>
+  request.get<ResponseData<{ version: string }>>(adminGetSystemVersion);

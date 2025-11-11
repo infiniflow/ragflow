@@ -44,9 +44,8 @@ export const AvailableModels: FC<{
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
-  // 过滤模型列表
   const filteredModels = useMemo(() => {
-    return factoryList.filter((model) => {
+    const models = factoryList.filter((model) => {
       const matchesSearch = model.name
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
@@ -55,9 +54,9 @@ export const AvailableModels: FC<{
         model.tags.split(',').some((tag) => tag.trim() === selectedTag);
       return matchesSearch && matchesTag;
     });
+    return models;
   }, [factoryList, searchTerm, selectedTag]);
 
-  // 获取所有唯一的标签
   const allTags = useMemo(() => {
     const tagsSet = new Set<string>();
     factoryList.forEach((model) => {
@@ -94,10 +93,10 @@ export const AvailableModels: FC<{
         <Button
           variant={'secondary'}
           onClick={() => setSelectedTag(null)}
-          className={`px-1 py-1 text-xs rounded-md bg-bg-card bg-bg-card h-5 transition-colors ${
+          className={`px-1 py-1 text-xs rounded-sm bg-bg-card h-5 transition-colors ${
             selectedTag === null
-              ? ' text-text-primary border border-text-primary'
-              : 'text-text-secondary bg-bg-input border-none'
+              ? ' text-bg-base bg-text-primary '
+              : 'text-text-secondary bg-bg-card border-none'
           }`}
         >
           All
@@ -107,10 +106,10 @@ export const AvailableModels: FC<{
             variant={'secondary'}
             key={tag}
             onClick={() => handleTagClick(tag)}
-            className={`px-1 py-1 text-xs rounded-md bg-bg-card h-5 transition-colors ${
+            className={`px-1 py-1 text-xs rounded-sm bg-bg-card h-5 transition-colors ${
               selectedTag === tag
-                ? ' text-text-primary border border-text-primary'
-                : 'text-text-secondary  border-none'
+                ? ' text-bg-base bg-text-primary '
+                : 'text-text-secondary  border-none bg-bg-card'
             }`}
           >
             {tag}
@@ -123,15 +122,15 @@ export const AvailableModels: FC<{
         {filteredModels.map((model) => (
           <div
             key={model.name}
-            className=" border border-border-default rounded-lg p-3 hover:bg-bg-input transition-colors"
+            className=" border border-border-default rounded-lg p-3 hover:bg-bg-input transition-colors group"
           >
             <div className="flex items-center space-x-3 mb-3">
-              <LlmIcon name={model.name} imgClass="h-8 w-auto" />
+              <LlmIcon name={model.name} imgClass="h-8 w-8 text-text-primary" />
               <div className="flex-1">
                 <h3 className="font-medium truncate">{model.name}</h3>
               </div>
               <Button
-                className=" px-2 flex items-center gap-0 text-xs h-6  rounded-md transition-colors"
+                className=" px-2 items-center gap-0 text-xs h-6  rounded-md transition-colors hidden group-hover:flex"
                 onClick={() => handleAddModel(model.name)}
               >
                 <Plus size={12} />

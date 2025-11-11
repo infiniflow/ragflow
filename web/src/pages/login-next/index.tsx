@@ -26,7 +26,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { BgSvg } from './bg';
@@ -158,7 +157,7 @@ const Login = () => {
         {/* <SpotlightTopRight opcity={0.7} coverage={10} /> */}
         <div className="absolute top-3 flex flex-col items-center mb-12 w-full text-text-primary">
           <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
-            <div className="w-12 h-12 p-2 rounded-lg bg-bg-base border-2 border-border flex items-center justify-center mr-3">
+            <div className="w-12 h-12 p-2 rounded-lg bg-bg-base flex items-center justify-center mr-3">
               <img
                 src={'/logo.svg'}
                 alt="logo"
@@ -247,7 +246,7 @@ const Login = () => {
                                 }
                                 {...field}
                               />
-                              <button
+                              {/* <button
                                 type="button"
                                 className="absolute inset-y-0 right-0 pr-3 flex items-center"
                                 onClick={() => setShowPassword(!showPassword)}
@@ -257,7 +256,7 @@ const Login = () => {
                                 ) : (
                                   <Eye className="h-4 w-4 text-gray-500" />
                                 )}
-                              </button>
+                              </button> */}
                             </div>
                           </FormControl>
                           <FormMessage />

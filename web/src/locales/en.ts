@@ -274,10 +274,16 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      generationScopeTip:
+        'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
+      scopeDataset: 'Dataset',
+      generationScope: 'Generation Scope',
+      scopeSingleFile: 'Single File',
+      autoParse: 'Auto Parse',
       rebuildTip:
         'Re-downloads files from the linked data source and parses them again.',
       baseInfo: 'Basic Info',
-      gobalIndex: 'Global Index',
+      globalIndex: 'Global Index',
       dataSource: 'Data Source',
       linkSourceSetTip: 'Manage data source linkage with this dataset',
       linkDataSource: 'Link Data Source',
@@ -687,6 +693,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      confluenceIsCloudTip:
+        'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
+      confluenceWikiBaseUrlTip:
+        'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
+      s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from. 
+Example: general/v2/`,
       addDataSourceModalTital: 'Create your {{name}} connector',
       deleteSourceModalTitle: 'Delete data source',
       deleteSourceModalContent: `
@@ -991,6 +1003,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      variableNameMessage:
+        'Variable name can only contain letters and underscores',
+      variableDescription: 'Variable Description',
+      defaultValue: 'Default Value',
+      conversationVariable: 'Conversation variable',
       recommended: 'Recommended',
       customerSupport: 'Customer Support',
       marketing: 'Marketing',
@@ -1905,7 +1922,7 @@ Important structured information may include: names, dates, locations, events, k
       processing: 'Processing',
     },
     admin: {
-      loginTitle: 'RAGFlow ADMIN',
+      loginTitle: 'Admin Console',
       title: 'RAGFlow admin',
       confirm: 'Confirm',
       close: 'Close',
@@ -1941,13 +1958,14 @@ Important structured information may include: names, dates, locations, events, k
       roles: 'Roles',
       monitoring: 'Monitoring',
 
+      back: 'Back',
       active: 'Active',
       inactive: 'Inactive',
       enable: 'Enable',
       disable: 'Disable',
       all: 'All',
       actions: 'Actions',
-      newUser: 'New User',
+      newUser: 'New user',
       email: 'Email',
       name: 'Name',
       nickname: 'Nickname',
@@ -1966,6 +1984,7 @@ Important structured information may include: names, dates, locations, events, k
       lastUpdateTime: 'Last update time',
 
       isAnonymous: 'Is Anonymous',
+      isSuperuser: 'Is Superuser',
 
       deleteUser: 'Delete user',
       deleteUserConfirmation: 'Are you sure you want to delete this user?',
@@ -1990,6 +2009,7 @@ Important structured information may include: names, dates, locations, events, k
 
       extraInfo: 'Extra information',
       serviceDetail: `Service {{name}} detail`,
+      taskExecutorDetail: 'Task executor detail',
 
       whitelistManagement: 'Whitelist management',
       exportAsExcel: 'Export Excel',
@@ -2000,7 +2020,7 @@ Important structured information may include: names, dates, locations, events, k
       deleteWhitelistEmailConfirmation:
         'Are you sure you want to delete this email from whitelist? This action cannot be undone.',
 
-      importWhitelist: 'Import whitelist (excel)',
+      importWhitelist: 'Import whitelist (Excel)',
       importSelectExcelFile: 'Excel file (.xlsx)',
       importOverwriteExistingEmails: 'Overwrite existing emails',
       importInvalidExcelFile: 'Please select a valid Excel file',
