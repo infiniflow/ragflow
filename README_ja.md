@@ -180,6 +180,8 @@
    # sed -i '1i DEVICE=gpu' .env
    # docker compose -f docker-compose.yml up -d
 ```
+   
+   # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases) 例: git checkout v0.21.1
 
 | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                    |
 | ----------------- | --------------- | --------------------- | -------------------------- |
