@@ -76,13 +76,8 @@ You can also change a file's chunking method on the **Files** page.
 
 An embedding model converts chunks into embeddings. It cannot be changed once the dataset has chunks. To switch to a different embedding model, you must delete all existing chunks in the dataset. The obvious reason is that we *must* ensure that files in a specific dataset are converted to embeddings using the *same* embedding model (ensure that they are compared in the same embedding space).
 
-The following embedding models can be deployed locally:
-
-- BAAI/bge-large-zh-v1.5
-- maidalun1020/bce-embedding-base_v1
-
 :::danger IMPORTANT
-These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
+Some embedding models are optimized for specific languages, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
 ### Upload file

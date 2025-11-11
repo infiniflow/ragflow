@@ -24,14 +24,6 @@ A guide explaining how to build a RAGFlow Docker image from its source code. By 
 
 ## Build a Docker image
 
-<Tabs
-  defaultValue="without"
-  values={[
-    {label: 'Build a Docker image without embedding models', value: 'without'},
-    {label: 'Build a Docker image including embedding models', value: 'including'}
-  ]}>
-  <TabItem value="without">
-
 This image is approximately 2 GB in size and relies on external LLM and embedding services.
 
 :::danger IMPORTANT
@@ -46,10 +38,6 @@ uv run download_deps.py
 docker build -f Dockerfile.deps -t infiniflow/ragflow_deps .
 docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
-
-
-  </TabItem>
-</Tabs>
 
 ## Launch a RAGFlow Service from Docker for MacOS
 
