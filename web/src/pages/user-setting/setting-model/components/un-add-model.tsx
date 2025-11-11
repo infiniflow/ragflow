@@ -122,7 +122,7 @@ export const AvailableModels: FC<{
         {filteredModels.map((model) => (
           <div
             key={model.name}
-            className=" border border-border-default rounded-lg p-3 hover:bg-bg-input transition-colors group"
+            className=" border border-border-button rounded-lg p-3 hover:bg-bg-input transition-colors group"
           >
             <div className="flex items-center space-x-3 mb-3">
               <LlmIcon name={model.name} imgClass="h-8 w-8 text-text-primary" />

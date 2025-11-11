@@ -68,6 +68,7 @@ export const LlmIcon = ({
     LLMFactory.FishAudio,
     LLMFactory.TogetherAI,
     LLMFactory.Meituan,
+    LLMFactory.Longcat,
   ];
   let icon = useMemo(() => {
     const icontemp = IconMap[name as keyof typeof IconMap];
@@ -84,7 +85,7 @@ export const LlmIcon = ({
   const svgIcons = [
     LLMFactory.LocalAI,
     // LLMFactory.VolcEngine,
-    LLMFactory.MiniMax,
+    // LLMFactory.MiniMax,
     LLMFactory.Gemini,
     LLMFactory.StepFun,
     // LLMFactory.DeerAPI,
@@ -101,9 +102,16 @@ export const LlmIcon = ({
   }
 
   return icon ? (
-    <IconFontFill name={icon} className={cn('size-8', imgClass)} />
+    <IconFontFill
+      name={icon}
+      className={cn('size-8 flex items-center justify-center', imgClass)}
+    />
   ) : (
-    <Avatar shape="square" size={size} icon={<UserOutlined />} />
+    <IconFontFill
+      name={'moxing-default'}
+      className={cn('size-8 flex items-center justify-center', imgClass)}
+    />
+    // <Avatar shape="square" size={size} icon={<UserOutlined />} />
   );
 };
 
