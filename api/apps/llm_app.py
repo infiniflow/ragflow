@@ -33,7 +33,7 @@ from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 def factories():
     try:
         fac = get_allowed_llm_factories()
-        fac = [f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI"]]
+        fac = [f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI", "Builtin"]]
         llms = LLMService.get_all()
         mdl_types = {}
         for m in llms:
