@@ -3,8 +3,11 @@ import { useTranslation } from 'react-i18next';
 
 import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { Plus } from 'lucide-react';
+import {
+  ProfileSettingWrapperCard,
+  UserSettingHeader,
+} from '../components/user-setting-header';
 import AddDataSourceModal from './add-datasource-modal';
 import { AddedSourceCard } from './component/added-source-card';
 import { DataSourceInfo, DataSourceKey } from './contant';
@@ -93,60 +96,57 @@ const DataSource = () => {
   };
 
   return (
-    <div className="w-full flex flex-col gap-4  relative ">
+    <ProfileSettingWrapperCard
+      header={
+        <UserSettingHeader
+          name={t('setting.dataSources')}
+          description={t('setting.datasourceDescription')}
+        />
+      }
+    >
       <Spotlight />
-
-      {/* <Card className="bg-transparent border-none px-0"> */}
-      <section className="flex flex-row items-center justify-between space-y-0 px-4 pt-4 pb-0">
-        <div className="text-2xl font-medium">
-          {t('setting.dataSources')}
-          <div className="text-sm text-text-secondary">
-            {t('setting.datasourceDescription')}
+      <div className="relative">
+        <div className=" flex flex-col gap-4 max-h-[calc(100vh-230px)] overflow-y-auto overflow-x-hidden scrollbar-auto">
+          <div className="flex flex-col gap-3">
+            {categorizedList.map((item, index) => (
+              <AddedSourceCard key={index} {...item} />
+            ))}
           </div>
-        </div>
-      </section>
-      {/* </Card> */}
-      <Separator className="border-border-button bg-border-button " />
-      <div className=" flex flex-col gap-4 p-4 max-h-[calc(100vh-120px)] overflow-y-auto overflow-x-hidden scrollbar-auto">
-        <div className="flex flex-col gap-3">
-          {categorizedList.map((item, index) => (
-            <AddedSourceCard key={index} {...item} />
-          ))}
-        </div>
-        <section className="bg-transparent border-none mt-8">
-          <header className="flex flex-row items-center justify-between space-y-0 p-0 pb-4">
-            {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
-            <CardTitle className="text-2xl font-semibold">
-              {t('setting.availableSources')}
-              <div className="text-sm text-text-secondary font-normal">
-                {t('setting.availableSourcesDescription')}
+          <section className="bg-transparent border-none mt-8">
+            <header className="flex flex-row items-center justify-between space-y-0 p-0 pb-4">
+              {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
+              <CardTitle className="text-2xl font-semibold">
+                {t('setting.availableSources')}
+                <div className="text-sm text-text-secondary font-normal">
+                  {t('setting.availableSourcesDescription')}
+                </div>
+              </CardTitle>
+            </header>
+            <main className="p-0">
+              {/* <TenantTable searchTerm={searchTerm}></TenantTable> */}
+              <div className="grid sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4 3xl:grid-cols-4 gap-4">
+                {dataSourceTemplates.map((item, index) => (
+                  <AbailableSourceCard {...item} key={index} />
+                ))}
               </div>
-            </CardTitle>
-          </header>
-          <main className="p-0">
-            {/* <TenantTable searchTerm={searchTerm}></TenantTable> */}
-            <div className="grid sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-4 3xl:grid-cols-4 gap-4">
-              {dataSourceTemplates.map((item, index) => (
-                <AbailableSourceCard {...item} key={index} />
-              ))}
-            </div>
-          </main>
-        </section>
-      </div>
+            </main>
+          </section>
+        </div>
 
-      {addingModalVisible && (
-        <AddDataSourceModal
-          visible
-          loading={addLoading}
-          hideModal={hideAddingModal}
-          onOk={(data) => {
-            console.log(data);
-            handleAddOk(data);
-          }}
-          sourceData={addSource}
-        ></AddDataSourceModal>
-      )}
-    </div>
+        {addingModalVisible && (
+          <AddDataSourceModal
+            visible
+            loading={addLoading}
+            hideModal={hideAddingModal}
+            onOk={(data) => {
+              console.log(data);
+              handleAddOk(data);
+            }}
+            sourceData={addSource}
+          ></AddDataSourceModal>
+        )}
+      </div>
+    </ProfileSettingWrapperCard>
   );
 };
 

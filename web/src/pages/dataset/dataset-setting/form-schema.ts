@@ -83,6 +83,7 @@ export const formSchema = z
           name: z.string().optional(),
           source: z.string().optional(),
           ststus: z.string().optional(),
+          auto_parse: z.string().optional(),
         }),
       )
       .optional(),

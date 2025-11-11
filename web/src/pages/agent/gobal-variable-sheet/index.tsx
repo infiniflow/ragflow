@@ -3,6 +3,7 @@ import {
   DynamicForm,
   DynamicFormRef,
   FormFieldConfig,
+  FormFieldType,
 } from '@/components/dynamic-form';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
@@ -112,6 +113,23 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
   };
 
   const handleEditGobalVariable = (item: FieldValues) => {
+    fields.forEach((field) => {
+      if (field.name === 'value') {
+        switch (item.type) {
+          // [TypesWithArray.String]: FormFieldType.Textarea,
+          // [TypesWithArray.Number]: FormFieldType.Number,
+          // [TypesWithArray.Boolean]: FormFieldType.Checkbox,
+          case TypesWithArray.Boolean:
+            field.type = FormFieldType.Checkbox;
+            break;
+          case TypesWithArray.Number:
+            field.type = FormFieldType.Number;
+            break;
+          default:
+            field.type = FormFieldType.Textarea;
+        }
+      }
+    });
     setDefaultValues(item);
     showModal();
   };
@@ -124,7 +142,7 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
         >
           <SheetHeader className="p-5">
             <SheetTitle className="flex items-center gap-2.5">
-              {t('flow.conversationVariable')}
+              {t('flow.gobalVariable')}
             </SheetTitle>
           </SheetHeader>
 
@@ -185,7 +203,7 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
           </div>
         </SheetContent>
         <Modal
-          title={t('flow.add') + t('flow.conversationVariable')}
+          title={t('flow.add') + t('flow.gobalVariable')}
           open={visible}
           onCancel={hideAddModal}
           showfooter={false}

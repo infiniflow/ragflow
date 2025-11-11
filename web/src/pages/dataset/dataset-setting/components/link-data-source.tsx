@@ -1,5 +1,6 @@
 import { IconFontFill } from '@/components/icon-font';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import {
   Tooltip,
   TooltipContent,
@@ -24,16 +25,25 @@ export interface ILinkDataSourceProps {
   data?: IConnector[];
   handleLinkOrEditSubmit?: (data: IDataSourceBase[] | undefined) => void;
   unbindFunc?: (item: DataSourceItemProps) => void;
+  handleAutoParse?: (option: {
+    source_id: string;
+    isAutoParse: boolean;
+  }) => void;
 }
 
 interface DataSourceItemProps extends IDataSourceNodeProps {
   openLinkModalFunc?: (open: boolean, data?: IDataSourceNodeProps) => void;
   unbindFunc?: (item: DataSourceItemProps) => void;
+  handleAutoParse?: (option: {
+    source_id: string;
+    isAutoParse: boolean;
+  }) => void;
 }
 
 const DataSourceItem = (props: DataSourceItemProps) => {
   const { t } = useTranslation();
-  const { id, name, icon, source, unbindFunc } = props;
+  const { id, name, icon, source, auto_parse, unbindFunc, handleAutoParse } =
+    props;
 
   const { navigateToDataSourceDetail } = useNavigatePage();
   const { handleRebuild } = useDataSourceRebuild();
@@ -50,7 +60,19 @@ const DataSourceItem = (props: DataSourceItemProps) => {
         </div>
         <div>{name}</div>
       </div>
-      <div className="flex items-center">
+      <div className="flex items-center ">
+        <div className="items-center gap-1 hidden mr-5 group-hover:flex">
+          <div className="text-xs text-text-secondary">
+            {t('knowledgeConfiguration.autoParse')}
+          </div>
+          <Switch
+            checked={auto_parse === '1'}
+            onCheckedChange={(isAutoParse) => {
+              handleAutoParse?.({ source_id: id, isAutoParse });
+            }}
+            className="w-8 h-4"
+          />
+        </div>
         <Tooltip>
           <TooltipTrigger>
             <Button
@@ -105,7 +127,12 @@ const DataSourceItem = (props: DataSourceItemProps) => {
 };
 
 const LinkDataSource = (props: ILinkDataSourceProps) => {
-  const { data, handleLinkOrEditSubmit: submit, unbindFunc } = props;
+  const {
+    data,
+    handleLinkOrEditSubmit: submit,
+    unbindFunc,
+    handleAutoParse,
+  } = props;
   const { t } = useTranslation();
   const [openLinkModal, setOpenLinkModal] = useState(false);
 
@@ -176,6 +203,7 @@ const LinkDataSource = (props: ILinkDataSourceProps) => {
                 key={item.id}
                 openLinkModalFunc={openLinkModalFunc}
                 unbindFunc={unbindFunc}
+                handleAutoParse={handleAutoParse}
                 {...item}
               />
             ),

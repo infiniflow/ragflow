@@ -1,3 +1,4 @@
+import Spotlight from '@/components/spotlight';
 import { LLMFactory } from '@/constants/llm';
 import { LlmItem, useFetchMyLlmListDetailed } from '@/hooks/llm-hooks';
 import { useCallback, useMemo } from 'react';
@@ -192,7 +193,8 @@ const ModelProviders = () => {
     [showApiKeyModal, showLlmAddingModal, ModalMap, detailedLlmList],
   );
   return (
-    <div className="flex w-full">
+    <div className="flex w-full border-[0.5px] border-border-default rounded-lg relative ">
+      <Spotlight />
       <section className="flex flex-col gap-4 w-3/5 px-5 border-r border-border-button overflow-auto scrollbar-auto">
         <SystemSetting
           onOk={onSystemSettingSavingOk}

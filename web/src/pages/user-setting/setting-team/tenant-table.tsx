@@ -71,7 +71,7 @@ const TenantTable = ({ searchTerm }: { searchTerm: string }) => {
   return (
     <div className="rounded-lg bg-bg-input scrollbar-auto overflow-hidden border border-border-default">
       <Table rootClassName="rounded-lg">
-        <TableHeader>
+        <TableHeader className="bg-bg-title">
           <TableRow>
             <TableHead className="h-12 px-4">{t('common.name')}</TableHead>
             <TableHead
@@ -87,7 +87,7 @@ const TenantTable = ({ searchTerm }: { searchTerm: string }) => {
             <TableHead className="h-12 px-4">{t('common.action')}</TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody>
+        <TableBody className="bg-bg-base">
           {loading ? (
             <TableRow>
               <TableCell colSpan={4} className="h-24 text-center">

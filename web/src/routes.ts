@@ -24,7 +24,6 @@ export enum Routes {
   Mcp = '/mcp',
   Team = '/team',
   Plan = '/plan',
-  System = '/system',
   Model = '/model',
   Prompt = '/prompt',
   DataSource = '/data-source',
@@ -379,10 +378,6 @@ const routes = [
         component: '@/pages/user-setting/setting-locale',
       },
       {
-        path: '/user-setting/password',
-        component: '@/pages/user-setting/setting-password',
-      },
-      {
         path: '/user-setting/model',
         component: '@/pages/user-setting/setting-model',
       },
@@ -391,16 +386,12 @@ const routes = [
         component: '@/pages/user-setting/setting-team',
       },
       {
-        path: `/user-setting${Routes.System}`,
-        component: '@/pages/user-setting/setting-system',
-      },
-      {
         path: `/user-setting${Routes.Api}`,
         component: '@/pages/user-setting/setting-api',
       },
       {
         path: `/user-setting${Routes.Mcp}`,
-        component: `@/pages${Routes.ProfileMcp}`,
+        component: `@/pages/user-setting/${Routes.Mcp}`,
       },
       {
         path: `/user-setting${Routes.DataSource}`,
