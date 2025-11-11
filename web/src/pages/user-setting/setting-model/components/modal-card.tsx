@@ -97,7 +97,7 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
             className="px-3 py-1 text-sm bg-bg-input hover:bg-bg-input text-text-primary rounded-md transition-colors flex items-center space-x-1"
           >
             <span>{visible ? t('hideModels') : t('showMoreModels')}</span>
-            {visible ? <ChevronsDown /> : <ChevronsUp />}
+            {!visible ? <ChevronsDown /> : <ChevronsUp />}
           </Button>
 
           <Button
