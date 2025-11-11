@@ -1,6 +1,6 @@
 ---
-sidebar_position: 6
-slug: /using_admin_ui
+sidebar_position: 7
+slug: /accessing_admin_ui
 ---
 
 # Admin UI
@@ -10,47 +10,7 @@ The RAGFlow Admin UI is a web-based interface that provides comprehensive system
 
 ## Accessing the Admin UI
 
-### Launching from source code
-
-1. Start the RAGFlow front-end (if not already running):
-
-   ```bash
-   cd web
-   npm run dev
-   ```
-
-   Typically, the front-end server is running on port `9222`. The following output confirms a successful launch of the RAGFlow UI:
-
-   ```bash
-            ╔════════════════════════════════════════════════════╗
-            ║ App listening at:                                  ║
-            ║  >   Local: http://localhost:9222                  ║
-    ready - ║  > Network: http://192.168.1.92:9222               ║
-            ║                                                    ║
-            ║ Now you can open browser with the above addresses↑ ║
-            ╚════════════════════════════════════════════════════╝
-   ```
-
-
-2. Login to RAGFlow Admin UI
-
-   Open your browser and navigate to:
-
-   ```
-   http://localhost:9222/admin
-   ```
-
-   Or if accessing from a remote machine:
-
-   ```
-   http://[YOUR_MACHINE_IP]:9222/admin
-   ```
-
-   > Replace `[YOUR_MACHINE_IP]` with your actual machine IP address (e.g., `http://192.168.1.49:9222/admin`).
-
-   Then, you will be presented with a login page where you need to enter your admin user email address and password.
-
-3. After a successful login, you will be redirected to the **Service Status** page, which is the default landing page for the Admin UI.
+To access the RAGFlow admin UI, append `/admin` to the web UI's address, e.g. `http://[RAGFLOW_WEB_UI_ADDR]/admin`, replace `[RAGFLOW_WEB_UI_ADDR]` with real RAGFlow web UI address.
 
 
 ## Admin UI Overview
@@ -59,7 +19,7 @@ The RAGFlow Admin UI is a web-based interface that provides comprehensive system
 
 The service status page displays of all services within the RAGFlow system.
 
-- **Service List**: View all services in a table format.
+- **Service List**: View all services in a table.
 - **Filtering**: Use the filter button to filter services by **Service Type**.
 - **Search**: Use the search bar to quickly find services by **Name** or **Service Type**.
 - **Actions** (hover over a row to see action buttons):
