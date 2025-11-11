@@ -122,16 +122,30 @@
 
 ## 🎬 시작하기
 
-### 📝 사전 준비 사항
+## 🚀 시작하기
 
-- CPU >= 4 cores
-- RAM >= 16 GB
-- Disk >= 50 GB
-- Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): RAGFlow의 코드 실행기(샌드박스) 기능을 사용하려는 경우에만 필요합니다.
+### 📝 사전 준비
 
-> [!TIP]
-> 로컬 머신(Windows, Mac, Linux)에 Docker가 설치되지 않은 경우, [Docker 엔진 설치](<(https://docs.docker.com/engine/install/)>)를 참조하세요.
+- CPU ≥ 4 코어
+- RAM ≥ 16 GB
+- Disk ≥ 50 GB
+- Docker ≥ v24.0.0 & Docker Compose ≥ v2.26.1
+  > Windows 사용자인 경우, Docker Desktop for Windows를 사용하고 WSL2가 활성화되어 있는지 확인하세요.
+  > 컴퓨터에서 가상화 기술(VT)이 활성화되어 있는지 확인하세요.
+
+### 🚀 Docker Compose로 RAGFlow 시작하기
+
+1. Docker와 Docker Compose가 설치되어 있는지 확인하세요.
+
+   > 자세한 설치 지침은 [이 가이드](https://docs.docker.com/engine/install/)를 참조하세요.
+
+2. RAGFlow Docker 이미지를 클론하고, `docker` 디렉토리로 이동하세요:
+
+   ```bash
+   $ git clone https://github.com/infiniflow/ragflow.git
+   $ cd ragflow/docker
+   
+   # 선택: 안정 태그 사용 (releases: https://github.com/infiniflow/ragflow/releases) 예: git checkout v0.21.1
 
 ### 🚀 서버 시작하기
 
