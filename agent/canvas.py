@@ -456,6 +456,7 @@ class Canvas(Graph):
                 for c in path:
                     o = self.get_component_obj(c)
                     if o.component_name.lower() == "userfillup":
+                        o.invoke()
                         another_inputs.update(o.get_input_elements())
                         if o.get_param("enable_tips"):
                             tips = o.output("tips")
