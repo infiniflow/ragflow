@@ -1385,7 +1385,6 @@ export default {
       },
       addVariable: 'Добавить переменную',
       variableSettings: 'Настройки переменных',
-      globalVariables: 'Глобальные переменные',
       systemPrompt: 'Системный промпт',
       userPrompt: 'Пользовательский промпт',
       addCategory: 'Добавить категорию',

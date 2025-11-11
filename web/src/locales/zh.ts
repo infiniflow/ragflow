@@ -748,7 +748,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       confirmPasswordMessage: '请确认新密码',
       confirmPasswordNonMatchMessage: '您输入的新密码不匹配！',
       cancel: '取消',
-      addedModels: '添加了的模型',
+      addedModels: '已添加的模型',
       modelsToBeAdded: '待添加的模型',
       addTheModel: '添加',
       apiKey: 'API-Key',
