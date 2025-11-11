@@ -29,35 +29,6 @@ from common import create_user
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
-
-# ---------------------------------------------------------------------------
-# Utility Functions
-# ---------------------------------------------------------------------------
-
-
-def encrypt_password(password: str) -> str:
-    """
-    Encrypt password for API calls without importing from api.utils.crypt.
-
-    Avoids ModuleNotFoundError caused by test helper module named `common`.
-    """
-    current_dir: str = os.path.dirname(os.path.abspath(__file__))
-    project_base: str = os.path.abspath(
-        os.path.join(current_dir, "..", "..", "..", "..")
-    )
-    file_path: str = os.path.join(project_base, "conf", "public.pem")
-
-    with open(file_path, encoding="utf-8") as pem_file:
-        rsa_key: RSA.RsaKey = RSA.import_key(
-            pem_file.read(), passphrase="Welcome"
-        )
-
-    cipher: Cipher_pkcs1_v1_5.PKCS115_Cipher = Cipher_pkcs1_v1_5.new(rsa_key)
-    password_base64: str = base64.b64encode(password.encode()).decode()
-    encrypted_password: bytes = cipher.encrypt(password_base64.encode())
-    return base64.b64encode(encrypted_password).decode()
-
-
 # ---------------------------------------------------------------------------
 # Test Classes
 # ---------------------------------------------------------------------------
@@ -91,7 +62,7 @@ class TestAuthorization:
         payload: dict[str, str] = {
             "nickname": "test_user",
             "email": unique_email,
-            "password": encrypt_password("test123"),
+            "password": "test123",
         }
         res: dict[str, Any] = create_user(invalid_auth, payload)
         assert res["code"] == expected_code, res
@@ -111,7 +82,7 @@ class TestUserCreate:
                 {
                     "nickname": "valid_user",
                     "email": "valid@example.com",
-                    "password": encrypt_password("test123"),
+                    "password": "test123",
                 },
                 0,
                 "",
@@ -120,7 +91,7 @@ class TestUserCreate:
                 {
                     "nickname": "",
                     "email": "test@example.com",
-                    "password": encrypt_password("test123"),
+                    "password": "test123",
                 },
                 0,
                 "",
@@ -129,7 +100,7 @@ class TestUserCreate:
                 {
                     "nickname": "test_user",
                     "email": "",
-                    "password": encrypt_password("test123"),
+                    "password": "test123",
                 },
                 103,
                 "Invalid email address",
@@ -140,8 +111,8 @@ class TestUserCreate:
                     "email": "test@example.com",
                     "password": "",
                 },
-                500,
-                "Fail to decrypt password",
+                101,
+                "Password cannot be empty",
             ),
             (
                 {"nickname": "test_user", "email": "test@example.com"},
@@ -151,7 +122,7 @@ class TestUserCreate:
             (
                 {
                     "nickname": "test_user",
-                    "password": encrypt_password("test123"),
+                    "password": "test123",
                 },
                 101,
                 "required argument are missing",
@@ -159,7 +130,7 @@ class TestUserCreate:
             (
                 {
                     "email": "test@example.com",
-                    "password": encrypt_password("test123"),
+                    "password": "test123",
                 },
                 101,
                 "required argument are missing",
@@ -215,7 +186,7 @@ class TestUserCreate:
         payload: dict[str, str] = {
             "nickname": "test_user",
             "email": email,
-            "password": encrypt_password("test123"),
+            "password": "test123",
         }
         res: dict[str, Any] = create_user(HttpApiAuth, payload)
         assert res["code"] == expected_code, res
@@ -247,7 +218,7 @@ class TestUserCreate:
         payload: dict[str, str] = {
             "nickname": nickname,
             "email": unique_email,
-            "password": encrypt_password("test123"),
+            "password": "test123",
         }
         res: dict[str, Any] = create_user(HttpApiAuth, payload)
         assert res["code"] == expected_code, res
@@ -265,7 +236,7 @@ class TestUserCreate:
         payload: dict[str, str] = {
             "nickname": "test_user_1",
             "email": unique_email,
-            "password": encrypt_password("test123"),
+            "password": "test123",
         }
         res: dict[str, Any] = create_user(HttpApiAuth, payload)
         assert res["code"] == 0
@@ -274,7 +245,7 @@ class TestUserCreate:
         payload2: dict[str, str] = {
             "nickname": "test_user_2",
             "email": unique_email,
-            "password": encrypt_password("test123"),
+            "password": "test123",
         }
         res2: dict[str, Any] = create_user(HttpApiAuth, payload2)
         assert res2["code"] == 103
@@ -300,7 +271,7 @@ class TestUserCreate:
         payload: dict[str, Any] = {
             "nickname": "test_user",
             "email": unique_email,
-            "password": encrypt_password("test123"),
+            "password": "test123",
         }
         if is_superuser is not None:
             payload["is_superuser"] = is_superuser
@@ -310,16 +281,16 @@ class TestUserCreate:
         assert res["data"]["is_superuser"] == expected_value
 
     @pytest.mark.p2
-    def test_password_encryption(
+    def test_password_hashing(
         self, HttpApiAuth: RAGFlowHttpApiAuth
     ) -> None:
-        """Test that password is properly encrypted and hashed."""
+        """Test that password is properly hashed when stored."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
         password: str = "test_password_123"
         payload: dict[str, str] = {
             "nickname": "test_user",
             "email": unique_email,
-            "password": encrypt_password(password),
+            "password": password,  # Plain text password
         }
         res: dict[str, Any] = create_user(HttpApiAuth, payload)
         assert res["code"] == 0
@@ -332,23 +303,22 @@ class TestUserCreate:
         )
         # Verify it's not the plain password
         assert res["data"]["password"] != password
-        assert res["data"]["password"] != encrypt_password(password)
 
     @pytest.mark.p2
-    def test_invalid_password_encryption(
+    def test_plain_text_password_accepted(
         self, HttpApiAuth: RAGFlowHttpApiAuth
     ) -> None:
-        """Test that plain text password without encryption fails."""
+        """Test that plain text password is accepted."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
         payload: dict[str, str] = {
             "nickname": "test_user",
             "email": unique_email,
-            "password": "plain_text_password",  # Not encrypted
+            "password": "plain_text_password",  # Plain text, no encryption
         }
         res: dict[str, Any] = create_user(HttpApiAuth, payload)
-        # Should fail to decrypt password
-        assert res["code"] == 500
-        assert "Fail to decrypt password" in res["message"]
+        # Should succeed with plain text password
+        assert res["code"] == 0
+        assert res["data"]["email"] == unique_email
 
     @pytest.mark.p3
     def test_concurrent_create(
@@ -363,7 +333,7 @@ class TestUserCreate:
                 payload: dict[str, str] = {
                     "nickname": f"test_user_{i}",
                     "email": unique_email,
-                    "password": encrypt_password("test123"),
+                    "password": "test123",
                 }
                 futures.append(
                     executor.submit(create_user, HttpApiAuth, payload)
@@ -385,7 +355,7 @@ class TestUserCreate:
         payload: dict[str, str] = {
             "nickname": "test_user",
             "email": unique_email,
-            "password": encrypt_password("test123"),
+            "password": "test123",
         }
         res: dict[str, Any] = create_user(HttpApiAuth, payload)
         assert res["code"] == 0

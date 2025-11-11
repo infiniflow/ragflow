@@ -781,7 +781,7 @@ def create_user() -> Response:
               description: User email.
             password:
               type: string
-              description: User password (encrypted).
+              description: User password (plain text).
             is_superuser:
               type: boolean
               description: Whether the user should be a superuser (admin).
@@ -844,14 +844,15 @@ def create_user() -> Response:
     # Construct user info data
     nickname: str = req["nickname"]
     is_superuser: bool = req.get("is_superuser", False)
-
-    try:
-        password: str = decrypt(req["password"])
-    except BaseException:
+    # Accept plain text password (no encryption required)
+    password: str = req["password"]
+    
+    # Validate password is not empty
+    if not password or not password.strip():
         return get_json_result(
             data=False,
-            code=RetCode.SERVER_ERROR,
-            message="Fail to decrypt password",
+            message="Password cannot be empty!",
+            code=RetCode.ARGUMENT_ERROR,
         )
 
     user_dict: Dict[str, Any] = {
