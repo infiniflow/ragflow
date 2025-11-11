@@ -7,6 +7,7 @@ import { Form } from '@/components/ui/form';
 import { FormLayout } from '@/constants/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { PermissionRole } from '@/constants/permission';
+import { IConnector } from '@/interfaces/database/knowledge';
 import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -149,11 +150,12 @@ export default function DatasetSettings() {
   //   }
   // };
 
-  const handleLinkOrEditSubmit = (data: IDataSourceBase[] | undefined) => {
+  const handleLinkOrEditSubmit = (data: IConnector[] | undefined) => {
     if (data) {
       const connectors = data.map((connector) => {
         return {
           ...connector,
+          auto_parse: connector.auto_parse === '0' ? '0' : '1',
           icon:
             DataSourceInfo[connector.source as keyof typeof DataSourceInfo]
               ?.icon || '',
@@ -208,6 +210,31 @@ export default function DatasetSettings() {
       // form.setValue('pipeline_avatar', data.avatar || '');
     }
   };
+  const handleAutoParse = ({
+    source_id,
+    isAutoParse,
+  }: {
+    source_id: string;
+    isAutoParse: boolean;
+  }) => {
+    if (source_id) {
+      const connectors = sourceData?.map((connector) => {
+        if (connector.id === source_id) {
+          return {
+            ...connector,
+            auto_parse: isAutoParse ? '1' : '0',
+          };
+        }
+        return connector;
+      });
+      console.log('🚀 ~ DatasetSettings ~ connectors:', connectors);
+      setSourceData(connectors as IDataSourceNodeProps[]);
+      form.setValue('connectors', connectors || []);
+      // form.setValue('pipeline_name', data.name || '');
+      // form.setValue('pipeline_avatar', data.avatar || '');
+    }
+  };
+
   return (
     <section className="p-5 h-full flex flex-col">
       <TopTitle
@@ -269,6 +296,7 @@ export default function DatasetSettings() {
                   data={sourceData}
                   handleLinkOrEditSubmit={handleLinkOrEditSubmit}
                   unbindFunc={unbindFunc}
+                  handleAutoParse={handleAutoParse}
                 />
               </MainContainer>
             </div>

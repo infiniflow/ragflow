@@ -154,7 +154,7 @@ class Graph:
         return self._tenant_id
 
     def get_value_with_variable(self,value: str) -> Any:
-        pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z:0-9_.-]+|sys\.[a-z_]+)\} *\}*")
+        pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*")
         out_parts = []
         last = 0
 
@@ -256,18 +256,19 @@ class Canvas(Graph):
             self.retrieval = []
             self.memory = []
         for k in self.globals.keys():
-            if isinstance(self.globals[k], str):
-                self.globals[k] = ""
-            elif isinstance(self.globals[k], int):
-                self.globals[k] = 0
-            elif isinstance(self.globals[k], float):
-                self.globals[k] = 0
-            elif isinstance(self.globals[k], list):
-                self.globals[k] = []
-            elif isinstance(self.globals[k], dict):
-                self.globals[k] = {}
-            else:
-                self.globals[k] = None
+            if k.startswith("sys."):
+                if isinstance(self.globals[k], str):
+                    self.globals[k] = ""
+                elif isinstance(self.globals[k], int):
+                    self.globals[k] = 0
+                elif isinstance(self.globals[k], float):
+                    self.globals[k] = 0
+                elif isinstance(self.globals[k], list):
+                    self.globals[k] = []
+                elif isinstance(self.globals[k], dict):
+                    self.globals[k] = {}
+                else:
+                    self.globals[k] = None
 
     def run(self, **kwargs):
         st = time.perf_counter()
