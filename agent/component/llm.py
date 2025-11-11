@@ -207,6 +207,9 @@ class LLM(ComponentBase):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("LLM processing"):
+            return
+
         def clean_formated_answer(ans: str) -> str:
             ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
             ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
@@ -223,6 +226,9 @@ class LLM(ComponentBase):
             schema=json.dumps(output_structure, ensure_ascii=False, indent=2)
             prompt += structured_output_prompt(schema)
             for _ in range(self._param.max_retries+1):
+                if self.check_if_canceled("LLM processing"):
+                    return
+
                 _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
                 error = ""
                 ans = self._generate(msg)
@@ -248,6 +254,9 @@ class LLM(ComponentBase):
             return
 
         for _ in range(self._param.max_retries+1):
+            if self.check_if_canceled("LLM processing"):
+                return
+
             _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
             error = ""
             ans = self._generate(msg)
@@ -269,6 +278,9 @@ class LLM(ComponentBase):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         answer = ""
         for ans in self._generate_streamly(msg):
+            if self.check_if_canceled("LLM streaming"):
+                return
+
             if ans.find("**ERROR**") >= 0:
                 if self.get_exception_default_value():
                     self.set_output("content", self.get_exception_default_value())

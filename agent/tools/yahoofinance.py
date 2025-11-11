@@ -74,15 +74,24 @@ class YahooFinance(ToolBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("YahooFinance processing"):
+            return
+
         if not kwargs.get("stock_code"):
             self.set_output("report", "")
             return ""
 
         last_e = ""
         for _ in range(self._param.max_retries+1):
+            if self.check_if_canceled("YahooFinance processing"):
+                return
+
             yohoo_res = []
             try:
                 msft = yf.Ticker(kwargs["stock_code"])
+                if self.check_if_canceled("YahooFinance processing"):
+                    return
+
                 if self._param.info:
                     yohoo_res.append("# Information:\n" + pd.Series(msft.info).to_markdown() + "\n")
                 if self._param.history:
@@ -100,6 +109,9 @@ class YahooFinance(ToolBase, ABC):
                 self.set_output("report", "\n\n".join(yohoo_res))
                 return self.output("report")
             except Exception as e:
+                if self.check_if_canceled("YahooFinance processing"):
+                    return
+
                 last_e = e
                 logging.exception(f"YahooFinance error: {e}")
                 time.sleep(self._param.delay_after_error)

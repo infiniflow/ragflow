@@ -24,7 +24,6 @@ import time
 
 import json_repair
 
-from api.db.services.canvas_service import UserCanvasService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from common.connection_utils import timeout
@@ -33,7 +32,6 @@ from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from graphrag.general.index import run_graphrag_for_kb
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
-from rag.flow.pipeline import Pipeline
 from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text
 import logging
 import os
@@ -478,6 +476,9 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
 
 
 async def run_dataflow(task: dict):
+    from api.db.services.canvas_service import UserCanvasService
+    from rag.flow.pipeline import Pipeline
+
     task_start_ts = timer()
     dataflow_id = task["dataflow_id"]
     doc_id = task["doc_id"]
@@ -944,6 +945,7 @@ async def do_handle_task(task):
 
 
 async def handle_task():
+
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
