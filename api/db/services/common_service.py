@@ -90,7 +90,7 @@ class CommonService:
         else:
             query_records = cls.model.select()
         if reverse is not None:
-            if not order_by or not hasattr(cls, order_by):
+            if not order_by or not hasattr(cls.model, order_by):
                 order_by = "create_time"
             if reverse is True:
                 query_records = query_records.order_by(cls.model.getter_by(order_by).desc())
