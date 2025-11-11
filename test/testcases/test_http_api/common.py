@@ -269,3 +269,9 @@ def list_users(auth, params=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{USER_API_URL}/list"
     res = requests.get(url=url, headers=headers, auth=auth, params=params)
     return res.json()
+
+
+def delete_user(auth, payload=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{USER_API_URL}/delete"
+    res = requests.delete(url=url, headers=headers, auth=auth, json=payload)
+    return res.json()

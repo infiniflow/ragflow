@@ -1251,6 +1251,137 @@ def list_users() -> Response:
         )
 
 
+@manager.route("/delete", methods=["DELETE"])  # noqa: F821
+# @login_required
+@validate_request()
+def delete_user() -> Response:
+    """
+    Delete a user.
+
+    ---
+    tags:
+      - User
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        description: User identification details.
+        required: true
+        schema:
+          type: object
+          properties:
+            user_id:
+              type: string
+              description: User ID to delete (optional if email is provided).
+            email:
+              type: string
+              description: User email to identify the user (optional if user_id
+                is provided).
+    responses:
+      200:
+        description: User deleted successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: boolean
+              description: Deletion success status.
+            message:
+              type: string
+              description: Success message.
+      400:
+        description: Invalid request or user not found.
+        schema:
+          type: object
+      500:
+        description: Server error during user deletion.
+        schema:
+          type: object
+    """
+    if request.json is None:
+        return get_json_result(
+            data=False,
+            message="Request body is required!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
+    req: Dict[str, Any] = request.json
+    user_id: Optional[str] = req.get("user_id")
+    email: Optional[str] = req.get("email")
+
+    # Validate that either user_id or email is provided
+    if not user_id and not email:
+        return get_json_result(
+            data=False,
+            message="Either user_id or email must be provided!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
+    # Find the user by user_id or email
+    user: Optional[User] = None
+
+    if user_id:
+        user = UserService.filter_by_id(user_id)
+    elif email:
+        # Validate the email address format
+        email_match: Optional[Match[str]] = re.match(
+            r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", email
+        )
+        if not email_match:
+            return get_json_result(
+                data=False,
+                message=f"Invalid email address: {email}!",
+                code=RetCode.OPERATING_ERROR,
+            )
+
+        users_query = UserService.query(email=email)
+        users_list: List[User] = list(users_query)
+        if not users_list:
+            return get_json_result(
+                data=False,
+                message=f"User with email: {email} not found!",
+                code=RetCode.DATA_ERROR,
+            )
+        if len(users_list) > 1:
+            return get_json_result(
+                data=False,
+                message=f"Multiple users found with email: {email}!",
+                code=RetCode.DATA_ERROR,
+            )
+        user = users_list[0]
+        user_id = user.id
+
+    if not user:
+        return get_json_result(
+            data=False,
+            message="User not found!",
+            code=RetCode.DATA_ERROR,
+        )
+
+    # Delete the user
+    try:
+        # Use hard delete to actually remove the user
+        deleted_count: int = UserService.delete_by_id(user_id)
+        if deleted_count == 0:
+            return get_json_result(
+                data=False,
+                message="User not found or could not be deleted!",
+                code=RetCode.DATA_ERROR,
+            )
+        return get_json_result(
+            data=True,
+            message=f"User {user.email} deleted successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(
+            data=False,
+            message=f"User deletion failure, error: {str(e)}",
+            code=RetCode.EXCEPTION_ERROR,
+        )
+
+
 @manager.route("/tenant_info", methods=["GET"])  # noqa: F821
 @login_required
 def tenant_info():
