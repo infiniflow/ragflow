@@ -1053,10 +1053,10 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       exceptionMethod: 'Exception method',
       maxRounds: 'Max reflection rounds',
       delayEfterError: 'Delay after error',
-      maxRetries: 'Max reflection rounds',
+      maxRetries: 'Max retry rounds',
       advancedSettings: 'Advanced Settings',
       addTools: 'Add Tools',
-      sysPromptDefultValue: `
+      sysPromptDefaultValue: `
       <role>
         You are a helpful assistant, an AI assistant specialized in problem-solving for the user.
         If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.
