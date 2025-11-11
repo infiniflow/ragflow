@@ -45,10 +45,7 @@ import {
   useShowDrawer,
   useShowLogSheet,
 } from '../hooks/use-show-drawer';
-import {
-  useStopMessage,
-  useStopMessageUnmount,
-} from '../hooks/use-stop-message';
+import { useStopMessageUnmount } from '../hooks/use-stop-message';
 import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
@@ -161,7 +158,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     currentTaskId,
   } = useCacheChatLog();
 
-  const { stopMessage } = useStopMessage();
+  const { stopMessage } = useStopMessageUnmount(chatVisible, currentTaskId);
 
   const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
     setCurrentMessageId,
@@ -182,8 +179,6 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
       clearEventList();
     }
   }, [chatVisible, clearEventList, currentTaskId, stopMessage]);
-
-  useStopMessageUnmount(chatVisible, currentTaskId);
 
   const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
     if (messageId === currentMessageId) {
