@@ -194,7 +194,8 @@ releases! 🌟
 ```bash
    $ cd ragflow/docker
    
-   # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases), e.g.: git checkout v0.21.1
+   # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases), e.g., `git checkout v0.21.1` 
+   # This steps ensures the **entrypoint.sh** file in the code matches the Docker image version.
 
    # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
