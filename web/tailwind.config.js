@@ -81,7 +81,15 @@ module.exports = {
         'text-primary': {
           DEFAULT: 'rgb(var(--text-primary) / <alpha-value>)',
         },
-        'text-secondary': 'var(--text-secondary)',
+        'text-primary-inverse': {
+          DEFAULT: 'rgb(var(--text-primary-inverse) / <alpha-value>)',
+        },
+        'text-secondary': {
+          DEFAULT: 'rgb(var(--text-secondary) / <alpha-value>)',
+        },
+        'text-secondary-inverse': {
+          DEFAULT: 'rgb(var(--text-secondary-inverse) / <alpha-value>)',
+        },
         'text-disabled': 'var(--text-disabled)',
         'text-input-tip': 'var(--text-input-tip)',
         'border-default': 'var(--border-default)',

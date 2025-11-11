@@ -68,7 +68,7 @@ function ServiceDetail({ content }: ServiceDetailProps) {
 
     if (typeof content === 'string') {
       return (
-        <div className="rounded-lg p-4 bg-bg-card text-sm text-text-primary">
+        <div className="rounded-xl p-4 bg-bg-card text-sm text-text-primary">
           <pre>
             <code>
               {typeof content === 'string'

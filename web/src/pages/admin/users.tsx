@@ -91,6 +91,7 @@ import {
   parseBooleanish,
 } from './utils';
 
+import { DialogDescription } from '@radix-ui/react-dialog';
 import EnterpriseFeature from './components/enterprise-feature';
 
 const columnHelper = createColumnHelper<AdminService.ListUsersItem>();
@@ -210,8 +211,8 @@ function AdminUserManagement() {
       columnHelper.accessor('nickname', {
         header: t('admin.nickname'),
         cell: ({ row, cell }) => (
-          <div className="flex items-center gap-2">
-            <span>{cell.getValue()}</span>
+          <div className="flex items-center">
+            <span className="mr-2 empty:hidden">{cell.getValue()}</span>
 
             {row.original.is_superuser ? (
               <Badge variant="secondary">{t('admin.superuser')}</Badge>
@@ -553,20 +554,22 @@ function AdminUserManagement() {
 
       {/* Delete Confirmation Modal */}
       <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
-        <DialogContent className="p-0 border-border-button">
-          <DialogHeader className="p-6 border-b-0.5 border-border-button">
+        <DialogContent>
+          <DialogHeader>
             <DialogTitle>{t('admin.deleteUser')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4 text-text-primary text-sm">
-            {t('admin.deleteUserConfirmation')}
+          <section className="px-6">
+            <DialogDescription>
+              {t('admin.deleteUserConfirmation')}
+            </DialogDescription>
 
             <div className="rounded-lg mt-6 p-4 border-0.5 border-border-button">
               {userToMakeAction?.email}
             </div>
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -595,18 +598,17 @@ function AdminUserManagement() {
       {/* Change Password Modal */}
       <Dialog open={passwordModalOpen} onOpenChange={setPasswordModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!passwordModalOpen) {
               changePasswordForm.form.reset();
             }
           }}
         >
-          <DialogHeader className="p-6 border-b-0.5 border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.changePassword')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4 text-text-secondary">
+          <section className="px-6">
             <changePasswordForm.FormComponent
               key="changePasswordForm"
               email={userToMakeAction?.email || ''}
@@ -621,7 +623,7 @@ function AdminUserManagement() {
             />
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -656,19 +658,19 @@ function AdminUserManagement() {
           createUserForm.form.reset();
         }}
       >
-        <DialogContent className="p-0 border-border-button">
-          <DialogHeader className="p-6 border-b-0.5 border-border-button">
+        <DialogContent>
+          <DialogHeader>
             <DialogTitle>{t('admin.createNewUser')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4">
+          <section className="px-6">
             <createUserForm.FormComponent
               id={createUserForm.id}
               onSubmit={createUserMutation.mutate}
             />
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"

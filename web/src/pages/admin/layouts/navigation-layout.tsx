@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet, useNavigate } from 'umi';
 
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
 import {
   LucideMonitor,
@@ -15,7 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
-import { logout } from '@/services/admin-service';
+import { getSystemVersion, logout } from '@/services/admin-service';
 
 import authorizationUtil from '@/utils/authorization-util';
 
@@ -25,6 +25,11 @@ import { IS_ENTERPRISE } from '../utils';
 const AdminNavigationLayout = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+
+  const { data: version } = useQuery({
+    queryKey: ['admin/version'],
+    queryFn: async () => (await getSystemVersion())?.data?.data?.version,
+  });
 
   const navItems = useMemo(
     () => [
@@ -109,8 +114,8 @@ const AdminNavigationLayout = () => {
 
         <div className="mt-auto space-y-4">
           <div className="flex justify-between items-center">
-            <span className="text-accent-primary">
-              vmm.ss.rr-nnn-commithash
+            <span className="leading-none text-xs text-accent-primary">
+              {version}
             </span>
 
             <ThemeSwitch />

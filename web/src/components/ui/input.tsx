@@ -40,6 +40,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         ref={ref}
         type={isPasswordInput && showPassword ? 'text' : type}
         className={cn(
+          'peer/input',
           'flex h-8 w-full rounded-md border-0.5 border-input bg-bg-input px-3 py-2 outline-none text-sm text-text-primary',
           'file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-text-disabled',
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-primary',
@@ -79,7 +80,12 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             <Button
               variant="transparent"
               type="button"
-              className="border-0 absolute right-1 top-[50%] translate-y-[-50%]"
+              className="
+                absolute border-0 right-1 top-[50%] translate-y-[-50%]
+                dark:peer-autofill/input:text-text-secondary-inverse
+                dark:peer-autofill/input:hover:text-text-primary-inverse
+                dark:peer-autofill/input:focus-visible:text-text-primary-inverse
+              "
               onClick={() => setShowPassword(!showPassword)}
             >
               {showPassword ? (

@@ -271,4 +271,6 @@ export default {
   adminDeleteWhitelistEntry: (email: string) =>
     `${ExternalApi}${api_host}/admin/whitelist/${email}`,
   adminImportWhitelist: `${ExternalApi}${api_host}/admin/whitelist/batch`,
+
+  adminGetSystemVersion: `${ExternalApi}${api_host}/admin/version`,
 };

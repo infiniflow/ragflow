@@ -34,6 +34,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -66,7 +67,9 @@ import {
   getSortIcon,
 } from './utils';
 
+import JsonView from 'react18-json-view';
 import ServiceDetail from './service-detail';
+import TaskExecutorDetail from './task-executor-detail';
 
 const columnHelper = createColumnHelper<AdminService.ListServicesItem>();
 const globalFilterFn = createFuzzySearchFn<AdminService.ListServicesItem>([
@@ -381,7 +384,7 @@ function AdminServiceStatus() {
       {/* Extra info modal*/}
       <Dialog open={extraInfoModalOpen} onOpenChange={setExtraInfoModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
+          className="flex flex-col max-h-[calc(100vh-4rem)] p-0 overflow-hidden"
           onAnimationEnd={() => {
             if (!extraInfoModalOpen) {
               setItemToMakeAction(null);
@@ -392,15 +395,16 @@ function AdminServiceStatus() {
             <DialogTitle>{t('admin.extraInfo')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 pt-6 pb-4">
-            <div className="rounded-lg p-4 bg-bg-input">
-              <pre className="text-sm">
-                <code>
-                  {JSON.stringify(itemToMakeAction?.extra ?? {}, null, 2)}
-                </code>
-              </pre>
+          <DialogDescription className="sr-only" />
+
+          <ScrollArea className="h-0 flex-1 grid">
+            <div className="px-12">
+              <JsonView
+                src={itemToMakeAction?.extra ?? {}}
+                className="rounded-lg p-4 bg-bg-card break-words text-text-secondary"
+              />
             </div>
-          </section>
+          </ScrollArea>
 
           <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
             <Button
@@ -417,7 +421,7 @@ function AdminServiceStatus() {
       {/* Service details modal */}
       <Dialog open={detailModalOpen} onOpenChange={setDetailModalOpen}>
         <DialogContent
-          className="flex flex-col max-h-[calc(100vh-4rem)] max-w-6xl p-0 border-border-button"
+          className="flex flex-col max-h-[calc(100vh-4rem)] max-w-6xl p-0 overflow-hidden"
           onAnimationEnd={() => {
             if (!detailModalOpen) {
               setItemToMakeAction(null);
@@ -426,14 +430,30 @@ function AdminServiceStatus() {
         >
           <DialogHeader className="p-6 border-b-0.5 border-border-button">
             <DialogTitle>
-              <Trans i18nKey="admin.serviceDetail">
-                {{ name: itemToMakeAction?.name }}
-              </Trans>
+              {itemToMakeAction?.service_type === 'task_executor' ? (
+                t('admin.taskExecutorDetail')
+              ) : (
+                <Trans i18nKey="admin.serviceDetail">
+                  {{ name: itemToMakeAction?.name }}
+                </Trans>
+              )}
             </DialogTitle>
           </DialogHeader>
 
-          <ScrollArea className="pt-6 pb-4 px-12 h-0 flex-1 text-text-secondary flex flex-col">
-            <ServiceDetail content={serviceDetails?.message} />
+          <DialogDescription className="sr-only" />
+
+          <ScrollArea className="h-0 flex-1 text-text-secondary grid">
+            <div className="px-12">
+              {itemToMakeAction?.service_type === 'task_executor' ? (
+                <TaskExecutorDetail
+                  content={
+                    serviceDetails?.message as AdminService.TaskExecutorInfo
+                  }
+                />
+              ) : (
+                <ServiceDetail content={serviceDetails?.message} />
+              )}
+            </div>
           </ScrollArea>
 
           <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">

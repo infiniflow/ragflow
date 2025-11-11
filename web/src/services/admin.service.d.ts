@@ -66,6 +66,21 @@ declare module AdminService {
     title: string;
   };
 
+  export type TaskExectorHeartbeatItem = {
+    name: string;
+    boot_at: string;
+    now: string;
+    ip_address: string;
+    current: Record<string, object>;
+    done: number;
+    failed: number;
+    lag: number;
+    pending: number;
+    pid: number;
+  };
+
+  export type TaskExecutorInfo = Record<string, TaskExectorHeartbeatItem[]>;
+
   export type ListServicesItem = {
     extra: Record<string, unknown>;
     host: string;
@@ -76,11 +91,17 @@ declare module AdminService {
     status: 'alive' | 'timeout' | 'fail';
   };
 
-  export type ServiceDetail = {
-    service_name: string;
-    status: 'alive' | 'timeout';
-    message: string | Record<string, any> | Record<string, any>[];
-  };
+  export type ServiceDetail =
+    | {
+        service_name: string;
+        status: 'alive' | 'timeout';
+        message: string | Record<string, any> | Record<string, any>[];
+      }
+    | {
+        service_name: 'task_executor';
+        status: 'alive' | 'timeout';
+        message: AdminService.TaskExecutorInfo;
+      };
 
   export type PermissionData = {
     enable: boolean;

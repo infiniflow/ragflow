@@ -280,24 +280,24 @@ function AdminRoles() {
       {/* Add role modal */}
       <Dialog open={isAddRoleModalOpen} onOpenChange={setAddRoleModalOpen}>
         <DialogContent
-          className="max-w-2xl p-0 border-border-button"
+          className="max-w-2xl"
           onAnimationEnd={() => {
             if (!isAddRoleModalOpen) {
               createRoleForm.form.reset();
             }
           }}
         >
-          <DialogHeader className="p-6 border-b-0.5 border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.addNewRole')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4">
+          <section className="px-6">
             <createRoleForm.FormComponent
               onSubmit={createRoleMutation.mutate}
             />
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -324,18 +324,17 @@ function AdminRoles() {
         onOpenChange={setEditRoleDescriptionModalOpen}
       >
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!isEditRoleDescriptionModalOpen) {
               setRoleToMakeAction(null);
             }
           }}
         >
-          <DialogHeader className="p-6 border-b-0.5 border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.editRoleDescription')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4">
+          <section className="px-6">
             <form
               id={editRoleDescriptionFormId}
               onSubmit={(evt) => {
@@ -360,7 +359,7 @@ function AdminRoles() {
             </form>
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -383,18 +382,17 @@ function AdminRoles() {
       {/* Delete role modal */}
       <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!deleteModalOpen) {
               setRoleToMakeAction(null);
             }
           }}
         >
-          <DialogHeader className="p-6 border-b-0.5 border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.deleteRole')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4">
+          <section className="px-6">
             <DialogDescription className="text-text-primary">
               {t('admin.deleteRoleConfirmation')}
             </DialogDescription>
@@ -404,7 +402,7 @@ function AdminRoles() {
             </div>
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"

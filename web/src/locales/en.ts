@@ -1911,7 +1911,7 @@ Important structured information may include: names, dates, locations, events, k
       processing: 'Processing',
     },
     admin: {
-      loginTitle: 'RAGFlow ADMIN',
+      loginTitle: 'Admin Console',
       title: 'RAGFlow admin',
       confirm: 'Confirm',
       close: 'Close',
@@ -1998,6 +1998,7 @@ Important structured information may include: names, dates, locations, events, k
 
       extraInfo: 'Extra information',
       serviceDetail: `Service {{name}} detail`,
+      taskExecutorDetail: 'Task executor detail',
 
       whitelistManagement: 'Whitelist management',
       exportAsExcel: 'Export Excel',
