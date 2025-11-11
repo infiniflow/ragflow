@@ -81,7 +81,7 @@ class Session(Base):
         if self.__session_type == "agent":
            answer = json_data["data"]["content"]
         elif self.__session_type == "chat":
-            answer = json_data["answer"]
+            answer = json_data['data']["answer"]
         reference = json_data.get("reference", {})
         temp_dict = {
             "content": answer,
