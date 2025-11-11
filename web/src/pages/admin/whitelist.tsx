@@ -349,18 +349,17 @@ function AdminWhitelist() {
       {/* Delete Confirmation Modal */}
       <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!deleteModalOpen) {
               setItemToMakeAction(null);
             }
           }}
         >
-          <DialogHeader className="p-6 border-b-0.5 border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.deleteEmail')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4">
+          <section className="px-6">
             <DialogDescription className="text-text-primary">
               {t('admin.deleteWhitelistEmailConfirmation')}
             </DialogDescription>
@@ -370,7 +369,7 @@ function AdminWhitelist() {
             </div>
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -402,25 +401,24 @@ function AdminWhitelist() {
       {/* Create Email Modal */}
       <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!createModalOpen) {
               createEmailForm.form.reset();
             }
           }}
         >
-          <DialogHeader className="p-6 border-b-0.5 border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.createEmail')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4 text-text-secondary">
+          <section className="px-6">
             <createEmailForm.FormComponent
               id={createEmailForm.id}
               onSubmit={createWhitelistEntryMutation.mutate}
             />
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -447,7 +445,6 @@ function AdminWhitelist() {
       {/* Edit Email Modal */}
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!editModalOpen) {
               setItemToMakeAction(null);
@@ -455,11 +452,11 @@ function AdminWhitelist() {
             }
           }}
         >
-          <DialogHeader className="p-6 border-b-0.5 border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.editEmail')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4 text-text-secondary">
+          <section className="px-6">
             <editEmailForm.FormComponent
               id={editEmailForm.id}
               onSubmit={(value) => {
@@ -473,7 +470,7 @@ function AdminWhitelist() {
             />
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -500,25 +497,24 @@ function AdminWhitelist() {
       {/* Import Excel Modal */}
       <Dialog open={importModalOpen} onOpenChange={setImportModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!importModalOpen) {
               importExcelForm.form.reset();
             }
           }}
         >
-          <DialogHeader className="p-6 border-b-0.5 border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.importWhitelist')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4 text-text-secondary">
+          <section className="px-6">
             <importExcelForm.FormComponent
               id={importExcelForm.id}
               onSubmit={importExcelMutation.mutate}
             />
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
