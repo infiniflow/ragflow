@@ -13,47 +13,65 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from __future__ import annotations
+
 import base64
 import os
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from typing import Any
 
 import pytest
-from Cryptodome.PublicKey import RSA
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
+from Cryptodome.PublicKey import RSA
+
 from common import create_user, update_user
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
 
+# ---------------------------------------------------------------------------
+# Utility Functions
+# ---------------------------------------------------------------------------
+
 def encrypt_password(password: str) -> str:
     """
-    Encrypt password for API calls without importing from api.utils.crypt
+    Encrypt password for API calls without importing from api.utils.crypt.
+
     Avoids ModuleNotFoundError caused by test helper module named `common`.
     """
-    # test/testcases/test_http_api/test_user_management/test_update_user.py -> project root
     current_dir: str = os.path.dirname(os.path.abspath(__file__))
-    project_base: str = os.path.abspath(os.path.join(current_dir, "..", "..", "..", ".."))
+    project_base: str = os.path.abspath(
+        os.path.join(current_dir, "..", "..", "..", "..")
+    )
     file_path: str = os.path.join(project_base, "conf", "public.pem")
 
-    rsa_key: RSA.RSAKey = RSA.importKey(open(file_path).read(), "Welcome")
-    cipher: Cipher_pkcs1_v1_5.Cipher_pkcs1_v1_5 = Cipher_pkcs1_v1_5.new(rsa_key)
-    password_base64: str = base64.b64encode(password.encode("utf-8")).decode("utf-8")
-    encrypted_password: str = cipher.encrypt(password_base64.encode())
-    return base64.b64encode(encrypted_password).decode("utf-8")
+    with open(file_path, encoding="utf-8") as pem_file:
+        rsa_key: RSA.RsaKey = RSA.import_key(pem_file.read(), passphrase="Welcome")
+
+    cipher: Cipher_pkcs1_v1_5.PKCS115_Cipher = Cipher_pkcs1_v1_5.new(rsa_key)
+    password_base64: str = base64.b64encode(password.encode()).decode()
+    encrypted_password: bytes = cipher.encrypt(password_base64.encode())
+    return base64.b64encode(encrypted_password).decode()
 
 
-@pytest.fixture
-def test_user(HttpApiAuth: RAGFlowHttpApiAuth) -> dict:
-    """Create a test user for update tests"""
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(name="test_user")
+def fixture_test_user(HttpApiAuth: RAGFlowHttpApiAuth) -> dict[str, Any]:
+    """Create a temporary user for update tests."""
     unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
-    payload: dict = {
+    payload: dict[str, str] = {
         "nickname": "test_user_original",
         "email": unique_email,
         "password": encrypt_password("test123"),
     }
-    res: dict = create_user(HttpApiAuth, payload)
+
+    res: dict[str, Any] = create_user(HttpApiAuth, payload)
     assert res["code"] == 0, f"Failed to create test user: {res}"
+
     return {
         "user_id": res["data"]["id"],
         "email": unique_email,
@@ -61,24 +79,34 @@ def test_user(HttpApiAuth: RAGFlowHttpApiAuth) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
 @pytest.mark.p1
 class TestAuthorization:
+    """Tests for authentication behavior during user updates."""
+
     @pytest.mark.parametrize(
-        "invalid_auth, expected_code, expected_message",
+        ("invalid_auth", "expected_code", "expected_message"),
         [
-            # Note: @login_required is commented out, so endpoint works without auth
-            # Testing with None auth should succeed (code 0) if endpoint doesn't require auth
+            # Endpoint works without auth (decorator commented out)
             (None, 0, ""),
-            # Invalid token should also work if auth is not required
             (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 0, ""),
         ],
     )
-    def test_invalid_auth(self, invalid_auth, expected_code, expected_message, test_user):
-        payload: dict = {
+    def test_invalid_auth(
+        self,
+        invalid_auth: RAGFlowHttpApiAuth | None,
+        expected_code: int,
+        expected_message: str,
+        test_user: dict[str, Any],
+    ) -> None:
+        payload: dict[str, Any] = {
             "user_id": test_user["user_id"],
             "nickname": "updated_nickname",
         }
-        res: dict = update_user(invalid_auth, payload)
+        res: dict[str, Any] = update_user(invalid_auth, payload)
         assert res["code"] == expected_code, res
         if expected_message:
             assert expected_message in res["message"]
@@ -86,82 +114,93 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("clear_users")
 class TestUserUpdate:
+    """Comprehensive tests for user update API."""
+
     @pytest.mark.p1
-    def test_update_with_user_id(self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict) -> None:
-        """Test updating user by user_id"""
-        payload: dict = {
+    def test_update_with_user_id(
+        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+    ) -> None:
+        payload: dict[str, Any] = {
             "user_id": test_user["user_id"],
             "nickname": "updated_nickname",
         }
-        res: dict = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["nickname"] == "updated_nickname"
         assert res["data"]["email"] == test_user["email"]
         assert "updated successfully" in res["message"].lower()
 
     @pytest.mark.p1
-    def test_update_with_email(self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict) -> None:
-        """Test updating user by email"""
-        payload: dict = {
+    def test_update_with_email(
+        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+    ) -> None:
+        payload: dict[str, Any] = {
             "email": test_user["email"],
             "nickname": "updated_nickname_email",
         }
-        res: dict = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["nickname"] == "updated_nickname_email"
         assert res["data"]["email"] == test_user["email"]
 
     @pytest.mark.p1
-    def test_update_missing_identifier(self, HttpApiAuth: RAGFlowHttpApiAuth) -> None:
-        """Test update without user_id or email"""
-        payload: dict = {
-            "nickname": "updated_nickname",
-        }
-        res: dict = update_user(HttpApiAuth, payload)
-        assert res["code"] == 101  # ARGUMENT_ERROR
+    def test_update_missing_identifier(
+        self, HttpApiAuth: RAGFlowHttpApiAuth
+    ) -> None:
+        """Test update without user_id or email."""
+        payload: dict[str, str] = {"nickname": "updated_nickname"}
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        assert res["code"] == 101
         assert "Either user_id or email must be provided" in res["message"]
 
     @pytest.mark.p1
-    def test_update_user_not_found_by_id(self, HttpApiAuth: RAGFlowHttpApiAuth) -> None:
-        """Test update with non-existent user_id"""
-        payload: dict = {
+    def test_update_user_not_found_by_id(
+        self, HttpApiAuth: RAGFlowHttpApiAuth
+    ) -> None:
+        payload: dict[str, str] = {
             "user_id": "non_existent_user_id_12345",
             "nickname": "updated_nickname",
         }
-        res: dict = update_user(HttpApiAuth, payload)
-        assert res["code"] == 102  # DATA_ERROR
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        assert res["code"] == 102
         assert "User not found" in res["message"]
 
     @pytest.mark.p1
-    def test_update_user_not_found_by_email(self, HttpApiAuth: RAGFlowHttpApiAuth) -> None:
-        """Test update with non-existent email"""
-        payload: dict = {
+    def test_update_user_not_found_by_email(
+        self, HttpApiAuth: RAGFlowHttpApiAuth
+    ) -> None:
+        payload: dict[str, str] = {
             "email": "nonexistent@example.com",
             "nickname": "updated_nickname",
         }
-        res: dict = update_user(HttpApiAuth, payload)
-        assert res["code"] == 102  # DATA_ERROR
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        assert res["code"] == 102
         assert "not found" in res["message"]
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
-        "nickname, expected_code, expected_message",
+        ("nickname", "expected_code", "expected_message"),
         [
             ("valid_nickname", 0, ""),
             ("user123", 0, ""),
             ("user_name", 0, ""),
             ("User Name", 0, ""),
-            ("", 0, ""),  # Empty nickname is accepted
+            ("", 0, ""),  # Empty nickname accepted
         ],
     )
     def test_update_nickname(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict, nickname: str, expected_code: int, expected_message: str
+        self,
+        HttpApiAuth: RAGFlowHttpApiAuth,
+        test_user: dict[str, Any],
+        nickname: str,
+        expected_code: int,
+        expected_message: str,
     ) -> None:
-        payload: dict = {
+        payload: dict[str, str] = {
             "user_id": test_user["user_id"],
             "nickname": nickname,
         }
-        res: dict = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
             assert res["data"]["nickname"] == nickname
@@ -169,31 +208,33 @@ class TestUserUpdate:
             assert expected_message in res["message"]
 
     @pytest.mark.p1
-    def test_update_password(self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict) -> None:
-        """Test updating user password"""
+    def test_update_password(
+        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+    ) -> None:
         new_password: str = "new_password_456"
-        payload: dict = {
+        payload: dict[str, str] = {
             "user_id": test_user["user_id"],
             "password": encrypt_password(new_password),
         }
-        res: dict = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert "updated successfully" in res["message"].lower()
 
     @pytest.mark.p1
-    def test_update_password_invalid_encryption(self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict) -> None:
-        """Test updating password with invalid encryption"""
-        payload: dict = {
+    def test_update_password_invalid_encryption(
+        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+    ) -> None:
+        payload: dict[str, str] = {
             "user_id": test_user["user_id"],
-            "password": "plain_text_password",  # Not encrypted
+            "password": "plain_text_password",
         }
-        res: dict = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
         assert res["code"] == 500
         assert "Fail to decrypt password" in res["message"]
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
-        "new_email, expected_code, expected_message",
+        ("new_email", "expected_code", "expected_message"),
         [
             ("valid@example.com", 0, ""),
             ("user.name@example.com", 0, ""),
@@ -206,16 +247,20 @@ class TestUserUpdate:
         ],
     )
     def test_update_email(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict, new_email: str, expected_code: int, expected_message: str
+        self,
+        HttpApiAuth: RAGFlowHttpApiAuth,
+        test_user: dict[str, Any],
+        new_email: str,
+        expected_code: int,
+        expected_message: str,
     ) -> None:
         if "@" in new_email and expected_code == 0:
-            # Use unique email to avoid conflicts
             new_email = f"test_{uuid.uuid4().hex[:8]}@example.com"
-        payload: dict = {
+        payload: dict[str, str] = {
             "user_id": test_user["user_id"],
             "new_email": new_email,
         }
-        res: dict = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
             assert res["data"]["email"] == new_email
@@ -223,159 +268,149 @@ class TestUserUpdate:
             assert expected_message in res["message"]
 
     @pytest.mark.p1
-    def test_update_email_duplicate(self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict) -> None:
-        """Test updating email to an already used email"""
-        # Create another user
+    def test_update_email_duplicate(
+        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+    ) -> None:
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
-        create_payload: dict = {
+        create_payload: dict[str, str] = {
             "nickname": "another_user",
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict = create_user(HttpApiAuth, create_payload)
+        create_res: dict[str, Any] = create_user(HttpApiAuth, create_payload)
         assert create_res["code"] == 0
 
-        # Try to update test_user's email to the same email
-        update_payload: dict = {
+        update_payload: dict[str, str] = {
             "user_id": test_user["user_id"],
             "new_email": unique_email,
         }
-        res: dict = update_user(HttpApiAuth, update_payload)
-        assert res["code"] == 103  # OPERATING_ERROR
+        res: dict[str, Any] = update_user(HttpApiAuth, update_payload)
+        assert res["code"] == 103
         assert "already in use" in res["message"]
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
-        "is_superuser, expected_value",
-        [
-            (True, True),
-            (False, False),
-        ],
+        ("is_superuser", "expected_value"),
+        [(True, True), (False, False)],
     )
     def test_update_is_superuser(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict, is_superuser: bool, expected_value: bool
+        self,
+        HttpApiAuth: RAGFlowHttpApiAuth,
+        test_user: dict[str, Any],
+        is_superuser: bool,
+        expected_value: bool,
     ) -> None:
-        payload: dict = {
+        payload: dict[str, Any] = {
             "user_id": test_user["user_id"],
             "is_superuser": is_superuser,
         }
-        res: dict = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
         assert res["code"] == 0, res
-        assert res["data"]["is_superuser"] == expected_value
+        assert res["data"]["is_superuser"] is expected_value
 
     @pytest.mark.p1
-    def test_update_multiple_fields(self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict) -> None:
-        """Test updating multiple fields at once"""
+    def test_update_multiple_fields(
+        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+    ) -> None:
         new_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
-        payload: dict = {
+        payload: dict[str, Any] = {
             "user_id": test_user["user_id"],
             "nickname": "updated_multiple",
             "new_email": new_email,
             "is_superuser": True,
         }
-        res: dict = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["nickname"] == "updated_multiple"
         assert res["data"]["email"] == new_email
         assert res["data"]["is_superuser"] is True
 
     @pytest.mark.p1
-    def test_update_no_fields(self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict) -> None:
-        """Test update with no fields to update"""
-        payload: dict = {
-            "user_id": test_user["user_id"],
-        }
-        res: dict = update_user(HttpApiAuth, payload)
-        assert res["code"] == 101  # ARGUMENT_ERROR
+    def test_update_no_fields(
+        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+    ) -> None:
+        payload: dict[str, str] = {"user_id": test_user["user_id"]}
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        assert res["code"] == 101
         assert "No valid fields to update" in res["message"]
 
     @pytest.mark.p1
     def test_update_email_using_email_field_when_user_id_provided(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict
+        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
     ) -> None:
-        """Test that when user_id is provided, 'email' field can be used as new_email"""
         new_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
-        payload: dict = {
+        payload: dict[str, str] = {
             "user_id": test_user["user_id"],
-            "email": new_email,  # When user_id is provided, email is treated as new_email
+            "email": new_email,
         }
-        res: dict = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["email"] == new_email
 
     @pytest.mark.p2
-    def test_update_response_structure(self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict) -> None:
-        """Test that update response has correct structure"""
-        payload: dict = {
+    def test_update_response_structure(
+        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+    ) -> None:
+        payload: dict[str, Any] = {
             "user_id": test_user["user_id"],
             "nickname": "response_test",
         }
-        res: dict = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(HttpApiAuth, payload)
         assert res["code"] == 0
-        assert "data" in res
-        assert "id" in res["data"]
-        assert "email" in res["data"]
-        assert "nickname" in res["data"]
+        assert set(("id", "email", "nickname")) <= res["data"].keys()
         assert res["data"]["nickname"] == "response_test"
         assert "updated successfully" in res["message"].lower()
 
     @pytest.mark.p2
-    def test_concurrent_updates(self, HttpApiAuth: RAGFlowHttpApiAuth) -> None:
-        """Test concurrent updates to different users"""
-        # Create multiple users
-        users: list = []
+    def test_concurrent_updates(
+        self, HttpApiAuth: RAGFlowHttpApiAuth
+    ) -> None:
+        """Test concurrent updates to different users."""
+        users: list[dict[str, Any]] = []
         for i in range(5):
-            unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
-            create_payload: dict = {
+            email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
+            create_payload: dict[str, str] = {
                 "nickname": f"user_{i}",
-                "email": unique_email,
+                "email": email,
                 "password": encrypt_password("test123"),
             }
-            create_res: dict = create_user(HttpApiAuth, create_payload)
+            create_res: dict[str, Any] = create_user(
+                HttpApiAuth, create_payload
+            )
             assert create_res["code"] == 0
             users.append(create_res["data"])
 
-        # Update all users concurrently
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures: list = []
-            for i, user in enumerate(users):
-                payload: dict = {
-                    "user_id": user["id"],
-                    "nickname": f"updated_user_{i}",
-                }
-                futures.append(executor.submit(update_user, HttpApiAuth, payload))
+            futures: list[Future[dict[str, Any]]] = [
+                executor.submit(
+                    update_user,
+                    HttpApiAuth,
+                    {
+                        "user_id": u["id"],
+                        "nickname": f"updated_user_{i}",
+                    },
+                )
+                for i, u in enumerate(users)
+            ]
 
-            responses: list = list(as_completed(futures))
-            assert len(responses) == 5
-            assert all(future.result()["code"] == 0 for future in futures)
+            for future in as_completed(futures):
+                res: dict[str, Any] = future.result()
+                assert res["code"] == 0
 
     @pytest.mark.p3
-    def test_update_same_user_multiple_times(self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict) -> None:
-        """Test updating the same user multiple times"""
-        # First update
-        payload1: dict = {
-            "user_id": test_user["user_id"],
-            "nickname": "first_update",
-        }
-        res1: dict = update_user(HttpApiAuth, payload1)
-        assert res1["code"] == 0
-        assert res1["data"]["nickname"] == "first_update"
-
-        # Second update
-        payload2: dict = {
-            "user_id": test_user["user_id"],
-            "nickname": "second_update",
-        }
-        res2: dict = update_user(HttpApiAuth, payload2)
-        assert res2["code"] == 0
-        assert res2["data"]["nickname"] == "second_update"
-
-        # Third update
-        payload3: dict = {
-            "user_id": test_user["user_id"],
-            "nickname": "third_update",
-        }
-        res3: dict = update_user(HttpApiAuth, payload3)
-        assert res3["code"] == 0
-        assert res3["data"]["nickname"] == "third_update"
-
+    def test_update_same_user_multiple_times(
+        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+    ) -> None:
+        """Test repeated updates on the same user."""
+        for nickname in (
+            "first_update",
+            "second_update",
+            "third_update",
+        ):
+            payload: dict[str, str] = {
+                "user_id": test_user["user_id"],
+                "nickname": nickname,
+            }
+            res: dict[str, Any] = update_user(HttpApiAuth, payload)
+            assert res["code"] == 0
+            assert res["data"]["nickname"] == nickname

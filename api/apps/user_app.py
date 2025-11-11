@@ -759,6 +759,7 @@ def user_add():
 def create_user() -> Response:
     """
     Create a new user.
+
     ---
     tags:
       - User
@@ -808,12 +809,21 @@ def create_user() -> Response:
         description: Server error during user creation.
         schema:
           type: object
-"""
+    """
+    if request.json is None:
+        return get_json_result(
+            data=False,
+            message="Request body is required!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
     req: Dict[str, Any] = request.json
     email_address: str = req["email"]
 
     # Validate the email address
-    email_match: Optional[Match[str]] = re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", email_address)
+    email_match: Optional[Match[str]] = re.match(
+        r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", email_address
+    )
     if not email_match:
         return get_json_result(
             data=False,
@@ -822,8 +832,9 @@ def create_user() -> Response:
         )
 
     # Check if the email address is already used
-    existing_users: Any = UserService.query(email=email_address)
-    if existing_users:
+    existing_users_query = UserService.query(email=email_address)
+    existing_users_list: List[User] = list(existing_users_query)
+    if existing_users_list:
         return get_json_result(
             data=False,
             message=f"Email: {email_address} has already registered!",
@@ -833,7 +844,7 @@ def create_user() -> Response:
     # Construct user info data
     nickname: str = req["nickname"]
     is_superuser: bool = req.get("is_superuser", False)
-    
+
     try:
         password: str = decrypt(req["password"])
     except BaseException:
@@ -855,13 +866,13 @@ def create_user() -> Response:
 
     user_id: str = get_uuid()
     try:
-        users: Any = user_register(user_id, user_dict)
-        if not users:
+        users_query = user_register(user_id, user_dict)
+        if not users_query:
             raise Exception(f"Fail to create user {email_address}.")
-        users_list: List[User] = list(users)
+        users_list: List[User] = list(users_query)
         if len(users_list) > 1:
             raise Exception(f"Same email: {email_address} exists!")
-        
+
         user: User = users_list[0]
         return get_json_result(
             data=user.to_dict(),
@@ -901,10 +912,13 @@ def update_user() -> Response:
               description: User ID to update (optional if email is provided).
             email:
               type: string
-              description: User email to identify the user (optional if user_id is provided). If user_id is provided, this can be used as new_email.
+              description: User email to identify the user (optional if user_id
+                is provided). If user_id is provided, this can be used as
+                new_email.
             new_email:
               type: string
-              description: New email address (optional). Use this to update email when identifying user by user_id.
+              description: New email address (optional). Use this to update email
+                when identifying user by user_id.
             nickname:
               type: string
               description: New nickname (optional).
@@ -938,11 +952,18 @@ def update_user() -> Response:
         schema:
           type: object
     """
+    if request.json is None:
+        return get_json_result(
+            data=False,
+            message="Request body is required!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
     req: Dict[str, Any] = request.json
     user_id: Optional[str] = req.get("user_id")
     email: Optional[str] = req.get("email")
     identified_by_user_id: bool = bool(user_id)
-    
+
     # Validate that either user_id or email is provided
     if not user_id and not email:
         return get_json_result(
@@ -950,24 +971,26 @@ def update_user() -> Response:
             message="Either user_id or email must be provided!",
             code=RetCode.ARGUMENT_ERROR,
         )
-    
+
     # Find the user by user_id or email
     user: Optional[User] = None
-    
+
     if user_id:
         user = UserService.filter_by_id(user_id)
     elif email:
         # Validate the email address format
-        email_match: Optional[Match[str]] = re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", email)
+        email_match: Optional[Match[str]] = re.match(
+            r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", email
+        )
         if not email_match:
             return get_json_result(
                 data=False,
                 message=f"Invalid email address: {email}!",
                 code=RetCode.OPERATING_ERROR,
             )
-        
-        users: Any = UserService.query(email=email)
-        users_list: List[User] = list(users)
+
+        users_query = UserService.query(email=email)
+        users_list: List[User] = list(users_query)
         if not users_list:
             return get_json_result(
                 data=False,
@@ -982,17 +1005,17 @@ def update_user() -> Response:
             )
         user = users_list[0]
         user_id = user.id
-    
+
     if not user:
         return get_json_result(
             data=False,
             message="User not found!",
             code=RetCode.DATA_ERROR,
         )
-    
+
     # Build update dictionary
     update_dict: Dict[str, Any] = {}
-    
+
     # Handle nickname update
     # Allow empty nickname (empty string is a valid value)
     if "nickname" in req:
@@ -1000,7 +1023,7 @@ def update_user() -> Response:
         # Only skip if explicitly None, allow empty strings
         if nickname is not None:
             update_dict["nickname"] = nickname
-    
+
     # Handle password update
     if "password" in req and req["password"]:
         try:
@@ -1012,7 +1035,7 @@ def update_user() -> Response:
                 code=RetCode.SERVER_ERROR,
                 message="Fail to decrypt password",
             )
-    
+
     # Handle email update
     # If user_id was used to identify, "email" in req can be the new email
     # Otherwise, use "new_email" field
@@ -1021,33 +1044,37 @@ def update_user() -> Response:
         new_email = req["email"]
     elif "new_email" in req and req["new_email"]:
         new_email = req["new_email"]
-    
+
     if new_email:
         # Validate the new email address format
-        email_match: Optional[Match[str]] = re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", new_email)
+        email_match: Optional[Match[str]] = re.match(
+            r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", new_email
+        )
         if not email_match:
             return get_json_result(
                 data=False,
                 message=f"Invalid email address: {new_email}!",
                 code=RetCode.OPERATING_ERROR,
             )
-        
+
         # Check if the new email is already used by another user
-        existing_users: Any = UserService.query(email=new_email)
-        existing_users_list: List[User] = list(existing_users)
+        existing_users_query = UserService.query(email=new_email)
+        existing_users_list: List[User] = list(existing_users_query)
         if existing_users_list and existing_users_list[0].id != user_id:
             return get_json_result(
                 data=False,
-                message=f"Email: {new_email} is already in use by another user!",
+                message=(
+                    f"Email: {new_email} is already in use by another user!"
+                ),
                 code=RetCode.OPERATING_ERROR,
             )
         update_dict["email"] = new_email
-    
+
     # Handle is_superuser update
     if "is_superuser" in req:
         is_superuser: bool = req.get("is_superuser", False)
         update_dict["is_superuser"] = is_superuser
-    
+
     # If no fields to update, return error
     if not update_dict:
         return get_json_result(
@@ -1055,7 +1082,7 @@ def update_user() -> Response:
             message="No valid fields to update!",
             code=RetCode.ARGUMENT_ERROR,
         )
-    
+
     # Update the user
     try:
         UserService.update_user(user_id, update_dict)
