@@ -189,6 +189,9 @@
 
 ```bash
    $ cd ragflow/docker
+   
+   # 可選：使用穩定版標籤（查看發佈：https://github.com/infiniflow/ragflow/releases），例：git checkout v0.21.1
+
    # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
 
