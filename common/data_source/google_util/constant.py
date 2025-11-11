@@ -47,3 +47,57 @@ USER_FIELDS = "nextPageToken, users(primaryEmail)"
 # Error message substrings
 MISSING_SCOPES_ERROR_STR = "client not authorized for any of the scopes requested"
 SCOPE_INSTRUCTIONS = ""
+
+
+GOOGLE_DRIVE_WEB_OAUTH_POPUP_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Google Drive Authorization</title>
+  <style>
+    body {{
+      font-family: Arial, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }}
+    .card {{
+      background: white;
+      padding: 32px;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.1);
+      max-width: 420px;
+      text-align: center;
+    }}
+    h1 {{
+      font-size: 1.5rem;
+      margin-bottom: 12px;
+    }}
+    p {{
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>{heading}</h1>
+    <p>{message}</p>
+    <p>You can close this window.</p>
+  </div>
+  <script>
+    (function(){{
+      if (window.opener) {{
+        window.opener.postMessage({payload_json}, "*");
+      }}
+      {auto_close}
+    }})();
+  </script>
+</body>
+</html>
+"""

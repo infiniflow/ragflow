@@ -190,6 +190,7 @@ OAUTH_GOOGLE_DRIVE_CLIENT_ID = os.environ.get("OAUTH_GOOGLE_DRIVE_CLIENT_ID", ""
 OAUTH_GOOGLE_DRIVE_CLIENT_SECRET = os.environ.get(
     "OAUTH_GOOGLE_DRIVE_CLIENT_SECRET", ""
 )
+GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI = os.environ.get("GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI", "http://localhost:9380/v1/connector/google-drive/oauth/web/callback")
 
 CONFLUENCE_OAUTH_TOKEN_URL = "https://auth.atlassian.com/oauth/token"
 RATE_LIMIT_MESSAGE_LOWERCASE = "Rate limit exceeded".lower()

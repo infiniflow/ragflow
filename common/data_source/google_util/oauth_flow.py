@@ -3,8 +3,14 @@ import os
 import threading
 from typing import Any, Callable
 
+import requests
+
 from common.data_source.config import DocumentSource
 from common.data_source.google_util.constant import GOOGLE_SCOPES
+
+GOOGLE_DEVICE_CODE_URL = "https://oauth2.googleapis.com/device/code"
+GOOGLE_DEVICE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+DEFAULT_DEVICE_INTERVAL = 5
 
 
 def _get_requested_scopes(source: DocumentSource) -> list[str]:
@@ -47,6 +53,62 @@ def _run_with_timeout(func: Callable[[], Any], timeout_secs: int, timeout_messag
     if "error" in error:
         raise error["error"]
     return result.get("value")
+
+
+def _extract_client_info(credentials: dict[str, Any]) -> tuple[str, str | None]:
+    if "client_id" in credentials:
+        return credentials["client_id"], credentials.get("client_secret")
+    for key in ("installed", "web"):
+        if key in credentials and isinstance(credentials[key], dict):
+            nested = credentials[key]
+            if "client_id" not in nested:
+                break
+            return nested["client_id"], nested.get("client_secret")
+    raise ValueError("Provided Google OAuth credentials are missing client_id.")
+
+
+def start_device_authorization_flow(
+    credentials: dict[str, Any],
+    source: DocumentSource,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    client_id, client_secret = _extract_client_info(credentials)
+    data = {
+        "client_id": client_id,
+        "scope": " ".join(_get_requested_scopes(source)),
+    }
+    if client_secret:
+        data["client_secret"] = client_secret
+    resp = requests.post(GOOGLE_DEVICE_CODE_URL, data=data, timeout=15)
+    resp.raise_for_status()
+    payload = resp.json()
+    state = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "device_code": payload.get("device_code"),
+        "interval": payload.get("interval", DEFAULT_DEVICE_INTERVAL),
+    }
+    response_data = {
+        "user_code": payload.get("user_code"),
+        "verification_url": payload.get("verification_url") or payload.get("verification_uri"),
+        "verification_url_complete": payload.get("verification_url_complete")
+        or payload.get("verification_uri_complete"),
+        "expires_in": payload.get("expires_in"),
+        "interval": state["interval"],
+    }
+    return state, response_data
+
+
+def poll_device_authorization_flow(state: dict[str, Any]) -> dict[str, Any]:
+    data = {
+        "client_id": state["client_id"],
+        "device_code": state["device_code"],
+        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+    }
+    if state.get("client_secret"):
+        data["client_secret"] = state["client_secret"]
+    resp = requests.post(GOOGLE_DEVICE_TOKEN_URL, data=data, timeout=20)
+    resp.raise_for_status()
+    return resp.json()
 
 
 def _run_local_server_flow(client_config: dict[str, Any], source: DocumentSource) -> dict[str, Any]:
