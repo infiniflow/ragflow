@@ -274,11 +274,16 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      generationScopeTip:
+        'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
+      scopeDataset: 'Dataset',
+      generationScope: 'Generation Scope',
+      scopeSingleFile: 'Single File',
       autoParse: 'Auto Parse',
       rebuildTip:
         'Re-downloads files from the linked data source and parses them again.',
       baseInfo: 'Basic Info',
-      gobalIndex: 'Global Index',
+      globalIndex: 'Global Index',
       dataSource: 'Data Source',
       linkSourceSetTip: 'Manage data source linkage with this dataset',
       linkDataSource: 'Link Data Source',
@@ -688,6 +693,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      confluenceIsCloudTip:
+        'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
+      confluenceWikiBaseUrlTip:
+        'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
+      s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from. 
+Example: general/v2/`,
       addDataSourceModalTital: 'Create your {{name}} connector',
       deleteSourceModalTitle: 'Delete data source',
       deleteSourceModalContent: `
