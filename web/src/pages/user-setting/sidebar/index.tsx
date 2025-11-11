@@ -12,7 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { t } from 'i18next';
-import { Banknote, Box, Cog, Server, Unplug, User, Users } from 'lucide-react';
+import { Banknote, Box, Server, Unplug, User, Users } from 'lucide-react';
 import { useEffect } from 'react';
 import { useHandleMenuClick } from './hooks';
 
@@ -28,7 +28,7 @@ const menuItems = [
   // },
   // { icon: TextSearch, label: 'Retrieval Templates', key: Routes.Profile },
   { icon: Server, label: t('setting.dataSources'), key: Routes.DataSource },
-  { icon: Cog, label: t('setting.system'), key: Routes.System },
+  // { icon: Cog, label: t('setting.system'), key: Routes.System },
   // { icon: Banknote, label: 'Plan', key: Routes.Plan },
   { icon: Banknote, label: 'MCP', key: Routes.Mcp },
 ];

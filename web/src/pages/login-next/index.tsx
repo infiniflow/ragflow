@@ -26,7 +26,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { BgSvg } from './bg';
@@ -247,7 +246,7 @@ const Login = () => {
                                 }
                                 {...field}
                               />
-                              <button
+                              {/* <button
                                 type="button"
                                 className="absolute inset-y-0 right-0 pr-3 flex items-center"
                                 onClick={() => setShowPassword(!showPassword)}
@@ -257,7 +256,7 @@ const Login = () => {
                                 ) : (
                                   <Eye className="h-4 w-4 text-gray-500" />
                                 )}
-                              </button>
+                              </button> */}
                             </div>
                           </FormControl>
                           <FormMessage />
