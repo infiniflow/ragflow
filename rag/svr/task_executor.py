@@ -642,47 +642,64 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
 
     raptor_config = kb_parser_config.get("raptor", {})
-
-    chunks = []
     vctr_nm = "q_%d_vec"%vector_size
-    for doc_id in doc_ids:
-        for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
-                                                 fields=["content_with_weight", vctr_nm],
-                                                 sort_by_position=True):
-            chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
 
-    raptor = Raptor(
-        raptor_config.get("max_cluster", 64),
-        chat_mdl,
-        embd_mdl,
-        raptor_config["prompt"],
-        raptor_config["max_token"],
-        raptor_config["threshold"],
-    )
-    original_length = len(chunks)
-    chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
-    doc = {
-        "doc_id": fake_doc_id,
-        "kb_id": [str(row["kb_id"])],
-        "docnm_kwd": row["name"],
-        "title_tks": rag_tokenizer.tokenize(row["name"]),
-        "raptor_kwd": "raptor"
-    }
-    if row["pagerank"]:
-        doc[PAGERANK_FLD] = int(row["pagerank"])
     res = []
     tk_count = 0
-    for content, vctr in chunks[original_length:]:
-        d = copy.deepcopy(doc)
-        d["id"] = xxhash.xxh64((content + str(fake_doc_id)).encode("utf-8")).hexdigest()
-        d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
-        d["create_timestamp_flt"] = datetime.now().timestamp()
-        d[vctr_nm] = vctr.tolist()
-        d["content_with_weight"] = content
-        d["content_ltks"] = rag_tokenizer.tokenize(content)
-        d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-        res.append(d)
-        tk_count += num_tokens_from_string(content)
+    async def generate(chunks):
+        nonlocal tk_count, res
+        raptor = Raptor(
+            raptor_config.get("max_cluster", 64),
+            chat_mdl,
+            embd_mdl,
+            raptor_config["prompt"],
+            raptor_config["max_token"],
+            raptor_config["threshold"],
+        )
+        original_length = len(chunks)
+        chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
+        doc = {
+            "doc_id": fake_doc_id,
+            "kb_id": [str(row["kb_id"])],
+            "docnm_kwd": row["name"],
+            "title_tks": rag_tokenizer.tokenize(row["name"]),
+            "raptor_kwd": "raptor"
+        }
+        if row["pagerank"]:
+            doc[PAGERANK_FLD] = int(row["pagerank"])
+
+        for content, vctr in chunks[original_length:]:
+            d = copy.deepcopy(doc)
+            d["id"] = xxhash.xxh64((content + str(fake_doc_id)).encode("utf-8")).hexdigest()
+            d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
+            d["create_timestamp_flt"] = datetime.now().timestamp()
+            d[vctr_nm] = vctr.tolist()
+            d["content_with_weight"] = content
+            d["content_ltks"] = rag_tokenizer.tokenize(content)
+            d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+            res.append(d)
+            tk_count += num_tokens_from_string(content)
+
+    if raptor_config.get("scope", "file") == "file":
+        for x, doc_id in enumerate(doc_ids):
+            chunks = []
+            for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
+                                                 fields=["content_with_weight", vctr_nm],
+                                                 sort_by_position=True):
+                chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+            callback(progress=(x+1.)/len(doc_ids))
+            await generate(chunks)
+
+    else:
+        chunks = []
+        for doc_id in doc_ids:
+            for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
+                                                 fields=["content_with_weight", vctr_nm],
+                                                 sort_by_position=True):
+                chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+
+        await generate(chunks)
+
     return res, tk_count
 
 
@@ -795,6 +812,7 @@ async def do_handle_task(task):
                         "threshold": 0.1,
                         "max_cluster": 64,
                         "random_seed": 0,
+                        "scope": "file"
                     },
                 }
             )
