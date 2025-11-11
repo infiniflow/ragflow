@@ -135,7 +135,7 @@ class Retrieval(ToolBase, ABC):
             elif self._param.meta_data_filter.get("method") == "manual":
                 filters=self._param.meta_data_filter["manual"]
                 for flt in filters:
-                    pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z:0-9_.-]+|sys\.[a-z_]+)\} *\}*")
+                    pat = re.compile(self.variable_ref_patt)
                     s = flt["value"]
                     out_parts = []
                     last = 0

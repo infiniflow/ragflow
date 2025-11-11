@@ -274,6 +274,7 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      autoParse: 'Auto Parse',
       rebuildTip:
         'Re-downloads files from the linked data source and parses them again.',
       baseInfo: 'Basic Info',

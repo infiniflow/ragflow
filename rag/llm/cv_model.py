@@ -268,44 +268,41 @@ class QWenCV(GptV4):
             tmp.write(video_bytes)
             tmp_path = tmp.name
 
-        video_path = f"file://{tmp_path}"
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "video": video_path,
-                        "fps": 2,
-                    },
-                    {
-                        "text": "Please summarize this video in proper sentences.",
-                    },
-                ],
-            }
-        ]
+            video_path = f"file://{tmp_path}"
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "video": video_path,
+                            "fps": 2,
+                        },
+                        {
+                            "text": "Please summarize this video in proper sentences.",
+                        },
+                    ],
+                }
+            ]
 
-        def call_api():
-            response = MultiModalConversation.call(
-                api_key=self.api_key,
-                model=self.model_name,
-                messages=messages,
-            )
-            summary = response["output"]["choices"][0]["message"].content[0]["text"]
-            return summary, num_tokens_from_string(summary)
+            def call_api():
+                response = MultiModalConversation.call(
+                    api_key=self.api_key,
+                    model=self.model_name,
+                    messages=messages,
+                )
+                summary = response["output"]["choices"][0]["message"].content[0]["text"]
+                return summary, num_tokens_from_string(summary)
 
-        try:
-            return call_api()
-        except Exception as e1:
-            import dashscope
-
-            dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
             try:
                 return call_api()
-            except Exception as e2:
-                raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
-        finally:
-            if tmp_path and tmp_path.exists():
-                tmp_path.unlink()
+            except Exception as e1:
+                import dashscope
+
+                dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
+                try:
+                    return call_api()
+                except Exception as e2:
+                    raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
 
 
 class HunyuanCV(GptV4):
