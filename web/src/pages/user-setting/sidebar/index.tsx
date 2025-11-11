@@ -77,11 +77,11 @@ export function SideBar() {
                     )}
                     <span>{item.label}</span>
                   </section>
-                  {item.key === Routes.System && (
+                  {/* {item.key === Routes.System && (
                     <div className="mr-2 px-2 bg-accent-primary-5 text-accent-primary rounded-md">
                       {version}
                     </div>
-                  )}
+                  )} */}
                   {/* {active && (
                     <div className="absolute right-0 w-[5px] h-[66px] bg-primary rounded-l-xl shadow-[0_0_5.94px_#7561ff,0_0_11.88px_#7561ff,0_0_41.58px_#7561ff,0_0_83.16px_#7561ff,0_0_142.56px_#7561ff,0_0_249.48px_#7561ff]" />
                   )} */}
@@ -93,7 +93,10 @@ export function SideBar() {
       </div>
 
       <div className="p-6 mt-auto ">
-        <div className="flex items-center gap-2 mb-6 justify-end">
+        <div className="flex items-center gap-2 mb-6 justify-between">
+          <div className="mr-2 px-2 text-accent-primary rounded-md">
+            {version}
+          </div>
           <ThemeToggle />
         </div>
         <Button

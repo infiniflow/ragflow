@@ -20,11 +20,12 @@ export interface FileLogsTableProps {
   active: (typeof LogTabs)[keyof typeof LogTabs];
 }
 
-export interface IOverviewTital {
+export interface IOverviewTotal {
   cancelled: number;
   failed: number;
   finished: number;
   processing: number;
+  downloaded: number;
 }
 
 export interface IFileLogItem {

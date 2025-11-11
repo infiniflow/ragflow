@@ -73,6 +73,7 @@ export default function DatasetSettings() {
           threshold: 0.1,
           max_cluster: 64,
           random_seed: 0,
+          scope: 'file',
           prompt: t('knowledgeConfiguration.promptText'),
         },
         graphrag: {
@@ -252,7 +253,7 @@ export default function DatasetSettings() {
                 <GeneralForm></GeneralForm>
                 <Divider />
                 <div className="text-base font-medium text-text-primary">
-                  {t('knowledgeConfiguration.gobalIndex')}
+                  {t('knowledgeConfiguration.globalIndex')}
                 </div>
                 <GraphRagItems
                   className="border-none p-0"

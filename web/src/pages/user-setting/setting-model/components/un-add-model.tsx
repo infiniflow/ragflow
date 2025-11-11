@@ -45,7 +45,7 @@ export const AvailableModels: FC<{
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
   const filteredModels = useMemo(() => {
-    return factoryList.filter((model) => {
+    const models = factoryList.filter((model) => {
       const matchesSearch = model.name
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
@@ -54,6 +54,7 @@ export const AvailableModels: FC<{
         model.tags.split(',').some((tag) => tag.trim() === selectedTag);
       return matchesSearch && matchesTag;
     });
+    return models;
   }, [factoryList, searchTerm, selectedTag]);
 
   const allTags = useMemo(() => {
@@ -124,7 +125,7 @@ export const AvailableModels: FC<{
             className=" border border-border-default rounded-lg p-3 hover:bg-bg-input transition-colors group"
           >
             <div className="flex items-center space-x-3 mb-3">
-              <LlmIcon name={model.name} imgClass="h-8 w-auto" />
+              <LlmIcon name={model.name} imgClass="h-8 w-8 text-text-primary" />
               <div className="flex-1">
                 <h3 className="font-medium truncate">{model.name}</h3>
               </div>

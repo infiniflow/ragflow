@@ -108,6 +108,7 @@ export const DataSourceFormFields = {
       name: 'config.prefix',
       type: FormFieldType.Text,
       required: false,
+      tooltip: t('setting.s3PrefixTip'),
     },
   ],
   [DataSourceKey.NOTION]: [
@@ -164,16 +165,14 @@ export const DataSourceFormFields = {
       name: 'config.wiki_base',
       type: FormFieldType.Text,
       required: false,
-      tooltip:
-        'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
+      tooltip: t('setting.confluenceWikiBaseUrlTip'),
     },
     {
       label: 'Is Cloud',
       name: 'config.is_cloud',
       type: FormFieldType.Checkbox,
       required: false,
-      tooltip:
-        'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
+      tooltip: t('setting.confluenceIsCloudTip'),
     },
   ],
   [DataSourceKey.GOOGLE_DRIVE]: [
