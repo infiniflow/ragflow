@@ -99,7 +99,7 @@ class Message(ComponentBase):
                 continue
 
             v = self._canvas.get_variable_value(exp)
-            if not v:
+            if v is None:
                 v = ""
             if isinstance(v, partial):
                 cnt = ""
@@ -107,7 +107,7 @@ class Message(ComponentBase):
                     all_content += t
                     cnt += t
                     yield t
-
+                self.set_input_value(exp, cnt)
                 continue
             elif not isinstance(v, str):
                 try:
@@ -115,6 +115,7 @@ class Message(ComponentBase):
                 except Exception:
                     v = str(v)
             yield v
+            self.set_input_value(exp, v)
             all_content += v
             cache[exp] = v
 
