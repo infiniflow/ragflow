@@ -89,14 +89,6 @@ MinerU PDF document parsing is available starting from v0.22.0. RAGFlow supports
    docker compose -f docker/docker-compose.yml restart
    ```
 
-```bash
-mkdir uv_tools
-cd uv_tools
-uv venv .venv
-source .venv/bin/activate
-uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
-```
-
 3. Restart the ragflow-server.
 :::
 

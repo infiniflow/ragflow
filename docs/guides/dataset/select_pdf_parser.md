@@ -89,14 +89,6 @@ MinerU PDF document parsing is available starting from v0.22.0. RAGFlow supports
    docker compose -f docker/docker-compose.yml restart
    ```
 
-```bash
-mkdir uv_tools
-cd uv_tools
-uv venv .venv
-source .venv/bin/activate
-uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
-```
-
 3. Restart the ragflow-server.
 4. In the web UI, navigate to the **Configuration** page of your dataset. Click **Built-in** in the **Ingestion pipeline** section, select a chunking method from the **Built-in** dropdown, which supports PDF parsing, and slect **MinerU** in **PDF parser**.
 5. If you use a custom ingestion pipeline instead, you must also complete the first three steps before selecting **MinerU** in the **Parsing method** section of the **Parser** component.
