@@ -13,10 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from agent.component.message import MessageParam, Message
+import json
+import re
+from functools import partial
+
+from agent.component.base import ComponentParamBase, ComponentBase
 
 
-class UserFillUpParam(MessageParam):
+class UserFillUpParam(ComponentParamBase):
 
     def __init__(self):
         super().__init__()
@@ -27,13 +31,32 @@ class UserFillUpParam(MessageParam):
         return True
 
 
-class UserFillUp(Message):
+class UserFillUp(ComponentBase):
     component_name = "UserFillUp"
 
     def _invoke(self, **kwargs):
         if self._param.enable_tips:
-            tips, kwargs = self.get_kwargs(self._param.tips)
-            self.set_output("tips", tips)
+            content = self._param.tips
+            for k, v in self.get_input_elements_from_text(self._param.tips).items():
+                v = v["value"]
+                ans = ""
+                if isinstance(v, partial):
+                    for t in v():
+                        ans += t
+                elif isinstance(v, list):
+                    ans = ",".join([str(vv) for vv in v])
+                elif not isinstance(v, str):
+                    try:
+                        ans = json.dumps(v, ensure_ascii=False)
+                    except Exception:
+                        pass
+                else:
+                    ans = v
+                if not ans:
+                    ans = ""
+                content = re.sub(r"\{%s\}"%k, ans, content)
+
+            self.set_output("tips", content)
         for k, v in kwargs.get("inputs", {}).items():
             self.set_output(k, v)
 

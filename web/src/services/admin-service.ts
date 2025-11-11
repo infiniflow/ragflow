@@ -101,8 +101,6 @@ request.interceptors.response.use(
 );
 
 const {
-  getSystemVersion: _getSystemVersion,
-
   adminLogin,
   adminLogout,
   adminListUsers,
@@ -136,6 +134,8 @@ const {
   adminUpdateWhitelistEntry,
   adminDeleteWhitelistEntry,
   adminImportWhitelist,
+
+  adminGetSystemVersion,
 } = api;
 
 type ResponseData<D = NonNullable<unknown>> = {
@@ -260,4 +260,4 @@ export const importWhitelistFromExcel = (file: File) => {
 };
 
 export const getSystemVersion = () =>
-  request.get<ResponseData<string>>(_getSystemVersion);
+  request.get<ResponseData<{ version: string }>>(adminGetSystemVersion);

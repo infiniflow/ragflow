@@ -37,7 +37,7 @@ class SupportedLiteLLMProvider(StrEnum):
     TogetherAI = "TogetherAI"
     Anthropic = "Anthropic"
     Ollama = "Ollama"
-    Meituan = "Meituan"
+    LongCat = "LongCat"
     CometAPI = "CometAPI"
     SILICONFLOW = "SILICONFLOW"
     OpenRouter = "OpenRouter"
@@ -56,7 +56,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     SupportedLiteLLMProvider.Moonshot: "https://api.moonshot.cn/v1",
     SupportedLiteLLMProvider.Ollama: "",
-    SupportedLiteLLMProvider.Meituan: "https://api.longcat.chat/openai",
+    SupportedLiteLLMProvider.LongCat: "https://api.longcat.chat/openai",
     SupportedLiteLLMProvider.CometAPI: "https://api.cometapi.com/v1",
     SupportedLiteLLMProvider.SILICONFLOW: "https://api.siliconflow.cn/v1",
     SupportedLiteLLMProvider.OpenRouter: "https://openrouter.ai/api/v1",
@@ -87,7 +87,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.TogetherAI: "together_ai/",
     SupportedLiteLLMProvider.Anthropic: "",  # don't need a prefix
     SupportedLiteLLMProvider.Ollama: "ollama_chat/",
-    SupportedLiteLLMProvider.Meituan: "openai/",
+    SupportedLiteLLMProvider.LongCat: "openai/",
     SupportedLiteLLMProvider.CometAPI: "openai/",
     SupportedLiteLLMProvider.SILICONFLOW: "openai/",
     SupportedLiteLLMProvider.OpenRouter: "openai/",
