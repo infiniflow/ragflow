@@ -704,6 +704,16 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Link your Discord server to access and analyze chat data.',
       notionDescription:
         'Sync pages and databases from Notion for knowledge retrieval.',
+      google_driveDescription:
+        'Connect your Google Drive via OAuth and sync specific folders or drives.',
+      google_driveTokenTip:
+        'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
+      google_drivePrimaryAdminTip:
+        'Email address that has access to the Drive content being synced.',
+      google_driveMyDriveEmailsTip:
+        'Comma-separated emails whose “My Drive” contents should be indexed (include the primary admin).',
+      google_driveSharedFoldersTip:
+        'Comma-separated Google Drive folder links to crawl.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available Sources',
       datasourceDescription: 'Manage your data source and connections',
@@ -981,6 +991,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      variableNameMessage:
+        'Variable name can only contain letters and underscores',
+      variableDescription: 'Variable Description',
+      defaultValue: 'Default Value',
+      conversationVariable: 'Conversation variable',
       recommended: 'Recommended',
       customerSupport: 'Customer Support',
       marketing: 'Marketing',
@@ -1931,13 +1946,14 @@ Important structured information may include: names, dates, locations, events, k
       roles: 'Roles',
       monitoring: 'Monitoring',
 
+      back: 'Back',
       active: 'Active',
       inactive: 'Inactive',
       enable: 'Enable',
       disable: 'Disable',
       all: 'All',
       actions: 'Actions',
-      newUser: 'New User',
+      newUser: 'New user',
       email: 'Email',
       name: 'Name',
       nickname: 'Nickname',
@@ -1956,6 +1972,7 @@ Important structured information may include: names, dates, locations, events, k
       lastUpdateTime: 'Last update time',
 
       isAnonymous: 'Is Anonymous',
+      isSuperuser: 'Is Superuser',
 
       deleteUser: 'Delete user',
       deleteUserConfirmation: 'Are you sure you want to delete this user?',
@@ -1990,7 +2007,7 @@ Important structured information may include: names, dates, locations, events, k
       deleteWhitelistEmailConfirmation:
         'Are you sure you want to delete this email from whitelist? This action cannot be undone.',
 
-      importWhitelist: 'Import whitelist (excel)',
+      importWhitelist: 'Import whitelist (Excel)',
       importSelectExcelFile: 'Excel file (.xlsx)',
       importOverwriteExistingEmails: 'Overwrite existing emails',
       importInvalidExcelFile: 'Please select a valid Excel file',

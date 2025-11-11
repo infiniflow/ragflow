@@ -1,14 +1,15 @@
 import { FormFieldType } from '@/components/dynamic-form';
 import SvgIcon from '@/components/svg-icon';
 import { t } from 'i18next';
+import GoogleDriveTokenField from './component/google-drive-token-field';
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   S3 = 's3',
   NOTION = 'notion',
   DISCORD = 'discord',
+  GOOGLE_DRIVE = 'google_drive',
   //   GMAIL = 'gmail',
-  //   GOOGLE_DRIVER = 'google_driver',
   //   JIRA = 'jira',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
@@ -35,6 +36,11 @@ export const DataSourceInfo = {
     name: 'Confluence',
     description: t(`setting.${DataSourceKey.CONFLUENCE}Description`),
     icon: <SvgIcon name={'data-source/confluence'} width={38} />,
+  },
+  [DataSourceKey.GOOGLE_DRIVE]: {
+    name: 'Google Drive',
+    description: t(`setting.${DataSourceKey.GOOGLE_DRIVE}Description`),
+    icon: <SvgIcon name={'data-source/google-drive'} width={38} />,
   },
 };
 
@@ -170,6 +176,101 @@ export const DataSourceFormFields = {
         'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
     },
   ],
+  [DataSourceKey.GOOGLE_DRIVE]: [
+    {
+      label: 'Primary Admin Email',
+      name: 'config.credentials.google_primary_admin',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'admin@example.com',
+      tooltip: t('setting.google_drivePrimaryAdminTip'),
+    },
+    {
+      label: 'OAuth Token JSON',
+      name: 'config.credentials.google_tokens',
+      type: FormFieldType.Textarea,
+      required: true,
+      render: (fieldProps) => (
+        <GoogleDriveTokenField
+          value={fieldProps.value}
+          onChange={fieldProps.onChange}
+          placeholder='{ "token": "...", "refresh_token": "...", ... }'
+        />
+      ),
+      tooltip: t('setting.google_driveTokenTip'),
+    },
+    {
+      label: 'My Drive Emails',
+      name: 'config.my_drive_emails',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'user1@example.com,user2@example.com',
+      tooltip: t('setting.google_driveMyDriveEmailsTip'),
+    },
+    {
+      label: 'Shared Folder URLs',
+      name: 'config.shared_folder_urls',
+      type: FormFieldType.Textarea,
+      required: true,
+      placeholder:
+        'https://drive.google.com/drive/folders/XXXXX,https://drive.google.com/drive/folders/YYYYY',
+      tooltip: t('setting.google_driveSharedFoldersTip'),
+    },
+    // The fields below are intentionally disabled for now. Uncomment them when we
+    // reintroduce shared drive controls or advanced impersonation options.
+    // {
+    //   label: 'Shared Drive URLs',
+    //   name: 'config.shared_drive_urls',
+    //   type: FormFieldType.Text,
+    //   required: false,
+    //   placeholder:
+    //     'Optional: comma-separated shared drive links if you want to include them.',
+    // },
+    // {
+    //   label: 'Specific User Emails',
+    //   name: 'config.specific_user_emails',
+    //   type: FormFieldType.Text,
+    //   required: false,
+    //   placeholder:
+    //     'Optional: comma-separated list of users to impersonate (overrides defaults).',
+    // },
+    // {
+    //      label: 'Include My Drive',
+    //      name: 'config.include_my_drives',
+    //      type: FormFieldType.Checkbox,
+    //      required: false,
+    //      defaultValue: true,
+    // },
+    // {
+    //   label: 'Include Shared Drives',
+    //   name: 'config.include_shared_drives',
+    //   type: FormFieldType.Checkbox,
+    //   required: false,
+    //   defaultValue: false,
+    // },
+    // {
+    //   label: 'Include “Shared with me”',
+    //   name: 'config.include_files_shared_with_me',
+    //   type: FormFieldType.Checkbox,
+    //   required: false,
+    //   defaultValue: false,
+    // },
+    // {
+    //   label: 'Allow Images',
+    //   name: 'config.allow_images',
+    //   type: FormFieldType.Checkbox,
+    //   required: false,
+    //   defaultValue: false,
+    // },
+    {
+      label: '',
+      name: 'config.credentials.authentication_method',
+      type: FormFieldType.Text,
+      required: false,
+      hidden: true,
+      defaultValue: 'uploaded',
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -216,6 +317,25 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         confluence_username: '',
         confluence_access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.GOOGLE_DRIVE]: {
+    name: '',
+    source: DataSourceKey.GOOGLE_DRIVE,
+    config: {
+      include_shared_drives: false,
+      include_my_drives: true,
+      include_files_shared_with_me: false,
+      allow_images: false,
+      shared_drive_urls: '',
+      shared_folder_urls: '',
+      my_drive_emails: '',
+      specific_user_emails: '',
+      credentials: {
+        google_primary_admin: '',
+        google_tokens: '',
+        authentication_method: 'uploaded',
       },
     },
   },

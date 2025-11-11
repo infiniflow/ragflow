@@ -13,10 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from agent.component.base import ComponentBase, ComponentParamBase
+from agent.component.message import MessageParam, Message
 
 
-class UserFillUpParam(ComponentParamBase):
+class UserFillUpParam(MessageParam):
 
     def __init__(self):
         super().__init__()
@@ -27,10 +27,13 @@ class UserFillUpParam(ComponentParamBase):
         return True
 
 
-class UserFillUp(ComponentBase):
+class UserFillUp(Message):
     component_name = "UserFillUp"
 
     def _invoke(self, **kwargs):
+        if self._param.enable_tips:
+            tips, kwargs = self.get_kwargs(self._param.tips)
+            self.set_output("tips", tips)
         for k, v in kwargs.get("inputs", {}).items():
             self.set_output(k, v)
 

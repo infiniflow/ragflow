@@ -99,7 +99,9 @@
     --bg-canvas: 246 246 247;
     --bg-list: 246 246 247;
     /* Button ,Body text, Input completed text */
-    --text-primary: #161618;
+
+    /* #161618 */
+    --text-primary: 22 22 24;
     --text-secondary: #75787a;
     --text-disabled: #b2b5b7;
     /* input placeholder color */
@@ -231,7 +233,9 @@
     --bg-input: rgba(255, 255, 255, 0.05);
     --bg-canvas: 0 0 0;
     --bg-list: 56 56 58;
-    --text-primary: #f6f6f7;
+
+    /* #f6f6f7 */
+    --text-primary: 246 246 247;
     --text-secondary: #b2b5b7;
     --text-disabled: #75787a;
     --text-input-tip: #75787a;

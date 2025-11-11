@@ -93,7 +93,7 @@ def resume(connector_id):
 @validate_request("kb_id")
 def rebuild(connector_id):
     req = request.json
-    err = ConnectorService.rebuild(connector_id, req["kb_id"], current_user.id)
+    err = ConnectorService.rebuild(req["kb_id"], connector_id, current_user.id)
     if err:
         return get_json_result(data=False, message=err, code=RetCode.SERVER_ERROR)
     return get_json_result(data=True)

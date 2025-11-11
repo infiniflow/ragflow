@@ -1,3 +1,4 @@
+import { KeyInput } from '@/components/key-input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -112,10 +113,10 @@ const AddFieldButton: FC<AddFieldButtonProps> = ({
                       </Tooltip>
                     </TooltipProvider>
                   </div>
-                  <Input
+                  <KeyInput
                     id={fieldNameId}
                     value={fieldName}
-                    onChange={(e) => setFieldName(e.target.value)}
+                    onChange={setFieldName}
                     placeholder={t.fieldNamePlaceholder}
                     className="font-mono text-sm w-full"
                     required
