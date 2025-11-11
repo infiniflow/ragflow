@@ -687,7 +687,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
                                                  fields=["content_with_weight", vctr_nm],
                                                  sort_by_position=True):
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
-            callback(progress=(x+1.)/len(doc_ids))
+            callback(prog=(x+1.)/len(doc_ids))
             await generate(chunks)
 
     else:
