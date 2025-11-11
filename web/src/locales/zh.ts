@@ -260,10 +260,15 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      generationScopeTip: '选择 RAPTOR 的生成范围：整个知识库或单个文件。',
+      generationScope: '生成范围',
+      scopeSingleFile: '单文件',
+      scopeDataset: '整库',
+
       autoParse: '自动解析',
       rebuildTip: '从所有已关联的数据源重新下载文件并再次解析。',
       baseInfo: '基础信息',
-      gobalIndex: '全局索引',
+      globalIndex: '全局索引',
       dataSource: '数据源',
       linkSourceSetTip: '管理与此数据集的数据源链接',
       linkDataSource: '链接数据源',
@@ -677,6 +682,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
     },
     setting: {
+      confluenceIsCloudTip:
+        '检查这是否是 Confluence Cloud 实例，如果是 Confluence 服务/数据中心，则取消选中。',
+      confluenceWikiBaseUrlTip:
+        'Confluence Wiki 的基础 URL（例如 https://your-domain.atlassian.net/wiki）',
+      s3PrefixTip: `指定 S3 存储桶内的文件夹路径，用于读取文件。
+示例：general/v2/`,
       addDataSourceModalTital: '创建你的 {{name}} 链接',
       deleteSourceModalTitle: '删除数据源链接',
       deleteSourceModalContent: `

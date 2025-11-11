@@ -14,7 +14,6 @@ import {
   IDeleteLlmRequestBody,
 } from '@/interfaces/request/llm';
 import userService from '@/services/user-service';
-import { sortLLmFactoryListBySpecifiedOrder } from '@/utils/common-util';
 import { getLLMIconName, getRealModelName } from '@/utils/llm-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DefaultOptionType } from 'antd/es/select';
@@ -239,7 +238,8 @@ export const useSelectLlmList = () => {
     const currentList = factoryList.filter((x) =>
       Object.keys(myLlmList).every((y) => y !== x.name),
     );
-    return sortLLmFactoryListBySpecifiedOrder(currentList);
+    return currentList;
+    // return sortLLmFactoryListBySpecifiedOrder(currentList);
   }, [factoryList, myLlmList]);
 
   return {
