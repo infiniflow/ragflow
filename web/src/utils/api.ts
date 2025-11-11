@@ -174,6 +174,7 @@ export default {
   debug: `${api_host}/canvas/debug`,
   uploadCanvasFile: `${api_host}/canvas/upload`,
   trace: `${api_host}/canvas/trace`,
+  cancelCanvas: (taskId: string) => `${api_host}/canvas/cancel/${taskId}`, // cancel conversation
   // agent
   inputForm: `${api_host}/canvas/input_form`,
   fetchVersionList: (id: string) => `${api_host}/canvas/getlistversion/${id}`,

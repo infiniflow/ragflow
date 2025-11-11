@@ -29,6 +29,7 @@ const {
   fetchExternalAgentInputs,
   prompt,
   cancelDataflow,
+  cancelCanvas,
 } = api;
 
 const methods = {
@@ -118,6 +119,10 @@ const methods = {
   },
   cancelDataflow: {
     url: cancelDataflow,
+    method: 'put',
+  },
+  cancelCanvas: {
+    url: cancelCanvas,
     method: 'put',
   },
 } as const;
