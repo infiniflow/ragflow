@@ -13,7 +13,7 @@ const Switch = React.forwardRef<
     className={cn(
       'group/switch inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full',
       'border-2 border-transparent overflow-hidden transition-colors',
-      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+      'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary',
       'disabled:cursor-not-allowed disabled:opacity-50',
       'data-[state=checked]:bg-accent-primary data-[state=unchecked]:bg-text-sub-title',
       className,

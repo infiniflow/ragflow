@@ -54,6 +54,7 @@ export const enum AgentApiAction {
   SetAgentSetting = 'setAgentSetting',
   FetchPrompt = 'fetchPrompt',
   CancelDataflow = 'cancelDataflow',
+  CancelCanvas = 'cancelCanvas',
 }
 
 export const EmptyDsl = {
@@ -734,3 +735,20 @@ export const useCancelDataflow = () => {
 
 //   return { list: data, loading };
 // };
+
+export function useCancelConversation() {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.CancelCanvas],
+    mutationFn: async (taskId: string) => {
+      const ret = await agentService.cancelCanvas(taskId);
+
+      return ret?.data?.code;
+    },
+  });
+
+  return { data, loading, cancelConversation: mutateAsync };
+}
