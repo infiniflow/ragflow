@@ -160,7 +160,6 @@ def get_column_value(column_name: str, value: Any) -> Any:
                 try:
                     return json.loads(value)
                 except json.JSONDecodeError:
-                    # 如果JSON解析失败，返回原始字符串
                     return value
             else:
                 return value
@@ -171,7 +170,6 @@ def get_column_value(column_name: str, value: Any) -> Any:
             try:
                 return json.loads(value)
             except json.JSONDecodeError:
-                # 如果JSON解析失败，返回原始字符串
                 return value
         else:
             return value
@@ -194,18 +192,16 @@ def get_default_value(column_name: str) -> Any:
 
 def get_value_str(value: Any) -> str:
     if isinstance(value, str):
-        # 对字符串进行额外的清理，确保不会导致JSON解析错误
-        cleaned_str = value.replace('\\', '\\\\')  # 转义反斜杠
-        cleaned_str = cleaned_str.replace('\n', '\\n')  # 转义换行符
-        cleaned_str = cleaned_str.replace('\r', '\\r')  # 转义回车符
-        cleaned_str = cleaned_str.replace('\t', '\\t')  # 转义制表符
+        cleaned_str = value.replace('\\', '\\\\')
+        cleaned_str = cleaned_str.replace('\n', '\\n')
+        cleaned_str = cleaned_str.replace('\r', '\\r')
+        cleaned_str = cleaned_str.replace('\t', '\\t')
         return f"'{escape_string(cleaned_str)}'"
     elif isinstance(value, bool):
         return "true" if value else "false"
     elif value is None:
         return "NULL"
     elif isinstance(value, (list, dict)):
-        # 确保JSON字符串中的特殊字符被正确转义
         json_str = json.dumps(value, ensure_ascii=False)
         return f"'{escape_string(json_str)}'"
     else:
@@ -1256,7 +1252,6 @@ class OBConnection(DocStoreConnection):
             return self._row_to_entity(row, fields=list(res.keys()))
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error when getting chunk {chunkId}: {str(e)}")
-            # 如果JSON解析失败，尝试返回一个基本的chunk信息
             return {
                 "id": chunkId,
                 "error": f"Failed to parse chunk data due to invalid JSON: {str(e)}"
@@ -1297,13 +1292,11 @@ class OBConnection(DocStoreConnection):
                     cleaned_v = []
                     for vv in v:
                         if isinstance(vv, str):
-                            # 清理可能导致JSON解析错误的特殊字符
                             cleaned_str = vv.strip()
-                            # 移除或替换可能导致JSON解析错误的字符
-                            cleaned_str = cleaned_str.replace('\\', '\\\\')  # 转义反斜杠
-                            cleaned_str = cleaned_str.replace('\n', '\\n')  # 转义换行符
-                            cleaned_str = cleaned_str.replace('\r', '\\r')  # 转义回车符
-                            cleaned_str = cleaned_str.replace('\t', '\\t')  # 转义制表符
+                            cleaned_str = cleaned_str.replace('\\', '\\\\')
+                            cleaned_str = cleaned_str.replace('\n', '\\n')
+                            cleaned_str = cleaned_str.replace('\r', '\\r')
+                            cleaned_str = cleaned_str.replace('\t', '\\t')
                             cleaned_v.append(cleaned_str)
                         else:
                             cleaned_v.append(vv)
