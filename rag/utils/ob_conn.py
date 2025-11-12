@@ -431,7 +431,7 @@ class OBConnection(DocStoreConnection):
                 pool_pre_ping=True,
                 pool_recycle=3600,
             )
-            logger.info(f"OceanBase Hybrid Search feature is enabled")
+            logger.info("OceanBase Hybrid Search feature is enabled")
 
     def _try_to_update_ob_query_timeout(self):
         try:
@@ -852,7 +852,7 @@ class OBConnection(DocStoreConnection):
 
         for m in matchExprs:
             if isinstance(m, MatchTextExpr):
-                assert "original_query" in m.extra_options, f"'original_query' is missing in extra_options."
+                assert "original_query" in m.extra_options, "'original_query' is missing in extra_options."
                 fulltext_query = m.extra_options["original_query"]
                 fulltext_query = escape_string(fulltext_query.strip())
                 fulltext_topn = m.topn
@@ -898,7 +898,7 @@ class OBConnection(DocStoreConnection):
         pagerank_score_expr = f"(CAST(IFNULL({PAGERANK_FLD}, 0) AS DECIMAL(10, 2)) / 100)"
 
         # TODO use tag rank_feature in sorting
-        tag_rank_fea = {k: float(v) for k, v in (rank_feature or {}).items() if k != PAGERANK_FLD}
+        # tag_rank_fea = {k: float(v) for k, v in (rank_feature or {}).items() if k != PAGERANK_FLD}
 
         if fulltext_query and vector_data:
             search_type = "fusion"
