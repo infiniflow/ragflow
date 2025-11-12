@@ -24,7 +24,7 @@ Click the dropdown menu of **Model** to show the model configuration window.
 - **Model**: The chat model to use.  
   - Ensure you set the chat model correctly on the **Model providers** page.
   - You can use different models for different components to increase flexibility or improve overall performance.
-- **Creavity**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
+- **Creativity**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
   This parameter has three options:
   - **Improvise**: Produces more creative responses.
   - **Precise**: (Default) Produces more conservative responses.

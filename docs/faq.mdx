@@ -193,7 +193,7 @@ This error suggests that you do not have Internet access or are unable to connec
 
 ---
 
-### `WARNING: can't find /raglof/rag/res/borker.tm`
+### `WARNING: can't find /ragflow/rag/res/borker.tm`
 
 Ignore this warning and continue. All system warnings can be ignored.
 
@@ -413,7 +413,7 @@ See [here](./guides/models/deploy_local_llm.mdx) for more information.
 
 For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. To update this 1GB file size limit:
 
-- In **docker/.env**, upcomment `# MAX_CONTENT_LENGTH=1073741824`, adjust the value as needed, and note that `1073741824` represents 1GB in bytes.
+- In **docker/.env**, uncomment `# MAX_CONTENT_LENGTH=1073741824`, adjust the value as needed, and note that `1073741824` represents 1GB in bytes.
 - If you update the value of `MAX_CONTENT_LENGTH` in **docker/.env**, ensure that you update `client_max_body_size` in **nginx/nginx.conf** accordingly.
 
 :::tip NOTE

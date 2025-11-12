@@ -89,7 +89,7 @@ Once the restore process is complete, you can start the RAGFlow services on your
 docker-compose -f docker/docker-compose.yml up -d
 ```
 
-**Note:** If you already have build an service by docker-compose before, you may need to backup your data for target machine like this guide above and run like:
+**Note:** If you already have built a service by docker-compose before, you may need to backup your data for target machine like this guide above and run like:
 
 ```bash
 # Please backup by `sh docker/migration.sh backup backup_dir_name` before you do the following line.

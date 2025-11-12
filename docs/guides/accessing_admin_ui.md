@@ -24,7 +24,7 @@ The service status page displays of all services within the RAGFlow system.
 - **Search**: Use the search bar to quickly find services by **Name** or **Service Type**.
 - **Actions** (hover over a row to see action buttons):
   - **Extra Info**: Display additional configuration information of a service in a dialog.
-  - **Service Details**: Display detailed status information of a service in a dialog. According to services's type, a service's status information could be displayed as a plain text, a key-value data list, a data table or a bar chart.
+  - **Service Details**: Display detailed status information of a service in a dialog. According to service's type, a service's status information could be displayed as a plain text, a key-value data list, a data table or a bar chart.
 
 
 ### User management
