@@ -270,101 +270,101 @@ export const DataSourceFormFields = {
       defaultValue: 'uploaded',
     },
   ],
-  [DataSourceKey.GOOGLE_DRIVE]: [
-    {
-      label: 'Primary Admin Email',
-      name: 'config.credentials.google_primary_admin',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'admin@example.com',
-      tooltip: t('setting.google_drivePrimaryAdminTip'),
-    },
-    {
-      label: 'OAuth Token JSON',
-      name: 'config.credentials.google_tokens',
-      type: FormFieldType.Textarea,
-      required: true,
-      render: (fieldProps) => (
-        <GoogleDriveTokenField
-          value={fieldProps.value}
-          onChange={fieldProps.onChange}
-          placeholder='{ "token": "...", "refresh_token": "...", ... }'
-        />
-      ),
-      tooltip: t('setting.google_driveTokenTip'),
-    },
-    {
-      label: 'My Drive Emails',
-      name: 'config.my_drive_emails',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'user1@example.com,user2@example.com',
-      tooltip: t('setting.google_driveMyDriveEmailsTip'),
-    },
-    {
-      label: 'Shared Folder URLs',
-      name: 'config.shared_folder_urls',
-      type: FormFieldType.Textarea,
-      required: true,
-      placeholder:
-        'https://drive.google.com/drive/folders/XXXXX,https://drive.google.com/drive/folders/YYYYY',
-      tooltip: t('setting.google_driveSharedFoldersTip'),
-    },
-    // The fields below are intentionally disabled for now. Uncomment them when we
-    // reintroduce shared drive controls or advanced impersonation options.
-    // {
-    //   label: 'Shared Drive URLs',
-    //   name: 'config.shared_drive_urls',
-    //   type: FormFieldType.Text,
-    //   required: false,
-    //   placeholder:
-    //     'Optional: comma-separated shared drive links if you want to include them.',
-    // },
-    // {
-    //   label: 'Specific User Emails',
-    //   name: 'config.specific_user_emails',
-    //   type: FormFieldType.Text,
-    //   required: false,
-    //   placeholder:
-    //     'Optional: comma-separated list of users to impersonate (overrides defaults).',
-    // },
-    // {
-    //      label: 'Include My Drive',
-    //      name: 'config.include_my_drives',
-    //      type: FormFieldType.Checkbox,
-    //      required: false,
-    //      defaultValue: true,
-    // },
-    // {
-    //   label: 'Include Shared Drives',
-    //   name: 'config.include_shared_drives',
-    //   type: FormFieldType.Checkbox,
-    //   required: false,
-    //   defaultValue: false,
-    // },
-    // {
-    //   label: 'Include “Shared with me”',
-    //   name: 'config.include_files_shared_with_me',
-    //   type: FormFieldType.Checkbox,
-    //   required: false,
-    //   defaultValue: false,
-    // },
-    // {
-    //   label: 'Allow Images',
-    //   name: 'config.allow_images',
-    //   type: FormFieldType.Checkbox,
-    //   required: false,
-    //   defaultValue: false,
-    // },
-    {
-      label: '',
-      name: 'config.credentials.authentication_method',
-      type: FormFieldType.Text,
-      required: false,
-      hidden: true,
-      defaultValue: 'uploaded',
-    },
-  ],
+  // [DataSourceKey.GOOGLE_DRIVE]: [
+  //   {
+  //     label: 'Primary Admin Email',
+  //     name: 'config.credentials.google_primary_admin',
+  //     type: FormFieldType.Text,
+  //     required: true,
+  //     placeholder: 'admin@example.com',
+  //     tooltip: t('setting.google_drivePrimaryAdminTip'),
+  //   },
+  //   {
+  //     label: 'OAuth Token JSON',
+  //     name: 'config.credentials.google_tokens',
+  //     type: FormFieldType.Textarea,
+  //     required: true,
+  //     render: (fieldProps) => (
+  //       <GoogleDriveTokenField
+  //         value={fieldProps.value}
+  //         onChange={fieldProps.onChange}
+  //         placeholder='{ "token": "...", "refresh_token": "...", ... }'
+  //       />
+  //     ),
+  //     tooltip: t('setting.google_driveTokenTip'),
+  //   },
+  //   {
+  //     label: 'My Drive Emails',
+  //     name: 'config.my_drive_emails',
+  //     type: FormFieldType.Text,
+  //     required: true,
+  //     placeholder: 'user1@example.com,user2@example.com',
+  //     tooltip: t('setting.google_driveMyDriveEmailsTip'),
+  //   },
+  //   {
+  //     label: 'Shared Folder URLs',
+  //     name: 'config.shared_folder_urls',
+  //     type: FormFieldType.Textarea,
+  //     required: true,
+  //     placeholder:
+  //       'https://drive.google.com/drive/folders/XXXXX,https://drive.google.com/drive/folders/YYYYY',
+  //     tooltip: t('setting.google_driveSharedFoldersTip'),
+  //   },
+  //   // The fields below are intentionally disabled for now. Uncomment them when we
+  //   // reintroduce shared drive controls or advanced impersonation options.
+  //   // {
+  //   //   label: 'Shared Drive URLs',
+  //   //   name: 'config.shared_drive_urls',
+  //   //   type: FormFieldType.Text,
+  //   //   required: false,
+  //   //   placeholder:
+  //   //     'Optional: comma-separated shared drive links if you want to include them.',
+  //   // },
+  //   // {
+  //   //   label: 'Specific User Emails',
+  //   //   name: 'config.specific_user_emails',
+  //   //   type: FormFieldType.Text,
+  //   //   required: false,
+  //   //   placeholder:
+  //   //     'Optional: comma-separated list of users to impersonate (overrides defaults).',
+  //   // },
+  //   // {
+  //   //      label: 'Include My Drive',
+  //   //      name: 'config.include_my_drives',
+  //   //      type: FormFieldType.Checkbox,
+  //   //      required: false,
+  //   //      defaultValue: true,
+  //   // },
+  //   // {
+  //   //   label: 'Include Shared Drives',
+  //   //   name: 'config.include_shared_drives',
+  //   //   type: FormFieldType.Checkbox,
+  //   //   required: false,
+  //   //   defaultValue: false,
+  //   // },
+  //   // {
+  //   //   label: 'Include “Shared with me”',
+  //   //   name: 'config.include_files_shared_with_me',
+  //   //   type: FormFieldType.Checkbox,
+  //   //   required: false,
+  //   //   defaultValue: false,
+  //   // },
+  //   // {
+  //   //   label: 'Allow Images',
+  //   //   name: 'config.allow_images',
+  //   //   type: FormFieldType.Checkbox,
+  //   //   required: false,
+  //   //   defaultValue: false,
+  //   // },
+  //   {
+  //     label: '',
+  //     name: 'config.credentials.authentication_method',
+  //     type: FormFieldType.Text,
+  //     required: false,
+  //     hidden: true,
+  //     defaultValue: 'uploaded',
+  //   },
+  // ],
 };
 
 export const DataSourceFormDefaultValues = {
