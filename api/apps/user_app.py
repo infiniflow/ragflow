@@ -754,7 +754,7 @@ def user_add():
 
 
 @manager.route("/create", methods=["POST"])  # noqa: F821
-# @login_required
+@login_required
 @validate_request("nickname", "email", "password")
 def create_user() -> Response:
     """
@@ -890,11 +890,11 @@ def create_user() -> Response:
 
 
 @manager.route("/update", methods=["PUT"])  # noqa: F821
-# @login_required
+@login_required
 @validate_request()
 def update_user() -> Response:
     """
-    Update an existing user.
+    Update an existing user. Users can only update their own account.
     ---
     tags:
       - User
@@ -1012,6 +1012,14 @@ def update_user() -> Response:
             data=False,
             message="User not found!",
             code=RetCode.DATA_ERROR,
+        )
+
+    # Ensure user can only update themselves
+    if user.id != current_user.id:
+        return get_json_result(
+            data=False,
+            message="You can only update your own account!",
+            code=RetCode.FORBIDDEN,
         )
 
     # Build update dictionary
