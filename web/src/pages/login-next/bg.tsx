@@ -5,7 +5,9 @@ const aspectRatio = {
   bottom: 704,
 };
 
-export const BgSvg = () => {
+export const BgSvg = ({ isPaused = false }: { isPaused?: boolean }) => {
+  const animationClass = isPaused ? 'paused' : '';
+
   const def = (
     path: string,
     id: number | string = '',
@@ -124,7 +126,7 @@ export const BgSvg = () => {
     <div className="absolute inset-0 overflow-hidden pointer-events-none ">
       <div className="absolute top-0 left-0 right-0 w-full">
         <div
-          className={`w-full ml-10`}
+          className={`w-full ml-10 ${animationClass}`}
           style={{ height: aspectRatio['top'] + 'px' }}
         >
           {def(
@@ -134,7 +136,7 @@ export const BgSvg = () => {
           )}
         </div>
         <div
-          className={`w-full -mt-48`}
+          className={`w-full -mt-48 ${animationClass}`}
           style={{ height: aspectRatio['middle'] + 'px' }}
         >
           {def(
@@ -144,7 +146,7 @@ export const BgSvg = () => {
           )}
         </div>
         <div
-          className={`w-full -mt-72`}
+          className={`w-full -mt-72 ${animationClass}`}
           style={{ height: aspectRatio['bottom'] + 'px' }}
         >
           {def(

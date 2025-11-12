@@ -26,27 +26,9 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 ---
 
-### Differences between RAGFlow full edition and RAGFlow slim edition?
-
-Each RAGFlow release is available in two editions:
-
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.21.1-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.21.1`
-
-Note: Starting with `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
-
----
-
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `v0.21.1-slim` and `v0.21.1`:  
-  
-- `infiniflow/ragflow:v0.21.1-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.21.1`: The RAGFlow Docker image with the following built-in embedding models:
-  - `BAAI/bge-large-zh-v1.5`
-  - `maidalun1020/bce-embedding-base_v1`
-
-Note: Starting with `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
+Starting from `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
 
 ---
 
@@ -65,7 +47,7 @@ If you build RAGFlow from source, the version number is also in the system log:
      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
 
-2025-02-18 10:10:43,835 INFO     1445658 RAGFlow version: v0.15.0-50-g6daae7f2 full
+2025-02-18 10:10:43,835 INFO     1445658 RAGFlow version: v0.15.0-50-g6daae7f2
 ```
 
 Where:
@@ -73,9 +55,6 @@ Where:
 - `v0.15.0`: The officially published release.
 - `50`: The number of git commits since the official release.
 - `g6daae7f2`: `g` is the prefix, and `6daae7f2` is the first seven characters of the current commit ID.
-- `full`/`slim`: The RAGFlow edition.
-  - `full`: The full RAGFlow edition.
-  - `slim`: The RAGFlow edition without embedding models and Python packages.
 
 ---
 
@@ -172,7 +151,7 @@ See [Build a RAGFlow Docker image](./develop/build_docker_image.mdx).
 
 ### Cannot access https://huggingface.co
 
-A locally deployed RAGflow downloads OCR and embedding modules from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
+A locally deployed RAGflow downloads OCR models from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
 
 ```
 FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'
@@ -214,7 +193,7 @@ This error suggests that you do not have Internet access or are unable to connec
 
 ---
 
-### `WARNING: can't find /raglof/rag/res/borker.tm`
+### `WARNING: can't find /ragflow/rag/res/borker.tm`
 
 Ignore this warning and continue. All system warnings can be ignored.
 
@@ -434,7 +413,7 @@ See [here](./guides/models/deploy_local_llm.mdx) for more information.
 
 For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. To update this 1GB file size limit:
 
-- In **docker/.env**, upcomment `# MAX_CONTENT_LENGTH=1073741824`, adjust the value as needed, and note that `1073741824` represents 1GB in bytes.
+- In **docker/.env**, uncomment `# MAX_CONTENT_LENGTH=1073741824`, adjust the value as needed, and note that `1073741824` represents 1GB in bytes.
 - If you update the value of `MAX_CONTENT_LENGTH` in **docker/.env**, ensure that you update `client_max_body_size` in **nginx/nginx.conf** accordingly.
 
 :::tip NOTE
