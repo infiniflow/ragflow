@@ -27,7 +27,7 @@ from common import (
     list_documents,
     parse_documents,
 )
-from libs.auth import RAGFlowHttpApiAuth
+from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
 from utils import wait_for
 from utils.file_utils import (
     create_docx_file,
@@ -84,6 +84,12 @@ def ragflow_tmp_dir(request, tmp_path_factory):
 @pytest.fixture(scope="session")
 def HttpApiAuth(token):
     return RAGFlowHttpApiAuth(token)
+
+
+@pytest.fixture(scope="session")
+def WebApiAuth(auth):
+    """Fixture for endpoints that use @login_required (JWT token, not API token)."""
+    return RAGFlowWebApiAuth(auth)
 
 
 @pytest.fixture(scope="function")

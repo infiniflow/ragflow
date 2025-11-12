@@ -27,7 +27,7 @@ from Cryptodome.PublicKey import RSA
 
 from common import create_user, update_user
 from configs import INVALID_API_TOKEN
-from libs.auth import RAGFlowHttpApiAuth
+from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ def encrypt_password(password: str) -> str:
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(name="test_user")
-def fixture_test_user(HttpApiAuth: RAGFlowHttpApiAuth) -> dict[str, Any]:
+def fixture_test_user(WebApiAuth: RAGFlowWebApiAuth) -> dict[str, Any]:
     """Create a temporary user for update tests."""
     unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
     payload: dict[str, str] = {
@@ -69,7 +69,7 @@ def fixture_test_user(HttpApiAuth: RAGFlowHttpApiAuth) -> dict[str, Any]:
         "password": encrypt_password("test123"),
     }
 
-    res: dict[str, Any] = create_user(HttpApiAuth, payload)
+    res: dict[str, Any] = create_user(WebApiAuth, payload)
     assert res["code"] == 0, f"Failed to create test user: {res}"
 
     return {
@@ -90,14 +90,14 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         ("invalid_auth", "expected_code", "expected_message"),
         [
-            # Endpoint works without auth (decorator commented out)
-            (None, 0, ""),
-            (RAGFlowHttpApiAuth(INVALID_API_TOKEN), 0, ""),
+            # Endpoint now requires @login_required (JWT token auth)
+            (None, 401, "Unauthorized"),
+            (RAGFlowWebApiAuth(INVALID_API_TOKEN), 401, "Unauthorized"),
         ],
     )
     def test_invalid_auth(
         self,
-        invalid_auth: RAGFlowHttpApiAuth | None,
+        invalid_auth: RAGFlowWebApiAuth | None,
         expected_code: int,
         expected_message: str,
         test_user: dict[str, Any],
@@ -111,6 +111,36 @@ class TestAuthorization:
         if expected_message:
             assert expected_message in res["message"]
 
+    @pytest.mark.p1
+    def test_user_can_only_update_themselves(
+        self,
+        WebApiAuth: RAGFlowWebApiAuth,
+        test_user: dict[str, Any],
+    ) -> None:
+        """Test that users can only update their own account."""
+        # Create another user
+        unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
+        create_payload: dict[str, str] = {
+            "nickname": "another_user",
+            "email": unique_email,
+            "password": encrypt_password("test123"),
+        }
+        create_res: dict[str, Any] = create_user(WebApiAuth, create_payload)
+        assert create_res["code"] == 0, "Failed to create second user"
+        other_user_id: str = create_res["data"]["id"]
+
+        # Try to update another user's account (should fail)
+        payload: dict[str, Any] = {
+            "user_id": other_user_id,
+            "nickname": "hacked_nickname",
+        }
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
+        assert res["code"] == 403, f"Expected 403 FORBIDDEN, got {res}"
+        assert "only update your own account" in res["message"].lower()
+
+        # Verify the other user's nickname wasn't changed
+        # (We can't easily verify this without a get_user endpoint, but the error is sufficient)
+
 
 @pytest.mark.usefixtures("clear_users")
 class TestUserUpdate:
@@ -118,13 +148,13 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_with_user_id(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+        self, WebApiAuth: RAGFlowWebApiAuth, test_user: dict[str, Any]
     ) -> None:
         payload: dict[str, Any] = {
             "user_id": test_user["user_id"],
             "nickname": "updated_nickname",
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["nickname"] == "updated_nickname"
         assert res["data"]["email"] == test_user["email"]
@@ -132,48 +162,48 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_with_email(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+        self, WebApiAuth: RAGFlowWebApiAuth, test_user: dict[str, Any]
     ) -> None:
         payload: dict[str, Any] = {
             "email": test_user["email"],
             "nickname": "updated_nickname_email",
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["nickname"] == "updated_nickname_email"
         assert res["data"]["email"] == test_user["email"]
 
     @pytest.mark.p1
     def test_update_missing_identifier(
-        self, HttpApiAuth: RAGFlowHttpApiAuth
+        self, WebApiAuth: RAGFlowWebApiAuth
     ) -> None:
         """Test update without user_id or email."""
         payload: dict[str, str] = {"nickname": "updated_nickname"}
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == 101
         assert "Either user_id or email must be provided" in res["message"]
 
     @pytest.mark.p1
     def test_update_user_not_found_by_id(
-        self, HttpApiAuth: RAGFlowHttpApiAuth
+        self, WebApiAuth: RAGFlowWebApiAuth
     ) -> None:
         payload: dict[str, str] = {
             "user_id": "non_existent_user_id_12345",
             "nickname": "updated_nickname",
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == 102
         assert "User not found" in res["message"]
 
     @pytest.mark.p1
     def test_update_user_not_found_by_email(
-        self, HttpApiAuth: RAGFlowHttpApiAuth
+        self, WebApiAuth: RAGFlowWebApiAuth
     ) -> None:
         payload: dict[str, str] = {
             "email": "nonexistent@example.com",
             "nickname": "updated_nickname",
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == 102
         assert "not found" in res["message"]
 
@@ -190,7 +220,7 @@ class TestUserUpdate:
     )
     def test_update_nickname(
         self,
-        HttpApiAuth: RAGFlowHttpApiAuth,
+        WebApiAuth: RAGFlowWebApiAuth,
         test_user: dict[str, Any],
         nickname: str,
         expected_code: int,
@@ -200,7 +230,7 @@ class TestUserUpdate:
             "user_id": test_user["user_id"],
             "nickname": nickname,
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
             assert res["data"]["nickname"] == nickname
@@ -209,26 +239,26 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_password(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+        self, WebApiAuth: RAGFlowWebApiAuth, test_user: dict[str, Any]
     ) -> None:
         new_password: str = "new_password_456"
         payload: dict[str, str] = {
             "user_id": test_user["user_id"],
             "password": encrypt_password(new_password),
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert "updated successfully" in res["message"].lower()
 
     @pytest.mark.p1
     def test_update_password_invalid_encryption(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+        self, WebApiAuth: RAGFlowWebApiAuth, test_user: dict[str, Any]
     ) -> None:
         payload: dict[str, str] = {
             "user_id": test_user["user_id"],
             "password": "plain_text_password",
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == 500
         assert "Fail to decrypt password" in res["message"]
 
@@ -248,7 +278,7 @@ class TestUserUpdate:
     )
     def test_update_email(
         self,
-        HttpApiAuth: RAGFlowHttpApiAuth,
+        WebApiAuth: RAGFlowWebApiAuth,
         test_user: dict[str, Any],
         new_email: str,
         expected_code: int,
@@ -260,7 +290,7 @@ class TestUserUpdate:
             "user_id": test_user["user_id"],
             "new_email": new_email,
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
             assert res["data"]["email"] == new_email
@@ -269,7 +299,7 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_email_duplicate(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+        self, WebApiAuth: RAGFlowWebApiAuth, test_user: dict[str, Any]
     ) -> None:
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
         create_payload: dict[str, str] = {
@@ -277,14 +307,14 @@ class TestUserUpdate:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(HttpApiAuth, create_payload)
+        create_res: dict[str, Any] = create_user(WebApiAuth, create_payload)
         assert create_res["code"] == 0
 
         update_payload: dict[str, str] = {
             "user_id": test_user["user_id"],
             "new_email": unique_email,
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, update_payload)
+        res: dict[str, Any] = update_user(WebApiAuth, update_payload)
         assert res["code"] == 103
         assert "already in use" in res["message"]
 
@@ -295,7 +325,7 @@ class TestUserUpdate:
     )
     def test_update_is_superuser(
         self,
-        HttpApiAuth: RAGFlowHttpApiAuth,
+        WebApiAuth: RAGFlowWebApiAuth,
         test_user: dict[str, Any],
         is_superuser: bool,
         expected_value: bool,
@@ -304,13 +334,13 @@ class TestUserUpdate:
             "user_id": test_user["user_id"],
             "is_superuser": is_superuser,
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["is_superuser"] is expected_value
 
     @pytest.mark.p1
     def test_update_multiple_fields(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+        self, WebApiAuth: RAGFlowWebApiAuth, test_user: dict[str, Any]
     ) -> None:
         new_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
         payload: dict[str, Any] = {
@@ -319,7 +349,7 @@ class TestUserUpdate:
             "new_email": new_email,
             "is_superuser": True,
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["nickname"] == "updated_multiple"
         assert res["data"]["email"] == new_email
@@ -327,35 +357,35 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_no_fields(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+        self, WebApiAuth: RAGFlowWebApiAuth, test_user: dict[str, Any]
     ) -> None:
         payload: dict[str, str] = {"user_id": test_user["user_id"]}
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == 101
         assert "No valid fields to update" in res["message"]
 
     @pytest.mark.p1
     def test_update_email_using_email_field_when_user_id_provided(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+        self, WebApiAuth: RAGFlowWebApiAuth, test_user: dict[str, Any]
     ) -> None:
         new_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
         payload: dict[str, str] = {
             "user_id": test_user["user_id"],
             "email": new_email,
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == 0, res
         assert res["data"]["email"] == new_email
 
     @pytest.mark.p2
     def test_update_response_structure(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+        self, WebApiAuth: RAGFlowWebApiAuth, test_user: dict[str, Any]
     ) -> None:
         payload: dict[str, Any] = {
             "user_id": test_user["user_id"],
             "nickname": "response_test",
         }
-        res: dict[str, Any] = update_user(HttpApiAuth, payload)
+        res: dict[str, Any] = update_user(WebApiAuth, payload)
         assert res["code"] == 0
         assert set(("id", "email", "nickname")) <= res["data"].keys()
         assert res["data"]["nickname"] == "response_test"
@@ -363,34 +393,21 @@ class TestUserUpdate:
 
     @pytest.mark.p2
     def test_concurrent_updates(
-        self, HttpApiAuth: RAGFlowHttpApiAuth
+        self, WebApiAuth: RAGFlowWebApiAuth, test_user: dict[str, Any]
     ) -> None:
-        """Test concurrent updates to different users."""
-        users: list[dict[str, Any]] = []
-        for i in range(5):
-            email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
-            create_payload: dict[str, str] = {
-                "nickname": f"user_{i}",
-                "email": email,
-                "password": encrypt_password("test123"),
-            }
-            create_res: dict[str, Any] = create_user(
-                HttpApiAuth, create_payload
-            )
-            assert create_res["code"] == 0
-            users.append(create_res["data"])
-
+        """Test concurrent updates to the same user (users can only update themselves)."""
+        # Test concurrent updates to the authenticated user's own account
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures: list[Future[dict[str, Any]]] = [
                 executor.submit(
                     update_user,
-                    HttpApiAuth,
+                    WebApiAuth,
                     {
-                        "user_id": u["id"],
+                        "user_id": test_user["user_id"],
                         "nickname": f"updated_user_{i}",
                     },
                 )
-                for i, u in enumerate(users)
+                for i in range(5)
             ]
 
             for future in as_completed(futures):
@@ -399,7 +416,7 @@ class TestUserUpdate:
 
     @pytest.mark.p3
     def test_update_same_user_multiple_times(
-        self, HttpApiAuth: RAGFlowHttpApiAuth, test_user: dict[str, Any]
+        self, WebApiAuth: RAGFlowWebApiAuth, test_user: dict[str, Any]
     ) -> None:
         """Test repeated updates on the same user."""
         for nickname in (
@@ -411,6 +428,6 @@ class TestUserUpdate:
                 "user_id": test_user["user_id"],
                 "nickname": nickname,
             }
-            res: dict[str, Any] = update_user(HttpApiAuth, payload)
+            res: dict[str, Any] = update_user(WebApiAuth, payload)
             assert res["code"] == 0
             assert res["data"]["nickname"] == nickname
