@@ -1,6 +1,6 @@
 ---
 sidebar_position: -7
-slug: /set_metada
+slug: /set_metadata
 ---
 
 # Set metadata
