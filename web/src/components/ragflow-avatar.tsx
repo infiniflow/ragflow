@@ -11,6 +11,8 @@ const PREDEFINED_COLORS = [
 ];
 
 const getStringHash = (str: string): number => {
+  if (typeof str !== 'string') return 0;
+
   const normalized = str.trim().toLowerCase();
   let hash = 104729;
   const seed = 0x9747b28c;
@@ -41,8 +43,8 @@ export const RAGFlowAvatar = memo(
   >(({ name, avatar, isPerson = false, className, ...props }, ref) => {
     // Generate initial letter logic
     const getInitials = (name?: string) => {
-      if (!name) return '';
-      const parts = name.trim().split(/\s+/);
+      if (typeof name !== 'string' || !name) return '';
+      const parts = name?.trim().split(/\s+/);
       if (parts.length === 1) {
         return parts[0][0].toUpperCase();
       }
