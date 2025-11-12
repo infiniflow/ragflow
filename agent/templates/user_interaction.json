@@ -1,8 +1,8 @@
 {
     "id": 27,
     "title": {
-        "en": "Interacting with the Agent",
-        "zh": "用户与 Agent 交互"
+        "en": "Interactive Agent",
+        "zh": "可交互的 Agent"
     },
     "description": {
         "en": "During the Agent’s execution, users can actively intervene and interact with the Agent to adjust or guide its output, ensuring the final result aligns with their intentions.",
