@@ -38,11 +38,11 @@ class FulltextQueryer:
         ]
 
     @staticmethod
-    def subSpecialChar(line):
+    def sub_special_char(line):
         return re.sub(r"([:\{\}/\[\]\-\*\"\(\)\|\+~\^])", r"\\\1", line).strip()
 
     @staticmethod
-    def isChinese(line):
+    def is_chinese(line):
         arr = re.split(r"[ \t]+", line)
         if len(arr) <= 3:
             return True
@@ -92,7 +92,7 @@ class FulltextQueryer:
         otxt = txt
         txt = FulltextQueryer.rmWWW(txt)
 
-        if not self.isChinese(txt):
+        if not self.is_chinese(txt):
             txt = FulltextQueryer.rmWWW(txt)
             tks = rag_tokenizer.tokenize(txt).split()
             keywords = [t for t in tks if t]
@@ -163,7 +163,7 @@ class FulltextQueryer:
                     )
                     for m in sm
                 ]
-                sm = [FulltextQueryer.subSpecialChar(m) for m in sm if len(m) > 1]
+                sm = [FulltextQueryer.sub_special_char(m) for m in sm if len(m) > 1]
                 sm = [m for m in sm if len(m) > 1]
 
                 if len(keywords) < 32:
@@ -171,7 +171,7 @@ class FulltextQueryer:
                     keywords.extend(sm)
 
                 tk_syns = self.syn.lookup(tk)
-                tk_syns = [FulltextQueryer.subSpecialChar(s) for s in tk_syns]
+                tk_syns = [FulltextQueryer.sub_special_char(s) for s in tk_syns]
                 if len(keywords) < 32:
                     keywords.extend([s for s in tk_syns if s])
                 tk_syns = [rag_tokenizer.fine_grained_tokenize(s) for s in tk_syns if s]
@@ -180,7 +180,7 @@ class FulltextQueryer:
                 if len(keywords) >= 32:
                     break
 
-                tk = FulltextQueryer.subSpecialChar(tk)
+                tk = FulltextQueryer.sub_special_char(tk)
                 if tk.find(" ") > 0:
                     tk = '"%s"' % tk
                 if tk_syns:
@@ -198,7 +198,7 @@ class FulltextQueryer:
             syns = " OR ".join(
                 [
                     '"%s"'
-                    % rag_tokenizer.tokenize(FulltextQueryer.subSpecialChar(s))
+                    % rag_tokenizer.tokenize(FulltextQueryer.sub_special_char(s))
                     for s in syns
                 ]
             )
@@ -217,17 +217,17 @@ class FulltextQueryer:
         return None, keywords
 
     def hybrid_similarity(self, avec, bvecs, atks, btkss, tkweight=0.3, vtweight=0.7):
-        from sklearn.metrics.pairwise import cosine_similarity as CosineSimilarity
+        from sklearn.metrics.pairwise import cosine_similarity
         import numpy as np
 
-        sims = CosineSimilarity([avec], bvecs)
+        sims = cosine_similarity([avec], bvecs)
         tksim = self.token_similarity(atks, btkss)
         if np.sum(sims[0]) == 0:
             return np.array(tksim), tksim, sims[0]
         return np.array(sims[0]) * vtweight + np.array(tksim) * tkweight, tksim, sims[0]
 
     def token_similarity(self, atks, btkss):
-        def toDict(tks):
+        def to_dict(tks):
             if isinstance(tks, str):
                 tks = tks.split()
             d = defaultdict(int)
@@ -236,8 +236,8 @@ class FulltextQueryer:
                 d[t] += c
             return d
 
-        atks = toDict(atks)
-        btkss = [toDict(tks) for tks in btkss]
+        atks = to_dict(atks)
+        btkss = [to_dict(tks) for tks in btkss]
         return [self.similarity(atks, btks) for btks in btkss]
 
     def similarity(self, qtwt, dtwt):
@@ -262,10 +262,10 @@ class FulltextQueryer:
         keywords = [f'"{k.strip()}"' for k in keywords]
         for tk, w in sorted(tks_w, key=lambda x: x[1] * -1)[:keywords_topn]:
             tk_syns = self.syn.lookup(tk)
-            tk_syns = [FulltextQueryer.subSpecialChar(s) for s in tk_syns]
+            tk_syns = [FulltextQueryer.sub_special_char(s) for s in tk_syns]
             tk_syns = [rag_tokenizer.fine_grained_tokenize(s) for s in tk_syns if s]
             tk_syns = [f"\"{s}\"" if s.find(" ") > 0 else s for s in tk_syns]
-            tk = FulltextQueryer.subSpecialChar(tk)
+            tk = FulltextQueryer.sub_special_char(tk)
             if tk.find(" ") > 0:
                 tk = '"%s"' % tk
             if tk_syns:

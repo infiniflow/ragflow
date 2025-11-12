@@ -104,6 +104,7 @@ class RedisDB:
 
         if self.REDIS.get(a) == b:
             return True
+        return False
 
     def info(self):
         info = self.REDIS.info()
@@ -124,7 +125,7 @@ class RedisDB:
 
     def exist(self, k):
         if not self.REDIS:
-            return
+            return None
         try:
             return self.REDIS.exists(k)
         except Exception as e:
@@ -133,7 +134,7 @@ class RedisDB:
 
     def get(self, k):
         if not self.REDIS:
-            return
+            return None
         try:
             return self.REDIS.get(k)
         except Exception as e:

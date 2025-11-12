@@ -28,7 +28,7 @@ def collect():
     logging.debug(doc_locations)
     if len(doc_locations) == 0:
         time.sleep(1)
-        return
+        return None
     return doc_locations
 
 

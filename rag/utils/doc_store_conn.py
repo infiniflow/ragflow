@@ -241,23 +241,23 @@ class DocStoreConnection(ABC):
     """
 
     @abstractmethod
-    def getTotal(self, res):
+    def get_total(self, res):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def getChunkIds(self, res):
+    def get_chunk_ids(self, res):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def getFields(self, res, fields: list[str]) -> dict[str, dict]:
+    def get_fields(self, res, fields: list[str]) -> dict[str, dict]:
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def getHighlight(self, res, keywords: list[str], fieldnm: str):
+    def get_highlight(self, res, keywords: list[str], fieldnm: str):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def getAggregation(self, res, fieldnm: str):
+    def get_aggregation(self, res, fieldnm: str):
         raise NotImplementedError("Not implemented")
 
     """

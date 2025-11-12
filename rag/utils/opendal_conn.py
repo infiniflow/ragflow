@@ -62,8 +62,7 @@ class OpenDALStorage:
 
     def health(self):
         bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
-        r = self._operator.write(f"{bucket}/{fnm}", binary)
-        return r
+        return self._operator.write(f"{bucket}/{fnm}", binary)
 
     def put(self, bucket, fnm, binary, tenant_id=None):
         self._operator.write(f"{bucket}/{fnm}", binary)

@@ -359,7 +359,7 @@ async def build_chunks(task, progress_callback):
             task_canceled = has_canceled(task["id"])
             if task_canceled:
                 progress_callback(-1, msg="Task has been canceled.")
-                return
+                return None
             if settings.retriever.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(d[TAG_FLD]) > 0:
                 examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
             else:
@@ -417,6 +417,7 @@ def build_TOC(task, docs, progress_callback):
         d["page_num_int"] = [100000000]
         d["id"] = xxhash.xxh64((d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
         return d
+    return None
 
 
 def init_kb(row, vector_size: int):
@@ -719,7 +720,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
         task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
-            return
+            return False
         if b % 128 == 0:
             progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
         if doc_store_result:
@@ -737,7 +738,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
                 for chunk_id in chunk_ids:
                     nursery.start_soon(delete_image, task_dataset_id, chunk_id)
             progress_callback(-1, msg=f"Chunk updates failed since task {task_id} is unknown.")
-            return
+            return False
     return True
 
 

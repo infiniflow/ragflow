@@ -471,12 +471,12 @@ class ESConnection(DocStoreConnection):
     Helper functions for search result
     """
 
-    def getTotal(self, res):
+    def get_total(self, res):
         if isinstance(res["hits"]["total"], type({})):
             return res["hits"]["total"]["value"]
         return res["hits"]["total"]
 
-    def getChunkIds(self, res):
+    def get_chunk_ids(self, res):
         return [d["_id"] for d in res["hits"]["hits"]]
 
     def __getSource(self, res):
@@ -487,7 +487,7 @@ class ESConnection(DocStoreConnection):
             rr.append(d["_source"])
         return rr
 
-    def getFields(self, res, fields: list[str]) -> dict[str, dict]:
+    def get_fields(self, res, fields: list[str]) -> dict[str, dict]:
         res_fields = {}
         if not fields:
             return {}
@@ -509,7 +509,7 @@ class ESConnection(DocStoreConnection):
                 res_fields[d["id"]] = m
         return res_fields
 
-    def getHighlight(self, res, keywords: list[str], fieldnm: str):
+    def get_highlight(self, res, keywords: list[str], fieldnm: str):
         ans = {}
         for d in res["hits"]["hits"]:
             hlts = d.get("highlight")
@@ -534,7 +534,7 @@ class ESConnection(DocStoreConnection):
 
         return ans
 
-    def getAggregation(self, res, fieldnm: str):
+    def get_aggregation(self, res, fieldnm: str):
         agg_field = "aggs_" + fieldnm
         if "aggregations" not in res or agg_field not in res["aggregations"]:
             return list()
