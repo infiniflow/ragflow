@@ -190,7 +190,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 3. Use the pre-built Docker images and start up the server:
 
    ```bash
-   # Use CPU for embedding and DeepDoc tasks:
+   # Use CPU for DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
    ```
 
@@ -206,15 +206,6 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 ```mdx-code-block
 </APITable>
 ```
-
-:::danger IMPORTANT
-The embedding models included in `v0.21.1` and `nightly` are:
-
-- BAAI/bge-large-zh-v1.5
-- maidalun1020/bce-embedding-base_v1
-
-These two embedding models are optimized specifically for English and Chinese, so performance will be compromised if you use them to embed documents in other languages.
-:::
 
 :::tip NOTE
 The image size shown refers to the size of the *downloaded* Docker image, which is compressed. When Docker runs the image, it unpacks it, resulting in significantly greater disk usage. A Docker image will expand to around 7 GB once unpacked.
