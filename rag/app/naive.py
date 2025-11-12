@@ -62,7 +62,7 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
 
     if not pdf_parser.check_installation():
         callback(-1, "MinerU not found.")
-        return None, None
+        return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
@@ -80,7 +80,7 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
 
     if not pdf_parser.check_installation():
         callback(-1, "Docling not found.")
-        return None, None
+        return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
@@ -97,7 +97,7 @@ def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese",
 
     if not tcadp_parser.check_installation():
         callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
-        return None, None
+        return None, None, tcadp_parser
 
     sections, tables = tcadp_parser.parse_pdf(
         filepath=filename,
@@ -478,12 +478,14 @@ class Markdown(MarkdownParser):
         images = []
         # Find all image URLs in text
         for url in image_urls:
+            if not url:
+                continue
             try:
                 # check if the url is a local file or a remote URL
                 if url.startswith(('http://', 'https://')):
                     # For remote URLs, download the image
                     response = requests.get(url, stream=True, timeout=30)
-                    if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
+                    if response.status_code == 200 and response.headers['Content-Type'] and response.headers['Content-Type'].startswith('image/'):
                         img = Image.open(BytesIO(response.content)).convert('RGB')
                         images.append(img)
                 else:
@@ -641,6 +643,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             to_page = to_page,
             lang = lang,
             callback = callback,
+            layout_recognizer = layout_recognizer,
             **kwargs
         )
 
@@ -724,8 +727,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
 
+        try:
+            from tika import parser as tika_parser
+        except Exception as e:
+            callback(0.8, f"tika not available: {e}. Unsupported .doc parsing.")
+            logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
+            return []
+
         binary = BytesIO(binary)
-        doc_parsed = parser.from_buffer(binary)
+        doc_parsed = tika_parser.from_buffer(binary)
         if doc_parsed.get('content', None) is not None:
             sections = doc_parsed['content'].split('\n')
             sections = [(_, "") for _ in sections if _]

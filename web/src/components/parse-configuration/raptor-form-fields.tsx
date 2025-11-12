@@ -19,6 +19,7 @@ import {
   FormMessage,
 } from '../ui/form';
 import { ExpandedInput } from '../ui/input';
+import { Radio } from '../ui/radio';
 import { Textarea } from '../ui/textarea';
 
 export const excludedParseMethods = [
@@ -100,6 +101,38 @@ const RaptorFormFields = ({
                       status={1}
                       type={GenerateType.Raptor}
                     />
+                  </FormControl>
+                </div>
+              </div>
+              <div className="flex pt-1">
+                <div className="w-1/4"></div>
+                <FormMessage />
+              </div>
+            </FormItem>
+          );
+        }}
+      />
+      <FormField
+        control={form.control}
+        name={'parser_config.raptor.scope'}
+        render={({ field }) => {
+          return (
+            <FormItem className=" items-center space-y-0 ">
+              <div className="flex items-start">
+                <FormLabel
+                  tooltip={t('generationScopeTip')}
+                  className="text-sm  whitespace-nowrap w-1/4"
+                >
+                  {t('generationScope')}
+                </FormLabel>
+                <div className="w-3/4">
+                  <FormControl>
+                    <Radio.Group {...field} disabled={!!data?.finish_at}>
+                      <div className={'flex gap-4 w-full text-text-secondary '}>
+                        <Radio value="dataset">{t('scopeDataset')}</Radio>
+                        <Radio value="file">{t('scopeSingleFile')}</Radio>
+                      </div>
+                    </Radio.Group>
                   </FormControl>
                 </div>
               </div>

@@ -130,9 +130,14 @@ const columns = ({
 //   pageSize: 10,
 //   total: 0,
 // };
-export const DataSourceLogsTable = () => {
+export const DataSourceLogsTable = ({
+  refresh_freq,
+}: {
+  refresh_freq: number | false;
+}) => {
   // const [pagination, setPagination] = useState(paginationInit);
-  const { data, pagination, setPagination } = useLogListDataSource();
+  const { data, pagination, setPagination } =
+    useLogListDataSource(refresh_freq);
   const navigate = useNavigate();
   const currentPagination = useMemo(
     () => ({
@@ -212,8 +217,8 @@ export const DataSourceLogsTable = () => {
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
+              <TableCell colSpan={5} className="h-24 text-center">
+                {t('common.noData')}
               </TableCell>
             </TableRow>
           )}

@@ -40,8 +40,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { LoadingButton } from '@/components/ui/loading-button';
+import { SearchInput } from '@/components/ui/input';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -63,6 +62,7 @@ import {
 
 import { EMPTY_DATA, createFuzzySearchFn, getSortIcon } from './utils';
 
+import dayjs from 'dayjs';
 import useCreateEmailForm from './forms/email-form';
 import useImportExcelForm, {
   ImportExcelFormData,
@@ -157,18 +157,14 @@ function AdminWhitelist() {
       email: item.email,
     }));
 
-    const now = new Date();
-    const YYYY = String(now.getFullYear()).padStart(4, '0');
-    const MM = String(now.getMonth()).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    const HH = String(now.getHours()).padStart(2, '0');
-    const mm = String(now.getMinutes()).padStart(2, '0');
-    const ss = String(now.getSeconds()).padStart(2, '0');
-
     const worksheet = XLSX.utils.json_to_sheet(columnData);
     const workbook = XLSX.utils.book_new();
+
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
-    XLSX.writeFile(workbook, `whitelist_${YYYY}${MM}${dd}${HH}${mm}${ss}.xlsx`);
+    XLSX.writeFile(
+      workbook,
+      `whitelist_${dayjs(new Date()).format('YYYYMMDDHHmmss')}.xlsx`,
+    );
   };
 
   const columnDefs = useMemo(
@@ -187,11 +183,11 @@ function AdminWhitelist() {
         id: 'actions',
         header: t('admin.actions'),
         cell: ({ row }) => (
-          <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-100">
+          <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
             <Button
               variant="transparent"
               size="icon"
-              className="border-0 text-text-secondary"
+              className="border-0"
               onClick={() => {
                 setItemToMakeAction(row.original);
                 setEditModalOpen(true);
@@ -200,9 +196,9 @@ function AdminWhitelist() {
               <LucideUserPen />
             </Button>
             <Button
-              variant="transparent"
+              variant="danger"
               size="icon"
-              className="border-0 text-text-secondary"
+              className="border-0"
               onClick={() => {
                 setItemToMakeAction(row.original);
                 setDeleteModalOpen(true);
@@ -227,11 +223,13 @@ function AdminWhitelist() {
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+
+    enableSorting: false,
   });
 
   return (
     <>
-      <Card className="!shadow-none relative h-full border border-border-button bg-transparent rounded-xl overflow-x-hidden overflow-y-auto">
+      <Card className="!shadow-none relative h-full border-0.5 border-border-button bg-transparent rounded-xl overflow-x-hidden overflow-y-auto">
         <Spotlight />
 
         <ScrollArea className="size-full">
@@ -239,15 +237,13 @@ function AdminWhitelist() {
             <CardTitle>{t('admin.whitelistManagement')}</CardTitle>
 
             <div className="flex items-center gap-4">
-              <div className="relative w-56">
-                <LucideSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <Input
-                  className="pl-10 h-10 bg-bg-input border-border-button"
-                  placeholder={t('header.search')}
-                  value={table.getState().globalFilter}
-                  onChange={(e) => table.setGlobalFilter(e.target.value)}
-                />
-              </div>
+              <SearchInput
+                className="w-56 h-10 bg-bg-input border-border-button"
+                placeholder={t('header.search')}
+                value={table.getState().globalFilter}
+                onChange={(e) => table.setGlobalFilter(e.target.value)}
+                prefix={<LucideSearch className="size-3.5" />}
+              />
 
               <Button
                 variant="outline"
@@ -272,7 +268,7 @@ function AdminWhitelist() {
                 onClick={() => setCreateModalOpen(true)}
               >
                 <LucidePlus />
-                {t('admin.createEmail')}
+                {t('admin.newUser')}
               </Button>
             </div>
           </CardHeader>
@@ -353,28 +349,27 @@ function AdminWhitelist() {
       {/* Delete Confirmation Modal */}
       <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!deleteModalOpen) {
               setItemToMakeAction(null);
             }
           }}
         >
-          <DialogHeader className="p-6 border-b border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.deleteEmail')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4">
+          <section className="px-6">
             <DialogDescription className="text-text-primary">
               {t('admin.deleteWhitelistEmailConfirmation')}
-
-              <div className="rounded-lg mt-6 p-4 border border-border-button">
-                {itemToMakeAction?.email}
-              </div>
             </DialogDescription>
+
+            <div className="rounded-lg mt-6 p-4 border-0.5 border-border-button">
+              {itemToMakeAction?.email}
+            </div>
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -384,7 +379,7 @@ function AdminWhitelist() {
               {t('admin.cancel')}
             </Button>
 
-            <LoadingButton
+            <Button
               className="px-4 h-10"
               variant="destructive"
               onClick={() => {
@@ -398,7 +393,7 @@ function AdminWhitelist() {
               loading={deleteWhitelistEntryMutation.isPending}
             >
               {t('admin.delete')}
-            </LoadingButton>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -406,25 +401,24 @@ function AdminWhitelist() {
       {/* Create Email Modal */}
       <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!createModalOpen) {
               createEmailForm.form.reset();
             }
           }}
         >
-          <DialogHeader className="p-6 border-b border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.createEmail')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4 text-text-secondary">
+          <section className="px-6">
             <createEmailForm.FormComponent
               id={createEmailForm.id}
               onSubmit={createWhitelistEntryMutation.mutate}
             />
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -434,7 +428,7 @@ function AdminWhitelist() {
               {t('admin.cancel')}
             </Button>
 
-            <LoadingButton
+            <Button
               form={createEmailForm.id}
               type="submit"
               className="px-4 h-10"
@@ -443,7 +437,7 @@ function AdminWhitelist() {
               loading={createWhitelistEntryMutation.isPending}
             >
               {t('admin.confirm')}
-            </LoadingButton>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -451,7 +445,6 @@ function AdminWhitelist() {
       {/* Edit Email Modal */}
       <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!editModalOpen) {
               setItemToMakeAction(null);
@@ -459,11 +452,11 @@ function AdminWhitelist() {
             }
           }}
         >
-          <DialogHeader className="p-6 border-b border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.editEmail')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4 text-text-secondary">
+          <section className="px-6">
             <editEmailForm.FormComponent
               id={editEmailForm.id}
               onSubmit={(value) => {
@@ -477,7 +470,7 @@ function AdminWhitelist() {
             />
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -487,7 +480,7 @@ function AdminWhitelist() {
               {t('admin.cancel')}
             </Button>
 
-            <LoadingButton
+            <Button
               form={editEmailForm.id}
               type="submit"
               className="px-4 h-10"
@@ -496,7 +489,7 @@ function AdminWhitelist() {
               loading={updateWhitelistEntryMutation.isPending}
             >
               {t('admin.confirm')}
-            </LoadingButton>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -504,25 +497,24 @@ function AdminWhitelist() {
       {/* Import Excel Modal */}
       <Dialog open={importModalOpen} onOpenChange={setImportModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!importModalOpen) {
               importExcelForm.form.reset();
             }
           }}
         >
-          <DialogHeader className="p-6 border-b border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.importWhitelist')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4 text-text-secondary">
+          <section className="px-6">
             <importExcelForm.FormComponent
               id={importExcelForm.id}
               onSubmit={importExcelMutation.mutate}
             />
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -532,7 +524,7 @@ function AdminWhitelist() {
               {t('admin.cancel')}
             </Button>
 
-            <LoadingButton
+            <Button
               form={importExcelForm.id}
               type="submit"
               className="px-4 h-10"
@@ -541,7 +533,7 @@ function AdminWhitelist() {
               loading={importExcelMutation.isPending}
             >
               {t('admin.import')}
-            </LoadingButton>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

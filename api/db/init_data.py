@@ -89,13 +89,7 @@ def init_superuser():
 
 
 def init_llm_factory():
-    try:
-        LLMService.filter_delete([(LLM.fid == "MiniMax" or LLM.fid == "Minimax")])
-        LLMService.filter_delete([(LLM.fid == "cohere")])
-        LLMFactoriesService.filter_delete([LLMFactories.name == "cohere"])
-    except Exception:
-        pass
-
+    LLMFactoriesService.filter_delete([1 == 1])
     factory_llm_infos = settings.FACTORY_LLM_INFOS
     for factory_llm_info in factory_llm_infos:
         info = deepcopy(factory_llm_info)

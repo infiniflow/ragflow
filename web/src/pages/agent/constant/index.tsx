@@ -446,7 +446,7 @@ export const initialAgentValues = {
   ...initialLlmBaseValues,
   description: '',
   user_prompt: '',
-  sys_prompt: t('flow.sysPromptDefultValue'),
+  sys_prompt: t('flow.sysPromptDefaultValue'),
   prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
   message_history_window_size: 12,
   max_retries: 3,
@@ -598,7 +598,7 @@ export const initialDataOperationsValues = {
 
 export const initialVariableAssignerValues = {};
 
-export const initialVariableAggregatorValues = {};
+export const initialVariableAggregatorValues = { outputs: {}, groups: [] };
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },

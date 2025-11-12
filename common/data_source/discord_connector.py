@@ -63,7 +63,7 @@ def _convert_message_to_document(
         semantic_identifier=semantic_identifier,
         doc_updated_at=doc_updated_at,
         blob=message.content.encode("utf-8"),
-        extension="txt",
+        extension=".txt",
         size_bytes=len(message.content.encode("utf-8")),
     )
 
@@ -275,7 +275,7 @@ class DiscordConnector(LoadConnector, PollConnector):
                 semantic_identifier=f"{min_updated_at} -> {max_updated_at}",
                 doc_updated_at=max_updated_at,
                 blob=blob,
-                extension="txt",
+                extension=".txt",
                 size_bytes=size_bytes,
             )
 

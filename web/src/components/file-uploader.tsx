@@ -272,7 +272,7 @@ export function FileUploader(props: FileUploaderProps) {
           <div
             {...getRootProps()}
             className={cn(
-              'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border-2 border-dashed border-muted-foreground/25 px-5 py-2.5 text-center transition hover:bg-muted/25',
+              'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border-2 border-dashed border-border-default px-5 py-2.5 text-center transition hover:bg-muted/25 bg-accent-primary-5',
               'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
               isDragActive && 'border-muted-foreground/50',
               isDisabled && 'pointer-events-none opacity-60',
@@ -305,7 +305,7 @@ export function FileUploader(props: FileUploaderProps) {
                   <p className="font-medium text-muted-foreground">
                     {t('knowledgeDetails.uploadTitle')}
                   </p>
-                  <p className="text-sm text-muted-foreground/70">
+                  <p className="text-sm text-text-secondary">
                     {description || t('knowledgeDetails.uploadDescription')}
                     {/* You can upload
                     {maxFileCount > 1

@@ -466,10 +466,7 @@ def upload():
     if "run" in form_data.keys():
         if request.form.get("run").strip() == "1":
             try:
-                info = {"run": 1, "progress": 0}
-                info["progress_msg"] = ""
-                info["chunk_num"] = 0
-                info["token_num"] = 0
+                info = {"run": 1, "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
                 DocumentService.update_by_id(doc["id"], info)
                 # if str(req["run"]) == TaskStatus.CANCEL.value:
                 tenant_id = DocumentService.get_tenant_id(doc["id"])
@@ -726,8 +723,7 @@ def completion_faq():
     if "quote" not in req:
         req["quote"] = True
 
-    msg = []
-    msg.append({"role": "user", "content": req["word"]})
+    msg = [{"role": "user", "content": req["word"]}]
     if not msg[-1].get("id"):
         msg[-1]["id"] = get_uuid()
     message_id = msg[-1]["id"]

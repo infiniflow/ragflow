@@ -13,7 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from agent.component.base import ComponentBase, ComponentParamBase
+import json
+import re
+from functools import partial
+
+from agent.component.base import ComponentParamBase, ComponentBase
 
 
 class UserFillUpParam(ComponentParamBase):
@@ -31,10 +35,35 @@ class UserFillUp(ComponentBase):
     component_name = "UserFillUp"
 
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("UserFillUp processing"):
+            return
+
+        if self._param.enable_tips:
+            content = self._param.tips
+            for k, v in self.get_input_elements_from_text(self._param.tips).items():
+                v = v["value"]
+                ans = ""
+                if isinstance(v, partial):
+                    for t in v():
+                        ans += t
+                elif isinstance(v, list):
+                    ans = ",".join([str(vv) for vv in v])
+                elif not isinstance(v, str):
+                    try:
+                        ans = json.dumps(v, ensure_ascii=False)
+                    except Exception:
+                        pass
+                else:
+                    ans = v
+                if not ans:
+                    ans = ""
+                content = re.sub(r"\{%s\}"%k, ans, content)
+
+            self.set_output("tips", content)
         for k, v in kwargs.get("inputs", {}).items():
+            if self.check_if_canceled("UserFillUp processing"):
+                return
             self.set_output(k, v)
 
     def thoughts(self) -> str:
         return "Waiting for your input..."
-
-

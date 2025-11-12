@@ -66,7 +66,7 @@ const SourceDetailPage = () => {
         render: (fieldProps: FormFieldConfig) => (
           <div className="flex items-center  gap-1 w-full relative">
             <Input {...fieldProps} type={FormFieldType.Number} />
-            <span className="absolute right-0 -translate-x-12 text-text-secondary italic ">
+            <span className="absolute right-0 -translate-x-[58px] text-text-secondary italic ">
               minutes
             </span>
             <button
@@ -96,7 +96,7 @@ const SourceDetailPage = () => {
           return (
             <div className="flex items-center  gap-1 w-full relative">
               <Input {...fieldProps} type={FormFieldType.Number} />
-              <span className="absolute right-0 -translate-x-3 text-text-secondary italic ">
+              <span className="absolute right-0 -translate-x-6 text-text-secondary italic ">
                 hours
               </span>
             </div>
@@ -111,7 +111,7 @@ const SourceDetailPage = () => {
         render: (fieldProps: FormFieldConfig) => (
           <div className="flex items-center  gap-1 w-full relative">
             <Input {...fieldProps} type={FormFieldType.Number} />
-            <span className="absolute right-0 -translate-x-3 text-text-secondary italic ">
+            <span className="absolute right-0 -translate-x-6 text-text-secondary italic ">
               seconds
             </span>
           </div>
@@ -183,7 +183,7 @@ const SourceDetailPage = () => {
           </div>
           <section className="flex flex-col gap-2 mt-6">
             <div className="text-2xl text-text-primary">{t('setting.log')}</div>
-            <DataSourceLogsTable />
+            <DataSourceLogsTable refresh_freq={detail?.refresh_freq || false} />
           </section>
         </CardContent>
       </Card>

@@ -53,10 +53,13 @@ export function StructuredOutputSecondaryMenu({
 
   const renderAgentStructuredOutput = useCallback(
     (values: any, option: { label: ReactNode; value: string }) => {
-      if (isPlainObject(values) && 'properties' in values) {
+      const properties =
+        get(values, 'properties') || get(values, 'items.properties');
+
+      if (isPlainObject(values) && properties) {
         return (
           <ul className="border-l">
-            {Object.entries(values.properties).map(([key, value]) => {
+            {Object.entries(properties).map(([key, value]) => {
               const nextOption = {
                 label: option.label + `.${key}`,
                 value: option.value + `.${key}`,
@@ -79,8 +82,9 @@ export function StructuredOutputSecondaryMenu({
                       {key}
                       <span className="text-text-secondary">{dataType}</span>
                     </div>
-                    {dataType === JsonSchemaDataType.Object &&
-                      renderAgentStructuredOutput(value, nextOption)}
+                    {[JsonSchemaDataType.Object, JsonSchemaDataType.Array].some(
+                      (x) => x === dataType,
+                    ) && renderAgentStructuredOutput(value, nextOption)}
                   </li>
                 );
               }
@@ -108,9 +112,12 @@ export function StructuredOutputSecondaryMenu({
       <HoverCardTrigger asChild>
         <li
           onClick={handleMenuClick}
-          className="hover:bg-bg-card py-1 px-2 text-text-primary rounded-sm text-sm flex justify-between items-center"
+          className="hover:bg-bg-card py-1 px-2 text-text-primary rounded-sm text-sm flex justify-between items-center gap-2"
         >
-          {data.label} <ChevronRight className="size-3.5 text-text-secondary" />
+          <div className="flex justify-between flex-1">
+            {data.label} <span className="text-text-secondary">object</span>
+          </div>
+          <ChevronRight className="size-3.5 text-text-secondary" />
         </li>
       </HoverCardTrigger>
       <HoverCardContent
