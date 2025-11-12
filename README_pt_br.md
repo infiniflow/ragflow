@@ -206,9 +206,9 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
    | v0.22.0           | &approx;2       | ❌                    | Stable release           |
    | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
 
-   > Nota: A partir da `v0.22.0`, distribuímos apenas versões sem modelos de embedding e não adicionamos mais o sufixo **-slim** à tag da imagem.
+   > Observação: A partir da`v0.22.0`, distribuímos apenas a edição slim e não adicionamos mais o sufixo **-slim** às tags das imagens.
 
-   > [!TIP]4. Verifique o status do servidor após tê-lo iniciado:
+   > 4. Verifique o status do servidor após tê-lo iniciado:
 
    ```bash
    $ docker logs -f docker-ragflow-cpu-1
@@ -280,7 +280,9 @@ O RAGFlow usa o Elasticsearch por padrão para armazenar texto completo e vetore
 
 ## 🔧 Criar uma imagem Docker
 
-Esta imagem tem cerca de 2 GB de tamanho e depende de serviços externos de LLM e incorporação.```bash
+Esta imagem tem cerca de 2 GB de tamanho e depende de serviços externos de LLM e incorporação.
+
+```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .

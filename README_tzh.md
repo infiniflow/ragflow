@@ -202,8 +202,8 @@
 
 | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                    |
 | ----------------- | --------------- | --------------------- | -------------------------- |
-   | v0.22.0           | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+| v0.22.0           | &approx;2       | ❌                    | Stable release           |
+| nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
 
 > 注意：自 `v0.22.0` 起，我們僅發佈 slim 版本，並且不再在映像標籤後附加 **-slim** 後綴。
 

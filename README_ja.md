@@ -180,15 +180,17 @@
    # sed -i '1i DEVICE=gpu' .env
    # docker compose -f docker-compose.yml up -d
 ```
-   
+
 | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                    |
 | ----------------- | --------------- | --------------------- | -------------------------- |
 | v0.22.0           | &approx;2       | ❌                    | Stable release             |
 | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
 
-> 注意：`v0.22.0` 以降、embedding モデルを含まないバージョンのみを提供し、イメージタグに **-slim** サフィックスを付けません。
+> 注意：`v0.22.0` 以降、当プロジェクトでは slim エディションのみを提供し、イメージタグに **-slim** サフィックスを付けなくなりました。
 
-   1. サーバーを立ち上げた後、サーバーの状態を確認する:   ```bash
+   1. サーバーを立ち上げた後、サーバーの状態を確認する:   
+   
+   ```bash
    $ docker logs -f docker-ragflow-cpu-1
    ```
 

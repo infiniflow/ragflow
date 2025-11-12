@@ -62,7 +62,6 @@
 - 🎬 [Mulai](#-mulai)
 - 🔧 [Konfigurasi](#-konfigurasi)
 - 🔧 [Membangun Image Docker](#-membangun-docker-image)
-- 🔧 [Membangun Image Docker dengan Model Embedding](#-membangun-image-docker-dengan-model-embedding)
 - 🔨 [Meluncurkan aplikasi dari Sumber untuk Pengembangan](#-meluncurkan-aplikasi-dari-sumber-untuk-pengembangan)
 - 📚 [Dokumentasi](#-dokumentasi)
 - 📜 [Peta Jalan](#-peta-jalan)
@@ -207,7 +206,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 | v0.22.0           | &approx;2       | ❌                    | Stable release             |
 | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
 
-> Catatan: Mulai dari `v0.22.0`, kami hanya merilis versi tanpa model embedding dan tidak lagi menambahkan akhiran **-slim** pada tag image.
+> Catatan: Mulai dari `v0.22.0`, kami hanya menyediakan edisi slim dan tidak lagi menambahkan akhiran **-slim** pada tag image.
 
 1. Periksa status server setelah server aktif dan berjalan:
 
