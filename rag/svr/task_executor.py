@@ -24,6 +24,7 @@ import time
 
 import json_repair
 
+from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from common.connection_utils import timeout
@@ -192,7 +193,7 @@ async def collect():
     canceled = False
     if msg.get("doc_id", "") in [GRAPH_RAPTOR_FAKE_DOC_ID, CANVAS_DEBUG_DOC_ID]:
         task = msg
-        if task["task_type"] in ["graphrag", "raptor", "mindmap"]:
+        if task["task_type"] in PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES:
             task = TaskService.get_task(msg["id"], msg["doc_ids"])
             if task:
                 task["doc_id"] = msg["doc_id"]
