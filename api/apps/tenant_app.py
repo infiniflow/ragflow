@@ -13,19 +13,33 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+from typing import Any, Dict, Optional
 
-from flask import request
-from flask_login import login_required, current_user
+from flask import Response, request
+from flask_login import current_user, login_required
 
 from api.apps import smtp_mail_server
-from api.db import UserTenantRole
+from api.db import FileType, UserTenantRole
 from api.db.db_models import UserTenant
-from api.db.services.user_service import UserTenantService, UserService
+from api.db.services.file_service import FileService
+from api.db.services.llm_service import get_init_tenant_llm
+from api.db.services.tenant_llm_service import TenantLLMService
+from api.db.services.user_service import (
+    TenantService,
+    UserService,
+    UserTenantService,
+)
 
 from common.constants import RetCode, StatusEnum
 from common.misc_utils import get_uuid
 from common.time_utils import delta_seconds
-from api.utils.api_utils import get_json_result, validate_request, server_error_response, get_data_error_result
+from api.utils.api_utils import (
+    get_data_error_result,
+    get_json_result,
+    server_error_response,
+    validate_request,
+)
 from api.utils.web_utils import send_invite_email
 from common import settings
 
@@ -117,6 +131,234 @@ def rm(tenant_id, user_id):
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/create", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("name")
+def create_team() -> Response:
+    """
+    Create a new team (tenant). Requires authentication - any registered user can create a team.
+
+    ---
+    tags:
+      - Team
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        description: Team creation details.
+        required: true
+        schema:
+          type: object
+          required:
+            - name
+          properties:
+            name:
+              type: string
+              description: Team name.
+            user_id:
+              type: string
+              description: User ID to set as team owner (optional, defaults to
+                current authenticated user).
+            llm_id:
+              type: string
+              description: LLM model ID (optional, defaults to system default).
+            embd_id:
+              type: string
+              description: Embedding model ID (optional, defaults to system default).
+            asr_id:
+              type: string
+              description: ASR model ID (optional, defaults to system default).
+            parser_ids:
+              type: string
+              description: Document parser IDs (optional, defaults to system default).
+            img2txt_id:
+              type: string
+              description: Image-to-text model ID (optional, defaults to system default).
+            rerank_id:
+              type: string
+              description: Rerank model ID (optional, defaults to system default).
+            credit:
+              type: integer
+              description: Initial credit amount (optional, defaults to 512).
+    responses:
+      200:
+        description: Team created successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              description: Created team information.
+            message:
+              type: string
+              description: Success message.
+      401:
+        description: Unauthorized - authentication required.
+        schema:
+          type: object
+      400:
+        description: Invalid request or user not found.
+        schema:
+          type: object
+      500:
+        description: Server error during team creation.
+        schema:
+          type: object
+    """
+    # Explicitly check authentication status
+    if not current_user.is_authenticated:
+        return get_json_result(
+            data=False,
+            message="Unauthorized",
+            code=RetCode.UNAUTHORIZED,
+        )
+    
+    if request.json is None:
+        return get_json_result(
+            data=False,
+            message="Request body is required!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
+    req: Dict[str, Any] = request.json
+    team_name: str = req.get("name", "").strip()
+    user_id: Optional[str] = req.get("user_id")
+    
+    # Optional configuration parameters (use defaults from settings if not provided)
+    llm_id: Optional[str] = req.get("llm_id")
+    embd_id: Optional[str] = req.get("embd_id")
+    asr_id: Optional[str] = req.get("asr_id")
+    parser_ids: Optional[str] = req.get("parser_ids")
+    img2txt_id: Optional[str] = req.get("img2txt_id")
+    rerank_id: Optional[str] = req.get("rerank_id")
+    credit: Optional[int] = req.get("credit")
+
+    # Validate team name
+    if not team_name:
+        return get_json_result(
+            data=False,
+            message="Team name is required!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
+    if len(team_name) > 100:
+        return get_json_result(
+            data=False,
+            message="Team name must be 100 characters or less!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
+    # Determine user_id (use provided or current_user as default)
+    owner_user_id: Optional[str] = user_id
+    if not owner_user_id:
+        # Use current authenticated user as default
+        owner_user_id = current_user.id
+
+    # Verify user exists
+    user: Optional[Any] = UserService.filter_by_id(owner_user_id)
+    if not user:
+        return get_json_result(
+            data=False,
+            message=f"User with ID {owner_user_id} not found!",
+            code=RetCode.DATA_ERROR,
+        )
+
+    # Generate tenant ID
+    tenant_id: str = get_uuid()
+
+    # Create tenant with optional parameters (use defaults from settings if not provided)
+    tenant: Dict[str, Any] = {
+        "id": tenant_id,
+        "name": team_name,
+        "llm_id": llm_id if llm_id is not None else settings.CHAT_MDL,
+        "embd_id": embd_id if embd_id is not None else settings.EMBEDDING_MDL,
+        "asr_id": asr_id if asr_id is not None else settings.ASR_MDL,
+        "parser_ids": parser_ids if parser_ids is not None else settings.PARSERS,
+        "img2txt_id": img2txt_id if img2txt_id is not None else settings.IMAGE2TEXT_MDL,
+        "rerank_id": rerank_id if rerank_id is not None else settings.RERANK_MDL,
+        "credit": credit if credit is not None else 512,
+        "status": StatusEnum.VALID.value,
+    }
+
+    # Create user-tenant relationship
+    usr_tenant: Dict[str, Any] = {
+        "id": get_uuid(),
+        "tenant_id": tenant_id,
+        "user_id": owner_user_id,
+        "invited_by": owner_user_id,
+        "role": UserTenantRole.OWNER,
+        "status": StatusEnum.VALID.value,
+    }
+
+    # Create root file folder
+    file_id: str = get_uuid()
+    file: Dict[str, Any] = {
+        "id": file_id,
+        "parent_id": file_id,
+        "tenant_id": tenant_id,
+        "created_by": owner_user_id,
+        "name": "/",
+        "type": FileType.FOLDER.value,
+        "size": 0,
+        "location": "",
+    }
+
+    try:
+        # Get tenant LLM configurations
+        tenant_llm: list[Dict[str, Any]] = get_init_tenant_llm(tenant_id)
+
+        # Insert all records
+        TenantService.insert(**tenant)
+        UserTenantService.insert(**usr_tenant)
+        TenantLLMService.insert_many(tenant_llm)
+        FileService.insert(file)
+
+        # Return created team info
+        team_data: Dict[str, Any] = {
+            "id": tenant_id,
+            "name": team_name,
+            "owner_id": owner_user_id,
+            "llm_id": tenant["llm_id"],
+            "embd_id": tenant["embd_id"],
+        }
+
+        return get_json_result(
+            data=team_data,
+            message=f"Team '{team_name}' created successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        # Rollback on error
+        try:
+            TenantService.delete_by_id(tenant_id)
+        except Exception:
+            pass
+        try:
+            UserTenantService.filter_delete(
+                [
+                    UserTenant.tenant_id == tenant_id,
+                    UserTenant.user_id == owner_user_id,
+                ]
+            )
+        except Exception:
+            pass
+        try:
+            TenantLLMService.delete_by_tenant_id(tenant_id)
+        except Exception:
+            pass
+        try:
+            FileService.delete_by_id(file_id)
+        except Exception:
+            pass
+
+        return get_json_result(
+            data=False,
+            message=f"Team creation failure, error: {str(e)}",
+            code=RetCode.EXCEPTION_ERROR,
+        )
 
 
 @manager.route("/list", methods=["GET"])  # noqa: F821

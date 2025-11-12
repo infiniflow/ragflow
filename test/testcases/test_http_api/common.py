@@ -275,3 +275,13 @@ def delete_user(auth, payload=None, *, headers=HEADERS):
     url = f"{HOST_ADDRESS}{USER_API_URL}/delete"
     res = requests.delete(url=url, headers=headers, auth=auth, json=payload)
     return res.json()
+
+
+# TEAM MANAGEMENT
+TEAM_API_URL = f"/{VERSION}/tenant"
+
+
+def create_team(auth, payload=None, *, headers=HEADERS):
+    url = f"{HOST_ADDRESS}{TEAM_API_URL}/create"
+    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
+    return res.json()
