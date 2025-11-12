@@ -14,15 +14,15 @@ Released on November 12, 2025.
 ### Breaking Changes
 
 :::danger IMPORTANT
-From this release onwards, built-in embedding models will be removed from the released Docker images.
+From this release onwards, we ship only the slim edition (without embedding models) Docker image and no longer append the `-slim` suffix to the image tag.
 :::
 
 ### New Features
 
 - Dataset:
   - Supports data synchronization from five online sources (AWS S3, Google Drive, Notion, Confluence, and Discord).
-  - RAPTOR can be created from an entire dataset or a single file.
-- Ingestion Pipeline: Supports [Docling document parsing](https://github.com/docling-project/docling) in the **Parser** component.
+  - RAPTOR can be built across an entire dataset or on individual documents.
+- Ingestion pipeline: Supports [Docling document parsing](https://github.com/docling-project/docling) in the **Parser** component.
 - Launches a new administrative Web UI dashboard for graphical user management and service status monitoring.
 - Agent:
   - Supports structured output.
@@ -33,7 +33,7 @@ From this release onwards, built-in embedding models will be removed from the re
 
 - Agent: Supports visualizing previous components' outputs in the **Await Response** component.
 - Revamps the model provider page.
-- Upgrades RAGFlow's document engine Infinity to v0.6.4.
+- Upgrades RAGFlow's document engine Infinity to v0.6.5.
 
 ### Added Models
 
