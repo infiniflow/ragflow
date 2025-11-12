@@ -161,7 +161,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
           value={value}
           options={options}
           onChange={(value) => handleFieldChange(id, value)}
-          placeholder={tcommon('selectPlaceholder')}
+          placeholder={t('selectModelPlaceholder')}
         />
       </div>
     );

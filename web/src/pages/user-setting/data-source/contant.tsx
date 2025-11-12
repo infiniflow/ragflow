@@ -189,7 +189,7 @@ export const DataSourceFormFields = {
       name: 'config.credentials.google_tokens',
       type: FormFieldType.Textarea,
       required: true,
-      render: (fieldProps) => (
+      render: (fieldProps: any) => (
         <GoogleDriveTokenField
           value={fieldProps.value}
           onChange={fieldProps.onChange}
