@@ -123,16 +123,14 @@ export const AvailableModels: FC<{
           <div
             key={model.name}
             className=" border border-border-button rounded-lg p-3 hover:bg-bg-input transition-colors group"
+            onClick={() => handleAddModel(model.name)}
           >
             <div className="flex items-center space-x-3 mb-3">
               <LlmIcon name={model.name} imgClass="h-8 w-8 text-text-primary" />
               <div className="flex-1">
                 <h3 className="font-medium truncate">{model.name}</h3>
               </div>
-              <Button
-                className=" px-2 items-center gap-0 text-xs h-6  rounded-md transition-colors hidden group-hover:flex"
-                onClick={() => handleAddModel(model.name)}
-              >
+              <Button className=" px-2 items-center gap-0 text-xs h-6  rounded-md transition-colors hidden group-hover:flex">
                 <Plus size={12} />
                 {t('addTheModel')}
               </Button>
