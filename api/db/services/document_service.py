@@ -698,7 +698,6 @@ class DocumentService(CommonService):
                 for t in tsks:
                     task_type = (t.task_type or "").lower()
                     if task_type in PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES:
-                        print("🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁🥁", flush=True)
                         special_task_running = True
                     if 0 <= t.progress < 1:
                         finished = False
