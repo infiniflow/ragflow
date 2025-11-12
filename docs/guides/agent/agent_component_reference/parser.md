@@ -9,7 +9,7 @@ A component that sets the parsing rules for your dataset.
 
 ---
 
-A **Parser** component is auto-populated on the ingestion pipeline canvas and required in all ingestion pipeline workflows. Just like the **Extract** stage in the traditional ETL process, a **Parser** component in an ingestion pipeline defines how various file types are parsed into structured data. Click the component to display its configuration panel. In this configuration panel, you set the parsing rules for various file types.
+A **Parser** component is autopopulated on the ingestion pipeline canvas and required in all ingestion pipeline workflows. Just like the **Extract** stage in the traditional ETL process, a **Parser** component in an ingestion pipeline defines how various file types are parsed into structured data. Click the component to display its configuration panel. In this configuration panel, you set the parsing rules for various file types.
 
 ## Configurations
 
@@ -39,7 +39,7 @@ The output of a PDF parser is `json`. In the PDF parser, you select the parsing 
 - [Docling](https://github.com/docling-project/docling): (Experimental) An open-source document processing tool for gen AI.
 - A third-party visual model from a specific model provider.
 
-:::danger IMPORTANG
+:::danger IMPORTANT
 MinerU PDF document parsing is available starting from v0.22.0. RAGFlow supports MinerU (>= 2.6.3) as an optional PDF parser with multiple backends. RAGFlow acts only as a client for MinerU, calling it to parse documents, reading the output files, and ingesting the parsed content. To use this feature, follow these steps:
 
 1. Prepare MinerU:

@@ -126,7 +126,7 @@ function AdminLogin() {
           color="rgb(128, 255, 248)"
         />
 
-        <BgSvg />
+        <BgSvg isPaused={true} />
 
         <div className="absolute top-3 left-0 w-full">
           <div className="absolute mt-12 ml-12 flex items-center">
