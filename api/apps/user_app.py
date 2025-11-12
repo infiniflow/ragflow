@@ -1117,7 +1117,7 @@ def update_user() -> Response:
 
 
 @manager.route("/list", methods=["GET"])  # noqa: F821
-# @login_required
+@login_required
 def list_users() -> Response:
     """
     List all users.
@@ -1169,11 +1169,23 @@ def list_users() -> Response:
             total:
               type: integer
               description: Total number of users.
+      401:
+        description: Unauthorized - authentication required.
+        schema:
+          type: object
       500:
         description: Server error during user listing.
         schema:
           type: object
     """
+    # Explicitly check authentication status
+    if not current_user.is_authenticated:
+        return get_json_result(
+            data=False,
+            message="Unauthorized",
+            code=RetCode.UNAUTHORIZED,
+        )
+    
     try:
         # Get query parameters
         page: Optional[int] = None
@@ -1261,11 +1273,11 @@ def list_users() -> Response:
 
 
 @manager.route("/delete", methods=["DELETE"])  # noqa: F821
-# @login_required
+@login_required
 @validate_request()
 def delete_user() -> Response:
     """
-    Delete a user.
+    Delete a user. Users can only delete their own account.
 
     ---
     tags:
@@ -1299,6 +1311,14 @@ def delete_user() -> Response:
             message:
               type: string
               description: Success message.
+      401:
+        description: Unauthorized - authentication required.
+        schema:
+          type: object
+      403:
+        description: Forbidden - users can only delete their own account.
+        schema:
+          type: object
       400:
         description: Invalid request or user not found.
         schema:
@@ -1308,6 +1328,14 @@ def delete_user() -> Response:
         schema:
           type: object
     """
+    # Explicitly check authentication status
+    if not current_user.is_authenticated:
+        return get_json_result(
+            data=False,
+            message="Unauthorized",
+            code=RetCode.UNAUTHORIZED,
+        )
+    
     if request.json is None:
         return get_json_result(
             data=False,
@@ -1366,6 +1394,14 @@ def delete_user() -> Response:
             data=False,
             message="User not found!",
             code=RetCode.DATA_ERROR,
+        )
+
+    # Ensure user can only delete themselves
+    if user.id != current_user.id:
+        return get_json_result(
+            data=False,
+            message="You can only delete your own account!",
+            code=RetCode.FORBIDDEN,
         )
 
     # Delete the user
