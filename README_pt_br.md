@@ -86,6 +86,7 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Últimas Atualizações
 
+- 12-11-2025 Suporta a sincronização de dados do Confluence, AWS S3, Discord e Google Drive.
 - 23-10-2025 Suporta MinerU e Docling como métodos de análise de documentos.
 - 15-10-2025 Suporte para pipelines de dados orquestrados.
 - 08-08-2025 Suporta a mais recente série GPT-5 da OpenAI.
@@ -93,7 +94,6 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 - 23-05-2025 Adicione o componente executor de código Python/JS ao Agente.
 - 05-05-2025 Suporte a consultas entre idiomas.
 - 19-03-2025 Suporta o uso de um modelo multi-modal para entender imagens dentro de arquivos PDF ou DOCX.
-- 28-02-2025 combinado com a pesquisa na Internet (T AVI LY), suporta pesquisas profundas para qualquer LLM.
 - 18-12-2024 Atualiza o modelo de Análise de Layout de Documentos no DeepDoc.
 - 22-08-2024 Suporta conversão de texto para comandos SQL via RAG.
 
