@@ -86,6 +86,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2025-11-12 Mendukung sinkronisasi data dari Confluence, AWS S3, Discord, Google Drive.
 - 2025-10-23 Mendukung MinerU & Docling sebagai metode penguraian dokumen.
 - 2025-10-15 Dukungan untuk jalur data yang terorkestrasi.
 - 2025-08-08 Mendukung model seri GPT-5 terbaru dari OpenAI.
@@ -93,7 +94,6 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 - 2025-05-23 Menambahkan komponen pelaksana kode Python/JS ke Agen.
 - 2025-05-05 Mendukung kueri lintas bahasa.
 - 2025-03-19 Mendukung penggunaan model multi-modal untuk memahami gambar di dalam file PDF atau DOCX.
-- 2025-02-28 dikombinasikan dengan pencarian Internet (TAVILY), mendukung penelitian mendalam untuk LLM apa pun.
 - 2024-12-18 Meningkatkan model Analisis Tata Letak Dokumen di DeepDoc.
 - 2024-08-22 Dukungan untuk teks ke pernyataan SQL melalui RAG.
 
