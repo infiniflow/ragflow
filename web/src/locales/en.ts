@@ -1925,7 +1925,7 @@ Important structured information may include: names, dates, locations, events, k
     },
     admin: {
       loginTitle: 'Admin Console',
-      title: 'RAGFlow admin',
+      title: 'RAGFlow',
       confirm: 'Confirm',
       close: 'Close',
       yes: 'Yes',

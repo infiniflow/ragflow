@@ -384,21 +384,21 @@ function AdminServiceStatus() {
       {/* Extra info modal*/}
       <Dialog open={extraInfoModalOpen} onOpenChange={setExtraInfoModalOpen}>
         <DialogContent
-          className="flex flex-col max-h-[calc(100vh-4rem)] p-0 overflow-hidden"
+          className="flex flex-col max-h-[calc(100vh-4rem)] overflow-hidden"
           onAnimationEnd={() => {
             if (!extraInfoModalOpen) {
               setItemToMakeAction(null);
             }
           }}
         >
-          <DialogHeader className="p-6 border-b-0.5 border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.extraInfo')}</DialogTitle>
           </DialogHeader>
 
           <DialogDescription className="sr-only" />
 
           <ScrollArea className="h-0 flex-1 grid">
-            <div className="px-12">
+            <div className="px-6">
               <JsonView
                 src={itemToMakeAction?.extra ?? {}}
                 className="rounded-lg p-4 bg-bg-card break-words text-text-secondary"
@@ -406,7 +406,7 @@ function AdminServiceStatus() {
             </div>
           </ScrollArea>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="flex justify-end gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -421,7 +421,7 @@ function AdminServiceStatus() {
       {/* Service details modal */}
       <Dialog open={detailModalOpen} onOpenChange={setDetailModalOpen}>
         <DialogContent
-          className="flex flex-col max-h-[calc(100vh-4rem)] max-w-6xl p-0 overflow-hidden"
+          className="flex flex-col max-h-[calc(100vh-4rem)] max-w-6xl overflow-hidden"
           onAnimationEnd={() => {
             if (!detailModalOpen) {
               setItemToMakeAction(null);
@@ -443,7 +443,7 @@ function AdminServiceStatus() {
           <DialogDescription className="sr-only" />
 
           <ScrollArea className="h-0 flex-1 text-text-secondary grid">
-            <div className="px-12">
+            <div className="px-6">
               {itemToMakeAction?.service_type === 'task_executor' ? (
                 <TaskExecutorDetail
                   content={
@@ -456,7 +456,7 @@ function AdminServiceStatus() {
             </div>
           </ScrollArea>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="flex justify-end gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"

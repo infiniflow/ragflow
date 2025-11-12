@@ -66,6 +66,7 @@
 
 ## 🔥 最新情報
 
+- 2025-11-12 Confluence、AWS S3、Discord、Google Drive からのデータ同期をサポートします。
 - 2025-10-23 ドキュメント解析方法として MinerU と Docling をサポートします。
 - 2025-10-15 オーケストレーションされたデータパイプラインのサポート。
 - 2025-08-08 OpenAI の最新 GPT-5 シリーズモデルをサポートします。
@@ -73,7 +74,6 @@
 - 2025-05-23 エージェントに Python/JS コードエグゼキュータコンポーネントを追加しました。
 - 2025-05-05 言語間クエリをサポートしました。
 - 2025-03-19 PDFまたはDOCXファイル内の画像を理解するために、多モーダルモデルを使用することをサポートします。
-- 2025-02-28 インターネット検索 (TAVILY) と組み合わせて、あらゆる LLM の詳細な調査をサポートします。
 - 2024-12-18 DeepDoc のドキュメント レイアウト分析モデルをアップグレードします。
 - 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
 
@@ -170,6 +170,9 @@
 
 ```bash
    $ cd ragflow/docker
+
+   # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases) 例: git checkout v0.21.1
+
    # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
 
@@ -177,6 +180,7 @@
    # sed -i '1i DEVICE=gpu' .env
    # docker compose -f docker-compose.yml up -d
 ```
+   
 
 | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                    |
 | ----------------- | --------------- | --------------------- | -------------------------- |
