@@ -66,6 +66,8 @@ class Tokenizer(ProcessBase):
             if isinstance(self._param.fields, str):
                 self._param.fields=[self._param.fields]
             for f in self._param.fields:
+                if f not in c:
+                    continue
                 f = c.get(f)
                 if isinstance(f, str):
                     txt += f
