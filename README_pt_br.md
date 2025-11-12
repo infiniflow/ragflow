@@ -191,7 +191,8 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 ```bash
    $ cd ragflow/docker
    
-   # Opcional: use uma tag estável (veja releases: https://github.com/infiniflow/ragflow/releases), ex.: git checkout v0.21.1
+   # Opcional: use uma tag estável (veja releases: https://github.com/infiniflow/ragflow/releases), ex., `git checkout v0.21.1`
+   # Esta etapa garante que o arquivo entrypoint.sh no código corresponda à versão da imagem do Docker.
 
    # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
