@@ -349,7 +349,7 @@ class Canvas(Graph):
                         i += 1
                     else:
                         for _, ele in cpn.get_input_elements().items():
-                            if isinstance(ele, dict) and ele.get("_cpn_id") and ele.get("_cpn_id") not in self.path[:i]:
+                            if isinstance(ele, dict) and ele.get("_cpn_id") and ele.get("_cpn_id") not in self.path[:i] and self.path[0].lower().find("userfillup") < 0:
                                 self.path.pop(i)
                                 t -= 1
                                 break
