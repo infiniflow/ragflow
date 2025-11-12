@@ -86,6 +86,7 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Últimas Atualizações
 
+- 12-11-2025 Suporta a sincronização de dados do Confluence, AWS S3, Discord e Google Drive.
 - 23-10-2025 Suporta MinerU e Docling como métodos de análise de documentos.
 - 15-10-2025 Suporte para pipelines de dados orquestrados.
 - 08-08-2025 Suporta a mais recente série GPT-5 da OpenAI.
@@ -93,7 +94,6 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 - 23-05-2025 Adicione o componente executor de código Python/JS ao Agente.
 - 05-05-2025 Suporte a consultas entre idiomas.
 - 19-03-2025 Suporta o uso de um modelo multi-modal para entender imagens dentro de arquivos PDF ou DOCX.
-- 28-02-2025 combinado com a pesquisa na Internet (T AVI LY), suporta pesquisas profundas para qualquer LLM.
 - 18-12-2024 Atualiza o modelo de Análise de Layout de Documentos no DeepDoc.
 - 22-08-2024 Suporta conversão de texto para comandos SQL via RAG.
 
@@ -190,6 +190,9 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ```bash
    $ cd ragflow/docker
+   
+   # Opcional: use uma tag estável (veja releases: https://github.com/infiniflow/ragflow/releases), ex.: git checkout v0.21.1
+
    # Use CPU for embedding and DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
 

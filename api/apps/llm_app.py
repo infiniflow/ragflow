@@ -33,7 +33,7 @@ from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 def factories():
     try:
         fac = get_allowed_llm_factories()
-        fac = [f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI"]]
+        fac = [f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI", "Builtin"]]
         llms = LLMService.get_all()
         mdl_types = {}
         for m in llms:
@@ -358,7 +358,7 @@ def list_app():
         for o in objs:
             if o.llm_name + "@" + o.llm_factory in llm_set:
                 continue
-            llms.append({"llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True})
+            llms.append({"llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True, "status": StatusEnum.VALID.value})
 
         res = {}
         for m in llms:

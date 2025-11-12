@@ -24,7 +24,6 @@ import time
 
 import json_repair
 
-from api.db.services.canvas_service import UserCanvasService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from common.connection_utils import timeout
@@ -33,7 +32,6 @@ from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from graphrag.general.index import run_graphrag_for_kb
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
-from rag.flow.pipeline import Pipeline
 from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text
 import logging
 import os
@@ -478,6 +476,9 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
 
 
 async def run_dataflow(task: dict):
+    from api.db.services.canvas_service import UserCanvasService
+    from rag.flow.pipeline import Pipeline
+
     task_start_ts = timer()
     dataflow_id = task["dataflow_id"]
     doc_id = task["doc_id"]
@@ -642,47 +643,63 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
 
     raptor_config = kb_parser_config.get("raptor", {})
-
-    chunks = []
     vctr_nm = "q_%d_vec"%vector_size
-    for doc_id in doc_ids:
-        for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
-                                                 fields=["content_with_weight", vctr_nm],
-                                                 sort_by_position=True):
-            chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
 
-    raptor = Raptor(
-        raptor_config.get("max_cluster", 64),
-        chat_mdl,
-        embd_mdl,
-        raptor_config["prompt"],
-        raptor_config["max_token"],
-        raptor_config["threshold"],
-    )
-    original_length = len(chunks)
-    chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
-    doc = {
-        "doc_id": fake_doc_id,
-        "kb_id": [str(row["kb_id"])],
-        "docnm_kwd": row["name"],
-        "title_tks": rag_tokenizer.tokenize(row["name"]),
-        "raptor_kwd": "raptor"
-    }
-    if row["pagerank"]:
-        doc[PAGERANK_FLD] = int(row["pagerank"])
     res = []
     tk_count = 0
-    for content, vctr in chunks[original_length:]:
-        d = copy.deepcopy(doc)
-        d["id"] = xxhash.xxh64((content + str(fake_doc_id)).encode("utf-8")).hexdigest()
-        d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
-        d["create_timestamp_flt"] = datetime.now().timestamp()
-        d[vctr_nm] = vctr.tolist()
-        d["content_with_weight"] = content
-        d["content_ltks"] = rag_tokenizer.tokenize(content)
-        d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-        res.append(d)
-        tk_count += num_tokens_from_string(content)
+    async def generate(chunks, did):
+        nonlocal tk_count, res
+        raptor = Raptor(
+            raptor_config.get("max_cluster", 64),
+            chat_mdl,
+            embd_mdl,
+            raptor_config["prompt"],
+            raptor_config["max_token"],
+            raptor_config["threshold"],
+        )
+        original_length = len(chunks)
+        chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
+        doc = {
+            "doc_id": did,
+            "kb_id": [str(row["kb_id"])],
+            "docnm_kwd": row["name"],
+            "title_tks": rag_tokenizer.tokenize(row["name"]),
+            "raptor_kwd": "raptor"
+        }
+        if row["pagerank"]:
+            doc[PAGERANK_FLD] = int(row["pagerank"])
+
+        for content, vctr in chunks[original_length:]:
+            d = copy.deepcopy(doc)
+            d["id"] = xxhash.xxh64((content + str(fake_doc_id)).encode("utf-8")).hexdigest()
+            d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
+            d["create_timestamp_flt"] = datetime.now().timestamp()
+            d[vctr_nm] = vctr.tolist()
+            d["content_with_weight"] = content
+            d["content_ltks"] = rag_tokenizer.tokenize(content)
+            d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+            res.append(d)
+            tk_count += num_tokens_from_string(content)
+
+    if raptor_config.get("scope", "file") == "file":
+        for x, doc_id in enumerate(doc_ids):
+            chunks = []
+            for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
+                                                 fields=["content_with_weight", vctr_nm],
+                                                 sort_by_position=True):
+                chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+            await generate(chunks, doc_id)
+            callback(prog=(x+1.)/len(doc_ids))
+    else:
+        chunks = []
+        for doc_id in doc_ids:
+            for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
+                                                 fields=["content_with_weight", vctr_nm],
+                                                 sort_by_position=True):
+                chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+
+        await generate(chunks, fake_doc_id)
+
     return res, tk_count
 
 
@@ -795,6 +812,7 @@ async def do_handle_task(task):
                         "threshold": 0.1,
                         "max_cluster": 64,
                         "random_seed": 0,
+                        "scope": "file"
                     },
                 }
             )
@@ -926,6 +944,7 @@ async def do_handle_task(task):
 
 
 async def handle_task():
+
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:

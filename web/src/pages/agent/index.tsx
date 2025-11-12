@@ -28,6 +28,7 @@ import {
   History,
   LaptopMinimalCheck,
   Logs,
+  MessageSquareCode,
   ScreenShare,
   Settings,
   Upload,
@@ -218,7 +219,7 @@ export default function Agent() {
             onClick={() => showGobalParamSheet()}
             loading={loading}
           >
-            {t('flow.conversationVariable')}
+            <MessageSquareCode /> {t('flow.conversationVariable')}
           </ButtonLoading>
           <Button variant={'secondary'} onClick={handleButtonRunClick}>
             <CirclePlay />

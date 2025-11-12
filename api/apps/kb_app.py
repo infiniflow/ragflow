@@ -127,6 +127,7 @@ def update():
             logging.error("Link KB errors: ", errors)
         kb = kb.to_dict()
         kb.update(req)
+        kb["connectors"] = connectors
 
         return get_json_result(data=kb)
     except Exception as e:

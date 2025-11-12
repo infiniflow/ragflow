@@ -89,6 +89,9 @@ class Message(ComponentBase):
         all_content = ""
         cache = {}
         for r in re.finditer(self.variable_ref_patt, rand_cnt, flags=re.DOTALL):
+            if self.check_if_canceled("Message streaming"):
+                return
+
             all_content += rand_cnt[s: r.start()]
             yield rand_cnt[s: r.start()]
             s = r.end()
@@ -99,26 +102,33 @@ class Message(ComponentBase):
                 continue
 
             v = self._canvas.get_variable_value(exp)
-            if not v:
+            if v is None:
                 v = ""
             if isinstance(v, partial):
                 cnt = ""
                 for t in v():
+                    if self.check_if_canceled("Message streaming"):
+                        return
+
                     all_content += t
                     cnt += t
                     yield t
-
+                self.set_input_value(exp, cnt)
                 continue
             elif not isinstance(v, str):
                 try:
-                    v = json.dumps(v, ensure_ascii=False, indent=2)
+                    v = json.dumps(v, ensure_ascii=False)
                 except Exception:
                     v = str(v)
             yield v
+            self.set_input_value(exp, v)
             all_content += v
             cache[exp] = v
 
         if s < len(rand_cnt):
+            if self.check_if_canceled("Message streaming"):
+                return
+
             all_content += rand_cnt[s: ]
             yield rand_cnt[s: ]
 
@@ -132,6 +142,9 @@ class Message(ComponentBase):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("Message processing"):
+            return
+
         rand_cnt = random.choice(self._param.content)
         if self._param.stream and not self._is_jinjia2(rand_cnt):
             self.set_output("content", partial(self._stream, rand_cnt))
@@ -143,6 +156,9 @@ class Message(ComponentBase):
             content = template.render(kwargs)
         except Exception:
             pass
+
+        if self.check_if_canceled("Message processing"):
+            return
 
         for n, v in kwargs.items():
             content = re.sub(n, v, content)

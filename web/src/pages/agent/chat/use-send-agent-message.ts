@@ -35,6 +35,7 @@ import {
   useIsTaskMode,
   useSelectBeginNodeDataInputs,
 } from '../hooks/use-get-begin-query';
+import { useStopMessage } from '../hooks/use-stop-message';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
@@ -243,6 +244,14 @@ export const useSendAgentMessage = ({
     fileList,
   } = useSetUploadResponseData();
 
+  const { stopMessage } = useStopMessage();
+
+  const stopConversation = useCallback(() => {
+    const taskId = answerList.at(0)?.task_id;
+    stopOutputMessage();
+    stopMessage(taskId);
+  }, [answerList, stopMessage, stopOutputMessage]);
+
   const sendMessage = useCallback(
     async ({
       message,
@@ -321,7 +330,7 @@ export const useSendAgentMessage = ({
 
   // reset session
   const resetSession = useCallback(() => {
-    stopOutputMessage();
+    stopConversation();
     resetAnswerList();
     setSessionId(null);
     if (isTaskMode) {
@@ -330,7 +339,7 @@ export const useSendAgentMessage = ({
       removeAllMessagesExceptFirst();
     }
   }, [
-    stopOutputMessage,
+    stopConversation,
     resetAnswerList,
     isTaskMode,
     removeAllMessages,
@@ -432,7 +441,7 @@ export const useSendAgentMessage = ({
     handlePressEnter,
     handleInputChange,
     removeMessageById,
-    stopOutputMessage,
+    stopOutputMessage: stopConversation,
     send,
     sendFormMessage,
     resetSession,

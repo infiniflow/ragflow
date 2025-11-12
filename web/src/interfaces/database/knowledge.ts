@@ -6,6 +6,7 @@ export interface IConnector {
   name: string;
   status: RunningStatus;
   source: DataSourceKey;
+  auto_parse?: '0' | '1';
 }
 // knowledge base
 export interface IKnowledge {
