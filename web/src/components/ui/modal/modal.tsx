@@ -108,7 +108,7 @@ const Modal: ModalType = ({
           <button
             type="button"
             onClick={() => handleCancel()}
-            className="px-2 py-1 border border-input rounded-md hover:bg-muted"
+            className="px-2 py-1 border border-border-button rounded-md hover:bg-bg-card hover:text-text-primary "
           >
             {cancelText ?? t('modal.cancelText')}
           </button>
@@ -132,7 +132,7 @@ const Modal: ModalType = ({
     return (
       <div
         className={cn(
-          'flex items-center justify-end px-6 py-4',
+          'flex items-center justify-end px-6 py-6',
           footerClassName,
         )}
       >

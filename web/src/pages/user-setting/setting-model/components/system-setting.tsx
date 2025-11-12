@@ -156,7 +156,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
           )}
         </label>
         <SelectWithSearch
-          triggerClassName="w-3/4"
+          triggerClassName="w-3/4 flex items-center"
           allowClear={id !== 'llm_id'}
           value={value}
           options={options}
@@ -175,7 +175,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
           {t('systemModelDescription')}
         </div>
       </div>
-      <div className="px-7 py-6 space-y-6 max-h-[70vh] overflow-y-auto border rounded-lg">
+      <div className="px-7 py-6 space-y-6 max-h-[70vh] overflow-y-auto border border-border-button rounded-lg">
         {llmList.map((item) => (
           <Items key={item.id} {...item} />
         ))}

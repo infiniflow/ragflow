@@ -302,7 +302,7 @@ const GoogleDriveTokenField = ({
         </div>
       )}
       <FileUploader
-        className="py-4"
+        className="py-4 border-[0.5px] bg-bg-card text-text-secondary"
         value={files}
         onValueChange={handleValueChange}
         accept={{ '*.json': [FileMimeType.Json] }}

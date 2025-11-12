@@ -69,7 +69,7 @@ const ApiKeyModal = ({
 
   return (
     <Modal
-      title={editMode ? t('editModel') : t('modify')}
+      title={t('configureModelTitle')}
       open={visible}
       onOpenChange={(open) => !open && hideModal()}
       onOk={handleOk}
@@ -77,6 +77,7 @@ const ApiKeyModal = ({
       confirmLoading={loading}
       okText={t('save')}
       cancelText={t('cancel')}
+      className="!w-[600px]"
     >
       <Form {...form}>
         <div className="space-y-4 py-4">
@@ -85,9 +86,11 @@ const ApiKeyModal = ({
             rules={{ required: t('apiKeyMessage') }}
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-sm font-medium text-text-primary">
+                <FormLabel
+                  className="text-sm font-medium text-text-secondary"
+                  required
+                >
                   {t('apiKey')}
-                  <span className="ml-1 text-destructive">*</span>
                 </FormLabel>
                 <FormControl>
                   <Input

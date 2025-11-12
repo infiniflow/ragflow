@@ -6,7 +6,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { TFunction } from 'i18next';
@@ -102,7 +101,7 @@ export function FileUploadDialog({
         <DialogHeader>
           <DialogTitle>{t('fileManager.uploadFile')}</DialogTitle>
         </DialogHeader>
-        <Tabs defaultValue="account">
+        {/* <Tabs defaultValue="account">
           <TabsList className="grid w-full grid-cols-2 mb-4">
             <TabsTrigger value="account">{t('fileManager.local')}</TabsTrigger>
             <TabsTrigger value="password">{t('fileManager.s3')}</TabsTrigger>
@@ -114,7 +113,11 @@ export function FileUploadDialog({
             ></UploadForm>
           </TabsContent>
           <TabsContent value="password">{t('common.comingSoon')}</TabsContent>
-        </Tabs>
+        </Tabs> */}
+        <UploadForm
+          submit={onOk!}
+          showParseOnCreation={showParseOnCreation}
+        ></UploadForm>
         <DialogFooter>
           <ButtonLoading type="submit" loading={loading} form={UploadFormId}>
             {t('common.save')}

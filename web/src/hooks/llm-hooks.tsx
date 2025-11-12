@@ -402,6 +402,7 @@ export const useDeleteFactory = () => {
         queryClient.invalidateQueries({ queryKey: ['myLlmList'] });
         queryClient.invalidateQueries({ queryKey: ['myLlmListDetailed'] });
         queryClient.invalidateQueries({ queryKey: ['factoryList'] });
+        queryClient.invalidateQueries({ queryKey: ['llmList'] });
         message.success(t('message.deleted'));
       }
       return data.code;

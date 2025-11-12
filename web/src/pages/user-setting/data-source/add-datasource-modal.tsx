@@ -63,7 +63,7 @@ const AddDataSourceModal = ({
           ] as FieldValues
         }
       >
-        <div className="flex items-center justify-end w-full gap-2">
+        <div className="flex items-center justify-end w-full gap-2 py-4">
           <DynamicForm.CancelButton
             handleCancel={() => {
               hideModal?.();
