@@ -22,7 +22,7 @@
         <img alt="Badge Estático" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.1">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.22.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Última%20Relese" alt="Última Versão">
@@ -186,30 +186,29 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 > Todas as imagens Docker são construídas para plataformas x86. Atualmente, não oferecemos imagens Docker para ARM64.
 > Se você estiver usando uma plataforma ARM64, por favor, utilize [este guia](https://ragflow.io/docs/dev/build_docker_image) para construir uma imagem Docker compatível com o seu sistema.
 
-    > O comando abaixo baixa a edição`v0.21.1` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.21.1`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor.
+    > O comando abaixo baixa a edição`v0.22.0` da imagem Docker do RAGFlow. Consulte a tabela a seguir para descrições de diferentes edições do RAGFlow. Para baixar uma edição do RAGFlow diferente da `v0.22.0`, atualize a variável `RAGFLOW_IMAGE` conforme necessário no **docker/.env** antes de usar `docker compose` para iniciar o servidor.
 
 ```bash
    $ cd ragflow/docker
    
-   # Opcional: use uma tag estável (veja releases: https://github.com/infiniflow/ragflow/releases), ex.: git checkout v0.21.1
+   # Opcional: use uma tag estável (veja releases: https://github.com/infiniflow/ragflow/releases), ex.: git checkout v0.22.0
 
-   # Use CPU for embedding and DeepDoc tasks:
+   # Use CPU for DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
 
-   # To use GPU to accelerate embedding and DeepDoc tasks:
+   # To use GPU to accelerate DeepDoc tasks:
    # sed -i '1i DEVICE=gpu' .env
    # docker compose -f docker-compose.yml up -d
 ```
 
-| Tag da imagem RAGFlow | Tamanho da imagem (GB) | Possui modelos de incorporação? | Estável?                      |
-| --------------------- | ---------------------- | --------------------------------- | ------------------------------ |
-| v0.21.1               | &approx;9              | ✔️                              | Lançamento estável           |
-| v0.21.1-slim          | &approx;2              | ❌                                | Lançamento estável           |
-| nightly               | &approx;2              | ❌                                | Construção noturna instável |
+   | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
+   | ----------------- | --------------- | --------------------- | ------------------------ |
+   | v0.22.0           | &approx;2       | ❌                    | Stable release           |
+   | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
 
-    > Observação: A partir da`v0.22.0`, distribuímos apenas a edição slim e não adicionamos mais o sufixo **-slim** às tags das imagens.
+   > Nota: A partir da `v0.22.0`, distribuímos apenas versões sem modelos de embedding e não adicionamos mais o sufixo **-slim** à tag da imagem.
 
-4. Verifique o status do servidor após tê-lo iniciado:
+   > [!TIP]4. Verifique o status do servidor após tê-lo iniciado:
 
    ```bash
    $ docker logs -f docker-ragflow-cpu-1
@@ -277,13 +276,11 @@ O RAGFlow usa o Elasticsearch por padrão para armazenar texto completo e vetore
    ```
 
 > [!ATENÇÃO]
-> A mudança para o Infinity em uma máquina Linux/arm64 ainda não é oficialmente suportada.
+ > A mudança para o Infinity em uma máquina Linux/arm64 ainda não é oficialmente suportada.
 
-## 🔧 Criar uma imagem Docker sem modelos de incorporação
+## 🔧 Criar uma imagem Docker
 
-Esta imagem tem cerca de 2 GB de tamanho e depende de serviços externos de LLM e incorporação.
-
-```bash
+Esta imagem tem cerca de 2 GB de tamanho e depende de serviços externos de LLM e incorporação.```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
