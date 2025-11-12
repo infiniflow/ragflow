@@ -17,9 +17,11 @@ import { useEffect } from 'react';
 import { useHandleMenuClick } from './hooks';
 
 const menuItems = [
-  { icon: User, label: t('setting.profile'), key: Routes.Profile },
-  { icon: Users, label: t('setting.team'), key: Routes.Team },
+  { icon: Server, label: t('setting.dataSources'), key: Routes.DataSource },
   { icon: Box, label: t('setting.model'), key: Routes.Model },
+  { icon: Banknote, label: 'MCP', key: Routes.Mcp },
+  { icon: Users, label: t('setting.team'), key: Routes.Team },
+  { icon: User, label: t('setting.profile'), key: Routes.Profile },
   { icon: Unplug, label: t('setting.api'), key: Routes.Api },
   // {
   //   icon: MessageSquareQuote,
@@ -27,10 +29,8 @@ const menuItems = [
   //   key: Routes.Profile,
   // },
   // { icon: TextSearch, label: 'Retrieval Templates', key: Routes.Profile },
-  { icon: Server, label: t('setting.dataSources'), key: Routes.DataSource },
   // { icon: Cog, label: t('setting.system'), key: Routes.System },
   // { icon: Banknote, label: 'Plan', key: Routes.Plan },
-  { icon: Banknote, label: 'MCP', key: Routes.Mcp },
 ];
 
 export function SideBar() {

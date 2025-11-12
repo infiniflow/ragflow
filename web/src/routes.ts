@@ -367,7 +367,7 @@ const routes = [
     component: '@/pages/user-setting',
     layout: false,
     routes: [
-      { path: '/user-setting', redirect: '/user-setting/profile' },
+      { path: '/user-setting', redirect: `/user-setting${Routes.DataSource}` },
       {
         path: '/user-setting/profile',
         // component: '@/pages/user-setting/setting-profile',
