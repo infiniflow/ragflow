@@ -42,7 +42,9 @@ const Login = () => {
     useLoginWithChannel();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
   const [isLoginPage, setIsLoginPage] = useState(true);
-  const [showPassword, setShowPassword] = useState(false);
+
+  const [isUserInteracting, setIsUserInteracting] = useState(true);
+
   const loading =
     signLoading ||
     registerLoading ||
@@ -152,9 +154,8 @@ const Login = () => {
         color={'rgb(128, 255, 248)'}
       />
       <div className=" h-[inherit] relative overflow-auto">
-        <BgSvg />
+        <BgSvg isPaused={isUserInteracting} />
 
-        {/* <SpotlightTopRight opcity={0.7} coverage={10} /> */}
         <div className="absolute top-3 flex flex-col items-center mb-12 w-full text-text-primary">
           <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
             <div className="w-12 h-12 p-2 rounded-lg flex items-center justify-center mr-3">
@@ -237,7 +238,7 @@ const Login = () => {
                           <FormControl>
                             <div className="relative">
                               <Input
-                                type={showPassword ? 'text' : 'password'}
+                                type={'password'}
                                 placeholder={t('passwordPlaceholder')}
                                 autoComplete={
                                   title === 'login'
