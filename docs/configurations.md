@@ -97,14 +97,7 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW-IMAGE`
-  The Docker image edition. Available editions:
-
-  - `infiniflow/ragflow:v0.21.1-slim` (default): The RAGFlow Docker image without embedding models.
-  - `infiniflow/ragflow:v0.21.1`: The RAGFlow Docker image with embedding models including:
-    - Built-in embedding models:
-      - `BAAI/bge-large-zh-v1.5`
-      - `maidalun1020/bce-embedding-base_v1`
-
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.21.1` (the RAGFlow Docker image without embedding models).
 
 :::tip NOTE
 If you cannot download the RAGFlow Docker image, try the following mirrors.
