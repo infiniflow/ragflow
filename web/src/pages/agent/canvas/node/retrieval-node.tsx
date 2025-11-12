@@ -55,8 +55,8 @@ function InnerRetrievalNode({
                 <div className="flex items-center gap-1.5">
                   <RAGFlowAvatar
                     className="size-6 rounded-lg"
-                    avatar={id}
-                    name={item?.name || (label as string) || 'CN'}
+                    avatar={item?.avatar}
+                    name={item ? item?.name : id}
                   />
 
                   <div className={'truncate flex-1'}>{label || item?.name}</div>
