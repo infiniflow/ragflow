@@ -13,7 +13,7 @@ export const LogicalOperatorIcon = function OperatorIcon({
       <IconFont
         name={icon}
         className={cn('size-4', {
-          'rotate-180': value === '>',
+          'rotate-180': value === ComparisonOperator.GreatThan,
         })}
       ></IconFont>
     );
