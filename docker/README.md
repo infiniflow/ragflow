@@ -138,6 +138,15 @@ The [.env](./.env) file contains important environment variables for Docker.
   - `password`: The password for MinIO.
   - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
 
+- `oceanbase`
+  - `scheme`: The connection scheme. Set to `mysql` to use mysql config, or other values to use config below.
+  - `config`:
+    - `db_name`: The OceanBase database name.
+    - `user`: The username for OceanBase.
+    - `password`: The password for OceanBase.
+    - `host`: The hostname of the OceanBase service.
+    - `port`: The port of OceanBase.
+
 - `oss`
   - `access_key`: The access key ID used to authenticate requests to the OSS service.
   - `secret_key`: The secret access key used to authenticate requests to the OSS service.
