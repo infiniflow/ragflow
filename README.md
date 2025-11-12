@@ -203,12 +203,14 @@ releases! 🌟
    # docker compose -f docker-compose.yml up -d
 ```
 
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                    |
-| ----------------- | --------------- | --------------------- | -------------------------- |
-| v0.22.0           | &approx;2       | ❌                    | Stable release             |
-| nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+> Note: Prior to `v0.22.0`, we provided both images with embedding models and slim images without embedding models. Details as follows:
 
-> Note: Starting with `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
+| ----------------- | --------------- | --------------------- | ------------------------ |
+| v0.21.1           | &approx;9       | ✔️                    | Stable release           |
+| v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
+
+> Starting with `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
 
 4. Check the server status after having the server up and running:
 
