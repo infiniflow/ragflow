@@ -201,12 +201,14 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
    # docker compose -f docker-compose.yml up -d
 ```
 
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                    |
-| ----------------- | --------------- | --------------------- | -------------------------- |
-| v0.22.0           | &approx;2       | ❌                    | Stable release             |
-| nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+> Catatan: Sebelum `v0.22.0`, kami menyediakan image dengan model embedding dan image slim tanpa model embedding. Detailnya sebagai berikut:
 
-> Catatan: Mulai dari `v0.22.0`, kami hanya menyediakan edisi slim dan tidak lagi menambahkan akhiran **-slim** pada tag image.
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
+| ----------------- | --------------- | --------------------- | ------------------------ |
+| v0.21.1           | &approx;9       | ✔️                    | Stable release           |
+| v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
+
+> Mulai dari `v0.22.0`, kami hanya menyediakan edisi slim dan tidak lagi menambahkan akhiran **-slim** pada tag image.
 
 1. Periksa status server setelah server aktif dan berjalan:
 

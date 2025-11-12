@@ -183,12 +183,14 @@
    # docker compose -f docker-compose.yml up -d
 ```
 
-   | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-   | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.22.0           | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+> 참고: `v0.22.0` 이전 버전에서는 embedding 모델이 포함된 이미지와 embedding 모델이 포함되지 않은 slim 이미지를 모두 제공했습니다. 자세한 내용은 다음과 같습니다:
 
-   > 참고: `v0.22.0`부터는 slim 에디션만 배포하며 이미지 태그에 **-slim** 접미사를 더 이상 붙이지 않습니다.
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
+| ----------------- | --------------- | --------------------- | ------------------------ |
+| v0.21.1           | &approx;9       | ✔️                    | Stable release           |
+| v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
+
+> `v0.22.0`부터는 slim 에디션만 배포하며 이미지 태그에 **-slim** 접미사를 더 이상 붙이지 않습니다.
 
 1. 서버가 시작된 후 서버 상태를 확인하세요:
 

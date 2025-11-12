@@ -201,14 +201,16 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
    # docker compose -f docker-compose.yml up -d
 ```
 
-   | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-   | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.22.0           | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+> Nota: Antes da `v0.22.0`, fornecíamos imagens com modelos de embedding e imagens slim sem modelos de embedding. Detalhes a seguir:
 
-   > Observação: A partir da`v0.22.0`, distribuímos apenas a edição slim e não adicionamos mais o sufixo **-slim** às tags das imagens.
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
+| ----------------- | --------------- | --------------------- | ------------------------ |
+| v0.21.1           | &approx;9       | ✔️                    | Stable release           |
+| v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
 
-   > 4. Verifique o status do servidor após tê-lo iniciado:
+> A partir da `v0.22.0`, distribuímos apenas a edição slim e não adicionamos mais o sufixo **-slim** às tags das imagens.
+
+4. Verifique o status do servidor após tê-lo iniciado:
 
    ```bash
    $ docker logs -f docker-ragflow-cpu-1

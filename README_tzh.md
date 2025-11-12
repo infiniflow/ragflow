@@ -200,12 +200,14 @@
    # docker compose -f docker-compose.yml up -d
 ```
 
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                    |
-| ----------------- | --------------- | --------------------- | -------------------------- |
-| v0.22.0           | &approx;2       | ❌                    | Stable release           |
-| nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+> 注意：在 `v0.22.0` 之前的版本，我們會同時提供包含 embedding 模型的映像和不含 embedding 模型的 slim 映像。具體如下：
 
-> 注意：自 `v0.22.0` 起，我們僅發佈 slim 版本，並且不再在映像標籤後附加 **-slim** 後綴。
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
+| ----------------- | --------------- | --------------------- | ------------------------ |
+| v0.21.1           | &approx;9       | ✔️                    | Stable release           |
+| v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
+
+> 從 `v0.22.0` 開始，我們只發佈 slim 版本，並且不再在映像標籤後附加 **-slim** 後綴。
 
 > [!TIP]
 > 如果你遇到 Docker 映像檔拉不下來的問題，可以在 **docker/.env** 檔案內根據變數 `RAGFLOW_IMAGE` 的註解提示選擇華為雲或阿里雲的對應映像。
