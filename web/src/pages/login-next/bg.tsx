@@ -124,14 +124,6 @@ export const BgSvg = ({ isPaused = false }: { isPaused?: boolean }) => {
   };
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none ">
-      <style>
-        {`
-          .paused .animate-glow,
-          .paused .animate-highlight {
-            animation-play-state: paused;
-          }
-        `}
-      </style>
       <div className="absolute top-0 left-0 right-0 w-full">
         <div
           className={`w-full ml-10 ${animationClass}`}
