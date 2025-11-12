@@ -65,7 +65,7 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
   };
 
   return (
-    <div className={`w-full rounded-lg border border-border-default`}>
+    <div className={`w-full rounded-lg border border-border-button`}>
       {/* Header */}
       <div className="flex h-16  items-center justify-between p-4 cursor-pointer transition-colors">
         <div className="flex items-center space-x-3">
@@ -131,7 +131,7 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
               {item.llm.map((model) => (
                 <div
                   key={model.name}
-                  className="flex items-center border-b border-border-default justify-between p-3 hover:bg-bg-card transition-colors"
+                  className="flex items-center border-b-[0.5px] border-border-button justify-between p-3 hover:bg-bg-card transition-colors"
                 >
                   <div className="flex items-center space-x-3">
                     <span className="font-medium">

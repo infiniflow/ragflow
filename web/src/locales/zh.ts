@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      back: '返回',
       noResults: '无结果。',
       selectPlaceholder: '请选择',
       selectAll: '全选',
@@ -679,9 +680,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       chatSetting: '聊天设置',
       avatarHidden: '隐藏头像',
       locale: '地区',
+      tocEnhance: '目录增强',
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
     },
     setting: {
+      configureModelTitle: '配置模型',
       confluenceIsCloudTip:
         '检查这是否是 Confluence Cloud 实例，如果是 Confluence 服务/数据中心，则取消选中。',
       confluenceWikiBaseUrlTip:
@@ -759,7 +762,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       confirmPasswordMessage: '请确认新密码',
       confirmPasswordNonMatchMessage: '您输入的新密码不匹配！',
       cancel: '取消',
-      addedModels: '已添加的模型',
+      addedModels: '添加了的模型',
       modelsToBeAdded: '待添加的模型',
       addTheModel: '添加',
       apiKey: 'API-Key',
@@ -1011,10 +1014,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       exceptionMethod: '异常处理方法',
       maxRounds: '最大反思轮数',
       delayEfterError: '错误后延迟',
-      maxRetries: '最大重试轮数',
+      maxRetries: '最大反思轮数',
       advancedSettings: '高级设置',
       addTools: '添加工具',
-      sysPromptDefaultValue: `
+      sysPromptDefultValue: `
 <role>
   你是一名乐于助人的助手，一名专注于为用户解决问题的 AI 助手。
   如果用户指定了特定领域，你需要在该领域展现专业性；如果没有，则以通用助手的方式工作。
