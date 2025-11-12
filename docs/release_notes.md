@@ -22,7 +22,7 @@ From this release onwards, built-in embedding models will be removed from the re
 - Dataset:
   - Supports data synchronization from five online sources (AWS S3, Google Drive, Notion, Confluence, and Discord).
   - RAPTOR can be created from an entire dataset or a single file.
-- Ingestion Pipeline: Supports Docling document parsing in the **Parser** component.
+- Ingestion Pipeline: Supports [Docling document parsing](https://github.com/docling-project/docling) in the **Parser** component.
 - Launches a new administrative Web UI dashboard for graphical user management and service status monitoring.
 - Agent:
   - Supports structured output.
