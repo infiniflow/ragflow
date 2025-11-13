@@ -649,6 +649,8 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
 
     res = []
     tk_count = 0
+    max_errors = int(os.environ.get("RAPTOR_MAX_ERRORS", 3))
+
     async def generate(chunks, did):
         nonlocal tk_count, res
         raptor = Raptor(
@@ -658,6 +660,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             raptor_config["prompt"],
             raptor_config["max_token"],
             raptor_config["threshold"],
+            max_errors=max_errors,
         )
         original_length = len(chunks)
         chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
