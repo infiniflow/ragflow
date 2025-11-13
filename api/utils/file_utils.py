@@ -164,3 +164,23 @@ def read_potential_broken_pdf(blob):
         return repaired
 
     return blob
+
+
+def sanitize_path(raw_path: str | None) -> str:
+    """Normalize and sanitize a user-provided path segment.
+
+    - Converts backslashes to forward slashes
+    - Strips leading/trailing slashes
+    - Removes '.' and '..' segments
+    - Restricts characters to A-Za-z0-9, underscore, dash, and '/'
+    """
+    if not raw_path:
+        return ""
+    backslash_re = re.compile(r"[\\]+")
+    unsafe_re = re.compile(r"[^A-Za-z0-9_\-/]")
+    normalized = backslash_re.sub("/", raw_path)
+    normalized = normalized.strip("/")
+    parts = [seg for seg in normalized.split("/") if seg and seg not in (".", "..")]
+    sanitized = "/".join(parts)
+    sanitized = unsafe_re.sub("", sanitized)
+    return sanitized
