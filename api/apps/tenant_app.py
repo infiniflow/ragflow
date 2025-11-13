@@ -266,6 +266,59 @@ def create_team() -> Response:
             code=RetCode.DATA_ERROR,
         )
 
+    # Validate that provided LLM models have been added by the user
+    # Models are stored in TenantLLM with tenant_id = user_id
+    def validate_model_id(user_id: str, model_id: Optional[str], model_type: str) -> Optional[str]:
+        """Validate that a model ID has been added by the user. Returns error message if invalid, None if valid."""
+        if model_id is None:
+            return None  # Optional parameter, skip validation if not provided
+        
+        # Check if the model exists in TenantLLM for this user
+        model_config = TenantLLMService.get_api_key(user_id, model_id)
+        if not model_config:
+            return f"{model_type} model '{model_id}' has not been added. Please add the model first before creating a team."
+        
+        # Check if the model is valid (status = "1")
+        if model_config.status != StatusEnum.VALID.value:
+            return f"{model_type} model '{model_id}' is not active. Please enable the model first."
+        
+        return None
+
+    # Validate all provided model IDs
+    validation_errors = []
+    
+    if llm_id is not None:
+        error = validate_model_id(owner_user_id, llm_id, "LLM")
+        if error:
+            validation_errors.append(error)
+    
+    if embd_id is not None:
+        error = validate_model_id(owner_user_id, embd_id, "Embedding")
+        if error:
+            validation_errors.append(error)
+    
+    if asr_id is not None:
+        error = validate_model_id(owner_user_id, asr_id, "ASR")
+        if error:
+            validation_errors.append(error)
+    
+    if img2txt_id is not None:
+        error = validate_model_id(owner_user_id, img2txt_id, "Image-to-text")
+        if error:
+            validation_errors.append(error)
+    
+    if rerank_id is not None:
+        error = validate_model_id(owner_user_id, rerank_id, "Rerank")
+        if error:
+            validation_errors.append(error)
+    
+    if validation_errors:
+        return get_json_result(
+            data=False,
+            message="; ".join(validation_errors),
+            code=RetCode.DATA_ERROR,
+        )
+
     # Generate tenant ID
     tenant_id: str = get_uuid()
 
