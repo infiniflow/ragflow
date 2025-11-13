@@ -44,6 +44,23 @@ from api.utils.web_utils import send_invite_email
 from common import settings
 
 
+def is_team_admin_or_owner(tenant_id: str, user_id: str) -> bool:
+    """
+    Check if a user is an OWNER or ADMIN of a team.
+    
+    Args:
+        tenant_id: The team/tenant ID
+        user_id: The user ID to check
+        
+    Returns:
+        True if user is OWNER or ADMIN, False otherwise
+    """
+    user_tenant = UserTenantService.filter_by_tenant_and_user_id(tenant_id, user_id)
+    if not user_tenant:
+        return False
+    return user_tenant.role in [UserTenantRole.OWNER, UserTenantRole.ADMIN]
+
+
 @manager.route("/<tenant_id>/user/list", methods=["GET"])  # noqa: F821
 @login_required
 def user_list(tenant_id):
@@ -435,3 +452,384 @@ def agree(tenant_id):
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route('/<tenant_id>/users/add', methods=['POST'])  # noqa: F821
+@login_required
+@validate_request("users")
+def add_users(tenant_id):
+    """
+    Add one or more users to a team. Only OWNER or ADMIN can add users.
+    Supports both single user and bulk operations.
+    
+    ---
+    tags:
+      - Team
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        type: string
+        description: Team ID
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - users
+          properties:
+            users:
+              type: array
+              description: List of users to add. Each user can be an email string or an object with email and role.
+              items:
+                oneOf:
+                  - type: string
+                    description: User email (will be added with 'normal' role)
+                  - type: object
+                    properties:
+                      email:
+                        type: string
+                        description: User email
+                      role:
+                        type: string
+                        description: Role to assign (normal, admin). Defaults to normal.
+                        enum: [normal, admin]
+    responses:
+      200:
+        description: Users added successfully
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              properties:
+                added:
+                  type: array
+                  description: Successfully added users
+                failed:
+                  type: array
+                  description: Users that failed to be added with error messages
+            message:
+              type: string
+      400:
+        description: Invalid request
+      401:
+        description: Unauthorized
+      403:
+        description: Forbidden - not owner or admin
+    """
+    # Check if current user is OWNER or ADMIN of the team
+    if not is_team_admin_or_owner(tenant_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='Only team owners or admins can add users.',
+            code=RetCode.PERMISSION_ERROR
+        )
+    
+    req = request.json
+    users_input = req.get("users", [])
+    
+    if not isinstance(users_input, list) or len(users_input) == 0:
+        return get_json_result(
+            data=False,
+            message="'users' must be a non-empty array.",
+            code=RetCode.ARGUMENT_ERROR
+        )
+    
+    added_users = []
+    failed_users = []
+    
+    for user_input in users_input:
+        # Handle both string (email) and object formats
+        if isinstance(user_input, str):
+            email = user_input
+            role = UserTenantRole.NORMAL.value
+        elif isinstance(user_input, dict):
+            email = user_input.get("email")
+            role = user_input.get("role", UserTenantRole.NORMAL.value)
+        else:
+            failed_users.append({
+                "email": str(user_input),
+                "error": "Invalid format. Must be a string (email) or object with 'email' and optional 'role'."
+            })
+            continue
+        
+        if not email:
+            failed_users.append({
+                "email": str(user_input),
+                "error": "Email is required."
+            })
+            continue
+        
+        # Validate role
+        if role not in [UserTenantRole.NORMAL.value, UserTenantRole.ADMIN.value]:
+            failed_users.append({
+                "email": email,
+                "error": f"Invalid role '{role}'. Allowed roles: {UserTenantRole.NORMAL.value}, {UserTenantRole.ADMIN.value}"
+            })
+            continue
+        
+        try:
+            # Find user by email
+            invite_users = UserService.query(email=email)
+            if not invite_users:
+                failed_users.append({
+                    "email": email,
+                    "error": f"User with email '{email}' not found."
+                })
+                continue
+            
+            user_id_to_add = invite_users[0].id
+            
+            # Check if user is already in the team
+            existing_user_tenants = UserTenantService.query(user_id=user_id_to_add, tenant_id=tenant_id)
+            if existing_user_tenants:
+                existing_role = existing_user_tenants[0].role
+                if existing_role in [UserTenantRole.NORMAL, UserTenantRole.ADMIN]:
+                    failed_users.append({
+                        "email": email,
+                        "error": f"User is already a member of the team with role '{existing_role}'."
+                    })
+                    continue
+                if existing_role == UserTenantRole.OWNER:
+                    failed_users.append({
+                        "email": email,
+                        "error": "User is the owner of the team and cannot be added again."
+                    })
+                    continue
+                # If user has INVITE role, update to the requested role
+                if existing_role == UserTenantRole.INVITE:
+                    UserTenantService.filter_update(
+                        [UserTenant.tenant_id == tenant_id, UserTenant.user_id == user_id_to_add],
+                        {"role": role, "status": StatusEnum.VALID.value}
+                    )
+                    usr = invite_users[0].to_dict()
+                    usr = {k: v for k, v in usr.items() if k in ["id", "avatar", "email", "nickname"]}
+                    usr["role"] = role
+                    added_users.append(usr)
+                    continue
+            
+            # Add user to team
+            UserTenantService.save(
+                id=get_uuid(),
+                user_id=user_id_to_add,
+                tenant_id=tenant_id,
+                invited_by=current_user.id,
+                role=role,
+                status=StatusEnum.VALID.value
+            )
+            
+            # Send invitation email if configured
+            if smtp_mail_server and settings.SMTP_CONF:
+                from threading import Thread
+                user_name = ""
+                _, user = UserService.get_by_id(current_user.id)
+                if user:
+                    user_name = user.nickname
+                Thread(
+                    target=send_invite_email,
+                    args=(email, settings.MAIL_FRONTEND_URL, tenant_id, user_name or current_user.email),
+                    daemon=True
+                ).start()
+            
+            usr = invite_users[0].to_dict()
+            usr = {k: v for k, v in usr.items() if k in ["id", "avatar", "email", "nickname"]}
+            usr["role"] = role
+            added_users.append(usr)
+            
+        except Exception as e:
+            logging.exception(f"Error adding user {email}: {e}")
+            failed_users.append({
+                "email": email,
+                "error": f"Failed to add user: {str(e)}"
+            })
+    
+    result = {
+        "added": added_users,
+        "failed": failed_users
+    }
+    
+    if failed_users and not added_users:
+        return get_json_result(
+            data=result,
+            message=f"Failed to add all users. {len(failed_users)} error(s).",
+            code=RetCode.DATA_ERROR
+        )
+    elif failed_users:
+        return get_json_result(
+            data=result,
+            message=f"Added {len(added_users)} user(s). {len(failed_users)} user(s) failed."
+        )
+    else:
+        return get_json_result(
+            data=result,
+            message=f"Successfully added {len(added_users)} user(s)."
+        )
+
+
+@manager.route('/<tenant_id>/users/remove', methods=['POST'])  # noqa: F821
+@login_required
+@validate_request("user_ids")
+def remove_users(tenant_id):
+    """
+    Remove one or more users from a team. Only OWNER or ADMIN can remove users.
+    Owners cannot be removed. Supports both single user and bulk operations.
+    
+    ---
+    tags:
+      - Team
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        type: string
+        description: Team ID
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - user_ids
+          properties:
+            user_ids:
+              type: array
+              description: List of user IDs to remove
+              items:
+                type: string
+    responses:
+      200:
+        description: Users removed successfully
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              properties:
+                removed:
+                  type: array
+                  description: Successfully removed user IDs
+                failed:
+                  type: array
+                  description: Users that failed to be removed with error messages
+            message:
+              type: string
+      400:
+        description: Invalid request
+      401:
+        description: Unauthorized
+      403:
+        description: Forbidden - not owner or admin
+    """
+    # Check if current user is OWNER or ADMIN of the team
+    if not is_team_admin_or_owner(tenant_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message='Only team owners or admins can remove users.',
+            code=RetCode.PERMISSION_ERROR
+        )
+    
+    req = request.json
+    user_ids = req.get("user_ids", [])
+    
+    if not isinstance(user_ids, list) or len(user_ids) == 0:
+        return get_json_result(
+            data=False,
+            message="'user_ids' must be a non-empty array.",
+            code=RetCode.ARGUMENT_ERROR
+        )
+    
+    removed_users = []
+    failed_users = []
+    
+    # Get all admins/owners for validation (check if removing would leave team without admin/owner)
+    all_user_tenants = UserTenantService.query(tenant_id=tenant_id)
+    admin_owner_ids = {
+        ut.user_id for ut in all_user_tenants 
+        if ut.role in [UserTenantRole.OWNER, UserTenantRole.ADMIN] and ut.status == StatusEnum.VALID.value
+    }
+    
+    for user_id in user_ids:
+        if not isinstance(user_id, str):
+            failed_users.append({
+                "user_id": str(user_id),
+                "error": "Invalid user ID format."
+            })
+            continue
+        
+        try:
+            # Check if user exists in the team
+            user_tenant = UserTenantService.filter_by_tenant_and_user_id(tenant_id, user_id)
+            if not user_tenant:
+                failed_users.append({
+                    "user_id": user_id,
+                    "error": "User is not a member of this team."
+                })
+                continue
+            
+            # Prevent removing the owner
+            if user_tenant.role == UserTenantRole.OWNER:
+                failed_users.append({
+                    "user_id": user_id,
+                    "error": "Cannot remove the team owner."
+                })
+                continue
+            
+            # Prevent removing yourself if you're the only admin
+            if user_id == current_user.id and user_tenant.role == UserTenantRole.ADMIN:
+                remaining_admins = admin_owner_ids - {user_id}
+                if len(remaining_admins) == 0:
+                    failed_users.append({
+                        "user_id": user_id,
+                        "error": "Cannot remove yourself. At least one owner or admin must remain in the team."
+                    })
+                    continue
+            
+            # Remove user from team
+            UserTenantService.filter_delete([
+                UserTenant.tenant_id == tenant_id,
+                UserTenant.user_id == user_id
+            ])
+            
+            # Get user info for response
+            user = UserService.filter_by_id(user_id)
+            user_email = user.email if user else "Unknown"
+            
+            removed_users.append({
+                "user_id": user_id,
+                "email": user_email
+            })
+            
+        except Exception as e:
+            logging.exception(f"Error removing user {user_id}: {e}")
+            failed_users.append({
+                "user_id": user_id,
+                "error": f"Failed to remove user: {str(e)}"
+            })
+    
+    result = {
+        "removed": removed_users,
+        "failed": failed_users
+    }
+    
+    if failed_users and not removed_users:
+        return get_json_result(
+            data=result,
+            message=f"Failed to remove all users. {len(failed_users)} error(s).",
+            code=RetCode.DATA_ERROR
+        )
+    elif failed_users:
+        return get_json_result(
+            data=result,
+            message=f"Removed {len(removed_users)} user(s). {len(failed_users)} user(s) failed."
+        )
+    else:
+        return get_json_result(
+            data=result,
+            message=f"Successfully removed {len(removed_users)} user(s)."
+        )
