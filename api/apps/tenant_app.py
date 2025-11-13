@@ -61,6 +61,34 @@ def is_team_admin_or_owner(tenant_id: str, user_id: str) -> bool:
     return user_tenant.role in [UserTenantRole.OWNER, UserTenantRole.ADMIN]
 
 
+def validate_model_id(user_id: str, model_id: Optional[str], model_type: str, context: str = "team") -> Optional[str]:
+    """
+    Validate that a model ID has been added by the user. Returns error message if invalid, None if valid.
+    
+    Args:
+        user_id: The user ID to check models for
+        model_id: The model ID to validate (optional)
+        model_type: The type of model (e.g., "LLM", "Embedding", "ASR")
+        context: The context for the error message (e.g., "team", "creating a team", "updating the team")
+        
+    Returns:
+        Error message string if invalid, None if valid
+    """
+    if model_id is None:
+        return None  # Optional parameter, skip validation if not provided
+    
+    # Check if the model exists in TenantLLM for this user
+    model_config = TenantLLMService.get_api_key(user_id, model_id)
+    if not model_config:
+        return f"{model_type} model '{model_id}' has not been added. Please add the model first before {context}."
+    
+    # Check if the model is valid (status = "1")
+    if model_config.status != StatusEnum.VALID.value:
+        return f"{model_type} model '{model_id}' is not active. Please enable the model first."
+    
+    return None
+
+
 @manager.route("/<tenant_id>/user/list", methods=["GET"])  # noqa: F821
 @login_required
 def user_list(tenant_id):
@@ -285,47 +313,30 @@ def create_team() -> Response:
 
     # Validate that provided LLM models have been added by the user
     # Models are stored in TenantLLM with tenant_id = user_id
-    def validate_model_id(user_id: str, model_id: Optional[str], model_type: str) -> Optional[str]:
-        """Validate that a model ID has been added by the user. Returns error message if invalid, None if valid."""
-        if model_id is None:
-            return None  # Optional parameter, skip validation if not provided
-        
-        # Check if the model exists in TenantLLM for this user
-        model_config = TenantLLMService.get_api_key(user_id, model_id)
-        if not model_config:
-            return f"{model_type} model '{model_id}' has not been added. Please add the model first before creating a team."
-        
-        # Check if the model is valid (status = "1")
-        if model_config.status != StatusEnum.VALID.value:
-            return f"{model_type} model '{model_id}' is not active. Please enable the model first."
-        
-        return None
-
-    # Validate all provided model IDs
     validation_errors = []
     
     if llm_id is not None:
-        error = validate_model_id(owner_user_id, llm_id, "LLM")
+        error = validate_model_id(owner_user_id, llm_id, "LLM", "creating a team")
         if error:
             validation_errors.append(error)
     
     if embd_id is not None:
-        error = validate_model_id(owner_user_id, embd_id, "Embedding")
+        error = validate_model_id(owner_user_id, embd_id, "Embedding", "creating a team")
         if error:
             validation_errors.append(error)
     
     if asr_id is not None:
-        error = validate_model_id(owner_user_id, asr_id, "ASR")
+        error = validate_model_id(owner_user_id, asr_id, "ASR", "creating a team")
         if error:
             validation_errors.append(error)
     
     if img2txt_id is not None:
-        error = validate_model_id(owner_user_id, img2txt_id, "Image-to-text")
+        error = validate_model_id(owner_user_id, img2txt_id, "Image-to-text", "creating a team")
         if error:
             validation_errors.append(error)
     
     if rerank_id is not None:
-        error = validate_model_id(owner_user_id, rerank_id, "Rerank")
+        error = validate_model_id(owner_user_id, rerank_id, "Rerank", "creating a team")
         if error:
             validation_errors.append(error)
     
@@ -440,6 +451,240 @@ def tenant_list():
             u["delta_seconds"] = delta_seconds(str(u["update_date"]))
         return get_json_result(data=users)
     except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/<tenant_id>", methods=["PUT"])  # noqa: F821
+@login_required
+def update_team(tenant_id: str) -> Response:
+    """
+    Update team details. Only OWNER or ADMIN can update team information.
+    
+    ---
+    tags:
+      - Team
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        type: string
+        description: Team ID
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            name:
+              type: string
+              description: Team name (optional, max 100 characters).
+            llm_id:
+              type: string
+              description: LLM model ID (optional, must be added by the user).
+            embd_id:
+              type: string
+              description: Embedding model ID (optional, must be added by the user).
+            asr_id:
+              type: string
+              description: ASR model ID (optional, must be added by the user).
+            img2txt_id:
+              type: string
+              description: Image-to-text model ID (optional, must be added by the user).
+            rerank_id:
+              type: string
+              description: Rerank model ID (optional, must be added by the user).
+            tts_id:
+              type: string
+              description: TTS model ID (optional, must be added by the user).
+            parser_ids:
+              type: string
+              description: Document parser IDs (optional).
+            credit:
+              type: integer
+              description: Credit amount (optional).
+    responses:
+      200:
+        description: Team updated successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              description: Updated team information.
+            message:
+              type: string
+              description: Success message.
+      400:
+        description: Invalid request.
+      401:
+        description: Unauthorized.
+      403:
+        description: Forbidden - not owner or admin.
+      404:
+        description: Team not found.
+    """
+    try:
+        # Check if current user is OWNER or ADMIN of the team
+        if not is_team_admin_or_owner(tenant_id, current_user.id):
+            return get_json_result(
+                data=False,
+                message='Only team owners or admins can update team details.',
+                code=RetCode.PERMISSION_ERROR
+            )
+        
+        # Verify tenant exists
+        success, tenant = TenantService.get_by_id(tenant_id)
+        if not success or not tenant:
+            return get_json_result(
+                data=False,
+                message=f"Team with ID '{tenant_id}' not found.",
+                code=RetCode.DATA_ERROR
+            )
+        
+        if request.json is None:
+            return get_json_result(
+                data=False,
+                message="Request body is required!",
+                code=RetCode.ARGUMENT_ERROR,
+            )
+        
+        req: Dict[str, Any] = request.json
+        
+        # Extract update fields (all optional)
+        update_data: Dict[str, Any] = {}
+        
+        # Update team name if provided
+        if "name" in req:
+            team_name: str = req.get("name", "").strip()
+            if team_name:
+                if len(team_name) > 100:
+                    return get_json_result(
+                        data=False,
+                        message="Team name must be 100 characters or less!",
+                        code=RetCode.ARGUMENT_ERROR,
+                    )
+                update_data["name"] = team_name
+            else:
+                return get_json_result(
+                    data=False,
+                    message="Team name cannot be empty!",
+                    code=RetCode.ARGUMENT_ERROR,
+                )
+        
+        # Validate model IDs if provided (reuse validate_model_id function)
+        validation_errors: List[str] = []
+        
+        llm_id: Optional[str] = req.get("llm_id")
+        if llm_id is not None:
+            error = validate_model_id(current_user.id, llm_id, "LLM", "updating the team")
+            if error:
+                validation_errors.append(error)
+            else:
+                update_data["llm_id"] = llm_id
+        
+        embd_id: Optional[str] = req.get("embd_id")
+        if embd_id is not None:
+            error = validate_model_id(current_user.id, embd_id, "Embedding", "updating the team")
+            if error:
+                validation_errors.append(error)
+            else:
+                update_data["embd_id"] = embd_id
+        
+        asr_id: Optional[str] = req.get("asr_id")
+        if asr_id is not None:
+            error = validate_model_id(current_user.id, asr_id, "ASR", "updating the team")
+            if error:
+                validation_errors.append(error)
+            else:
+                update_data["asr_id"] = asr_id
+        
+        img2txt_id: Optional[str] = req.get("img2txt_id")
+        if img2txt_id is not None:
+            error = validate_model_id(current_user.id, img2txt_id, "Image-to-text", "updating the team")
+            if error:
+                validation_errors.append(error)
+            else:
+                update_data["img2txt_id"] = img2txt_id
+        
+        rerank_id: Optional[str] = req.get("rerank_id")
+        if rerank_id is not None:
+            error = validate_model_id(current_user.id, rerank_id, "Rerank", "updating the team")
+            if error:
+                validation_errors.append(error)
+            else:
+                update_data["rerank_id"] = rerank_id
+        
+        tts_id: Optional[str] = req.get("tts_id")
+        if tts_id is not None:
+            error = validate_model_id(current_user.id, tts_id, "TTS", "updating the team")
+            if error:
+                validation_errors.append(error)
+            else:
+                update_data["tts_id"] = tts_id
+        
+        parser_ids: Optional[str] = req.get("parser_ids")
+        if parser_ids is not None:
+            update_data["parser_ids"] = parser_ids
+        
+        credit: Optional[int] = req.get("credit")
+        if credit is not None:
+            if not isinstance(credit, int) or credit < 0:
+                return get_json_result(
+                    data=False,
+                    message="Credit must be a non-negative integer!",
+                    code=RetCode.ARGUMENT_ERROR,
+                )
+            update_data["credit"] = credit
+        
+        if validation_errors:
+            return get_json_result(
+                data=False,
+                message="; ".join(validation_errors),
+                code=RetCode.DATA_ERROR,
+            )
+        
+        # Check if there's anything to update
+        if not update_data:
+            return get_json_result(
+                data=False,
+                message="No fields provided to update.",
+                code=RetCode.ARGUMENT_ERROR,
+            )
+        
+        # Update the tenant
+        TenantService.update_by_id(tenant_id, update_data)
+        
+        # Get updated tenant info
+        success, updated_tenant = TenantService.get_by_id(tenant_id)
+        if not success or not updated_tenant:
+            return get_json_result(
+                data=False,
+                message="Failed to retrieve updated team information.",
+                code=RetCode.EXCEPTION_ERROR,
+            )
+        
+        # Return updated team info
+        team_data: Dict[str, Any] = {
+            "id": updated_tenant.id,
+            "name": updated_tenant.name,
+            "llm_id": updated_tenant.llm_id,
+            "embd_id": updated_tenant.embd_id,
+            "asr_id": updated_tenant.asr_id,
+            "img2txt_id": updated_tenant.img2txt_id,
+            "rerank_id": updated_tenant.rerank_id,
+            "tts_id": updated_tenant.tts_id,
+            "parser_ids": updated_tenant.parser_ids,
+            "credit": updated_tenant.credit,
+        }
+        
+        return get_json_result(
+            data=team_data,
+            message="Team updated successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
         return server_error_response(e)
 
 
