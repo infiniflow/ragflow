@@ -731,6 +731,8 @@ def delete_kb_task():
     def cancel_task(task_id):
         REDIS_CONN.set(f"{task_id}-cancel", "x")
 
+    kb_task_id_field: str = ""
+    kb_task_finish_at: str = ""
     match pipeline_task_type:
         case PipelineTaskType.GRAPH_RAG:
             kb_task_id_field = "graphrag_task_id"
