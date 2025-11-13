@@ -35,6 +35,16 @@ import trio
 
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from common.log_utils import init_root_logger
+from common.config_utils import show_configs
+from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, WebDAVConnector
+import logging
+import os
+from datetime import datetime, timezone
+import signal
+import trio
+import faulthandler
+from common.constants import FileSource, TaskStatus
 from common import settings
 from common.config_utils import show_configs
 from common.constants import FileSource, TaskStatus
@@ -418,6 +428,37 @@ class Teams(SyncBase):
         pass
 
 
+class WebDAV(SyncBase):
+    SOURCE_NAME: str = FileSource.WEBDAV
+
+    async def _generate(self, task: dict):
+        self.connector = WebDAVConnector(
+            base_url=self.conf["base_url"],
+            remote_path=self.conf.get("remote_path", "/")
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+        
+        logging.info(f"Task info: reindex={task['reindex']}, poll_range_start={task['poll_range_start']}")
+        
+        if task["reindex"]=="1" or not task["poll_range_start"]:
+            logging.info("Using load_from_state (full sync)")
+            document_batch_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+            end_ts = datetime.now(timezone.utc).timestamp()
+            logging.info(f"Polling WebDAV from {task['poll_range_start']} (ts: {start_ts}) to now (ts: {end_ts})")
+            document_batch_generator = self.connector.poll_source(start_ts, end_ts)
+            begin_info = "from {}".format(task["poll_range_start"])
+            
+        logging.info("Connect to WebDAV: {}(path: {}) {}".format(
+            self.conf["base_url"],
+            self.conf.get("remote_path", "/"),
+            begin_info
+        ))
+        return document_batch_generator
+
+
 func_factory = {
     FileSource.S3: S3,
     FileSource.NOTION: Notion,
@@ -429,6 +470,7 @@ func_factory = {
     FileSource.SHAREPOINT: SharePoint,
     FileSource.SLACK: Slack,
     FileSource.TEAMS: Teams,
+    FileSource.WEBDAV: WebDAV
 }
 
 

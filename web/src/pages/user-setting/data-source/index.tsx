@@ -50,6 +50,12 @@ const dataSourceTemplates = [
     description: DataSourceInfo[DataSourceKey.JIRA].description,
     icon: DataSourceInfo[DataSourceKey.JIRA].icon,
   },
+  {
+    id: DataSourceKey.WEBDAV,
+    name: DataSourceInfo[DataSourceKey.WEBDAV].name,
+    description: DataSourceInfo[DataSourceKey.WEBDAV].description,
+    icon: DataSourceInfo[DataSourceKey.WEBDAV].icon,
+  },
 ];
 const DataSource = () => {
   const { t } = useTranslation();
