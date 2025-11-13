@@ -115,6 +115,28 @@ class Base(ABC):
         yield tk_count
 
     @staticmethod
+    def image2base64_rawvalue(self, image):
+        # Return a base64 string without data URL header
+        if isinstance(image, bytes):
+            b64 = base64.b64encode(image).decode("utf-8")
+            return b64
+        if isinstance(image, BytesIO):
+            data = image.getvalue()
+            b64 = base64.b64encode(data).decode("utf-8")
+            return b64
+        with BytesIO() as buffered:
+            try:
+                image.save(buffered, format="JPEG")
+            except Exception:
+                 # reset buffer before saving PNG
+                buffered.seek(0)
+                buffered.truncate()
+                image.save(buffered, format="PNG")
+            data = buffered.getvalue()
+            b64 = base64.b64encode(data).decode("utf-8")
+        return b64
+
+    @staticmethod
     def image2base64(image):
         # Return a data URL with the correct MIME to avoid provider mismatches
         if isinstance(image, bytes):
@@ -246,42 +268,41 @@ class QWenCV(GptV4):
             tmp.write(video_bytes)
             tmp_path = tmp.name
 
-        video_path = f"file://{tmp_path}"
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "video": video_path,
-                        "fps": 2,
-                    },
-                    {
-                        "text": "Please summarize this video in proper sentences.",
-                    },
-                ],
-            }
-        ]
+            video_path = f"file://{tmp_path}"
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "video": video_path,
+                            "fps": 2,
+                        },
+                        {
+                            "text": "Please summarize this video in proper sentences.",
+                        },
+                    ],
+                }
+            ]
 
-        def call_api():
-            response = MultiModalConversation.call(
-                api_key=self.api_key,
-                model=self.model_name,
-                messages=messages,
-            )
-            summary = response["output"]["choices"][0]["message"].content[0]["text"]
-            return summary, num_tokens_from_string(summary)
+            def call_api():
+                response = MultiModalConversation.call(
+                    api_key=self.api_key,
+                    model=self.model_name,
+                    messages=messages,
+                )
+                summary = response["output"]["choices"][0]["message"].content[0]["text"]
+                return summary, num_tokens_from_string(summary)
 
-        try:
-            return call_api()
-        except Exception as e1:
-            import dashscope
-
-            dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
             try:
                 return call_api()
-            except Exception as e2:
-                raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
+            except Exception as e1:
+                import dashscope
 
+                dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
+                try:
+                    return call_api()
+                except Exception as e2:
+                    raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
 
 
 class HunyuanCV(GptV4):
@@ -614,23 +635,38 @@ class GeminiCV(Base):
             if self.lang.lower() == "chinese"
             else "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out."
         )
-        b64 = self.image2base64(image)
-        with BytesIO(base64.b64decode(b64)) as bio:
-            with open(bio) as img:
-                input = [prompt, img]
-                res = self.model.generate_content(input)
-                return res.text, total_token_count_from_response(res)
+
+        if image is bytes:
+            with BytesIO(image) as bio:
+                with open(bio) as img:
+                    input = [prompt, img]
+                    res = self.model.generate_content(input)
+                    return res.text, total_token_count_from_response(res)
+        else:
+            b64 = self.image2base64_rawvalue(image)
+            with BytesIO(base64.b64decode(b64)) as bio:
+                with open(bio) as img:
+                    input = [prompt, img]
+                    res = self.model.generate_content(input)
+                    return res.text, total_token_count_from_response(res)
 
     def describe_with_prompt(self, image, prompt=None):
         from PIL.Image import open
-
-        b64 = self.image2base64(image)
         vision_prompt = prompt if prompt else vision_llm_describe_prompt()
-        with BytesIO(base64.b64decode(b64)) as bio:
-            with open(bio) as img:
-                input = [vision_prompt, img]
-                res = self.model.generate_content(input)
-                return res.text, total_token_count_from_response(res)
+
+        if image is bytes:
+            with BytesIO(image) as bio:
+                with open(bio) as img:
+                    input = [vision_prompt, img]
+                    res = self.model.generate_content(input)
+                    return res.text, total_token_count_from_response(res)
+        else:
+            b64 = self.image2base64_rawvalue(image)
+            with BytesIO(base64.b64decode(b64)) as bio:
+                with open(bio) as img:
+                    input = [vision_prompt, img]
+                    res = self.model.generate_content(input)
+                    return res.text, total_token_count_from_response(res)
 
 
     def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):

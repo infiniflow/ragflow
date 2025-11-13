@@ -669,6 +669,7 @@ class LLMFactories(DataBaseModel):
     name = CharField(max_length=128, null=False, help_text="LLM factory name", primary_key=True)
     logo = TextField(null=True, help_text="llm logo base64")
     tags = CharField(max_length=255, null=False, help_text="LLM, Text Embedding, Image2Text, ASR", index=True)
+    rank = IntegerField(default=0, index=False)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
@@ -1285,6 +1286,10 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("llm_factories", "rank", IntegerField(default=0, index=False)))
     except Exception:
         pass
     logging.disable(logging.NOTSET)

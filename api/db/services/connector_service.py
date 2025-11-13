@@ -72,7 +72,7 @@ class ConnectorService(CommonService):
         if not e:
             return
         SyncLogsService.filter_delete([SyncLogs.connector_id==connector_id, SyncLogs.kb_id==kb_id])
-        docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}")
+        docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}", kb_id=kb_id)
         err = FileService.delete_docs([d.id for d in docs], tenant_id)
         SyncLogsService.schedule(connector_id, kb_id, reindex=True)
         return err
@@ -236,12 +236,13 @@ class Connector2KbService(CommonService):
             conn_id = conn["id"]
             connector_ids.append(conn_id)
             if conn_id in old_conn_ids:
+                cls.filter_update([cls.model.connector_id==conn_id, cls.model.kb_id==kb_id], {"auto_parse": conn.get("auto_parse", "1")})
                 continue
             cls.save(**{
                 "id": get_uuid(),
                 "connector_id": conn_id,
                 "kb_id": kb_id,
-                "auto_parse": conn.get("auto_parse", "1")
+                "auto_parse": conn.get("auto_parse", "1")   
             })
             SyncLogsService.schedule(conn_id, kb_id, reindex=True)
 
@@ -268,6 +269,7 @@ class Connector2KbService(CommonService):
             Connector.id,
             Connector.source,
             Connector.name,
+            cls.model.auto_parse,
             Connector.status
         ]
         return list(cls.model.select(*fields)\

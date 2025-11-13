@@ -25,15 +25,7 @@
    _Replace `[YOUR_MACHINE_IP]` with your actual machine IP address (e.g., `http://192.168.1.49:9222`)._
 
 
-## Shutdown front-end
-
-   Ctrl + C or
-
-   ```bash
-   kill -f "umi dev"
-   ```
-
-## Access admin UI
+## Login to RAGFlow web admin UI
 
    Open your browser and navigate to:
 
@@ -44,3 +36,10 @@
    _Replace `[YOUR_MACHINE_IP]` with your actual machine IP address (e.g., `http://192.168.1.49:9222/admin`)._
 
 
+## Shutdown front-end
+
+   Ctrl + C or
+
+   ```bash
+   kill -f "umi dev"
+   ```

@@ -625,7 +625,7 @@ async def is_strong_enough(chat_model, embedding_model):
 
 
 def get_allowed_llm_factories() -> list:
-    factories = list(LLMFactoriesService.get_all())
+    factories = list(LLMFactoriesService.get_all(reverse=True, order_by="rank"))
     if settings.ALLOWED_LLM_FACTORIES is None:
         return factories
 

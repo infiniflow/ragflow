@@ -28,6 +28,10 @@ import { Loader2Icon, PenLine } from 'lucide-react';
 import { FC, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import {
+  ProfileSettingWrapperCard,
+  UserSettingHeader,
+} from '../components/user-setting-header';
 import { EditType, modalTitle, useProfile } from './hooks/use-profile';
 
 const baseSchema = z.object({
@@ -122,20 +126,21 @@ const ProfilePage: FC = () => {
   //   };
 
   return (
-    <div className="h-full w-full text-text-secondary p-5 relative">
+    // <div className="h-full w-full text-text-secondary relative flex flex-col gap-4">
+    <ProfileSettingWrapperCard
+      header={
+        <UserSettingHeader
+          name={t('profile')}
+          description={t('profileDescription')}
+        />
+      }
+    >
       <Spotlight />
-      {/* Header */}
-      <header className="flex flex-col gap-1 justify-between items-start mb-6">
-        <h1 className="text-2xl font-bold text-text-primary">{t('profile')}</h1>
-        <div className="text-sm text-text-secondary mb-6">
-          {t('profileDescription')}
-        </div>
-      </header>
 
       {/* Main Content */}
-      <div className="max-w-3xl space-y-11 w-3/4">
+      <div className="max-w-3xl space-y-11 w-3/4 p-7">
         {/* Name */}
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-4 ">
           <label className="w-[190px] text-sm font-medium">
             {t('username')}
           </label>
@@ -408,7 +413,8 @@ const ProfilePage: FC = () => {
           </Form>
         </Modal>
       )}
-    </div>
+    </ProfileSettingWrapperCard>
+    // </div>
   );
 };
 

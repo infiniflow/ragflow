@@ -1950,6 +1950,19 @@ wheels = [
 ]
 
 [[package]]
+name = "google-auth-oauthlib"
+version = "1.2.3"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "google-auth" },
+    { name = "requests-oauthlib" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/86/a6/c6336a6ceb682709a4aa39e2e6b5754a458075ca92359512b6cbfcb25ae3/google_auth_oauthlib-1.2.3.tar.gz", hash = "sha256:eb09e450d3cc789ecbc2b3529cb94a713673fd5f7a22c718ad91cf75aedc2ea4", size = 21265, upload-time = "2025-10-30T21:28:19.105Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/38/07/a54c100da461ffc5968457823fcc665a48fb4b875c68bcfecbfe24a10dbe/google_auth_oauthlib-1.2.3-py3-none-any.whl", hash = "sha256:7c0940e037677f25e71999607493640d071212e7f3c15aa0febea4c47a5a0680", size = 19184, upload-time = "2025-10-30T21:28:17.88Z" },
+]
+
+[[package]]
 name = "google-cloud-aiplatform"
 version = "1.70.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -2637,7 +2650,7 @@ wheels = [
 
 [[package]]
 name = "infinity-sdk"
-version = "0.6.4"
+version = "0.6.5"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "numpy" },
@@ -2653,9 +2666,9 @@ dependencies = [
     { name = "sqlglot", extra = ["rs"] },
     { name = "thrift" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/6c/2c/c10ecad998ec56bae14903967cafdcb864bc007bc0cbff91688a62b424cd/infinity_sdk-0.6.4.tar.gz", hash = "sha256:7aea07a52dda312a9b13225544dc7b30a4ebb557bdd2dfe6311c76453af08179", size = 67059, upload-time = "2025-11-06T11:56:45.975Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/8f/19/31f14d841da58002fa63dd14c403185adecc4266ab2616c102794ea4baf6/infinity_sdk-0.6.5.tar.gz", hash = "sha256:8ab1c70c95affaed172173c9875cf9ccd08481f32d2eed9b6dc316f8e9da0a6e", size = 67043, upload-time = "2025-11-12T04:02:06.039Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7a/51/bd010e05d3421f9f6477105f950aa4eb3da5aad2dcbc451452a6c5d9c121/infinity_sdk-0.6.4-py3-none-any.whl", hash = "sha256:9a8c6944391b69312e51fe292d37bb8e6af44c4ebdbbfaee36f906e62f36976c", size = 75538, upload-time = "2025-11-06T11:56:44.704Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/cb/57/e72444c09223dc2aa8618a690788939910d595537bce3eb482858587a458/infinity_sdk-0.6.5-py3-none-any.whl", hash = "sha256:c5e5f4d49a611cde0602c87f11957dcae068c13c84dbdd6e5b0044635e2728c3", size = 75542, upload-time = "2025-11-12T04:02:04.424Z" },
 ]
 
 [[package]]
@@ -5183,7 +5196,7 @@ wheels = [
 
 [[package]]
 name = "ragflow"
-version = "0.21.1"
+version = "0.22.0"
 source = { virtual = "." }
 dependencies = [
     { name = "akshare" },
@@ -5226,6 +5239,7 @@ dependencies = [
     { name = "flask-login" },
     { name = "flask-mail" },
     { name = "flask-session" },
+    { name = "google-auth-oauthlib" },
     { name = "google-genai" },
     { name = "google-generativeai" },
     { name = "google-search-results" },
@@ -5381,6 +5395,7 @@ requires-dist = [
     { name = "flask-login", specifier = "==0.6.3" },
     { name = "flask-mail", specifier = ">=0.10.0" },
     { name = "flask-session", specifier = "==0.8.0" },
+    { name = "google-auth-oauthlib", specifier = ">=1.2.0,<2.0.0" },
     { name = "google-genai", specifier = ">=1.41.0,<2.0.0" },
     { name = "google-generativeai", specifier = ">=0.8.1,<0.9.0" },
     { name = "google-search-results", specifier = "==2.4.2" },
@@ -5391,7 +5406,7 @@ requires-dist = [
     { name = "httpx", extras = ["socks"], specifier = ">=0.28.1,<0.29.0" },
     { name = "huggingface-hub", specifier = ">=0.25.0,<0.26.0" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
-    { name = "infinity-sdk", specifier = "==0.6.4" },
+    { name = "infinity-sdk", specifier = "==0.6.5" },
     { name = "itsdangerous", specifier = "==2.1.2" },
     { name = "jira", specifier = "==3.10.5" },
     { name = "json-repair", specifier = "==0.35.0" },

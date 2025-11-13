@@ -45,6 +45,7 @@ export interface DSL {
   messages?: Message[];
   reference?: IReference[];
   globals: Record<string, any>;
+  variables: Record<string, GlobalVariableType>;
   retrieval: IReference[];
 }
 
@@ -282,4 +283,11 @@ export interface IPipeLineListRequest {
   orderby?: string;
   desc?: boolean;
   canvas_category?: AgentCategory;
+}
+
+export interface GlobalVariableType {
+  name: string;
+  value: any;
+  description: string;
+  type: string;
 }

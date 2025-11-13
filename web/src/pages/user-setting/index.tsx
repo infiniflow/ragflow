@@ -44,12 +44,7 @@ const UserSetting = () => {
         )}
       >
         <SideBar></SideBar>
-        <div
-          className={cn(
-            styles.outletWrapper,
-            'flex flex-1 border border-border-button rounded-lg',
-          )}
-        >
+        <div className={cn(styles.outletWrapper, 'flex flex-1 rounded-lg')}>
           <Outlet></Outlet>
         </div>
       </div>

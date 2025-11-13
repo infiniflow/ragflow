@@ -89,7 +89,7 @@ function DataOperationsForm({ node }: INextOperatorForm) {
         <QueryVariableList
           tooltip={t('flow.queryTip')}
           label={t('flow.query')}
-          types={[JsonSchemaDataType.Array, JsonSchemaDataType.Object]}
+          types={[JsonSchemaDataType.Object]}
         ></QueryVariableList>
         <Separator />
         <RAGFlowFormItem name="operations" label={t('flow.operations')}>
