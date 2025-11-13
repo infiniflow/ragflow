@@ -7,6 +7,9 @@ import { Form } from '@/components/ui/form';
 import { FormLayout } from '@/constants/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { PermissionRole } from '@/constants/permission';
+import { IConnector } from '@/interfaces/database/knowledge';
+import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
+import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -19,6 +22,9 @@ import {
 } from '../dataset/generate-button/generate';
 import { ChunkMethodForm } from './chunk-method-form';
 import ChunkMethodLearnMore from './chunk-method-learn-more';
+import LinkDataSource, {
+  IDataSourceNodeProps,
+} from './components/link-data-source';
 import { MainContainer } from './configuration-form-container';
 import { ChunkMethodItem, ParseTypeItem } from './configuration/common-item';
 import { formSchema } from './form-schema';
@@ -67,6 +73,7 @@ export default function DatasetSettings() {
           threshold: 0.1,
           max_cluster: 64,
           random_seed: 0,
+          scope: 'file',
           prompt: t('knowledgeConfiguration.promptText'),
         },
         graphrag: {
@@ -78,10 +85,12 @@ export default function DatasetSettings() {
       pipeline_id: '',
       parseType: 1,
       pagerank: 0,
+      connectors: [],
     },
   });
   const knowledgeDetails = useFetchKnowledgeConfigurationOnMount(form);
   // const [pipelineData, setPipelineData] = useState<IDataPipelineNodeProps>();
+  const [sourceData, setSourceData] = useState<IDataSourceNodeProps[]>();
   const [graphRagGenerateData, setGraphRagGenerateData] =
     useState<IGenerateLogButtonProps>();
   const [raptorGenerateData, setRaptorGenerateData] =
@@ -97,6 +106,19 @@ export default function DatasetSettings() {
       //   linked: true,
       // };
       // setPipelineData(data);
+
+      const source_data: IDataSourceNodeProps[] =
+        knowledgeDetails?.connectors?.map((connector) => {
+          return {
+            ...connector,
+            icon:
+              DataSourceInfo[connector.source as keyof typeof DataSourceInfo]
+                ?.icon || '',
+          };
+        });
+
+      setSourceData(source_data);
+
       setGraphRagGenerateData({
         finish_at: knowledgeDetails.graphrag_task_finish_at,
         task_id: knowledgeDetails.graphrag_task_id,
@@ -129,6 +151,24 @@ export default function DatasetSettings() {
   //   }
   // };
 
+  const handleLinkOrEditSubmit = (data: IConnector[] | undefined) => {
+    if (data) {
+      const connectors = data.map((connector) => {
+        return {
+          ...connector,
+          auto_parse: connector.auto_parse === '0' ? '0' : '1',
+          icon:
+            DataSourceInfo[connector.source as keyof typeof DataSourceInfo]
+              ?.icon || '',
+        };
+      });
+      setSourceData(connectors as IDataSourceNodeProps[]);
+      form.setValue('connectors', connectors || []);
+      // form.setValue('pipeline_name', data.name || '');
+      // form.setValue('pipeline_avatar', data.avatar || '');
+    }
+  };
+
   const handleDeletePipelineTask = (type: GenerateType) => {
     if (type === GenerateType.KnowledgeGraph) {
       setGraphRagGenerateData({
@@ -158,6 +198,44 @@ export default function DatasetSettings() {
     }
     console.log('parseType', parseType);
   }, [parseType, form]);
+
+  const unbindFunc = (data: IDataSourceBase) => {
+    if (data) {
+      const connectors = sourceData?.filter((connector) => {
+        return connector.id !== data.id;
+      });
+      console.log('🚀 ~ DatasetSettings ~ connectors:', connectors);
+      setSourceData(connectors as IDataSourceNodeProps[]);
+      form.setValue('connectors', connectors || []);
+      // form.setValue('pipeline_name', data.name || '');
+      // form.setValue('pipeline_avatar', data.avatar || '');
+    }
+  };
+  const handleAutoParse = ({
+    source_id,
+    isAutoParse,
+  }: {
+    source_id: string;
+    isAutoParse: boolean;
+  }) => {
+    if (source_id) {
+      const connectors = sourceData?.map((connector) => {
+        if (connector.id === source_id) {
+          return {
+            ...connector,
+            auto_parse: isAutoParse ? '1' : '0',
+          };
+        }
+        return connector;
+      });
+      console.log('🚀 ~ DatasetSettings ~ connectors:', connectors);
+      setSourceData(connectors as IDataSourceNodeProps[]);
+      form.setValue('connectors', connectors || []);
+      // form.setValue('pipeline_name', data.name || '');
+      // form.setValue('pipeline_avatar', data.avatar || '');
+    }
+  };
+
   return (
     <section className="p-5 h-full flex flex-col">
       <TopTitle
@@ -169,9 +247,14 @@ export default function DatasetSettings() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 ">
             <div className="w-[768px] h-[calc(100vh-240px)] pr-1 overflow-y-auto scrollbar-auto">
               <MainContainer className="text-text-secondary">
+                <div className="text-base font-medium text-text-primary">
+                  {t('knowledgeConfiguration.baseInfo')}
+                </div>
                 <GeneralForm></GeneralForm>
                 <Divider />
-
+                <div className="text-base font-medium text-text-primary">
+                  {t('knowledgeConfiguration.globalIndex')}
+                </div>
                 <GraphRagItems
                   className="border-none p-0"
                   data={graphRagGenerateData as IGenerateLogButtonProps}
@@ -185,6 +268,9 @@ export default function DatasetSettings() {
                   onDelete={() => handleDeletePipelineTask(GenerateType.Raptor)}
                 ></RaptorFormFields>
                 <Divider />
+                <div className="text-base font-medium text-text-primary">
+                  {t('knowledgeConfiguration.dataPipeline')}
+                </div>
                 <ParseTypeItem line={1} />
                 {parseType === 1 && (
                   <ChunkMethodItem line={1}></ChunkMethodItem>
@@ -198,13 +284,21 @@ export default function DatasetSettings() {
                   />
                 )}
 
-                <Divider />
+                {/* <Divider /> */}
                 {parseType === 1 && <ChunkMethodForm />}
 
                 {/* <LinkDataPipeline
                   data={pipelineData}
                   handleLinkOrEditSubmit={handleLinkOrEditSubmit}
                 /> */}
+
+                <Divider />
+                <LinkDataSource
+                  data={sourceData}
+                  handleLinkOrEditSubmit={handleLinkOrEditSubmit}
+                  unbindFunc={unbindFunc}
+                  handleAutoParse={handleAutoParse}
+                />
               </MainContainer>
             </div>
             <div className="text-right items-center flex justify-end gap-3 w-[768px]">

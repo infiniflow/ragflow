@@ -19,7 +19,7 @@ import time
 from abc import ABC
 from tavily import TavilyClient
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class TavilySearchParam(ToolParamBase):
@@ -103,6 +103,9 @@ class TavilySearch(ToolBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("TavilySearch processing"):
+            return
+
         if not kwargs.get("query"):
             self.set_output("formalized_content", "")
             return ""
@@ -113,10 +116,16 @@ class TavilySearch(ToolBase, ABC):
             if fld not in kwargs:
                 kwargs[fld] = getattr(self._param, fld)
         for _ in range(self._param.max_retries+1):
+            if self.check_if_canceled("TavilySearch processing"):
+                return
+
             try:
                 kwargs["include_images"] = False
                 kwargs["include_raw_content"] = False
                 res = self.tavily_client.search(**kwargs)
+                if self.check_if_canceled("TavilySearch processing"):
+                    return
+
                 self._retrieve_chunks(res["results"],
                                       get_title=lambda r: r["title"],
                                       get_url=lambda r: r["url"],
@@ -125,6 +134,9 @@ class TavilySearch(ToolBase, ABC):
                 self.set_output("json", res["results"])
                 return self.output("formalized_content")
             except Exception as e:
+                if self.check_if_canceled("TavilySearch processing"):
+                    return
+
                 last_e = e
                 logging.exception(f"Tavily error: {e}")
                 time.sleep(self._param.delay_after_error)
@@ -201,6 +213,9 @@ class TavilyExtract(ToolBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("TavilyExtract processing"):
+            return
+
         self.tavily_client = TavilyClient(api_key=self._param.api_key)
         last_e = None
         for fld in ["urls", "extract_depth", "format"]:
@@ -209,12 +224,21 @@ class TavilyExtract(ToolBase, ABC):
         if kwargs.get("urls") and isinstance(kwargs["urls"], str):
             kwargs["urls"] = kwargs["urls"].split(",")
         for _ in range(self._param.max_retries+1):
+            if self.check_if_canceled("TavilyExtract processing"):
+                return
+
             try:
                 kwargs["include_images"] = False
                 res = self.tavily_client.extract(**kwargs)
+                if self.check_if_canceled("TavilyExtract processing"):
+                    return
+
                 self.set_output("json", res["results"])
                 return self.output("json")
             except Exception as e:
+                if self.check_if_canceled("TavilyExtract processing"):
+                    return
+
                 last_e = e
                 logging.exception(f"Tavily error: {e}")
         if last_e:

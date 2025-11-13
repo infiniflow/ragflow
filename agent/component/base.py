@@ -25,7 +25,7 @@ from typing import Any, List, Union
 import pandas as pd
 import trio
 from agent import settings
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
@@ -393,7 +393,7 @@ class ComponentParamBase(ABC):
 class ComponentBase(ABC):
     component_name: str
     thread_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
-    variable_ref_patt = r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z:0-9_.-]+|sys\.[a-z_]+)\} *\}*"
+    variable_ref_patt = r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
 
     def __str__(self):
         """
@@ -416,6 +416,20 @@ class ComponentBase(ABC):
         self._id = id
         self._param = param
         self._param.check()
+
+    def is_canceled(self) -> bool:
+        return self._canvas.is_canceled()
+
+    def check_if_canceled(self, message: str = "") -> bool:
+        if self.is_canceled():
+            task_id = getattr(self._canvas, 'task_id', 'unknown')
+            log_message = f"Task {task_id} has been canceled"
+            if message:
+                log_message += f" during {message}"
+            logging.info(log_message)
+            self.set_output("_ERROR", "Task has been canceled")
+            return True
+        return False
 
     def invoke(self, **kwargs) -> dict[str, Any]:
         self.set_output("_created_time", time.perf_counter())
@@ -514,6 +528,7 @@ class ComponentBase(ABC):
     def get_param(self, name):
         if hasattr(self._param, name):
             return getattr(self._param, name)
+        return None
 
     def debug(self, **kwargs):
         return self._invoke(**kwargs)
@@ -521,7 +536,7 @@ class ComponentBase(ABC):
     def get_parent(self) -> Union[object, None]:
         pid = self._canvas.get_component(self._id).get("parent_id")
         if not pid:
-            return
+            return None
         return self._canvas.get_component(pid)["obj"]
 
     def get_upstream(self) -> List[str]:
@@ -546,7 +561,7 @@ class ComponentBase(ABC):
 
     def exception_handler(self):
         if not self._param.exception_method:
-            return
+            return None
         return {
             "goto": self._param.exception_goto,
             "default_value": self._param.exception_default_value

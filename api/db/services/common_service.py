@@ -19,7 +19,8 @@ import peewee
 from peewee import InterfaceError, OperationalError
 
 from api.db.db_models import DB
-from api.utils import current_timestamp, datetime_format, get_uuid
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, datetime_format
 
 def retry_db_operation(func):
     @retry(
@@ -89,7 +90,7 @@ class CommonService:
         else:
             query_records = cls.model.select()
         if reverse is not None:
-            if not order_by or not hasattr(cls, order_by):
+            if not order_by or not hasattr(cls.model, order_by):
                 order_by = "create_time"
             if reverse is True:
                 query_records = query_records.order_by(cls.model.getter_by(order_by).desc())

@@ -140,7 +140,7 @@ export const SelectWithSearch = forwardRef<
             ref={ref}
             disabled={disabled}
             className={cn(
-              'bg-background hover:bg-background border-input w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto',
+              '!bg-bg-input hover:bg-background border-input w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto',
               triggerClassName,
             )}
           >
@@ -149,13 +149,13 @@ export const SelectWithSearch = forwardRef<
                 <span className="leading-none truncate">{selectLabel}</span>
               </span>
             ) : (
-              <span className="text-muted-foreground">{placeholder}</span>
+              <span className="text-text-disabled">{placeholder}</span>
             )}
             <div className="flex items-center justify-between">
               {value && allowClear && (
                 <>
                   <XIcon
-                    className="h-4 mx-2 cursor-pointer text-muted-foreground"
+                    className="h-4 mx-2 cursor-pointer text-text-disabled"
                     onClick={handleClear}
                   />
                   <Separator

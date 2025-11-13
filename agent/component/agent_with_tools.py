@@ -27,7 +27,7 @@ from agent.tools.base import LLMToolPluginCallSession, ToolParamBase, ToolBase, 
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.mcp_server_service import MCPServerService
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 from rag.prompts.generator import next_step, COMPLETE_TASK, analyze_task, \
     citation_prompt, reflect, rank_memories, kb_prompt, citation_plus, full_question, message_fit_in
 from rag.utils.mcp_tool_call_conn import MCPToolCallSession, mcp_tool_metadata_to_openai_tool
@@ -139,6 +139,9 @@ class Agent(LLM, ToolBase):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 20*60)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("Agent processing"):
+            return
+
         if kwargs.get("user_prompt"):
             usr_pmt = ""
             if kwargs.get("reasoning"):
@@ -152,13 +155,20 @@ class Agent(LLM, ToolBase):
             self._param.prompts = [{"role": "user", "content": usr_pmt}]
 
         if not self.tools:
+            if self.check_if_canceled("Agent processing"):
+                return
             return LLM._invoke(self, **kwargs)
 
         prompt, msg, user_defined_prompt = self._prepare_prompt_variables()
 
         downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
         ex = self.exception_handler()
-        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure and not (ex and ex["goto"]):
+        output_structure=None
+        try:
+            output_structure=self._param.outputs['structured']
+        except Exception:
+            pass
+        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not output_structure and not (ex and ex["goto"]):
             self.set_output("content", partial(self.stream_output_with_tools, prompt, msg, user_defined_prompt))
             return
 
@@ -166,6 +176,8 @@ class Agent(LLM, ToolBase):
         use_tools = []
         ans = ""
         for delta_ans, tk in self._react_with_tools_streamly(prompt, msg, use_tools, user_defined_prompt):
+            if self.check_if_canceled("Agent processing"):
+                return
             ans += delta_ans
 
         if ans.find("**ERROR**") >= 0:
@@ -186,12 +198,16 @@ class Agent(LLM, ToolBase):
         answer_without_toolcall = ""
         use_tools = []
         for delta_ans,_ in self._react_with_tools_streamly(prompt, msg, use_tools, user_defined_prompt):
+            if self.check_if_canceled("Agent streaming"):
+                return
+
             if delta_ans.find("**ERROR**") >= 0:
                 if self.get_exception_default_value():
                     self.set_output("content", self.get_exception_default_value())
                     yield self.get_exception_default_value()
                 else:
                     self.set_output("_ERROR", delta_ans)
+                    return
             answer_without_toolcall += delta_ans
             yield delta_ans
 
@@ -266,6 +282,8 @@ class Agent(LLM, ToolBase):
             st = timer()
             txt = ""
             for delta_ans in self._gen_citations(entire_txt):
+                if self.check_if_canceled("Agent streaming"):
+                    return
                 yield delta_ans, 0
                 txt += delta_ans
 
@@ -281,6 +299,8 @@ class Agent(LLM, ToolBase):
         task_desc = analyze_task(self.chat_mdl, prompt, user_request, tool_metas, user_defined_prompt)
         self.callback("analyze_task", {}, task_desc, elapsed_time=timer()-st)
         for _ in range(self._param.max_rounds + 1):
+            if self.check_if_canceled("Agent streaming"):
+                return
             response, tk = next_step(self.chat_mdl, hist, tool_metas, task_desc, user_defined_prompt)
             # self.callback("next_step", {}, str(response)[:256]+"...")
             token_count += tk
@@ -328,6 +348,8 @@ Instructions:
 6. Focus on delivering VALUE with the information already gathered
 Respond immediately with your final comprehensive answer.
         """
+        if self.check_if_canceled("Agent final instruction"):
+            return
         append_user_content(hist, final_instruction)
 
         for txt, tkcnt in complete():

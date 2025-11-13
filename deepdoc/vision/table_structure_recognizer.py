@@ -21,7 +21,7 @@ from collections import Counter
 import numpy as np
 from huggingface_hub import snapshot_download
 
-from api.utils.file_utils import get_project_base_directory
+from common.file_utils import get_project_base_directory
 from rag.nlp import rag_tokenizer
 
 from .recognizer import Recognizer
@@ -57,10 +57,10 @@ class TableStructureRecognizer(Recognizer):
             raise RuntimeError("Unsupported table structure recognizer type.")
 
         if table_structure_recognizer_type == "onnx":
-            logging.debug("Using Onnx table structure recognizer", flush=True)
+            logging.debug("Using Onnx table structure recognizer")
             tbls = super().__call__(images, thr)
         else:  # ascend
-            logging.debug("Using Ascend table structure recognizer", flush=True)
+            logging.debug("Using Ascend table structure recognizer")
             tbls = self._run_ascend_tsr(images, thr)
 
         res = []

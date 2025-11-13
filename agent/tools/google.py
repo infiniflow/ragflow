@@ -19,7 +19,7 @@ import time
 from abc import ABC
 from serpapi import GoogleSearch
 from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class GoogleParam(ToolParamBase):
@@ -118,6 +118,9 @@ class Google(ToolBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("Google processing"):
+            return
+
         if not kwargs.get("q"):
             self.set_output("formalized_content", "")
             return ""
@@ -132,8 +135,15 @@ class Google(ToolBase, ABC):
         }
         last_e = ""
         for _ in range(self._param.max_retries+1):
+            if self.check_if_canceled("Google processing"):
+                return
+
             try:
                 search = GoogleSearch(params).get_dict()
+
+                if self.check_if_canceled("Google processing"):
+                    return
+
                 self._retrieve_chunks(search["organic_results"],
                                       get_title=lambda r: r["title"],
                                       get_url=lambda r: r["link"],
@@ -142,6 +152,9 @@ class Google(ToolBase, ABC):
                 self.set_output("json", search["organic_results"])
                 return self.output("formalized_content")
             except Exception as e:
+                if self.check_if_canceled("Google processing"):
+                    return
+
                 last_e = e
                 logging.exception(f"Google error: {e}")
                 time.sleep(self._param.delay_after_error)

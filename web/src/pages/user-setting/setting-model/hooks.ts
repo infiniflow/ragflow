@@ -5,6 +5,7 @@ import {
   useAddLlm,
   useDeleteFactory,
   useDeleteLlm,
+  useEnableLlm,
   useSaveApiKey,
   useSaveTenantInfo,
   useSelectLlmOptionsByModelType,
@@ -12,6 +13,7 @@ import {
 import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { getRealModelName } from '@/utils/llm-util';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { ApiKeyPostBody } from '../interface';
 
@@ -28,7 +30,7 @@ export const useSubmitApiKey = () => {
     hideModal: hideApiKeyModal,
     showModal: showApiKeyModal,
   } = useSetModalState();
-
+  const queryClient = useQueryClient();
   const onApiKeySavingOk = useCallback(
     async (postBody: ApiKeyPostBody) => {
       const ret = await saveApiKey({
@@ -37,11 +39,12 @@ export const useSubmitApiKey = () => {
       });
 
       if (ret === 0) {
+        queryClient.invalidateQueries({ queryKey: ['llmList'] });
         hideApiKeyModal();
         setEditMode(false);
       }
     },
-    [hideApiKeyModal, saveApiKey, savingParams],
+    [hideApiKeyModal, saveApiKey, savingParams, queryClient],
   );
 
   const onShowApiKeyModal = useCallback(
@@ -421,7 +424,7 @@ export const useHandleDeleteLlm = (llmFactory: string) => {
   const { deleteLlm } = useDeleteLlm();
   const showDeleteConfirm = useShowDeleteConfirm();
 
-  const handleDeleteLlm = (name: string) => () => {
+  const handleDeleteLlm = (name: string) => {
     showDeleteConfirm({
       onOk: async () => {
         deleteLlm({ llm_factory: llmFactory, llm_name: name });
@@ -430,6 +433,16 @@ export const useHandleDeleteLlm = (llmFactory: string) => {
   };
 
   return { handleDeleteLlm };
+};
+
+export const useHandleEnableLlm = (llmFactory: string) => {
+  const { enableLlm } = useEnableLlm();
+
+  const handleEnableLlm = (name: string, enable: boolean) => {
+    enableLlm({ llm_factory: llmFactory, llm_name: name, enable });
+  };
+
+  return { handleEnableLlm };
 };
 
 export const useHandleDeleteFactory = (llmFactory: string) => {

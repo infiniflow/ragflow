@@ -25,8 +25,7 @@ import trio
 from langfuse import Langfuse
 from peewee import fn
 from agentic_reasoning import DeepResearcher
-from api import settings
-from api.db import LLMType, ParserType, StatusEnum
+from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
@@ -34,15 +33,17 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.utils import current_timestamp, datetime_format
+from common.time_utils import current_timestamp, datetime_format
 from graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
 from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, \
     gen_meta_filter, PROMPT_JINJA_ENV, ASK_SUMMARY
-from rag.utils import num_tokens_from_string, rmSpace
+from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
+from common.string_utils import remove_redundant_spaces
+from common import settings
 
 
 class DialogService(CommonService):
@@ -292,12 +293,13 @@ def meta_filter(metas: dict, filters: list[dict]):
     def filter_out(v2docs, operator, value):
         ids = []
         for input, docids in v2docs.items():
-            try:
-                input = float(input)
-                value = float(value)
-            except Exception:
-                input = str(input)
-                value = str(value)
+            if operator in ["=", "≠", ">", "<", "≥", "≤"]:
+                try:
+                    input = float(input)
+                    value = float(value)
+                except Exception:
+                    input = str(input)
+                    value = str(value)
 
             for conds in [
                 (operator == "contains", str(value).lower() in str(input).lower()),
@@ -617,7 +619,12 @@ def chat(dialog, messages, stream=True, **kwargs):
 
 
 def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
-    sys_prompt = "You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question."
+    sys_prompt = """
+You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question. 
+Ensure that:
+1. Field names should not start with a digit. If any field name starts with a digit, use double quotes around it.
+2. Write only the SQL, no explanations or additional text.
+"""
     user_prompt = """
 Table name: {};
 Table of database fields are as follows:
@@ -638,6 +645,7 @@ Please write the SQL, only SQL, without any other explanations or text.
         sql = re.sub(r".*select ", "select ", sql.lower())
         sql = re.sub(r" +", " ", sql)
         sql = re.sub(r"([;；]|```).*", "", sql)
+        sql = re.sub(r"&", "and", sql)
         if sql[: len("select ")] != "select ":
             return None, None
         if not re.search(r"((sum|avg|max|min)\(|group by )", sql.lower()):
@@ -706,7 +714,7 @@ Please write the SQL, only SQL, without any other explanations or text.
 
     line = "|" + "|".join(["------" for _ in range(len(column_idx))]) + ("|------|" if docid_idx and docid_idx else "")
 
-    rows = ["|" + "|".join([rmSpace(str(r[i])) for i in column_idx]).replace("None", " ") + "|" for r in tbl["rows"]]
+    rows = ["|" + "|".join([remove_redundant_spaces(str(r[i])) for i in column_idx]).replace("None", " ") + "|" for r in tbl["rows"]]
     rows = [r for r in rows if re.sub(r"[ |]+", "", r)]
     if quota:
         rows = "\n".join([r + f" ##{ii}$$ |" for ii, r in enumerate(rows)])

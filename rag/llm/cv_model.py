@@ -30,7 +30,7 @@ from openai.lib.azure import AzureOpenAI
 from zhipuai import ZhipuAI
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
-from rag.utils import num_tokens_from_string, total_token_count_from_response
+from common.token_utils import num_tokens_from_string, total_token_count_from_response
 
 
 class Base(ABC):
@@ -113,6 +113,28 @@ class Base(ABC):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield tk_count
+
+    @staticmethod
+    def image2base64_rawvalue(self, image):
+        # Return a base64 string without data URL header
+        if isinstance(image, bytes):
+            b64 = base64.b64encode(image).decode("utf-8")
+            return b64
+        if isinstance(image, BytesIO):
+            data = image.getvalue()
+            b64 = base64.b64encode(data).decode("utf-8")
+            return b64
+        with BytesIO() as buffered:
+            try:
+                image.save(buffered, format="JPEG")
+            except Exception:
+                 # reset buffer before saving PNG
+                buffered.seek(0)
+                buffered.truncate()
+                image.save(buffered, format="PNG")
+            data = buffered.getvalue()
+            b64 = base64.b64encode(data).decode("utf-8")
+        return b64
 
     @staticmethod
     def image2base64(image):
@@ -228,7 +250,7 @@ class QWenCV(GptV4):
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
-    def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename=""):
+    def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
         if video_bytes:
             try:
                 summary, summary_num_tokens = self._process_video(video_bytes, filename)
@@ -246,42 +268,41 @@ class QWenCV(GptV4):
             tmp.write(video_bytes)
             tmp_path = tmp.name
 
-        video_path = f"file://{tmp_path}"
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "video": video_path,
-                        "fps": 2,
-                    },
-                    {
-                        "text": "Please summarize this video in proper sentences.",
-                    },
-                ],
-            }
-        ]
+            video_path = f"file://{tmp_path}"
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "video": video_path,
+                            "fps": 2,
+                        },
+                        {
+                            "text": "Please summarize this video in proper sentences.",
+                        },
+                    ],
+                }
+            ]
 
-        def call_api():
-            response = MultiModalConversation.call(
-                api_key=self.api_key,
-                model=self.model_name,
-                messages=messages,
-            )
-            summary = response["output"]["choices"][0]["message"].content[0]["text"]
-            return summary, num_tokens_from_string(summary)
+            def call_api():
+                response = MultiModalConversation.call(
+                    api_key=self.api_key,
+                    model=self.model_name,
+                    messages=messages,
+                )
+                summary = response["output"]["choices"][0]["message"].content[0]["text"]
+                return summary, num_tokens_from_string(summary)
 
-        try:
-            return call_api()
-        except Exception as e1:
-            import dashscope
-
-            dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
             try:
                 return call_api()
-            except Exception as e2:
-                raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
+            except Exception as e1:
+                import dashscope
 
+                dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
+                try:
+                    return call_api()
+                except Exception as e2:
+                    raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
 
 
 class HunyuanCV(GptV4):
@@ -464,7 +485,7 @@ class GPUStackCV(GptV4):
 
 
 class LocalCV(Base):
-    _FACTORY_NAME = "Moonshot"
+    _FACTORY_NAME = "Local"
 
     def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
         pass
@@ -526,7 +547,7 @@ class OllamaCV(Base):
         try:
             response = self.client.generate(
                 model=self.model_name,
-                prompt=prompt[0]["content"][0]["text"],
+                prompt=prompt[0]["content"],
                 images=[image],
             )
             ans = response["response"].strip()
@@ -539,7 +560,7 @@ class OllamaCV(Base):
         try:
             response = self.client.generate(
                 model=self.model_name,
-                prompt=vision_prompt[0]["content"][0]["text"],
+                prompt=vision_prompt[0]["content"],
                 images=[image],
             )
             ans = response["response"].strip()
@@ -547,7 +568,7 @@ class OllamaCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat(self, system, history, gen_conf, images=None):
+    def chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
             response = self.client.chat(
                 model=self.model_name,
@@ -561,7 +582,7 @@ class OllamaCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=None):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         try:
             response = self.client.chat(
@@ -614,26 +635,41 @@ class GeminiCV(Base):
             if self.lang.lower() == "chinese"
             else "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out."
         )
-        b64 = self.image2base64(image)
-        with BytesIO(base64.b64decode(b64)) as bio:
-            with open(bio) as img:
-                input = [prompt, img]
-                res = self.model.generate_content(input)
-                return res.text, total_token_count_from_response(res)
+
+        if image is bytes:
+            with BytesIO(image) as bio:
+                with open(bio) as img:
+                    input = [prompt, img]
+                    res = self.model.generate_content(input)
+                    return res.text, total_token_count_from_response(res)
+        else:
+            b64 = self.image2base64_rawvalue(image)
+            with BytesIO(base64.b64decode(b64)) as bio:
+                with open(bio) as img:
+                    input = [prompt, img]
+                    res = self.model.generate_content(input)
+                    return res.text, total_token_count_from_response(res)
 
     def describe_with_prompt(self, image, prompt=None):
         from PIL.Image import open
-
-        b64 = self.image2base64(image)
         vision_prompt = prompt if prompt else vision_llm_describe_prompt()
-        with BytesIO(base64.b64decode(b64)) as bio:
-            with open(bio) as img:
-                input = [vision_prompt, img]
-                res = self.model.generate_content(input)
-                return res.text, total_token_count_from_response(res)
+
+        if image is bytes:
+            with BytesIO(image) as bio:
+                with open(bio) as img:
+                    input = [vision_prompt, img]
+                    res = self.model.generate_content(input)
+                    return res.text, total_token_count_from_response(res)
+        else:
+            b64 = self.image2base64_rawvalue(image)
+            with BytesIO(base64.b64decode(b64)) as bio:
+                with open(bio) as img:
+                    input = [vision_prompt, img]
+                    res = self.model.generate_content(input)
+                    return res.text, total_token_count_from_response(res)
 
 
-    def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename=""):
+    def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
         if video_bytes:
             try:
                 summary, summary_num_tokens = self._process_video(video_bytes, filename)
@@ -651,7 +687,7 @@ class GeminiCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=None):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         response = None
         try:
@@ -797,8 +833,7 @@ class NvidiaCV(Base):
         try:
             response = self._request(self._form_history(system, history, images), gen_conf)
             cnt = response["choices"][0]["message"]["content"]
-            if "usage" in response and "total_tokens" in response["usage"]:
-                total_tokens +=  total_token_count_from_response(response)
+            total_tokens +=  total_token_count_from_response(response)
             for resp in cnt:
                 yield resp
         except Exception as e:
@@ -847,7 +882,7 @@ class AnthropicCV(Base):
         prompt = self.prompt(b64, prompt if prompt else vision_llm_describe_prompt())
 
         response = self.client.messages.create(model=self.model_name, max_tokens=self.max_tokens, messages=prompt)
-        return response["content"][0]["text"].strip(), response["usage"]["input_tokens"] + response["usage"]["output_tokens"]
+        return response["content"][0]["text"].strip(), total_token_count_from_response(response)
 
     def _clean_conf(self, gen_conf):
         if "presence_penalty" in gen_conf:
@@ -858,7 +893,7 @@ class AnthropicCV(Base):
             gen_conf["max_tokens"] = self.max_tokens
         return gen_conf
 
-    def chat(self, system, history, gen_conf, images=None):
+    def chat(self, system, history, gen_conf, images=None, **kwargs):
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
         try:
@@ -874,12 +909,12 @@ class AnthropicCV(Base):
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return (
                 ans,
-                response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
+                total_token_count_from_response(response),
             )
         except Exception as e:
             return ans + "\n**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=None):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         gen_conf = self._clean_conf(gen_conf)
         total_tokens = 0
         try:
@@ -963,16 +998,25 @@ class GoogleCV(AnthropicCV, GeminiCV):
         else:
             return GeminiCV.describe_with_prompt(self, image, prompt)
 
-    def chat(self, system, history, gen_conf, images=None):
+    def chat(self, system, history, gen_conf, images=None, **kwargs):
         if "claude" in self.model_name:
             return AnthropicCV.chat(self, system, history, gen_conf, images)
         else:
             return GeminiCV.chat(self, system, history, gen_conf, images)
 
-    def chat_streamly(self, system, history, gen_conf, images=None):
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         if "claude" in self.model_name:
             for ans in AnthropicCV.chat_streamly(self, system, history, gen_conf, images):
                 yield ans
         else:
             for ans in GeminiCV.chat_streamly(self, system, history, gen_conf, images):
                 yield ans
+
+
+class MoonshotCV(GptV4):
+    _FACTORY_NAME = "Moonshot"
+
+    def __init__(self, key, model_name="moonshot-v1-8k-vision-preview", lang="Chinese", base_url="https://api.moonshot.cn/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.moonshot.cn/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)

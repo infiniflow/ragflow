@@ -22,20 +22,21 @@ import trio
 import numpy as np
 from PIL import Image
 
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
-from api.utils import get_uuid
-from api.utils.base64_image import image2id
+from common.misc_utils import get_uuid
+from rag.utils.base64_image import image2id
 from deepdoc.parser import ExcelParser
 from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
+from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
-from rag.utils.storage_factory import STORAGE_IMPL
+from common import settings
 
 
 class ParserParam(ProcessParamBase):
@@ -74,7 +75,7 @@ class ParserParam(ProcessParamBase):
 
         self.setups = {
             "pdf": {
-                "parse_method": "deepdoc",  # deepdoc/plain_text/vlm
+                "parse_method": "deepdoc",  # deepdoc/plain_text/tcadp_parser/vlm
                 "lang": "Chinese",
                 "suffix": [
                     "pdf",
@@ -157,7 +158,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp parser"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -221,9 +222,11 @@ class Parser(ProcessBase):
             bboxes = [{"text": t} for t, _ in lines]
         elif conf.get("parse_method").lower() == "mineru":
             mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
-            pdf_parser = MinerUParser(mineru_path=mineru_executable)
-            if not pdf_parser.check_installation():
-                raise RuntimeError("MinerU not found. Please install it via: pip install -U 'mineru[core]'.")
+            mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
+            pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
+            ok, reason = pdf_parser.check_installation()
+            if not ok:
+                raise RuntimeError(f"MinerU not found or server not accessible: {reason}. Please install it via: pip install -U 'mineru[core]'.")
 
             lines, _ = pdf_parser.parse_pdf(
                 filepath=name,
@@ -240,6 +243,39 @@ class Parser(ProcessBase):
                     "text": t,
                 }
                 bboxes.append(box)
+        elif conf.get("parse_method").lower() == "tcadp parser":
+            # ADP is a document parsing tool using Tencent Cloud API
+            tcadp_parser = TCADPParser()
+            sections, _ = tcadp_parser.parse_pdf(
+                filepath=name,
+                binary=blob,
+                callback=self.callback,
+                file_type="PDF",
+                file_start_page=1,
+                file_end_page=1000
+            )
+            bboxes = []
+            for section, position_tag in sections:
+                if position_tag:
+                    # Extract position information from TCADP's position tag
+                    # Format: @@{page_number}\t{x0}\t{x1}\t{top}\t{bottom}##
+                    import re
+                    match = re.match(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", position_tag)
+                    if match:
+                        pn, x0, x1, top, bott = match.groups()
+                        bboxes.append({
+                            "page_number": int(pn.split('-')[0]),  # Take the first page number
+                            "x0": float(x0),
+                            "x1": float(x1),
+                            "top": float(top),
+                            "bottom": float(bott),
+                            "text": section
+                        })
+                    else:
+                        # If no position info, add as text without position
+                        bboxes.append({"text": section})
+                else:
+                    bboxes.append({"text": section})
         else:
             vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("parse_method"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
@@ -396,7 +432,7 @@ class Parser(ProcessBase):
         conf = self._param.setups["video"]
         self.set_output("output_format", conf["output_format"])
 
-        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT)
+        cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"])
         txt = cv_mdl.chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name)
 
         self.set_output("text", txt)
@@ -429,14 +465,27 @@ class Parser(ProcessBase):
             if "body" in target_fields:
                 body_text, body_html = [], []
                 def _add_content(m, content_type):
+                    def _decode_payload(payload, charset, target_list):
+                        try:
+                            target_list.append(payload.decode(charset))
+                        except (UnicodeDecodeError, LookupError):
+                            for enc in ["utf-8", "gb2312", "gbk", "gb18030", "latin1"]:
+                                try:
+                                    target_list.append(payload.decode(enc))
+                                    break
+                                except UnicodeDecodeError:
+                                    continue
+                            else:
+                                target_list.append(payload.decode("utf-8", errors="ignore"))
+
                     if content_type == "text/plain":
-                        body_text.append(
-                            m.get_payload(decode=True).decode(m.get_content_charset())
-                        )
+                        payload = msg.get_payload(decode=True)
+                        charset = msg.get_content_charset() or "utf-8"
+                        _decode_payload(payload, charset, body_text)
                     elif content_type == "text/html":
-                        body_html.append(
-                            m.get_payload(decode=True).decode(m.get_content_charset())
-                        )
+                        payload = msg.get_payload(decode=True)
+                        charset = msg.get_content_charset() or "utf-8"
+                        _decode_payload(payload, charset, body_html)
                     elif "multipart" in content_type:
                         if m.is_multipart():
                             for part in m.iter_parts():
@@ -539,7 +588,7 @@ class Parser(ProcessBase):
         name = from_upstream.name
         if self._canvas._doc_id:
             b, n = File2DocumentService.get_storage_address(doc_id=self._canvas._doc_id)
-            blob = STORAGE_IMPL.get(b, n)
+            blob = settings.STORAGE_IMPL.get(b, n)
         else:
             blob = FileService.get_blob(from_upstream.file["created_by"], from_upstream.file["id"])
 
@@ -557,4 +606,4 @@ class Parser(ProcessBase):
         outs = self.output()
         async with trio.open_nursery() as nursery:
             for d in outs.get("json", []):
-                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())
+                nursery.start_soon(image2id, d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())

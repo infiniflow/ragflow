@@ -27,7 +27,7 @@ from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, chat_l
 from rag.llm.chat_model import Base as CompletionLLM
 import markdown_to_json
 from functools import reduce
-from rag.utils import num_tokens_from_string
+from common.token_utils import num_tokens_from_string
 
 
 @dataclass

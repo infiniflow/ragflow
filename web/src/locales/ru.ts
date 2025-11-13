@@ -611,7 +611,7 @@ export default {
       addCondition: 'Добавить условие',
       meta: {
         disabled: 'Отключено',
-        automatic: 'Автоматически',
+        auto: 'Автоматически',
         manual: 'Вручную',
       },
       cancel: 'Отмена',
@@ -937,7 +937,7 @@ export default {
       maxRetries: 'Макс. попыток',
       advancedSettings: 'Расширенные настройки',
       addTools: 'Добавить инструменты',
-      sysPromptDefultValue: `
+      sysPromptDefaultValue: `
       <role>
         Вы полезный помощник, ИИ-ассистент, специализирующийся на решении проблем пользователя.
         Если указана конкретная область, адаптируйте вашу экспертизу к этой области; в противном случае действуйте как универсальный специалист.
@@ -1385,7 +1385,6 @@ export default {
       },
       addVariable: 'Добавить переменную',
       variableSettings: 'Настройки переменных',
-      globalVariables: 'Глобальные переменные',
       systemPrompt: 'Системный промпт',
       userPrompt: 'Пользовательский промпт',
       addCategory: 'Добавить категорию',

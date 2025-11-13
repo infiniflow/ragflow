@@ -24,7 +24,7 @@ from ragflow_sdk import DataSet
 from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
-
+from configs import DEFAULT_PARSER_CONFIG
 
 class TestRquest:
     @pytest.mark.p2
@@ -168,11 +168,10 @@ class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "embedding_model",
         [
-            "BAAI/bge-large-zh-v1.5@BAAI",
-            "maidalun1020/bce-embedding-base_v1@Youdao",
+            "BAAI/bge-small-en-v1.5@Builtin",
             "embedding-3@ZHIPU-AI",
         ],
-        ids=["builtin_baai", "builtin_youdao", "tenant_zhipu"],
+        ids=["builtin_baai", "tenant_zhipu"],
     )
     def test_embedding_model(self, client, add_dataset_func, embedding_model):
         dataset = add_dataset_func
@@ -209,11 +208,11 @@ class TestDatasetUpdate:
         [
             ("empty", ""),
             ("space", " "),
-            ("missing_at", "BAAI/bge-large-zh-v1.5BAAI"),
-            ("missing_model_name", "@BAAI"),
-            ("missing_provider", "BAAI/bge-large-zh-v1.5@"),
-            ("whitespace_only_model_name", " @BAAI"),
-            ("whitespace_only_provider", "BAAI/bge-large-zh-v1.5@ "),
+            ("missing_at", "BAAI/bge-small-en-v1.5Builtin"),
+            ("missing_model_name", "@Builtin"),
+            ("missing_provider", "BAAI/bge-small-en-v1.5@"),
+            ("whitespace_only_model_name", " @Builtin"),
+            ("whitespace_only_provider", "BAAI/bge-small-en-v1.5@ "),
         ],
         ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
     )
@@ -231,10 +230,10 @@ class TestDatasetUpdate:
     def test_embedding_model_none(self, client, add_dataset_func):
         dataset = add_dataset_func
         dataset.update({"embedding_model": None})
-        assert dataset.embedding_model == "BAAI/bge-large-zh-v1.5@BAAI", str(dataset)
+        assert dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(dataset)
 
         retrieved_dataset = client.get_dataset(name=dataset.name)
-        assert retrieved_dataset.embedding_model == "BAAI/bge-large-zh-v1.5@BAAI", str(retrieved_dataset)
+        assert retrieved_dataset.embedding_model == "BAAI/bge-small-en-v1.5@Builtin", str(retrieved_dataset)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -635,14 +634,7 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         expected_config = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         dataset.update({"parser_config": {}})
         assert str(dataset.parser_config) == str(expected_config), str(dataset)
@@ -655,14 +647,7 @@ class TestDatasetUpdate:
         dataset = add_dataset_func
         expected_config = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         dataset.update({"parser_config": None})
         assert str(dataset.parser_config) == str(expected_config), str(dataset)

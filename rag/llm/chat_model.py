@@ -36,7 +36,7 @@ from zhipuai import ZhipuAI
 
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
 from rag.nlp import is_chinese, is_english
-from rag.utils import num_tokens_from_string, total_token_count_from_response
+from common.token_utils import num_tokens_from_string, total_token_count_from_response
 
 
 # Error message constants
@@ -1363,6 +1363,8 @@ class TokenPonyChat(Base):
     def __init__(self, key, model_name, base_url="https://ragflow.vip-api.tokenpony.cn/v1", **kwargs):
         if not base_url:
             base_url = "https://ragflow.vip-api.tokenpony.cn/v1"
+        super().__init__(key, model_name, base_url, **kwargs)
+
 
 class DeerAPIChat(Base):
     _FACTORY_NAME = "DeerAPI"
@@ -1388,7 +1390,7 @@ class LiteLLMBase(ABC):
         "TogetherAI",
         "Anthropic",
         "Ollama",
-        "Meituan",
+        "LongCat",
         "CometAPI",
         "SILICONFLOW",
         "OpenRouter",

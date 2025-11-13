@@ -17,7 +17,7 @@ from graphrag.general.extractor import ENTITY_EXTRACTION_MAX_GLEANINGS, Extracto
 from graphrag.light.graph_prompt import PROMPTS
 from graphrag.utils import chat_limiter, pack_user_ass_to_openai_messages, split_string_by_multi_markers
 from rag.llm.chat_model import Base as CompletionLLM
-from rag.utils import num_tokens_from_string
+from common.token_utils import num_tokens_from_string
 
 
 @dataclass
@@ -71,7 +71,7 @@ class GraphExtractor(Extractor):
         self._left_token_count = llm_invoker.max_length - num_tokens_from_string(self._entity_extract_prompt.format(**self._context_base, input_text=""))
         self._left_token_count = max(llm_invoker.max_length * 0.6, self._left_token_count)
 
-    async def _process_single_content(self, chunk_key_dp: tuple[str, str], chunk_seq: int, num_chunks: int, out_results):
+    async def _process_single_content(self, chunk_key_dp: tuple[str, str], chunk_seq: int, num_chunks: int, out_results, task_id=""):
         token_count = 0
         chunk_key = chunk_key_dp[0]
         content = chunk_key_dp[1]
@@ -86,13 +86,13 @@ class GraphExtractor(Extractor):
         if self.callback:
             self.callback(msg=f"Start processing for {chunk_key}: {content[:25]}...")
         async with chat_limiter:
-            final_result = await trio.to_thread.run_sync(self._chat, "", [{"role": "user", "content": hint_prompt}], gen_conf)
+            final_result = await trio.to_thread.run_sync(self._chat, "", [{"role": "user", "content": hint_prompt}], gen_conf, task_id)
         token_count += num_tokens_from_string(hint_prompt + final_result)
         history = pack_user_ass_to_openai_messages(hint_prompt, final_result, self._continue_prompt)
         for now_glean_index in range(self._max_gleanings):
             async with chat_limiter:
                 # glean_result = await trio.to_thread.run_sync(lambda: self._chat(hint_prompt, history, gen_conf))
-                glean_result = await trio.to_thread.run_sync(self._chat, "", history, gen_conf)
+                glean_result = await trio.to_thread.run_sync(self._chat, "", history, gen_conf, task_id)
             history.extend([{"role": "assistant", "content": glean_result}])
             token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + hint_prompt + self._continue_prompt)
             final_result += glean_result
@@ -101,7 +101,7 @@ class GraphExtractor(Extractor):
 
             history.extend([{"role": "user", "content": self._if_loop_prompt}])
             async with chat_limiter:
-                if_loop_result = await trio.to_thread.run_sync(self._chat, "", history, gen_conf)
+                if_loop_result = await trio.to_thread.run_sync(self._chat, "", history, gen_conf, task_id)
             token_count += num_tokens_from_string("\n".join([m["content"] for m in history]) + if_loop_result + self._if_loop_prompt)
             if_loop_result = if_loop_result.strip().strip('"').strip("'").lower()
             if if_loop_result != "yes":

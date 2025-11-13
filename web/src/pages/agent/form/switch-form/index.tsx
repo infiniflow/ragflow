@@ -1,5 +1,4 @@
 import { FormContainer } from '@/components/form-container';
-import { IconFont } from '@/components/icon-font';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,6 +12,7 @@ import {
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
+import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-operator-options';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
@@ -22,11 +22,7 @@ import { memo, useCallback, useMemo } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import {
-  SwitchLogicOperatorOptions,
-  SwitchOperatorOptions,
-  VariableType,
-} from '../../constant';
+import { SwitchLogicOperatorOptions, VariableType } from '../../constant';
 import { useBuildQueryVariableOptions } from '../../hooks/use-get-begin-query';
 import { IOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
@@ -42,42 +38,6 @@ type ConditionCardsProps = {
   parentIndex: number;
   parentLength: number;
 } & IOperatorForm;
-
-export const LogicalOperatorIcon = function OperatorIcon({
-  icon,
-  value,
-}: Omit<(typeof SwitchOperatorOptions)[0], 'label'>) {
-  if (typeof icon === 'string') {
-    return (
-      <IconFont
-        name={icon}
-        className={cn('size-4', {
-          'rotate-180': value === '>',
-        })}
-      ></IconFont>
-    );
-  }
-  return icon;
-};
-
-export function useBuildSwitchOperatorOptions() {
-  const { t } = useTranslation();
-
-  const switchOperatorOptions = useMemo(() => {
-    return SwitchOperatorOptions.map((x) => ({
-      value: x.value,
-      icon: (
-        <LogicalOperatorIcon
-          icon={x.icon}
-          value={x.value}
-        ></LogicalOperatorIcon>
-      ),
-      label: t(`flow.switchOperatorOptions.${x.label}`),
-    }));
-  }, [t]);
-
-  return switchOperatorOptions;
-}
 
 function ConditionCards({
   name: parentName,

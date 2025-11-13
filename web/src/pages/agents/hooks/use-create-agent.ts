@@ -1,12 +1,9 @@
-import { AgentCategory } from '@/constants/agent';
+import { AgentCategory, Operator } from '@/constants/agent';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { EmptyDsl, useSetAgent } from '@/hooks/use-agent-request';
 import { DSL } from '@/interfaces/database/agent';
-import {
-  BeginId,
-  Operator,
-  initialParserValues,
-} from '@/pages/data-flow/constant';
+
+import { FileId, initialParserValues } from '@/pages/agent/constant';
 import { useCallback } from 'react';
 import { FlowType } from '../constant';
 import { FormSchemaType } from '../create-agent-form';
@@ -15,15 +12,15 @@ export const DataflowEmptyDsl = {
   graph: {
     nodes: [
       {
-        id: BeginId,
+        id: FileId,
         type: 'beginNode',
         position: {
           x: 50,
           y: 200,
         },
         data: {
-          label: Operator.Begin,
-          name: Operator.Begin,
+          label: Operator.File,
+          name: Operator.File,
         },
         sourcePosition: 'left',
         targetPosition: 'right',
@@ -53,7 +50,7 @@ export const DataflowEmptyDsl = {
     edges: [
       {
         id: 'xy-edge__Filestart-Parser:HipSignsRhymeend',
-        source: BeginId,
+        source: FileId,
         sourceHandle: 'start',
         target: 'Parser:HipSignsRhyme',
         targetHandle: 'end',
@@ -61,9 +58,9 @@ export const DataflowEmptyDsl = {
     ],
   },
   components: {
-    [Operator.Begin]: {
+    [Operator.File]: {
       obj: {
-        component_name: Operator.Begin,
+        component_name: Operator.File,
         params: {},
       },
       downstream: [], // other edge target is downstream, edge source is current node id

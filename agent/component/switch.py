@@ -19,7 +19,7 @@ from abc import ABC
 from typing import Any
 
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class SwitchParam(ComponentParamBase):
@@ -63,9 +63,18 @@ class Switch(ComponentBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("Switch processing"):
+            return
+
         for cond in self._param.conditions:
+            if self.check_if_canceled("Switch processing"):
+                return
+
             res = []
             for item in cond["items"]:
+                if self.check_if_canceled("Switch processing"):
+                    return
+
                 if not item["cpn_id"]:
                     continue
                 cpn_v = self._canvas.get_variable_value(item["cpn_id"])

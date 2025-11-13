@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.1">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.22.0">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -43,7 +43,13 @@
   <a href="https://demo.ragflow.io">Demo</a>
 </h4>
 
-#
+<div align="center" style="margin-top:20px;margin-bottom:20px;">
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
+</div>
+
+<div align="center">
+<a href="https://trendshift.io/repositories/9064" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9064" alt="infiniflow%2Fragflow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</div>
 
 ## 💡 RAGFlow とは？
 
@@ -60,13 +66,14 @@
 
 ## 🔥 最新情報
 
+- 2025-11-12 Confluence、AWS S3、Discord、Google Drive からのデータ同期をサポートします。
+- 2025-10-23 ドキュメント解析方法として MinerU と Docling をサポートします。
 - 2025-10-15 オーケストレーションされたデータパイプラインのサポート。
 - 2025-08-08 OpenAI の最新 GPT-5 シリーズモデルをサポートします。
 - 2025-08-01 エージェントワークフローとMCPをサポート。
 - 2025-05-23 エージェントに Python/JS コードエグゼキュータコンポーネントを追加しました。
 - 2025-05-05 言語間クエリをサポートしました。
 - 2025-03-19 PDFまたはDOCXファイル内の画像を理解するために、多モーダルモデルを使用することをサポートします。
-- 2025-02-28 インターネット検索 (TAVILY) と組み合わせて、あらゆる LLM の詳細な調査をサポートします。
 - 2024-12-18 DeepDoc のドキュメント レイアウト分析モデルをアップグレードします。
 - 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
 
@@ -147,41 +154,46 @@
    > ```bash
    > vm.max_map_count=262144
    > ```
-
+   >
 2. リポジトリをクローンする:
 
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    ```
-
 3. ビルド済みの Docker イメージをビルドし、サーバーを起動する:
 
 > [!CAUTION]
 > 現在、公式に提供されているすべての Docker イメージは x86 アーキテクチャ向けにビルドされており、ARM64 用の Docker イメージは提供されていません。
 > ARM64 アーキテクチャのオペレーティングシステムを使用している場合は、[このドキュメント](https://ragflow.io/docs/dev/build_docker_image)を参照して Docker イメージを自分でビルドしてください。
 
-   > 以下のコマンドは、RAGFlow Docker イメージの v0.21.1-slim エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.21.1-slim とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。例えば、完全版 v0.21.1 をダウンロードするには、RAGFLOW_IMAGE=infiniflow/ragflow:v0.21.1 と設定します。
+> 以下のコマンドは、RAGFlow Docker イメージの v0.22.0 エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.22.0 とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。
 
-   ```bash
+```bash
    $ cd ragflow/docker
-   # Use CPU for embedding and DeepDoc tasks:
+
+   # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases) 例: git checkout v0.22.0
+
+   # Use CPU for DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
 
-   # To use GPU to accelerate embedding and DeepDoc tasks:
-   # docker compose -f docker-compose-gpu.yml up -d
-   ```
+   # To use GPU to accelerate DeepDoc tasks:
+   # sed -i '1i DEVICE=gpu' .env
+   # docker compose -f docker-compose.yml up -d
+```
 
-   | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-   | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.21.1           | &approx;9       | :heavy_check_mark:    | Stable release           |
-   | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;9       | :heavy_check_mark:    | _Unstable_ nightly build |
-   | nightly-slim      | &approx;2       | ❌                     | _Unstable_ nightly build |
+> 注意：`v0.22.0` より前のバージョンでは、embedding モデルを含むイメージと、embedding モデルを含まない slim イメージの両方を提供していました。詳細は以下の通りです：
 
-1. サーバーを立ち上げた後、サーバーの状態を確認する:
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
+| ----------------- | --------------- | --------------------- | ------------------------ |
+| v0.21.1           | &approx;9       | ✔️                    | Stable release           |
+| v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
 
+> `v0.22.0` 以降、当プロジェクトでは slim エディションのみを提供し、イメージタグに **-slim** サフィックスを付けなくなりました。
+
+   1. サーバーを立ち上げた後、サーバーの状態を確認する:   
+   
    ```bash
-   $ docker logs -f ragflow-server
+   $ docker logs -f docker-ragflow-cpu-1
    ```
 
    _以下の出力は、システムが正常に起動したことを確認するものです:_
@@ -197,12 +209,15 @@
    ```
 
    > もし確認ステップをスキップして直接 RAGFlow にログインした場合、その時点で RAGFlow が完全に初期化されていない可能性があるため、ブラウザーがネットワーク異常エラーを表示するかもしれません。
-
+   >
 2. ウェブブラウザで、プロンプトに従ってサーバーの IP アドレスを入力し、RAGFlow にログインします。
+
    > デフォルトの設定を使用する場合、デフォルトの HTTP サービングポート `80` は省略できるので、与えられたシナリオでは、`http://IP_OF_YOUR_MACHINE`（ポート番号は省略）だけを入力すればよい。
+   >
 3. [service_conf.yaml.template](./docker/service_conf.yaml.template) で、`user_default_llm` で希望の LLM ファクトリを選択し、`API_KEY` フィールドを対応する API キーで更新する。
 
    > 詳しくは [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) を参照してください。
+   >
 
    _これで初期設定完了！ショーの開幕です！_
 
@@ -231,32 +246,26 @@
 RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトルを保存します。［Infinity］に切り替え（https://github.com/infiniflow/infinity/)、次の手順に従います。
 
 1. 実行中のすべてのコンテナを停止するには：
+
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
+
    Note: `-v` は docker コンテナのボリュームを削除し、既存のデータをクリアします。
 2. **docker/.env** の「DOC \_ ENGINE」を「infinity」に設定します。
-
 3. 起動コンテナ：
+
    ```bash
    $ docker compose -f docker-compose.yml up -d
    ```
+
    > [!WARNING]
    > Linux/arm64 マシンでの Infinity への切り替えは正式にサポートされていません。
+   >
 
-## 🔧 ソースコードで Docker イメージを作成（埋め込みモデルなし）
+## 🔧 ソースコードで Docker イメージを作成
 
 この Docker イメージのサイズは約 1GB で、外部の大モデルと埋め込みサービスに依存しています。
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 --build-arg LIGHTEN=1 -f Dockerfile -t infiniflow/ragflow:nightly-slim .
-```
-
-## 🔧 ソースコードをコンパイルした Docker イメージ（埋め込みモデルを含む）
-
-この Docker のサイズは約 9GB で、埋め込みモデルを含むため、外部の大モデルサービスのみが必要です。
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
@@ -271,17 +280,15 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    pipx install uv pre-commit
    ```
-
 2. ソースコードをクローンし、Python の依存関係をインストールする:
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   uv sync --python 3.10 # install RAGFlow dependent python modules
    uv run download_deps.py
    pre-commit install
    ```
-
 3. Docker Compose を使用して依存サービス（MinIO、Elasticsearch、Redis、MySQL）を起動する:
 
    ```bash
@@ -293,13 +300,11 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```
    127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
-
 4. HuggingFace にアクセスできない場合は、`HF_ENDPOINT` 環境変数を設定してミラーサイトを使用してください:
 
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
-
 5. オペレーティングシステムにjemallocがない場合は、次のようにインストールします:
 
    ```bash
@@ -310,7 +315,6 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    # mac
    sudo brew install jemalloc
    ```
-
 6. バックエンドサービスを起動する:
 
    ```bash
@@ -318,14 +322,12 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh
    ```
-
 7. フロントエンドの依存関係をインストールする:
 
    ```bash
    cd web
    npm install
    ```
-
 8. フロントエンドサービスを起動する:
 
    ```bash
@@ -335,13 +337,11 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    _以下の画面で、システムが正常に起動したことを示します:_
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-
 9. 開発が完了したら、RAGFlow のフロントエンド サービスとバックエンド サービスを停止します:
 
    ```bash
    pkill -f "ragflow_server.py|task_executor.py"
    ```
-
 
 ## 📚 ドキュメンテーション
 

@@ -21,7 +21,7 @@ import pandas as pd
 import pywencai
 
 from agent.tools.base import ToolParamBase, ToolMeta, ToolBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class WenCaiParam(ToolParamBase):
@@ -70,19 +70,31 @@ class WenCai(ToolBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("WenCai processing"):
+            return
+
         if not kwargs.get("query"):
             self.set_output("report", "")
             return ""
 
         last_e = ""
         for _ in range(self._param.max_retries+1):
+            if self.check_if_canceled("WenCai processing"):
+                return
+
             try:
                 wencai_res = []
                 res = pywencai.get(query=kwargs["query"], query_type=self._param.query_type, perpage=self._param.top_n)
+                if self.check_if_canceled("WenCai processing"):
+                    return
+
                 if isinstance(res, pd.DataFrame):
                     wencai_res.append(res.to_markdown())
                 elif isinstance(res, dict):
                     for item in res.items():
+                        if self.check_if_canceled("WenCai processing"):
+                            return
+
                         if isinstance(item[1], list):
                             wencai_res.append(item[0] + "\n" + pd.DataFrame(item[1]).to_markdown())
                         elif isinstance(item[1], str):
@@ -100,6 +112,9 @@ class WenCai(ToolBase, ABC):
                 self.set_output("report", "\n\n".join(wencai_res))
                 return self.output("report")
             except Exception as e:
+                if self.check_if_canceled("WenCai processing"):
+                    return
+
                 last_e = e
                 logging.exception(f"WenCai error: {e}")
                 time.sleep(self._param.delay_after_error)

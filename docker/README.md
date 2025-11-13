@@ -18,7 +18,7 @@
   Sets up environment for RAGFlow's dependencies: Elasticsearch/[Infinity](https://github.com/infiniflow/infinity), MySQL, MinIO, and Redis.
 
 > [!CAUTION]
-> We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-gpu-CN-oc9.yml**, or **docker-compose-gpu.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
+> We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-macos.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve any of them.
 
 ## 🐬 Docker environment variables
 
@@ -77,28 +77,19 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `SVR_HTTP_PORT`  
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW-IMAGE`  
-  The Docker image edition. Available editions:  
-  
-  - `infiniflow/ragflow:v0.21.1-slim` (default): The RAGFlow Docker image without embedding models.  
-  - `infiniflow/ragflow:v0.21.1`: The RAGFlow Docker image with embedding models including:
-    - Built-in embedding models:
-      - `BAAI/bge-large-zh-v1.5` 
-      - `maidalun1020/bce-embedding-base_v1`
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.22.0`. The RAGFlow Docker image does not include embedding models.
 
   
 > [!TIP]  
 > If you cannot download the RAGFlow Docker image, try the following mirrors.  
 > 
-> - For the `nightly-slim` edition:  
->   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly-slim` or,
->   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly-slim`.
 > - For the `nightly` edition:  
 >   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
 >   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
 
 ### Timezone
 
-- `TIMEZONE`  
+- `TZ`  
   The local time zone. Defaults to `'Asia/Shanghai'`.
 
 ### Hugging Face mirror site

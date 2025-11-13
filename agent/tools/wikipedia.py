@@ -19,7 +19,7 @@ import time
 from abc import ABC
 import wikipedia
 from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class WikipediaParam(ToolParamBase):
@@ -66,17 +66,26 @@ class Wikipedia(ToolBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("Wikipedia processing"):
+            return
+
         if not kwargs.get("query"):
             self.set_output("formalized_content", "")
             return ""
 
         last_e = ""
         for _ in range(self._param.max_retries+1):
+            if self.check_if_canceled("Wikipedia processing"):
+                return
+
             try:
                 wikipedia.set_lang(self._param.language)
                 wiki_engine = wikipedia
                 pages = []
                 for p in wiki_engine.search(kwargs["query"], results=self._param.top_n):
+                    if self.check_if_canceled("Wikipedia processing"):
+                        return
+
                     try:
                         pages.append(wikipedia.page(p))
                     except Exception:
@@ -87,6 +96,9 @@ class Wikipedia(ToolBase, ABC):
                                       get_content=lambda r: r.summary)
                 return self.output("formalized_content")
             except Exception as e:
+                if self.check_if_canceled("Wikipedia processing"):
+                    return
+
                 last_e = e
                 logging.exception(f"Wikipedia error: {e}")
                 time.sleep(self._param.delay_after_error)

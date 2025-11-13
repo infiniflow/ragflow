@@ -26,23 +26,9 @@ The "garbage in garbage out" status quo remains unchanged despite the fact that 
 
 ---
 
-### Differences between RAGFlow full edition and RAGFlow slim edition?
-
-Each RAGFlow release is available in two editions:
-
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.21.1-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.21.1`
-
----
-
 ### Which embedding models can be deployed locally?
 
-RAGFlow offers two Docker image editions, `v0.21.1-slim` and `v0.21.1`:  
-  
-- `infiniflow/ragflow:v0.21.1-slim` (default): The RAGFlow Docker image without embedding models.  
-- `infiniflow/ragflow:v0.21.1`: The RAGFlow Docker image with the following built-in embedding models:
-  - `BAAI/bge-large-zh-v1.5`
-  - `maidalun1020/bce-embedding-base_v1`
+Starting from `v0.22.0`, we ship only the slim edition and no longer append the **-slim** suffix to the image tag.
 
 ---
 
@@ -61,7 +47,7 @@ If you build RAGFlow from source, the version number is also in the system log:
      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ / 
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/                             
 
-2025-02-18 10:10:43,835 INFO     1445658 RAGFlow version: v0.15.0-50-g6daae7f2 full
+2025-02-18 10:10:43,835 INFO     1445658 RAGFlow version: v0.15.0-50-g6daae7f2
 ```
 
 Where:
@@ -69,9 +55,6 @@ Where:
 - `v0.15.0`: The officially published release.
 - `50`: The number of git commits since the official release.
 - `g6daae7f2`: `g` is the prefix, and `6daae7f2` is the first seven characters of the current commit ID.
-- `full`/`slim`: The RAGFlow edition.
-  - `full`: The full RAGFlow edition.
-  - `slim`: The RAGFlow edition without embedding models and Python packages.
 
 ---
 
@@ -168,7 +151,7 @@ See [Build a RAGFlow Docker image](./develop/build_docker_image.mdx).
 
 ### Cannot access https://huggingface.co
 
-A locally deployed RAGflow downloads OCR and embedding modules from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
+A locally deployed RAGflow downloads OCR models from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
 
 ```
 FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'
@@ -210,7 +193,7 @@ This error suggests that you do not have Internet access or are unable to connec
 
 ---
 
-### `WARNING: can't find /raglof/rag/res/borker.tm`
+### `WARNING: can't find /ragflow/rag/res/borker.tm`
 
 Ignore this warning and continue. All system warnings can be ignored.
 
@@ -220,7 +203,7 @@ Ignore this warning and continue. All system warnings can be ignored.
 
 ![anomaly](https://github.com/infiniflow/ragflow/assets/93570324/beb7ad10-92e4-4a58-8886-bfb7cbd09e5d)
 
-You will not log in to RAGFlow unless the server is fully initialized. Run `docker logs -f ragflow-server`.
+You will not log in to RAGFlow unless the server is fully initialized. Run `docker logs -f docker-ragflow-cpu-1`.
 
 *The server is successfully initialized, if your system displays the following:*
 
@@ -256,7 +239,7 @@ Click the red cross beside the 'parsing status' bar, then restart the parsing pr
 1. Check the log of your RAGFlow server to see if it is running properly:
 
    ```bash
-   docker logs -f ragflow-server
+   docker logs -f docker-ragflow-cpu-1
    ```
 
 2. Check if the **task_executor.py** process exists.
@@ -310,7 +293,7 @@ tail -f ragflow/docker/ragflow-logs/*.log
    *The following is an example result:*
 
    ```bash
-   5bc45806b680   infiniflow/ragflow:latest     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   ragflow-server
+   5bc45806b680   infiniflow/ragflow:latest     "./entrypoint.sh"        11 hours ago   Up 11 hours               0.0.0.0:80->80/tcp, :::80->80/tcp, 0.0.0.0:443->443/tcp, :::443->443/tcp, 0.0.0.0:9380->9380/tcp, :::9380->9380/tcp   docker-ragflow-cpu-1
    91220e3285dd   docker.elastic.co/elasticsearch/elasticsearch:8.11.3   "/bin/tini -- /usr/l…"   11 hours ago   Up 11 hours (healthy)     9300/tcp, 0.0.0.0:9200->9200/tcp, :::9200->9200/tcp           ragflow-es-01
    d8c86f06c56b   mysql:5.7.18        "docker-entrypoint.s…"   7 days ago     Up 16 seconds (healthy)   0.0.0.0:3306->3306/tcp, :::3306->3306/tcp     ragflow-mysql
    cd29bcb254bc   quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z       "/usr/bin/docker-ent…"   2 weeks ago    Up 11 hours      0.0.0.0:9001->9001/tcp, :::9001->9001/tcp, 0.0.0.0:9000->9000/tcp, :::9000->9000/tcp     ragflow-minio
@@ -430,7 +413,7 @@ See [here](./guides/models/deploy_local_llm.mdx) for more information.
 
 For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. To update this 1GB file size limit:
 
-- In **docker/.env**, upcomment `# MAX_CONTENT_LENGTH=1073741824`, adjust the value as needed, and note that `1073741824` represents 1GB in bytes.
+- In **docker/.env**, uncomment `# MAX_CONTENT_LENGTH=1073741824`, adjust the value as needed, and note that `1073741824` represents 1GB in bytes.
 - If you update the value of `MAX_CONTENT_LENGTH` in **docker/.env**, ensure that you update `client_max_body_size` in **nginx/nginx.conf** accordingly.
 
 :::tip NOTE
@@ -508,29 +491,110 @@ See [here](./guides/chat/best_practices/accelerate_question_answering.mdx).
 
 See [here](./guides/agent/best_practices/accelerate_agent_question_answering.md).
 
----
-
 ### How to use MinerU to parse PDF documents?
 
-MinerU PDF document parsing is available starting from v0.21.1. To use this feature, follow these steps:
+MinerU PDF document parsing is available starting from v0.22.0. RAGFlow supports MinerU (>= 2.6.3) as an optional PDF parser with multiple backends. RAGFlow acts only as a client for MinerU, calling it to parse documents, reading the output files, and ingesting the parsed content. To use this feature, follow these steps:
 
-1. Before deploying ragflow-server, update your **docker/.env** file:  
-   - Enable `HF_ENDPOINT=https://hf-mirror.com`
-   - Add a MinerU entry: `MINERU_EXECUTABLE=/ragflow/uv_tools/.venv/bin/mineru`
+1. Prepare MinerU
 
-2. Start the ragflow-server and run the following commands inside the container:  
+   - **If you deploy RAGFlow from source**, install MinerU into an isolated virtual environment (recommended path: `$HOME/uv_tools`):
 
-```bash
-mkdir uv_tools
-cd uv_tools
-uv venv .venv
-source .venv/bin/activate
-uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
-```
+   ```bash
+   mkdir -p "$HOME/uv_tools"
+   cd "$HOME/uv_tools"
+   uv venv .venv
+   source .venv/bin/activate
+   uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
+   # or
+   # uv pip install -U "mineru[all]" -i https://mirrors.aliyun.com/pypi/simple
+   ```
 
-3. Restart the ragflow-server.
-4. In the web UI, navigate to the **Configuration** page of your dataset. Click **Built-in** in the **Ingestion pipeline** section, select a chunking method from the **Built-in** dropdown, which supports PDF parsing, and slect **MinerU** in **PDF parser**.
-5. If you use a custom ingestion pipeline instead, you must also complete the first three steps before selecting **MinerU** in the **Parsing method** section of the **Parser** component.
+   - **If you deploy RAGFlow with Docker**, you usually only need to turn on MinerU support in `docker/.env`:
 
+   ```bash
+   # docker/.env
+   ...
+   USE_MINERU=true
+   ...
+   ```
 
+   Enabling `USE_MINERU=true` will internally perform the same setup as the manual configuration (including setting the MinerU executable path and related environment variables). You only need the manual installation above if you are running from source or want full control over the MinerU installation.
 
+2. Start RAGFlow with MinerU enabled:
+
+   - **Source deployment** – in the RAGFlow repo, export the key MinerU-related variables and start the backend service:
+
+   ```bash
+   # in RAGFlow repo
+   export MINERU_EXECUTABLE="$HOME/uv_tools/.venv/bin/mineru"
+   export MINERU_DELETE_OUTPUT=0   # keep output directory
+   export MINERU_BACKEND=pipeline  # or another backend you prefer
+
+   source .venv/bin/activate
+   export PYTHONPATH=$(pwd)
+   bash docker/launch_backend_service.sh
+   ```
+
+   - **Docker deployment** – after setting `USE_MINERU=true`, restart the containers so that the new settings take effect:
+
+   ```bash
+   # in RAGFlow repo
+   docker compose -f docker/docker-compose.yml restart
+   ```
+
+3. In the web UI, navigate to the **Configuration** page of your dataset. Click **Built-in** in the **Ingestion pipeline** section, select a chunking method from the **Built-in** dropdown (which supports PDF parsing), and select **MinerU** in **PDF parser**.
+4. If you use a custom ingestion pipeline instead, you must also complete the first two steps before selecting **MinerU** in the **Parsing method** section of the **Parser** component.
+
+---
+
+### How to configure MinerU-specific settings?
+
+The table below summarizes the most frequently used MinerU environment variables:
+
+| Environment variable   | Description                        | Default                             | Example                                                                                         |
+| ---------------------- | ---------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `MINERU_EXECUTABLE`    | Path to the local MinerU executable | `mineru`                            | `MINERU_EXECUTABLE=/home/ragflow/uv_tools/.venv/bin/mineru`                                    |
+| `MINERU_DELETE_OUTPUT` | Whether to delete MinerU output directory | `1` (do **not** keep the output directory) | `MINERU_DELETE_OUTPUT=0`                                                                       |
+| `MINERU_OUTPUT_DIR`    | Directory for MinerU output files  | System-defined temporary directory  | `MINERU_OUTPUT_DIR=/home/ragflow/mineru/output`                                                |
+| `MINERU_BACKEND`       | MinerU parsing backend             | `pipeline`                          | `MINERU_BACKEND=pipeline\|vlm-transformers\|vlm-vllm-engine\|vlm-http-client`               |
+| `MINERU_SERVER_URL`    | URL of remote vLLM server (only for `vlm-http-client` backend) | _unset_ | `MINERU_SERVER_URL=http://your-vllm-server-ip:30000`                                           |
+| `MINERU_APISERVER`     | URL of remote MinerU service used as the parser (instead of local MinerU) | _unset_ | `MINERU_APISERVER=http://your-mineru-server:port`                                              |
+
+1. Set `MINERU_EXECUTABLE` to the path to the MinerU executable if the default `mineru` is not on `PATH`.
+2. Set `MINERU_DELETE_OUTPUT` to `0` to keep MinerU's output. (Default: `1`, which deletes temporary output.)
+3. Set `MINERU_OUTPUT_DIR` to specify the output directory for MinerU; otherwise, a system temp directory is used.
+4. Set `MINERU_BACKEND` to specify a parsing backend:
+   - `"pipeline"` (default): The traditional multimodel pipeline.
+   - `"vlm-transformers"`: A vision-language model using HuggingFace Transformers.
+   - `"vlm-vllm-engine"`: A vision-language model using a local vLLM engine (requires a local GPU).
+   - `"vlm-http-client"`: A vision-language model via HTTP client to a remote vLLM server (RAGFlow only requires CPU).
+5. If using the `"vlm-http-client"` backend, you must also set `MINERU_SERVER_URL` to your vLLM server's URL.
+6. If configuring RAGFlow to call a *remote* MinerU service, set `MINERU_APISERVER` to the MinerU server's URL.
+
+:::tip NOTE
+For information about other environment variables natively supported by MinerU, see [here](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).
+:::
+
+---
+
+### How to use MinerU with a vLLM server for document parsing?
+
+RAGFlow supports MinerU's `vlm-http-client` backend, enabling you to delegate document parsing tasks to a remote vLLM server. With this configuration, RAGFlow will connect to your remote vLLM server as a client and use its powerful GPU resources for document parsing. This significantly improves performance for parsing complex documents while reducing the resources required on your RAGFlow server. To configure MinerU with a vLLM server:
+
+1. Set up a vLLM server running MinerU:
+
+   ```bash
+   mineru-vllm-server --port 30000
+   ```
+
+2. Configure the following environment variables in your **docker/.env** file (or your shell if running from source):
+
+   - `MINERU_EXECUTABLE=/home/ragflow/uv_tools/.venv/bin/mineru` (or the path to your MinerU executable)
+   - `MINERU_BACKEND="vlm-http-client"`
+   - `MINERU_SERVER_URL="http://your-vllm-server-ip:30000"`
+
+3. Complete the rest of the standard MinerU setup steps as described [here](#how-to-configure-mineru-specific-settings).
+
+:::tip NOTE
+When using the `vlm-http-client` backend, the RAGFlow server requires no GPU, only network connectivity. This enables cost-effective distributed deployment with multiple RAGFlow instances sharing one remote vLLM server.
+:::

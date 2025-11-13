@@ -21,12 +21,12 @@ from copy import deepcopy
 from typing import Any, Generator
 import json_repair
 from functools import partial
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.api_utils import timeout
-from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt
+from common.connection_utils import timeout
+from rag.prompts.generator import tool_call_summary, message_fit_in, citation_prompt, structured_output_prompt
 
 
 class LLMParam(ComponentParamBase):
@@ -207,6 +207,9 @@ class LLM(ComponentBase):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("LLM processing"):
+            return
+
         def clean_formated_answer(ans: str) -> str:
             ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
             ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
@@ -214,11 +217,18 @@ class LLM(ComponentBase):
 
         prompt, msg, _ = self._prepare_prompt_variables()
         error: str = ""
-
-        if self._param.output_structure:
-            prompt += "\nThe output MUST follow this JSON format:\n"+json.dumps(self._param.output_structure, ensure_ascii=False, indent=2)
-            prompt += "\nRedundant information is FORBIDDEN."
+        output_structure=None
+        try:
+            output_structure = self._param.outputs['structured']
+        except Exception:
+            pass
+        if output_structure:
+            schema=json.dumps(output_structure, ensure_ascii=False, indent=2)
+            prompt += structured_output_prompt(schema)
             for _ in range(self._param.max_retries+1):
+                if self.check_if_canceled("LLM processing"):
+                    return
+
                 _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
                 error = ""
                 ans = self._generate(msg)
@@ -228,7 +238,7 @@ class LLM(ComponentBase):
                     error = ans
                     continue
                 try:
-                    self.set_output("structured_content", json_repair.loads(clean_formated_answer(ans)))
+                    self.set_output("structured", json_repair.loads(clean_formated_answer(ans)))
                     return
                 except Exception:
                     msg.append({"role": "user", "content": "The answer can't not be parsed as JSON"})
@@ -239,11 +249,14 @@ class LLM(ComponentBase):
 
         downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
         ex = self.exception_handler()
-        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not self._param.output_structure and not (ex and ex["goto"]):
+        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not output_structure and not (ex and ex["goto"]):
             self.set_output("content", partial(self._stream_output, prompt, msg))
             return
 
         for _ in range(self._param.max_retries+1):
+            if self.check_if_canceled("LLM processing"):
+                return
+
             _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
             error = ""
             ans = self._generate(msg)
@@ -265,6 +278,9 @@ class LLM(ComponentBase):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         answer = ""
         for ans in self._generate_streamly(msg):
+            if self.check_if_canceled("LLM streaming"):
+                return
+
             if ans.find("**ERROR**") >= 0:
                 if self.get_exception_default_value():
                     self.set_output("content", self.get_exception_default_value())

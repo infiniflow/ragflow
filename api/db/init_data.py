@@ -20,7 +20,7 @@ import time
 import uuid
 from copy import deepcopy
 
-from api.db import LLMType, UserTenantRole
+from api.db import UserTenantRole
 from api.db.db_models import init_database_tables as init_web_db, LLMFactories, LLM, TenantLLM
 from api.db.services import UserService
 from api.db.services.canvas_service import CanvasTemplateService
@@ -29,8 +29,9 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
 from api.db.services.llm_service import LLMService, LLMBundle, get_init_tenant_llm
 from api.db.services.user_service import TenantService, UserTenantService
-from api import settings
-from api.utils.file_utils import get_project_base_directory
+from common.constants import LLMType
+from common.file_utils import get_project_base_directory
+from common import settings
 from api.common.base64 import encode_to_base64
 
 
@@ -88,13 +89,7 @@ def init_superuser():
 
 
 def init_llm_factory():
-    try:
-        LLMService.filter_delete([(LLM.fid == "MiniMax" or LLM.fid == "Minimax")])
-        LLMService.filter_delete([(LLM.fid == "cohere")])
-        LLMFactoriesService.filter_delete([LLMFactories.name == "cohere"])
-    except Exception:
-        pass
-
+    LLMFactoriesService.filter_delete([1 == 1])
     factory_llm_infos = settings.FACTORY_LLM_INFOS
     for factory_llm_info in factory_llm_infos:
         info = deepcopy(factory_llm_info)

@@ -31,7 +31,19 @@ export default {
   set_api_key: `${api_host}/llm/set_api_key`,
   add_llm: `${api_host}/llm/add_llm`,
   delete_llm: `${api_host}/llm/delete_llm`,
+  enable_llm: `${api_host}/llm/enable_llm`,
   deleteFactory: `${api_host}/llm/delete_factory`,
+
+  // data source
+  dataSourceSet: `${api_host}/connector/set`,
+  dataSourceList: `${api_host}/connector/list`,
+  dataSourceDel: (id: string) => `${api_host}/connector/${id}/rm`,
+  dataSourceResume: (id: string) => `${api_host}/connector/${id}/resume`,
+  dataSourceRebuild: (id: string) => `${api_host}/connector/${id}/rebuild`,
+  dataSourceLogs: (id: string) => `${api_host}/connector/${id}/logs`,
+  dataSourceDetail: (id: string) => `${api_host}/connector/${id}`,
+  googleDriveWebAuthStart: `${api_host}/connector/google-drive/oauth/web/start`,
+  googleDriveWebAuthResult: `${api_host}/connector/google-drive/oauth/web/result`,
 
   // plugin
   llm_tools: `${api_host}/plugin/llm_tools`,
@@ -164,6 +176,7 @@ export default {
   debug: `${api_host}/canvas/debug`,
   uploadCanvasFile: `${api_host}/canvas/upload`,
   trace: `${api_host}/canvas/trace`,
+  cancelCanvas: (taskId: string) => `${api_host}/canvas/cancel/${taskId}`, // cancel conversation
   // agent
   inputForm: `${api_host}/canvas/input_form`,
   fetchVersionList: (id: string) => `${api_host}/canvas/getlistversion/${id}`,
@@ -210,4 +223,57 @@ export default {
   removeDataflow: `${api_host}/dataflow/rm`,
   listDataflow: `${api_host}/dataflow/list`,
   runDataflow: `${api_host}/dataflow/run`,
+
+  // admin
+  adminLogin: `${ExternalApi}${api_host}/admin/login`,
+  adminLogout: `${ExternalApi}${api_host}/admin/logout`,
+  adminListUsers: `${ExternalApi}${api_host}/admin/users`,
+  adminCreateUser: `${ExternalApi}${api_host}/admin/users`,
+  adminGetUserDetails: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}`,
+  adminUpdateUserStatus: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/activate`,
+  adminUpdateUserPassword: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/password`,
+  adminDeleteUser: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}`,
+  adminListUserDatasets: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/datasets`,
+  adminListUserAgents: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/agents`,
+
+  adminListServices: `${ExternalApi}${api_host}/admin/services`,
+  adminShowServiceDetails: (serviceId: string) =>
+    `${ExternalApi}${api_host}/admin/services/${serviceId}`,
+
+  adminListRoles: `${ExternalApi}${api_host}/admin/roles`,
+  adminListRolesWithPermission: `${ExternalApi}${api_host}/admin/roles_with_permission`,
+  adminGetRolePermissions: (roleName: string) =>
+    `${ExternalApi}${api_host}/admin/roles/${roleName}/permissions`,
+  adminAssignRolePermissions: (roleName: string) =>
+    `${ExternalApi}${api_host}/admin/roles/${roleName}/permission`,
+  adminRevokeRolePermissions: (roleName: string) =>
+    `${ExternalApi}${api_host}/admin/roles/${roleName}/permission`,
+  adminCreateRole: `${ExternalApi}${api_host}/admin/roles`,
+  adminDeleteRole: (roleName: string) =>
+    `${ExternalApi}${api_host}/admin/roles/${roleName}`,
+  adminUpdateRoleDescription: (roleName: string) =>
+    `${ExternalApi}${api_host}/admin/roles/${roleName}`,
+
+  adminUpdateUserRole: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/role`,
+  adminGetUserPermissions: (username: string) =>
+    `${ExternalApi}${api_host}/admin/users/${username}/permissions`,
+
+  adminListResources: `${ExternalApi}${api_host}/admin/roles/resource`,
+
+  adminListWhitelist: `${ExternalApi}${api_host}/admin/whitelist`,
+  adminCreateWhitelistEntry: `${ExternalApi}${api_host}/admin/whitelist/add`,
+  adminUpdateWhitelistEntry: (id: number) =>
+    `${ExternalApi}${api_host}/admin/whitelist/${id}`,
+  adminDeleteWhitelistEntry: (email: string) =>
+    `${ExternalApi}${api_host}/admin/whitelist/${email}`,
+  adminImportWhitelist: `${ExternalApi}${api_host}/admin/whitelist/batch`,
+
+  adminGetSystemVersion: `${ExternalApi}${api_host}/admin/version`,
 };

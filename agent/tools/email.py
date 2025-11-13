@@ -25,7 +25,7 @@ from email.header import Header
 from email.utils import formataddr
 
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class EmailParam(ToolParamBase):
@@ -101,19 +101,27 @@ class Email(ToolBase, ABC):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("Email processing"):
+            return
+
         if not kwargs.get("to_email"):
             self.set_output("success", False)
             return ""
 
         last_e = ""
         for _ in range(self._param.max_retries+1):
+            if self.check_if_canceled("Email processing"):
+                return
+
             try:
                 # Parse JSON string passed from upstream
                 email_data = kwargs
 
                 # Validate required fields
                 if "to_email" not in email_data:
-                    return Email.be_output("Missing required field: to_email")
+                    self.set_output("_ERROR", "Missing required field: to_email")
+                    self.set_output("success", False)
+                    return False
 
                 # Create email object
                 msg = MIMEMultipart('alternative')
@@ -133,6 +141,9 @@ class Email(ToolBase, ABC):
                 # Connect to SMTP server and send
                 logging.info(f"Connecting to SMTP server {self._param.smtp_server}:{self._param.smtp_port}")
 
+                if self.check_if_canceled("Email processing"):
+                    return
+
                 context = smtplib.ssl.create_default_context()
                 with smtplib.SMTP(self._param.smtp_server, self._param.smtp_port) as server:
                     server.ehlo()
@@ -149,6 +160,10 @@ class Email(ToolBase, ABC):
 
                     # Send email
                     logging.info(f"Sending email to recipients: {recipients}")
+
+                    if self.check_if_canceled("Email processing"):
+                        return
+
                     try:
                         server.send_message(msg, self._param.email, recipients)
                         success = True

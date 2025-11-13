@@ -12,6 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import socket
 import concurrent
 # from beartype import BeartypeConf
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
@@ -23,15 +24,15 @@ import time
 
 import json_repair
 
-from api.db.services.canvas_service import UserCanvasService
+from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.utils.api_utils import timeout
-from api.utils.base64_image import image2id
-from api.utils.log_utils import init_root_logger, get_project_base_directory
+from common.connection_utils import timeout
+from rag.utils.base64_image import image2id
+from common.log_utils import init_root_logger
+from common.config_utils import show_configs
 from graphrag.general.index import run_graphrag_for_kb
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
-from rag.flow.pipeline import Pipeline
 from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text
 import logging
 import os
@@ -43,30 +44,30 @@ import re
 from functools import partial
 from multiprocessing.context import TimeoutError
 from timeit import default_timer as timer
-import tracemalloc
 import signal
 import trio
 import exceptiongroup
 import faulthandler
 import numpy as np
 from peewee import DoesNotExist
-from api.db import LLMType, ParserType, PipelineTaskType
+from common.constants import LLMType, ParserType, PipelineTaskType
 from api.db.services.document_service import DocumentService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.file2document_service import File2DocumentService
-from api import settings
-from api.versions import get_ragflow_version
+from common.versions import get_ragflow_version
 from api.db.db_models import close_connection
 from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, \
     email, tag
 from rag.nlp import search, rag_tokenizer, add_positions
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
-from rag.settings import DOC_MAXIMUM_SIZE, DOC_BULK_SIZE, EMBEDDING_BATCH_SIZE, SVR_CONSUMER_GROUP_NAME, get_svr_queue_name, get_svr_queue_names, print_rag_settings, TAG_FLD, PAGERANK_FLD
-from rag.utils import num_tokens_from_string, truncate
+from common.token_utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
-from rag.utils.storage_factory import STORAGE_IMPL
 from graphrag.utils import chat_limiter
+from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
+from common.exceptions import TaskCanceledException
+from common import settings
+from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
 
 BATCH_SIZE = 64
 
@@ -127,43 +128,7 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-# SIGUSR1 handler: start tracemalloc and take snapshot
-def start_tracemalloc_and_snapshot(signum, frame):
-    if not tracemalloc.is_tracing():
-        logging.info("start tracemalloc")
-        tracemalloc.start()
-    else:
-        logging.info("tracemalloc is already running")
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    snapshot_file = f"snapshot_{timestamp}.trace"
-    snapshot_file = os.path.abspath(os.path.join(get_project_base_directory(), "logs", f"{os.getpid()}_snapshot_{timestamp}.trace"))
-
-    snapshot = tracemalloc.take_snapshot()
-    snapshot.dump(snapshot_file)
-    current, peak = tracemalloc.get_traced_memory()
-    if sys.platform == "win32":
-        import  psutil
-        process = psutil.Process()
-        max_rss = process.memory_info().rss / 1024
-    else:
-        import resource
-        max_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    logging.info(f"taken snapshot {snapshot_file}. max RSS={max_rss / 1000:.2f} MB, current memory usage: {current / 10**6:.2f} MB, Peak memory usage: {peak / 10**6:.2f} MB")
-
-
-# SIGUSR2 handler: stop tracemalloc
-def stop_tracemalloc(signum, frame):
-    if tracemalloc.is_tracing():
-        logging.info("stop tracemalloc")
-        tracemalloc.stop()
-    else:
-        logging.info("tracemalloc not running")
-
-
-class TaskCanceledException(Exception):
-    def __init__(self, msg):
-        self.msg = msg
 
 
 def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing..."):
@@ -202,7 +167,7 @@ async def collect():
     global CONSUMER_NAME, DONE_TASKS, FAILED_TASKS
     global UNACKED_ITERATOR
 
-    svr_queue_names = get_svr_queue_names()
+    svr_queue_names = settings.get_svr_queue_names()
     try:
         if not UNACKED_ITERATOR:
             UNACKED_ITERATOR = REDIS_CONN.get_unacked_iterator(svr_queue_names, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
@@ -228,10 +193,11 @@ async def collect():
     canceled = False
     if msg.get("doc_id", "") in [GRAPH_RAPTOR_FAKE_DOC_ID, CANVAS_DEBUG_DOC_ID]:
         task = msg
-        if task["task_type"] in ["graphrag", "raptor", "mindmap"]:
+        if task["task_type"] in PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES:
             task = TaskService.get_task(msg["id"], msg["doc_ids"])
-            task["doc_id"] = msg["doc_id"]
-            task["doc_ids"] = msg.get("doc_ids", []) or []
+            if task:
+                task["doc_id"] = msg["doc_id"]
+                task["doc_ids"] = msg.get("doc_ids", []) or []
     else:
         task = TaskService.get_task(msg["id"])
 
@@ -254,14 +220,14 @@ async def collect():
 
 
 async def get_storage_binary(bucket, name):
-    return await trio.to_thread.run_sync(lambda: STORAGE_IMPL.get(bucket, name))
+    return await trio.to_thread.run_sync(lambda: settings.STORAGE_IMPL.get(bucket, name))
 
 
 @timeout(60*80, 1)
 async def build_chunks(task, progress_callback):
-    if task["size"] > DOC_MAXIMUM_SIZE:
+    if task["size"] > settings.DOC_MAXIMUM_SIZE:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
-                                              (int(DOC_MAXIMUM_SIZE / 1024 / 1024)))
+                                              (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
         return []
 
     chunker = FACTORY[task["parser_id"].lower()]
@@ -318,7 +284,7 @@ async def build_chunks(task, progress_callback):
                 d["img_id"] = ""
                 docs.append(d)
                 return
-            await image2id(d, partial(STORAGE_IMPL.put, tenant_id=task["tenant_id"]), d["id"], task["kb_id"])
+            await image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=task["tenant_id"]), d["id"], task["kb_id"])
             docs.append(d)
         except Exception:
             logging.exception(
@@ -475,7 +441,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     tk_count = 0
     if len(tts) == len(cnts):
         vts, c = await trio.to_thread.run_sync(lambda: mdl.encode(tts[0: 1]))
-        tts = np.concatenate([vts for _ in range(len(tts))], axis=0)
+        tts = np.concatenate([vts[0] for _ in range(len(tts))], axis=0)
         tk_count += c
 
     @timeout(60)
@@ -484,9 +450,9 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         return mdl.encode([truncate(c, mdl.max_length-10) for c in txts])
 
     cnts_ = np.array([])
-    for i in range(0, len(cnts), EMBEDDING_BATCH_SIZE):
+    for i in range(0, len(cnts), settings.EMBEDDING_BATCH_SIZE):
         async with embed_limiter:
-            vts, c = await trio.to_thread.run_sync(lambda: batch_encode(cnts[i: i + EMBEDDING_BATCH_SIZE]))
+            vts, c = await trio.to_thread.run_sync(lambda: batch_encode(cnts[i: i + settings.EMBEDDING_BATCH_SIZE]))
         if len(cnts_) == 0:
             cnts_ = vts
         else:
@@ -511,6 +477,9 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
 
 
 async def run_dataflow(task: dict):
+    from api.db.services.canvas_service import UserCanvasService
+    from rag.flow.pipeline import Pipeline
+
     task_start_ts = timer()
     dataflow_id = task["dataflow_id"]
     doc_id = task["doc_id"]
@@ -560,19 +529,19 @@ async def run_dataflow(task: dict):
                 return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
             vects = np.array([])
             texts = [o.get("questions", o.get("summary", o["text"])) for o in chunks]
-            delta = 0.20/(len(texts)//EMBEDDING_BATCH_SIZE+1)
+            delta = 0.20/(len(texts)//settings.EMBEDDING_BATCH_SIZE+1)
             prog = 0.8
-            for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
                 async with embed_limiter:
-                    vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + EMBEDDING_BATCH_SIZE]))
+                    vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + settings.EMBEDDING_BATCH_SIZE]))
                 if len(vects) == 0:
                     vects = vts
                 else:
                     vects = np.concatenate((vects, vts), axis=0)
                 embedding_token_consumption += c
                 prog += delta
-                if i % (len(texts)//EMBEDDING_BATCH_SIZE/100+1) == 1:
-                    set_progress(task_id, prog=prog, msg=f"{i+1} / {len(texts)//EMBEDDING_BATCH_SIZE}")
+                if i % (len(texts)//settings.EMBEDDING_BATCH_SIZE/100+1) == 1:
+                    set_progress(task_id, prog=prog, msg=f"{i+1} / {len(texts)//settings.EMBEDDING_BATCH_SIZE}")
 
             assert len(vects) == len(chunks)
             for i, ck in enumerate(chunks):
@@ -675,61 +644,78 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
 
     raptor_config = kb_parser_config.get("raptor", {})
-
-    chunks = []
     vctr_nm = "q_%d_vec"%vector_size
-    for doc_id in doc_ids:
-        for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
-                                                 fields=["content_with_weight", vctr_nm],
-                                                 sort_by_position=True):
-            chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
 
-    raptor = Raptor(
-        raptor_config.get("max_cluster", 64),
-        chat_mdl,
-        embd_mdl,
-        raptor_config["prompt"],
-        raptor_config["max_token"],
-        raptor_config["threshold"],
-    )
-    original_length = len(chunks)
-    chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback)
-    doc = {
-        "doc_id": fake_doc_id,
-        "kb_id": [str(row["kb_id"])],
-        "docnm_kwd": row["name"],
-        "title_tks": rag_tokenizer.tokenize(row["name"])
-    }
-    if row["pagerank"]:
-        doc[PAGERANK_FLD] = int(row["pagerank"])
     res = []
     tk_count = 0
-    for content, vctr in chunks[original_length:]:
-        d = copy.deepcopy(doc)
-        d["id"] = xxhash.xxh64((content + str(fake_doc_id)).encode("utf-8")).hexdigest()
-        d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
-        d["create_timestamp_flt"] = datetime.now().timestamp()
-        d[vctr_nm] = vctr.tolist()
-        d["content_with_weight"] = content
-        d["content_ltks"] = rag_tokenizer.tokenize(content)
-        d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-        res.append(d)
-        tk_count += num_tokens_from_string(content)
+    async def generate(chunks, did):
+        nonlocal tk_count, res
+        raptor = Raptor(
+            raptor_config.get("max_cluster", 64),
+            chat_mdl,
+            embd_mdl,
+            raptor_config["prompt"],
+            raptor_config["max_token"],
+            raptor_config["threshold"],
+        )
+        original_length = len(chunks)
+        chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
+        doc = {
+            "doc_id": did,
+            "kb_id": [str(row["kb_id"])],
+            "docnm_kwd": row["name"],
+            "title_tks": rag_tokenizer.tokenize(row["name"]),
+            "raptor_kwd": "raptor"
+        }
+        if row["pagerank"]:
+            doc[PAGERANK_FLD] = int(row["pagerank"])
+
+        for content, vctr in chunks[original_length:]:
+            d = copy.deepcopy(doc)
+            d["id"] = xxhash.xxh64((content + str(fake_doc_id)).encode("utf-8")).hexdigest()
+            d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
+            d["create_timestamp_flt"] = datetime.now().timestamp()
+            d[vctr_nm] = vctr.tolist()
+            d["content_with_weight"] = content
+            d["content_ltks"] = rag_tokenizer.tokenize(content)
+            d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+            res.append(d)
+            tk_count += num_tokens_from_string(content)
+
+    if raptor_config.get("scope", "file") == "file":
+        for x, doc_id in enumerate(doc_ids):
+            chunks = []
+            for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
+                                                 fields=["content_with_weight", vctr_nm],
+                                                 sort_by_position=True):
+                chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+            await generate(chunks, doc_id)
+            callback(prog=(x+1.)/len(doc_ids))
+    else:
+        chunks = []
+        for doc_id in doc_ids:
+            for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
+                                                 fields=["content_with_weight", vctr_nm],
+                                                 sort_by_position=True):
+                chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+
+        await generate(chunks, fake_doc_id)
+
     return res, tk_count
 
 
 async def delete_image(kb_id, chunk_id):
     try:
         async with minio_limiter:
-            STORAGE_IMPL.delete(kb_id, chunk_id)
+            settings.STORAGE_IMPL.delete(kb_id, chunk_id)
     except Exception:
         logging.exception(f"Deleting image of chunk {chunk_id} got exception")
         raise
 
 
 async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback):
-    for b in range(0, len(chunks), DOC_BULK_SIZE):
-        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
+    for b in range(0, len(chunks), settings.DOC_BULK_SIZE):
+        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + settings.DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
         task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
@@ -740,7 +726,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
             progress_callback(-1, msg=error_message)
             raise Exception(error_message)
-        chunk_ids = [chunk["id"] for chunk in chunks[:b + DOC_BULK_SIZE]]
+        chunk_ids = [chunk["id"] for chunk in chunks[:b + settings.DOC_BULK_SIZE]]
         chunk_ids_str = " ".join(chunk_ids)
         try:
             TaskService.update_chunk_ids(task_id, chunk_ids_str)
@@ -827,6 +813,7 @@ async def do_handle_task(task):
                         "threshold": 0.1,
                         "max_cluster": 64,
                         "random_seed": 0,
+                        "scope": "file"
                     },
                 }
             )
@@ -847,6 +834,8 @@ async def do_handle_task(task):
                 callback=progress_callback,
                 doc_ids=task.get("doc_ids", []),
             )
+        if fake_doc_ids := task.get("doc_ids", []):
+            task_doc_id = fake_doc_ids[0] # use the first document ID to represent this task for logging purposes
     # Either using graphrag or Standard chunking methods
     elif task_type == "graphrag":
         ok, kb = KnowledgebaseService.get_by_id(task_dataset_id)
@@ -956,6 +945,7 @@ async def do_handle_task(task):
 
 
 async def handle_task():
+
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
@@ -994,6 +984,17 @@ async def handle_task():
     redis_msg.ack()
 
 
+async def get_server_ip() -> str:
+    # get ip by udp
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception as e:
+        logging.error(str(e))
+        return 'Unknown'
+
+
 async def report_status():
     global CONSUMER_NAME, BOOT_AT, PENDING_TASKS, LAG_TASKS, DONE_TASKS, FAILED_TASKS
     REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
@@ -1001,13 +1002,17 @@ async def report_status():
     while True:
         try:
             now = datetime.now()
-            group_info = REDIS_CONN.queue_info(get_svr_queue_name(0), SVR_CONSUMER_GROUP_NAME)
+            group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(0), SVR_CONSUMER_GROUP_NAME)
             if group_info is not None:
                 PENDING_TASKS = int(group_info.get("pending", 0))
                 LAG_TASKS = int(group_info.get("lag", 0))
 
+            pid = os.getpid()
+            ip_address = await get_server_ip()
             current = copy.deepcopy(CURRENT_TASKS)
             heartbeat = json.dumps({
+                "ip_address": ip_address,
+                "pid": pid,
                 "name": CONSUMER_NAME,
                 "now": now.astimezone().isoformat(timespec="milliseconds"),
                 "boot_at": BOOT_AT,
@@ -1061,8 +1066,11 @@ async def main():
           /____/
     """)
     logging.info(f'RAGFlow version: {get_ragflow_version()}')
+    show_configs()
     settings.init_settings()
-    print_rag_settings()
+    settings.check_and_install_torch()
+    logging.info(f'settings.EMBEDDING_CFG: {settings.EMBEDDING_CFG}')
+    settings.print_rag_settings()
     if sys.platform != "win32":
         signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)
         signal.signal(signal.SIGUSR2, stop_tracemalloc)
