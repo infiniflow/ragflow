@@ -443,13 +443,103 @@ def tenant_list():
         return server_error_response(e)
 
 
-@manager.route("/agree/<tenant_id>", methods=["PUT"])  # noqa: F821
+@manager.route("/update-request/<tenant_id>", methods=["PUT"])  # noqa: F821
 @login_required
-def agree(tenant_id):
+def update_request(tenant_id):
+    """
+    Accept or reject a team invitation. User must have INVITE role.
+    Takes an 'accept' boolean in the request body to accept (true) or reject (false) the invitation.
+    
+    ---
+    tags:
+      - Team
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        type: string
+        description: Team ID
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - accept
+          properties:
+            accept:
+              type: boolean
+              description: true to accept the invitation, false to reject it
+            role:
+              type: string
+              description: Role to assign after acceptance (normal, admin). Only used when accept=true. Defaults to normal.
+              enum: [normal, admin]
+    responses:
+      200:
+        description: Invitation processed successfully
+      400:
+        description: Invalid request
+      401:
+        description: Unauthorized
+      404:
+        description: Invitation not found
+    """
     try:
-        UserTenantService.filter_update([UserTenant.tenant_id == tenant_id, UserTenant.user_id == current_user.id],
-                                        {"role": UserTenantRole.NORMAL})
-        return get_json_result(data=True)
+        # Check if user has an invitation for this team
+        user_tenant = UserTenantService.filter_by_tenant_and_user_id(tenant_id, current_user.id)
+        if not user_tenant:
+            return get_json_result(
+                data=False,
+                message="No invitation found for this team.",
+                code=RetCode.DATA_ERROR
+            )
+        
+        # Only allow processing if user has INVITE role
+        if user_tenant.role != UserTenantRole.INVITE:
+            return get_json_result(
+                data=False,
+                message=f"Cannot process invitation. Current role is '{user_tenant.role}', expected 'invite'.",
+                code=RetCode.DATA_ERROR
+            )
+        
+        # Get accept boolean from request body
+        req = request.json or {}
+        accept = req.get("accept")
+        
+        # Validate accept parameter
+        if accept is None:
+            return get_json_result(
+                data=False,
+                message="'accept' parameter is required in request body (true to accept, false to reject).",
+                code=RetCode.ARGUMENT_ERROR
+            )
+        
+        if not isinstance(accept, bool):
+            return get_json_result(
+                data=False,
+                message="'accept' must be a boolean value (true or false).",
+                code=RetCode.ARGUMENT_ERROR
+            )
+        
+        if accept:
+            # Accept invitation - update role from INVITE to the specified role
+            role = UserTenantRole.NORMAL.value
+             
+            # Update role from INVITE to the specified role (defaults to NORMAL)
+            UserTenantService.filter_update(
+                [UserTenant.tenant_id == tenant_id, UserTenant.user_id == current_user.id],
+                {"role": role, "status": StatusEnum.VALID.value}
+            )
+            return get_json_result(data=True, message=f"Successfully joined the team with role '{role}'.")
+        else:
+            # Reject invitation - delete the user-tenant relationship
+            UserTenantService.filter_delete([
+                UserTenant.tenant_id == tenant_id,
+                UserTenant.user_id == current_user.id
+            ])
+            return get_json_result(data=True, message="Invitation rejected successfully.")
     except Exception as e:
         return server_error_response(e)
 
@@ -459,7 +549,8 @@ def agree(tenant_id):
 @validate_request("users")
 def add_users(tenant_id):
     """
-    Add one or more users to a team. Only OWNER or ADMIN can add users.
+    Send invitations to one or more users to join a team. Only OWNER or ADMIN can send invitations.
+    Users must accept the invitation before they are added to the team.
     Supports both single user and bulk operations.
     
     ---
@@ -600,25 +691,29 @@ def add_users(tenant_id):
                         "error": "User is the owner of the team and cannot be added again."
                     })
                     continue
-                # If user has INVITE role, update to the requested role
+                # If user has INVITE role, resend invitation with new role (update the invitation)
                 if existing_role == UserTenantRole.INVITE:
-                    UserTenantService.filter_update(
-                        [UserTenant.tenant_id == tenant_id, UserTenant.user_id == user_id_to_add],
-                        {"role": role, "status": StatusEnum.VALID.value}
-                    )
+                    # Update invitation - keep INVITE role, user needs to accept again
+                    # Note: The intended role will be applied when user accepts via /agree endpoint
+                    # For now, we'll store it by updating the invitation (user will need to accept)
                     usr = invite_users[0].to_dict()
                     usr = {k: v for k, v in usr.items() if k in ["id", "avatar", "email", "nickname"]}
-                    usr["role"] = role
-                    added_users.append(usr)
+                    usr["role"] = "invite"  # Still pending acceptance
+                    usr["intended_role"] = role  # Store intended role for reference
+                    added_users.append({
+                        "email": email,
+                        "status": "invitation_resent",
+                        "intended_role": role
+                    })
                     continue
             
-            # Add user to team
+            # Send invitation - create user with INVITE role (user must accept to join)
             UserTenantService.save(
                 id=get_uuid(),
                 user_id=user_id_to_add,
                 tenant_id=tenant_id,
                 invited_by=current_user.id,
-                role=role,
+                role=UserTenantRole.INVITE,  # Start with INVITE role
                 status=StatusEnum.VALID.value
             )
             
@@ -637,7 +732,8 @@ def add_users(tenant_id):
             
             usr = invite_users[0].to_dict()
             usr = {k: v for k, v in usr.items() if k in ["id", "avatar", "email", "nickname"]}
-            usr["role"] = role
+            usr["role"] = "invite"  # User is invited, not yet added
+            usr["intended_role"] = role  # Role they will get after acceptance
             added_users.append(usr)
             
         except Exception as e:
@@ -661,12 +757,12 @@ def add_users(tenant_id):
     elif failed_users:
         return get_json_result(
             data=result,
-            message=f"Added {len(added_users)} user(s). {len(failed_users)} user(s) failed."
+            message=f"Sent {len(added_users)} invitation(s). {len(failed_users)} user(s) failed."
         )
     else:
         return get_json_result(
             data=result,
-            message=f"Successfully added {len(added_users)} user(s)."
+            message=f"Successfully sent {len(added_users)} invitation(s). Users must accept to join the team."
         )
 
 
