@@ -2,7 +2,10 @@ import { FileMimeType } from '@/constants/common';
 import fileManagerService from '@/services/file-manager-service';
 import { UploadFile } from 'antd';
 
-export const transformFile2Base64 = (val: any): Promise<any> => {
+export const transformFile2Base64 = (
+  val: any,
+  imgSize?: number,
+): Promise<any> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(val);
@@ -19,7 +22,7 @@ export const transformFile2Base64 = (val: any): Promise<any> => {
         // Calculate compressed dimensions, set max width/height to 800px
         let width = img.width;
         let height = img.height;
-        const maxSize = 100;
+        const maxSize = imgSize ?? 100;
 
         if (width > height && width > maxSize) {
           height = (height * maxSize) / width;
