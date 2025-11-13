@@ -222,7 +222,7 @@ class LLM(ComponentBase):
             output_structure = self._param.outputs['structured']
         except Exception:
             pass
-        if output_structure:
+        if output_structure and isinstance(output_structure, dict) and output_structure.get("properties"):
             schema=json.dumps(output_structure, ensure_ascii=False, indent=2)
             prompt += structured_output_prompt(schema)
             for _ in range(self._param.max_retries+1):
