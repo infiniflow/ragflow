@@ -17,6 +17,9 @@ import json
 import os
 import random
 import re
+import pypandoc
+import logging
+import tempfile
 from functools import partial
 from typing import Any
 
@@ -24,7 +27,8 @@ from agent.component.base import ComponentBase, ComponentParamBase
 from jinja2 import Template as Jinja2Template
 
 from common.connection_utils import timeout
-
+from common.misc_utils import get_uuid
+from common import settings
 
 class MessageParam(ComponentParamBase):
     """
@@ -34,6 +38,7 @@ class MessageParam(ComponentParamBase):
         super().__init__()
         self.content = []
         self.stream = True
+        self.output_format = None  # default output format
         self.outputs = {
             "content": {
                 "type": "str"
@@ -146,7 +151,7 @@ class Message(ComponentBase):
             return
 
         rand_cnt = random.choice(self._param.content)
-        if self._param.stream and not self._is_jinjia2(rand_cnt):
+        if self._param.stream and self._param.output_format is None and not self._is_jinjia2(rand_cnt):
             self.set_output("content", partial(self._stream, rand_cnt))
             return
 
@@ -164,6 +169,60 @@ class Message(ComponentBase):
             content = re.sub(n, v, content)
 
         self.set_output("content", content)
+        self._convert_content(content)
 
     def thoughts(self) -> str:
         return ""
+
+    def _convert_content(self, content):
+        doc_id = get_uuid()
+
+        try:
+            if self._param.output_format in {"markdown", "html"}:
+                if isinstance(content, str):
+                    converted = pypandoc.convert_text(
+                        content,
+                        to=self._param.output_format,
+                        format="markdown",
+                    )
+                else:
+                    converted = pypandoc.convert_file(
+                        content,
+                        to=self._param.output_format,
+                        format="markdown",
+                    )
+
+                binary_content = converted.encode("utf-8")
+
+            else:  # pdf, docx
+                with tempfile.NamedTemporaryFile(suffix=f".{self._param.output_format}", delete=False) as tmp:
+                    tmp_name = tmp.name
+
+                try:
+                    if isinstance(content, str):
+                        pypandoc.convert_text(
+                            content,
+                            to=self._param.output_format,
+                            format="markdown",
+                            outputfile=tmp_name,
+                        )
+                    else:
+                        pypandoc.convert_file(
+                            content,
+                            to=self._param.output_format,
+                            format="markdown",
+                            outputfile=tmp_name,
+                        )
+
+                    with open(tmp_name, "rb") as f:
+                        binary_content = f.read()
+
+                finally:
+                    if os.path.exists(tmp_name):
+                        os.remove(tmp_name)
+
+            settings.STORAGE_IMPL.put(self._canvas._tenant_id, doc_id, binary_content)
+            logging.info(f"Converted content uploaded as {doc_id} (format={self._param.output_format})")
+
+        except Exception as e:
+            logging.error(f"Error converting content to {self._param.output_format}: {e}")

@@ -517,6 +517,22 @@ def get(doc_id):
         return server_error_response(e)
 
 
+@manager.route("/download/<attachment_id>", methods=["GET"])  # noqa: F821
+@login_required
+def download_attachment(attachment_id):
+    try:
+        ext = request.args.get("ext", "markdown")
+        data = settings.STORAGE_IMPL.get(current_user.id, attachment_id)
+        response = flask.make_response(data)
+
+        response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
+
+        return response
+
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/change_parser", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id")
