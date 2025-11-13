@@ -192,6 +192,7 @@
    $ cd ragflow/docker
    
    # 可选：使用稳定版本标签（查看发布：https://github.com/infiniflow/ragflow/releases），例如：git checkout v0.22.0
+   # 这一步确保代码中的 entrypoint.sh 文件与 Docker 镜像的版本保持一致。
 
    # Use CPU for DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d

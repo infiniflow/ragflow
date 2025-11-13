@@ -172,6 +172,7 @@
    $ cd ragflow/docker
 
    # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases) 例: git checkout v0.22.0
+   # この手順は、コード内の entrypoint.sh ファイルが Docker イメージのバージョンと一致していることを確認します。
 
    # Use CPU for DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
