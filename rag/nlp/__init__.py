@@ -482,7 +482,7 @@ def tree_merge(bull, sections, depth):
     root = Node(level=0, depth=target_level, texts=[])
     root.build_tree(lines)
 
-    return [("\n").join(element) for element in root.get_tree() if element]
+    return [element for element in root.get_tree() if element]
 
 def hierarchical_merge(bull, sections, depth):
 
