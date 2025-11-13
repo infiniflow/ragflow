@@ -117,7 +117,6 @@ def load_model(model_dir, nm, device_id: int | None = None):
             providers=['CUDAExecutionProvider'],
             provider_options=[cuda_provider_options]
             )
-        run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:" + str(provider_device_id))
         logging.info(f"load_model {model_file_path} uses GPU (device {provider_device_id}, gpu_mem_limit={cuda_provider_options['gpu_mem_limit']}, arena_strategy={arena_strategy})")
     else:
         sess = ort.InferenceSession(
