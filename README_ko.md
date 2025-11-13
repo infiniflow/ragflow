@@ -174,6 +174,7 @@
    $ cd ragflow/docker
    
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases), e.g.: git checkout v0.22.0
+   # 이 단계는 코드의 entrypoint.sh 파일이 Docker 이미지 버전과 일치하도록 보장합니다.
 
    # Use CPU for DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
