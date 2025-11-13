@@ -974,11 +974,11 @@ Failure:
 
 ---
 
-### Create knowledge graph
+### Construct knowledge graph
 
 **POST** `/api/v1/datasets/{dataset_id}/run_graphrag`
 
-Creates the knowledge graph of a specified dataset.
+Constructs a knowledge graph from a specified dataset.
 
 #### Request
 
@@ -1024,11 +1024,11 @@ Failure:
 
 ---
 
-### Get knowledge graph creation status
+### Get knowledge graph construction status
 
 **GET** `/api/v1/datasets/{dataset_id}/trace_graphrag`
 
-Retrieves the status of the knowledge graph creation task of a specified dataset.
+Retrieves the knowledge graph construction status for a specified dataset.
 
 #### Request
 
@@ -1089,11 +1089,11 @@ Failure:
 
 ---
 
-### Create raptor
+### Construct RAPTOR
 
 **POST** `/api/v1/datasets/{dataset_id}/run_raptor`
 
-Creates the raptor of a specified dataset.
+Construct a RAPTOR from a specified dataset.
 
 #### Request
 
@@ -1139,11 +1139,11 @@ Failure:
 
 ---
 
-### Get raptor creation status
+### Get RAPTOR construction status
 
 **GET** `/api/v1/datasets/{dataset_id}/trace_raptor`
 
-Retrieves the status of the raptor creation task of a specified dataset.
+Retrieves the RAPTOR construction status for a specified dataset.
 
 #### Request
 
