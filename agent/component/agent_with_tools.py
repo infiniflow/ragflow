@@ -368,11 +368,19 @@ Respond immediately with your final comprehensive answer.
 
         return "Error occurred."
 
-    def reset(self, temp=False):
+    def reset(self, only_output=False):
         """
         Reset all tools if they have a reset method. This avoids errors for tools like MCPToolCallSession.
         """
+        for k in self._param.outputs.keys():
+            self._param.outputs[k]["value"] = None
+            
         for k, cpn in self.tools.items():
             if hasattr(cpn, "reset") and callable(cpn.reset):
                 cpn.reset()
+        if only_output:
+            return
+        for k in self._param.inputs.keys():
+            self._param.inputs[k]["value"] = None
+        self._param.debug_inputs = {}
 

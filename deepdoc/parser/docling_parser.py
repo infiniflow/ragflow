@@ -186,9 +186,6 @@ class DoclingParser(RAGFlowPdfParser):
                 yield (DoclingContentType.EQUATION.value, text, bbox)
 
     def _transfer_to_sections(self, doc) -> list[tuple[str, str]]:
-        """
-        和 MinerUParser 保持一致：返回 [(section_text, line_tag), ...]
-        """
         sections: list[tuple[str, str]] = []
         for typ, payload, bbox in self._iter_doc_items(doc):
             if typ == DoclingContentType.TEXT.value:
