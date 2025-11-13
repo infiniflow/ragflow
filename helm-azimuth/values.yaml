@@ -9,15 +9,8 @@ zenithClient:
 
 # Config overrides for the underlying RAGFlow chart
 ragflow:
-  # RAGFlow container config
-  ragflow:
-    image:
-      # Use a non-slim image which includes embedding models
-      # NOTE(scott): Maybe we can remove this once we are using
-      # the HU-hosted embedding and reranking models in RAGFlow?
-      tag: v0.21.1
-  # Elasticsearch seems more stable than other options for now
   env:
+    # Elasticsearch seems more stable than other options for now
     DOC_ENGINE: elasticsearch
 
   # Clean up redis volumes when Azimuth app is uninstalled
