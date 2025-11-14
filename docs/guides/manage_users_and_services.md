@@ -64,7 +64,10 @@ The Admin CLI and Admin Service form a client-server architectural suite for RAG
     
     - -p: RAGFlow admin server port
 
+## Default administrative account
 
+- Username: admin@ragflow.io
+- Password: admin
 
 ## Supported Commands
 
