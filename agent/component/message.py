@@ -230,4 +230,3 @@ class Message(ComponentBase):
 
         except Exception as e:
             logging.error(f"Error converting content to {self._param.output_format}: {e}")
-            self.set_output("attachment", None)
