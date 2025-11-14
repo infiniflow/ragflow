@@ -168,6 +168,7 @@ class Message(ComponentBase):
         for n, v in kwargs.items():
             content = re.sub(n, v, content)
 
+        self.set_output("content", content)
         self._convert_content(content)
 
     def thoughts(self) -> str:
@@ -222,6 +223,7 @@ class Message(ComponentBase):
 
             settings.STORAGE_IMPL.put(self._canvas._tenant_id, doc_id, binary_content)
 
+            # document id, format, filename
             self.set_output("attachment", (doc_id, self._param.output_format, f"{doc_id[:8]}.{self._param.output_format}"))
 
             logging.info(f"Converted content uploaded as {doc_id} (format={self._param.output_format})")

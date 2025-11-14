@@ -405,11 +405,13 @@ class Canvas(Graph):
                                 _m += m
                         cpn_obj.set_output("content", _m)
                         cite = re.search(r"\[ID:[ 0-9]+\]", _m)
-                    elif isinstance(cpn_obj.output("attachment"), tuple):
-                        yield decorate("message", {"attachment": cpn_obj.output("attachment")})
                     else:
                         yield decorate("message", {"content": cpn_obj.output("content")})
                         cite = re.search(r"\[ID:[ 0-9]+\]",  cpn_obj.output("content"))
+
+                    if isinstance(cpn_obj.output("attachment"), tuple):
+                        yield decorate("message", {"attachment": cpn_obj.output("attachment")})
+                        
                     yield decorate("message_end", {"reference": self.get_reference() if cite else None})
 
                     while partials:
