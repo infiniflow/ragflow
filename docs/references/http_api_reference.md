@@ -974,6 +974,237 @@ Failure:
 
 ---
 
+### Construct knowledge graph
+
+**POST** `/api/v1/datasets/{dataset_id}/run_graphrag`
+
+Constructs a knowledge graph from a specified dataset.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/datasets/{dataset_id}/run_graphrag`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/datasets/{dataset_id}/run_graphrag \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the target dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code":0,
+    "data":{
+      "graphrag_task_id":"e498de54bfbb11f0ba028f704583b57b"
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Invalid Dataset ID"
+}
+```
+
+---
+
+### Get knowledge graph construction status
+
+**GET** `/api/v1/datasets/{dataset_id}/trace_graphrag`
+
+Retrieves the knowledge graph construction status for a specified dataset.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/trace_graphrag`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/datasets/{dataset_id}/trace_graphrag \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the target dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code":0,
+    "data":{
+        "begin_at":"Wed, 12 Nov 2025 19:36:56 GMT",
+        "chunk_ids":"",
+        "create_date":"Wed, 12 Nov 2025 19:36:56 GMT",
+        "create_time":1762947416350,
+        "digest":"39e43572e3dcd84f",
+        "doc_id":"44661c10bde211f0bc93c164a47ffc40",
+        "from_page":100000000,
+        "id":"e498de54bfbb11f0ba028f704583b57b",
+        "priority":0,
+        "process_duration":2.45419,
+        "progress":1.0,
+        "progress_msg":"19:36:56 created task graphrag\n19:36:57 Task has been received.\n19:36:58 [GraphRAG] doc:083661febe2411f0bc79456921e5745f has no available chunks, skip generation.\n19:36:58 [GraphRAG] build_subgraph doc:44661c10bde211f0bc93c164a47ffc40 start (chunks=1, timeout=10000000000s)\n19:36:58 Graph already contains 44661c10bde211f0bc93c164a47ffc40\n19:36:58 [GraphRAG] build_subgraph doc:44661c10bde211f0bc93c164a47ffc40 empty\n19:36:58 [GraphRAG] kb:33137ed0bde211f0bc93c164a47ffc40 no subgraphs generated successfully, end.\n19:36:58 Knowledge Graph done (0.72s)","retry_count":1,
+        "task_type":"graphrag",
+        "to_page":100000000,
+        "update_date":"Wed, 12 Nov 2025 19:36:58 GMT",
+        "update_time":1762947418454
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Invalid Dataset ID"
+}
+```
+
+---
+
+### Construct RAPTOR
+
+**POST** `/api/v1/datasets/{dataset_id}/run_raptor`
+
+Construct a RAPTOR from a specified dataset.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/datasets/{dataset_id}/run_raptor`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/datasets/{dataset_id}/run_raptor \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the target dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code":0,
+    "data":{
+        "raptor_task_id":"50d3c31cbfbd11f0ba028f704583b57b"
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Invalid Dataset ID"
+}
+```
+
+---
+
+### Get RAPTOR construction status
+
+**GET** `/api/v1/datasets/{dataset_id}/trace_raptor`
+
+Retrieves the RAPTOR construction status for a specified dataset.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/trace_raptor`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/datasets/{dataset_id}/trace_raptor \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the target dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code":0,
+    "data":{
+        "begin_at":"Wed, 12 Nov 2025 19:47:07 GMT",
+        "chunk_ids":"",
+        "create_date":"Wed, 12 Nov 2025 19:47:07 GMT",
+        "create_time":1762948027427,
+        "digest":"8b279a6248cb8fc6",
+        "doc_id":"44661c10bde211f0bc93c164a47ffc40",
+        "from_page":100000000,
+        "id":"50d3c31cbfbd11f0ba028f704583b57b",
+        "priority":0,
+        "process_duration":0.948244,
+        "progress":1.0,
+        "progress_msg":"19:47:07 created task raptor\n19:47:07 Task has been received.\n19:47:07 Processing...\n19:47:07 Processing...\n19:47:07 Indexing done (0.01s).\n19:47:07 Task done (0.29s)",
+        "retry_count":1,
+        "task_type":"raptor",
+        "to_page":100000000,
+        "update_date":"Wed, 12 Nov 2025 19:47:07 GMT",
+        "update_time":1762948027948
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Invalid Dataset ID"
+}
+```
+
+---
+
 ## FILE MANAGEMENT WITHIN DATASET
 
 ---

@@ -1,12 +1,6 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import {
-  DynamicForm,
-  DynamicFormRef,
-  FormFieldConfig,
-  FormFieldType,
-} from '@/components/dynamic-form';
+import { FormFieldConfig } from '@/components/dynamic-form';
 import { BlockButton, Button } from '@/components/ui/button';
-import { Modal } from '@/components/ui/modal/modal';
 import {
   Sheet,
   SheetContent,
@@ -19,117 +13,65 @@ import { GlobalVariableType } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import { Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { FieldValues } from 'react-hook-form';
 import { useSaveGraph } from '../hooks/use-save-graph';
+import { AddVariableModal } from './component/add-variable-modal';
 import {
-  GobalFormFields,
-  GobalVariableFormDefaultValues,
+  GlobalFormFields,
+  GlobalVariableFormDefaultValues,
   TypeMaps,
   TypesWithArray,
-} from './contant';
+} from './constant';
+import { useObjectFields } from './hooks/use-object-fields';
 
-export type IGobalParamModalProps = {
+export type IGlobalParamModalProps = {
   data: any;
   hideModal: (open: boolean) => void;
 };
-export const GobalParamSheet = (props: IGobalParamModalProps) => {
+export const GlobalParamSheet = (props: IGlobalParamModalProps) => {
   const { hideModal } = props;
   const { data, refetch } = useFetchAgent();
-  const [fields, setFields] = useState<FormFieldConfig[]>(GobalFormFields);
   const { visible, showModal, hideModal: hideAddModal } = useSetModalState();
+  const [fields, setFields] = useState<FormFieldConfig[]>(GlobalFormFields);
   const [defaultValues, setDefaultValues] = useState<FieldValues>(
-    GobalVariableFormDefaultValues,
+    GlobalVariableFormDefaultValues,
   );
-  const formRef = useRef<DynamicFormRef>(null);
+  const { handleCustomValidate, handleCustomSchema, handleRender } =
+    useObjectFields();
+  const { saveGraph } = useSaveGraph();
 
-  const handleFieldUpdate = (
-    fieldName: string,
-    updatedField: Partial<FormFieldConfig>,
-  ) => {
-    setFields((prevFields) =>
-      prevFields.map((field) =>
-        field.name === fieldName ? { ...field, ...updatedField } : field,
-      ),
-    );
-  };
-
-  useEffect(() => {
-    const typefileld = fields.find((item) => item.name === 'type');
-
-    if (typefileld) {
-      typefileld.onChange = (value) => {
-        // setWatchType(value);
-        handleFieldUpdate('value', {
-          type: TypeMaps[value as keyof typeof TypeMaps],
-        });
-        const values = formRef.current?.getValues();
-        setTimeout(() => {
-          switch (value) {
-            case TypesWithArray.Boolean:
-              setDefaultValues({ ...values, value: false });
-              break;
-            case TypesWithArray.Number:
-              setDefaultValues({ ...values, value: 0 });
-              break;
-            default:
-              setDefaultValues({ ...values, value: '' });
-          }
-        }, 0);
-      };
-    }
-  }, [fields]);
-
-  const { saveGraph, loading } = useSaveGraph();
-
-  const handleSubmit = async (value: FieldValues) => {
-    const param = {
-      ...(data.dsl?.variables || {}),
-      [value.name]: value,
-    } as Record<string, GlobalVariableType>;
-
-    const res = await saveGraph(undefined, {
-      gobalVariables: param,
-    });
-
-    if (res.code === 0) {
-      refetch();
-    }
-    hideAddModal();
-  };
-
-  const handleDeleteGobalVariable = async (key: string) => {
+  const handleDeleteGlobalVariable = async (key: string) => {
     const param = {
       ...(data.dsl?.variables || {}),
     } as Record<string, GlobalVariableType>;
     delete param[key];
     const res = await saveGraph(undefined, {
-      gobalVariables: param,
+      globalVariables: param,
     });
-    console.log('delete gobal variable-->', res);
     if (res.code === 0) {
       refetch();
     }
   };
 
-  const handleEditGobalVariable = (item: FieldValues) => {
-    fields.forEach((field) => {
-      if (field.name === 'value') {
-        switch (item.type) {
-          // [TypesWithArray.String]: FormFieldType.Textarea,
-          // [TypesWithArray.Number]: FormFieldType.Number,
-          // [TypesWithArray.Boolean]: FormFieldType.Checkbox,
-          case TypesWithArray.Boolean:
-            field.type = FormFieldType.Checkbox;
-            break;
-          case TypesWithArray.Number:
-            field.type = FormFieldType.Number;
-            break;
-          default:
-            field.type = FormFieldType.Textarea;
-        }
+  const handleEditGlobalVariable = (item: FieldValues) => {
+    const newFields = fields.map((field) => {
+      let newField = field;
+      newField.render = undefined;
+      newField.schema = undefined;
+      newField.customValidate = undefined;
+      if (newField.name === 'value') {
+        newField = {
+          ...newField,
+          type: TypeMaps[item.type as keyof typeof TypeMaps],
+          render: handleRender(item.type),
+          customValidate: handleCustomValidate(item.type),
+          schema: handleCustomSchema(item.type),
+        };
       }
+      return newField;
     });
+    setFields(newFields);
     setDefaultValues(item);
     showModal();
   };
@@ -149,8 +91,8 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
           <div className="px-5 pb-5">
             <BlockButton
               onClick={() => {
-                setFields(GobalFormFields);
-                setDefaultValues(GobalVariableFormDefaultValues);
+                setFields(GlobalFormFields);
+                setDefaultValues(GlobalVariableFormDefaultValues);
                 showModal();
               }}
             >
@@ -167,7 +109,7 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
                     key={key}
                     className="flex items-center gap-3 min-h-14 justify-between px-5 py-3 border border-border-default rounded-lg  hover:bg-bg-card group"
                     onClick={() => {
-                      handleEditGobalVariable(item);
+                      handleEditGlobalVariable(item);
                     }}
                   >
                     <div className="flex flex-col">
@@ -177,13 +119,23 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
                           {item.type}
                         </span>
                       </div>
-                      <div>
-                        <span className="text-text-primary">{item.value}</span>
-                      </div>
+                      {![
+                        TypesWithArray.Object,
+                        TypesWithArray.ArrayObject,
+                        TypesWithArray.ArrayString,
+                        TypesWithArray.ArrayNumber,
+                        TypesWithArray.ArrayBoolean,
+                      ].includes(item.type as TypesWithArray) && (
+                        <div>
+                          <span className="text-text-primary">
+                            {item.value}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <ConfirmDeleteDialog
-                        onOk={() => handleDeleteGobalVariable(key)}
+                        onOk={() => handleDeleteGlobalVariable(key)}
                       >
                         <Button
                           variant={'secondary'}
@@ -201,40 +153,14 @@ export const GobalParamSheet = (props: IGobalParamModalProps) => {
               })}
           </div>
         </SheetContent>
-        <Modal
-          title={t('flow.add') + t('flow.conversationVariable')}
-          open={visible}
-          onCancel={hideAddModal}
-          showfooter={false}
-        >
-          <DynamicForm.Root
-            ref={formRef}
-            fields={fields}
-            onSubmit={(data) => {
-              console.log(data);
-            }}
-            defaultValues={defaultValues}
-            onFieldUpdate={handleFieldUpdate}
-          >
-            <div className="flex items-center justify-end w-full gap-2">
-              <DynamicForm.CancelButton
-                handleCancel={() => {
-                  hideAddModal?.();
-                }}
-              />
-              <DynamicForm.SavingButton
-                submitLoading={loading || false}
-                buttonText={t('common.ok')}
-                submitFunc={(values: FieldValues) => {
-                  handleSubmit(values);
-                  // console.log(values);
-                  // console.log(nodes, edges);
-                  //   handleOk(values);
-                }}
-              />
-            </div>
-          </DynamicForm.Root>
-        </Modal>
+        <AddVariableModal
+          visible={visible}
+          hideModal={hideAddModal}
+          fields={fields}
+          setFields={setFields}
+          defaultValues={defaultValues}
+          setDefaultValues={setDefaultValues}
+        />
       </Sheet>
     </>
   );
