@@ -21,29 +21,25 @@ import os
 import sys
 import time
 import typing
+from datetime import datetime, timezone
 from enum import Enum
 from functools import wraps
 
 from flask_login import UserMixin
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
-from peewee import BigIntegerField, BooleanField, CharField, CompositeKey, DateTimeField, Field, FloatField, IntegerField, Metadata, Model, TextField
+from peewee import InterfaceError, OperationalError, BigIntegerField, BooleanField, CharField, CompositeKey, DateTimeField, Field, FloatField, IntegerField, Metadata, Model, TextField
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 
-from api import settings, utils
-from api.db import ParserType, SerializedType
+from api import utils
+from api.db import SerializedType
+from api.utils.json_encode import json_dumps, json_loads
+from api.utils.configs import deserialize_b64, serialize_b64
 
-
-def singleton(cls, *args, **kw):
-    instances = {}
-
-    def _singleton():
-        key = str(cls) + str(os.getpid())
-        if key not in instances:
-            instances[key] = cls(*args, **kw)
-        return instances[key]
-
-    return _singleton
+from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
+from common.decorator import singleton
+from common.constants import ParserType
+from common import settings
 
 
 CONTINUOUS_FIELD_TYPE = {IntegerField, FloatField, DateTimeField}
@@ -70,12 +66,12 @@ class JSONField(LongTextField):
     def db_value(self, value):
         if value is None:
             value = self.default_value
-        return utils.json_dumps(value)
+        return json_dumps(value)
 
     def python_value(self, value):
         if not value:
             return self.default_value
-        return utils.json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
+        return json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
 
 
 class ListField(JSONField):
@@ -91,21 +87,21 @@ class SerializedField(LongTextField):
 
     def db_value(self, value):
         if self._serialized_type == SerializedType.PICKLE:
-            return utils.serialize_b64(value, to_str=True)
+            return serialize_b64(value, to_str=True)
         elif self._serialized_type == SerializedType.JSON:
             if value is None:
                 return None
-            return utils.json_dumps(value, with_type=True)
+            return json_dumps(value, with_type=True)
         else:
             raise ValueError(f"the serialized type {self._serialized_type} is not supported")
 
     def python_value(self, value):
         if self._serialized_type == SerializedType.PICKLE:
-            return utils.deserialize_b64(value)
+            return deserialize_b64(value)
         elif self._serialized_type == SerializedType.JSON:
             if value is None:
                 return {}
-            return utils.json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
+            return json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
         else:
             raise ValueError(f"the serialized type {self._serialized_type} is not supported")
 
@@ -187,7 +183,7 @@ class BaseModel(Model):
                         for i, v in enumerate(f_v):
                             if isinstance(v, str) and f_n in auto_date_timestamp_field():
                                 # time type: %Y-%m-%d %H:%M:%S
-                                f_v[i] = utils.date_string_to_timestamp(v)
+                                f_v[i] = date_string_to_timestamp(v)
                         lt_value = f_v[0]
                         gt_value = f_v[1]
                         if lt_value is not None and gt_value is not None:
@@ -216,9 +212,9 @@ class BaseModel(Model):
     @classmethod
     def insert(cls, __data=None, **insert):
         if isinstance(__data, dict) and __data:
-            __data[cls._meta.combined["create_time"]] = utils.current_timestamp()
+            __data[cls._meta.combined["create_time"]] = current_timestamp()
         if insert:
-            insert["create_time"] = utils.current_timestamp()
+            insert["create_time"] = current_timestamp()
 
         return super().insert(__data, **insert)
 
@@ -229,11 +225,11 @@ class BaseModel(Model):
         if not normalized:
             return {}
 
-        normalized[cls._meta.combined["update_time"]] = utils.current_timestamp()
+        normalized[cls._meta.combined["update_time"]] = current_timestamp()
 
         for f_n in AUTO_DATE_TIMESTAMP_FIELD_PREFIX:
             if {f"{f_n}_time", f"{f_n}_date"}.issubset(cls._meta.combined.keys()) and cls._meta.combined[f"{f_n}_time"] in normalized and normalized[cls._meta.combined[f"{f_n}_time"]] is not None:
-                normalized[cls._meta.combined[f"{f_n}_date"]] = utils.timestamp_to_date(normalized[cls._meta.combined[f"{f_n}_time"]])
+                normalized[cls._meta.combined[f"{f_n}_date"]] = timestamp_to_date(normalized[cls._meta.combined[f"{f_n}_time"]])
 
         return normalized
 
@@ -243,9 +239,144 @@ class JsonSerializedField(SerializedField):
         super(JsonSerializedField, self).__init__(serialized_type=SerializedType.JSON, object_hook=object_hook, object_pairs_hook=object_pairs_hook, **kwargs)
 
 
+class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
+    def __init__(self, *args, **kwargs):
+        self.max_retries = kwargs.pop("max_retries", 5)
+        self.retry_delay = kwargs.pop("retry_delay", 1)
+        super().__init__(*args, **kwargs)
+
+    def execute_sql(self, sql, params=None, commit=True):
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().execute_sql(sql, params, commit)
+            except (OperationalError, InterfaceError) as e:
+                error_codes = [2013, 2006]
+                error_messages = ['', 'Lost connection']
+                should_retry = (
+                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
+                    (str(e) in error_messages) or
+                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
+                )
+
+                if should_retry and attempt < self.max_retries:
+                    logging.warning(
+                        f"Database connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    logging.error(f"DB execution failure: {e}")
+                    raise
+        return None
+
+    def _handle_connection_loss(self):
+        # self.close_all()
+        # self.connect()
+        try:
+            self.close()
+        except Exception:
+            pass
+        try:
+            self.connect()
+        except Exception as e:
+            logging.error(f"Failed to reconnect: {e}")
+            time.sleep(0.1)
+            self.connect()
+
+    def begin(self):
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().begin()
+            except (OperationalError, InterfaceError) as e:
+                error_codes = [2013, 2006]
+                error_messages = ['', 'Lost connection']
+
+                should_retry = (
+                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
+                    (str(e) in error_messages) or
+                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
+                )
+
+                if should_retry and attempt < self.max_retries:
+                    logging.warning(
+                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    raise
+
+
+class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
+    def __init__(self, *args, **kwargs):
+        self.max_retries = kwargs.pop("max_retries", 5)
+        self.retry_delay = kwargs.pop("retry_delay", 1)
+        super().__init__(*args, **kwargs)
+
+    def execute_sql(self, sql, params=None, commit=True):
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().execute_sql(sql, params, commit)
+            except (OperationalError, InterfaceError) as e:
+                # PostgreSQL specific error codes
+                # 57P01: admin_shutdown
+                # 57P02: crash_shutdown
+                # 57P03: cannot_connect_now
+                # 08006: connection_failure
+                # 08003: connection_does_not_exist
+                # 08000: connection_exception
+                error_messages = ['connection', 'server closed', 'connection refused',
+                                'no connection to the server', 'terminating connection']
+
+                should_retry = any(msg in str(e).lower() for msg in error_messages)
+
+                if should_retry and attempt < self.max_retries:
+                    logging.warning(
+                        f"PostgreSQL connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    logging.error(f"PostgreSQL execution failure: {e}")
+                    raise
+        return None
+
+    def _handle_connection_loss(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+        try:
+            self.connect()
+        except Exception as e:
+            logging.error(f"Failed to reconnect to PostgreSQL: {e}")
+            time.sleep(0.1)
+            self.connect()
+
+    def begin(self):
+        for attempt in range(self.max_retries + 1):
+            try:
+                return super().begin()
+            except (OperationalError, InterfaceError) as e:
+                error_messages = ['connection', 'server closed', 'connection refused',
+                                'no connection to the server', 'terminating connection']
+
+                should_retry = any(msg in str(e).lower() for msg in error_messages)
+
+                if should_retry and attempt < self.max_retries:
+                    logging.warning(
+                        f"PostgreSQL connection lost during transaction (attempt {attempt+1}/{self.max_retries})"
+                    )
+                    self._handle_connection_loss()
+                    time.sleep(self.retry_delay * (2 ** attempt))
+                else:
+                    raise
+        return None
+
+
 class PooledDatabase(Enum):
-    MYSQL = PooledMySQLDatabase
-    POSTGRES = PooledPostgresqlDatabase
+    MYSQL = RetryingPooledMySQLDatabase
+    POSTGRES = RetryingPooledPostgresqlDatabase
 
 
 class DatabaseMigrator(Enum):
@@ -258,7 +389,16 @@ class BaseDataBase:
     def __init__(self):
         database_config = settings.DATABASE.copy()
         db_name = database_config.pop("name")
-        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
+
+        pool_config = {
+            'max_retries': 5,
+            'retry_delay': 1,
+        }
+        database_config.update(pool_config)
+        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(
+            db_name, **database_config
+        )
+        # self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
         logging.info("init database on cluster mode successfully")
 
 
@@ -420,6 +560,7 @@ class DataBaseModel(BaseModel):
 
 
 @DB.connection_context()
+@DB.lock("init_database_tables", 60)
 def init_database_tables(alter_fields=[]):
     members = inspect.getmembers(sys.modules[__name__], inspect.isclass)
     table_objs = []
@@ -431,7 +572,7 @@ def init_database_tables(alter_fields=[]):
             if not obj.table_exists():
                 logging.debug(f"start create table {obj.__name__}")
                 try:
-                    obj.create_table()
+                    obj.create_table(safe=True)
                     logging.debug(f"create table success: {obj.__name__}")
                 except Exception as e:
                     logging.exception(e)
@@ -528,6 +669,7 @@ class LLMFactories(DataBaseModel):
     name = CharField(max_length=128, null=False, help_text="LLM factory name", primary_key=True)
     logo = TextField(null=True, help_text="llm logo base64")
     tags = CharField(max_length=255, null=False, help_text="LLM, Text Embedding, Image2Text, ASR", index=True)
+    rank = IntegerField(default=0, index=False)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
@@ -561,10 +703,11 @@ class TenantLLM(DataBaseModel):
     llm_factory = CharField(max_length=128, null=False, help_text="LLM factory name", index=True)
     model_type = CharField(max_length=128, null=True, help_text="LLM, Text Embedding, Image2Text, ASR", index=True)
     llm_name = CharField(max_length=128, null=True, help_text="LLM name", default="", index=True)
-    api_key = CharField(max_length=2048, null=True, help_text="API KEY", index=True)
+    api_key = TextField(null=True, help_text="API KEY")
     api_base = CharField(max_length=255, null=True, help_text="API Base")
     max_tokens = IntegerField(default=8192, index=True)
     used_tokens = IntegerField(default=0, index=True)
+    status = CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
         return self.llm_name
@@ -604,8 +747,17 @@ class Knowledgebase(DataBaseModel):
     vector_similarity_weight = FloatField(default=0.3, index=True)
 
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID", default=ParserType.NAIVE.value, index=True)
+    pipeline_id = CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)
     parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
     pagerank = IntegerField(default=0, index=False)
+
+    graphrag_task_id = CharField(max_length=32, null=True, help_text="Graph RAG task ID", index=True)
+    graphrag_task_finish_at = DateTimeField(null=True)
+    raptor_task_id = CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True)
+    raptor_task_finish_at = DateTimeField(null=True)
+    mindmap_task_id = CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True)
+    mindmap_task_finish_at = DateTimeField(null=True)
+
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
 
     def __str__(self):
@@ -620,6 +772,7 @@ class Document(DataBaseModel):
     thumbnail = TextField(null=True, help_text="thumbnail base64 string")
     kb_id = CharField(max_length=256, null=False, index=True)
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID", index=True)
+    pipeline_id = CharField(max_length=32, null=True, help_text="pipleline ID", index=True)
     parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
     source_type = CharField(max_length=128, null=False, default="local", help_text="where dose this document come from", index=True)
     type = CharField(max_length=32, null=False, help_text="file extension", index=True)
@@ -632,8 +785,9 @@ class Document(DataBaseModel):
     progress = FloatField(default=0, index=True)
     progress_msg = TextField(null=True, help_text="process message", default="")
     process_begin_at = DateTimeField(null=True, index=True)
-    process_duation = FloatField(default=0)
+    process_duration = FloatField(default=0)
     meta_fields = JSONField(null=True, default={})
+    suffix = CharField(max_length=32, null=False, help_text="The real file extension suffix", index=True)
 
     run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
@@ -675,7 +829,7 @@ class Task(DataBaseModel):
     priority = IntegerField(default=0)
 
     begin_at = DateTimeField(null=True, index=True)
-    process_duation = FloatField(default=0)
+    process_duration = FloatField(default=0)
 
     progress = FloatField(default=0, index=True)
     progress_msg = TextField(null=True, help_text="process message", default="")
@@ -697,8 +851,9 @@ class Dialog(DataBaseModel):
     prompt_type = CharField(max_length=16, null=False, default="simple", help_text="simple|advanced", index=True)
     prompt_config = JSONField(
         null=False,
-        default={"system": "", "prologue": "Hi! I'm your assistant, what can I do for you?", "parameters": [], "empty_response": "Sorry! No relevant content was found in the knowledge base!"},
+        default={"system": "", "prologue": "Hi! I'm your assistant. What can I do for you?", "parameters": [], "empty_response": "Sorry! No relevant content was found in the knowledge base!"},
     )
+    meta_data_filter = JSONField(null=True, default={})
 
     similarity_threshold = FloatField(default=0.2)
     vector_similarity_weight = FloatField(default=0.3)
@@ -754,6 +909,7 @@ class API4Conversation(DataBaseModel):
     duration = FloatField(default=0, index=True)
     round = IntegerField(default=0, index=True)
     thumb_up = IntegerField(default=0, index=True)
+    errors = TextField(null=True, help_text="errors")
 
     class Meta:
         db_table = "api_4_conversation"
@@ -768,6 +924,7 @@ class UserCanvas(DataBaseModel):
     permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
     description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
+    canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -777,10 +934,10 @@ class UserCanvas(DataBaseModel):
 class CanvasTemplate(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
-    title = CharField(max_length=255, null=True, help_text="Canvas title")
-
-    description = TextField(null=True, help_text="Canvas description")
+    title = JSONField(null=True, default=dict, help_text="Canvas title")
+    description = JSONField(null=True, default=dict, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
+    canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
     dsl = JSONField(null=True, default={})
 
     class Meta:
@@ -799,6 +956,20 @@ class UserCanvasVersion(DataBaseModel):
         db_table = "user_canvas_version"
 
 
+class MCPServer(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    name = CharField(max_length=255, null=False, help_text="MCP Server name")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    url = CharField(max_length=2048, null=False, help_text="MCP Server URL")
+    server_type = CharField(max_length=32, null=False, help_text="MCP Server type")
+    description = TextField(null=True, help_text="MCP Server description")
+    variables = JSONField(null=True, default=dict, help_text="MCP Server variables")
+    headers = JSONField(null=True, default=dict, help_text="MCP Server additional request headers")
+
+    class Meta:
+        db_table = "mcp_server"
+
+
 class Search(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
@@ -811,7 +982,7 @@ class Search(DataBaseModel):
         default={
             "kb_ids": [],
             "doc_ids": [],
-            "similarity_threshold": 0.0,
+            "similarity_threshold": 0.2,
             "vector_similarity_weight": 0.3,
             "use_kg": False,
             # rerank settings
@@ -820,11 +991,12 @@ class Search(DataBaseModel):
             # chat settings
             "summary": False,
             "chat_id": "",
+            # Leave it here for reference, don't need to set default values
             "llm_setting": {
-                "temperature": 0.1,
-                "top_p": 0.3,
-                "frequency_penalty": 0.7,
-                "presence_penalty": 0.4,
+                # "temperature": 0.1,
+                # "top_p": 0.3,
+                # "frequency_penalty": 0.7,
+                # "presence_penalty": 0.4,
             },
             "chat_settingcross_languages": [],
             "highlight": False,
@@ -843,7 +1015,105 @@ class Search(DataBaseModel):
         db_table = "search"
 
 
+class PipelineOperationLog(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    document_id = CharField(max_length=32, index=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    kb_id = CharField(max_length=32, null=False, index=True)
+    pipeline_id = CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)
+    pipeline_title = CharField(max_length=32, null=True, help_text="Pipeline title", index=True)
+    parser_id = CharField(max_length=32, null=False, help_text="Parser ID", index=True)
+    document_name = CharField(max_length=255, null=False, help_text="File name")
+    document_suffix = CharField(max_length=255, null=False, help_text="File suffix")
+    document_type = CharField(max_length=255, null=False, help_text="Document type")
+    source_from = CharField(max_length=255, null=False, help_text="Source")
+    progress = FloatField(default=0, index=True)
+    progress_msg = TextField(null=True, help_text="process message", default="")
+    process_begin_at = DateTimeField(null=True, index=True)
+    process_duration = FloatField(default=0)
+    dsl = JSONField(null=True, default=dict)
+    task_type = CharField(max_length=32, null=False, default="")
+    operation_status = CharField(max_length=32, null=False, help_text="Operation status")
+    avatar = TextField(null=True, help_text="avatar base64 string")
+    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+
+    class Meta:
+        db_table = "pipeline_operation_log"
+
+
+class Connector(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, help_text="Search name", index=False)
+    source = CharField(max_length=128, null=False, help_text="Data source", index=True)
+    input_type = CharField(max_length=128, null=False, help_text="poll/event/..", index=True)
+    config = JSONField(null=False, default={})
+    refresh_freq = IntegerField(default=0, index=False)
+    prune_freq = IntegerField(default=0, index=False)
+    timeout_secs = IntegerField(default=3600, index=False)
+    indexing_start = DateTimeField(null=True, index=True)
+    status = CharField(max_length=16, null=True, help_text="schedule", default="schedule", index=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        db_table = "connector"
+
+
+class Connector2Kb(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    connector_id = CharField(max_length=32, null=False, index=True)
+    kb_id = CharField(max_length=32, null=False, index=True)
+    auto_parse = CharField(max_length=1, null=False, default="1", index=False)
+
+    class Meta:
+        db_table = "connector2kb"
+
+
+class DateTimeTzField(CharField):
+    field_type = 'VARCHAR'
+
+    def db_value(self, value: datetime|None) -> str|None:
+        if value is not None:
+            if value.tzinfo is not None:
+                return value.isoformat()
+            else:
+                return value.replace(tzinfo=timezone.utc).isoformat()
+        return value
+
+    def python_value(self, value: str|None) -> datetime|None:
+        if value is not None:
+            dt = datetime.fromisoformat(value)
+            if dt.tzinfo is None:
+                import pytz
+                return dt.replace(tzinfo=pytz.UTC)
+            return dt
+        return value
+
+
+class SyncLogs(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    connector_id = CharField(max_length=32, index=True)
+    status = CharField(max_length=128, null=False, help_text="Processing status", index=True)
+    from_beginning = CharField(max_length=1, null=True, help_text="", default="0", index=False)
+    new_docs_indexed = IntegerField(default=0, index=False)
+    total_docs_indexed = IntegerField(default=0, index=False)
+    docs_removed_from_index = IntegerField(default=0, index=False)
+    error_msg = TextField(null=False, help_text="process message", default="")
+    error_count = IntegerField(default=0, index=False)
+    full_exception_trace = TextField(null=True, help_text="process message", default="")
+    time_started = DateTimeField(null=True, index=True)
+    poll_range_start = DateTimeTzField(max_length=255, null=True, index=True)
+    poll_range_end = DateTimeTzField(max_length=255, null=True, index=True)
+    kb_id = CharField(max_length=32, null=False, index=True)
+
+    class Meta:
+        db_table = "sync_logs"
+
+
 def migrate_db():
+    logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
     try:
         migrate(migrator.add_column("file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True)))
@@ -934,3 +1204,92 @@ def migrate_db():
         migrate(migrator.add_column("llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False)))
     except Exception:
         pass
+    try:
+        migrate(migrator.add_column("mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.rename_column("task", "process_duation", "process_duration"))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.rename_column("document", "process_duation", "process_duration"))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("api_4_conversation", "errors", TextField(null=True, help_text="errors")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("dialog", "meta_data_filter", JSONField(null=True, default={})))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.alter_column_type("canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.alter_column_type("canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("user_canvas", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("canvas_template", "canvas_category", CharField(max_length=32, null=False, default="agent_canvas", help_text="agent_canvas|dataflow_canvas", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "raptor_task_id", CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "graphrag_task_finish_at", DateTimeField(null=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "raptor_task_finish_at", CharField(null=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "mindmap_task_id", CharField(max_length=32, null=True, help_text="Mindmap task ID", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "mindmap_task_finish_at", CharField(null=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.alter_column_type("tenant_llm", "api_key", TextField(null=True, help_text="API KEY")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("tenant_llm", "status", CharField(max_length=1, null=False, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("connector2kb", "auto_parse", CharField(max_length=1, null=False, default="1", index=False)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("llm_factories", "rank", IntegerField(default=0, index=False)))
+    except Exception:
+        pass
+    logging.disable(logging.NOTSET)

@@ -1,25 +1,24 @@
-import {
-  ProfileSettingBaseKey,
-  ProfileSettingRouteKey,
-} from '@/constants/setting';
 import { useLogout } from '@/hooks/login-hooks';
-import { useCallback } from 'react';
+import { Routes } from '@/routes';
+import { useCallback, useState } from 'react';
 import { useNavigate } from 'umi';
 
 export const useHandleMenuClick = () => {
   const navigate = useNavigate();
+  const [active, setActive] = useState<Routes>();
   const { logout } = useLogout();
 
   const handleMenuClick = useCallback(
-    (key: ProfileSettingRouteKey) => () => {
-      if (key === ProfileSettingRouteKey.Logout) {
+    (key: Routes) => () => {
+      if (key === Routes.Logout) {
         logout();
       } else {
-        navigate(`/${ProfileSettingBaseKey}/${key}`);
+        setActive(key);
+        navigate(`${Routes.ProfileSetting}${key}`);
       }
     },
     [logout, navigate],
   );
 
-  return { handleMenuClick };
+  return { handleMenuClick, active };
 };

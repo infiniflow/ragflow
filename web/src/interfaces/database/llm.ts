@@ -37,5 +37,6 @@ export interface IMyLlmValue {
 export interface Llm {
   name: string;
   type: string;
+  status: '0' | '1';
   used_token: number;
 }

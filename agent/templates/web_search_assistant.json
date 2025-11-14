@@ -1,0 +1,875 @@
+
+{
+    "id": 16,
+    "title": {
+		"en": "WebSearch Assistant",
+		"de": "Websuche Assistent",
+		"zh": "网页搜索助手"},
+    "description": {
+		"en": "A chat assistant template that integrates information extracted from a knowledge base and web searches to respond to queries. Let's start by setting up your knowledge base in 'Retrieval'!",
+		"de": "Eine Chat-Assistenten-Vorlage, die Informationen aus einer Wissensdatenbank und Websuchen integriert, um auf Anfragen zu antworten. Beginnen wir mit der Einrichtung Ihrer Wissensdatenbank unter 'Retrieval'!",
+		"zh": "集成了从知识库和网络搜索中提取的信息回答用户问题。让我们从设置您的知识库开始检索！"},
+	"canvas_type": "Other",
+    "dsl": {
+		"components": {
+			"Agent:SmartSchoolsCross": {
+				"downstream": [
+					"Message:ShaggyRingsCrash"
+				],
+				"obj": {
+					"component_name": "Agent",
+					"params": {
+						"delay_after_error": 1,
+						"description": "",
+						"exception_comment": "",
+						"exception_default_value": "",
+						"exception_goto": [],
+						"exception_method": null,
+						"frequencyPenaltyEnabled": false,
+						"frequency_penalty": 0.7,
+						"llm_id": "deepseek-chat@DeepSeek",
+						"maxTokensEnabled": false,
+						"max_retries": 3,
+						"max_rounds": 1,
+						"max_tokens": 256,
+						"mcp": [],
+						"message_history_window_size": 12,
+						"outputs": {
+							"content": {
+								"type": "string",
+								"value": ""
+							}
+						},
+						"presencePenaltyEnabled": false,
+						"presence_penalty": 0.4,
+						"prompts": [
+							{
+								"content": "User's query:\n{sys.query}\n\nRefined question:\n{Agent:ThreePathsDecide@content}\n\nWeb search result:\n{Agent:WildGoatsRule@content}\n\nRetrieval result:\n{Agent:WildGoatsRule@content}",
+								"role": "user"
+							}
+						],
+						"sys_prompt": "Role: You are an Answer Organizer.\nTask: Generate the answer based on the provided content from: User's query, Refined question, Web search result, Retrieval result.\n\nRequirements:\n  - Answer should be in markdown format.\n - Answer should include all \n  - Do not make thing up when there's no relevant information to user's question. \n",
+						"temperature": 0.1,
+						"temperatureEnabled": true,
+						"tools": [],
+						"topPEnabled": false,
+						"top_p": 0.3,
+						"user_prompt": "",
+						"visual_files_var": ""
+					}
+				},
+				"upstream": [
+					"Agent:WildGoatsRule",
+					"Retrieval:WarmTimesRun"
+				]
+			},
+			"Agent:ThreePathsDecide": {
+				"downstream": [
+					"Agent:WildGoatsRule",
+					"Retrieval:WarmTimesRun"
+				],
+				"obj": {
+					"component_name": "Agent",
+					"params": {
+						"delay_after_error": 1,
+						"description": "",
+						"exception_comment": "",
+						"exception_default_value": "",
+						"exception_goto": [],
+						"exception_method": null,
+						"frequencyPenaltyEnabled": false,
+						"frequency_penalty": 0.7,
+						"llm_id": "deepseek-chat@DeepSeek",
+						"maxTokensEnabled": false,
+						"max_retries": 3,
+						"max_rounds": 1,
+						"max_tokens": 256,
+						"mcp": [],
+						"message_history_window_size": 12,
+						"outputs": {
+							"content": {
+								"type": "string",
+								"value": ""
+							}
+						},
+						"presencePenaltyEnabled": false,
+						"presence_penalty": 0.4,
+						"prompts": [
+							{
+								"content": "{sys.query}",
+								"role": "user"
+							}
+						],
+						"sys_prompt": "Role: You are a Question Refinement Agent. Rewrite ambiguous or incomplete user questions to align with knowledge base terminology using conversation history.\n\nExample：\n\nUser: What's RAGFlow?\nAssistant: RAGFlow is xxx.\n\nUser: How to deloy it?\nRefine it: How to deploy RAGFlow?",
+						"temperature": 0.1,
+						"temperatureEnabled": true,
+						"tools": [],
+						"topPEnabled": false,
+						"top_p": 0.3,
+						"user_prompt": "",
+						"visual_files_var": ""
+					}
+				},
+				"upstream": [
+					"begin"
+				]
+			},
+			"Agent:WildGoatsRule": {
+				"downstream": [
+					"Agent:SmartSchoolsCross"
+				],
+				"obj": {
+					"component_name": "Agent",
+					"params": {
+						"delay_after_error": 1,
+						"description": "",
+						"exception_comment": "",
+						"exception_default_value": "",
+						"exception_goto": [],
+						"exception_method": null,
+						"frequencyPenaltyEnabled": false,
+						"frequency_penalty": 0.7,
+						"llm_id": "deepseek-chat@DeepSeek",
+						"maxTokensEnabled": false,
+						"max_retries": 3,
+						"max_rounds": 2,
+						"max_tokens": 256,
+						"mcp": [],
+						"message_history_window_size": 12,
+						"outputs": {
+							"content": {
+								"type": "string",
+								"value": ""
+							}
+						},
+						"presencePenaltyEnabled": false,
+						"presence_penalty": 0.4,
+						"prompts": [
+							{
+								"content": "User's query:\n{sys.query}\n\nRefined question:\n{Agent:ThreePathsDecide@content}",
+								"role": "user"
+							}
+						],
+						"sys_prompt": "Role: You are a Search-Driven Information Agent that answers questions using web search results.\n\nWorkflow:\nKeyword Extraction:\nExtract exactly 3 keywords from the user's question.\n\nKeywords must be:\n✅ Most specific nouns/proper nouns (e.g., \"iPhone 15 Pro\" not \"phone\")\n✅ Core concepts (e.g., \"quantum entanglement\" not \"science thing\")\n✅ Unbiased (no added opinions)\nNever output keywords to users\n\nSearch & Answer:\nUse search tools (TavilySearch, TavilyExtract, Google, Bing, DuckDuckGo, Wikipedia)  with the 3 keywords to retrieve results.\nAnswer solely based on search findings, citing sources.\nIf results conflict, prioritize recent (.gov/.edu > forums)\n\nOutput Rules:\n✖️ Never show keywords in final answers\n✖️ Never guess if search yields no results\n✅ Always cite sources using [Source #] notation",
+						"temperature": 0.1,
+						"temperatureEnabled": true,
+						"tools": [
+							{
+								"component_name": "TavilySearch",
+								"name": "TavilySearch",
+								"params": {
+									"api_key": "",
+									"days": 7,
+									"exclude_domains": [],
+									"include_answer": false,
+									"include_domains": [],
+									"include_image_descriptions": false,
+									"include_images": false,
+									"include_raw_content": true,
+									"max_results": 5,
+									"outputs": {
+										"formalized_content": {
+											"type": "string",
+											"value": ""
+										},
+										"json": {
+											"type": "Array<Object>",
+											"value": []
+										}
+									},
+									"query": "sys.query",
+									"search_depth": "basic",
+									"topic": "general"
+								}
+							},
+							{
+								"component_name": "TavilyExtract",
+								"name": "TavilyExtract",
+								"params": {
+									"api_key": ""
+								}
+							},
+							{
+								"component_name": "Google",
+								"name": "Google",
+								"params": {
+									"api_key": "",
+									"country": "us",
+									"language": "en"
+								}
+							},
+							{
+								"component_name": "Bing",
+								"name": "Bing",
+								"params": {
+									"api_key": "YOUR_API_KEY (obtained from https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)",
+									"channel": "Webpages",
+									"country": "CH",
+									"language": "en",
+									"top_n": 10
+								}
+							},
+							{
+								"component_name": "DuckDuckGo",
+								"name": "DuckDuckGo",
+								"params": {
+									"channel": "text",
+									"top_n": 10
+								}
+							},
+							{
+								"component_name": "Wikipedia",
+								"name": "Wikipedia",
+								"params": {
+									"language": "en",
+									"top_n": 10
+								}
+							}
+						],
+						"topPEnabled": false,
+						"top_p": 0.3,
+						"user_prompt": "",
+						"visual_files_var": ""
+					}
+				},
+				"upstream": [
+					"Agent:ThreePathsDecide"
+				]
+			},
+			"Message:ShaggyRingsCrash": {
+				"downstream": [],
+				"obj": {
+					"component_name": "Message",
+					"params": {
+						"content": [
+							"{Agent:SmartSchoolsCross@content}"
+						]
+					}
+				},
+				"upstream": [
+					"Agent:SmartSchoolsCross"
+				]
+			},
+			"Retrieval:WarmTimesRun": {
+				"downstream": [
+					"Agent:SmartSchoolsCross"
+				],
+				"obj": {
+					"component_name": "Retrieval",
+					"params": {
+						"cross_languages": [],
+						"empty_response": "",
+						"kb_ids": [],
+						"keywords_similarity_weight": 0.7,
+						"outputs": {
+							"formalized_content": {
+								"type": "string",
+								"value": ""
+							}
+						},
+						"query": "Agent:ThreePathsDecide@content",
+						"rerank_id": "",
+						"similarity_threshold": 0.2,
+						"top_k": 1024,
+						"top_n": 8,
+						"use_kg": false
+					}
+				},
+				"upstream": [
+					"Agent:ThreePathsDecide"
+				]
+			},
+			"begin": {
+				"downstream": [
+					"Agent:ThreePathsDecide"
+				],
+				"obj": {
+					"component_name": "Begin",
+					"params": {
+						"enablePrologue": true,
+						"inputs": {},
+						"mode": "conversational",
+						"prologue": "Hi! I'm your web search assistant. What do you want to search today?"
+					}
+				},
+				"upstream": []
+			}
+		},
+		"globals": {
+			"sys.conversation_turns": 1,
+			"sys.files": [],
+			"sys.query": "你好",
+			"sys.user_id": "d6d98fd652f911f0a8fb047c16ec874f"
+		},
+		"graph": {
+			"edges": [
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__beginstart-Agent:ThreePathsDecideend",
+					"source": "begin",
+					"sourceHandle": "start",
+					"target": "Agent:ThreePathsDecide",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Agent:ThreePathsDecidestart-Agent:WildGoatsRuleend",
+					"source": "Agent:ThreePathsDecide",
+					"sourceHandle": "start",
+					"target": "Agent:WildGoatsRule",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Agent:ThreePathsDecidestart-Retrieval:WarmTimesRunend",
+					"source": "Agent:ThreePathsDecide",
+					"sourceHandle": "start",
+					"target": "Retrieval:WarmTimesRun",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Agent:WildGoatsRulestart-Agent:SmartSchoolsCrossend",
+					"source": "Agent:WildGoatsRule",
+					"sourceHandle": "start",
+					"target": "Agent:SmartSchoolsCross",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Agent:SmartSchoolsCrossstart-Message:ShaggyRingsCrashend",
+					"source": "Agent:SmartSchoolsCross",
+					"sourceHandle": "start",
+					"target": "Message:ShaggyRingsCrash",
+					"targetHandle": "end"
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Retrieval:WarmTimesRunstart-Agent:SmartSchoolsCrossend",
+					"markerEnd": "logo",
+					"source": "Retrieval:WarmTimesRun",
+					"sourceHandle": "start",
+					"style": {
+						"stroke": "rgba(91, 93, 106, 1)",
+						"strokeWidth": 1
+					},
+					"target": "Agent:SmartSchoolsCross",
+					"targetHandle": "end",
+					"type": "buttonEdge",
+					"zIndex": 1001
+				},
+				{
+					"data": {
+						"isHovered": false
+					},
+					"id": "xy-edge__Agent:WildGoatsRuletool-Tool:TrueCrewsTakeend",
+					"source": "Agent:WildGoatsRule",
+					"sourceHandle": "tool",
+					"target": "Tool:TrueCrewsTake",
+					"targetHandle": "end"
+				}
+			],
+			"nodes": [
+				{
+					"data": {
+						"form": {
+							"enablePrologue": true,
+							"inputs": {},
+							"mode": "conversational",
+							"prologue": "Hi! I'm your web search assistant. What do you want to search today?"
+						},
+						"label": "Begin",
+						"name": "begin"
+					},
+					"dragging": false,
+					"id": "begin",
+					"measured": {
+						"height": 48,
+						"width": 200
+					},
+					"position": {
+						"x": 32.79251060693639,
+						"y": 209.67921278359827
+					},
+					"selected": false,
+					"sourcePosition": "left",
+					"targetPosition": "right",
+					"type": "beginNode"
+				},
+				{
+					"data": {
+						"form": {
+							"delay_after_error": 1,
+							"description": "",
+							"exception_comment": "",
+							"exception_default_value": "",
+							"exception_goto": [],
+							"exception_method": null,
+							"frequencyPenaltyEnabled": false,
+							"frequency_penalty": 0.7,
+							"llm_id": "deepseek-chat@DeepSeek",
+							"maxTokensEnabled": false,
+							"max_retries": 3,
+							"max_rounds": 1,
+							"max_tokens": 256,
+							"mcp": [],
+							"message_history_window_size": 12,
+							"outputs": {
+								"content": {
+									"type": "string",
+									"value": ""
+								}
+							},
+							"presencePenaltyEnabled": false,
+							"presence_penalty": 0.4,
+							"prompts": [
+								{
+									"content": "{sys.query}",
+									"role": "user"
+								}
+							],
+							"sys_prompt": "Role: You are a Question Refinement Agent. Rewrite ambiguous or incomplete user questions to align with knowledge base terminology using conversation history.\n\nExample：\n\nUser: What's RAGFlow?\nAssistant: RAGFlow is xxx.\n\nUser: How to deloy it?\nRefine it: How to deploy RAGFlow?",
+							"temperature": 0.1,
+							"temperatureEnabled": true,
+							"tools": [],
+							"topPEnabled": false,
+							"top_p": 0.3,
+							"user_prompt": "",
+							"visual_files_var": ""
+						},
+						"label": "Agent",
+						"name": "Refine Question"
+					},
+					"dragging": false,
+					"id": "Agent:ThreePathsDecide",
+					"measured": {
+						"height": 84,
+						"width": 200
+					},
+					"position": {
+						"x": 309.1322126914739,
+						"y": 188.16985104226876
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "agentNode"
+				},
+				{
+					"data": {
+						"form": {
+							"delay_after_error": 1,
+							"description": "",
+							"exception_comment": "",
+							"exception_default_value": "",
+							"exception_goto": [],
+							"exception_method": null,
+							"frequencyPenaltyEnabled": false,
+							"frequency_penalty": 0.7,
+							"llm_id": "deepseek-chat@DeepSeek",
+							"maxTokensEnabled": false,
+							"max_retries": 3,
+							"max_rounds": 2,
+							"max_tokens": 256,
+							"mcp": [],
+							"message_history_window_size": 12,
+							"outputs": {
+								"content": {
+									"type": "string",
+									"value": ""
+								}
+							},
+							"presencePenaltyEnabled": false,
+							"presence_penalty": 0.4,
+							"prompts": [
+								{
+									"content": "User's query:\n{sys.query}\n\nRefined question:\n{Agent:ThreePathsDecide@content}",
+									"role": "user"
+								}
+							],
+							"sys_prompt": "Role: You are a Search-Driven Information Agent that answers questions using web search results.\n\nWorkflow:\nKeyword Extraction:\nExtract exactly 3 keywords from the user's question.\n\nKeywords must be:\n✅ Most specific nouns/proper nouns (e.g., \"iPhone 15 Pro\" not \"phone\")\n✅ Core concepts (e.g., \"quantum entanglement\" not \"science thing\")\n✅ Unbiased (no added opinions)\nNever output keywords to users\n\nSearch & Answer:\nUse search tools (TavilySearch, TavilyExtract, Google, Bing, DuckDuckGo, Wikipedia)  with the 3 keywords to retrieve results.\nAnswer solely based on search findings, citing sources.\nIf results conflict, prioritize recent (.gov/.edu > forums)\n\nOutput Rules:\n✖️ Never show keywords in final answers\n✖️ Never guess if search yields no results\n✅ Always cite sources using [Source #] notation",
+							"temperature": 0.1,
+							"temperatureEnabled": true,
+							"tools": [
+								{
+									"component_name": "TavilySearch",
+									"name": "TavilySearch",
+									"params": {
+										"api_key": "",
+										"days": 7,
+										"exclude_domains": [],
+										"include_answer": false,
+										"include_domains": [],
+										"include_image_descriptions": false,
+										"include_images": false,
+										"include_raw_content": true,
+										"max_results": 5,
+										"outputs": {
+											"formalized_content": {
+												"type": "string",
+												"value": ""
+											},
+											"json": {
+												"type": "Array<Object>",
+												"value": []
+											}
+										},
+										"query": "sys.query",
+										"search_depth": "basic",
+										"topic": "general"
+									}
+								},
+								{
+									"component_name": "TavilyExtract",
+									"name": "TavilyExtract",
+									"params": {
+										"api_key": ""
+									}
+								},
+								{
+									"component_name": "Google",
+									"name": "Google",
+									"params": {
+										"api_key": "",
+										"country": "us",
+										"language": "en"
+									}
+								},
+								{
+									"component_name": "Bing",
+									"name": "Bing",
+									"params": {
+										"api_key": "YOUR_API_KEY (obtained from https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)",
+										"channel": "Webpages",
+										"country": "CH",
+										"language": "en",
+										"top_n": 10
+									}
+								},
+								{
+									"component_name": "DuckDuckGo",
+									"name": "DuckDuckGo",
+									"params": {
+										"channel": "text",
+										"top_n": 10
+									}
+								},
+								{
+									"component_name": "Wikipedia",
+									"name": "Wikipedia",
+									"params": {
+										"language": "en",
+										"top_n": 10
+									}
+								}
+							],
+							"topPEnabled": false,
+							"top_p": 0.3,
+							"user_prompt": "",
+							"visual_files_var": ""
+						},
+						"label": "Agent",
+						"name": "Search Agent"
+					},
+					"dragging": false,
+					"id": "Agent:WildGoatsRule",
+					"measured": {
+						"height": 84,
+						"width": 200
+					},
+					"position": {
+						"x": 678.5892767651895,
+						"y": 2.074237779456759
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "agentNode"
+				},
+				{
+					"data": {
+						"form": {
+							"cross_languages": [],
+							"empty_response": "",
+							"kb_ids": [],
+							"keywords_similarity_weight": 0.7,
+							"outputs": {
+								"formalized_content": {
+									"type": "string",
+									"value": ""
+								}
+							},
+							"query": "Agent:ThreePathsDecide@content",
+							"rerank_id": "",
+							"similarity_threshold": 0.2,
+							"top_k": 1024,
+							"top_n": 8,
+							"use_kg": false
+						},
+						"label": "Retrieval",
+						"name": "Retrieval from knowledge bases "
+					},
+					"dragging": false,
+					"id": "Retrieval:WarmTimesRun",
+					"measured": {
+						"height": 56,
+						"width": 200
+					},
+					"position": {
+						"x": 689.0595178434597,
+						"y": 499.2340890704343
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "retrievalNode"
+				},
+				{
+					"data": {
+						"form": {
+							"delay_after_error": 1,
+							"description": "",
+							"exception_comment": "",
+							"exception_default_value": "",
+							"exception_goto": [],
+							"exception_method": null,
+							"frequencyPenaltyEnabled": false,
+							"frequency_penalty": 0.7,
+							"llm_id": "deepseek-chat@DeepSeek",
+							"maxTokensEnabled": false,
+							"max_retries": 3,
+							"max_rounds": 1,
+							"max_tokens": 256,
+							"mcp": [],
+							"message_history_window_size": 12,
+							"outputs": {
+								"content": {
+									"type": "string",
+									"value": ""
+								}
+							},
+							"presencePenaltyEnabled": false,
+							"presence_penalty": 0.4,
+							"prompts": [
+								{
+									"content": "User's query:\n{sys.query}\n\nRefined question:\n{Agent:ThreePathsDecide@content}\n\nWeb search result:\n{Agent:WildGoatsRule@content}\n\nRetrieval result:\n{Agent:WildGoatsRule@content}",
+									"role": "user"
+								}
+							],
+							"sys_prompt": "Role: You are an Answer Organizer.\nTask: Generate the answer based on the provided content from: User's query, Refined question, Web search result, Retrieval result.\n\nRequirements:\n  - Answer should be in markdown format.\n - Answer should include all \n  - Do not make thing up when there's no relevant information to user's question. \n",
+							"temperature": 0.1,
+							"temperatureEnabled": true,
+							"tools": [],
+							"topPEnabled": false,
+							"top_p": 0.3,
+							"user_prompt": "",
+							"visual_files_var": ""
+						},
+						"label": "Agent",
+						"name": "Answer Organizer"
+					},
+					"dragging": false,
+					"id": "Agent:SmartSchoolsCross",
+					"measured": {
+						"height": 84,
+						"width": 200
+					},
+					"position": {
+						"x": 1134.5321493898284,
+						"y": 221.46972754101765
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "agentNode"
+				},
+				{
+					"data": {
+						"form": {
+							"content": [
+								"{Agent:SmartSchoolsCross@content}"
+							]
+						},
+						"label": "Message",
+						"name": "Answer"
+					},
+					"dragging": false,
+					"id": "Message:ShaggyRingsCrash",
+					"measured": {
+						"height": 56,
+						"width": 200
+					},
+					"position": {
+						"x": 1437.758553651028,
+						"y": 235.45081267288185
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "messageNode"
+				},
+				{
+					"data": {
+						"form": {
+							"text": "This Agent rewrites your question for better search & retrieval results."
+						},
+						"label": "Note",
+						"name": "Note: Refine Question"
+					},
+					"dragHandle": ".note-drag-handle",
+					"id": "Note:BetterCupsBow",
+					"measured": {
+						"height": 136,
+						"width": 244
+					},
+					"position": {
+						"x": 270,
+						"y": 390
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "noteNode"
+				},
+				{
+					"data": {
+						"form": {
+							"text": "This Agent answers questions using web search results."
+						},
+						"label": "Note",
+						"name": "Note: Search Agent"
+					},
+					"dragHandle": ".note-drag-handle",
+					"dragging": false,
+					"id": "Note:OddGoatsBeg",
+					"measured": {
+						"height": 136,
+						"width": 244
+					},
+					"position": {
+						"x": 689.3401860180043,
+						"y": -204.46057070562227
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "noteNode"
+				},
+				{
+					"data": {
+						"form": {
+							"text": "This Agents generates the answer based on the provided content from: User's query, Refined question, Web search result, Retrieval result."
+						},
+						"label": "Note",
+						"name": "Note: Answer Organizer"
+					},
+					"dragHandle": ".note-drag-handle",
+					"dragging": false,
+					"height": 188,
+					"id": "Note:SlowBottlesHope",
+					"measured": {
+						"height": 188,
+						"width": 251
+					},
+					"position": {
+						"x": 1152.1929528629184,
+						"y": 375.08305219772546
+					},
+					"resizing": false,
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "noteNode",
+					"width": 251
+				},
+				{
+					"data": {
+						"form": {
+							"description": "This is an agent for a specific task.",
+							"user_prompt": "This is the order you need to send to the agent."
+						},
+						"label": "Tool",
+						"name": "flow.tool_0"
+					},
+					"dragging": false,
+					"id": "Tool:TrueCrewsTake",
+					"measured": {
+						"height": 228,
+						"width": 200
+					},
+					"position": {
+						"x": 642.9703031510875,
+						"y": 144.80253344921545
+					},
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "toolNode"
+				},
+				{
+					"data": {
+						"form": {
+							"text": "This is a chat assistant template that integrates information extracted from a knowledge base and web searches to respond to queries. Let's start by setting up your knowledge base in 'Retrieval'!"
+						},
+						"label": "Note",
+						"name": "Workflow Overall Description"
+					},
+					"dragHandle": ".note-drag-handle",
+					"dragging": false,
+					"height": 163,
+					"id": "Note:BumpySteaksPump",
+					"measured": {
+						"height": 163,
+						"width": 389
+					},
+					"position": {
+						"x": -36.59148337976953,
+						"y": 1.488564577528809
+					},
+					"resizing": false,
+					"selected": false,
+					"sourcePosition": "right",
+					"targetPosition": "left",
+					"type": "noteNode",
+					"width": 389
+				}
+			]
+		},
+		"history": [
+			[
+				"user",
+				"你好"
+			]
+		],
+		"memory": [],
+		"messages": [],
+		"path": [
+			"begin",
+			"Agent:ThreePathsDecide"
+		],
+		"retrieval": [
+			{
+				"chunks": [],
+				"doc_aggs": []
+			},
+			{
+				"chunks": {},
+				"doc_aggs": {}
+			}
+		],
+		"task_id": "183442fc6dd811f091b1047c16ec874f"
+	},
+    "avatar": "data:image/png;base64,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"
+}

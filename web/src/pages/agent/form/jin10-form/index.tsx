@@ -1,6 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Input, Select } from 'antd';
 import { useMemo } from 'react';
+import { IOperatorForm } from '../../interface';
 import {
   Jin10CalendarDatashapeOptions,
   Jin10CalendarTypeOptions,
@@ -8,8 +9,7 @@ import {
   Jin10SymbolsDatatypeOptions,
   Jin10SymbolsTypeOptions,
   Jin10TypeOptions,
-} from '../../constant';
-import { IOperatorForm } from '../../interface';
+} from '../../options';
 import DynamicInputVariable from '../components/dynamic-input-variable';
 
 const Jin10Form = ({ onValuesChange, form, node }: IOperatorForm) => {

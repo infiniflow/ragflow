@@ -7,12 +7,13 @@ zenithClient:
   skipAuth: false
 
 
-# RAGflow values
+# Config overrides for the underlying RAGFlow chart
 ragflow:
   env:
-    RAGFLOW_IMAGE: infiniflow/ragflow:v0.19.1
+    # Elasticsearch seems more stable than other options for now
     DOC_ENGINE: elasticsearch
 
+  # Clean up redis volumes when Azimuth app is uninstalled
   redis:
     persistence:
       retentionPolicy:

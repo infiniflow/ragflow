@@ -6,11 +6,13 @@ set -e
 # Usage and command-line argument parsing
 # -----------------------------------------------------------------------------
 function usage() {
-    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
+    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--disable-datasync] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
     echo
     echo "  --disable-webserver             Disables the web server (nginx + ragflow_server)."
     echo "  --disable-taskexecutor          Disables task executor workers."
+    echo "  --disable-datasync              Disables synchronization of datasource workers."
     echo "  --enable-mcpserver              Enables the MCP server."
+    echo "  --enable-adminserver            Enables the Admin server."
     echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
     echo "  --consumer-no-end=<num>         End range for consumers (if using range-based)."
     echo "  --workers=<num>                 Number of task executors to run (if range is not used)."
@@ -21,12 +23,15 @@ function usage() {
     echo "  $0 --disable-webserver --consumer-no-beg=0 --consumer-no-end=5"
     echo "  $0 --disable-webserver --workers=2 --host-id=myhost123"
     echo "  $0 --enable-mcpserver"
+    echo "  $0 --enable-adminserver"
     exit 1
 }
 
 ENABLE_WEBSERVER=1 # Default to enable web server
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
+ENABLE_DATASYNC=1
 ENABLE_MCP_SERVER=0
+ENABLE_ADMIN_SERVER=0 # Default close admin server
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
@@ -37,6 +42,9 @@ MCP_BASE_URL="http://127.0.0.1:9380"
 MCP_SCRIPT_PATH="/ragflow/mcp/server/server.py"
 MCP_MODE="self-host"
 MCP_HOST_API_KEY=""
+MCP_TRANSPORT_SSE_FLAG="--transport-sse-enabled"
+MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--transport-streamable-http-enabled"
+MCP_JSON_RESPONSE_FLAG="--json-response"
 
 # -----------------------------------------------------------------------------
 # Host ID logic:
@@ -63,8 +71,16 @@ for arg in "$@"; do
       ENABLE_TASKEXECUTOR=0
       shift
       ;;
+    --disable-datasyn)
+      ENABLE_DATASYNC=0
+      shift
+      ;;
     --enable-mcpserver)
       ENABLE_MCP_SERVER=1
+      shift
+      ;;
+    --enable-adminserver)
+      ENABLE_ADMIN_SERVER=1
       shift
       ;;
     --mcp-host=*)
@@ -89,6 +105,18 @@ for arg in "$@"; do
       ;;
     --mcp-script-path=*)
       MCP_SCRIPT_PATH="${arg#*=}"
+      shift
+      ;;
+    --no-transport-sse-enabled)
+      MCP_TRANSPORT_SSE_FLAG="--no-transport-sse-enabled"
+      shift
+      ;;
+    --no-transport-streamable-http-enabled)
+      MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--no-transport-streamable-http-enabled"
+      shift
+      ;;
+    --no-json-response)
+      MCP_JSON_RESPONSE_FLAG="--no-json-response"
       shift
       ;;
     --consumer-no-beg=*)
@@ -139,7 +167,9 @@ function task_exe() {
     JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
     while true; do
         LD_PRELOAD="$JEMALLOC_PATH" \
-        "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"
+        "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"  &
+        wait;
+        sleep 1;
     done
 }
 
@@ -148,14 +178,61 @@ function start_mcp_server() {
     "$PY" "${MCP_SCRIPT_PATH}" \
         --host="${MCP_HOST}" \
         --port="${MCP_PORT}" \
-        --base_url="${MCP_BASE_URL}" \
+        --base-url="${MCP_BASE_URL}" \
         --mode="${MCP_MODE}" \
-        --api_key="${MCP_HOST_API_KEY}" &
+        --api-key="${MCP_HOST_API_KEY}" \
+        "${MCP_TRANSPORT_SSE_FLAG}" \
+        "${MCP_TRANSPORT_STREAMABLE_HTTP_FLAG}" \
+        "${MCP_JSON_RESPONSE_FLAG}" &
 }
 
+function ensure_docling() {
+    [[ "${USE_DOCLING}" == "true" ]] || { echo "[docling] disabled by USE_DOCLING"; return 0; }
+    python3 -c 'import pip' >/dev/null 2>&1 || python3 -m ensurepip --upgrade || true
+    DOCLING_PIN="${DOCLING_VERSION:-==2.58.0}"
+    python3 -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
+      || python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
+}
+
+function ensure_mineru() {
+    [[ "${USE_MINERU}" == "true" ]] || { echo "[mineru] disabled by USE_MINERU"; return 0; }
+
+    export HUGGINGFACE_HUB_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+
+    local default_prefix="/ragflow/uv_tools"
+    local venv_dir="${default_prefix}/.venv"
+    local exe="${MINERU_EXECUTABLE:-${venv_dir}/bin/mineru}"
+
+    if [[ -x "${exe}" ]]; then
+      echo "[mineru] found: ${exe}"
+      export MINERU_EXECUTABLE="${exe}"
+      return 0
+    fi
+
+    echo "[mineru] not found, bootstrapping with uv ..."
+
+    (
+        set -e
+        mkdir -p "${default_prefix}"
+        cd "${default_prefix}"
+        [[ -d "${venv_dir}" ]] || uv venv "${venv_dir}"
+
+        source "${venv_dir}/bin/activate"
+        uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple --extra-index-url https://pypi.org/simple
+        deactivate
+    )
+    export MINERU_EXECUTABLE="${exe}"
+    if ! "${MINERU_EXECUTABLE}" --help >/dev/null 2>&1; then
+      echo "[mineru] installation failed: ${MINERU_EXECUTABLE} not working" >&2
+      return 1
+    fi
+    echo "[mineru] installed: ${MINERU_EXECUTABLE}"
+}
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
+ensure_docling
+ensure_mineru
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
@@ -163,14 +240,34 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     echo "Starting ragflow_server..."
     while true; do
-        "$PY" api/ragflow_server.py
+        "$PY" api/ragflow_server.py &
+        wait;
+        sleep 1;
     done &
 fi
 
+if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
+    echo "Starting data sync..."
+    while true; do
+        "$PY" rag/svr/sync_data_source.py &
+        wait;
+        sleep 1;
+    done &
+fi
+
+if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
+    echo "Starting admin_server..."
+    while true; do
+        "$PY" admin/server/admin_server.py &
+        wait;
+        sleep 1;
+    done &
+fi
 
 if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
     start_mcp_server
 fi
+
 
 if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
     if [[ "${CONSUMER_NO_END}" -gt "${CONSUMER_NO_BEG}" ]]; then

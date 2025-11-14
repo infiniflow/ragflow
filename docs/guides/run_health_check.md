@@ -31,3 +31,79 @@ You can click on a specific 30-second time interval to view the details of compl
 ![done_tasks](https://github.com/user-attachments/assets/49b25ec4-03af-48cf-b2e5-c892f6eaa261)
 
 ![done_vs_failed](https://github.com/user-attachments/assets/eaa928d0-a31c-4072-adea-046091e04599)
+
+## API Health Check
+
+In addition to checking the system dependencies from the **avatar > System** page in the UI, you can directly query the backend health check endpoint:
+
+```bash
+http://IP_OF_YOUR_MACHINE/v1/system/healthz
+```
+
+Here `<port>` refers to the actual port of your backend service (e.g., `7897`, `9222`, etc.).
+
+Key points:
+- **No login required** (no `@login_required` decorator)
+- Returns results in JSON format
+- If all dependencies are healthy → HTTP **200 OK**
+- If any dependency fails → HTTP **500 Internal Server Error**
+
+### Example 1: All services healthy (HTTP 200)
+
+```bash
+http://127.0.0.1/v1/system/healthz
+```
+
+Response:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 120
+
+{
+  "db": "ok",
+  "redis": "ok",
+  "doc_engine": "ok",
+  "storage": "ok",
+  "status": "ok"
+}
+```
+
+Explanation:
+- Database (MySQL/Postgres), Redis, document engine (Elasticsearch/Infinity), and object storage (MinIO) are all healthy.
+- The `status` field returns `"ok"`.
+
+### Example 2: One service unhealthy (HTTP 500)
+
+For example, if Redis is down:
+
+Response:
+
+```http
+HTTP/1.1 500 INTERNAL SERVER ERROR
+Content-Type: application/json
+Content-Length: 300
+
+{
+  "db": "ok",
+  "redis": "nok",
+  "doc_engine": "ok",
+  "storage": "ok",
+  "status": "nok",
+  "_meta": {
+    "redis": {
+      "elapsed": "5.2",
+      "error": "Lost connection!"
+    }
+  }
+}
+```
+
+Explanation:
+- `redis` is marked as `"nok"`, with detailed error info under `_meta.redis.error`.
+- The overall `status` is `"nok"`, so the endpoint returns 500.
+
+---
+
+This endpoint allows you to monitor RAGFlow’s core dependencies programmatically in scripts or external monitoring systems, without relying on the frontend UI.

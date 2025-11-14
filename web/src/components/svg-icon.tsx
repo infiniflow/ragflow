@@ -1,9 +1,12 @@
-import { IconMap } from '@/constants/llm';
+import { IconMap, LLMFactory } from '@/constants/llm';
 import { cn } from '@/lib/utils';
 import Icon, { UserOutlined } from '@ant-design/icons';
 import { IconComponentProps } from '@ant-design/icons/lib/components/Icon';
 import { Avatar } from 'antd';
 import { AvatarSize } from 'antd/es/avatar/AvatarContext';
+import { useMemo } from 'react';
+import { IconFontFill } from './icon-font';
+import { useIsDarkTheme } from './theme-provider';
 
 const importAll = (requireContext: __WebpackModuleApi.RequireContext) => {
   const list = requireContext.keys().map((key) => {
@@ -60,11 +63,77 @@ export const LlmIcon = ({
   size?: AvatarSize;
   imgClass?: string;
 }) => {
-  const icon = IconMap[name as keyof typeof IconMap];
+  const isDark = useIsDarkTheme();
+  const themeIcons = [
+    LLMFactory.FishAudio,
+    LLMFactory.TogetherAI,
+    LLMFactory.Meituan,
+    LLMFactory.Longcat,
+  ];
+  let icon = useMemo(() => {
+    const icontemp = IconMap[name as keyof typeof IconMap];
+    if (themeIcons.includes(name as LLMFactory)) {
+      if (isDark) {
+        return icontemp + '-dark';
+      } else {
+        return icontemp + '-bright';
+      }
+    }
+    return icontemp;
+  }, [name, isDark]);
+
+  const svgIcons = [
+    LLMFactory.LocalAI,
+    // LLMFactory.VolcEngine,
+    // LLMFactory.MiniMax,
+    LLMFactory.Gemini,
+    LLMFactory.StepFun,
+    // LLMFactory.DeerAPI,
+  ];
+  if (svgIcons.includes(name as LLMFactory)) {
+    return (
+      <SvgIcon
+        name={`llm/${icon}`}
+        width={width}
+        height={height}
+        imgClass={imgClass}
+      ></SvgIcon>
+    );
+  }
+
+  return icon ? (
+    <IconFontFill
+      name={icon}
+      className={cn('size-8 flex items-center justify-center', imgClass)}
+    />
+  ) : (
+    <IconFontFill
+      name={'moxing-default'}
+      className={cn('size-8 flex items-center justify-center', imgClass)}
+    />
+    // <Avatar shape="square" size={size} icon={<UserOutlined />} />
+  );
+};
+
+export const HomeIcon = ({
+  name,
+  height = '32',
+  width = '32',
+  size = 'large',
+  imgClass,
+}: {
+  name: string;
+  height?: string;
+  width?: string;
+  size?: AvatarSize;
+  imgClass?: string;
+}) => {
+  const isDark = useIsDarkTheme();
+  const icon = isDark ? name : `${name}-bri`;
 
   return icon ? (
     <SvgIcon
-      name={`llm/${icon}`}
+      name={`home-icon/${icon}`}
       width={width}
       height={height}
       imgClass={imgClass}

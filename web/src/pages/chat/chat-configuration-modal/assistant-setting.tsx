@@ -8,7 +8,9 @@ import classNames from 'classnames';
 import { useCallback } from 'react';
 import { ISegmentedContentProps } from '../interface';
 
+import { DatasetMetadata } from '@/constants/chat';
 import styles from './index.less';
+import { MetadataFilterConditions } from './metadata-filter-conditions';
 
 const emptyResponseField = ['prompt_config', 'empty_response'];
 
@@ -19,6 +21,18 @@ const AssistantSetting = ({
 }: ISegmentedContentProps) => {
   const { t } = useTranslate('chat');
   const { data } = useFetchTenantInfo(true);
+
+  const MetadataOptions = Object.values(DatasetMetadata).map((x) => {
+    return {
+      value: x,
+      label: t(`meta.${x}`),
+    };
+  });
+
+  const metadata = Form.useWatch(['meta_data_filter', 'method'], form);
+  const kbIds = Form.useWatch(['kb_ids'], form);
+
+  const hasKnowledge = Array.isArray(kbIds) && kbIds.length > 0;
 
   const handleChange = useCallback(() => {
     const kbIds = form.getFieldValue('kb_ids');
@@ -153,6 +167,25 @@ const AssistantSetting = ({
         required={false}
         onChange={handleChange}
       ></KnowledgeBaseItem>
+      {hasKnowledge && (
+        <Form.Item
+          label={t('metadata')}
+          name={['meta_data_filter', 'method']}
+          tooltip={t('metadataTip')}
+          initialValue={DatasetMetadata.Disabled}
+        >
+          <Select options={MetadataOptions} />
+        </Form.Item>
+      )}
+      {hasKnowledge && metadata === DatasetMetadata.Manual && (
+        <Form.Item
+          label={t('conditions')}
+          tooltip={t('ttsTip')}
+          initialValue={false}
+        >
+          <MetadataFilterConditions kbIds={kbIds}></MetadataFilterConditions>
+        </Form.Item>
+      )}
     </section>
   );
 };

@@ -61,9 +61,7 @@ export function useBulkOperateDataset({
 
   const onChangeStatus = useCallback(
     (enabled: boolean) => {
-      selectedRowKeys.forEach((id) => {
-        setDocumentStatus({ status: enabled, documentId: id });
-      });
+      setDocumentStatus({ status: enabled, documentId: selectedRowKeys });
     },
     [selectedRowKeys, setDocumentStatus],
   );

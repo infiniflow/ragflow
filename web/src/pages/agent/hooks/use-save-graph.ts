@@ -3,26 +3,30 @@ import {
   useResetAgent,
   useSetAgent,
 } from '@/hooks/use-agent-request';
+import { GlobalVariableType } from '@/interfaces/database/agent';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { formatDate } from '@/utils/date';
 import { useDebounceEffect } from 'ahooks';
-import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'umi';
 import useGraphStore from '../store';
 import { useBuildDslData } from './use-build-dsl';
 
-export const useSaveGraph = () => {
+export const useSaveGraph = (showMessage: boolean = true) => {
   const { data } = useFetchAgent();
-  const { setAgent, loading } = useSetAgent();
+  const { setAgent, loading } = useSetAgent(showMessage);
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
 
   const saveGraph = useCallback(
-    async (currentNodes?: RAGFlowNodeType[]) => {
+    async (
+      currentNodes?: RAGFlowNodeType[],
+      otherParam?: { gobalVariables: Record<string, GlobalVariableType> },
+    ) => {
       return setAgent({
         id,
         title: data.title,
-        dsl: buildDslData(currentNodes),
+        dsl: buildDslData(currentNodes, otherParam),
       });
     },
     [setAgent, data, id, buildDslData],
@@ -57,11 +61,11 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   const [time, setTime] = useState<string>();
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
-  const { saveGraph } = useSaveGraph();
+  const { saveGraph } = useSaveGraph(false);
   const { data: flowDetail } = useFetchAgent();
 
   const setSaveTime = useCallback((updateTime: number) => {
-    setTime(dayjs(updateTime).format('YYYY-MM-DD HH:mm:ss'));
+    setTime(formatDate(updateTime));
   }, []);
 
   useEffect(() => {
@@ -77,7 +81,7 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
 
   useDebounceEffect(
     () => {
-      // saveAgent();
+      saveAgent();
     },
     [nodes, edges],
     {

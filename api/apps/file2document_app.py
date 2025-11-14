@@ -14,6 +14,8 @@
 #  limitations under the License
 #
 
+from pathlib import Path
+
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 
@@ -21,10 +23,10 @@ from flask import request
 from flask_login import login_required, current_user
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
+from common.constants import RetCode
 from api.db import FileType
 from api.db.services.document_service import DocumentService
-from api import settings
 from api.utils.api_utils import get_json_result
 
 
@@ -82,6 +84,7 @@ def convert():
                         "created_by": current_user.id,
                         "type": file.type,
                         "name": file.name,
+                        "suffix": Path(file.name).suffix.lstrip("."),
                         "location": file.location,
                         "size": file.size
                     })
@@ -105,7 +108,7 @@ def rm():
     file_ids = req["file_ids"]
     if not file_ids:
         return get_json_result(
-            data=False, message='Lack of "Files ID"', code=settings.RetCode.ARGUMENT_ERROR)
+            data=False, message='Lack of "Files ID"', code=RetCode.ARGUMENT_ERROR)
     try:
         for file_id in file_ids:
             informs = File2DocumentService.get_by_file_id(file_id)

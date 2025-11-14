@@ -13,7 +13,7 @@ RAPTOR (Recursive Abstractive Processing for Tree Organized Retrieval) is an enh
 
 ![document_clustering](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/document_clustering_as_preprocessing.jpg)
 
-Our tests with this new approach demonstrate state-of-the-art (SOTA) results on question-answering tasks requiring complex, multi-step reasoning. By combining RAPTOR retrieval with our built-in chunking methods and/or other retrieval-augmented generation (RAG) approaches, you can further improve your question-answering accuracy.
+Our tests with this new approach demonstrate state-of-the-art (SOTA) results on question-answering tasks requiring complex, multistep reasoning. By combining RAPTOR retrieval with our built-in chunking methods and/or other retrieval-augmented generation (RAG) approaches, you can further improve your question-answering accuracy.
 
 :::danger WARNING
 Enabling RAPTOR requires significant memory, computational resources, and tokens.
@@ -29,7 +29,7 @@ The recursive clustering and summarization capture a broad understanding (by the
 
 ## Scenarios
 
-For multi-hop question-answering tasks involving complex, multi-step reasoning, a semantic gap often exists between the question and its answer. As a result, searching with the question often fails to retrieve the relevant chunks that contribute to the correct answer. RAPTOR addresses this challenge by providing the chat model with richer and more context-aware and relevant chunks to summarize, enabling a holistic understanding without losing granular details.
+For multi-hop question-answering tasks involving complex, multistep reasoning, a semantic gap often exists between the question and its answer. As a result, searching with the question often fails to retrieve the relevant chunks that contribute to the correct answer. RAPTOR addresses this challenge by providing the chat model with richer and more context-aware and relevant chunks to summarize, enabling a holistic understanding without losing granular details.
 
 :::tip NOTE
 Knowledge graphs can also be used for multi-hop question-answering tasks. See [Construct knowledge graph](./construct_knowledge_graph.md) for details. You may use either approach or both, but ensure you understand the memory, computational, and token costs involved.
@@ -39,11 +39,11 @@ Knowledge graphs can also be used for multi-hop question-answering tasks. See [C
 
 The system's default chat model is used to summarize clustered content. Before proceeding, ensure that you have a chat model properly configured:
 
-![Image](https://github.com/user-attachments/assets/6bc34279-68c3-4d99-8d20-b7bd1dafc1c1)
+![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpg)
 
 ## Configurations
 
-The RAPTOR feature is disabled by default. To enable it, manually switch on the **Use RAPTOR to enhance retrieval** toggle on your knowledge base's **Configuration** page.
+The RAPTOR feature is disabled by default. To enable it, manually switch on the **Use RAPTOR to enhance retrieval** toggle on your dataset's **Configuration** page.
 
 ### Prompt
 
@@ -72,3 +72,22 @@ The maximum number of clusters to create. Defaults to 64, with a maximum limit o
 ### Random seed
 
 A random seed. Click **+** to change the seed value.
+
+## Quickstart
+
+1. Navigate to the **Configuration** page of your dataset and update:
+   
+   - Prompt: *Optional* - We recommend that you keep it as-is until you understand the mechanism behind.
+   - Max token: *Optional*
+   - Threshold: *Optional*
+   - Max cluster: *Optional*
+
+2. Navigate to the **Files** page of your dataset, click the **Generate** button on the top right corner of the page, then select **RAPTOR** from the dropdown to initiate the RAPTOR build process.
+
+   *You can click the pause button in the dropdown to halt the build process when necessary.*
+
+3. Go back to the **Configuration** page:  
+   
+   *The **RAPTOR** field changes from `Not generated` to `Generated at a specific timestamp` when a RAPTOR hierarchical tree structure is generated. You can delete it by clicking the recycle bin button to the right of the field.*
+
+4. Once a RAPTOR hierarchical tree structure is generated, your chat assistant and **Retrieval** agent component will use it for retrieval as a default.

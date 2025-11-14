@@ -7,18 +7,23 @@ Reference:
 
 import logging
 import json
+import os
 import re
 from typing import Callable
 from dataclasses import dataclass
 import networkx as nx
 import pandas as pd
+
+from api.db.services.task_service import has_canceled
+from common.exceptions import TaskCanceledException
+from common.connection_utils import timeout
 from graphrag.general import leiden
 from graphrag.general.community_report_prompt import COMMUNITY_REPORT_PROMPT
 from graphrag.general.extractor import Extractor
 from graphrag.general.leiden import add_community_info2graph
 from rag.llm.chat_model import Base as CompletionLLM
 from graphrag.utils import perform_variable_replacements, dict_has_keys_with_types, chat_limiter
-from rag.utils import num_tokens_from_string
+from common.token_utils import num_tokens_from_string
 import trio
 
 
@@ -48,7 +53,8 @@ class CommunityReportsExtractor(Extractor):
         self._extraction_prompt = COMMUNITY_REPORT_PROMPT
         self._max_report_length = max_report_length or 1500
 
-    async def __call__(self, graph: nx.Graph, callback: Callable | None = None):
+    async def __call__(self, graph: nx.Graph, callback: Callable | None = None, task_id: str = ""):
+        enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
         for node_degree in graph.degree:
             graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
 
@@ -57,8 +63,14 @@ class CommunityReportsExtractor(Extractor):
         res_str = []
         res_dict = []
         over, token_count = 0, 0
+        @timeout(120)
         async def extract_community_report(community):
             nonlocal res_str, res_dict, over, token_count
+            if task_id:
+                if has_canceled(task_id):
+                    logging.info(f"Task {task_id} cancelled during community report extraction.")
+                    raise TaskCanceledException(f"Task {task_id} was cancelled")
+
             cm_id, cm = community
             weight = cm["weight"]
             ents = cm["nodes"]
@@ -87,11 +99,13 @@ class CommunityReportsExtractor(Extractor):
                 "relation_df": rela_df.to_csv(index_label="id")
             }
             text = perform_variable_replacements(self._extraction_prompt, variables=prompt_variables)
-            gen_conf = {"temperature": 0.3}
             async with chat_limiter:
                 try:
-                    with trio.move_on_after(120) as cancel_scope:
-                        response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
+                    with trio.move_on_after(180 if enable_timeout_assertion else 1000000000) as cancel_scope:
+                        if task_id and has_canceled(task_id):
+                            logging.info(f"Task {task_id} cancelled before LLM call.")
+                            raise TaskCanceledException(f"Task {task_id} was cancelled")
+                        response = await trio.to_thread.run_sync( self._chat, text, [{"role": "user", "content": "Output:"}], {}, task_id)
                     if cancel_scope.cancelled_caught:
                         logging.warning("extract_community_report._chat timeout, skipping...")
                         return
@@ -132,6 +146,9 @@ class CommunityReportsExtractor(Extractor):
             for level, comm in communities.items():
                 logging.info(f"Level {level}: Community: {len(comm.keys())}")
                 for community in comm.items():
+                    if task_id and has_canceled(task_id):
+                        logging.info(f"Task {task_id} cancelled before community processing.")
+                        raise TaskCanceledException(f"Task {task_id} was cancelled")
                     nursery.start_soon(extract_community_report, community)
         if callback:
             callback(msg=f"Community reports done in {trio.current_time() - st:.2f}s, used tokens: {token_count}")

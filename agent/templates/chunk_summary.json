@@ -1,0 +1,495 @@
+{
+    "id": 24,
+    "title": {
+        "en": "Chunk Summary",
+        "de": "Segmentzusammenfassung",
+        "zh": "总结切片"
+    },
+    "description": {
+        "en": "This template uses an LLM to generate chunk summaries for building text and vector indexes. During retrieval, summaries enhance matching, and the original chunks are returned as results.",
+        "de": "Diese Vorlage nutzt ein LLM zur Generierung von Segmentzusammenfassungen für den Aufbau von Text- und Vektorindizes. Bei der Abfrage verbessern die Zusammenfassungen die Übereinstimmung, während die ursprünglichen Segmente als Ergebnisse zurückgegeben werden.",
+        "zh": "此模板利用大模型生成切片摘要，并据此建立全文索引与向量。检索时以摘要提升匹配效果，最终召回对应的原文切片。"
+    },
+    "canvas_type": "Ingestion Pipeline",
+    "canvas_category": "dataflow_canvas",
+    "dsl": {
+        "components": {
+            "File": {
+                "obj": {
+                    "component_name": "File",
+                    "params": {}
+                },
+                "downstream": [
+                    "Parser:HipSignsRhyme"
+                ],
+                "upstream": []
+            },
+            "Parser:HipSignsRhyme": {
+                "obj": {
+                    "component_name": "Parser",
+                    "params": {
+                        "outputs": {
+                            "html": {
+                                "type": "string",
+                                "value": ""
+                            },
+                            "json": {
+                                "type": "Array<object>",
+                                "value": []
+                            },
+                            "markdown": {
+                                "type": "string",
+                                "value": ""
+                            },
+                            "text": {
+                                "type": "string",
+                                "value": ""
+                            }
+                        },
+                        "setups": {
+                            "pdf": {
+                                "output_format": "json",
+                                "suffix": [
+                                    "pdf"
+                                ],
+                                "parse_method": "DeepDOC"
+                            },
+                            "spreadsheet": {
+                                "output_format": "html",
+                                "suffix": [
+                                    "xls",
+                                    "xlsx",
+                                    "csv"
+                                ]
+                            },
+                            "image": {
+                                "output_format": "text",
+                                "suffix": [
+                                    "jpg",
+                                    "jpeg",
+                                    "png",
+                                    "gif"
+                                ],
+                                "parse_method": "ocr"
+                            },
+                            "email": {
+                                "output_format": "text",
+                                "suffix": [
+                                    "eml",
+                                    "msg"
+                                ],
+                                "fields": [
+                                    "from",
+                                    "to",
+                                    "cc",
+                                    "bcc",
+                                    "date",
+                                    "subject",
+                                    "body",
+                                    "attachments"
+                                ]
+                            },
+                            "text&markdown": {
+                                "output_format": "text",
+                                "suffix": [
+                                    "md",
+                                    "markdown",
+                                    "mdx",
+                                    "txt"
+                                ]
+                            },
+                            "word": {
+                                "output_format": "json",
+                                "suffix": [
+                                    "doc",
+                                    "docx"
+                                ]
+                            },
+                            "slides": {
+                                "output_format": "json",
+                                "suffix": [
+                                    "pptx"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "downstream": [
+                    "Splitter:LateExpertsFeel"
+                ],
+                "upstream": [
+                    "File"
+                ]
+            },
+            "Splitter:LateExpertsFeel": {
+                "obj": {
+                    "component_name": "Splitter",
+                    "params": {
+                        "chunk_token_size": 512,
+                        "delimiters": [
+                            "\n"
+                        ],
+                        "outputs": {
+                            "chunks": {
+                                "type": "Array<Object>",
+                                "value": []
+                            }
+                        },
+                        "overlapped_percent": 0
+                    }
+                },
+                "downstream": [
+                    "Extractor:YummyGhostsType"
+                ],
+                "upstream": [
+                    "Parser:HipSignsRhyme"
+                ]
+            },
+            "Tokenizer:EightRocketsAppear": {
+                "obj": {
+                    "component_name": "Tokenizer",
+                    "params": {
+                        "fields": "summary",
+                        "filename_embd_weight": 0.1,
+                        "outputs": {},
+                        "search_method": [
+                            "embedding",
+                            "full_text"
+                        ]
+                    }
+                },
+                "downstream": [],
+                "upstream": [
+                    "Extractor:YummyGhostsType"
+                ]
+            },
+            "Extractor:YummyGhostsType": {
+                "obj": {
+                    "component_name": "Extractor",
+                    "params": {
+                        "field_name": "summary",
+                        "frequencyPenaltyEnabled": false,
+                        "frequency_penalty": 0.7,
+                        "llm_id": "deepseek-chat@DeepSeek",
+                        "maxTokensEnabled": false,
+                        "max_tokens": 256,
+                        "outputs": {
+                            "chunks": {
+                                "type": "Array<Object>",
+                                "value": []
+                            }
+                        },
+                        "presencePenaltyEnabled": false,
+                        "presence_penalty": 0.4,
+                        "prompts": [
+                            {
+                                "content": "Text to Summarize:\n\n\n{Splitter:LateExpertsFeel@chunks}",
+                                "role": "user"
+                            }
+                        ],
+                        "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
+                        "temperature": 0.1,
+                        "temperatureEnabled": false,
+                        "topPEnabled": false,
+                        "top_p": 0.3
+                    }
+                },
+                "downstream": [
+                    "Tokenizer:EightRocketsAppear"
+                ],
+                "upstream": [
+                    "Splitter:LateExpertsFeel"
+                ]
+            }
+        },
+        "globals": {},
+        "graph": {
+            "nodes": [
+                {
+                    "data": {
+                        "label": "File",
+                        "name": "File"
+                    },
+                    "id": "File",
+                    "measured": {
+                        "height": 48,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 50,
+                        "y": 200
+                    },
+                    "sourcePosition": "left",
+                    "targetPosition": "right",
+                    "type": "beginNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "outputs": {
+                                "html": {
+                                    "type": "string",
+                                    "value": ""
+                                },
+                                "json": {
+                                    "type": "Array<object>",
+                                    "value": []
+                                },
+                                "markdown": {
+                                    "type": "string",
+                                    "value": ""
+                                },
+                                "text": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "setups": [
+                                {
+                                    "fileFormat": "pdf",
+                                    "output_format": "json",
+                                    "parse_method": "DeepDOC"
+                                },
+                                {
+                                    "fileFormat": "spreadsheet",
+                                    "output_format": "html"
+                                },
+                                {
+                                    "fileFormat": "image",
+                                    "output_format": "text",
+                                    "parse_method": "ocr"
+                                },
+                                {
+                                    "fields": [
+                                        "from",
+                                        "to",
+                                        "cc",
+                                        "bcc",
+                                        "date",
+                                        "subject",
+                                        "body",
+                                        "attachments"
+                                    ],
+                                    "fileFormat": "email",
+                                    "output_format": "text"
+                                },
+                                {
+                                    "fileFormat": "text&markdown",
+                                    "output_format": "text"
+                                },
+                                {
+                                    "fileFormat": "word",
+                                    "output_format": "json"
+                                },
+                                {
+                                    "fileFormat": "slides",
+                                    "output_format": "json"
+                                }
+                            ]
+                        },
+                        "label": "Parser",
+                        "name": "Parser"
+                    },
+                    "dragging": false,
+                    "id": "Parser:HipSignsRhyme",
+                    "measured": {
+                        "height": 412,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 316.99524094206413,
+                        "y": 195.39629819663406
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "parserNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "chunk_token_size": 512,
+                            "delimiters": [
+                                {
+                                    "value": "\n"
+                                }
+                            ],
+                            "outputs": {
+                                "chunks": {
+                                    "type": "Array<Object>",
+                                    "value": []
+                                }
+                            },
+                            "overlapped_percent": 0
+                        },
+                        "label": "Splitter",
+                        "name": "Token Splitter"
+                    },
+                    "dragging": false,
+                    "id": "Splitter:LateExpertsFeel",
+                    "measured": {
+                        "height": 80,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 600.5891036507014,
+                        "y": 197.6804920892271
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "splitterNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "fields": "summary",
+                            "filename_embd_weight": 0.1,
+                            "outputs": {},
+                            "search_method": [
+                                "embedding",
+                                "full_text"
+                            ]
+                        },
+                        "label": "Tokenizer",
+                        "name": "Indexer"
+                    },
+                    "dragging": false,
+                    "id": "Tokenizer:EightRocketsAppear",
+                    "measured": {
+                        "height": 120,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 1136.0745258879847,
+                        "y": 202.22674640530906
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "tokenizerNode"
+                },
+                {
+                    "data": {
+                        "form": {
+                            "field_name": "summary",
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.7,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_tokens": 256,
+                            "outputs": {
+                                "chunks": {
+                                    "type": "Array<Object>",
+                                    "value": []
+                                }
+                            },
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.4,
+                            "prompts": "Text to Summarize:\n\n\n{Splitter:LateExpertsFeel@chunks}",
+                            "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
+                            "temperature": 0.1,
+                            "temperatureEnabled": false,
+                            "topPEnabled": false,
+                            "top_p": 0.3
+                        },
+                        "label": "Extractor",
+                        "name": "Transformer"
+                    },
+                    "dragging": false,
+                    "id": "Extractor:YummyGhostsType",
+                    "measured": {
+                        "height": 84,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 870.1728208672672,
+                        "y": 201.4516837225608
+                    },
+                    "selected": false,
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "contextNode"
+                },
+                {
+                    "id": "Note:MightyPandasWatch",
+                    "type": "noteNode",
+                    "position": {
+                        "x": 1128.1996486833773,
+                        "y": 342.4601052720091
+                    },
+                    "data": {
+                        "label": "Note",
+                        "name": "Index summary",
+                        "form": {
+                            "text": "Using summary to build both text and vector indexes."
+                        }
+                    },
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "dragHandle": ".note-drag-handle",
+                    "measured": {
+                        "width": 249,
+                        "height": 128
+                    },
+                    "selected": false,
+                    "dragging": false
+                }
+            ],
+            "edges": [
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__Filestart-Parser:HipSignsRhymeend",
+                    "source": "File",
+                    "sourceHandle": "start",
+                    "target": "Parser:HipSignsRhyme",
+                    "targetHandle": "end"
+                },
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__Parser:HipSignsRhymestart-Splitter:LateExpertsFeelend",
+                    "source": "Parser:HipSignsRhyme",
+                    "sourceHandle": "start",
+                    "target": "Splitter:LateExpertsFeel",
+                    "targetHandle": "end"
+                },
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__Splitter:LateExpertsFeelstart-Extractor:YummyGhostsTypeend",
+                    "source": "Splitter:LateExpertsFeel",
+                    "sourceHandle": "start",
+                    "target": "Extractor:YummyGhostsType",
+                    "targetHandle": "end"
+                },
+                {
+                    "data": {
+                        "isHovered": false
+                    },
+                    "id": "xy-edge__Extractor:YummyGhostsTypestart-Tokenizer:EightRocketsAppearend",
+                    "markerEnd": "logo",
+                    "source": "Extractor:YummyGhostsType",
+                    "sourceHandle": "start",
+                    "style": {
+                        "stroke": "rgba(91, 93, 106, 1)",
+                        "strokeWidth": 1
+                    },
+                    "target": "Tokenizer:EightRocketsAppear",
+                    "targetHandle": "end",
+                    "type": "buttonEdge",
+                    "zIndex": 1001
+                }
+            ]
+        },
+        "history": [],
+        "messages": [],
+        "path": [],
+        "retrieval": []
+    },
+    "avatar": "data:image/png;base64,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"
+}

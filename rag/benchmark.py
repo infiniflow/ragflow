@@ -20,11 +20,11 @@ import time
 import argparse
 from collections import defaultdict
 
-from api.db import LLMType
+from common import settings
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api import settings
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 from rag.nlp import tokenize, search
 from ranx import evaluate
 from ranx import Qrels, Run
@@ -52,7 +52,7 @@ class Benchmark:
         run = defaultdict(dict)
         query_list = list(qrels.keys())
         for query in query_list:
-            ranks = settings.retrievaler.retrieval(query, self.embd_mdl, self.tenant_id, [self.kb.id], 1, 30,
+            ranks = settings.retriever.retrieval(query, self.embd_mdl, self.tenant_id, [self.kb.id], 1, 30,
                                             0.0, self.vector_similarity_weight)
             if len(ranks["chunks"]) == 0:
                 print(f"deleted query: {query}")

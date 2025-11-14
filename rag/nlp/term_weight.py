@@ -21,7 +21,7 @@ import re
 import os
 import numpy as np
 from rag.nlp import rag_tokenizer
-from api.utils.file_utils import get_project_base_directory
+from common.file_utils import get_project_base_directory
 
 
 class Dealer:
@@ -160,15 +160,15 @@ class Dealer:
         return tks
 
     def weights(self, tks, preprocess=True):
-        def skill(t):
-            if t not in self.sk:
-                return 1
-            return 6
+        num_pattern = re.compile(r"[0-9,.]{2,}$")
+        short_letter_pattern = re.compile(r"[a-z]{1,2}$")
+        num_space_pattern = re.compile(r"[0-9. -]{2,}$")
+        letter_pattern = re.compile(r"[a-z. -]+$")
 
         def ner(t):
-            if re.match(r"[0-9,.]{2,}$", t):
+            if num_pattern.match(t):
                 return 2
-            if re.match(r"[a-z]{1,2}$", t):
+            if short_letter_pattern.match(t):
                 return 0.01
             if not self.ne or t not in self.ne:
                 return 1
@@ -189,10 +189,10 @@ class Dealer:
             return 1
 
         def freq(t):
-            if re.match(r"[0-9. -]{2,}$", t):
+            if num_space_pattern.match(t):
                 return 3
             s = rag_tokenizer.freq(t)
-            if not s and re.match(r"[a-z. -]+$", t):
+            if not s and letter_pattern.match(t):
                 return 300
             if not s:
                 s = 0
@@ -207,11 +207,11 @@ class Dealer:
             return max(s, 10)
 
         def df(t):
-            if re.match(r"[0-9. -]{2,}$", t):
+            if num_space_pattern.match(t):
                 return 5
             if t in self.df:
                 return self.df[t] + 3
-            elif re.match(r"[a-z. -]+$", t):
+            elif letter_pattern.match(t):
                 return 300
             elif len(t) >= 4:
                 s = [tt for tt in rag_tokenizer.fine_grained_tokenize(t).split() if len(tt) > 1]

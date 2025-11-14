@@ -27,7 +27,6 @@ const KnowledgeSidebar = () => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
 
   const [windowWidth, setWindowWidth] = useState(getWidth());
-  const [collapsed, setCollapsed] = useState(false);
   const { t } = useTranslation();
   const { data: knowledgeDetails } = useFetchKnowledgeBaseConfiguration();
 
@@ -91,14 +90,6 @@ const KnowledgeSidebar = () => {
 
     return list;
   }, [data, getItem]);
-
-  useEffect(() => {
-    if (windowWidth.width > 957) {
-      setCollapsed(false);
-    } else {
-      setCollapsed(true);
-    }
-  }, [windowWidth.width]);
 
   useEffect(() => {
     const widthSize = () => {

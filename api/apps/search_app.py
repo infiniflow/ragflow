@@ -17,15 +17,13 @@
 from flask import request
 from flask_login import current_user, login_required
 
-from api import settings
 from api.constants import DATASET_NAME_LIMIT
-from api.db import StatusEnum
 from api.db.db_models import DB
 from api.db.services import duplicate_name
-from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
+from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import get_data_error_result, get_json_result, not_allowed_parameters, server_error_response, validate_request
 
 
@@ -40,14 +38,14 @@ def create():
         return get_data_error_result(message="Search name must be string.")
     if search_name.strip() == "":
         return get_data_error_result(message="Search name can't be empty.")
-    if len(search_name.encode("utf-8")) > DATASET_NAME_LIMIT:
-        return get_data_error_result(message=f"Search name length is {len(search_name)} which is large than {DATASET_NAME_LIMIT}")
+    if len(search_name.encode("utf-8")) > 255:
+        return get_data_error_result(message=f"Search name length is {len(search_name)} which is large than 255.")
     e, _ = TenantService.get_by_id(current_user.id)
     if not e:
-        return get_data_error_result(message="Authorizationd identity.")
+        return get_data_error_result(message="Authorized identity.")
 
     search_name = search_name.strip()
-    search_name = duplicate_name(KnowledgebaseService.query, name=search_name, tenant_id=current_user.id, status=StatusEnum.VALID.value)
+    search_name = duplicate_name(SearchService.query, name=search_name, tenant_id=current_user.id, status=StatusEnum.VALID.value)
 
     req["id"] = get_uuid()
     req["name"] = search_name
@@ -79,16 +77,16 @@ def update():
     tenant_id = req["tenant_id"]
     e, _ = TenantService.get_by_id(tenant_id)
     if not e:
-        return get_data_error_result(message="Authorizationd identity.")
+        return get_data_error_result(message="Authorized identity.")
 
     search_id = req["search_id"]
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         search_app = SearchService.query(tenant_id=tenant_id, id=search_id)[0]
         if not search_app:
-            return get_json_result(data=False, message=f"Cannot find search {search_id}", code=settings.RetCode.DATA_ERROR)
+            return get_json_result(data=False, message=f"Cannot find search {search_id}", code=RetCode.DATA_ERROR)
 
         if req["name"].lower() != search_app.name.lower() and len(SearchService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) >= 1:
             return get_data_error_result(message="Duplicated search name.")
@@ -130,7 +128,7 @@ def detail():
             if SearchService.query(tenant_id=tenant.tenant_id, id=search_id):
                 break
         else:
-            return get_json_result(data=False, message="Has no permission for this operation.", code=settings.RetCode.OPERATING_ERROR)
+            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
 
         search = SearchService.get_detail(search_id)
         if not search:
@@ -156,8 +154,9 @@ def list_search_app():
     owner_ids = req.get("owner_ids", [])
     try:
         if not owner_ids:
-            tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
-            tenants = [m["tenant_id"] for m in tenants]
+            # tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
+            # tenants = [m["tenant_id"] for m in tenants]
+            tenants = []
             search_apps, total = SearchService.get_by_tenant_ids(tenants, current_user.id, page_number, items_per_page, orderby, desc, keywords)
         else:
             tenants = owner_ids
@@ -178,7 +177,7 @@ def rm():
     req = request.get_json()
     search_id = req["search_id"]
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         if not SearchService.delete_by_id(search_id):

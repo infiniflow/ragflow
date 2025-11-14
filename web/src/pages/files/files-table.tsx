@@ -48,7 +48,7 @@ import { KnowledgeCell } from './knowledge-cell';
 import { LinkToDatasetDialog } from './link-to-dataset-dialog';
 import { UseMoveDocumentShowType } from './use-move-file';
 import { useNavigateToOtherFolder } from './use-navigate-to-folder';
-import { isFolderType } from './util';
+import { isFolderType, isKnowledgeBaseType } from './util';
 
 type FilesTableProps = Pick<
   ReturnType<typeof useFetchFileList>,
@@ -112,6 +112,7 @@ export function FilesTable({
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
           aria-label="Select row"
+          disabled={!row.getCanSelect()}
         />
       ),
       enableSorting: false,
@@ -213,6 +214,7 @@ export function FilesTable({
       id: 'actions',
       header: t('action'),
       enableHiding: false,
+      enablePinning: true,
       cell: ({ row }) => {
         return (
           <ActionCell
@@ -246,7 +248,9 @@ export function FilesTable({
     onRowSelectionChange: setRowSelection,
 
     manualPagination: true, //we're doing manual "server-side" pagination
-
+    enableRowSelection(row) {
+      return !isKnowledgeBaseType(row.original.source_type);
+    },
     state: {
       sorting,
       columnFilters,
@@ -259,51 +263,56 @@ export function FilesTable({
   });
 
   return (
-    <div className="w-full">
-      <Table>
-        <TableHeader>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id}>
-              {headerGroup.headers.map((header) => {
-                return (
-                  <TableHead key={header.id}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
-                  </TableHead>
-                );
-              })}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
-          {loading ? (
-            <TableSkeleton columnsLength={columns.length}></TableSkeleton>
-          ) : table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => (
-              <TableRow
-                key={row.id}
-                data-state={row.getIsSelected() && 'selected'}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell
-                    key={cell.id}
-                    className={cell.column.columnDef.meta?.cellClassName}
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
+    <>
+      <div className="w-full">
+        <Table rootClassName="max-h-[calc(100vh-242px)] overflow-auto">
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => {
+                  return (
+                    <TableHead key={header.id}>
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                    </TableHead>
+                  );
+                })}
               </TableRow>
-            ))
-          ) : (
-            <TableEmpty columnsLength={columns.length}></TableEmpty>
-          )}
-        </TableBody>
-      </Table>
-
+            ))}
+          </TableHeader>
+          <TableBody className="max-h-96 overflow-y-auto">
+            {loading ? (
+              <TableSkeleton columnsLength={columns.length}></TableSkeleton>
+            ) : table.getRowModel().rows?.length ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() && 'selected'}
+                  className="group"
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell
+                      key={cell.id}
+                      className={cell.column.columnDef.meta?.cellClassName}
+                    >
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableEmpty columnsLength={columns.length}></TableEmpty>
+            )}
+          </TableBody>
+        </Table>
+      </div>
       <div className="flex items-center justify-end py-4">
         <div className="space-x-2">
           <RAGFlowPagination
@@ -331,6 +340,6 @@ export function FilesTable({
           loading={fileRenameLoading}
         ></RenameDialog>
       )}
-    </div>
+    </>
   );
 }

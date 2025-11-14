@@ -6,7 +6,7 @@ slug: /autokeyword_autoquestion
 # Auto-keyword Auto-question
 import APITable from '@site/src/components/APITable';
 
-Use a chat model to generate keywords or questions from each chunk in the knowledge base.
+Use a chat model to generate keywords or questions from each chunk in the dataset.
 
 ---
 
@@ -18,7 +18,7 @@ Enabling this feature increases document indexing time and uses extra tokens, as
 
 ## What is Auto-keyword?
 
-Auto-keyword refers to the auto-keyword generation feature of RAGFlow. It uses a chat model to generate a set of keywords or synonyms from each chunk to correct errors and enhance retrieval accuracy. This feature is implemented as a slider under **Page rank** on the **Configuration** page of your knowledge base.
+Auto-keyword refers to the auto-keyword generation feature of RAGFlow. It uses a chat model to generate a set of keywords or synonyms from each chunk to correct errors and enhance retrieval accuracy. This feature is implemented as a slider under **Page rank** on the **Configuration** page of your dataset.
 
 **Values**:  
 
@@ -33,7 +33,7 @@ Auto-keyword refers to the auto-keyword generation feature of RAGFlow. It uses a
 
 ## What is Auto-question?
 
-Auto-question is a feature of RAGFlow that automatically generates questions from chunks of data using a chat model. These questions (e.g. who, what, and why) also help correct errors and improve the matching of user queries. The feature usually works with FAQ retrieval scenarios involving product manuals or policy documents. And you can find this feature as a slider under **Page rank** on the **Configuration** page of your knowledge base.
+Auto-question is a feature of RAGFlow that automatically generates questions from chunks of data using a chat model. These questions (e.g. who, what, and why) also help correct errors and improve the matching of user queries. The feature usually works with FAQ retrieval scenarios involving product manuals or policy documents. And you can find this feature as a slider under **Page rank** on the **Configuration** page of your dataset.
 
 **Values**:
 
@@ -48,7 +48,7 @@ Auto-question is a feature of RAGFlow that automatically generates questions fro
 
 ## Tips from the community
 
-The Auto-keyword or Auto-question values relate closely to the chunking size in your knowledge base. However, if you are new to this feature and unsure which value(s) to start with, the following are some value settings we gathered from our community. While they may not be accurate, they provide a starting point at the very least.
+The Auto-keyword or Auto-question values relate closely to the chunking size in your dataset. However, if you are new to this feature and unsure which value(s) to start with, the following are some value settings we gathered from our community. While they may not be accurate, they provide a starting point at the very least.
 
 ```mdx-code-block
 <APITable>
@@ -58,7 +58,7 @@ The Auto-keyword or Auto-question values relate closely to the chunking size in 
 |---------------------------------------------------------------------|---------------------------------|----------------------------|----------------------------|
 | Internal process guidance for employee handbook                     | Small, under 10 pages           | 0                          | 0                          |
 | Customer service FAQs                                               | Medium, 10–100 pages            | 3–7                        | 1–3                        |
-| Technical whitepapers: Development standards, protocol details      | Large, over 100 pages           | 2–4                        | 1–2                        |
+| Technical white papers: Development standards, protocol details     | Large, over 100 pages           | 2–4                        | 1–2                        |
 | Contracts / Regulations / Legal clause retrieval                    | Large, over 50 pages            | 2–5                        | 0–1                        |
 | Multi-repository layered new documents + old archive                | Many                            | Adjust as appropriate      |Adjust as appropriate       |
 | Social media comment pool: multilingual & mixed spelling            | Very large volume of short text | 8–12                       | 0                          |

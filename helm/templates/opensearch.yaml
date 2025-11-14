@@ -44,9 +44,21 @@ spec:
         checksum/config-opensearch: {{ include (print $.Template.BasePath "/opensearch-config.yaml") . | sha256sum }}
         checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
     spec:
+      {{- if or .Values.imagePullSecrets .Values.opensearch.image.pullSecrets }}
+      imagePullSecrets:
+        {{- with .Values.imagePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.opensearch.image.pullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
       initContainers:
       - name: fix-data-volume-permissions
-        image: alpine
+        image: {{ .Values.opensearch.initContainers.alpine.repository }}:{{ .Values.opensearch.initContainers.alpine.tag }}
+        {{- with .Values.opensearch.initContainers.alpine.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
         command:
         - sh
         - -c
@@ -55,7 +67,10 @@ spec:
           - mountPath: /usr/share/opensearch/data
             name: opensearch-data
       - name: sysctl
-        image: busybox
+        image: {{ .Values.opensearch.initContainers.busybox.repository }}:{{ .Values.opensearch.initContainers.busybox.tag }}
+        {{- with .Values.opensearch.initContainers.busybox.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
         securityContext:
           privileged: true
           runAsUser: 0
@@ -63,6 +78,9 @@ spec:
       containers:
       - name: opensearch
         image: {{ .Values.opensearch.image.repository }}:{{ .Values.opensearch.image.tag }}
+        {{- with .Values.opensearch.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
         envFrom:
           - secretRef:
               name: {{ include "ragflow.fullname" . }}-env-config

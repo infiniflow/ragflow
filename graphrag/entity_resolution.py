@@ -15,6 +15,7 @@
 #
 import logging
 import itertools
+import os
 import re
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -28,6 +29,8 @@ import editdistance
 from graphrag.entity_resolution_prompt import ENTITY_RESOLUTION_PROMPT
 from rag.llm.chat_model import Base as CompletionLLM
 from graphrag.utils import perform_variable_replacements, chat_limiter, GraphChange
+from api.db.services.task_service import has_canceled
+from common.exceptions import TaskCanceledException
 
 DEFAULT_RECORD_DELIMITER = "##"
 DEFAULT_ENTITY_INDEX_DELIMITER = "<|>"
@@ -59,14 +62,15 @@ class EntityResolution(Extractor):
         self._llm = llm_invoker
         self._resolution_prompt = ENTITY_RESOLUTION_PROMPT
         self._record_delimiter_key = "record_delimiter"
-        self._entity_index_dilimiter_key = "entity_index_delimiter"
+        self._entity_index_delimiter_key = "entity_index_delimiter"
         self._resolution_result_delimiter_key = "resolution_result_delimiter"
         self._input_text_key = "input_text"
 
     async def __call__(self, graph: nx.Graph,
                        subgraph_nodes: set[str],
                        prompt_variables: dict[str, Any] | None = None,
-                       callback: Callable | None = None) -> EntityResolutionResult:
+                       callback: Callable | None = None,
+                       task_id: str = "") -> EntityResolutionResult:
         """Call method definition."""
         if prompt_variables is None:
             prompt_variables = {}
@@ -76,7 +80,7 @@ class EntityResolution(Extractor):
             **prompt_variables,
             self._record_delimiter_key: prompt_variables.get(self._record_delimiter_key)
                                         or DEFAULT_RECORD_DELIMITER,
-            self._entity_index_dilimiter_key: prompt_variables.get(self._entity_index_dilimiter_key)
+            self._entity_index_delimiter_key: prompt_variables.get(self._entity_index_delimiter_key)
                                               or DEFAULT_ENTITY_INDEX_DELIMITER,
             self._resolution_result_delimiter_key: prompt_variables.get(self._resolution_result_delimiter_key)
                                                    or DEFAULT_RESOLUTION_RESULT_DELIMITER,
@@ -106,8 +110,9 @@ class EntityResolution(Extractor):
             nonlocal remain_candidates_to_resolve, callback
             async with semaphore:
                 try:
-                    with trio.move_on_after(180) as cancel_scope:
-                        await self._resolve_candidate(candidate_batch, result_set, result_lock)
+                    enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+                    with trio.move_on_after(280 if enable_timeout_assertion else 1000000000) as cancel_scope:
+                        await self._resolve_candidate(candidate_batch, result_set, result_lock, task_id)
                         remain_candidates_to_resolve = remain_candidates_to_resolve - len(candidate_batch[1])
                         callback(msg=f"Resolved {len(candidate_batch[1])} pairs, {remain_candidates_to_resolve} are remained to resolve. ")
                     if cancel_scope.cancelled_caught:
@@ -134,7 +139,7 @@ class EntityResolution(Extractor):
 
         async def limited_merge_nodes(graph, nodes, change):
             async with semaphore:
-                await self._merge_graph_nodes(graph, nodes, change)
+                await self._merge_graph_nodes(graph, nodes, change, task_id)
 
         async with trio.open_nursery() as nursery:
             for sub_connect_graph in nx.connected_components(connect_graph):
@@ -151,8 +156,12 @@ class EntityResolution(Extractor):
             change=change,
         )
 
-    async def _resolve_candidate(self, candidate_resolution_i: tuple[str, list[tuple[str, str]]], resolution_result: set[str], resolution_result_lock: trio.Lock):
-        gen_conf = {"temperature": 0.5}
+    async def _resolve_candidate(self, candidate_resolution_i: tuple[str, list[tuple[str, str]]], resolution_result: set[str], resolution_result_lock: trio.Lock, task_id: str = ""):
+        if task_id:
+            if has_canceled(task_id):
+                logging.info(f"Task {task_id} cancelled during entity resolution candidate processing.")
+                raise TaskCanceledException(f"Task {task_id} was cancelled")
+
         pair_txt = [
             f'When determining whether two {candidate_resolution_i[0]}s are the same, you should only focus on critical properties and overlook noisy factors.\n']
         for index, candidate in enumerate(candidate_resolution_i[1]):
@@ -170,8 +179,9 @@ class EntityResolution(Extractor):
         logging.info(f"Created resolution prompt {len(text)} bytes for {len(candidate_resolution_i[1])} entity pairs of type {candidate_resolution_i[0]}")
         async with chat_limiter:
             try:
-                with trio.move_on_after(120) as cancel_scope:
-                    response = await trio.to_thread.run_sync(self._chat, text, [{"role": "user", "content": "Output:"}], gen_conf)
+                enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+                with trio.move_on_after(280 if enable_timeout_assertion else 1000000000) as cancel_scope:
+                    response = await trio.to_thread.run_sync(self._chat, text, [{"role": "user", "content": "Output:"}], {}, task_id)
                 if cancel_scope.cancelled_caught:
                     logging.warning("_resolve_candidate._chat timeout, skipping...")
                     return
@@ -183,7 +193,7 @@ class EntityResolution(Extractor):
         result = self._process_results(len(candidate_resolution_i[1]), response,
                                        self.prompt_variables.get(self._record_delimiter_key,
                                                             DEFAULT_RECORD_DELIMITER),
-                                       self.prompt_variables.get(self._entity_index_dilimiter_key,
+                                       self.prompt_variables.get(self._entity_index_delimiter_key,
                                                             DEFAULT_ENTITY_INDEX_DELIMITER),
                                        self.prompt_variables.get(self._resolution_result_delimiter_key,
                                                             DEFAULT_RESOLUTION_RESULT_DELIMITER))
@@ -218,13 +228,29 @@ class EntityResolution(Extractor):
 
         return ans_list
 
+    def _has_digit_in_2gram_diff(self, a, b):
+        def to_2gram_set(s):
+            return {s[i:i+2] for i in range(len(s) - 1)}
+
+        set_a = to_2gram_set(a)
+        set_b = to_2gram_set(b)
+        diff = set_a ^ set_b
+
+        return any(any(c.isdigit() for c in pair) for pair in diff)
+
     def is_similarity(self, a, b):
+        if self._has_digit_in_2gram_diff(a, b):
+            return False
+
         if is_english(a) and is_english(b):
             if editdistance.eval(a, b) <= min(len(a), len(b)) // 2:
                 return True
             return False
 
-        if len(set(a) & set(b)) > 1:
-            return True
+        a, b = set(a), set(b)
+        max_l = max(len(a), len(b))
+        if max_l < 4:
+            return len(a & b) > 1
 
-        return False
+        return len(a & b)*1./max_l >= 0.8
+

@@ -1,5 +1,7 @@
+import { FormLayout } from '@/constants/form';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Form, Slider } from 'antd';
+import { z } from 'zod';
 import { SliderInputFormField } from './slider-input-form-field';
 
 type FieldType = {
@@ -32,6 +34,10 @@ interface SimilaritySliderFormFieldProps {
   max?: number;
 }
 
+export const topnSchema = {
+  top_n: z.number().optional(),
+};
+
 export function TopNFormField({ max = 30 }: SimilaritySliderFormFieldProps) {
   const { t } = useTranslate('chat');
 
@@ -41,6 +47,7 @@ export function TopNFormField({ max = 30 }: SimilaritySliderFormFieldProps) {
       label={t('topN')}
       max={max}
       tooltip={t('topNTip')}
+      layout={FormLayout.Vertical}
     ></SliderInputFormField>
   );
 }

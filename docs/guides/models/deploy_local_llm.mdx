@@ -62,7 +62,7 @@ $ sudo docker exec ollama ollama pull bge-m3
 
 - If RAGFlow runs in Docker, the localhost is mapped within the RAGFlow Docker container as `host.docker.internal`. If Ollama runs on the same host machine, the right URL to use for Ollama would be `http://host.docker.internal:11434/' and you should check that Ollama is accessible from inside the RAGFlow container with:
 ```bash
-$ sudo docker exec -it ragflow-server bash
+$ sudo docker exec -it docker-ragflow-cpu-1 bash
 $ curl http://host.docker.internal:11434/
 > Ollama is running
 ```
@@ -91,7 +91,7 @@ In RAGFlow, click on your logo on the top right of the page **>** **Model provid
 In the popup window, complete basic settings for Ollama:
 
 1. Ensure that your model name and type match those been pulled at step 1 (Deploy Ollama using Docker). For example, (`llama3.2` and `chat`) or (`bge-m3` and `embedding`).
-2. In Ollama base URL, put the URL you found in step 2 followed by `/v1`, i.e. `http://host.docker.internal:11434/v1`, `http://localhost:11434/v1` or `http://${IP_OF_OLLAMA_MACHINE}:11434/v1`.
+2. Put in the Ollama base URL, i.e. `http://host.docker.internal:11434`, `http://localhost:11434` or `http://${IP_OF_OLLAMA_MACHINE}:11434`.
 3. OPTIONAL: Switch on the toggle under **Does it support Vision?** if your model includes an image-to-text model.
 
 
@@ -107,7 +107,6 @@ Max retries exceeded with url: /api/chat (Caused by NewConnectionError('<urllib3
 Click on your logo **>** **Model providers** **>** **System Model Settings** to update your model:
    
 - *You should now be able to find **llama3.2** from the dropdown list under **Chat model**, and **bge-m3** from the dropdown list under **Embedding model**.*
-- _If your local model is an embedding model, you should find it under **Embedding model**._
 
 ### 6. Update Chat Configuration
 
@@ -158,13 +157,9 @@ Click on your logo **>** **Model providers** **>** **System Model Settings** to 
    
 *You should now be able to find **mistral** from the dropdown list under **Chat model**.*
 
-> If your local model is an embedding model, you should find your local model under **Embedding model**.
-
 ### 7. Update Chat Configuration
 
 Update your chat model accordingly in **Chat Configuration**:
-
-> If your local model is an embedding model, update it on the configuration page of your knowledge base.
 
 ## Deploy a local model using IPEX-LLM
 

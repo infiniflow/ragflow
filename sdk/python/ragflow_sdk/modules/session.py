@@ -15,7 +15,6 @@
 #
 
 import json
-
 from .base import Base
 
 
@@ -33,36 +32,59 @@ class Session(Base):
                 self.__session_type = "agent"
         super().__init__(rag, res_dict)
 
-    def ask(self, question="", stream=True, **kwargs):
+
+    def ask(self, question="", stream=False, **kwargs):
+        """
+        Ask a question to the session. If stream=True, yields Message objects as they arrive (SSE streaming).
+        If stream=False, returns a single Message object for the final answer.
+        """
         if self.__session_type == "agent":
-            res = self._ask_agent(question, stream)
+            res = self._ask_agent(question, stream, **kwargs)
         elif self.__session_type == "chat":
             res = self._ask_chat(question, stream, **kwargs)
+        else:
+            raise Exception(f"Unknown session type: {self.__session_type}")
 
         if stream:
-            for line in res.iter_lines():
-                line = line.decode("utf-8")
-                if line.startswith("{"):
-                    json_data = json.loads(line)
-                    raise Exception(json_data["message"])
-                if not line.startswith("data:"):
-                    continue
-                json_data = json.loads(line[5:])
-                if json_data["data"] is True or json_data["data"].get("running_status"):
-                    continue
-                message = self._structure_answer(json_data)
-                yield message
+            for line in res.iter_lines(decode_unicode=True):
+                if not line:
+                    continue  # Skip empty lines
+                line = line.strip()
+                if line.startswith("data:"):
+                    content = line[len("data:"):].strip()
+                    if content == "[DONE]":
+                        break  # End of stream
+                else:
+                    content = line
+
+                try:
+                    json_data = json.loads(content)
+                except json.JSONDecodeError:
+                    continue  # Skip lines that are not valid JSON
+
+                if (
+                    (self.__session_type == "agent" and json_data.get("event") == "message_end")
+                    or (self.__session_type == "chat" and json_data.get("data") is True)
+                ):
+                    return
+                if self.__session_type == "agent":
+                    yield self._structure_answer(json_data)
+                else:
+                    yield self._structure_answer(json_data["data"])
         else:
             try:
-                json_data = json.loads(res.text)
+                json_data = res.json()
             except ValueError:
                 raise Exception(f"Invalid response {res}")
-            return self._structure_answer(json_data)
+            yield self._structure_answer(json_data["data"])
         
 
     def _structure_answer(self, json_data):
-        answer = json_data["data"]["answer"]
-        reference = json_data["data"].get("reference", {})
+        if self.__session_type == "agent":
+           answer = json_data["data"]["content"]
+        elif self.__session_type == "chat":
+            answer = json_data["answer"]
+        reference = json_data.get("reference", {})
         temp_dict = {
             "content": answer,
             "role": "assistant"
@@ -80,9 +102,11 @@ class Session(Base):
                         json_data, stream=stream)
         return res
 
-    def _ask_agent(self, question: str, stream: bool):
+    def _ask_agent(self, question: str, stream: bool, **kwargs):
+        json_data = {"question": question, "stream": stream, "session_id": self.id}
+        json_data.update(kwargs)
         res = self.post(f"/agents/{self.agent_id}/completions",
-                        {"question": question, "stream": stream, "session_id": self.id}, stream=stream)
+                        json_data, stream=stream)
         return res
 
     def update(self, update_message):

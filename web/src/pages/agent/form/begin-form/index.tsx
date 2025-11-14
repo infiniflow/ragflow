@@ -12,9 +12,10 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { FormTooltip } from '@/components/ui/tooltip';
-import { buildSelectOptions } from '@/utils/component-util';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { Plus } from 'lucide-react';
+import { memo, useEffect, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -26,12 +27,12 @@ import { useEditQueryRecord } from './use-edit-query';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
-const ModeOptions = buildSelectOptions([
-  AgentDialogueMode.Conversational,
-  AgentDialogueMode.Task,
-]);
+const ModeOptions = [
+  { value: AgentDialogueMode.Conversational, label: t('flow.conversational') },
+  { value: AgentDialogueMode.Task, label: t('flow.task') },
+];
 
-const BeginForm = ({ node }: INextOperatorForm) => {
+function BeginForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
 
   const values = useValues(node);
@@ -69,6 +70,18 @@ const BeginForm = ({ node }: INextOperatorForm) => {
     name: 'enablePrologue',
   });
 
+  const previousModeRef = useRef(mode);
+
+  useEffect(() => {
+    if (
+      previousModeRef.current === AgentDialogueMode.Task &&
+      mode === AgentDialogueMode.Conversational
+    ) {
+      form.setValue('enablePrologue', true);
+    }
+    previousModeRef.current = mode;
+  }, [mode, form]);
+
   const {
     ok,
     currentRecord,
@@ -90,7 +103,9 @@ const BeginForm = ({ node }: INextOperatorForm) => {
           name={'mode'}
           render={({ field }) => (
             <FormItem>
-              <FormLabel tooltip={t('flow.modeTip')}>Mode</FormLabel>
+              <FormLabel tooltip={t('flow.modeTip')}>
+                {t('flow.mode')}
+              </FormLabel>
               <FormControl>
                 <RAGFlowSelect
                   placeholder={t('common.pleaseSelect')}
@@ -122,7 +137,7 @@ const BeginForm = ({ node }: INextOperatorForm) => {
             )}
           />
         )}
-        {enablePrologue && (
+        {mode === AgentDialogueMode.Conversational && enablePrologue && (
           <FormField
             control={form.control}
             name={'prologue'}
@@ -174,7 +189,6 @@ const BeginForm = ({ node }: INextOperatorForm) => {
             deleteRecord={handleDeleteRecord}
           ></QueryTable>
         </Collapse>
-
         {visible && (
           <ParameterDialog
             hideModal={hideModal}
@@ -186,6 +200,6 @@ const BeginForm = ({ node }: INextOperatorForm) => {
       </Form>
     </section>
   );
-};
+}
 
-export default BeginForm;
+export default memo(BeginForm);

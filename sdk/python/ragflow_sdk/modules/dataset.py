@@ -63,8 +63,30 @@ class DataSet(Base):
             return doc_list
         raise Exception(res.get("message"))
 
-    def list_documents(self, id: str | None = None, name: str | None = None, keywords: str | None = None, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True):
-        res = self.get(f"/datasets/{self.id}/documents", params={"id": id, "name": name, "keywords": keywords, "page": page, "page_size": page_size, "orderby": orderby, "desc": desc})
+    def list_documents(
+        self,
+        id: str | None = None,
+        name: str | None = None,
+        keywords: str | None = None,
+        page: int = 1,
+        page_size: int = 30,
+        orderby: str = "create_time",
+        desc: bool = True,
+        create_time_from: int = 0,
+        create_time_to: int = 0,
+    ):
+        params = {
+            "id": id,
+            "name": name,
+            "keywords": keywords,
+            "page": page,
+            "page_size": page_size,
+            "orderby": orderby,
+            "desc": desc,
+            "create_time_from": create_time_from,
+            "create_time_to": create_time_to,
+        }
+        res = self.get(f"/datasets/{self.id}/documents", params=params)
         res = res.json()
         documents = []
         if res.get("code") == 0:
@@ -78,12 +100,51 @@ class DataSet(Base):
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
-
+        
+    
+    def _get_documents_status(self, document_ids):
+        import time
+        terminal_states = {"DONE", "FAIL", "CANCEL"}
+        interval_sec = 1
+        pending = set(document_ids)
+        finished = []
+        while pending:
+            for doc_id in list(pending):
+                def fetch_doc(doc_id: str) -> Document | None:
+                    try:
+                        docs = self.list_documents(id=doc_id)
+                        return docs[0] if docs else None
+                    except Exception:
+                        return None
+                doc = fetch_doc(doc_id)
+                if doc is None:
+                    continue
+                if isinstance(doc.run, str) and doc.run.upper() in terminal_states:
+                    finished.append((doc_id, doc.run, doc.chunk_count, doc.token_count))
+                    pending.discard(doc_id)
+                elif float(doc.progress or 0.0) >= 1.0:
+                    finished.append((doc_id, "DONE", doc.chunk_count, doc.token_count))
+                    pending.discard(doc_id)
+            if pending:
+                time.sleep(interval_sec)
+        return finished
+    
     def async_parse_documents(self, document_ids):
         res = self.post(f"/datasets/{self.id}/chunks", {"document_ids": document_ids})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))
+        
+
+    def parse_documents(self, document_ids):
+        try:
+            self.async_parse_documents(document_ids)
+            self._get_documents_status(document_ids)
+        except KeyboardInterrupt:
+            self.async_cancel_parse_documents(document_ids)
+            
+        return self._get_documents_status(document_ids)
+
 
     def async_cancel_parse_documents(self, document_ids):
         res = self.rm(f"/datasets/{self.id}/chunks", {"document_ids": document_ids})

@@ -25,10 +25,10 @@ export function ExcelToHtmlFormField() {
 
         return (
           <FormItem defaultChecked={false} className=" items-center space-y-0 ">
-            <div className="flex items-center">
+            <div className="flex items-center gap-1">
               <FormLabel
                 tooltip={t('html4excelTip')}
-                className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                className="text-sm text-text-secondary whitespace-break-spaces w-1/4"
               >
                 {t('html4excel')}
               </FormLabel>

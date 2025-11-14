@@ -1,0 +1,336 @@
+
+{
+    "id": 9,
+    "title": {
+        "en": "Technical Docs QA",
+        "de": "Technische Dokumentation Fragen & Antworten",
+        "zh": "技术文档问答"},
+    "description": {
+        "en": "This is a document question-and-answer system based on a knowledge base. When a user asks a question, it retrieves relevant document content to provide accurate answers.",
+        "de": "Dies ist ein dokumentenbasiertes Frage-und-Antwort-System auf Basis einer Wissensdatenbank. Wenn ein Benutzer eine Frage stellt, werden relevante Dokumenteninhalte abgerufen, um genaue Antworten zu liefern.",
+        "zh": "基于知识库的文档问答系统，当用户提出问题时，会检索相关本地文档并提供准确回答。"},
+    "canvas_type": "Customer Support",
+    "dsl": {
+            "components": {
+                "Agent:StalePandasDream": {
+                    "downstream": [
+                        "Message:BrownPugsStick"
+                    ],
+                    "obj": {
+                        "component_name": "Agent",
+                        "params": {
+                            "delay_after_error": 1,
+                            "description": "",
+                            "exception_comment": "",
+                            "exception_default_value": "",
+                            "exception_goto": [],
+                            "exception_method": null,
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.7,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_retries": 3,
+                            "max_rounds": 5,
+                            "max_tokens": 256,
+                            "mcp": [],
+                            "message_history_window_size": 12,
+                            "outputs": {
+                                "content": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.4,
+                            "prompts": [
+                                {
+                                    "content": "The user query is {sys.query}",
+                                    "role": "user"
+                                }
+                            ],
+                            "sys_prompt": "# Role\n\nYou are the **Docs QA Agent**, a specialized knowledge base assistant responsible for providing accurate answers based strictly on the connected documentation repository.\n\n# Core Principles\n\n1. **Knowledge Base Only**: Answer questions EXCLUSIVELY based on information retrieved from the connected knowledge base.\n\n2. **No Content Creation**: Never generate, infer, or create information that is not explicitly present in the retrieved documents.\n\n3. **Source Transparency**: Always indicate when information comes from the knowledge base vs. when it's unavailable.\n\n4. **Accuracy Over Completeness**: Prefer incomplete but accurate answers over complete but potentially inaccurate ones.\n\n# Response Guidelines\n\n## When Information is Available\n\n- Provide direct answers based on retrieved content\n\n- Quote relevant sections when helpful\n\n- Cite the source document/section if available\n\n- Use phrases like: \"According to the documentation...\" or \"Based on the knowledge base...\"\n\n## When Information is Unavailable\n\n- Clearly state: \"I cannot find this information in the current knowledge base.\"\n\n- Do NOT attempt to fill gaps with general knowledge\n\n- Suggest alternative questions that might be covered in the docs\n\n- Use phrases like: \"The documentation does not cover...\" or \"This information is not available in the knowledge base.\"\n\n# Response Format\n\n```markdown\n\n## Answer\n\n[Your response based strictly on knowledge base content]\n\n**Always do these:**\n\n- Use the Retrieval tool for every question\n\n- Be transparent about information availability\n\n- Stick to documented facts only\n\n- Acknowledge knowledge base limitations\n\n",
+                            "temperature": 0.1,
+                            "temperatureEnabled": true,
+                            "tools": [
+                                {
+                                    "component_name": "Retrieval",
+                                    "name": "Retrieval",
+                                    "params": {
+                                        "cross_languages": [],
+                                        "description": "This is  a technical docs knowledge bases.",
+                                        "empty_response": "",
+                                        "kb_ids": [],
+                                        "keywords_similarity_weight": 0.7,
+                                        "outputs": {
+                                            "formalized_content": {
+                                                "type": "string",
+                                                "value": ""
+                                            }
+                                        },
+                                        "rerank_id": "",
+                                        "similarity_threshold": 0.2,
+                                        "top_k": 1024,
+                                        "top_n": 8,
+                                        "use_kg": false
+                                    }
+                                }
+                            ],
+                            "topPEnabled": false,
+                            "top_p": 0.3,
+                            "user_prompt": "",
+                            "visual_files_var": ""
+                        }
+                    },
+                    "upstream": [
+                        "begin"
+                    ]
+                },
+                "Message:BrownPugsStick": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Message",
+                        "params": {
+                            "content": [
+                                "{Agent:StalePandasDream@content}"
+                            ]
+                        }
+                    },
+                    "upstream": [
+                        "Agent:StalePandasDream"
+                    ]
+                },
+                "begin": {
+                    "downstream": [
+                        "Agent:StalePandasDream"
+                    ],
+                    "obj": {
+                        "component_name": "Begin",
+                        "params": {}
+                    },
+                    "upstream": []
+                }
+            },
+            "globals": {
+                "sys.conversation_turns": 0,
+                "sys.files": [],
+                "sys.query": "",
+                "sys.user_id": ""
+            },
+            "graph": {
+                "edges": [
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__beginstart-Agent:StalePandasDreamend",
+                        "source": "begin",
+                        "sourceHandle": "start",
+                        "target": "Agent:StalePandasDream",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Agent:StalePandasDreamstart-Message:BrownPugsStickend",
+                        "source": "Agent:StalePandasDream",
+                        "sourceHandle": "start",
+                        "target": "Message:BrownPugsStick",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "id": "xy-edge__Agent:StalePandasDreamtool-Tool:PrettyMasksFloatend",
+                        "source": "Agent:StalePandasDream",
+                        "sourceHandle": "tool",
+                        "target": "Tool:PrettyMasksFloat",
+                        "targetHandle": "end"
+                    }
+                ],
+                "nodes": [
+                    {
+                        "data": {
+                            "label": "Begin",
+                            "name": "begin"
+                        },
+                        "dragging": false,
+                        "id": "begin",
+                        "measured": {
+                            "height": 48,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 47.500000000000014,
+                            "y": 199.5
+                        },
+                        "selected": false,
+                        "sourcePosition": "left",
+                        "targetPosition": "right",
+                        "type": "beginNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "delay_after_error": 1,
+                                "description": "",
+                                "exception_comment": "",
+                                "exception_default_value": "",
+                                "exception_goto": [],
+                                "exception_method": null,
+                                "frequencyPenaltyEnabled": false,
+                                "frequency_penalty": 0.7,
+                                "llm_id": "deepseek-chat@DeepSeek",
+                                "maxTokensEnabled": false,
+                                "max_retries": 3,
+                                "max_rounds": 5,
+                                "max_tokens": 256,
+                                "mcp": [],
+                                "message_history_window_size": 12,
+                                "outputs": {
+                                    "content": {
+                                        "type": "string",
+                                        "value": ""
+                                    }
+                                },
+                                "presencePenaltyEnabled": false,
+                                "presence_penalty": 0.4,
+                                "prompts": [
+                                    {
+                                        "content": "The user query is {sys.query}",
+                                        "role": "user"
+                                    }
+                                ],
+                                "sys_prompt": "# Role\n\nYou are the **Docs QA Agent**, a specialized knowledge base assistant responsible for providing accurate answers based strictly on the connected documentation repository.\n\n# Core Principles\n\n1. **Knowledge Base Only**: Answer questions EXCLUSIVELY based on information retrieved from the connected knowledge base.\n\n2. **No Content Creation**: Never generate, infer, or create information that is not explicitly present in the retrieved documents.\n\n3. **Source Transparency**: Always indicate when information comes from the knowledge base vs. when it's unavailable.\n\n4. **Accuracy Over Completeness**: Prefer incomplete but accurate answers over complete but potentially inaccurate ones.\n\n# Response Guidelines\n\n## When Information is Available\n\n- Provide direct answers based on retrieved content\n\n- Quote relevant sections when helpful\n\n- Cite the source document/section if available\n\n- Use phrases like: \"According to the documentation...\" or \"Based on the knowledge base...\"\n\n## When Information is Unavailable\n\n- Clearly state: \"I cannot find this information in the current knowledge base.\"\n\n- Do NOT attempt to fill gaps with general knowledge\n\n- Suggest alternative questions that might be covered in the docs\n\n- Use phrases like: \"The documentation does not cover...\" or \"This information is not available in the knowledge base.\"\n\n# Response Format\n\n```markdown\n\n## Answer\n\n[Your response based strictly on knowledge base content]\n\n**Always do these:**\n\n- Use the Retrieval tool for every question\n\n- Be transparent about information availability\n\n- Stick to documented facts only\n\n- Acknowledge knowledge base limitations\n\n",
+                                "temperature": 0.1,
+                                "temperatureEnabled": true,
+                                "tools": [
+                                    {
+                                        "component_name": "Retrieval",
+                                        "name": "Retrieval",
+                                        "params": {
+                                            "cross_languages": [],
+                                            "description": "This is  a technical docs knowledge bases.",
+                                            "empty_response": "",
+                                            "kb_ids": [],
+                                            "keywords_similarity_weight": 0.7,
+                                            "outputs": {
+                                                "formalized_content": {
+                                                    "type": "string",
+                                                    "value": ""
+                                                }
+                                            },
+                                            "rerank_id": "",
+                                            "similarity_threshold": 0.2,
+                                            "top_k": 1024,
+                                            "top_n": 8,
+                                            "use_kg": false
+                                        }
+                                    }
+                                ],
+                                "topPEnabled": false,
+                                "top_p": 0.3,
+                                "user_prompt": "",
+                                "visual_files_var": ""
+                            },
+                            "label": "Agent",
+                            "name": "Docs QA Agent"
+                        },
+                        "dragging": false,
+                        "id": "Agent:StalePandasDream",
+                        "measured": {
+                            "height": 87,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 351.5,
+                            "y": 231
+                        },
+                        "selected": true,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "agentNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "content": [
+                                    "{Agent:StalePandasDream@content}"
+                                ]
+                            },
+                            "label": "Message",
+                            "name": "Message_0"
+                        },
+                        "dragging": false,
+                        "id": "Message:BrownPugsStick",
+                        "measured": {
+                            "height": 56,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 671.5,
+                            "y": 192.5
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "messageNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "description": "This is an agent for a specific task.",
+                                "user_prompt": "This is the order you need to send to the agent."
+                            },
+                            "label": "Tool",
+                            "name": "flow.tool_0"
+                        },
+                        "dragging": false,
+                        "id": "Tool:PrettyMasksFloat",
+                        "measured": {
+                            "height": 48,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 234.5,
+                            "y": 370.5
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "toolNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "This is a document question-and-answer system based on a knowledge base. When a user asks a question, it retrieves relevant document content to provide accurate answers.\nProcess Steps\n\n#Begin\n\nWorkflow entry: Receive user questions\n\nDocs QA Agent\n\nAI Model: deepseek-chat\n\nFunction: Analyze user questions and understand query intent\n\nRetrieval\n\nFunction: Search for relevant information from connected document knowledge bases\n\nFeature: Ensures answers are based on actual document content\n\nMessage_0 (Output Response)\n\nReturns accurate answers to the user based on the knowledge base\n\n#Core Features\n\nAccuracy: Answers are strictly based on knowledge base content\n\nReliability: Avoid AI illusions and only provide information that is verifiable\n\nSimplicity: Linear process with fast response\n\n#Applicable Scenarios\n\nProduct Documentation Query\n\nTechnical Support Q&A\n\nInternal Enterprise Knowledge Base Search\n\nUser Manual Consultation"
+                            },
+                            "label": "Note",
+                            "name": "Workflow Overall Description"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "dragging": false,
+                        "height": 154,
+                        "id": "Note:SwiftSuitsFlow",
+                        "measured": {
+                            "height": 154,
+                            "width": 374
+                        },
+                        "position": {
+                            "x": 349.65276636527506,
+                            "y": 28.869446726944993
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 374
+                    }
+                ]
+            },
+            "history": [],
+            "messages": [],
+            "path": [],
+            "retrieval": []
+        },
+    "avatar": "data:image/png;base64,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"
+}

@@ -18,10 +18,6 @@ export const useBuildSwitchHandlePositions = ({
     return get(data, 'form.conditions', []);
   }, [data]);
 
-  useEffect(() => {
-    console.info('xxx0000');
-  }, [conditions]);
-
   const positions = useMemo(() => {
     const list: Array<{
       text: string;
@@ -31,7 +27,7 @@ export const useBuildSwitchHandlePositions = ({
     }> = [];
 
     [...conditions, ''].forEach((x, idx) => {
-      let top = idx === 0 ? 53 : list[idx - 1].top + 10 + 14; // case number (Case 1) height + flex gap
+      let top = idx === 0 ? 53 : list[idx - 1].top + 10 + 14 + 16 + 16; // case number (Case 1) height + flex gap
       if (idx >= 1) {
         const previousItems = conditions[idx - 1]?.items ?? [];
         if (previousItems.length > 0) {

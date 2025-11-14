@@ -15,15 +15,15 @@
 #
 import time
 from uuid import uuid4
-from api.db import StatusEnum
+from common.constants import StatusEnum
 from api.db.db_models import Conversation, DB
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
 from api.db.services.dialog_service import DialogService, chat
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 import json
 
-from rag.prompts import chunks_format
+from rag.prompts.generator import chunks_format
 
 
 class ConversationService(CommonService):
@@ -48,6 +48,21 @@ class ConversationService(CommonService):
 
         return list(sessions.dicts())
 
+    @classmethod
+    @DB.connection_context()
+    def get_all_conversation_by_dialog_ids(cls, dialog_ids):
+        sessions = cls.model.select().where(cls.model.dialog_id.in_(dialog_ids))
+        sessions.order_by(cls.model.create_time.asc())
+        offset, limit = 0, 100
+        res = []
+        while True:
+            s_batch = sessions.offset(offset).limit(limit)
+            _temp = list(s_batch.dicts())
+            if not _temp:
+                break
+            res.extend(_temp)
+            offset += limit
+        return res
 
 def structure_answer(conv, ans, message_id, session_id):
     reference = ans["reference"]

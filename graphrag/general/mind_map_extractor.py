@@ -27,7 +27,7 @@ from graphrag.utils import ErrorHandlerFn, perform_variable_replacements, chat_l
 from rag.llm.chat_model import Base as CompletionLLM
 import markdown_to_json
 from functools import reduce
-from rag.utils import num_tokens_from_string
+from common.token_utils import num_tokens_from_string
 
 
 @dataclass
@@ -171,9 +171,8 @@ class MindMapExtractor(Extractor):
             self._input_text_key: text,
         }
         text = perform_variable_replacements(self._mind_map_prompt, variables=variables)
-        gen_conf = {"temperature": 0.5}
         async with chat_limiter:
-            response = await trio.to_thread.run_sync(lambda: self._chat(text, [{"role": "user", "content": "Output:"}], gen_conf))
+            response = await trio.to_thread.run_sync(lambda: self._chat(text, [{"role": "user", "content": "Output:"}], {}))
         response = re.sub(r"```[^\n]*", "", response)
         logging.debug(response)
         logging.debug(self._todict(markdown_to_json.dictify(response)))

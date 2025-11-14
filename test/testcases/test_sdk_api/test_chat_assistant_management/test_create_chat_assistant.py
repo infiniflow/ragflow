@@ -207,7 +207,7 @@ class TestChatAssistantCreate:
                 assert attrgetter("variables")(chat_assistant.prompt) == [{"key": "knowledge", "optional": False}]
                 assert attrgetter("rerank_model")(chat_assistant.prompt) == ""
                 assert attrgetter("empty_response")(chat_assistant.prompt) == "Sorry! No relevant content was found in the knowledge base!"
-                assert attrgetter("opener")(chat_assistant.prompt) == "Hi! I'm your assistant, what can I do for you?"
+                assert attrgetter("opener")(chat_assistant.prompt) == "Hi! I'm your assistant. What can I do for you?"
                 assert attrgetter("show_quote")(chat_assistant.prompt) is True
                 assert (
                     attrgetter("prompt")(chat_assistant.prompt)

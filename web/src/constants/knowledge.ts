@@ -13,7 +13,17 @@ export enum RunningStatus {
   CANCEL = '2', // need to refresh
   DONE = '3', // need to refresh
   FAIL = '4', // need to refresh
+  SCHEDULE = '5',
 }
+
+export const RunningStatusMap = {
+  [RunningStatus.UNSTART]: 'Pending',
+  [RunningStatus.RUNNING]: 'Running',
+  [RunningStatus.CANCEL]: 'Cancel',
+  [RunningStatus.DONE]: 'Success',
+  [RunningStatus.FAIL]: 'Failed',
+  [RunningStatus.SCHEDULE]: 'Schedule',
+};
 
 export enum ModelVariableType {
   Improvise = 'Improvise',
@@ -57,6 +67,7 @@ export enum LlmModelType {
 export enum KnowledgeSearchParams {
   DocumentId = 'doc_id',
   KnowledgeId = 'id',
+  Type = 'type',
 }
 
 export enum DocumentType {

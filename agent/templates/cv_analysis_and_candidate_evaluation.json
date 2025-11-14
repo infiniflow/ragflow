@@ -1,0 +1,428 @@
+
+{
+    "id": 15,
+    "title": {
+        "en": "CV Analysis and Candidate Evaluation",
+        "de": "Lebenslaufanalyse und Kandidatenbewertung",
+        "zh": "简历分析和候选人评估"},
+    "description": {
+        "en": "This is a workflow that helps companies evaluate resumes, HR uploads a job description first, then submits multiple resumes via the chat window for evaluation.",
+        "de": "Dies ist ein Workflow, der Unternehmen bei der Bewertung von Lebensläufen hilft. Die Personalabteilung lädt zunächst eine Stellenbeschreibung hoch und reicht dann mehrere Lebensläufe über das Chat-Fenster zur Bewertung ein.",
+        "zh": "帮助公司评估简历的工作流。HR首先上传职位描述，通过聊天窗口提交多份简历进行评估。"},
+    "canvas_type": "Other",
+    "dsl": {
+            "components": {
+                "Agent:AfraidBearsShare": {
+                    "downstream": [
+                        "Message:TenLizardsShake"
+                    ],
+                    "obj": {
+                        "component_name": "Agent",
+                        "params": {
+                            "delay_after_error": 1,
+                            "description": "",
+                            "exception_comment": "",
+                            "exception_default_value": "",
+                            "exception_goto": [],
+                            "exception_method": null,
+                            "frequencyPenaltyEnabled": false,
+                            "frequency_penalty": 0.5,
+                            "llm_id": "deepseek-chat@DeepSeek",
+                            "maxTokensEnabled": false,
+                            "max_retries": 1,
+                            "max_rounds": 1,
+                            "max_tokens": 4096,
+                            "mcp": [],
+                            "message_history_window_size": 12,
+                            "outputs": {
+                                "content": {
+                                    "type": "string",
+                                    "value": ""
+                                }
+                            },
+                            "parameter": "Precise",
+                            "presencePenaltyEnabled": false,
+                            "presence_penalty": 0.5,
+                            "prompts": [
+                                {
+                                    "content": "HR is asking about: {sys.query}\n\nJob description is {begin@JD}\n\nResume is {IterationItem:EagerGiftsOpen@item}",
+                                    "role": "user"
+                                }
+                            ],
+                            "sys_prompt": "# HR Resume Batch Processing Agent \n\n## Mission Statement\n\nYou are a professional HR resume processing agent designed to handle large-scale resume screening . Your primary goal is to extract standardized candidate information and provide efficient JD matching analysis in a clear, hierarchical text format.And always use Chinese to answer questions, and always separate each resume information with paragraphs.\n\n## Core Capabilities\n\n### 1. Standardized Information Extraction\n\n- Extract 6 key data points from each resume\n\n\n- Normalize all information to consistent format\n\n- Ensure data quality and completeness\n\n- Provide confidence levels for extracted information\n\n### 3. JD Matching Analysis\n\n1. Score: [X/10]  \n\n2. Matching Analysis:  \n\n- Clearly state the main points of alignment between resume and job description.  \n\n- Mention any strong matches in experience, skills, or education.  \n\n- Indicate if there are any gaps or mismatches.  \n\n\n\n- Content length must always be between 30-50 characters\n\n### Output Specifications\n\n\n\n\n**Important requirement**: No subheadings\n\n\n\n-  Full name without titles\n\n- Primary phone/email in standard format\n\n- Most recent educational institution\n\n- Numeric value (years of experience or graduation year)\n\n- Current residence city only\n\n- JD Matching Analysis\n\n\n## Processing Workflow\n\n### Step 1: File Analysis\n\n### Step 2: Information Extraction\n\n### Step 3: JD Matching Analysis\n\n### Step 4: Text Formatting\n\n### Step 5: Output complete context\uff08Strictly keep one line per message and do not merge. The content of the second resume and the previous resume are not allowed to be on the same line\uff09",
+                            "temperature": "0.1",
+                            "temperatureEnabled": true,
+                            "tools": [],
+                            "topPEnabled": false,
+                            "top_p": 0.75,
+                            "user_prompt": "",
+                            "visual_files_var": ""
+                        }
+                    },
+                    "parent_id": "Iteration:PetiteBanksWarn",
+                    "upstream": [
+                        "IterationItem:EagerGiftsOpen"
+                    ]
+                },
+                "Iteration:PetiteBanksWarn": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Iteration",
+                        "params": {
+                            "items_ref": "sys.files",
+                            "outputs": {
+                                "evaluation": {
+                                    "ref": "Agent:AfraidBearsShare@content",
+                                    "type": "Array<string>"
+                                }
+                            }
+                        }
+                    },
+                    "upstream": [
+                        "begin"
+                    ]
+                },
+                "IterationItem:EagerGiftsOpen": {
+                    "downstream": [
+                        "Agent:AfraidBearsShare"
+                    ],
+                    "obj": {
+                        "component_name": "IterationItem",
+                        "params": {
+                            "outputs": {
+                                "index": {
+                                    "type": "integer"
+                                },
+                                "item": {
+                                    "type": "unkown"
+                                }
+                            }
+                        }
+                    },
+                    "parent_id": "Iteration:PetiteBanksWarn",
+                    "upstream": []
+                },
+                "Message:TenLizardsShake": {
+                    "downstream": [],
+                    "obj": {
+                        "component_name": "Message",
+                        "params": {
+                            "content": [
+                                "\n\n\n\n{Agent:AfraidBearsShare@content}"
+                            ]
+                        }
+                    },
+                    "parent_id": "Iteration:PetiteBanksWarn",
+                    "upstream": [
+                        "Agent:AfraidBearsShare"
+                    ]
+                },
+                "begin": {
+                    "downstream": [
+                        "Iteration:PetiteBanksWarn"
+                    ],
+                    "obj": {
+                        "component_name": "Begin",
+                        "params": {
+                            "enablePrologue": true,
+                            "inputs": {
+                                "JD": {
+                                    "name": "Job Description",
+                                    "optional": false,
+                                    "options": [],
+                                    "type": "line"
+                                }
+                            },
+                            "mode": "conversational",
+                            "prologue": "Hi there! I help you assess how well candidates match your job description. Just upload the JD and candidate resumes to begin."
+                        }
+                    },
+                    "upstream": []
+                }
+            },
+            "globals": {
+                "sys.conversation_turns": 0,
+                "sys.files": [],
+                "sys.query": "",
+                "sys.user_id": ""
+            },
+            "graph": {
+                "edges": [
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__beginstart-Iteration:PetiteBanksWarnend",
+                        "source": "begin",
+                        "sourceHandle": "start",
+                        "target": "Iteration:PetiteBanksWarn",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__IterationItem:EagerGiftsOpenstart-Agent:AfraidBearsShareend",
+                        "source": "IterationItem:EagerGiftsOpen",
+                        "sourceHandle": "start",
+                        "target": "Agent:AfraidBearsShare",
+                        "targetHandle": "end"
+                    },
+                    {
+                        "data": {
+                            "isHovered": false
+                        },
+                        "id": "xy-edge__Agent:AfraidBearsSharestart-Message:TenLizardsShakeend",
+                        "source": "Agent:AfraidBearsShare",
+                        "sourceHandle": "start",
+                        "target": "Message:TenLizardsShake",
+                        "targetHandle": "end"
+                    }
+                ],
+                "nodes": [
+                    {
+                        "data": {
+                            "form": {
+                                "enablePrologue": true,
+                                "inputs": {
+                                    "JD": {
+                                        "name": "Job Description",
+                                        "optional": false,
+                                        "options": [],
+                                        "type": "line"
+                                    }
+                                },
+                                "mode": "conversational",
+                                "prologue": "Hi there! I help you assess how well candidates match your job description. Just upload the JD and candidate resumes to begin."
+                            },
+                            "label": "Begin",
+                            "name": "begin"
+                        },
+                        "id": "begin",
+                        "measured": {
+                            "height": 76,
+                            "width": 200
+                        },
+                        "position": {
+                            "x": 50,
+                            "y": 200
+                        },
+                        "selected": false,
+                        "sourcePosition": "left",
+                        "targetPosition": "right",
+                        "type": "beginNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "items_ref": "sys.files",
+                                "outputs": {
+                                    "evaluation": {
+                                        "ref": "Agent:AfraidBearsShare@content",
+                                        "type": "Array<string>"
+                                    }
+                                }
+                            },
+                            "label": "Iteration",
+                            "name": "Iteration"
+                        },
+                        "dragging": false,
+                        "height": 300,
+                        "id": "Iteration:PetiteBanksWarn",
+                        "measured": {
+                            "height": 300,
+                            "width": 762
+                        },
+                        "position": {
+                            "x": 664.2911321008794,
+                            "y": 300.8643508010756
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "group",
+                        "width": 762
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "outputs": {
+                                    "index": {
+                                        "type": "integer"
+                                    },
+                                    "item": {
+                                        "type": "unkown"
+                                    }
+                                }
+                            },
+                            "label": "IterationItem",
+                            "name": "IterationItem"
+                        },
+                        "dragging": false,
+                        "extent": "parent",
+                        "id": "IterationItem:EagerGiftsOpen",
+                        "measured": {
+                            "height": 40,
+                            "width": 80
+                        },
+                        "parentId": "Iteration:PetiteBanksWarn",
+                        "position": {
+                            "x": 61.93019203023471,
+                            "y": 108.67650329471616
+                        },
+                        "selected": false,
+                        "type": "iterationStartNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "delay_after_error": 1,
+                                "description": "",
+                                "exception_comment": "",
+                                "exception_default_value": "",
+                                "exception_goto": [],
+                                "exception_method": null,
+                                "frequencyPenaltyEnabled": false,
+                                "frequency_penalty": 0.5,
+                                "llm_id": "deepseek-chat@DeepSeek",
+                                "maxTokensEnabled": false,
+                                "max_retries": 1,
+                                "max_rounds": 1,
+                                "max_tokens": 4096,
+                                "mcp": [],
+                                "message_history_window_size": 12,
+                                "outputs": {
+                                    "content": {
+                                        "type": "string",
+                                        "value": ""
+                                    }
+                                },
+                                "parameter": "Precise",
+                                "presencePenaltyEnabled": false,
+                                "presence_penalty": 0.5,
+                                "prompts": [
+                                    {
+                                        "content": "HR is asking about: {sys.query}\n\nJob description is {begin@JD}\n\nResume is {IterationItem:EagerGiftsOpen@item}",
+                                        "role": "user"
+                                    }
+                                ],
+                                "sys_prompt": "# HR Resume Batch Processing Agent \n\n## Mission Statement\n\nYou are a professional HR resume processing agent designed to handle large-scale resume screening . Your primary goal is to extract standardized candidate information and provide efficient JD matching analysis in a clear, hierarchical text format.And always use Chinese to answer questions, and always separate each resume information with paragraphs.\n\n## Core Capabilities\n\n### 1. Standardized Information Extraction\n\n- Extract 6 key data points from each resume\n\n\n- Normalize all information to consistent format\n\n- Ensure data quality and completeness\n\n- Provide confidence levels for extracted information\n\n### 3. JD Matching Analysis\n\n1. Score: [X/10]  \n\n2. Matching Analysis:  \n\n- Clearly state the main points of alignment between resume and job description.  \n\n- Mention any strong matches in experience, skills, or education.  \n\n- Indicate if there are any gaps or mismatches.  \n\n\n\n- Content length must always be between 30-50 characters\n\n### Output Specifications\n\n\n\n\n**Important requirement**: No subheadings\n\n\n\n-  Full name without titles\n\n- Primary phone/email in standard format\n\n- Most recent educational institution\n\n- Numeric value (years of experience or graduation year)\n\n- Current residence city only\n\n- JD Matching Analysis\n\n\n## Processing Workflow\n\n### Step 1: File Analysis\n\n### Step 2: Information Extraction\n\n### Step 3: JD Matching Analysis\n\n### Step 4: Text Formatting\n\n### Step 5: Output complete context\uff08Strictly keep one line per message and do not merge. The content of the second resume and the previous resume are not allowed to be on the same line\uff09",
+                                "temperature": "0.1",
+                                "temperatureEnabled": true,
+                                "tools": [],
+                                "topPEnabled": false,
+                                "top_p": 0.75,
+                                "user_prompt": "",
+                                "visual_files_var": ""
+                            },
+                            "label": "Agent",
+                            "name": "Evaluation Agent"
+                        },
+                        "dragging": false,
+                        "extent": "parent",
+                        "id": "Agent:AfraidBearsShare",
+                        "measured": {
+                            "height": 84,
+                            "width": 200
+                        },
+                        "parentId": "Iteration:PetiteBanksWarn",
+                        "position": {
+                            "x": 294.68729149618423,
+                            "y": 129.28319861966708
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "agentNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "content": [
+                                    "\n\n\n\n{Agent:AfraidBearsShare@content}"
+                                ]
+                            },
+                            "label": "Message",
+                            "name": "Evaluation Result"
+                        },
+                        "dragging": false,
+                        "extent": "parent",
+                        "id": "Message:TenLizardsShake",
+                        "measured": {
+                            "height": 56,
+                            "width": 200
+                        },
+                        "parentId": "Iteration:PetiteBanksWarn",
+                        "position": {
+                            "x": 612.0402980856167,
+                            "y": 82.64699341056763
+                        },
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "messageNode"
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "The agent can also save evaluation results to your Google Sheet using MCP.\n\nhttps://github.com/xing5/mcp-google-sheets"
+                            },
+                            "label": "Note",
+                            "name": "Google Sheet MCP"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "dragging": false,
+                        "height": 130,
+                        "id": "Note:SixtyHeadsShout",
+                        "measured": {
+                            "height": 130,
+                            "width": 337
+                        },
+                        "position": {
+                            "x": 619.4967244976884,
+                            "y": 619.3395083567394
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 337
+                    },
+                    {
+                        "data": {
+                            "form": {
+                                "text": "HR uploads a job description first, then submits multiple resumes via the chat window for evaluation."
+                            },
+                            "label": "Note",
+                            "name": "Candidate Evaluation Workflow"
+                        },
+                        "dragHandle": ".note-drag-handle",
+                        "dragging": false,
+                        "height": 157,
+                        "id": "Note:LuckyDeerSearch",
+                        "measured": {
+                            "height": 157,
+                            "width": 452
+                        },
+                        "position": {
+                            "x": 457.08115218140847,
+                            "y": -6.323496705283823
+                        },
+                        "resizing": false,
+                        "selected": false,
+                        "sourcePosition": "right",
+                        "targetPosition": "left",
+                        "type": "noteNode",
+                        "width": 452
+                    }
+                ]
+            },
+            "history": [],
+            "messages": [],
+            "path": [],
+            "retrieval": []
+        },
+    "avatar": "data:image/png;base64,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"
+}

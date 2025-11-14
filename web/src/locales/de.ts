@@ -325,7 +325,7 @@ export default {
   <p>Die Chunks werden dann dem LLM zugeführt, um Entitäten und Beziehungen für einen Wissensgraphen und eine Mind Map zu extrahieren.</p>
   <p>Stellen Sie sicher, dass Sie die <b>Entitätstypen</b> festlegen.</p>`,
       tag: `<p>Eine Wissensdatenbank, die die 'Tag'-Chunk-Methode verwendet, fungiert als Tag-Set. Andere Wissensdatenbanken können es verwenden, um ihre eigenen Chunks zu taggen, und Abfragen an diese Wissensdatenbanken werden ebenfalls mit diesem Tag-Set getaggt.</p>
-      <p>Die Wissensdatenbank, die 'Tag' als Chunk-Methode verwendet, ist <b>NICHT</b> an einem Retrieval-Augmented Generation (RAG)-Prozess beteiligt.</p>
+      <p>Ein Tag-Set wird <b>NICHT</b> direkt in einen Retrieval-Augmented Generation (RAG)-Prozess einbezogen.</p>
       <p>Jeder Chunk in dieser Wissensdatenbank ist ein unabhängiges Beschreibungs-Tag-Paar.</p>
       <p>Zu den unterstützten Dateiformaten gehören <b>XLSX</b> und <b>CSV/TXT</b>:</p>
       <p>Wenn eine Datei im <b>XLSX</b>-Format vorliegt, sollte sie zwei Spalten ohne Überschriften enthalten: eine für Tag-Beschreibungen und die andere für Tag-Namen, wobei die Spalte "Beschreibung" vor der Spalte "Tag" steht. Mehrere Blätter sind zulässig, sofern die Spalten ordnungsgemäß strukturiert sind.</p>
@@ -549,7 +549,7 @@ export default {
         'Ob ein Wissensgraph im angegebenen Wissensspeicher während der Wiederherstellung für die Beantwortung von Fragen mit mehreren Schritten verwendet werden soll. Wenn aktiviert, beinhaltet dies iterative Suchen über Entitäten-, Beziehungs- und Gemeinschaftsberichtssegmente, was die Wiederherstellungszeit erheblich verlängert.',
       keyword: 'Schlüsselwortanalyse',
       keywordTip:
-        'LLM anwenden, um die Fragen des Benutzers zu analysieren und Schlüsselwörter zu extrahieren, die während der Relevanzberechnung hervorgehoben werden.',
+        'LLM anwenden, um die Fragen des Benutzers zu analysieren und Schlüsselwörter zu extrahieren, die während der Relevanzberechnung hervorgehoben werden. Funktioniert gut bei langen Anfragen, erhöht jedoch die Antwortzeit.',
       languageTip:
         'Ermöglicht die Umformulierung von Sätzen in der angegebenen Sprache oder verwendet standardmäßig die letzte Frage, wenn keine ausgewählt ist.',
       avatarHidden: 'Avatar ausblenden',
@@ -620,9 +620,14 @@ export default {
       apiKeyTip:
         'Der API-Schlüssel kann durch Registrierung beim entsprechenden LLM-Anbieter erhalten werden.',
       showMoreModels: 'Mehr Modelle anzeigen',
+      hideModels: 'Modelle ausblenden',
       baseUrl: 'Basis-URL',
       baseUrlTip:
         'Wenn Ihr API-Schlüssel von OpenAI stammt, ignorieren Sie dies. Andere Zwischenanbieter geben diese Basis-URL mit dem API-Schlüssel an.',
+      tongyiBaseUrlTip:
+        'Für chinesische Benutzer ist keine Eingabe erforderlich oder verwenden Sie https://dashscope.aliyuncs.com/compatible-mode/v1. Für internationale Benutzer verwenden Sie https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+      tongyiBaseUrlPlaceholder:
+        '(Nur für internationale Benutzer, bitte Hinweis beachten)',
       modify: 'Ändern',
       systemModelSettings: 'Standardmodelle festlegen',
       chatModel: 'Chat-Modell',
@@ -716,7 +721,7 @@ export default {
       addGoogleRegion: 'Google Cloud Region',
       GoogleRegionMessage: 'Bitte geben Sie die Google Cloud Region ein',
       modelProvidersWarn:
-        'Bitte fügen Sie zuerst sowohl das Embedding-Modell als auch das LLM in <b>Einstellungen > Modellanbieter</b> hinzu. Legen Sie sie dann in "Systemmodelleinstellungen" fest.',
+        'Bitte fügen Sie zuerst sowohl das Embedding-Modell als auch das LLM in <b>Einstellungen > Modellanbieter</b> hinzu. Legen Sie sie dann in "Standardmodelle festlegen" fest.',
       apiVersion: 'API-Version',
       apiVersionMessage: 'Bitte geben Sie die API-Version ein',
       add: 'Hinzufügen',
@@ -867,6 +872,9 @@ export default {
       duckDuckGo: 'DuckDuckGo',
       duckDuckGoDescription:
         'Eine Komponente, die auf duckduckgo.com sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken.',
+      searXNG: 'SearXNG',
+      searXNGDescription:
+        'Eine Komponente, die auf https://searxng.org/ sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken.',
       channel: 'Kanal',
       channelTip:
         'Führt eine Textsuche oder Nachrichtensuche für die Eingabe der Komponente durch',
@@ -1162,6 +1170,8 @@ export default {
       cleanHtml: 'HTML bereinigen',
       cleanHtmlTip:
         'Wenn die Antwort im HTML-Format vorliegt und nur der Hauptinhalt gewünscht wird, schalten Sie dies bitte ein.',
+      invalidUrl:
+        'Muss eine gültige URL oder eine URL mit Variablenplatzhaltern im Format {Variablenname} oder {Komponente@Variable} sein',
       reference: 'Referenz',
       input: 'Eingabe',
       output: 'Ausgabe',
@@ -1219,7 +1229,6 @@ export default {
       },
       addVariable: 'Variable hinzufügen',
       variableSettings: 'Variableneinstellungen',
-      globalVariables: 'Globale Variablen',
       systemPrompt: 'System-Prompt',
       addCategory: 'Kategorie hinzufügen',
       categoryName: 'Kategoriename',

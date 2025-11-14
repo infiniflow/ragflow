@@ -12,7 +12,7 @@ Convert complex Excel spreadsheets into HTML tables.
 When using the **General** chunking method, you can enable the **Excel to HTML** toggle to convert spreadsheet files into HTML tables. If it is disabled, spreadsheet tables will be represented as key-value pairs. For complex tables that cannot be simply represented this way, you must enable this feature.
 
 :::caution WARNING
-The feature is disabled by default. If your knowledge base contains spreadsheets with complex tables and you do not enable this feature, RAGFlow will not throw an error but your tables are likely to be garbled.
+The feature is disabled by default. If your dataset contains spreadsheets with complex tables, and you do not enable this feature, RAGFlow will not throw an error but your tables are likely to be garbled.
 :::
 
 ## Scenarios
@@ -27,12 +27,12 @@ Works with complex tables that cannot be represented as key-value pairs. Example
 
 ## Procedure
 
-1. On your knowledge base's **Configuration** page, select **General** as the chunking method.
+1. On your dataset's **Configuration** page, select **General** as the chunking method.
 
    _The **Excel to HTML** toggle appears._
 
-2. Enable **Excel to HTML** if your knowledge base contains complex spreadsheet tables that cannot be represented as key-value pairs.
-3. Leave **Excel to HTML** disabled if your knowledge base has no spreadsheet tables or if its spreadsheet tables can be represented as key-value pairs.
+2. Enable **Excel to HTML** if your dataset contains complex spreadsheet tables that cannot be represented as key-value pairs.
+3. Leave **Excel to HTML** disabled if your dataset has no spreadsheet tables or if its spreadsheet tables can be represented as key-value pairs.
 4. If question-answering regarding complex tables is unsatisfactory, check if **Excel to HTML** is enabled.
 
 ## Frequently asked questions

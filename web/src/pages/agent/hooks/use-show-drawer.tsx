@@ -1,12 +1,11 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import { Node, NodeMouseHandler } from '@xyflow/react';
+import { NodeMouseHandler } from '@xyflow/react';
 import get from 'lodash/get';
-import { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { Operator } from '../constant';
-import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { useCacheChatLog } from './use-cache-chat-log';
-import { useGetBeginNodeDataQuery } from './use-get-begin-query';
+import { useGetBeginNodeDataInputs } from './use-get-begin-query';
 import { useSaveGraph } from './use-save-graph';
 
 export const useShowFormDrawer = () => {
@@ -22,10 +21,15 @@ export const useShowFormDrawer = () => {
     showModal: showFormDrawer,
   } = useSetModalState();
 
-  const handleShow: NodeMouseHandler = useCallback(
-    (e, node: Node) => {
-      setClickedNodeId(node.id);
-      setClickedToolId(get(e.target, 'dataset.tool'));
+  const handleShow = useCallback(
+    (e: React.MouseEvent<Element>, nodeId: string) => {
+      const tool = get(e.target, 'dataset.tool');
+      // TODO: Operator type judgment should be used
+      if (nodeId.startsWith(Operator.Tool) && !tool) {
+        return;
+      }
+      setClickedNodeId(nodeId);
+      setClickedToolId(tool);
       showFormDrawer();
     },
     [setClickedNodeId, setClickedToolId, showFormDrawer],
@@ -57,7 +61,7 @@ export const useShowSingleDebugDrawer = () => {
   };
 };
 
-const ExcludedNodes = [Operator.IterationStart, Operator.Note];
+const ExcludedNodes = [Operator.Note, Operator.Placeholder, Operator.File];
 
 export function useShowDrawer({
   drawerVisible,
@@ -83,12 +87,11 @@ export function useShowDrawer({
   } = useShowSingleDebugDrawer();
   const { formDrawerVisible, hideFormDrawer, showFormDrawer, clickedNode } =
     useShowFormDrawer();
-  const getBeginNodeDataQuery = useGetBeginNodeDataQuery();
+  const inputs = useGetBeginNodeDataInputs();
 
   useEffect(() => {
     if (drawerVisible) {
-      const query: BeginQuery[] = getBeginNodeDataQuery();
-      if (query.length > 0) {
+      if (inputs.length > 0) {
         showRunModal();
         hideChatModal();
       } else {
@@ -102,7 +105,7 @@ export function useShowDrawer({
     showChatModal,
     showRunModal,
     drawerVisible,
-    getBeginNodeDataQuery,
+    inputs,
   ]);
 
   const hideRunOrChatDrawer = useCallback(() => {
@@ -119,8 +122,8 @@ export function useShowDrawer({
     (e, node) => {
       if (!ExcludedNodes.some((x) => x === node.data.label)) {
         hideSingleDebugDrawer();
-        hideRunOrChatDrawer();
-        showFormDrawer(e, node);
+        // hideRunOrChatDrawer();
+        showFormDrawer(e, node.id);
       }
       // handle single debug icon click
       if (
@@ -130,12 +133,7 @@ export function useShowDrawer({
         showSingleDebugDrawer();
       }
     },
-    [
-      hideRunOrChatDrawer,
-      hideSingleDebugDrawer,
-      showFormDrawer,
-      showSingleDebugDrawer,
-    ],
+    [hideSingleDebugDrawer, showFormDrawer, showSingleDebugDrawer],
   );
 
   return {
@@ -173,4 +171,16 @@ export function useShowLogSheet({
     hideLogSheet: hideModal,
     showLogSheet: handleShow,
   };
+}
+
+export function useHideFormSheetOnNodeDeletion({
+  hideFormDrawer,
+}: Pick<ReturnType<typeof useShowFormDrawer>, 'hideFormDrawer'>) {
+  const { nodes, clickedNodeId } = useGraphStore((state) => state);
+
+  useEffect(() => {
+    if (!nodes.some((x) => x.id === clickedNodeId)) {
+      hideFormDrawer();
+    }
+  }, [clickedNodeId, hideFormDrawer, nodes]);
 }

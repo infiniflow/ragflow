@@ -10,7 +10,6 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import {
   LexicalTypeaheadMenuPlugin,
   MenuOption,
-  useBasicTypeaheadTriggerMatch,
 } from '@lexical/react/LexicalTypeaheadMenuPlugin';
 import {
   $createParagraphNode,
@@ -20,22 +19,48 @@ import {
   $isRangeSelection,
   TextNode,
 } from 'lexical';
-import React, { ReactElement, useCallback, useEffect, useRef } from 'react';
+import React, {
+  ReactElement,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+} from 'react';
 import * as ReactDOM from 'react-dom';
 
 import { $createVariableNode } from './variable-node';
 
-import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
+import { JsonSchemaDataType } from '@/pages/agent/constant';
+import {
+  useFindAgentStructuredOutputLabel,
+  useShowSecondaryMenu,
+} from '@/pages/agent/hooks/use-build-structured-output';
+import { useFilterQueryVariableOptionsByTypes } from '@/pages/agent/hooks/use-get-begin-query';
+import { get } from 'lodash';
+import { PromptIdentity } from '../../agent-form/use-build-prompt-options';
+import { StructuredOutputSecondaryMenu } from '../structured-output-secondary-menu';
 import { ProgrammaticTag } from './constant';
 import './index.css';
 class VariableInnerOption extends MenuOption {
   label: string;
   value: string;
+  parentLabel: string | JSX.Element;
+  icon?: ReactNode;
+  type?: string;
 
-  constructor(label: string, value: string) {
+  constructor(
+    label: string,
+    value: string,
+    parentLabel: string | JSX.Element,
+    icon?: ReactNode,
+    type?: string,
+  ) {
     super(value);
     this.label = label;
     this.value = value;
+    this.parentLabel = parentLabel;
+    this.icon = icon;
+    this.type = type;
   }
 }
 
@@ -60,14 +85,17 @@ function VariablePickerMenuItem({
   index,
   option,
   selectOptionAndCleanUp,
+  types,
 }: {
   index: number;
   option: VariableOption;
+  types?: JsonSchemaDataType[];
   selectOptionAndCleanUp: (
     option: VariableOption | VariableInnerOption,
   ) => void;
 }) {
-  console.info('xxxx');
+  const showSecondaryMenu = useShowSecondaryMenu();
+
   return (
     <li
       key={option.key}
@@ -77,42 +105,101 @@ function VariablePickerMenuItem({
       id={'typeahead-item-' + index}
     >
       <div>
-        <span className="text text-slate-500">{option.title}</span>
+        <span className="text text-text-secondary">{option.title}</span>
         <ul className="pl-2 py-1">
-          {option.options.map((x) => (
-            <li
-              key={x.value}
-              onClick={() => selectOptionAndCleanUp(x)}
-              className="hover:bg-slate-300 p-1"
-            >
-              {x.label}
-            </li>
-          ))}
+          {option.options.map((x) => {
+            const shouldShowSecondary = showSecondaryMenu(x.value, x.label);
+
+            if (shouldShowSecondary) {
+              return (
+                <StructuredOutputSecondaryMenu
+                  key={x.value}
+                  data={x}
+                  types={types}
+                  click={(y) =>
+                    selectOptionAndCleanUp({
+                      ...x,
+                      ...y,
+                    } as VariableInnerOption)
+                  }
+                ></StructuredOutputSecondaryMenu>
+              );
+            }
+
+            return (
+              <li
+                key={x.value}
+                onClick={() => selectOptionAndCleanUp(x)}
+                className="hover:bg-bg-card p-1 text-text-primary rounded-sm flex justify-between items-center"
+              >
+                <span className="truncate flex-1 min-w-0">{x.label}</span>
+                <span className="text-text-secondary">{get(x, 'type')}</span>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </li>
   );
 }
 
+export type VariablePickerMenuOptionType = {
+  label: string;
+  title: string;
+  value?: string;
+  options: Array<{
+    label: string;
+    value: string;
+    icon: ReactNode;
+    type?: string;
+  }>;
+};
+
+export type VariablePickerMenuPluginProps = {
+  value?: string;
+  extraOptions?: VariablePickerMenuOptionType[];
+  baseOptions?: VariablePickerMenuOptionType[];
+  types?: JsonSchemaDataType[];
+};
 export default function VariablePickerMenuPlugin({
   value,
-}: {
-  value?: string;
-}): JSX.Element {
+  extraOptions,
+  baseOptions,
+  types,
+}: VariablePickerMenuPluginProps): JSX.Element {
   const [editor] = useLexicalComposerContext();
-  const isFirstRender = useRef(true);
 
-  const checkForTriggerMatch = useBasicTypeaheadTriggerMatch('/', {
-    minLength: 0,
-  });
+  const findAgentStructuredOutputLabel = useFindAgentStructuredOutputLabel();
+
+  // const checkForTriggerMatch = useBasicTypeaheadTriggerMatch('/', {
+  //   minLength: 0,
+  // });
+
+  const testTriggerFn = React.useCallback((text: string) => {
+    const lastChar = text.slice(-1);
+    if (lastChar === '/') {
+      console.log('Found trigger character "/"');
+      return {
+        leadOffset: text.length - 1,
+        matchingString: '',
+        replaceableString: '/',
+      };
+    }
+    return null;
+  }, []);
+
+  const previousValue = useRef<string | undefined>();
 
   const [queryString, setQueryString] = React.useState<string | null>('');
 
-  const options = useBuildQueryVariableOptions();
+  let options = useFilterQueryVariableOptionsByTypes(types);
+
+  if (baseOptions) {
+    options = baseOptions as typeof options;
+  }
 
   const buildNextOptions = useCallback(() => {
-    let filteredOptions = options;
-
+    let filteredOptions = [...options, ...(extraOptions ?? [])];
     if (queryString) {
       const lowerQuery = queryString.toLowerCase();
       filteredOptions = options
@@ -127,35 +214,55 @@ export default function VariablePickerMenuPlugin({
         .filter((x) => x.options.length > 0);
     }
 
-    const nextOptions: VariableOption[] = filteredOptions.map(
+    const finalOptions: VariableOption[] = filteredOptions.map(
       (x) =>
         new VariableOption(
           x.label,
           x.title,
-          x.options.map((y) => new VariableInnerOption(y.label, y.value)),
+          x.options.map((y) => {
+            return new VariableInnerOption(
+              y.label,
+              y.value,
+              x.label,
+              y.icon,
+              y.type,
+            );
+          }),
         ),
     );
+    return finalOptions;
+  }, [extraOptions, options, queryString]);
 
-    return nextOptions;
-  }, [options, queryString]);
-
-  const findLabelByValue = useCallback(
+  const findItemByValue = useCallback(
     (value: string) => {
-      const children = options.reduce<Array<{ label: string; value: string }>>(
-        (pre, cur) => {
-          return pre.concat(cur.options);
-        },
-        [],
-      );
+      const children = options.reduce<
+        Array<{
+          label: string;
+          value: string;
+          parentLabel?: string | ReactNode;
+          icon?: ReactNode;
+        }>
+      >((pre, cur) => {
+        return pre.concat(cur.options);
+      }, []);
 
-      return children.find((x) => x.value === value)?.label;
+      // agent structured output
+      const agentStructuredOutput = findAgentStructuredOutputLabel(
+        value,
+        children,
+      );
+      if (agentStructuredOutput) {
+        return agentStructuredOutput;
+      }
+
+      return children.find((x) => x.value === value);
     },
-    [options],
+    [findAgentStructuredOutputLabel, options],
   );
 
   const onSelectOption = useCallback(
     (
-      selectedOption: VariableOption | VariableInnerOption,
+      selectedOption: VariableInnerOption,
       nodeToRemove: TextNode | null,
       closeMenu: () => void,
     ) => {
@@ -169,13 +276,17 @@ export default function VariablePickerMenuPlugin({
         if (nodeToRemove) {
           nodeToRemove.remove();
         }
-
-        selection.insertNodes([
-          $createVariableNode(
-            (selectedOption as VariableInnerOption).value,
-            selectedOption.label as string,
-          ),
-        ]);
+        const variableNode = $createVariableNode(
+          (selectedOption as VariableInnerOption).value,
+          selectedOption.label as string,
+          selectedOption.parentLabel as string | ReactNode,
+          selectedOption.icon as ReactNode,
+        );
+        if (selectedOption.parentLabel === PromptIdentity) {
+          selection.insertText(selectedOption.value);
+        } else {
+          selection.insertNodes([variableNode]);
+        }
 
         closeMenu();
       });
@@ -191,7 +302,6 @@ export default function VariablePickerMenuPlugin({
       const regex = /{([^}]*)}/g;
       let match;
       let lastIndex = 0;
-
       while ((match = regex.exec(text)) !== null) {
         const { 1: content, index, 0: template } = match;
 
@@ -203,9 +313,17 @@ export default function VariablePickerMenuPlugin({
         }
 
         // Add variable node or text node
-        const label = findLabelByValue(content);
-        if (label) {
-          paragraph.append($createVariableNode(content, label));
+        const nodeItem = findItemByValue(content);
+
+        if (nodeItem) {
+          paragraph.append(
+            $createVariableNode(
+              content,
+              nodeItem.label,
+              nodeItem.parentLabel,
+              nodeItem.icon,
+            ),
+          );
         } else {
           paragraph.append($createTextNode(template));
         }
@@ -221,13 +339,17 @@ export default function VariablePickerMenuPlugin({
       }
 
       $getRoot().clear().append(paragraph);
+
+      if ($isRangeSelection($getSelection())) {
+        $getRoot().selectEnd();
+      }
     },
-    [findLabelByValue],
+    [findItemByValue],
   );
 
   useEffect(() => {
-    if (editor && value && isFirstRender.current) {
-      isFirstRender.current = false;
+    if (editor && value && value !== previousValue.current) {
+      previousValue.current = value;
       editor.update(
         () => {
           parseTextToVariableNodes(value);
@@ -237,24 +359,45 @@ export default function VariablePickerMenuPlugin({
     }
   }, [parseTextToVariableNodes, editor, value]);
 
+  // Fixed the issue where the cursor would go to the end when changing its own data
+  useEffect(() => {
+    return editor.registerUpdateListener(({ editorState, tags }) => {
+      // If we trigger the programmatic update ourselves, we should not write back to avoid an infinite loop.
+      if (tags.has(ProgrammaticTag)) return;
+
+      editorState.read(() => {
+        const text = $getRoot().getTextContent();
+        if (text !== previousValue.current) {
+          previousValue.current = text;
+        }
+      });
+    });
+  }, [editor]);
+
   return (
     <LexicalTypeaheadMenuPlugin<VariableOption | VariableInnerOption>
       onQueryChange={setQueryString}
-      onSelectOption={onSelectOption}
-      triggerFn={checkForTriggerMatch}
+      onSelectOption={(option, textNodeContainingQuery, closeMenu) =>
+        onSelectOption(
+          option as VariableInnerOption, // Only the second level menu can be selected
+          textNodeContainingQuery,
+          closeMenu,
+        )
+      }
+      triggerFn={testTriggerFn}
       options={buildNextOptions()}
       menuRenderFn={(anchorElementRef, { selectOptionAndCleanUp }) => {
         const nextOptions = buildNextOptions();
-        console.log('🚀 ~ nextOptions:', nextOptions);
         return anchorElementRef.current && nextOptions.length
           ? ReactDOM.createPortal(
-              <div className="typeahead-popover w-[200px] p-2">
-                <ul>
+              <div className="typeahead-popover w-80 p-2 bg-bg-base">
+                <ul className="scroll-auto overflow-x-hidden">
                   {nextOptions.map((option, i: number) => (
                     <VariablePickerMenuItem
                       index={i}
                       key={option.key}
                       option={option}
+                      types={types}
                       selectOptionAndCleanUp={selectOptionAndCleanUp}
                     />
                   ))}

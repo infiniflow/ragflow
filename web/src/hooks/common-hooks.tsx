@@ -4,8 +4,8 @@ import isEqual from 'lodash/isEqual';
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export const useSetModalState = () => {
-  const [visible, setVisible] = useState(false);
+export const useSetModalState = (initialVisible = false) => {
+  const [visible, setVisible] = useState(initialVisible);
 
   const showModal = useCallback(() => {
     setVisible(true);
@@ -94,9 +94,9 @@ export const useShowDeleteConfirm = () => {
           title: title ?? t('common.deleteModalTitle'),
           icon: <ExclamationCircleFilled />,
           content,
-          okText: t('common.ok'),
+          okText: t('common.yes'),
           okType: 'danger',
-          cancelText: t('common.cancel'),
+          cancelText: t('common.no'),
           async onOk() {
             try {
               const ret = await onOk?.();
