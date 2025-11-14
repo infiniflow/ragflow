@@ -49,6 +49,8 @@ export default {
   llm_tools: `${api_host}/plugin/llm_tools`,
 
   // knowledge base
+
+  check_embedding: `${api_host}/kb/check_embedding`,
   kb_list: `${api_host}/kb/list`,
   create_kb: `${api_host}/kb/create`,
   update_kb: `${api_host}/kb/update`,

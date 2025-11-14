@@ -13,14 +13,14 @@ export enum TypesWithArray {
   String = 'string',
   Number = 'number',
   Boolean = 'boolean',
-  // Object = 'object',
-  // ArrayString = 'array<string>',
-  // ArrayNumber = 'array<number>',
-  // ArrayBoolean = 'array<boolean>',
-  // ArrayObject = 'array<object>',
+  Object = 'object',
+  ArrayString = 'array<string>',
+  ArrayNumber = 'array<number>',
+  ArrayBoolean = 'array<boolean>',
+  ArrayObject = 'array<object>',
 }
 
-export const GobalFormFields = [
+export const GlobalFormFields = [
   {
     label: t('flow.name'),
     name: 'name',
@@ -50,11 +50,11 @@ export const GobalFormFields = [
     label: t('flow.description'),
     name: 'description',
     placeholder: t('flow.variableDescription'),
-    type: 'textarea',
+    type: FormFieldType.Textarea,
   },
 ] as FormFieldConfig[];
 
-export const GobalVariableFormDefaultValues = {
+export const GlobalVariableFormDefaultValues = {
   name: '',
   type: TypesWithArray.String,
   value: '',
@@ -65,9 +65,9 @@ export const TypeMaps = {
   [TypesWithArray.String]: FormFieldType.Textarea,
   [TypesWithArray.Number]: FormFieldType.Number,
   [TypesWithArray.Boolean]: FormFieldType.Checkbox,
-  // [TypesWithArray.Object]: FormFieldType.Textarea,
-  // [TypesWithArray.ArrayString]: FormFieldType.Textarea,
-  // [TypesWithArray.ArrayNumber]: FormFieldType.Textarea,
-  // [TypesWithArray.ArrayBoolean]: FormFieldType.Textarea,
-  // [TypesWithArray.ArrayObject]: FormFieldType.Textarea,
+  [TypesWithArray.Object]: FormFieldType.Textarea,
+  [TypesWithArray.ArrayString]: FormFieldType.Textarea,
+  [TypesWithArray.ArrayNumber]: FormFieldType.Textarea,
+  [TypesWithArray.ArrayBoolean]: FormFieldType.Textarea,
+  [TypesWithArray.ArrayObject]: FormFieldType.Textarea,
 };

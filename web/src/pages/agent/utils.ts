@@ -348,30 +348,30 @@ export const buildDslComponentsByGraph = (
   return components;
 };
 
-export const buildDslGobalVariables = (
+export const buildDslGlobalVariables = (
   dsl: DSL,
-  gobalVariables?: Record<string, GlobalVariableType>,
+  globalVariables?: Record<string, GlobalVariableType>,
 ) => {
-  if (!gobalVariables) {
+  if (!globalVariables) {
     return { globals: dsl.globals, variables: dsl.variables || {} };
   }
 
-  let gobalVariablesTemp: Record<string, any> = {};
-  let gobalSystem: Record<string, any> = {};
+  let globalVariablesTemp: Record<string, any> = {};
+  let globalSystem: Record<string, any> = {};
   Object.keys(dsl.globals)?.forEach((key) => {
     if (key.indexOf('sys') > -1) {
-      gobalSystem[key] = dsl.globals[key];
+      globalSystem[key] = dsl.globals[key];
     }
   });
-  Object.keys(gobalVariables).forEach((key) => {
-    gobalVariablesTemp['env.' + key] = gobalVariables[key].value;
+  Object.keys(globalVariables).forEach((key) => {
+    globalVariablesTemp['env.' + key] = globalVariables[key].value;
   });
 
-  const gobalVariablesResult = {
-    ...gobalSystem,
-    ...gobalVariablesTemp,
+  const globalVariablesResult = {
+    ...globalSystem,
+    ...globalVariablesTemp,
   };
-  return { globals: gobalVariablesResult, variables: gobalVariables };
+  return { globals: globalVariablesResult, variables: globalVariables };
 };
 
 export const receiveMessageError = (res: any) =>

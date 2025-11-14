@@ -88,7 +88,7 @@ export function GeneralForm() {
         }}
       />
       <PermissionFormField></PermissionFormField>
-      <EmbeddingModelItem></EmbeddingModelItem>
+      <EmbeddingModelItem isEdit={true}></EmbeddingModelItem>
       <PageRankFormField></PageRankFormField>
 
       <TagItems></TagItems>

@@ -39,7 +39,7 @@ import { useParams } from 'umi';
 import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
 import { Operator } from './constant';
-import { GobalParamSheet } from './gobal-variable-sheet';
+import { GlobalParamSheet } from './gobal-variable-sheet';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
 import { useHandleExportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
@@ -126,9 +126,9 @@ export default function Agent() {
   } = useSetModalState();
 
   const {
-    visible: gobalParamSheetVisible,
-    showModal: showGobalParamSheet,
-    hideModal: hideGobalParamSheet,
+    visible: globalParamSheetVisible,
+    showModal: showGlobalParamSheet,
+    hideModal: hideGlobalParamSheet,
   } = useSetModalState();
 
   const {
@@ -216,7 +216,7 @@ export default function Agent() {
           </ButtonLoading>
           <ButtonLoading
             variant={'secondary'}
-            onClick={() => showGobalParamSheet()}
+            onClick={() => showGlobalParamSheet()}
             loading={loading}
           >
             <MessageSquareCode /> {t('flow.conversationVariable')}
@@ -314,11 +314,11 @@ export default function Agent() {
           loading={pipelineRunning}
         ></PipelineRunSheet>
       )}
-      {gobalParamSheetVisible && (
-        <GobalParamSheet
+      {globalParamSheetVisible && (
+        <GlobalParamSheet
           data={{}}
-          hideModal={hideGobalParamSheet}
-        ></GobalParamSheet>
+          hideModal={hideGlobalParamSheet}
+        ></GlobalParamSheet>
       )}
     </section>
   );
