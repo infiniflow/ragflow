@@ -16,13 +16,14 @@
 import hashlib
 from datetime import datetime
 import logging
+from typing import Any, Dict, List, Optional, Tuple
 
 import peewee
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from api.db import UserTenantRole
 from api.db.db_models import DB, UserTenant
-from api.db.db_models import User, Tenant
+from api.db.db_models import User, Tenant, Department, UserDepartment
 from api.db.services.common_service import CommonService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
@@ -317,3 +318,157 @@ class UserTenantService(CommonService):
             return user_tenant
         except peewee.DoesNotExist:
             return None
+
+
+class DepartmentService(CommonService):
+    """Service class for managing department-related database operations.
+
+    This class extends CommonService to provide functionality for department management,
+    including department creation, retrieval, and tenant-based queries.
+
+    Attributes:
+        model: The Department model class for database operations.
+    """
+    model = Department
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_tenant_id(cls, tenant_id: str) -> List[Dict[str, Any]]:
+        """Get all departments for a given tenant.
+
+        Args:
+            tenant_id: The tenant ID to query departments for.
+
+        Returns:
+            List of department dictionaries with all fields.
+        """
+        return list(cls.model.select()
+                    .where(
+                        (cls.model.tenant_id == tenant_id) & 
+                        (cls.model.status == StatusEnum.VALID.value)
+                    )
+                    .order_by(cls.model.create_time.desc())
+                    .dicts())
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_id(cls, department_id: str) -> Tuple[bool, Optional[Department]]:
+        """Get a department by its ID.
+
+        Args:
+            department_id: The department ID.
+
+        Returns:
+            Tuple of (success: bool, department: Department or None).
+        """
+        try:
+            department: Optional[Department] = cls.model.get_or_none(
+                (cls.model.id == department_id) & 
+                (cls.model.status == StatusEnum.VALID.value)
+            )
+            if department:
+                return True, department
+        except Exception:
+            pass
+        return False, None
+
+    @classmethod
+    @DB.connection_context()
+    def filter_by_tenant_and_id(cls, tenant_id: str, department_id: str) -> Optional[Department]:
+        """Get a department by tenant ID and department ID.
+
+        Args:
+            tenant_id: The tenant ID.
+            department_id: The department ID.
+
+        Returns:
+            Department instance or None if not found.
+        """
+        try:
+            department: Optional[Department] = cls.model.select().where(
+                (cls.model.tenant_id == tenant_id) & 
+                (cls.model.id == department_id) & 
+                (cls.model.status == StatusEnum.VALID.value)
+            ).first()
+            return department
+        except peewee.DoesNotExist:
+            return None
+
+
+class UserDepartmentService(CommonService):
+    """Service class for managing user-department relationship operations.
+    
+    This class extends CommonService to handle the many-to-many relationship
+    between users and departments.
+    
+    Attributes:
+        model: The UserDepartment model class for database operations.
+    """
+    model = UserDepartment
+    
+    @classmethod
+    @DB.connection_context()
+    def save(cls, **kwargs) -> UserDepartment:
+        """Save a user-department relationship.
+        
+        Args:
+            **kwargs: UserDepartment fields (id, department_id, user_id, status).
+            
+        Returns:
+            Created UserDepartment instance.
+        """
+        if "id" not in kwargs:
+            kwargs["id"] = get_uuid()
+        obj = cls.model(**kwargs).save(force_insert=True)
+        return obj
+    
+    @classmethod
+    @DB.connection_context()
+    def filter_by_department_and_user_id(
+        cls, department_id: str, user_id: str
+    ) -> Optional[UserDepartment]:
+        """Get a user-department relationship by department ID and user ID.
+        
+        Args:
+            department_id: The department ID.
+            user_id: The user ID.
+            
+        Returns:
+            UserDepartment instance or None if not found.
+        """
+        try:
+            user_department: Optional[UserDepartment] = cls.model.select().where(
+                (cls.model.department_id == department_id) &
+                (cls.model.user_id == user_id)
+            ).first()
+            return user_department
+        except peewee.DoesNotExist:
+            return None
+    
+    @classmethod
+    @DB.connection_context()
+    def get_by_department_id(cls, department_id: str) -> List[Dict[str, Any]]:
+        """Get all users in a department.
+        
+        Args:
+            department_id: The department ID.
+            
+        Returns:
+            List of user dictionaries with department relationship info.
+        """
+        fields = [
+            cls.model.id,
+            cls.model.user_id,
+            cls.model.status,
+            User.nickname,
+            User.email,
+            User.avatar,
+            User.is_active,
+            User.status,
+        ]
+        return list(
+            cls.model.select(*fields)
+            .join(User, on=((cls.model.user_id == User.id) & (cls.model.status == StatusEnum.VALID.value)))
+            .where(cls.model.department_id == department_id)
+            .dicts()
+        )
