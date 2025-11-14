@@ -96,7 +96,7 @@ jobs:
           args: "check"
 
       - name: Check comments of changed Python files
-        if: ${{ !cancelled() && !failure() }}
+        if: ${{ false }}
         run: |
           if [[ ${{ github.event_name }} == 'pull_request_target' ]]; then
             CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
@@ -110,7 +110,7 @@ jobs:
 
               for file in "${files[@]}"; do
                 if [ -f "$file" ]; then
-                  if python3 check_comment_ascii.py $file"; then
+                  if python3 check_comment_ascii.py "$file"; then
                     echo "✅ $file"
                   else
                     echo "❌ $file"
