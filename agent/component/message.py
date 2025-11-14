@@ -138,6 +138,7 @@ class Message(ComponentBase):
             yield rand_cnt[s: ]
 
         self.set_output("content", all_content)
+        self._convert_content(all_content)
 
     def _is_jinjia2(self, content:str) -> bool:
         patt = [
@@ -151,7 +152,7 @@ class Message(ComponentBase):
             return
 
         rand_cnt = random.choice(self._param.content)
-        if self._param.stream and self._param.output_format is None and not self._is_jinjia2(rand_cnt):
+        if self._param.stream and not self._is_jinjia2(rand_cnt):
             self.set_output("content", partial(self._stream, rand_cnt))
             return
 
