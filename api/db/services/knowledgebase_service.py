@@ -393,11 +393,10 @@ class KnowledgebaseService(CommonService):
         if not isinstance(name, str):
             return get_data_error_result(message="Dataset name must be string.")
         dataset_name = name.strip()
-        dataset_size = len(dataset_name)
-        if dataset_size == 0:
+        if len(dataset_name) == 0:
             return get_data_error_result(message="Dataset name can't be empty.")
-        if dataset_size > DATASET_NAME_LIMIT:
-            return get_data_error_result(message=f"Dataset name length is {dataset_size} which is larger than {DATASET_NAME_LIMIT}")
+        if len(dataset_name.encode("utf-8")) > DATASET_NAME_LIMIT:
+            return get_data_error_result(message=f"Dataset name length is {len(dataset_name)} which is larger than {DATASET_NAME_LIMIT}")
 
         # Deduplicate name within tenant
         dataset_name = duplicate_name(
