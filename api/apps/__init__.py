@@ -159,7 +159,7 @@ def login_required(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]
 
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-        if not current_user or not session.get("_user_id"):
+        if not current_user:# or not session.get("_user_id"):
             raise Unauthorized()
         else:
             return await current_app.ensure_async(func)(*args, **kwargs)

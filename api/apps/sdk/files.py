@@ -35,7 +35,7 @@ from common import settings
 
 @manager.route('/file/upload', methods=['POST'])  # noqa: F821
 @token_required
-def upload(tenant_id):
+async def upload(tenant_id):
     """
     Upload a file to the system.
     ---
@@ -77,15 +77,17 @@ def upload(tenant_id):
                     type: string
                     description: File type (e.g., document, folder)
     """
-    pf_id = request.form.get("parent_id")
+    form = await request.form
+    files = await request.files
+    pf_id = form.get("parent_id")
 
     if not pf_id:
         root_folder = FileService.get_root_folder(tenant_id)
         pf_id = root_folder["id"]
 
-    if 'file' not in request.files:
+    if 'file' not in files:
         return get_json_result(data=False, message='No file part!', code=400)
-    file_objs = request.files.getlist('file')
+    file_objs = files.getlist('file')
 
     for file_obj in file_objs:
         if file_obj.filename == '':

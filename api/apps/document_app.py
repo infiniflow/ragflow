@@ -51,14 +51,16 @@ from common import settings
 @manager.route("/upload", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id")
-def upload():
-    kb_id = request.form.get("kb_id")
+async def upload():
+    form = await request.form
+    kb_id = form.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    if "file" not in request.files:
+    files = await request.files
+    if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
-    file_objs = request.files.getlist("file")
+    file_objs = files.getlist("file")
     for file_obj in file_objs:
         if file_obj.filename == "":
             return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
@@ -85,12 +87,13 @@ def upload():
 @manager.route("/web_crawl", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id", "name", "url")
-def web_crawl():
-    kb_id = request.form.get("kb_id")
+async def web_crawl():
+    form = await request.form
+    kb_id = form.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    name = request.form.get("name")
-    url = request.form.get("url")
+    name = form.get("name")
+    url = form.get("url")
     if not is_valid_url(url):
         return get_json_result(data=False, message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
     e, kb = KnowledgebaseService.get_by_id(kb_id)
@@ -587,17 +590,18 @@ async def get_image(image_id):
 @manager.route("/upload_and_parse", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id")
-def upload_and_parse():
-    if "file" not in request.files:
+async def upload_and_parse():
+    files = await request.file
+    if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
-    file_objs = request.files.getlist("file")
+    file_objs = files.getlist("file")
     for file_obj in file_objs:
         if file_obj.filename == "":
             return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
 
-    doc_ids = doc_upload_and_parse(request.form.get("conversation_id"), file_objs, current_user.id)
-
+    form = await request.form
+    doc_ids = doc_upload_and_parse(form.get("conversation_id"), file_objs, current_user.id)
     return get_json_result(data=doc_ids)
 
 
@@ -645,10 +649,11 @@ async def parse():
         txt = FileService.parse_docs([f], current_user.id)
         return get_json_result(data=txt)
 
-    if "file" not in request.files:
+    files = await request.files
+    if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
-    file_objs = request.files.getlist("file")
+    file_objs = files.getlist("file")
     txt = FileService.parse_docs(file_objs, current_user.id)
 
     return get_json_result(data=txt)

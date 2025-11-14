@@ -38,17 +38,19 @@ from common import settings
 @manager.route('/upload', methods=['POST'])  # noqa: F821
 @login_required
 # @validate_request("parent_id")
-def upload():
-    pf_id = request.form.get("parent_id")
+async def upload():
+    form = await request.form
+    pf_id = form.get("parent_id")
 
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
         pf_id = root_folder["id"]
 
-    if 'file' not in request.files:
+    files = await request.files
+    if 'file' not in files:
         return get_json_result(
             data=False, message='No file part!', code=RetCode.ARGUMENT_ERROR)
-    file_objs = request.files.getlist('file')
+    file_objs = files.getlist('file')
 
     for file_obj in file_objs:
         if file_obj.filename == '':

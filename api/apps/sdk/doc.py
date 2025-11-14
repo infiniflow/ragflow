@@ -69,7 +69,7 @@ class Chunk(BaseModel):
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["POST"])  # noqa: F821
 @token_required
-def upload(dataset_id, tenant_id):
+async def upload(dataset_id, tenant_id):
     """
     Upload documents to a dataset.
     ---
@@ -130,9 +130,11 @@ def upload(dataset_id, tenant_id):
                     type: string
                     description: Processing status.
     """
-    if "file" not in request.files:
+    form = await request.form
+    files = await request.files
+    if "file" not in files:
         return get_error_data_result(message="No file part!", code=RetCode.ARGUMENT_ERROR)
-    file_objs = request.files.getlist("file")
+    file_objs = files.getlist("file")
     for file_obj in file_objs:
         if file_obj.filename == "":
             return get_result(message="No file selected!", code=RetCode.ARGUMENT_ERROR)
@@ -155,7 +157,7 @@ def upload(dataset_id, tenant_id):
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         raise LookupError(f"Can't find the dataset with ID {dataset_id}!")
-    err, files = FileService.upload_document(kb, file_objs, tenant_id, parent_path=request.form.get("parent_path"))
+    err, files = FileService.upload_document(kb, file_objs, tenant_id, parent_path=form.get("parent_path"))
     if err:
         return get_result(message="\n".join(err), code=RetCode.SERVER_ERROR)
     # rename key's name

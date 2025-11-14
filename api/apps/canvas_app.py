@@ -243,7 +243,7 @@ async def reset():
 
 
 @manager.route("/upload/<canvas_id>", methods=["POST"])  # noqa: F821
-def upload(canvas_id):
+async def upload(canvas_id):
     e, cvs = UserCanvasService.get_by_canvas_id(canvas_id)
     if not e:
         return get_data_error_result(message="canvas not found.")
@@ -309,7 +309,8 @@ def upload(canvas_id):
         except Exception as e:
             return  server_error_response(e)
 
-    file = request.files['file']
+    files = await request.files
+    file = files['file']
     try:
         DocumentService.check_doc_health(user_id, file.filename)
         return get_json_result(data=structured(file.filename, filename_type(file.filename), file.read(), file.content_type))
