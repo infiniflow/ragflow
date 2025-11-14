@@ -14,9 +14,11 @@
 #  limitations under the License.
 #
 from pathlib import Path
+from typing import Any, Dict, Optional, Union
 
 import requests
 from configs import HOST_ADDRESS, VERSION
+from requests.auth import AuthBase
 from requests_toolbelt import MultipartEncoder
 from utils.file_utils import create_txt_file
 
@@ -250,38 +252,162 @@ def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
 
 
 # USER MANAGEMENT
-USER_API_URL = f"/{VERSION}/user"
+USER_API_URL: str = f"/{VERSION}/user"
 
 
-def create_user(auth, payload=None, *, headers=HEADERS):
-    url = f"{HOST_ADDRESS}{USER_API_URL}/create"
-    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
+def create_user(
+    auth: Union[AuthBase, str, None],
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Create a new user.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        payload: Optional JSON payload containing user data.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the created user data.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{USER_API_URL}/create"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth, json=payload
+    )
     return res.json()
 
 
-def update_user(auth, payload=None, *, headers=HEADERS):
-    url = f"{HOST_ADDRESS}{USER_API_URL}/update"
-    res = requests.put(url=url, headers=headers, auth=auth, json=payload)
+def update_user(
+    auth: Union[AuthBase, str, None],
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Update an existing user.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        payload: Optional JSON payload containing updated user data.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the updated user data.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{USER_API_URL}/update"
+    res: requests.Response = requests.put(
+        url=url, headers=headers, auth=auth, json=payload
+    )
     return res.json()
 
 
-def list_users(auth, params=None, *, headers=HEADERS):
-    url = f"{HOST_ADDRESS}{USER_API_URL}/list"
-    res = requests.get(url=url, headers=headers, auth=auth, params=params)
+def list_users(
+    auth: Union[AuthBase, str, None],
+    params: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """List users with optional filtering.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        params: Optional query parameters for filtering/pagination.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the list of users.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{USER_API_URL}/list"
+    res: requests.Response = requests.get(
+        url=url, headers=headers, auth=auth, params=params
+    )
     return res.json()
 
 
-def delete_user(auth, payload=None, *, headers=HEADERS):
-    url = f"{HOST_ADDRESS}{USER_API_URL}/delete"
-    res = requests.delete(url=url, headers=headers, auth=auth, json=payload)
+def delete_user(
+    auth: Union[AuthBase, str, None],
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Delete a user.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        payload: Optional JSON payload containing user identification data.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the deletion result.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{USER_API_URL}/delete"
+    res: requests.Response = requests.delete(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
+def get_user_info(
+    auth: Union[AuthBase, str, None],
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Get the current authenticated user's information.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the user information.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{USER_API_URL}/info"
+    res: requests.Response = requests.get(
+        url=url, headers=headers, auth=auth
+    )
     return res.json()
 
 
 # TEAM MANAGEMENT
-TEAM_API_URL = f"/{VERSION}/tenant"
+TEAM_API_URL: str = f"/{VERSION}/tenant"
 
 
-def create_team(auth, payload=None, *, headers=HEADERS):
-    url = f"{HOST_ADDRESS}{TEAM_API_URL}/create"
-    res = requests.post(url=url, headers=headers, auth=auth, json=payload)
+def create_team(
+    auth: Union[AuthBase, str, None],
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Create a new team (tenant).
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        payload: Optional JSON payload containing team data (e.g., name, user_id).
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the created team data.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{TEAM_API_URL}/create"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth, json=payload
+    )
     return res.json()

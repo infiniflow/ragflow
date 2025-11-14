@@ -15,46 +15,24 @@
 #
 from __future__ import annotations
 
-import base64
-import os
 import uuid
 from typing import Any
 
 import pytest
-from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
-from Cryptodome.PublicKey import RSA
 
 from common import create_user, delete_user
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
 
+# Import from conftest - load it directly to avoid import issues
+import importlib.util
+from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Utility Functions
-# ---------------------------------------------------------------------------
-
-
-def encrypt_password(password: str) -> str:
-    """
-    Encrypt password for API calls without importing from api.utils.crypt.
-
-    Avoids ModuleNotFoundError caused by test helper module named `common`.
-    """
-    current_dir: str = os.path.dirname(os.path.abspath(__file__))
-    project_base: str = os.path.abspath(
-        os.path.join(current_dir, "..", "..", "..", "..")
-    )
-    file_path: str = os.path.join(project_base, "conf", "public.pem")
-
-    with open(file_path, encoding="utf-8") as pem_file:
-        rsa_key: RSA.RsaKey = RSA.import_key(
-            pem_file.read(), passphrase="Welcome"
-        )
-
-    cipher: Cipher_pkcs1_v1_5.PKCS115_Cipher = Cipher_pkcs1_v1_5.new(rsa_key)
-    password_base64: str = base64.b64encode(password.encode()).decode()
-    encrypted_password: bytes = cipher.encrypt(password_base64.encode())
-    return base64.b64encode(encrypted_password).decode()
+_conftest_path = Path(__file__).parent / "conftest.py"
+spec = importlib.util.spec_from_file_location("conftest", _conftest_path)
+conftest_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(conftest_module)
+encrypt_password = conftest_module.encrypt_password
 
 
 # ---------------------------------------------------------------------------
