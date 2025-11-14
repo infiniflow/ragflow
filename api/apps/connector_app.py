@@ -56,7 +56,6 @@ async def set_connector():
             "timeout_secs": int(req.get("timeout_secs", 60 * 29)),
             "status": TaskStatus.SCHEDULE,
         }
-        conn["status"] = TaskStatus.SCHEDULE
         ConnectorService.save(**conn)
 
     time.sleep(1)

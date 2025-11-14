@@ -51,6 +51,7 @@ export interface SegmentedProps
   direction?: 'ltr' | 'rtl';
   motionName?: string;
   activeClassName?: string;
+  itemClassName?: string;
   rounded?: keyof typeof segmentedVariants.round;
   sizeType?: keyof typeof segmentedVariants.size;
   buttonSize?: keyof typeof segmentedVariants.buttonSize;
@@ -62,6 +63,7 @@ export function Segmented({
   onChange,
   className,
   activeClassName,
+  itemClassName,
   rounded = 'default',
   sizeType = 'default',
   buttonSize = 'default',
@@ -92,12 +94,13 @@ export function Segmented({
           <div
             key={actualValue}
             className={cn(
-              'inline-flex items-center  text-base font-normal cursor-pointer',
+              'inline-flex items-center text-base font-normal cursor-pointer',
               segmentedVariants.round[rounded],
               segmentedVariants.buttonSize[buttonSize],
               {
                 'text-text-primary bg-bg-base': selectedValue === actualValue,
               },
+              itemClassName,
               activeClassName && selectedValue === actualValue
                 ? activeClassName
                 : '',

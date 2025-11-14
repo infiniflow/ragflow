@@ -306,7 +306,7 @@ async def get_filter():
 
 @manager.route("/infos", methods=["POST"])  # noqa: F821
 @login_required
-async def docinfos():
+async def doc_infos():
     req = await request.json
     doc_ids = req["doc_ids"]
     for doc_id in doc_ids:
@@ -542,6 +542,7 @@ async def change_parser():
                 return get_data_error_result(message="Tenant not found!")
             if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
                 settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+        return None
 
     try:
         if "pipeline_id" in req and req["pipeline_id"] != "":

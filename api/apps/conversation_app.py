@@ -85,7 +85,6 @@ def get():
         if not e:
             return get_data_error_result(message="Conversation not found!")
         tenants = UserTenantService.query(user_id=current_user.id)
-        avatar = None
         for tenant in tenants:
             dialog = DialogService.query(tenant_id=tenant.tenant_id, id=conv.dialog_id)
             if dialog and len(dialog) > 0:
