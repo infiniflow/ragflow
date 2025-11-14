@@ -1,16 +1,28 @@
 #!/usr/bin/env python3
+
+"""
+Check whether given python files contain non-ASCII comments.
+
+How to check the whole git repo:
+
+```
+$ git ls-files -z -- '*.py' | xargs -0 python3 check_comment_ascii.py
+```
+"""
+
 import sys
 import tokenize
 import ast
 import pathlib
 import re
 
-ASCII = re.compile(r"^[ -~]*\Z")  # Only printable ASCII
+ASCII = re.compile(r"^[\n -~]*\Z")  # Printable ASCII + newline
 
 
 def check(src: str, name: str) -> int:
     """
-    I'm a docstring
+    docstring line 1
+    docstring line 2
     """
     ok = 1
     # A common comment begins with `#`
