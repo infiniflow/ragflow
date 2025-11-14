@@ -417,6 +417,7 @@ export const initialIterationValues = {
   items_ref: '',
   outputs: {},
 };
+
 export const initialIterationStartValues = {
   outputs: {
     item: {
@@ -844,4 +845,11 @@ export enum JsonSchemaDataType {
   Boolean = 'boolean',
   Array = 'array',
   Object = 'object',
+}
+
+export enum ExportFileType {
+  PDF = 'pdf',
+  HTML = 'html',
+  Markdown = 'md',
+  DOCX = 'docx',
 }

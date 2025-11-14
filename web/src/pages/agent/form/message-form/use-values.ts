@@ -1,7 +1,7 @@
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
-import { initialMessageValues } from '../../constant';
+import { ExportFileType, initialMessageValues } from '../../constant';
 import { convertToObjectArray } from '../../utils';
 
 export function useValues(node?: RAGFlowNodeType) {
@@ -15,6 +15,7 @@ export function useValues(node?: RAGFlowNodeType) {
     return {
       ...formData,
       content: convertToObjectArray(formData.content),
+      output_format: formData.output_format || ExportFileType.PDF,
     };
   }, [node]);
 

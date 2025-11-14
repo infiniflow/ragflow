@@ -1009,6 +1009,8 @@ Example: general/v2/`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      downloadFileTypeTip: 'The file type to download',
+      downloadFileType: 'Download file type',
       formatTypeError: 'Format or type error',
       variableNameMessage:
         'Variable name can only contain letters and underscores',

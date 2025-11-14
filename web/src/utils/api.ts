@@ -100,6 +100,8 @@ export default {
   document_change_parser: `${api_host}/document/change_parser`,
   document_thumbnails: `${api_host}/document/thumbnails`,
   get_document_file: `${api_host}/document/get`,
+  get_document_file_download: (docId: string) =>
+    `${api_host}/document/download/${docId}`,
   document_upload: `${api_host}/document/upload`,
   web_crawl: `${api_host}/document/web_crawl`,
   document_infos: `${api_host}/document/infos`,

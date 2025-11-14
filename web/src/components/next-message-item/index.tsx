@@ -18,8 +18,10 @@ import { cn } from '@/lib/utils';
 import { AgentChatContext } from '@/pages/agent/context';
 import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workflow-timeline';
 import { IMessage } from '@/pages/chat/interface';
+import { downloadFile } from '@/services/file-manager-service';
+import { downloadFileFromBlob } from '@/utils/file-util';
 import { isEmpty } from 'lodash';
-import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
+import { Atom, ChevronDown, ChevronUp, Download } from 'lucide-react';
 import MarkdownContent from '../next-markdown-content';
 import { RAGFlowAvatar } from '../ragflow-avatar';
 import { useTheme } from '../theme-provider';
@@ -244,6 +246,32 @@ function MessageItem({
 
             {isUser && (
               <UploadedMessageFiles files={item.files}></UploadedMessageFiles>
+            )}
+            {isAssistant && item.attachment && item.attachment.doc_id && (
+              <div className="w-full flex items-center justify-end">
+                <Button
+                  variant="link"
+                  className="p-1 m-0 h-auto text-text-sub-title-invert"
+                  onClick={async () => {
+                    if (item.attachment?.doc_id) {
+                      try {
+                        const response = await downloadFile({
+                          docId: item.attachment.doc_id,
+                          ext: item.attachment.format,
+                        });
+                        const blob = new Blob([response.data], {
+                          type: response.data.type,
+                        });
+                        downloadFileFromBlob(blob, item.attachment.file_name);
+                      } catch (error) {
+                        console.error('Download failed:', error);
+                      }
+                    }
+                  }}
+                >
+                  <Download size={16} />
+                </Button>
+              </div>
             )}
           </section>
         </div>

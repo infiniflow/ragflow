@@ -956,6 +956,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      downloadFileTypeTip: '文件下载的类型',
+      downloadFileType: '文件类型',
       formatTypeError: '格式或类型错误',
       variableNameMessage: '名称只能包含字母和下划线',
       variableDescription: '变量的描述',
