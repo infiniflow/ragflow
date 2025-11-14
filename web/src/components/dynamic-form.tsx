@@ -61,6 +61,12 @@ export interface FormFieldConfig {
   horizontal?: boolean;
   onChange?: (value: any) => void;
   tooltip?: React.ReactNode;
+  customValidate?: (
+    value: any,
+    formValues: any,
+  ) => string | boolean | Promise<string | boolean>;
+  dependencies?: string[];
+  schema?: ZodSchema;
 }
 
 // Component props interface
@@ -94,36 +100,40 @@ const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
     let fieldSchema: ZodSchema;
 
     // Create base validation schema based on field type
-    switch (field.type) {
-      case FormFieldType.Email:
-        fieldSchema = z.string().email('Please enter a valid email address');
-        break;
-      case FormFieldType.Number:
-        fieldSchema = z.coerce.number();
-        if (field.validation?.min !== undefined) {
-          fieldSchema = (fieldSchema as z.ZodNumber).min(
-            field.validation.min,
-            field.validation.message ||
-              `Value cannot be less than ${field.validation.min}`,
-          );
-        }
-        if (field.validation?.max !== undefined) {
-          fieldSchema = (fieldSchema as z.ZodNumber).max(
-            field.validation.max,
-            field.validation.message ||
-              `Value cannot be greater than ${field.validation.max}`,
-          );
-        }
-        break;
-      case FormFieldType.Checkbox:
-        fieldSchema = z.boolean();
-        break;
-      case FormFieldType.Tag:
-        fieldSchema = z.array(z.string());
-        break;
-      default:
-        fieldSchema = z.string();
-        break;
+    if (field.schema) {
+      fieldSchema = field.schema;
+    } else {
+      switch (field.type) {
+        case FormFieldType.Email:
+          fieldSchema = z.string().email('Please enter a valid email address');
+          break;
+        case FormFieldType.Number:
+          fieldSchema = z.coerce.number();
+          if (field.validation?.min !== undefined) {
+            fieldSchema = (fieldSchema as z.ZodNumber).min(
+              field.validation.min,
+              field.validation.message ||
+                `Value cannot be less than ${field.validation.min}`,
+            );
+          }
+          if (field.validation?.max !== undefined) {
+            fieldSchema = (fieldSchema as z.ZodNumber).max(
+              field.validation.max,
+              field.validation.message ||
+                `Value cannot be greater than ${field.validation.max}`,
+            );
+          }
+          break;
+        case FormFieldType.Checkbox:
+          fieldSchema = z.boolean();
+          break;
+        case FormFieldType.Tag:
+          fieldSchema = z.array(z.string());
+          break;
+        default:
+          fieldSchema = z.string();
+          break;
+      }
     }
 
     // Handle required fields
@@ -300,9 +310,89 @@ const DynamicForm = {
 
       // Initialize form
       const form = useForm<T>({
-        resolver: zodResolver(schema),
+        resolver: async (data, context, options) => {
+          const zodResult = await zodResolver(schema)(data, context, options);
+
+          let combinedErrors = { ...zodResult.errors };
+
+          const fieldErrors: Record<string, { type: string; message: string }> =
+            {};
+          for (const field of fields) {
+            if (field.customValidate && data[field.name] !== undefined) {
+              try {
+                const result = await field.customValidate(
+                  data[field.name],
+                  data,
+                );
+                if (typeof result === 'string') {
+                  fieldErrors[field.name] = {
+                    type: 'custom',
+                    message: result,
+                  };
+                } else if (result === false) {
+                  fieldErrors[field.name] = {
+                    type: 'custom',
+                    message:
+                      field.validation?.message || `${field.label} is invalid`,
+                  };
+                }
+              } catch (error) {
+                fieldErrors[field.name] = {
+                  type: 'custom',
+                  message:
+                    error instanceof Error
+                      ? error.message
+                      : 'Validation failed',
+                };
+              }
+            }
+          }
+
+          combinedErrors = {
+            ...combinedErrors,
+            ...fieldErrors,
+          } as any;
+          console.log('combinedErrors', combinedErrors);
+          return {
+            values: Object.keys(combinedErrors).length ? {} : data,
+            errors: combinedErrors,
+          } as any;
+        },
         defaultValues,
       });
+
+      useEffect(() => {
+        const dependencyMap: Record<string, string[]> = {};
+
+        fields.forEach((field) => {
+          if (field.dependencies && field.dependencies.length > 0) {
+            field.dependencies.forEach((dep) => {
+              if (!dependencyMap[dep]) {
+                dependencyMap[dep] = [];
+              }
+              dependencyMap[dep].push(field.name);
+            });
+          }
+        });
+
+        const subscriptions = Object.keys(dependencyMap).map((depField) => {
+          return form.watch((values: any, { name }) => {
+            if (name === depField && dependencyMap[depField]) {
+              dependencyMap[depField].forEach((dependentField) => {
+                form.trigger(dependentField as any);
+              });
+            }
+          });
+        });
+
+        return () => {
+          subscriptions.forEach((sub) => {
+            if (sub.unsubscribe) {
+              sub.unsubscribe();
+            }
+          });
+        };
+      }, [fields, form]);
 
       // Expose form methods via ref
       useImperativeHandle(ref, () => ({
