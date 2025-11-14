@@ -173,7 +173,8 @@ def check_task_executor_alive():
             heartbeats = [json.loads(heartbeat) for heartbeat in heartbeats]
             task_executor_heartbeats[task_executor_id] = heartbeats
         if task_executor_heartbeats:
-            return {"status": "alive", "message": task_executor_heartbeats}
+            status = "alive" if any(task_executor_heartbeats.values()) else "timeout"
+            return {"status": status, "message": task_executor_heartbeats}
         else:
             return {"status": "timeout", "message": "Not found any task executor."}
     except Exception as e:

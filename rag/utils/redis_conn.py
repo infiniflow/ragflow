@@ -110,7 +110,7 @@ class RedisDB:
         info = self.REDIS.info()
         return {
             'redis_version': info["redis_version"],
-            'server_mode': info["server_mode"],
+            'server_mode': info["server_mode"] if "server_mode" in info else info.get("redis_mode", ""),
             'used_memory': info["used_memory_human"],
             'total_system_memory': info["total_system_memory_human"],
             'mem_fragmentation_ratio': info["mem_fragmentation_ratio"],

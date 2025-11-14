@@ -393,7 +393,9 @@ class AdminCLI(Cmd):
                 print(f"Can't access {self.host}, port: {self.port}")
 
     def _format_service_detail_table(self, data):
-        if not any([isinstance(v, list) for v in data.values()]):
+        if isinstance(data, list):
+            return data
+        if not all([isinstance(v, list) for v in data.values()]):
             # normal table
             return data
         # handle task_executor heartbeats map, for example {'name': [{'done': 2, 'now': timestamp1}, {'done': 3, 'now': timestamp2}]
@@ -404,7 +406,7 @@ class AdminCLI(Cmd):
             task_executor_list.append({
                 "task_executor_name": k,
                 **heartbeats[0],
-            })
+            } if heartbeats else {"task_executor_name": k})
         return task_executor_list
 
     def _print_table_simple(self, data):
@@ -415,7 +417,8 @@ class AdminCLI(Cmd):
             # handle single row data
             data = [data]
 
-        columns = list(data[0].keys())
+        columns = list(set().union(*(d.keys() for d in data)))
+        columns.sort()
         col_widths = {}
 
         def get_string_width(text):
