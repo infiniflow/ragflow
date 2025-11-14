@@ -178,7 +178,7 @@ class Message(ComponentBase):
     def _convert_content(self, content):
         doc_id = get_uuid()
         
-        if not self._param.output_format.lower() in {"markdown", "html", "pdf", "docx"}:
+        if self._param.output_format.lower() not in {"markdown", "html", "pdf", "docx"}:
             self._param.output_format = "markdown"
 
         try:
