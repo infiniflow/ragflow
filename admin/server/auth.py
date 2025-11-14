@@ -169,7 +169,7 @@ def login_verify(f):
         username = auth.parameters['username']
         password = auth.parameters['password']
         try:
-            if check_admin(username, password) is False:
+            if not check_admin(username, password):
                 return jsonify({
                     "code": 500,
                     "message": "Access denied",
