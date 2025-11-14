@@ -93,6 +93,10 @@ def upload(dataset_id, tenant_id):
         type: file
         required: true
         description: Document files to upload.
+      - in: formData
+        name: parent_path
+        type: string
+        description: Optional nested path under the parent folder. Uses '/' separators.
     responses:
       200:
         description: Successfully uploaded documents.
@@ -151,7 +155,7 @@ def upload(dataset_id, tenant_id):
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         raise LookupError(f"Can't find the dataset with ID {dataset_id}!")
-    err, files = FileService.upload_document(kb, file_objs, tenant_id)
+    err, files = FileService.upload_document(kb, file_objs, tenant_id, parent_path=request.form.get("parent_path"))
     if err:
         return get_result(message="\n".join(err), code=RetCode.SERVER_ERROR)
     # rename key's name

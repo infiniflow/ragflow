@@ -242,7 +242,7 @@ class Connector2KbService(CommonService):
                 "id": get_uuid(),
                 "connector_id": conn_id,
                 "kb_id": kb_id,
-                "auto_parse": conn.get("auto_parse", "1")   
+                "auto_parse": conn.get("auto_parse", "1")
             })
             SyncLogsService.schedule(conn_id, kb_id, reindex=True)
 

@@ -382,7 +382,7 @@ async def does_graph_contains(tenant_id, kb_id, doc_id):
         "removed_kwd": "N",
     }
     res = await trio.to_thread.run_sync(lambda: settings.docStoreConn.search(fields, [], condition, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [kb_id]))
-    fields2 = settings.docStoreConn.getFields(res, fields)
+    fields2 = settings.docStoreConn.get_fields(res, fields)
     graph_doc_ids = set()
     for chunk_id in fields2.keys():
         graph_doc_ids = set(fields2[chunk_id]["source_id"])
@@ -591,8 +591,8 @@ async def rebuild_graph(tenant_id, kb_id, exclude_rebuild=None):
         es_res = await trio.to_thread.run_sync(
             lambda: settings.docStoreConn.search(flds, [], {"kb_id": kb_id, "knowledge_graph_kwd": ["subgraph"]}, [], OrderByExpr(), i, bs, search.index_name(tenant_id), [kb_id])
         )
-        # tot = settings.docStoreConn.getTotal(es_res)
-        es_res = settings.docStoreConn.getFields(es_res, flds)
+        # tot = settings.docStoreConn.get_total(es_res)
+        es_res = settings.docStoreConn.get_fields(es_res, flds)
 
         if len(es_res) == 0:
             break
