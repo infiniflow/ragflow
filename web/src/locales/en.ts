@@ -1009,6 +1009,7 @@ Example: general/v2/`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      formatTypeError: 'Format or type error',
       variableNameMessage:
         'Variable name can only contain letters and underscores',
       variableDescription: 'Variable Description',
