@@ -20,8 +20,8 @@ import uuid
 from html import escape
 from typing import Any
 
-from flask import make_response, request
-from flask_login import current_user, login_required
+import flask
+from quart import make_response, request
 from google_auth_oauthlib.flow import Flow
 
 from api.db import InputType
@@ -32,12 +32,13 @@ from common.data_source.config import GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, Docum
 from common.data_source.google_util.constant import GOOGLE_DRIVE_WEB_OAUTH_POPUP_TEMPLATE, GOOGLE_SCOPES
 from common.misc_utils import get_uuid
 from rag.utils.redis_conn import REDIS_CONN
+from api.apps import login_required, current_user
 
 
 @manager.route("/set", methods=["POST"])  # noqa: F821
 @login_required
-def set_connector():
-    req = request.json
+async def set_connector():
+    req = await request.json
     if req.get("id"):
         conn = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
         ConnectorService.update_by_id(req["id"], conn)
@@ -89,8 +90,8 @@ def list_logs(connector_id):
 
 @manager.route("/<connector_id>/resume", methods=["PUT"])  # noqa: F821
 @login_required
-def resume(connector_id):
-    req = request.json
+async def resume(connector_id):
+    req = await request.json
     if req.get("resume"):
         ConnectorService.resume(connector_id, TaskStatus.SCHEDULE)
     else:
@@ -101,8 +102,8 @@ def resume(connector_id):
 @manager.route("/<connector_id>/rebuild", methods=["PUT"])  # noqa: F821
 @login_required
 @validate_request("kb_id")
-def rebuild(connector_id):
-    req = request.json
+async def rebuild(connector_id):
+    req = await request.json
     err = ConnectorService.rebuild(req["kb_id"], connector_id, current_user.id)
     if err:
         return get_json_result(data=False, message=err, code=RetCode.SERVER_ERROR)
@@ -164,7 +165,7 @@ def _render_web_oauth_popup(flow_id: str, success: bool, message: str):
         payload_json=payload_json,
         auto_close=auto_close,
     )
-    response = make_response(html, 200)
+    response = flask.make_response(html, 200)
     response.headers["Content-Type"] = "text/html; charset=utf-8"
     return response
 
@@ -172,14 +173,14 @@ def _render_web_oauth_popup(flow_id: str, success: bool, message: str):
 @manager.route("/google-drive/oauth/web/start", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("credentials")
-def start_google_drive_web_oauth():
+async def start_google_drive_web_oauth():
     if not GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI:
         return get_json_result(
             code=RetCode.SERVER_ERROR,
             message="Google Drive OAuth redirect URI is not configured on the server.",
         )
 
-    req = request.json or {}
+    req = await request.json or {}
     raw_credentials = req.get("credentials", "")
     try:
         credentials = _load_credentials(raw_credentials)
@@ -280,8 +281,8 @@ def google_drive_web_oauth_callback():
 @manager.route("/google-drive/oauth/web/result", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("flow_id")
-def poll_google_drive_web_result():
-    req = request.json or {}
+async def poll_google_drive_web_result():
+    req = await request.json or {}
     flow_id = req.get("flow_id")
     cache_raw = REDIS_CONN.get(_web_result_cache_key(flow_id))
     if not cache_raw:

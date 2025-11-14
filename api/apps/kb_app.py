@@ -17,10 +17,8 @@ import json
 import logging
 import random
 
-from flask import request
-from flask_login import login_required, current_user
+from quart import request
 import numpy as np
-
 
 from api.db.services.connector_service import Connector2KbService
 from api.db.services.llm_service import LLMBundle
@@ -41,12 +39,14 @@ from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.doc_store_conn import OrderByExpr
 from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType, PAGERANK_FLD
 from common import settings
+from api.apps import login_required, current_user
+
 
 @manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("name")
-def create():
-    req = request.json
+async def create():
+    req = await request.json
     req = KnowledgebaseService.create_with_name(
         name = req.pop("name", None),
         tenant_id = current_user.id,
@@ -66,8 +66,8 @@ def create():
 @login_required
 @validate_request("kb_id", "name", "description", "parser_id")
 @not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
-def update():
-    req = request.json
+async def update():
+    req = await request.json
     if not isinstance(req["name"], str):
         return get_data_error_result(message="Dataset name must be string.")
     if req["name"].strip() == "":
@@ -165,18 +165,19 @@ def detail():
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
-def list_kbs():
-    keywords = request.args.get("keywords", "")
-    page_number = int(request.args.get("page", 0))
-    items_per_page = int(request.args.get("page_size", 0))
-    parser_id = request.args.get("parser_id")
-    orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc", "true").lower() == "false":
+async def list_kbs():
+    args = request.args
+    keywords = args.get("keywords", "")
+    page_number = int(args.get("page", 0))
+    items_per_page = int(args.get("page_size", 0))
+    parser_id = args.get("parser_id")
+    orderby = args.get("orderby", "create_time")
+    if args.get("desc", "true").lower() == "false":
         desc = False
     else:
         desc = True
 
-    req = request.get_json()
+    req = await request.get_json()
     owner_ids = req.get("owner_ids", [])
     try:
         if not owner_ids:
@@ -198,11 +199,12 @@ def list_kbs():
     except Exception as e:
         return server_error_response(e)
 
+
 @manager.route('/rm', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("kb_id")
-def rm():
-    req = request.json
+async def rm():
+    req = await request.json
     if not KnowledgebaseService.accessible4deletion(req["kb_id"], current_user.id):
         return get_json_result(
             data=False,
@@ -278,8 +280,8 @@ def list_tags_from_kbs():
 
 @manager.route('/<kb_id>/rm_tags', methods=['POST'])  # noqa: F821
 @login_required
-def rm_tags(kb_id):
-    req = request.json
+async def rm_tags(kb_id):
+    req = await request.json
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
@@ -298,8 +300,8 @@ def rm_tags(kb_id):
 
 @manager.route('/<kb_id>/rename_tag', methods=['POST'])  # noqa: F821
 @login_required
-def rename_tags(kb_id):
-    req = request.json
+async def rename_tags(kb_id):
+    req = await request.json
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
@@ -402,7 +404,7 @@ def get_basic_info():
 
 @manager.route("/list_pipeline_logs", methods=["POST"])  # noqa: F821
 @login_required
-def list_pipeline_logs():
+async def list_pipeline_logs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -421,7 +423,7 @@ def list_pipeline_logs():
     if create_date_to > create_date_from:
         return get_data_error_result(message="Create data filter is abnormal.")
 
-    req = request.get_json()
+    req = await request.get_json()
 
     operation_status = req.get("operation_status", [])
     if operation_status:
@@ -446,7 +448,7 @@ def list_pipeline_logs():
 
 @manager.route("/list_pipeline_dataset_logs", methods=["POST"])  # noqa: F821
 @login_required
-def list_pipeline_dataset_logs():
+async def list_pipeline_dataset_logs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -463,7 +465,7 @@ def list_pipeline_dataset_logs():
     if create_date_to > create_date_from:
         return get_data_error_result(message="Create data filter is abnormal.")
 
-    req = request.get_json()
+    req = await request.get_json()
 
     operation_status = req.get("operation_status", [])
     if operation_status:
@@ -480,12 +482,12 @@ def list_pipeline_dataset_logs():
 
 @manager.route("/delete_pipeline_logs", methods=["POST"])  # noqa: F821
 @login_required
-def delete_pipeline_logs():
+async def delete_pipeline_logs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
 
-    req = request.get_json()
+    req = await request.get_json()
     log_ids = req.get("log_ids", [])
 
     PipelineOperationLogService.delete_by_ids(log_ids)
@@ -509,8 +511,8 @@ def pipeline_log_detail():
 
 @manager.route("/run_graphrag", methods=["POST"])  # noqa: F821
 @login_required
-def run_graphrag():
-    req = request.json
+async def run_graphrag():
+    req = await request.json
 
     kb_id = req.get("kb_id", "")
     if not kb_id:
@@ -578,8 +580,8 @@ def trace_graphrag():
 
 @manager.route("/run_raptor", methods=["POST"])  # noqa: F821
 @login_required
-def run_raptor():
-    req = request.json
+async def run_raptor():
+    req = await request.json
 
     kb_id = req.get("kb_id", "")
     if not kb_id:
@@ -647,8 +649,8 @@ def trace_raptor():
 
 @manager.route("/run_mindmap", methods=["POST"])  # noqa: F821
 @login_required
-def run_mindmap():
-    req = request.json
+async def run_mindmap():
+    req = await request.json
 
     kb_id = req.get("kb_id", "")
     if not kb_id:
@@ -761,7 +763,7 @@ def delete_kb_task():
 
 @manager.route("/check_embedding", methods=["post"])  # noqa: F821
 @login_required
-def check_embedding():
+async def check_embedding():
 
     def _guess_vec_field(src: dict) -> str | None:
         for k in src or {}:
@@ -847,7 +849,7 @@ def check_embedding():
                 "content_with_weight": full_doc.get("content_with_weight") or "",
             })
         return out
-    req = request.json
+    req = await request.json
     kb_id = req.get("kb_id", "")
     embd_id = req.get("embd_id", "")
     n = int(req.get("check_num", 5))

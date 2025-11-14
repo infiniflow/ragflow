@@ -31,7 +31,6 @@ import traceback
 import threading
 import uuid
 
-from werkzeug.serving import run_simple
 from api.apps import app, smtp_mail_server
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
@@ -153,14 +152,7 @@ if __name__ == '__main__':
     # start http server
     try:
         logging.info("RAGFlow HTTP server start...")
-        run_simple(
-            hostname=settings.HOST_IP,
-            port=settings.HOST_PORT,
-            application=app,
-            threaded=True,
-            use_reloader=RuntimeConfig.DEBUG,
-            use_debugger=RuntimeConfig.DEBUG,
-        )
+        app.run(host=settings.HOST_IP, port=settings.HOST_PORT)
     except Exception:
         traceback.print_exc()
         stop_event.set()

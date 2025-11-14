@@ -18,7 +18,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from flask_login import current_user
+from api.apps import current_user
 from peewee import fn
 
 from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileType

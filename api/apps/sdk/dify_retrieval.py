@@ -15,7 +15,7 @@
 #
 import logging
 
-from flask import request, jsonify
+from quart import request, jsonify
 
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -29,7 +29,7 @@ from common import settings
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required
 @validate_request("knowledge_id", "query")
-def retrieval(tenant_id):
+async def retrieval(tenant_id):
     """
     Dify-compatible retrieval API
     ---
@@ -113,7 +113,7 @@ def retrieval(tenant_id):
       404:
         description: Knowledge base or document not found
     """
-    req = request.json
+    req = await request.json
     question = req["query"]
     kb_id = req["knowledge_id"]
     use_kg = req.get("use_kg", False)

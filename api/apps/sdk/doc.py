@@ -20,7 +20,7 @@ import re
 from io import BytesIO
 
 import xxhash
-from flask import request, send_file
+from quart import request, send_file
 from peewee import OperationalError
 from pydantic import BaseModel, Field, validator
 
@@ -179,7 +179,7 @@ def upload(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["PUT"])  # noqa: F821
 @token_required
-def update_doc(tenant_id, dataset_id, document_id):
+async def update_doc(tenant_id, dataset_id, document_id):
     """
     Update a document within a dataset.
     ---
@@ -228,7 +228,7 @@ def update_doc(tenant_id, dataset_id, document_id):
         schema:
           type: object
     """
-    req = request.json
+    req = await request.json
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(message="You don't own the dataset.")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
@@ -589,7 +589,7 @@ def list_docs(dataset_id, tenant_id):
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
 @token_required
-def delete(tenant_id, dataset_id):
+async def delete(tenant_id, dataset_id):
     """
     Delete documents from a dataset.
     ---
@@ -628,7 +628,7 @@ def delete(tenant_id, dataset_id):
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
-    req = request.json
+    req = await request.json
     if not req:
         doc_ids = None
     else:
@@ -699,7 +699,7 @@ def delete(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @token_required
-def parse(tenant_id, dataset_id):
+async def parse(tenant_id, dataset_id):
     """
     Start parsing documents into chunks.
     ---
@@ -738,7 +738,7 @@ def parse(tenant_id, dataset_id):
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
-    req = request.json
+    req = await request.json
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
     doc_list = req.get("document_ids")
@@ -782,7 +782,7 @@ def parse(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/chunks", methods=["DELETE"])  # noqa: F821
 @token_required
-def stop_parsing(tenant_id, dataset_id):
+async def stop_parsing(tenant_id, dataset_id):
     """
     Stop parsing documents into chunks.
     ---
@@ -821,7 +821,7 @@ def stop_parsing(tenant_id, dataset_id):
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
-    req = request.json
+    req = await request.json
 
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
@@ -1023,7 +1023,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
     "/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["POST"]
 )
 @token_required
-def add_chunk(tenant_id, dataset_id, document_id):
+async def add_chunk(tenant_id, dataset_id, document_id):
     """
     Add a chunk to a document.
     ---
@@ -1093,7 +1093,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
     if not doc:
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
-    req = request.json
+    req = await request.json
     if not str(req.get("content", "")).strip():
         return get_error_data_result(message="`content` is required")
     if "important_keywords" in req:
@@ -1152,7 +1152,7 @@ def add_chunk(tenant_id, dataset_id, document_id):
     "datasets/<dataset_id>/documents/<document_id>/chunks", methods=["DELETE"]
 )
 @token_required
-def rm_chunk(tenant_id, dataset_id, document_id):
+async def rm_chunk(tenant_id, dataset_id, document_id):
     """
     Remove chunks from a document.
     ---
@@ -1199,7 +1199,7 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     docs = DocumentService.get_by_ids([document_id])
     if not docs:
         raise LookupError(f"Can't find the document with ID {document_id}!")
-    req = request.json
+    req = await request.json
     condition = {"doc_id": document_id}
     if "chunk_ids" in req:
         unique_chunk_ids, duplicate_messages = check_duplicate_ids(req["chunk_ids"], "chunk")
@@ -1223,7 +1223,7 @@ def rm_chunk(tenant_id, dataset_id, document_id):
     "/datasets/<dataset_id>/documents/<document_id>/chunks/<chunk_id>", methods=["PUT"]
 )
 @token_required
-def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
+async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     """
     Update a chunk within a document.
     ---
@@ -1285,7 +1285,7 @@ def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     if not doc:
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
-    req = request.json
+    req = await request.json
     if "content" in req:
         content = req["content"]
     else:
@@ -1327,7 +1327,7 @@ def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
 
 @manager.route("/retrieval", methods=["POST"])  # noqa: F821
 @token_required
-def retrieval_test(tenant_id):
+async def retrieval_test(tenant_id):
     """
     Retrieve chunks based on a query.
     ---
@@ -1408,7 +1408,7 @@ def retrieval_test(tenant_id):
                     format: float
                     description: Similarity score.
     """
-    req = request.json
+    req = await request.json
     if not req.get("dataset_ids"):
         return get_error_data_result("`dataset_ids` is required.")
     kb_ids = req["dataset_ids"]

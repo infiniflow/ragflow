@@ -18,7 +18,7 @@
 import logging
 import os
 import json
-from flask import request
+from quart import request
 from peewee import OperationalError
 from api.db.db_models import File
 from api.db.services.document_service import DocumentService
@@ -53,7 +53,7 @@ from common import settings
 
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
 @token_required
-def create(tenant_id):
+async def create(tenant_id):
     """
     Create a new dataset.
     ---
@@ -115,7 +115,7 @@ def create(tenant_id):
     # | embedding_model| embd_id     |
     # | chunk_method   | parser_id   |
 
-    req, err = validate_and_parse_json_request(request, CreateDatasetReq)
+    req, err = await validate_and_parse_json_request(request, CreateDatasetReq)
     if err is not None:
         return get_error_argument_result(err)
     
@@ -153,7 +153,7 @@ def create(tenant_id):
 
 @manager.route("/datasets", methods=["DELETE"])  # noqa: F821
 @token_required
-def delete(tenant_id):
+async def delete(tenant_id):
     """
     Delete datasets.
     ---
@@ -191,7 +191,7 @@ def delete(tenant_id):
         schema:
           type: object
     """
-    req, err = validate_and_parse_json_request(request, DeleteDatasetReq)
+    req, err = await validate_and_parse_json_request(request, DeleteDatasetReq)
     if err is not None:
         return get_error_argument_result(err)
 
@@ -251,7 +251,7 @@ def delete(tenant_id):
 
 @manager.route("/datasets/<dataset_id>", methods=["PUT"])  # noqa: F821
 @token_required
-def update(tenant_id, dataset_id):
+async def update(tenant_id, dataset_id):
     """
     Update a dataset.
     ---
@@ -317,7 +317,7 @@ def update(tenant_id, dataset_id):
     # | embedding_model| embd_id     |
     # | chunk_method   | parser_id   |
     extras = {"dataset_id": dataset_id}
-    req, err = validate_and_parse_json_request(request, UpdateDatasetReq, extras=extras, exclude_unset=True)
+    req, err = await validate_and_parse_json_request(request, UpdateDatasetReq, extras=extras, exclude_unset=True)
     if err is not None:
         return get_error_argument_result(err)
 
