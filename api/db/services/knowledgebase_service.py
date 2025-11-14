@@ -424,7 +424,6 @@ class KnowledgebaseService(CommonService):
             "parser_config": parser_config,
             **kwargs
         }
-
         
         return payload
 
