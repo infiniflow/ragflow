@@ -109,6 +109,7 @@ export enum Operator {
   SearXNG = 'SearXNG',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
+  ListOperations = 'ListOperations',
   VariableAssigner = 'VariableAssigner',
   VariableAggregator = 'VariableAggregator',
   File = 'File', // pipeline

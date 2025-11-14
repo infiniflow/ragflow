@@ -1508,6 +1508,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       codeDescription: '它允许开发人员编写自定义 Python 逻辑。',
       dataOperations: '数据操作',
       dataOperationsDescription: '对数据对象执行各种操作。',
+      listOperations: '列表操作',
+      listOperationsDescription: '对列表对象执行各种操作。',
       variableAssigner: '变量赋值器',
       variableAssignerDescription:
         '此组件对数据对象执行操作，包括提取、筛选和编辑数据中的键和值。',
@@ -1678,6 +1680,19 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         appendOrUpdate: '追加或更新',
         removeKeys: '删除键',
         renameKeys: '重命名键',
+      },
+      ListOperationsOptions: {
+        topN: '取前N项',
+        head: '取前第N项',
+        tail: '取后第N项',
+        sort: '排序',
+        filter: '筛选',
+        dropDuplicates: '去重',
+      },
+      sortMethod: '排序方式',
+      SortMethodOptions: {
+        asc: '升序',
+        desc: '降序',
       },
     },
     footer: {

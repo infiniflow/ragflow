@@ -328,7 +328,6 @@ export const buildDslComponentsByGraph = (
         case Operator.DataOperations:
           params = transformDataOperationsParams(params);
           break;
-
         default:
           break;
       }

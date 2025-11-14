@@ -21,6 +21,7 @@ import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
 import Jin10Form from '../form/jin10-form';
 import KeywordExtractForm from '../form/keyword-extract-form';
+import ListOperationsForm from '../form/list-operations-form';
 import MessageForm from '../form/message-form';
 import ParserForm from '../form/parser-form';
 import PubMedForm from '../form/pubmed-form';
@@ -183,6 +184,9 @@ export const FormConfigMap = {
   },
   [Operator.DataOperations]: {
     component: DataOperationsForm,
+  },
+  [Operator.ListOperations]: {
+    component: ListOperationsForm,
   },
   [Operator.VariableAssigner]: {
     component: VariableAssignerForm,
