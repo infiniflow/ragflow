@@ -177,6 +177,9 @@ class Message(ComponentBase):
 
     def _convert_content(self, content):
         doc_id = get_uuid()
+        
+        if not self._param.output_format.lower() in {"markdown", "html", "pdf", "docx"}:
+            self._param.output_format = "markdown"
 
         try:
             if self._param.output_format in {"markdown", "html"}:
@@ -223,9 +226,10 @@ class Message(ComponentBase):
                         os.remove(tmp_name)
 
             settings.STORAGE_IMPL.put(self._canvas._tenant_id, doc_id, binary_content)
-
-            # document id, format, filename
-            self.set_output("attachment", (doc_id, self._param.output_format, f"{doc_id[:8]}.{self._param.output_format}"))
+            self.set_output("attachment", {
+                "doc_id":doc_id, 
+                "format":self._param.output_format, 
+                "file_name":f"{doc_id[:8]}.{self._param.output_format}"})
 
             logging.info(f"Converted content uploaded as {doc_id} (format={self._param.output_format})")
 

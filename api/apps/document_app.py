@@ -508,6 +508,7 @@ def get(doc_id):
         ext = ext.group(1) if ext else None
         if ext:
             if doc.type == FileType.VISUAL.value:
+
                 content_type = CONTENT_TYPE_MAP.get(ext, f"image/{ext}")
             else:
                 content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
@@ -523,8 +524,8 @@ def download_attachment(attachment_id):
     try:
         ext = request.args.get("ext", "markdown")
         data = settings.STORAGE_IMPL.get(current_user.id, attachment_id)
+        # data = settings.STORAGE_IMPL.get("eb500d50bb0411f0907561d2782adda5", attachment_id)
         response = flask.make_response(data)
-
         response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
 
         return response
