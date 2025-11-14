@@ -14,7 +14,7 @@ import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.s
 
 import { IconFont } from '@/components/icon-font';
 import { cn } from '@/lib/utils';
-import { Equal, FileCode, HousePlus, Variable } from 'lucide-react';
+import { Columns3, Equal, FileCode, HousePlus, Variable } from 'lucide-react';
 import { Operator } from './constant';
 
 interface IProps {
@@ -57,6 +57,7 @@ export const SVGIconMap = {
 };
 export const LucideIconMap = {
   [Operator.DataOperations]: FileCode,
+  [Operator.ListOperations]: Columns3,
   [Operator.VariableAssigner]: Equal,
   [Operator.VariableAggregator]: Variable,
 };

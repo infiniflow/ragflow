@@ -31,6 +31,7 @@ import {
   initialIterationValues,
   initialJin10Values,
   initialKeywordExtractValues,
+  initialListOperationsValues,
   initialMessageValues,
   initialNoteValues,
   initialParserValues,
@@ -129,6 +130,7 @@ export const useInitializeOperatorParams = () => {
         prompts: t('flow.prompts.user.summary'),
       },
       [Operator.DataOperations]: initialDataOperationsValues,
+      [Operator.ListOperations]: initialListOperationsValues,
       [Operator.VariableAssigner]: initialVariableAssignerValues,
       [Operator.VariableAggregator]: initialVariableAggregatorValues,
     };
