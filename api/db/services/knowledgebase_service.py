@@ -26,7 +26,7 @@ from api.db.services.user_service import TenantService
 from common.misc_utils import get_uuid
 from common.constants import StatusEnum, RetCode
 from api.constants import DATASET_NAME_LIMIT
-from api.utils.api_utils import get_parser_config, get_data_error_result
+from api.utils.api_utils import get_parser_config
 
 class KnowledgebaseService(CommonService):
     """Service class for managing knowledge base operations.
