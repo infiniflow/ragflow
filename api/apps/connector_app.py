@@ -21,7 +21,8 @@ from html import escape
 from typing import Any
 
 import flask
-from quart import make_response, request
+import trio
+from quart import request
 from google_auth_oauthlib.flow import Flow
 
 from api.db import InputType
@@ -59,7 +60,7 @@ async def set_connector():
         conn["status"] = TaskStatus.SCHEDULE
         ConnectorService.save(**conn)
 
-    time.sleep(1)
+    await trio.sleep(1)
     e, conn = ConnectorService.get_by_id(req["id"])
 
     return get_json_result(data=conn.to_dict())

@@ -24,14 +24,14 @@ from flasgger import Swagger
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from quart_cors import cors
 from common.constants import StatusEnum
-from api.db.db_models import close_connection, User
+from api.db.db_models import close_connection
 from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
 from api.utils import commands
 
 from flask_mail import Mail
 from quart_session import Session
-from quart_auth import QuartAuth, Unauthorized
+from quart_auth import Unauthorized
 from common import settings
 from api.utils.api_utils import server_error_response
 from api.constants import API_VERSION
