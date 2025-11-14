@@ -359,7 +359,7 @@ async def build_chunks(task, progress_callback):
             task_canceled = has_canceled(task["id"])
             if task_canceled:
                 progress_callback(-1, msg="Task has been canceled.")
-                return
+                return None
             if settings.retriever.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(d[TAG_FLD]) > 0:
                 examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
             else:
@@ -417,6 +417,7 @@ def build_TOC(task, docs, progress_callback):
         d["page_num_int"] = [100000000]
         d["id"] = xxhash.xxh64((d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
         return d
+    return None
 
 
 def init_kb(row, vector_size: int):
@@ -441,7 +442,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     tk_count = 0
     if len(tts) == len(cnts):
         vts, c = await trio.to_thread.run_sync(lambda: mdl.encode(tts[0: 1]))
-        tts = np.concatenate([vts[0] for _ in range(len(tts))], axis=0)
+        tts = np.tile(vts[0], (len(cnts), 1))
         tk_count += c
 
     @timeout(60)
@@ -464,8 +465,10 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     if not filename_embd_weight:
         filename_embd_weight = 0.1
     title_w = float(filename_embd_weight)
-    vects = (title_w * tts + (1 - title_w) *
-             cnts) if len(tts) == len(cnts) else cnts
+    if tts.ndim == 2 and cnts.ndim == 2 and tts.shape == cnts.shape:
+        vects = title_w * tts + (1 - title_w) * cnts
+    else:
+        vects = cnts
 
     assert len(vects) == len(docs)
     vector_size = 0
@@ -648,6 +651,8 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
 
     res = []
     tk_count = 0
+    max_errors = int(os.environ.get("RAPTOR_MAX_ERRORS", 3))
+
     async def generate(chunks, did):
         nonlocal tk_count, res
         raptor = Raptor(
@@ -657,6 +662,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             raptor_config["prompt"],
             raptor_config["max_token"],
             raptor_config["threshold"],
+            max_errors=max_errors,
         )
         original_length = len(chunks)
         chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])
@@ -719,7 +725,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
         task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
-            return
+            return False
         if b % 128 == 0:
             progress_callback(prog=0.8 + 0.1 * (b + 1) / len(chunks), msg="")
         if doc_store_result:
@@ -737,7 +743,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
                 for chunk_id in chunk_ids:
                     nursery.start_soon(delete_image, task_dataset_id, chunk_id)
             progress_callback(-1, msg=f"Chunk updates failed since task {task_id} is unknown.")
-            return
+            return False
     return True
 
 

@@ -21,7 +21,7 @@ export const useSaveGraph = (showMessage: boolean = true) => {
   const saveGraph = useCallback(
     async (
       currentNodes?: RAGFlowNodeType[],
-      otherParam?: { gobalVariables: Record<string, GlobalVariableType> },
+      otherParam?: { globalVariables: Record<string, GlobalVariableType> },
     ) => {
       return setAgent({
         id,

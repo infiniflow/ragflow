@@ -694,6 +694,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      cropTip:
+        'Drag the selection area to choose the cropping position of the image, and scroll to zoom in/out',
+      cropImage: 'Crop image',
       selectModelPlaceholder: 'Select model',
       configureModelTitle: 'Configure model',
       confluenceIsCloudTip:
@@ -1033,6 +1036,7 @@ Example: general/v2/`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      formatTypeError: 'Format or type error',
       variableNameMessage:
         'Variable name can only contain letters and underscores',
       variableDescription: 'Variable Description',
@@ -1614,6 +1618,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       codeDescription: 'It allows developers to write custom Python logic.',
       dataOperations: 'Data operations',
       dataOperationsDescription: 'Perform various operations on a Data object.',
+      listOperations: 'List operations',
+      listOperationsDescription: 'Perform operations on a list.',
       variableAssigner: 'Variable assigner',
       variableAssignerDescription:
         'This component performs operations on Data objects, including extracting, filtering, and editing keys and values in the Data.',
@@ -1828,6 +1834,19 @@ Important structured information may include: names, dates, locations, events, k
         appendOrUpdate: 'Append or update',
         removeKeys: 'Remove keys',
         renameKeys: 'Rename keys',
+      },
+      ListOperationsOptions: {
+        topN: 'Top N',
+        head: 'Head',
+        tail: 'Tail',
+        sort: 'Sort',
+        filter: 'Filter',
+        dropDuplicates: 'Drop duplicates',
+      },
+      sortMethod: 'Sort method',
+      SortMethodOptions: {
+        asc: 'Ascending',
+        desc: 'Descending',
       },
     },
     llmTools: {

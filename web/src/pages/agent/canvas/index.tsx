@@ -61,6 +61,7 @@ import { FileNode } from './node/file-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
+import { ListOperationsNode } from './node/list-operations-node';
 import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
 import ParserNode from './node/parser-node';
@@ -101,6 +102,7 @@ export const nodeTypes: NodeTypes = {
   splitterNode: SplitterNode,
   contextNode: ExtractorNode,
   dataOperationsNode: DataOperationsNode,
+  listOperationsNode: ListOperationsNode,
   variableAssignerNode: VariableAssignerNode,
   variableAggregatorNode: VariableAggregatorNode,
 };

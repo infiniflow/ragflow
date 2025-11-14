@@ -104,12 +104,13 @@ class RedisDB:
 
         if self.REDIS.get(a) == b:
             return True
+        return False
 
     def info(self):
         info = self.REDIS.info()
         return {
             'redis_version': info["redis_version"],
-            'server_mode': info["server_mode"],
+            'server_mode': info["server_mode"] if "server_mode" in info else info.get("redis_mode", ""),
             'used_memory': info["used_memory_human"],
             'total_system_memory': info["total_system_memory_human"],
             'mem_fragmentation_ratio': info["mem_fragmentation_ratio"],
@@ -124,7 +125,7 @@ class RedisDB:
 
     def exist(self, k):
         if not self.REDIS:
-            return
+            return None
         try:
             return self.REDIS.exists(k)
         except Exception as e:
@@ -133,7 +134,7 @@ class RedisDB:
 
     def get(self, k):
         if not self.REDIS:
-            return
+            return None
         try:
             return self.REDIS.get(k)
         except Exception as e:
