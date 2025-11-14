@@ -88,7 +88,6 @@ dependencies = [
     "qianfan==0.4.6",
     "quart-auth==0.11.0",
     "quart-cors==0.8.0",
-    "Quart-Session==3.0.0",
     "Quart==0.20.0",
     "ranx==0.3.20",
     "readability-lxml==0.8.1",

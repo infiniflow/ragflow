@@ -19,8 +19,9 @@ import logging
 import uuid
 from functools import wraps
 from datetime import datetime
-from quart import request, jsonify
-from api.apps import current_user, login_user
+
+from flask import jsonify, request
+from flask_login import current_user, login_user
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 from api.common.exceptions import AdminException, UserNotFoundError

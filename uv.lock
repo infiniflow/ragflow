@@ -5271,15 +5271,6 @@ wheels = [
 ]
 
 [[package]]
-name = "quart-session"
-version = "3.0.0"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-dependencies = [
-    { name = "quart" },
-]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/1c/15/87047bb2139166cd8ee7f18148b7d7cf58f60b71d27e978fd47f7db6fd2b/Quart-Session-3.0.0.tar.gz", hash = "sha256:b9c466c705773f13141b210ac6b20381b667c6a518e7aa49bb134cdde80f3bb6" }
-
-[[package]]
 name = "ragflow"
 version = "0.22.0"
 source = { virtual = "." }
@@ -5389,7 +5380,6 @@ dependencies = [
     { name = "quart" },
     { name = "quart-auth" },
     { name = "quart-cors" },
-    { name = "quart-session" },
     { name = "ranx" },
     { name = "readability-lxml" },
     { name = "replicate" },
@@ -5548,7 +5538,6 @@ requires-dist = [
     { name = "quart", specifier = "==0.20.0" },
     { name = "quart-auth", specifier = "==0.11.0" },
     { name = "quart-cors", specifier = "==0.8.0" },
-    { name = "quart-session", specifier = "==3.0.0" },
     { name = "ranx", specifier = "==0.3.20" },
     { name = "readability-lxml", specifier = "==0.8.1" },
     { name = "replicate", specifier = "==0.31.0" },

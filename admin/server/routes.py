@@ -16,8 +16,8 @@
 
 import secrets
 
-from quart import Blueprint, request
-from api.apps import current_user, logout_user, login_required
+from flask import Blueprint, request
+from flask_login import current_user, login_required, logout_user
 
 from auth import login_verify, login_admin, check_admin_auth
 from responses import success_response, error_response

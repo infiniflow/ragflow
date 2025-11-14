@@ -13,9 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-
-from quart import jsonify
+from flask import jsonify
 
 
 def success_response(data=None, message="Success", code=0):
