@@ -145,6 +145,7 @@ dependencies = [
     "markdownify>=1.2.0",
     "captcha>=0.7.1",
     "pip>=25.2",
+    "pypandoc>=1.16",
 ]
 
 [dependency-groups]

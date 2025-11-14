@@ -121,10 +121,26 @@ class ListOperations(ComponentBase,ABC):
             return False
 
     def _sort(self):
-        if self._param.sort_method == "asc":
-            self._set_outputs(sorted(self.inputs))
-        elif self._param.sort_method == "desc":
-            self._set_outputs(sorted(self.inputs, reverse=True))
+        items = self.inputs or []
+        method = getattr(self._param, "sort_method", "asc") or "asc"
+        reverse = method == "desc"
+
+        if not items:
+            self._set_outputs([])
+            return
+
+        first = items[0]
+
+        if isinstance(first, dict):
+            outputs = sorted(
+                items,
+                key=lambda x: self._hashable(x),
+                reverse=reverse,
+            )
+        else:
+            outputs = sorted(items, reverse=reverse)
+
+        self._set_outputs(outputs)
 
     def _drop_duplicates(self):
         seen = set()
@@ -145,5 +161,6 @@ class ListOperations(ComponentBase,ABC):
         if isinstance(x, set):
             return tuple(sorted(self._hashable(v) for v in x))
         return x
+    
     def thoughts(self) -> str:
         return "ListOperation in progress"

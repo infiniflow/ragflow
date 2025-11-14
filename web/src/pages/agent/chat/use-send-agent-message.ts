@@ -5,6 +5,7 @@ import {
   useSelectDerivedMessages,
 } from '@/hooks/logic-hooks';
 import {
+  IAttachment,
   IEventList,
   IInputEvent,
   IMessageEndData,
@@ -75,9 +76,13 @@ export function findMessageFromList(eventList: IEventList) {
     nextContent += '</think>';
   }
 
+  const workflowFinished = eventList.find(
+    (x) => x.event === MessageEventType.WorkflowFinished,
+  ) as IMessageEvent;
   return {
     id: eventList[0]?.message_id,
     content: nextContent,
+    attachment: workflowFinished?.data?.outputs?.attachment || {},
   };
 }
 
@@ -388,12 +393,13 @@ export const useSendAgentMessage = ({
   }, [sendMessageInTaskMode]);
 
   useEffect(() => {
-    const { content, id } = findMessageFromList(answerList);
+    const { content, id, attachment } = findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
     const answer = content || getLatestError(answerList);
     if (answerList.length > 0) {
       addNewestOneAnswer({
         answer: answer ?? '',
+        attachment: attachment as IAttachment,
         id: id,
         ...inputAnswer,
       });
