@@ -393,10 +393,11 @@ class KnowledgebaseService(CommonService):
         if not isinstance(name, str):
             return get_data_error_result(message="Dataset name must be string.")
         dataset_name = name.strip()
-        if dataset_name == "":
+        dataset_size = len(dataset_name)
+        if dataset_size == 0:
             return get_data_error_result(message="Dataset name can't be empty.")
-        if len(dataset_name.encode("utf-8")) > DATASET_NAME_LIMIT:
-            return get_data_error_result(message=f"Dataset name length is {len(dataset_name)} which is larger than {DATASET_NAME_LIMIT}")
+        if dataset_size > DATASET_NAME_LIMIT:
+            return get_data_error_result(message=f"Dataset name length is {dataset_size} which is larger than {DATASET_NAME_LIMIT}")
 
         # Deduplicate name within tenant
         dataset_name = duplicate_name(
@@ -409,9 +410,10 @@ class KnowledgebaseService(CommonService):
         # Verify tenant exists
         ok, _t = TenantService.get_by_id(tenant_id)
         if not ok:
-            return False, "Tenant not found."
+            return get_data_error_result(message="Tenant does not exist.")
 
         # Build payload
+        parser_config = get_parser_config(parser_id, kwargs.get("parser_config"))
         kb_id = get_uuid()
         payload = {
             "id": kb_id,
@@ -419,11 +421,11 @@ class KnowledgebaseService(CommonService):
             "tenant_id": tenant_id,
             "created_by": tenant_id,
             "parser_id": (parser_id or "naive"),
+            "parser_config": parser_config,
             **kwargs
         }
 
-        # Default parser_config (align with kb_app.create) — do not accept external overrides
-        payload["parser_config"] = get_parser_config(parser_id, kwargs.get("parser_config"))
+        
         return payload
 
 
