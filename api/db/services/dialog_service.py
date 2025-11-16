@@ -342,7 +342,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
         for ans in chat_solo(dialog, messages, stream):
             yield ans
-        return
+        return None
 
     chat_start_ts = timer()
 
@@ -386,7 +386,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         ans = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
         if ans:
             yield ans
-            return
+            return None
 
     for p in prompt_config["parameters"]:
         if p["key"] == "knowledge":
@@ -617,6 +617,8 @@ def chat(dialog, messages, stream=True, **kwargs):
         res["audio_binary"] = tts(tts_mdl, answer)
         yield res
 
+    return None
+
 
 def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
     sys_prompt = """
@@ -745,7 +747,7 @@ Please write the SQL, only SQL, without any other explanations or text.
 
 def tts(tts_mdl, text):
     if not tts_mdl or not text:
-        return
+        return None
     bin = b""
     for chunk in tts_mdl.tts(text):
         bin += chunk
