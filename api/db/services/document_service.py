@@ -113,7 +113,7 @@ class DocumentService(CommonService):
     def check_doc_health(cls, tenant_id: str, filename):
         import os
         MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
-        if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(tenant_id) >= MAX_FILE_NUM_PER_USER:
+        if 0 < MAX_FILE_NUM_PER_USER <= DocumentService.get_doc_count(tenant_id):
             raise RuntimeError("Exceed the maximum file number of a free user!")
         if len(filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
             raise RuntimeError("Exceed the maximum length of file name!")
@@ -464,7 +464,7 @@ class DocumentService(CommonService):
             cls.model.id == doc_id, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
-            return
+            return None
         return docs[0]["tenant_id"]
 
     @classmethod
@@ -473,7 +473,7 @@ class DocumentService(CommonService):
         docs = cls.model.select(cls.model.kb_id).where(cls.model.id == doc_id)
         docs = docs.dicts()
         if not docs:
-            return
+            return None
         return docs[0]["kb_id"]
 
     @classmethod
@@ -486,7 +486,7 @@ class DocumentService(CommonService):
             cls.model.name == name, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
-            return
+            return None
         return docs[0]["tenant_id"]
 
     @classmethod
@@ -533,7 +533,7 @@ class DocumentService(CommonService):
             cls.model.id == doc_id, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
-            return
+            return None
         return docs[0]["embd_id"]
 
     @classmethod
@@ -569,7 +569,7 @@ class DocumentService(CommonService):
             .where(cls.model.name == doc_name)
         doc_id = doc_id.dicts()
         if not doc_id:
-            return
+            return None
         return doc_id[0]["id"]
 
     @classmethod
@@ -715,7 +715,7 @@ class DocumentService(CommonService):
                     prg = 1
                     status = TaskStatus.DONE.value
 
-                # only for special task and parsed docs and unfinised
+                # only for special task and parsed docs and unfinished
                 freeze_progress = special_task_running and doc_progress >= 1 and not finished
                 msg = "\n".join(sorted(msg))
                 info = {
@@ -974,13 +974,13 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
 
     def embedding(doc_id, cnts, batch_size=16):
         nonlocal embd_mdl, chunk_counts, token_counts
-        vects = []
+        vectors = []
         for i in range(0, len(cnts), batch_size):
             vts, c = embd_mdl.encode(cnts[i: i + batch_size])
-            vects.extend(vts.tolist())
+            vectors.extend(vts.tolist())
             chunk_counts[doc_id] += len(cnts[i:i + batch_size])
             token_counts[doc_id] += c
-        return vects
+        return vectors
 
     idxnm = search.index_name(kb.tenant_id)
     try_create_idx = True
@@ -1011,15 +1011,15 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             except Exception:
                 logging.exception("Mind map generation error")
 
-        vects = embedding(doc_id, [c["content_with_weight"] for c in cks])
-        assert len(cks) == len(vects)
+        vectors = embedding(doc_id, [c["content_with_weight"] for c in cks])
+        assert len(cks) == len(vectors)
         for i, d in enumerate(cks):
-            v = vects[i]
+            v = vectors[i]
             d["q_%d_vec" % len(v)] = v
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
                 if not settings.docStoreConn.indexExist(idxnm, kb_id):
-                    settings.docStoreConn.createIdx(idxnm, kb_id, len(vects[0]))
+                    settings.docStoreConn.createIdx(idxnm, kb_id, len(vectors[0]))
                 try_create_idx = False
             settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 
