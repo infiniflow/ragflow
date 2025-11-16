@@ -413,17 +413,17 @@ class KnowledgebaseService(CommonService):
 
         # Build payload
         kb_id = get_uuid()
-        # Default parser_config (align with kb_app.create) — do not accept external overrides
-        parser_config = get_parser_config(parser_id, kwargs.get("parser_config"))
         payload = {
             "id": kb_id,
             "name": dataset_name,
             "tenant_id": tenant_id,
             "created_by": tenant_id,
             "parser_id": (parser_id or "naive"),
-            "parser_config": parser_config,
             **kwargs
         }
+
+        # Default parser_config (align with kb_app.create) — do not accept external overrides
+        payload["parser_config"] = get_parser_config(parser_id, kwargs.get("parser_config"))
 
         return payload
 
