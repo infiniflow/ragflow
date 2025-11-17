@@ -119,12 +119,15 @@ async def create(tenant_id):
     req, err = await validate_and_parse_json_request(request, CreateDatasetReq)
     if err is not None:
         return get_error_argument_result(err)
-    req = KnowledgebaseService.create_with_name(
+    e, req = KnowledgebaseService.create_with_name(
         name = req.pop("name", None),
         tenant_id = tenant_id,
         parser_id = req.pop("parser_id", None),
         **req
     )
+
+    if not e:
+        return req
 
     # Insert embedding model(embd id)
     ok, t = TenantService.get_by_id(tenant_id)

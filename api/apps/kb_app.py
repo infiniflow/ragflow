@@ -48,17 +48,20 @@ from api.apps import login_required, current_user
 @validate_request("name")
 async def create():
     req = await request.json
-    req = KnowledgebaseService.create_with_name(
+    e, res = KnowledgebaseService.create_with_name(
         name = req.pop("name", None),
         tenant_id = current_user.id,
         parser_id = req.pop("parser_id", None),
         **req
     )
 
+    if not e:
+        return res
+
     try:
-        if not KnowledgebaseService.save(**req):
+        if not KnowledgebaseService.save(**res):
             return get_data_error_result()
-        return get_json_result(data={"kb_id":req["id"]})
+        return get_json_result(data={"kb_id":res["id"]})
     except Exception as e:
         return server_error_response(e)
 
