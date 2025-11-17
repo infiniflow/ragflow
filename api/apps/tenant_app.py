@@ -1184,3 +1184,231 @@ def remove_users(tenant_id: str) -> Response:
             data=result,
             message=f"Successfully removed {len(removed_users)} user(s)."
         )
+
+
+@manager.route('/<tenant_id>/admin/<user_id>/promote', methods=['POST'])  # noqa: F821
+@login_required
+def promote_admin(tenant_id: str, user_id: str) -> Response:
+    """Promote a team member to admin role.
+    
+    Only team owners or admins can promote members to admin.
+    Cannot promote the team owner (owner role is permanent).
+    
+    ---
+    tags:
+      - Team
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        type: string
+        description: Team ID
+      - in: path
+        name: user_id
+        required: true
+        type: string
+        description: User ID to promote to admin
+    responses:
+      200:
+        description: User promoted to admin successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: boolean
+              description: Success status.
+            message:
+              type: string
+              description: Success message.
+      400:
+        description: Invalid request or user not found.
+      401:
+        description: Unauthorized.
+      403:
+        description: Forbidden - not team owner or admin.
+      404:
+        description: User not found in team.
+    """
+    # Check if current user is team owner or admin
+    if not is_team_admin_or_owner(tenant_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message="Only team owners or admins can promote members to admin.",
+            code=RetCode.PERMISSION_ERROR,
+        )
+    
+    try:
+        # Check if target user exists in the team
+        user_tenant: Optional[UserTenant] = UserTenantService.filter_by_tenant_and_user_id(
+            tenant_id, user_id
+        )
+        
+        if not user_tenant:
+            return get_json_result(
+                data=False,
+                message="User is not a member of this team.",
+                code=RetCode.DATA_ERROR,
+            )
+        
+        # Cannot promote the owner (owner role is permanent)
+        if user_tenant.role == UserTenantRole.OWNER:
+            return get_json_result(
+                data=False,
+                message="Cannot promote the team owner. Owner role is permanent.",
+                code=RetCode.DATA_ERROR,
+            )
+        
+        # Check if user is already an admin
+        if user_tenant.role == UserTenantRole.ADMIN:
+            # Get user info for response
+            user: Optional[Any] = UserService.filter_by_id(user_id)
+            user_email: str = user.email if user else "Unknown"
+            return get_json_result(
+                data=True,
+                message=f"User {user_email} is already an admin.",
+            )
+        
+        # Promote user to admin (update role from NORMAL or INVITE to ADMIN)
+        UserTenantService.filter_update(
+            [UserTenant.tenant_id == tenant_id, UserTenant.user_id == user_id],
+            {"role": UserTenantRole.ADMIN.value}
+        )
+        
+        # Get user info for response
+        user: Optional[Any] = UserService.filter_by_id(user_id)
+        user_email: str = user.email if user else "Unknown"
+        
+        return get_json_result(
+            data=True,
+            message=f"User {user_email} has been promoted to admin successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return server_error_response(e)
+
+
+@manager.route('/<tenant_id>/admin/<user_id>/demote', methods=['POST'])  # noqa: F821
+@login_required
+def demote_admin(tenant_id: str, user_id: str) -> Response:
+    """Demote a team admin to normal member.
+    
+    Only team owners or admins can demote admins.
+    Cannot demote the team owner (owner role is permanent).
+    Cannot demote yourself if you're the only admin/owner.
+    
+    ---
+    tags:
+      - Team
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        type: string
+        description: Team ID
+      - in: path
+        name: user_id
+        required: true
+        type: string
+        description: User ID to demote from admin
+    responses:
+      200:
+        description: Admin demoted to normal member successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: boolean
+              description: Success status.
+            message:
+              type: string
+              description: Success message.
+      400:
+        description: Invalid request or user not found.
+      401:
+        description: Unauthorized.
+      403:
+        description: Forbidden - not team owner or admin.
+      404:
+        description: User not found in team or not an admin.
+    """
+    # Check if current user is team owner or admin
+    if not is_team_admin_or_owner(tenant_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message="Only team owners or admins can demote admins.",
+            code=RetCode.PERMISSION_ERROR,
+        )
+    
+    try:
+        # Check if target user exists in the team
+        user_tenant: Optional[UserTenant] = UserTenantService.filter_by_tenant_and_user_id(
+            tenant_id, user_id
+        )
+        
+        if not user_tenant:
+            return get_json_result(
+                data=False,
+                message="User is not a member of this team.",
+                code=RetCode.DATA_ERROR,
+            )
+        
+        # Cannot demote the owner (owner role is permanent)
+        if user_tenant.role == UserTenantRole.OWNER:
+            return get_json_result(
+                data=False,
+                message="Cannot demote the team owner. Owner role is permanent.",
+                code=RetCode.DATA_ERROR,
+            )
+        
+        # Check if user is actually an admin
+        if user_tenant.role != UserTenantRole.ADMIN:
+            # Get user info for response
+            user: Optional[Any] = UserService.filter_by_id(user_id)
+            user_email: str = user.email if user else "Unknown"
+            return get_json_result(
+                data=False,
+                message=f"User {user_email} is not an admin. Only admins can be demoted.",
+                code=RetCode.DATA_ERROR,
+            )
+        
+        # Check if demoting yourself would leave the team without any admins/owners
+        if user_id == current_user.id:
+            # Get all admins and owners in the team
+            all_admins_owners: List[UserTenant] = list(
+                UserTenantService.model.select()
+                .where(
+                    (UserTenant.tenant_id == tenant_id) &
+                    (UserTenant.status == StatusEnum.VALID.value) &
+                    (UserTenant.role.in_([UserTenantRole.OWNER, UserTenantRole.ADMIN]))
+                )
+            )
+            
+            # If this is the only admin/owner, prevent demotion
+            if len(all_admins_owners) <= 1:
+                return get_json_result(
+                    data=False,
+                    message="Cannot demote yourself. At least one owner or admin must remain in the team.",
+                    code=RetCode.DATA_ERROR,
+                )
+        
+        # Demote admin to normal member
+        UserTenantService.filter_update(
+            [UserTenant.tenant_id == tenant_id, UserTenant.user_id == user_id],
+            {"role": UserTenantRole.NORMAL.value}
+        )
+        
+        # Get user info for response
+        user: Optional[Any] = UserService.filter_by_id(user_id)
+        user_email: str = user.email if user else "Unknown"
+        
+        return get_json_result(
+            data=True,
+            message=f"User {user_email} has been demoted to normal member successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return server_error_response(e)
