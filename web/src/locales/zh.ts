@@ -716,6 +716,23 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '需要索引其 “我的云端硬盘” 的邮箱，多个邮箱用逗号分隔（建议包含管理员）。',
       google_driveSharedFoldersTip:
         '需要同步的 Google Drive 文件夹链接，多个链接用逗号分隔。',
+      jiraDescription: '接入 Jira 工作区，持续同步Issues、评论与附件。',
+      jiraBaseUrlTip:
+        'Jira 的 Base URL，例如：https://your-domain.atlassian.net。',
+      jiraProjectKeyTip: '可选：仅同步指定的项目（如 RAG）。',
+      jiraJqlTip: '可选：自定义 JQL 过滤条件，留空则使用项目 / 时间范围。',
+      jiraBatchSizeTip: '每次向 Jira 请求的 Issue 数量上限。',
+      jiraCommentsTip: '同步评论。',
+      jiraAttachmentsTip: '开启后会将附件下载为独立文档。',
+      jiraAttachmentSizeTip: '超过该字节阈值的附件会被跳过。',
+      jiraLabelsTip: '需要跳过的标签（逗号分隔）。',
+      jiraBlacklistTip: '这些邮箱作者的评论会被忽略。',
+      jiraScopedTokenTip:
+        '仅当凭证为 Atlassian scoped token（api.atlassian.com）时生效。',
+      jiraEmailTip: '与 API Token 对应的 Jira 账户邮箱。',
+      jiraTokenTip:
+        '在 https://id.atlassian.com/manage-profile/security/api-tokens 生成的 API Token。 (Clould only)',
+      jiraPasswordTip: '可选：仅 Jira Server/Data Center 环境需要的密码字段。',
       availableSourcesDescription: '选择要添加的数据源',
       availableSources: '可用数据源',
       datasourceDescription: '管理您的数据源和连接',
