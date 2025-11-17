@@ -17,6 +17,7 @@
 import logging
 import re
 from io import BytesIO
+import os
 from docx import Document
 
 from common.constants import ParserType
@@ -138,11 +139,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     parser_config = kwargs.get(
         "parser_config", {
             "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
-    doc = {
-        "docnm_kwd": filename,
-        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
-    }
-    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
+    if os.getenv('DOC_ENGINE', 'elasticsearch') == 'infinity':
+        doc = {"docnm": filename}
+    else:
+        doc = {
+            "docnm_kwd": filename,
+            "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
+        }
+        doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     pdf_parser = None
     sections = []
     # is it English

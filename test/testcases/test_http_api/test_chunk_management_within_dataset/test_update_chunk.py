@@ -47,7 +47,7 @@ class TestUpdatedChunk:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"content": None}, 100, "TypeError('expected string or bytes-like object')"),
+            ({"content": None}, 0, ""),
             pytest.param(
                 {"content": ""},
                 100,
@@ -102,7 +102,7 @@ class TestUpdatedChunk:
         [
             ({"questions": ["a", "b", "c"]}, 0, ""),
             ({"questions": [""]}, 0, ""),
-            ({"questions": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
+            ({"questions": [1]}, 0, ""),
             ({"questions": ["a", "a"]}, 0, ""),
             ({"questions": "abc"}, 102, "`questions` should be a list"),
             ({"questions": 123}, 102, "`questions` should be a list"),

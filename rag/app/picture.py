@@ -16,6 +16,7 @@
 
 import io
 import re
+import os
 
 import numpy as np
 from PIL import Image
@@ -33,10 +34,14 @@ VIDEO_EXTS = [".mp4", ".mov", ".avi", ".flv", ".mpeg", ".mpg", ".webm", ".wmv", 
 
 
 def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
-    doc = {
-        "docnm_kwd": filename,
-        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename)),
-    }
+    if os.getenv('DOC_ENGINE', 'elasticsearch') == 'infinity':
+        doc = {"docnm": filename}
+    else:
+        doc = {
+            "docnm_kwd": filename,
+            "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename)),
+        }
+        doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     eng = lang.lower() == "english"
 
     if any(filename.lower().endswith(ext) for ext in VIDEO_EXTS):

@@ -358,7 +358,7 @@ async def update(tenant_id, dataset_id):
                 return err
 
         if "pagerank" in req and req["pagerank"] != kb.pagerank:
-            if os.environ.get("DOC_ENGINE", "elasticsearch") == "infinity":
+            if os.environ.get("DOC_ENGINE", "elasticsearch") != "elasticsearch":
                 return get_error_argument_result(message="'pagerank' can only be set when doc_engine is elasticsearch")
 
             if req["pagerank"] > 0:

@@ -17,6 +17,7 @@
 import logging
 import copy
 import re
+import os
 
 from common.constants import ParserType
 from io import BytesIO
@@ -188,11 +189,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         "parser_config", {
             "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     pdf_parser = None
-    doc = {
-        "docnm_kwd": filename
-    }
-    doc["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", doc["docnm_kwd"]))
-    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
+    if os.getenv('DOC_ENGINE', 'elasticsearch') == 'infinity':
+        doc = {"docnm": filename}
+    else:
+        doc = {
+            "docnm_kwd": filename,
+            "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
+        }
+        doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
     if re.search(r"\.pdf$", filename, re.IGNORECASE):

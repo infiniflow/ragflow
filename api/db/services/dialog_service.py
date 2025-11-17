@@ -523,12 +523,13 @@ def chat(dialog, messages, stream=True, **kwargs):
             think = ans[0] + "</think>"
             answer = ans[1]
 
+        content_field = "content" if settings.DOC_ENGINE_INFINITY else "content_with_weight"
         if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
             idx = set([])
             if embd_mdl and not re.search(r"\[ID:([0-9]+)\]", answer):
                 answer, idx = retriever.insert_citations(
                     answer,
-                    [ck["content_ltks"] for ck in kbinfos["chunks"]],
+                    [ck[content_field] for ck in kbinfos["chunks"]],
                     [ck["vector"] for ck in kbinfos["chunks"]],
                     embd_mdl,
                     tkweight=1 - dialog.vector_similarity_weight,
@@ -814,7 +815,8 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
 
     def decorate_answer(answer):
         nonlocal knowledges, kbinfos, sys_prompt
-        answer, idx = retriever.insert_citations(answer, [ck["content_ltks"] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]],
+        content_field = "content" if settings.DOC_ENGINE_INFINITY else "content_with_weight"
+        answer, idx = retriever.insert_citations(answer, [ck[content_field] for ck in kbinfos["chunks"]], [ck["vector"] for ck in kbinfos["chunks"]],
                                                  embd_mdl, tkweight=0.7, vtweight=0.3)
         idx = set([kbinfos["chunks"][int(i)]["doc_id"] for i in idx])
         recall_docs = [d for d in kbinfos["doc_aggs"] if d["doc_id"] in idx]

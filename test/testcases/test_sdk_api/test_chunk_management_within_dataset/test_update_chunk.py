@@ -25,7 +25,7 @@ class TestUpdatedChunk:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"content": None}, "TypeError('expected string or bytes-like object')"),
+            ({"content": None}, ""),
             pytest.param(
                 {"content": ""},
                 """APIRequestFailedError(\'Error code: 400, with error text {"error":{"code":"1213","message":"未正常接收到prompt参数。"}}\')""",
@@ -85,7 +85,7 @@ class TestUpdatedChunk:
         [
             ({"questions": ["a", "b", "c"]}, ""),
             ({"questions": [""]}, ""),
-            ({"questions": [1]}, "TypeError('sequence item 0: expected str instance, int found')"),
+            ({"questions": [1]}, ""),
             ({"questions": ["a", "a"]}, ""),
             ({"questions": "abc"}, "`questions` should be a list"),
             ({"questions": 123}, "`questions` should be a list"),

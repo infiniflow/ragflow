@@ -17,6 +17,7 @@ import logging
 from tavily import TavilyClient
 from common.misc_utils import get_uuid
 from rag.nlp import rag_tokenizer
+from common import settings
 
 
 class Tavily:
@@ -42,14 +43,10 @@ class Tavily:
         logging.info("[Tavily]Q: " + question)
         for r in self.search(question):
             id = get_uuid()
-            chunks.append({
+            chunk = {
                 "chunk_id": id,
-                "content_ltks": rag_tokenizer.tokenize(r["content"]),
-                "content_with_weight": r["content"],
                 "doc_id": id,
-                "docnm_kwd": r["title"],
                 "kb_id": [],
-                "important_kwd": [],
                 "image_id": "",
                 "similarity": r["score"],
                 "vector_similarity": 1.,
@@ -57,7 +54,18 @@ class Tavily:
                 "vector": [],
                 "positions": [],
                 "url": r["url"]
-            })
+            }
+            if settings.DOC_ENGINE_INFINITY:
+                chunk["content"] = r["content"]
+                chunk["docnm"] = r["title"]
+                chunk["important_keywords"] = ""
+            else:
+                chunk["content_with_weight"] = r["content"]
+                chunk["content_ltks"] = rag_tokenizer.tokenize(r["content"])
+                chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(r["content"])
+                chunk["docnm_kwd"] = r["title"]
+                chunk["important_kwd"] = []
+            chunks.append(chunk)
             aggs.append({
                 "doc_name": r["title"],
                 "doc_id": id,

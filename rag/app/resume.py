@@ -26,6 +26,7 @@ from rag.nlp import rag_tokenizer
 from deepdoc.parser.resume import refactor
 from deepdoc.parser.resume import step_one, step_two
 from common.string_utils import remove_redundant_spaces
+from common import settings
 
 forbidden_select_fields4resume = [
     "name_pinyin_kwd", "edu_first_fea_kwd", "degree_kwd", "sch_rank_kwd", "edu_fea_kwd"
@@ -132,11 +133,14 @@ def chunk(filename, binary=None, callback=None, **kwargs):
         if n.find("tks") > 0:
             v = remove_redundant_spaces(v)
         titles.append(str(v))
-    doc = {
-        "docnm_kwd": filename,
-        "title_tks": rag_tokenizer.tokenize("-".join(titles) + "-简历")
-    }
-    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
+    if settings.DOC_ENGINE_INFINITY:
+        doc = {"docnm": "-".join(titles) + "-简历"}
+    else:
+        doc = {
+            "docnm_kwd": filename,
+            "title_tks": rag_tokenizer.tokenize("-".join(titles) + "-简历")
+        }
+        doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     pairs = []
     for n, m in field_map.items():
         if not resume.get(n):
@@ -148,10 +152,14 @@ def chunk(filename, binary=None, callback=None, **kwargs):
             v = remove_redundant_spaces(v)
         pairs.append((m, str(v)))
 
-    doc["content_with_weight"] = "\n".join(
+    content = "\n".join(
         ["{}: {}".format(re.sub(r"（[^（）]+）", "", k), v) for k, v in pairs])
-    doc["content_ltks"] = rag_tokenizer.tokenize(doc["content_with_weight"])
-    doc["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(doc["content_ltks"])
+    if settings.DOC_ENGINE_INFINITY:
+        doc["content"] = content
+    else:
+        doc["content_with_weight"] = content
+        doc["content_ltks"] = rag_tokenizer.tokenize(doc["content_with_weight"])
+        doc["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(doc["content_ltks"])
     for n, _ in field_map.items():
         if n not in resume:
             continue

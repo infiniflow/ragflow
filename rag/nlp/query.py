@@ -17,6 +17,7 @@
 import logging
 import json
 import re
+import os
 from collections import defaultdict
 
 from rag.utils.doc_store_conn import MatchTextExpr
@@ -27,15 +28,26 @@ class FulltextQueryer:
     def __init__(self):
         self.tw = term_weight.Dealer()
         self.syn = synonym.Dealer()
-        self.query_fields = [
-            "title_tks^10",
-            "title_sm_tks^5",
-            "important_kwd^30",
-            "important_tks^20",
-            "question_tks^20",
-            "content_ltks^2",
-            "content_sm_ltks",
-        ]
+        if os.getenv('DOC_ENGINE', 'elasticsearch') == 'infinity':
+            self.query_fields = [
+                "docnm@ft_docnm_rag_coarse^10",
+                "docnm@ft_docnm_rag_fine^5",
+                "important_keywords@ft_important_keywords_rag_coarse^30",
+                "important_keywords@ft_important_keywords_rag_fine^20",
+                "questions@ft_questions_rag_fine^20",
+                "content@ft_content_rag_coarse^2",
+                "content@ft_content_rag_fine",
+            ]
+        else:
+            self.query_fields = [
+                "title_tks^10",
+                "title_sm_tks^5",
+                "important_kwd^30",
+                "important_tks^20",
+                "question_tks^20",
+                "content_ltks^2",
+                "content_sm_ltks",
+            ]
 
     @staticmethod
     def sub_special_char(line):

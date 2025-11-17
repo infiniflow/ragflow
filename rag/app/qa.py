@@ -31,6 +31,7 @@ from PIL import Image
 from markdown import markdown
 
 from common.float_utils import get_float
+from common import settings
 
 
 class Excel(ExcelParser):
@@ -63,31 +64,18 @@ class Excel(ExcelParser):
                 else:
                     fails.append(str(i + 1))
                 if len(res) % 999 == 0:
-                    callback(len(res) *
-                             0.6 /
-                             total, ("Extract pairs: {}".format(len(res)) +
-                                     (f"{len(fails)} failure, line: %s..." %
-                                      (",".join(fails[:3])) if fails else "")))
+                    callback(len(res) * 0.6 / total, ("Extract pairs: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
-        callback(0.6, ("Extract pairs: {}. ".format(len(res)) + (
-            f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
-        self.is_english = is_english(
-            [rmPrefix(q) for q, _ in random_choices(res, k=30) if len(q) > 1])
+        callback(0.6, ("Extract pairs: {}. ".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        self.is_english = is_english([rmPrefix(q) for q, _ in random_choices(res, k=30) if len(q) > 1])
         return res
 
 
 class Pdf(PdfParser):
-    def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None):
+    def __call__(self, filename, binary=None, from_page=0, to_page=100000, zoomin=3, callback=None):
         start = timer()
         callback(msg="OCR started")
-        self.__images__(
-            filename if not binary else binary,
-            zoomin,
-            from_page,
-            to_page,
-            callback
-        )
+        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
         logging.debug("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
         start = timer()
@@ -102,9 +90,9 @@ class Pdf(PdfParser):
         self._text_merge()
         callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
         tbls = self._extract_table_figure(True, zoomin, True, True)
-        #self._naive_vertical_merge()
+        # self._naive_vertical_merge()
         # self._concat_downward()
-        #self._filter_forpages()
+        # self._filter_forpages()
         logging.debug("layouts: {}".format(timer() - start))
         sections = [b["text"] for b in self.boxes]
         bull_x0_list = []
@@ -112,57 +100,61 @@ class Pdf(PdfParser):
         if q_bull == -1:
             raise ValueError("Unable to recognize Q&A structure.")
         qai_list = []
-        last_q, last_a, last_tag = '', '', ''
+        last_q, last_a, last_tag = "", "", ""
         last_index = -1
-        last_box = {'text':''}
+        last_box = {"text": ""}
         last_bull = None
+
         def sort_key(element):
             tbls_pn = element[1][0][0]
             tbls_top = element[1][0][3]
             return tbls_pn, tbls_top
+
         tbls.sort(key=sort_key)
         tbl_index = 0
         last_pn, last_bottom = 0, 0
-        tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = 1, 0, 0, 0, 0, '@@0\t0\t0\t0\t0##', ''
+        tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = 1, 0, 0, 0, 0, "@@0\t0\t0\t0\t0##", ""
         for box in self.boxes:
-            section, line_tag = box['text'], self._line_tag(box, zoomin)
+            section, line_tag = box["text"], self._line_tag(box, zoomin)
             has_bull, index = has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list)
             last_box, last_index, last_bull = box, index, has_bull
-            line_pn = get_float(line_tag.lstrip('@@').split('\t')[0])
-            line_top = get_float(line_tag.rstrip('##').split('\t')[3])
+            line_pn = get_float(line_tag.lstrip("@@").split("\t")[0])
+            line_top = get_float(line_tag.rstrip("##").split("\t")[3])
             tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = self.get_tbls_info(tbls, tbl_index)
             if not has_bull:  # No question bullet
                 if not last_q:
-                    if tbl_pn < line_pn or (tbl_pn == line_pn and tbl_top <= line_top):    # image passed
+                    if tbl_pn < line_pn or (tbl_pn == line_pn and tbl_top <= line_top):  # image passed
                         tbl_index += 1
                     continue
                 else:
                     sum_tag = line_tag
                     sum_section = section
-                    while ((tbl_pn == last_pn and tbl_top>= last_bottom) or (tbl_pn > last_pn)) \
-                        and ((tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)):    # add image at the middle of current answer
-                        sum_tag = f'{tbl_tag}{sum_tag}'
-                        sum_section = f'{tbl_text}{sum_section}'
+                    while ((tbl_pn == last_pn and tbl_top >= last_bottom) or (tbl_pn > last_pn)) and (
+                        (tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)
+                    ):  # add image at the middle of current answer
+                        sum_tag = f"{tbl_tag}{sum_tag}"
+                        sum_section = f"{tbl_text}{sum_section}"
                         tbl_index += 1
                         tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = self.get_tbls_info(tbls, tbl_index)
-                    last_a = f'{last_a}{sum_section}'
-                    last_tag = f'{last_tag}{sum_tag}'
+                    last_a = f"{last_a}{sum_section}"
+                    last_tag = f"{last_tag}{sum_tag}"
             else:
                 if last_q:
-                    while ((tbl_pn == last_pn and tbl_top>= last_bottom) or (tbl_pn > last_pn)) \
-                        and ((tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)):    # add image at the end of last answer
-                        last_tag = f'{last_tag}{tbl_tag}'
-                        last_a = f'{last_a}{tbl_text}'
+                    while ((tbl_pn == last_pn and tbl_top >= last_bottom) or (tbl_pn > last_pn)) and (
+                        (tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)
+                    ):  # add image at the end of last answer
+                        last_tag = f"{last_tag}{tbl_tag}"
+                        last_a = f"{last_a}{tbl_text}"
                         tbl_index += 1
                         tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = self.get_tbls_info(tbls, tbl_index)
                     image, poss = self.crop(last_tag, need_position=True)
                     qai_list.append((last_q, last_a, image, poss))
-                    last_q, last_a, last_tag = '', '', ''
+                    last_q, last_a, last_tag = "", "", ""
                 last_q = has_bull.group()
                 _, end = has_bull.span()
                 last_a = section[end:]
                 last_tag = line_tag
-            last_bottom = float(line_tag.rstrip('##').split('\t')[4])
+            last_bottom = float(line_tag.rstrip("##").split("\t")[4])
             last_pn = line_pn
         if last_q:
             qai_list.append((last_q, last_a, *self.crop(last_tag, need_position=True)))
@@ -170,15 +162,14 @@ class Pdf(PdfParser):
 
     def get_tbls_info(self, tbls, tbl_index):
         if tbl_index >= len(tbls):
-            return 1, 0, 0, 0, 0, '@@0\t0\t0\t0\t0##', ''
-        tbl_pn = tbls[tbl_index][1][0][0]+1
+            return 1, 0, 0, 0, 0, "@@0\t0\t0\t0\t0##", ""
+        tbl_pn = tbls[tbl_index][1][0][0] + 1
         tbl_left = tbls[tbl_index][1][0][1]
         tbl_right = tbls[tbl_index][1][0][2]
         tbl_top = tbls[tbl_index][1][0][3]
         tbl_bottom = tbls[tbl_index][1][0][4]
-        tbl_tag = "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##" \
-            .format(tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom)
-        _tbl_text = ''.join(tbls[tbl_index][0][1])
+        tbl_tag = "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom)
+        _tbl_text = "".join(tbls[tbl_index][0][1])
         return tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, _tbl_text
 
 
@@ -187,19 +178,18 @@ class Docx(DocxParser):
         pass
 
     def get_picture(self, document, paragraph):
-        img = paragraph._element.xpath('.//pic:pic')
+        img = paragraph._element.xpath(".//pic:pic")
         if not img:
             return None
         img = img[0]
-        embed = img.xpath('.//a:blip/@r:embed')[0]
+        embed = img.xpath(".//a:blip/@r:embed")[0]
         related_part = document.part.related_parts[embed]
         image = related_part.image
-        image = Image.open(BytesIO(image.blob)).convert('RGB')
+        image = Image.open(BytesIO(image.blob)).convert("RGB")
         return image
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000, callback=None):
-        self.doc = Document(
-            filename) if not binary else Document(BytesIO(binary))
+        self.doc = Document(filename) if not binary else Document(BytesIO(binary))
         pn = 0
         last_answer, last_image = "", None
         question_stack, level_stack = [], []
@@ -207,19 +197,19 @@ class Docx(DocxParser):
         for p in self.doc.paragraphs:
             if pn > to_page:
                 break
-            question_level, p_text = 0, ''
+            question_level, p_text = 0, ""
             if from_page <= pn < to_page and p.text.strip():
                 question_level, p_text = docx_question_level(p)
-            if not question_level or question_level > 6: # not a question
-                last_answer = f'{last_answer}\n{p_text}'
+            if not question_level or question_level > 6:  # not a question
+                last_answer = f"{last_answer}\n{p_text}"
                 current_image = self.get_picture(self.doc, p)
                 last_image = concat_img(last_image, current_image)
-            else:   # is a question
+            else:  # is a question
                 if last_answer or last_image:
-                    sum_question = '\n'.join(question_stack)
+                    sum_question = "\n".join(question_stack)
                     if sum_question:
                         qai_list.append((sum_question, last_answer, last_image))
-                    last_answer, last_image = '', None
+                    last_answer, last_image = "", None
 
                 i = question_level
                 while question_stack and i <= level_stack[-1]:
@@ -228,26 +218,26 @@ class Docx(DocxParser):
                 question_stack.append(p_text)
                 level_stack.append(question_level)
             for run in p.runs:
-                if 'lastRenderedPageBreak' in run._element.xml:
+                if "lastRenderedPageBreak" in run._element.xml:
                     pn += 1
                     continue
-                if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
+                if "w:br" in run._element.xml and 'type="page"' in run._element.xml:
                     pn += 1
         if last_answer:
-            sum_question = '\n'.join(question_stack)
+            sum_question = "\n".join(question_stack)
             if sum_question:
                 qai_list.append((sum_question, last_answer, last_image))
 
         tbls = []
         for tb in self.doc.tables:
-            html= "<table>"
+            html = "<table>"
             for r in tb.rows:
                 html += "<tr>"
                 i = 0
                 while i < len(r.cells):
                     span = 1
                     c = r.cells[i]
-                    for j in range(i+1, len(r.cells)):
+                    for j in range(i + 1, len(r.cells)):
                         if c.text == r.cells[j].text:
                             span += 1
                             i = j
@@ -260,17 +250,19 @@ class Docx(DocxParser):
 
 
 def rmPrefix(txt):
-    return re.sub(
-        r"^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+", "", txt.strip(), flags=re.IGNORECASE)
+    return re.sub(r"^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+", "", txt.strip(), flags=re.IGNORECASE)
 
 
 def beAdocPdf(d, q, a, eng, image, poss):
     qprefix = "Question: " if eng else "问题："
     aprefix = "Answer: " if eng else "回答："
-    d["content_with_weight"] = "\t".join(
-        [qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
-    d["content_ltks"] = rag_tokenizer.tokenize(q)
-    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+    content = "\t".join([qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
+    if settings.DOC_ENGINE_INFINITY:
+        d["content"] = content
+    else:
+        d["content_with_weight"] = content
+        d["content_ltks"] = rag_tokenizer.tokenize(content)
+        d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     if image:
         d["image"] = image
         d["doc_type_kwd"] = "image"
@@ -281,10 +273,13 @@ def beAdocPdf(d, q, a, eng, image, poss):
 def beAdocDocx(d, q, a, eng, image, row_num=-1):
     qprefix = "Question: " if eng else "问题："
     aprefix = "Answer: " if eng else "回答："
-    d["content_with_weight"] = "\t".join(
-        [qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
-    d["content_ltks"] = rag_tokenizer.tokenize(q)
-    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+    content = "\t".join([qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
+    if settings.DOC_ENGINE_INFINITY:
+        d["content"] = content
+    else:
+        d["content_with_weight"] = content
+        d["content_ltks"] = rag_tokenizer.tokenize(content)
+        d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     if image:
         d["image"] = image
         d["doc_type_kwd"] = "image"
@@ -296,38 +291,45 @@ def beAdocDocx(d, q, a, eng, image, row_num=-1):
 def beAdoc(d, q, a, eng, row_num=-1):
     qprefix = "Question: " if eng else "问题："
     aprefix = "Answer: " if eng else "回答："
-    d["content_with_weight"] = "\t".join(
-        [qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
-    d["content_ltks"] = rag_tokenizer.tokenize(q)
-    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+    content = "\t".join([qprefix + rmPrefix(q), aprefix + rmPrefix(a)])
+    if settings.DOC_ENGINE_INFINITY:
+        d["content"] = content
+    else:
+        d["content_with_weight"] = content
+        d["content_ltks"] = rag_tokenizer.tokenize(content)
+        d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     if row_num >= 0:
         d["top_int"] = [row_num]
     return d
 
 
 def mdQuestionLevel(s):
-    match = re.match(r'#*', s)
-    return (len(match.group(0)), s.lstrip('#').lstrip()) if match else (0, s)
+    match = re.match(r"#*", s)
+    return (len(match.group(0)), s.lstrip("#").lstrip()) if match else (0, s)
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
-        Excel and csv(txt) format files are supported.
-        If the file is in excel format, there should be 2 column question and answer without header.
-        And question column is ahead of answer column.
-        And it's O.K if it has multiple sheets as long as the columns are rightly composed.
+    Excel and csv(txt) format files are supported.
+    If the file is in excel format, there should be 2 column question and answer without header.
+    And question column is ahead of answer column.
+    And it's O.K if it has multiple sheets as long as the columns are rightly composed.
 
-        If it's in csv format, it should be UTF-8 encoded. Use TAB as delimiter to separate question and answer.
+    If it's in csv format, it should be UTF-8 encoded. Use TAB as delimiter to separate question and answer.
 
-        All the deformed lines will be ignored.
-        Every pair of Q&A will be treated as a chunk.
+    All the deformed lines will be ignored.
+    Every pair of Q&A will be treated as a chunk.
     """
     eng = lang.lower() == "english"
     res = []
-    doc = {
-        "docnm_kwd": filename,
-        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
-    }
+    if settings.DOC_ENGINE_INFINITY:
+        doc = {"docnm": filename}
+    else:
+        doc = {
+            "docnm_kwd": filename,
+            "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename)),
+        }
+        doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
@@ -356,21 +358,19 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 if question:
                     answer += "\n" + lines[i]
                 else:
-                    fails.append(str(i+1))
+                    fails.append(str(i + 1))
             elif len(arr) == 2:
                 if question and answer:
                     res.append(beAdoc(deepcopy(doc), question, answer, eng, i))
                 question, answer = arr
             i += 1
             if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (
-                    f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
             res.append(beAdoc(deepcopy(doc), question, answer, eng, len(lines)))
 
-        callback(0.6, ("Extract Q&A: {}".format(len(res)) + (
-            f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.6, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         return res
 
@@ -396,21 +396,18 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                     res.append(beAdoc(deepcopy(doc), question, answer, eng, i))
                 question, answer = row
             if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (
-                    f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                callback(len(res) * 0.6 / len(lines), ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
             res.append(beAdoc(deepcopy(doc), question, answer, eng, len(list(reader))))
 
-        callback(0.6, ("Extract Q&A: {}".format(len(res)) + (
-            f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.6, ("Extract Q&A: {}".format(len(res)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         pdf_parser = Pdf()
-        qai_list, tbls = pdf_parser(filename if not binary else binary,
-                                    from_page=from_page, to_page=to_page, callback=callback)
+        qai_list, tbls = pdf_parser(filename if not binary else binary, from_page=from_page, to_page=to_page, callback=callback)
         for q, a, image, poss in qai_list:
             res.append(beAdocPdf(deepcopy(doc), q, a, eng, image, poss))
         return res
@@ -423,20 +420,20 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         question_stack, level_stack = [], []
         code_block = False
         for index, line in enumerate(lines):
-            if line.strip().startswith('```'):
+            if line.strip().startswith("```"):
                 code_block = not code_block
-            question_level, question = 0, ''
+            question_level, question = 0, ""
             if not code_block:
                 question_level, question = mdQuestionLevel(line)
 
-            if not question_level or question_level > 6: # not a question
-                last_answer = f'{last_answer}\n{line}'
-            else:   # is a question
+            if not question_level or question_level > 6:  # not a question
+                last_answer = f"{last_answer}\n{line}"
+            else:  # is a question
                 if last_answer.strip():
-                    sum_question = '\n'.join(question_stack)
+                    sum_question = "\n".join(question_stack)
                     if sum_question:
-                        res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=['markdown.extensions.tables']), eng, index))
-                    last_answer = ''
+                        res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=["markdown.extensions.tables"]), eng, index))
+                    last_answer = ""
 
                 i = question_level
                 while question_stack and i <= level_stack[-1]:
@@ -445,22 +442,20 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 question_stack.append(question)
                 level_stack.append(question_level)
         if last_answer.strip():
-            sum_question = '\n'.join(question_stack)
+            sum_question = "\n".join(question_stack)
             if sum_question:
-                res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=['markdown.extensions.tables']), eng, index))
+                res.append(beAdoc(deepcopy(doc), sum_question, markdown(last_answer, extensions=["markdown.extensions.tables"]), eng, index))
         return res
 
     elif re.search(r"\.docx$", filename, re.IGNORECASE):
         docx_parser = Docx()
-        qai_list, tbls = docx_parser(filename, binary,
-                                    from_page=0, to_page=10000, callback=callback)
+        qai_list, tbls = docx_parser(filename, binary, from_page=0, to_page=10000, callback=callback)
         res = tokenize_table(tbls, doc, eng)
         for i, (q, a, image) in enumerate(qai_list):
             res.append(beAdocDocx(deepcopy(doc), q, a, eng, image, i))
         return res
 
-    raise NotImplementedError(
-        "Excel, csv(txt), pdf, markdown and docx format files are supported.")
+    raise NotImplementedError("Excel, csv(txt), pdf, markdown and docx format files are supported.")
 
 
 if __name__ == "__main__":
@@ -468,4 +463,5 @@ if __name__ == "__main__":
 
     def dummy(prog=None, msg=""):
         pass
+
     chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)
