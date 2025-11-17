@@ -125,6 +125,7 @@ async def login():
         user.update_date = (datetime_format(datetime.now()),)
         user.save()
         msg = "Welcome back!"
+        
         return await construct_response(data=response_data, auth=user.get_id(), message=msg)
     else:
         return get_json_result(
