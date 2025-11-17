@@ -48,7 +48,8 @@ class SupportedLiteLLMProvider(StrEnum):
     NovitaAI = "NovitaAI"
     Lingyi_AI = "01.AI"
     GiteeAI = "GiteeAI"
-    AI_302 = "302.AI"
+    AI_302 = "302.AI",
+    BurnCloud = "BurnCloud"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -99,6 +100,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Lingyi_AI: "openai/",
     SupportedLiteLLMProvider.GiteeAI: "openai/",
     SupportedLiteLLMProvider.AI_302: "openai/",
+    SupportedLiteLLMProvider.BurnCloud: "burncloud/",
 }
 
 ChatModel = globals().get("ChatModel", {})

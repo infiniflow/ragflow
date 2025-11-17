@@ -4839,6 +4839,29 @@
                     "is_tools": false
                 }
             ]
+        },
+        {
+            "name": "BurnCloud",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "rank": "980",
+            "llm": [
+                {
+                    "llm_name": "deepseek-chat",
+                    "tags": "LLM,CHAT",
+                    "max_tokens": 64000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-reasoner",
+                    "tags": "LLM,CHAT",
+                    "max_tokens": 64000,
+                    "model_type": "chat",
+                    "is_tools": true
+                }
+            ]
         }
     ]
 }

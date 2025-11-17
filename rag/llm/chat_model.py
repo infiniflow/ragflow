@@ -1402,6 +1402,7 @@ class LiteLLMBase(ABC):
         "01.AI",
         "GiteeAI",
         "302.AI",
+        "BurnCloud"
     ]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):

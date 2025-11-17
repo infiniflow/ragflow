@@ -59,6 +59,7 @@ export enum LLMFactory {
   CometAPI = 'CometAPI',
   DeerAPI = 'DeerAPI',
   Builtin = 'Builtin',
+  BurnCloud = 'BurnCloud',
 }
 
 // Please lowercase the file name
@@ -123,4 +124,5 @@ export const IconMap = {
   [LLMFactory.CometAPI]: 'cometapi',
   [LLMFactory.DeerAPI]: 'deerapi',
   [LLMFactory.Builtin]: 'builtin',
+  [LLMFactory.BurnCloud]: 'burncloud',
 };
