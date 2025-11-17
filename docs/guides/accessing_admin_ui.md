@@ -12,6 +12,10 @@ The RAGFlow Admin UI is a web-based interface that provides comprehensive system
 
 To access the RAGFlow admin UI, append `/admin` to the web UI's address, e.g. `http://[RAGFLOW_WEB_UI_ADDR]/admin`, replace `[RAGFLOW_WEB_UI_ADDR]` with real RAGFlow web UI address.
 
+### Default Credentials
+| Username | Password |
+|----------|----------|
+| admin@ragflow.io   | admin |
 
 ## Admin UI Overview
 
