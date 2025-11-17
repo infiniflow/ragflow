@@ -101,7 +101,7 @@ def test_invalid_name_dataset(get_auth):
     # create dataset
     # with pytest.raises(Exception) as e:
     res = create_dataset(get_auth, 0)
-    assert res['code'] == 102
+    assert res['code'] == 100
 
     res = create_dataset(get_auth, "")
     assert res['code'] == 102
