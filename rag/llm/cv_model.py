@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import re
 import base64
 import json
 import os
@@ -319,10 +320,55 @@ class Zhipu4V(GptV4):
 
     def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
         self.client = ZhipuAI(api_key=key)
+        self.api_key = key
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
 
+    def describe(self, image):
+        return self.describe_with_prompt(image)
+
+    def describe_with_prompt(self, image, prompt=None):
+        b64 = self.image2base64(image)
+        if prompt is None:
+            prompt = "Describe this image."
+
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": b64
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }
+            ]
+        }
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        resp = requests.post(
+            "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+            json=payload,
+            headers=headers
+        )
+
+        content = resp.json()["choices"][0]["message"]["content"].strip()
+        cleaned = re.sub(r"<\|(begin_of_box|end_of_box)\|>", "", content).strip()
+        return cleaned, num_tokens_from_string(cleaned)
+    
 
 class StepFunCV(GptV4):
     _FACTORY_NAME = "StepFun"
