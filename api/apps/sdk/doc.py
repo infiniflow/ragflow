@@ -414,7 +414,7 @@ async def download(tenant_id, dataset_id, document_id):
     return await send_file(
         file,
         as_attachment=True,
-        download_name=doc[0].name,
+        attachment_filename=doc[0].name,
         mimetype="application/octet-stream",  # Set a default MIME type
     )
 
