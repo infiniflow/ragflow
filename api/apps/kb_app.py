@@ -55,6 +55,10 @@ def create():
         **req
     )
 
+    code = req.get("code")
+    if code:
+        return get_data_error_result(code=code, message=req.get("message"))
+
     try:
         if not KnowledgebaseService.save(**req):
             return get_data_error_result()

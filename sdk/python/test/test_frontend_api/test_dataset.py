@@ -104,7 +104,7 @@ def test_invalid_name_dataset(get_auth):
     assert res['code'] == 100
 
     res = create_dataset(get_auth, "")
-    assert res['code'] == 100
+    assert res['code'] == 102
 
     long_string = ""
 
@@ -112,7 +112,7 @@ def test_invalid_name_dataset(get_auth):
         long_string += random.choice(string.ascii_letters + string.digits)
 
     res = create_dataset(get_auth, long_string)
-    assert res['code'] == 100
+    assert res['code'] == 102
     print(res)
 
 
