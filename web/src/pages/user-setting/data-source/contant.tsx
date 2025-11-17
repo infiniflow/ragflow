@@ -9,6 +9,7 @@ export enum DataSourceKey {
   NOTION = 'notion',
   DISCORD = 'discord',
   GOOGLE_DRIVE = 'google_drive',
+  MOODLE = 'moodle',
   //   GMAIL = 'gmail',
   //   JIRA = 'jira',
   //   SHAREPOINT = 'sharepoint',
@@ -41,6 +42,11 @@ export const DataSourceInfo = {
     name: 'Google Drive',
     description: t(`setting.${DataSourceKey.GOOGLE_DRIVE}Description`),
     icon: <SvgIcon name={'data-source/google-drive'} width={38} />,
+  },
+  [DataSourceKey.MOODLE]: {
+    name: 'Moodle',
+    description: t(`setting.${DataSourceKey.MOODLE}Description`),
+    icon: <SvgIcon name={'data-source/moodle'} width={38} />,
   },
 };
 
@@ -270,6 +276,21 @@ export const DataSourceFormFields = {
       defaultValue: 'uploaded',
     },
   ],
+  [DataSourceKey.MOODLE]: [
+    {
+      label: 'Moodle URL',
+      name: 'config.moodle_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://moodle.example.com',
+    },
+    {
+      label: 'API Token',
+      name: 'config.credentials.moodle_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+  ],
   // [DataSourceKey.GOOGLE_DRIVE]: [
   //   {
   //     label: 'Primary Admin Email',
@@ -430,6 +451,16 @@ export const DataSourceFormDefaultValues = {
         google_primary_admin: '',
         google_tokens: '',
         authentication_method: 'uploaded',
+      },
+    },
+  },
+  [DataSourceKey.MOODLE]: {
+    name: '',
+    source: DataSourceKey.MOODLE,
+    config: {
+      moodle_url: '',
+      credentials: {
+        moodle_token: '',
       },
     },
   },

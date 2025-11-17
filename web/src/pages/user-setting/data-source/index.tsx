@@ -44,6 +44,12 @@ const dataSourceTemplates = [
     description: DataSourceInfo[DataSourceKey.NOTION].description,
     icon: DataSourceInfo[DataSourceKey.NOTION].icon,
   },
+  {
+    id: DataSourceKey.MOODLE,
+    name: DataSourceInfo[DataSourceKey.MOODLE].name,
+    description: DataSourceInfo[DataSourceKey.MOODLE].description,
+    icon: DataSourceInfo[DataSourceKey.MOODLE].icon,
+  },
 ];
 const DataSource = () => {
   const { t } = useTranslation();

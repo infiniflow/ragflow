@@ -45,6 +45,7 @@ class DocumentSource(str, Enum):
     GOOGLE_DRIVE = "google_drive"
     GMAIL = "gmail"
     DISCORD = "discord"
+    MOODLE = "moodle"
 
 
 class FileOrigin(str, Enum):

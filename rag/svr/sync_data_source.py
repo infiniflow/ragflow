@@ -30,7 +30,7 @@ from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
-from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector
+from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector
 import logging
 import os
 from datetime import datetime, timezone
@@ -327,6 +327,37 @@ class Teams(SyncBase):
         pass
 
 
+class Moodle(SyncBase):
+    SOURCE_NAME: str = FileSource.MOODLE
+
+    async def _generate(self, task: dict):
+        self.connector = MoodleConnector(
+            moodle_url=self.conf["moodle_url"],
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        )
+        
+        self.connector.load_credentials(self.conf["credentials"])
+
+        # Determine the time range for synchronization based on reindex or poll_range_start
+        if task["reindex"] == "1" or not task.get("poll_range_start"):
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task["poll_range_start"]
+            if poll_start is None:
+                document_generator = self.connector.load_from_state()
+                begin_info = "totally"
+            else:
+                document_generator = self.connector.poll_source(
+                    poll_start.timestamp(), 
+                    datetime.now(timezone.utc).timestamp()
+                )
+                begin_info = "from {}".format(poll_start)
+
+        logging.info("Connect to Moodle: {} {}".format(self.conf["moodle_url"], begin_info))
+        return document_generator
+
+
 func_factory = {
     FileSource.S3: S3,
     FileSource.NOTION: Notion,
@@ -337,7 +368,8 @@ func_factory = {
     FileSource.JIRA: Jira,
     FileSource.SHAREPOINT: SharePoint,
     FileSource.SLACK: Slack,
-    FileSource.TEAMS: Teams
+    FileSource.TEAMS: Teams,
+    FileSource.MOODLE: Moodle
 }
 
 async def dispatch_tasks():
