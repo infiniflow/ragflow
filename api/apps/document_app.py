@@ -520,12 +520,12 @@ async def get(doc_id):
 
 @manager.route("/download/<attachment_id>", methods=["GET"])  # noqa: F821
 @login_required
-def download_attachment(attachment_id):
+async def download_attachment(attachment_id):
     try:
         ext = request.args.get("ext", "markdown")
         data = settings.STORAGE_IMPL.get(current_user.id, attachment_id)
         # data = settings.STORAGE_IMPL.get("eb500d50bb0411f0907561d2782adda5", attachment_id)
-        response = make_response(data)
+        response = await make_response(data)
         response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
 
         return response

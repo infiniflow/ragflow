@@ -361,7 +361,7 @@ async def update_doc(tenant_id, dataset_id, document_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>", methods=["GET"])  # noqa: F821
 @token_required
-def download(tenant_id, dataset_id, document_id):
+async def download(tenant_id, dataset_id, document_id):
     """
     Download a document from a dataset.
     ---
@@ -411,7 +411,7 @@ def download(tenant_id, dataset_id, document_id):
         return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
     file = BytesIO(file_stream)
     # Use send_file with a proper filename and MIME type
-    return send_file(
+    return await send_file(
         file,
         as_attachment=True,
         download_name=doc[0].name,
