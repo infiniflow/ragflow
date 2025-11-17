@@ -49,6 +49,8 @@ const dataSourceTemplates = [
     name: DataSourceInfo[DataSourceKey.MOODLE].name,
     description: DataSourceInfo[DataSourceKey.MOODLE].description,
     icon: DataSourceInfo[DataSourceKey.MOODLE].icon,
+  },
+  {
     id: DataSourceKey.JIRA,
     name: DataSourceInfo[DataSourceKey.JIRA].name,
     description: DataSourceInfo[DataSourceKey.JIRA].description,
