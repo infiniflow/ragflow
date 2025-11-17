@@ -420,10 +420,10 @@ class KnowledgebaseService(CommonService):
             "tenant_id": tenant_id,
             "created_by": tenant_id,
             "parser_id": (parser_id or "naive"),
-            **kwargs
+            **kwargs # Includes optional fields such as description, language, permission, avatar, parser_config, etc.
         }
 
-        # Default parser_config (align with kb_app.create) — do not accept external overrides
+        # Update parser_config (always override with validated default/merged config)
         payload["parser_config"] = get_parser_config(parser_id, kwargs.get("parser_config"))
 
         return True, payload
