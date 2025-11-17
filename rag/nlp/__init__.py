@@ -723,47 +723,40 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？"):
     if not sections:
         return [], []
 
-    cks = [""]
-    images = [None]
-    tk_nums = [0]
+    cks = []
+    images = []
+    tk_nums = []
 
     def add_chunk(t, image, pos=""):
-        nonlocal cks, tk_nums, delimiter
+        nonlocal cks, images, tk_nums
         tnum = num_tokens_from_string(t)
         if tnum < 8:
             pos = ""
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num:
-            if t.find(pos) < 0:
+
+        if not cks or tk_nums[-1] > chunk_token_num:
+            # new chunk
+            if pos and t.find(pos) < 0:
                 t += pos
             cks.append(t)
             images.append(image)
             tk_nums.append(tnum)
         else:
-            if cks[-1].find(pos) < 0:
+            # add to last chunk
+            if pos and cks[-1].find(pos) < 0:
                 t += pos
             cks[-1] += t
             images[-1] = concat_img(images[-1], image)
             tk_nums[-1] += tnum
 
     dels = get_delimiters(delimiter)
-    line = ""
-    for sec, image in sections:
-        if not image:
-            line += sec + "\n"
-            continue
-        split_sec = re.split(r"(%s)" % dels, line + sec)
-        for sub_sec in split_sec:
-            if re.match(f"^{dels}$", sub_sec):
-                continue
-            add_chunk("\n"+sub_sec, image,"")
-        line = ""
+    pattern = r"(%s)" % dels
 
-    if line:
-        split_sec = re.split(r"(%s)" % dels, line)
+    for sec, image in sections:
+        split_sec = re.split(pattern, sec)
         for sub_sec in split_sec:
-            if re.match(f"^{dels}$", sub_sec):
+            if not sub_sec or re.match(f"^{dels}$", sub_sec):
                 continue
-            add_chunk("\n"+sub_sec, image,"")
+            add_chunk("\n" + sub_sec, image, "")
 
     return cks, images
 
