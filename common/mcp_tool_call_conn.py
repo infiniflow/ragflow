@@ -21,7 +21,7 @@ import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from string import Template
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from typing_extensions import override
 
@@ -30,10 +30,13 @@ from mcp.client.session import ClientSession
 from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
-from rag.llm.chat_model import ToolCallSession
 
 MCPTaskType = Literal["list_tools", "tool_call"]
 MCPTask = tuple[MCPTaskType, dict[str, Any], asyncio.Queue[Any]]
+
+
+class ToolCallSession(Protocol):
+    def tool_call(self, name: str, arguments: dict[str, Any]) -> str: ...
 
 
 class MCPToolCallSession(ToolCallSession):
@@ -106,7 +109,8 @@ class MCPToolCallSession(ToolCallSession):
                 await self._process_mcp_tasks(None, msg)
 
         else:
-            await self._process_mcp_tasks(None, f"Unsupported MCP server type: {self._mcp_server.server_type}, id: {self._mcp_server.id}")
+            await self._process_mcp_tasks(None,
+                                          f"Unsupported MCP server type: {self._mcp_server.server_type}, id: {self._mcp_server.id}")
 
     async def _process_mcp_tasks(self, client_session: ClientSession | None, error_message: str | None = None) -> None:
         while not self._close:
@@ -164,7 +168,8 @@ class MCPToolCallSession(ToolCallSession):
             raise
 
     async def _call_mcp_tool(self, name: str, arguments: dict[str, Any], timeout: float | int = 10) -> str:
-        result: CallToolResult = await self._call_mcp_server("tool_call", name=name, arguments=arguments, timeout=timeout)
+        result: CallToolResult = await self._call_mcp_server("tool_call", name=name, arguments=arguments,
+                                                             timeout=timeout)
 
         if result.isError:
             return f"MCP server error: {result.content}"
@@ -283,7 +288,8 @@ def close_multiple_mcp_toolcall_sessions(sessions: list[MCPToolCallSession]) -> 
     except Exception:
         logging.exception("Exception during MCP session cleanup thread management")
 
-    logging.info(f"{len(sessions)} MCP sessions has been cleaned up. {len(list(MCPToolCallSession._ALL_INSTANCES))} in global context.")
+    logging.info(
+        f"{len(sessions)} MCP sessions has been cleaned up. {len(list(MCPToolCallSession._ALL_INSTANCES))} in global context.")
 
 
 def shutdown_all_mcp_sessions():
@@ -298,7 +304,7 @@ def shutdown_all_mcp_sessions():
     logging.info("All MCPToolCallSession instances have been closed.")
 
 
-def mcp_tool_metadata_to_openai_tool(mcp_tool: Tool|dict) -> dict[str, Any]:
+def mcp_tool_metadata_to_openai_tool(mcp_tool: Tool | dict) -> dict[str, Any]:
     if isinstance(mcp_tool, dict):
         return {
             "type": "function",

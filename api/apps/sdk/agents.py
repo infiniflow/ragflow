@@ -41,12 +41,12 @@ def list_agents(tenant_id):
             return get_error_data_result("The agent doesn't exist.")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
-    orderby = request.args.get("orderby", "update_time")
+    order_by = request.args.get("orderby", "update_time")
     if request.args.get("desc") == "False" or request.args.get("desc") == "false":
         desc = False
     else:
         desc = True
-    canvas = UserCanvasService.get_list(tenant_id, page_number, items_per_page, orderby, desc, id, title)
+    canvas = UserCanvasService.get_list(tenant_id, page_number, items_per_page, order_by, desc, id, title)
     return get_result(data=canvas)
 
 
