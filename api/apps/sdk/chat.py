@@ -14,10 +14,7 @@
 #  limitations under the License.
 #
 import logging
-
-import trio
 from quart import request
-
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.tenant_llm_service import TenantLLMService
@@ -254,7 +251,6 @@ async def delete(tenant_id):
         temp_dict = {"status": StatusEnum.INVALID.value}
         DialogService.update_by_id(id, temp_dict)
         success_count += 1
-        await trio.sleep(1)
 
     if errors:
         if success_count > 0:

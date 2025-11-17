@@ -213,28 +213,32 @@ def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", da
 def token_required(func):
     def get_tenant_id(**kwargs):
         if os.environ.get("DISABLE_SDK"):
-            return get_json_result(data=False, message="`Authorization` can't be empty")
+            return False, get_json_result(data=False, message="`Authorization` can't be empty")
         authorization_str = request.headers.get("Authorization")
         if not authorization_str:
-            return get_json_result(data=False, message="`Authorization` can't be empty")
+            return False, get_json_result(data=False, message="`Authorization` can't be empty")
         authorization_list = authorization_str.split()
         if len(authorization_list) < 2:
-            return get_json_result(data=False, message="Please check your authorization format.")
+            return False, get_json_result(data=False, message="Please check your authorization format.")
         token = authorization_list[1]
         objs = APIToken.query(token=token)
         if not objs:
-            return get_json_result(data=False, message="Authentication error: API key is invalid!", code=RetCode.AUTHENTICATION_ERROR)
+            return False, get_json_result(data=False, message="Authentication error: API key is invalid!", code=RetCode.AUTHENTICATION_ERROR)
         kwargs["tenant_id"] = objs[0].tenant_id
-        return kwargs
+        return True, kwargs
 
     @wraps(func)
     def decorated_function(*args, **kwargs):
-        kwargs = get_tenant_id(**kwargs)
+        e, kwargs = get_tenant_id(**kwargs)
+        if not e:
+            return kwargs
         return func(*args, **kwargs)
 
     @wraps(func)
     async def adecorated_function(*args, **kwargs):
-        kwargs = get_tenant_id(**kwargs)
+        e, kwargs = get_tenant_id(**kwargs)
+        if not e:
+            return kwargs
         return await func(*args, **kwargs)
 
     if inspect.iscoroutinefunction(func):
