@@ -19,6 +19,8 @@ type QueryVariableProps = {
   hideLabel?: boolean;
   className?: string;
   onChange?: (value: string) => void;
+  pureQuery?: boolean;
+  value?: string;
 };
 
 export function QueryVariable({
@@ -28,11 +30,33 @@ export function QueryVariable({
   hideLabel = false,
   className,
   onChange,
+  pureQuery = false,
+  value,
 }: QueryVariableProps) {
   const { t } = useTranslation();
   const form = useFormContext();
 
   const finalOptions = useFilterQueryVariableOptionsByTypes(types);
+
+  const renderWidget = (
+    value?: string,
+    handleChange?: (value: string) => void,
+  ) => (
+    <GroupedSelectWithSecondaryMenu
+      options={finalOptions}
+      value={value}
+      onChange={(val) => {
+        handleChange?.(val);
+        onChange?.(val);
+      }}
+      // allowClear
+      types={types}
+    ></GroupedSelectWithSecondaryMenu>
+  );
+
+  if (pureQuery) {
+    renderWidget(value, onChange);
+  }
 
   return (
     <FormField
@@ -45,18 +69,7 @@ export function QueryVariable({
               {t('flow.query')}
             </FormLabel>
           )}
-          <FormControl>
-            <GroupedSelectWithSecondaryMenu
-              options={finalOptions}
-              value={field.value}
-              onChange={(val) => {
-                field.onChange(val);
-                onChange?.(val);
-              }}
-              // allowClear
-              types={types}
-            ></GroupedSelectWithSecondaryMenu>
-          </FormControl>
+          <FormControl>{renderWidget(field.value, field.onChange)}</FormControl>
           <FormMessage />
         </FormItem>
       )}

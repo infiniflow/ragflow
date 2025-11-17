@@ -79,8 +79,9 @@ export function AccordionOperators({
               Operator.Code,
               Operator.StringTransform,
               Operator.DataOperations,
+              Operator.VariableAssigner,
               Operator.ListOperations,
-              // Operator.VariableAssigner,
+              Operator.VariableAssigner,
               Operator.VariableAggregator,
             ]}
             isCustomDropdown={isCustomDropdown}

@@ -119,6 +119,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@hookform/devtools": "^4.4.0",
     "@react-dev-inspector/umi4-plugin": "^2.0.1",
     "@redux-devtools/extension": "^3.3.0",
     "@storybook/addon-docs": "^9.1.4",
