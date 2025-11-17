@@ -10,10 +10,7 @@ import { PropsWithChildren, ReactNode, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { JsonSchemaDataType } from '../../constant';
 import { useGetStructuredOutputByValue } from '../../hooks/use-build-structured-output';
-import {
-  hasJsonSchemaChild,
-  hasSpecificTypeChild,
-} from '../../utils/filter-agent-structured-output';
+import { hasSpecificTypeChild } from '../../utils/filter-agent-structured-output';
 
 type DataItem = { label: ReactNode; value: string; parentLabel?: ReactNode };
 
@@ -101,8 +98,9 @@ export function StructuredOutputSecondaryMenu({
   );
 
   if (
-    !hasJsonSchemaChild(structuredOutput) ||
-    (!isEmpty(types) && !hasSpecificTypeChild(structuredOutput, types))
+    !isEmpty(types) &&
+    !hasSpecificTypeChild(structuredOutput, types) &&
+    !types.some((x) => x === JsonSchemaDataType.Object)
   ) {
     return null;
   }

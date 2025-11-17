@@ -847,6 +847,31 @@ export enum JsonSchemaDataType {
   Object = 'object',
 }
 
+export enum VariableAssignerLogicalOperator {
+  Overwrite = 'overwrite',
+  Clear = 'clear',
+  Set = 'set',
+}
+
+export enum VariableAssignerLogicalNumberOperator {
+  Overwrite = VariableAssignerLogicalOperator.Overwrite,
+  Clear = VariableAssignerLogicalOperator.Clear,
+  Set = VariableAssignerLogicalOperator.Set,
+  Add = '+=',
+  Subtract = '-=',
+  Multiply = '*=',
+  Divide = '/=',
+}
+
+export enum VariableAssignerLogicalArrayOperator {
+  Overwrite = VariableAssignerLogicalOperator.Overwrite,
+  Clear = VariableAssignerLogicalOperator.Clear,
+  Append = 'append',
+  Extend = 'extend',
+  RemoveFirst = 'remove_first',
+  RemoveLast = 'remove_last',
+}
+
 export enum ExportFileType {
   PDF = 'pdf',
   HTML = 'html',
