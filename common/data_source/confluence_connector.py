@@ -1788,6 +1788,7 @@ class ConfluenceConnector(
         cql_url = self.confluence_client.build_cql_url(
             page_query, expand=",".join(_PAGE_EXPANSION_FIELDS)
         )
+        logging.info(f"[Confluence Connector] Building CQL URL {cql_url}")
         return update_param_in_path(cql_url, "limit", str(limit))
 
     @override
