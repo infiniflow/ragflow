@@ -311,6 +311,13 @@ def create_s3_client(bucket_type: BlobType, credentials: dict[str, Any], europea
             aws_secret_access_key=credentials["secret_access_key"],
             region_name=credentials["region"],
         )
+    elif bucket_type == BlobType.S3_COMPATIBLE:
+        return boto3.client(
+            "s3",
+            endpoint_url=credentials["endpoint_url"],
+            aws_access_key_id=credentials["aws_access_key_id"],
+            aws_secret_access_key=credentials["aws_secret_access_key"],
+        )    
 
     else:
         raise ValueError(f"Unsupported bucket type: {bucket_type}")
