@@ -18,13 +18,13 @@ from flask import request
 from flask_login import login_required, current_user
 from api.db.services import duplicate_name
 from api.db.services.dialog_service import DialogService
-from api.db import StatusEnum
+from common.constants import StatusEnum
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService, UserTenantService
-from api import settings
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
 from common.misc_utils import get_uuid
+from common.constants import RetCode
 from api.utils.api_utils import get_json_result
 
 
@@ -154,15 +154,15 @@ def get_kb_names(kb_ids):
 @login_required
 def list_dialogs():
     try:
-        diags = DialogService.query(
+        conversations = DialogService.query(
             tenant_id=current_user.id,
             status=StatusEnum.VALID.value,
             reverse=True,
             order_by=DialogService.model.create_time)
-        diags = [d.to_dict() for d in diags]
-        for d in diags:
-            d["kb_ids"], d["kb_names"] = get_kb_names(d["kb_ids"])
-        return get_json_result(data=diags)
+        conversations = [d.to_dict() for d in conversations]
+        for conversation in conversations:
+            conversation["kb_ids"], conversation["kb_names"] = get_kb_names(conversation["kb_ids"])
+        return get_json_result(data=conversations)
     except Exception as e:
         return server_error_response(e)
 
@@ -219,7 +219,7 @@ def rm():
             else:
                 return get_json_result(
                     data=False, message='Only owner of dialog authorized for this operation.',
-                    code=settings.RetCode.OPERATING_ERROR)
+                    code=RetCode.OPERATING_ERROR)
             dialog_list.append({"id": id,"status":StatusEnum.INVALID.value})
         DialogService.update_many_by_id(dialog_list)
         return get_json_result(data=True)

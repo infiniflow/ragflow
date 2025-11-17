@@ -6,8 +6,10 @@ import {
   AgentGlobals,
   AgentGlobalsSysQueryWithBrace,
   CodeTemplateStrMap,
+  ComparisonOperator,
   Operator,
   ProgrammingLanguage,
+  SwitchOperatorOptions,
   initialLlmBaseValues,
 } from '@/constants/agent';
 export { Operator } from '@/constants/agent';
@@ -20,7 +22,6 @@ export enum AgentDialogueMode {
 }
 
 import { ModelVariableType } from '@/constants/knowledge';
-import i18n from '@/locales/config';
 import { t } from 'i18next';
 
 // DuckDuckGo's channel options
@@ -35,8 +36,6 @@ export enum PromptRole {
 }
 
 import {
-  Circle,
-  CircleSlash2,
   CloudUpload,
   ListOrdered,
   OptionIcon,
@@ -66,127 +65,12 @@ export const AgentOperatorList = [
   Operator.Agent,
 ];
 
-export const componentMenuList = [
-  {
-    name: Operator.Retrieval,
-  },
-  {
-    name: Operator.Categorize,
-  },
-  {
-    name: Operator.Message,
-  },
-
-  {
-    name: Operator.RewriteQuestion,
-  },
-  {
-    name: Operator.KeywordExtract,
-  },
-  {
-    name: Operator.Switch,
-  },
-  {
-    name: Operator.Iteration,
-  },
-  {
-    name: Operator.Code,
-  },
-  {
-    name: Operator.WaitingDialogue,
-  },
-  {
-    name: Operator.Agent,
-  },
-  {
-    name: Operator.Note,
-  },
-  {
-    name: Operator.DuckDuckGo,
-  },
-  {
-    name: Operator.Baidu,
-  },
-  {
-    name: Operator.Wikipedia,
-  },
-  {
-    name: Operator.PubMed,
-  },
-  {
-    name: Operator.ArXiv,
-  },
-  {
-    name: Operator.Google,
-  },
-  {
-    name: Operator.Bing,
-  },
-  {
-    name: Operator.GoogleScholar,
-  },
-  {
-    name: Operator.GitHub,
-  },
-  {
-    name: Operator.BaiduFanyi,
-  },
-  {
-    name: Operator.QWeather,
-  },
-  {
-    name: Operator.ExeSQL,
-  },
-  {
-    name: Operator.WenCai,
-  },
-  {
-    name: Operator.AkShare,
-  },
-  {
-    name: Operator.YahooFinance,
-  },
-  {
-    name: Operator.Jin10,
-  },
-  {
-    name: Operator.TuShare,
-  },
-  {
-    name: Operator.Crawler,
-  },
-  {
-    name: Operator.Invoke,
-  },
-  {
-    name: Operator.Email,
-  },
-  {
-    name: Operator.SearXNG,
-  },
-];
-
-export const SwitchOperatorOptions = [
-  { value: '=', label: 'equal', icon: 'equal' },
-  { value: '≠', label: 'notEqual', icon: 'not-equals' },
-  { value: '>', label: 'gt', icon: 'Less' },
-  { value: '≥', label: 'ge', icon: 'Greater-or-equal' },
-  { value: '<', label: 'lt', icon: 'Less' },
-  { value: '≤', label: 'le', icon: 'less-or-equal' },
-  { value: 'contains', label: 'contains', icon: 'Contains' },
-  { value: 'not contains', label: 'notContains', icon: 'not-contains' },
-  { value: 'start with', label: 'startWith', icon: 'list-start' },
-  { value: 'end with', label: 'endWith', icon: 'list-end' },
-  {
-    value: 'empty',
-    label: 'empty',
-    icon: <Circle className="size-4" />,
-  },
-  {
-    value: 'not empty',
-    label: 'notEmpty',
-    icon: <CircleSlash2 className="size-4" />,
-  },
+export const DataOperationsOperatorOptions = [
+  ComparisonOperator.Equal,
+  ComparisonOperator.NotEqual,
+  ComparisonOperator.Contains,
+  ComparisonOperator.StartWith,
+  ComparisonOperator.EndWith,
 ];
 
 export const SwitchElseTo = 'end_cpn_ids';
@@ -222,14 +106,6 @@ export const initialRetrievalValues = {
 export const initialBeginValues = {
   mode: AgentDialogueMode.Conversational,
   prologue: `Hi! I'm your assistant. What can I do for you?`,
-};
-
-export const initialGenerateValues = {
-  ...initialLlmBaseValues,
-  prompt: i18n.t('flow.promptText'),
-  cite: true,
-  message_history_window_size: 12,
-  parameters: [],
 };
 
 export const initialRewriteQuestionValues = {
@@ -294,11 +170,6 @@ export const initialSearXNGValues = {
       type: 'Array<Object>',
     },
   },
-};
-
-export const initialBaiduValues = {
-  top_n: 10,
-  ...initialQueryBaseValues,
 };
 
 export const initialWikipediaValues = {
@@ -398,13 +269,6 @@ export const initialGithubValues = {
       type: 'Array<Object>',
     },
   },
-};
-
-export const initialBaiduFanyiValues = {
-  appid: 'xxx',
-  secret_key: 'xxx',
-  trans_type: 'translate',
-  ...initialQueryBaseValues,
 };
 
 export const initialQWeatherValues = {
@@ -553,6 +417,7 @@ export const initialIterationValues = {
   items_ref: '',
   outputs: {},
 };
+
 export const initialIterationStartValues = {
   outputs: {
     item: {
@@ -582,7 +447,7 @@ export const initialAgentValues = {
   ...initialLlmBaseValues,
   description: '',
   user_prompt: '',
-  sys_prompt: t('flow.sysPromptDefultValue'),
+  sys_prompt: t('flow.sysPromptDefaultValue'),
   prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
   message_history_window_size: 12,
   max_retries: 3,
@@ -609,10 +474,7 @@ export const initialAgentValues = {
       type: 'string',
       value: '',
     },
-    [AgentStructuredOutputField]: {
-      type: 'Object Array String Number Boolean',
-      value: '',
-    },
+    [AgentStructuredOutputField]: {},
   },
 };
 
@@ -715,9 +577,58 @@ export const initialPlaceholderValues = {
   // It's just a visual placeholder
 };
 
+export enum Operations {
+  SelectKeys = 'select_keys',
+  LiteralEval = 'literal_eval',
+  Combine = 'combine',
+  FilterValues = 'filter_values',
+  AppendOrUpdate = 'append_or_update',
+  RemoveKeys = 'remove_keys',
+  RenameKeys = 'rename_keys',
+}
+
 export const initialDataOperationsValues = {
-  outputs: {},
+  query: [],
+  operations: Operations.SelectKeys,
+  outputs: {
+    result: {
+      type: 'Array<Object>',
+    },
+  },
 };
+export enum SortMethod {
+  Asc = 'asc',
+  Desc = 'desc',
+}
+
+export enum ListOperations {
+  TopN = 'topN',
+  Head = 'head',
+  Tail = 'tail',
+  Filter = 'filter',
+  Sort = 'sort',
+  DropDuplicates = 'drop_duplicates',
+}
+
+export const initialListOperationsValues = {
+  query: '',
+  operations: ListOperations.TopN,
+  outputs: {
+    result: {
+      type: 'Array<?>',
+    },
+    first: {
+      type: '?',
+    },
+    last: {
+      type: '?',
+    },
+  },
+};
+
+export const initialVariableAssignerValues = {};
+
+export const initialVariableAggregatorValues = { outputs: {}, groups: [] };
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
@@ -759,7 +670,6 @@ export const RestrictedUpstreamMap = {
     Operator.Message,
     Operator.Relevant,
   ],
-  [Operator.Baidu]: [Operator.Begin, Operator.Retrieval],
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
   [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
@@ -768,7 +678,6 @@ export const RestrictedUpstreamMap = {
   [Operator.Bing]: [Operator.Begin, Operator.Retrieval],
   [Operator.GoogleScholar]: [Operator.Begin, Operator.Retrieval],
   [Operator.GitHub]: [Operator.Begin, Operator.Retrieval],
-  [Operator.BaiduFanyi]: [Operator.Begin, Operator.Retrieval],
   [Operator.QWeather]: [Operator.Begin, Operator.Retrieval],
   [Operator.SearXNG]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
@@ -794,12 +703,14 @@ export const RestrictedUpstreamMap = {
   [Operator.Tool]: [Operator.Begin],
   [Operator.Placeholder]: [Operator.Begin],
   [Operator.DataOperations]: [Operator.Begin],
+  [Operator.ListOperations]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
   [Operator.Splitter]: [Operator.Begin],
   [Operator.HierarchicalMerger]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
+  [Operator.VariableAssigner]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -811,7 +722,6 @@ export const NodeMap = {
   [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.KeywordExtract]: 'keywordNode',
   [Operator.DuckDuckGo]: 'ragNode',
-  [Operator.Baidu]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
   [Operator.PubMed]: 'ragNode',
   [Operator.ArXiv]: 'ragNode',
@@ -819,7 +729,6 @@ export const NodeMap = {
   [Operator.Bing]: 'ragNode',
   [Operator.GoogleScholar]: 'ragNode',
   [Operator.GitHub]: 'ragNode',
-  [Operator.BaiduFanyi]: 'ragNode',
   [Operator.QWeather]: 'ragNode',
   [Operator.SearXNG]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
@@ -851,6 +760,9 @@ export const NodeMap = {
   [Operator.HierarchicalMerger]: 'splitterNode',
   [Operator.Extractor]: 'contextNode',
   [Operator.DataOperations]: 'dataOperationsNode',
+  [Operator.ListOperations]: 'listOperationsNode',
+  [Operator.VariableAssigner]: 'variableAssignerNode',
+  [Operator.VariableAggregator]: 'variableAggregatorNode',
 };
 
 export enum BeginQueryType {
@@ -933,4 +845,11 @@ export enum JsonSchemaDataType {
   Boolean = 'boolean',
   Array = 'array',
   Object = 'object',
+}
+
+export enum ExportFileType {
+  PDF = 'pdf',
+  HTML = 'html',
+  Markdown = 'md',
+  DOCX = 'docx',
 }

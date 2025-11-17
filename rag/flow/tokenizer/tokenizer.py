@@ -19,7 +19,7 @@ import re
 import numpy as np
 import trio
 
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.user_service import TenantService
@@ -27,7 +27,7 @@ from common.connection_utils import timeout
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.tokenizer.schema import TokenizerFromUpstream
 from rag.nlp import rag_tokenizer
-from rag.settings import EMBEDDING_BATCH_SIZE
+from common import settings
 from rag.svr.task_executor import embed_limiter
 from common.token_utils import truncate
 
@@ -82,16 +82,16 @@ class Tokenizer(ProcessBase):
             return embedding_model.encode([truncate(c, embedding_model.max_length - 10) for c in txts])
 
         cnts_ = np.array([])
-        for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+        for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
             async with embed_limiter:
-                vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + EMBEDDING_BATCH_SIZE]))
+                vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + settings.EMBEDDING_BATCH_SIZE]))
             if len(cnts_) == 0:
                 cnts_ = vts
             else:
                 cnts_ = np.concatenate((cnts_, vts), axis=0)
             token_count += c
             if i % 33 == 32:
-                self.callback(i * 1.0 / len(texts) / parts / EMBEDDING_BATCH_SIZE + 0.5 * (parts - 1))
+                self.callback(i * 1.0 / len(texts) / parts / settings.EMBEDDING_BATCH_SIZE + 0.5 * (parts - 1))
 
         cnts = cnts_
         title_w = float(self._param.filename_embd_weight)

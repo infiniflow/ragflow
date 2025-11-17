@@ -29,7 +29,7 @@ class LLMService(CommonService):
 
 
 def get_init_tenant_llm(user_id):
-    from api import settings
+    from common import settings
     tenant_llm = []
 
     seen = set()

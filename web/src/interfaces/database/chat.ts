@@ -1,4 +1,5 @@
 import { MessageType } from '@/constants/chat';
+import { IAttachment } from '@/hooks/use-send-message';
 
 export interface PromptConfig {
   empty_response: string;
@@ -97,6 +98,7 @@ export interface Message {
   data?: any;
   files?: File[];
   chatBoxId?: string;
+  attachment?: IAttachment;
 }
 
 export interface IReferenceChunk {
@@ -126,6 +128,7 @@ export interface IReferenceObject {
 
 export interface IAnswer {
   answer: string;
+  attachment?: IAttachment;
   reference?: IReference;
   conversationId?: string;
   prompt?: string;

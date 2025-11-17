@@ -13,6 +13,7 @@ def get_current_tz_offset() -> int:
     return round(time_diff.total_seconds() / 3600)
 
 
+ONE_MINUTE = 60
 ONE_HOUR = 3600
 ONE_DAY = ONE_HOUR * 24
 
@@ -42,6 +43,10 @@ class DocumentSource(str, Enum):
     OCI_STORAGE = "oci_storage"
     SLACK = "slack"
     CONFLUENCE = "confluence"
+    JIRA = "jira"
+    GOOGLE_DRIVE = "google_drive"
+    GMAIL = "gmail"
+    DISCORD = "discord"
 
 
 class FileOrigin(str, Enum):
@@ -97,22 +102,6 @@ SIZE_THRESHOLD_BUFFER = 64
 NOTION_CONNECTOR_DISABLE_RECURSIVE_PAGE_LOOKUP = (
     os.environ.get("NOTION_CONNECTOR_DISABLE_RECURSIVE_PAGE_LOOKUP", "").lower()
     == "true"
-)
-
-# This is the Oauth token
-DB_CREDENTIALS_DICT_TOKEN_KEY = "google_tokens"
-# This is the service account key
-DB_CREDENTIALS_DICT_SERVICE_ACCOUNT_KEY = "google_service_account_key"
-# The email saved for both auth types
-DB_CREDENTIALS_PRIMARY_ADMIN_KEY = "google_primary_admin"
-
-USER_FIELDS = "nextPageToken, users(primaryEmail)"
-
-# Error message substrings
-MISSING_SCOPES_ERROR_STR = "client not authorized for any of the scopes requested"
-
-SCOPE_INSTRUCTIONS = (
-    "You have upgraded RAGFlow without updating the Google Auth scopes. "
 )
 
 SLIM_BATCH_SIZE = 100
@@ -183,6 +172,29 @@ CONFLUENCE_TIMEZONE_OFFSET = float(
     os.environ.get("CONFLUENCE_TIMEZONE_OFFSET", get_current_tz_offset())
 )
 
+CONFLUENCE_SYNC_TIME_BUFFER_SECONDS = int(
+    os.environ.get("CONFLUENCE_SYNC_TIME_BUFFER_SECONDS", ONE_DAY)
+)
+
+GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD = int(
+    os.environ.get("GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
+)
+
+JIRA_CONNECTOR_LABELS_TO_SKIP = [
+    ignored_tag
+    for ignored_tag in os.environ.get("JIRA_CONNECTOR_LABELS_TO_SKIP", "").split(",")
+    if ignored_tag
+]
+JIRA_CONNECTOR_MAX_TICKET_SIZE = int(
+    os.environ.get("JIRA_CONNECTOR_MAX_TICKET_SIZE", 100 * 1024)
+)
+JIRA_SYNC_TIME_BUFFER_SECONDS = int(
+    os.environ.get("JIRA_SYNC_TIME_BUFFER_SECONDS", ONE_MINUTE)
+)
+JIRA_TIMEZONE_OFFSET = float(
+    os.environ.get("JIRA_TIMEZONE_OFFSET", get_current_tz_offset())
+)
+
 OAUTH_SLACK_CLIENT_ID = os.environ.get("OAUTH_SLACK_CLIENT_ID", "")
 OAUTH_SLACK_CLIENT_SECRET = os.environ.get("OAUTH_SLACK_CLIENT_SECRET", "")
 OAUTH_CONFLUENCE_CLOUD_CLIENT_ID = os.environ.get(
@@ -199,6 +211,7 @@ OAUTH_GOOGLE_DRIVE_CLIENT_ID = os.environ.get("OAUTH_GOOGLE_DRIVE_CLIENT_ID", ""
 OAUTH_GOOGLE_DRIVE_CLIENT_SECRET = os.environ.get(
     "OAUTH_GOOGLE_DRIVE_CLIENT_SECRET", ""
 )
+GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI = os.environ.get("GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI", "http://localhost:9380/v1/connector/google-drive/oauth/web/callback")
 
 CONFLUENCE_OAUTH_TOKEN_URL = "https://auth.atlassian.com/oauth/token"
 RATE_LIMIT_MESSAGE_LOWERCASE = "Rate limit exceeded".lower()

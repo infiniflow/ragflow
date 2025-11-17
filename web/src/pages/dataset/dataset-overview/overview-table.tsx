@@ -11,11 +11,18 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { cn } from '@/lib/utils';
 import { PipelineResultSearchParams } from '@/pages/dataflow-result/constant';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
+import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import {
   ColumnDef,
@@ -30,7 +37,7 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { TFunction } from 'i18next';
-import { ArrowUpDown, ClipboardList, Eye } from 'lucide-react';
+import { ArrowUpDown, ClipboardList, Eye, MonitorUp } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
 import { useParams } from 'umi';
 import { RunningStatus } from '../dataset/constant';
@@ -77,25 +84,43 @@ export const getFileLogsTableColumns = (
     {
       accessorKey: 'fileName',
       header: t('fileName'),
+      meta: { cellClassName: 'max-w-[20vw]' },
       cell: ({ row }) => (
-        <div
-          className="flex items-center gap-2 text-text-primary"
-          // onClick={navigateToDataflowResult(
-          //   row.original.id,
-          //   row.original.kb_id,
-          // )}
-        >
-          <FileIcon name={row.original.document_name}></FileIcon>
-          {row.original.document_name}
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex gap-2 cursor-pointer">
+              <FileIcon name={row.original.document_name}></FileIcon>
+              <span className={cn('truncate')}>
+                {row.original.document_name}
+              </span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{row.original.document_name}</p>
+          </TooltipContent>
+        </Tooltip>
       ),
     },
     {
       accessorKey: 'source_from',
       header: t('source'),
+      meta: { cellClassName: 'max-w-[10vw]' },
       cell: ({ row }) => (
         <div className="text-text-primary">
-          {row.original.source_from || t('localUpload')}
+          {row.original.source_from === 'local' ||
+          row.original.source_from === '' ? (
+            <div className="bg-accent-primary-5 w-6 h-6 rounded-full flex items-center justify-center">
+              <MonitorUp className="text-accent-primary" size={16} />
+            </div>
+          ) : (
+            <div className="w-6 h-6 flex items-center justify-center">
+              {
+                DataSourceInfo[
+                  row.original.source_from as keyof typeof DataSourceInfo
+                ].icon
+              }
+            </div>
+          )}
         </div>
       ),
     },

@@ -34,10 +34,23 @@ export default {
   enable_llm: `${api_host}/llm/enable_llm`,
   deleteFactory: `${api_host}/llm/delete_factory`,
 
+  // data source
+  dataSourceSet: `${api_host}/connector/set`,
+  dataSourceList: `${api_host}/connector/list`,
+  dataSourceDel: (id: string) => `${api_host}/connector/${id}/rm`,
+  dataSourceResume: (id: string) => `${api_host}/connector/${id}/resume`,
+  dataSourceRebuild: (id: string) => `${api_host}/connector/${id}/rebuild`,
+  dataSourceLogs: (id: string) => `${api_host}/connector/${id}/logs`,
+  dataSourceDetail: (id: string) => `${api_host}/connector/${id}`,
+  googleDriveWebAuthStart: `${api_host}/connector/google-drive/oauth/web/start`,
+  googleDriveWebAuthResult: `${api_host}/connector/google-drive/oauth/web/result`,
+
   // plugin
   llm_tools: `${api_host}/plugin/llm_tools`,
 
   // knowledge base
+
+  check_embedding: `${api_host}/kb/check_embedding`,
   kb_list: `${api_host}/kb/list`,
   create_kb: `${api_host}/kb/create`,
   update_kb: `${api_host}/kb/update`,
@@ -87,6 +100,8 @@ export default {
   document_change_parser: `${api_host}/document/change_parser`,
   document_thumbnails: `${api_host}/document/thumbnails`,
   get_document_file: `${api_host}/document/get`,
+  get_document_file_download: (docId: string) =>
+    `${api_host}/document/download/${docId}`,
   document_upload: `${api_host}/document/upload`,
   web_crawl: `${api_host}/document/web_crawl`,
   document_infos: `${api_host}/document/infos`,
@@ -165,6 +180,7 @@ export default {
   debug: `${api_host}/canvas/debug`,
   uploadCanvasFile: `${api_host}/canvas/upload`,
   trace: `${api_host}/canvas/trace`,
+  cancelCanvas: (taskId: string) => `${api_host}/canvas/cancel/${taskId}`, // cancel conversation
   // agent
   inputForm: `${api_host}/canvas/input_form`,
   fetchVersionList: (id: string) => `${api_host}/canvas/getlistversion/${id}`,
@@ -262,4 +278,6 @@ export default {
   adminDeleteWhitelistEntry: (email: string) =>
     `${ExternalApi}${api_host}/admin/whitelist/${email}`,
   adminImportWhitelist: `${ExternalApi}${api_host}/admin/whitelist/batch`,
+
+  adminGetSystemVersion: `${ExternalApi}${api_host}/admin/version`,
 };

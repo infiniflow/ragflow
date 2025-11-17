@@ -22,12 +22,12 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 from rag.prompts.generator import relevant_chunks_with_toc
-from rag.settings import TAG_FLD, PAGERANK_FLD
 from rag.nlp import rag_tokenizer, query
 import numpy as np
 from rag.utils.doc_store_conn import DocStoreConnection, MatchDenseExpr, FusionExpr, OrderByExpr
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
+from common.constants import PAGERANK_FLD, TAG_FLD
 
 
 def index_name(uid): return f"ragflow_{uid}"
@@ -102,7 +102,7 @@ class Dealer:
                 orderBy.asc("top_int")
                 orderBy.desc("create_timestamp_flt")
             res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
-            total = self.dataStore.getTotal(res)
+            total = self.dataStore.get_total(res)
             logging.debug("Dealer.search TOTAL: {}".format(total))
         else:
             highlightFields = ["content_ltks", "title_tks"]
@@ -115,7 +115,7 @@ class Dealer:
                 matchExprs = [matchText]
                 res = self.dataStore.search(src, highlightFields, filters, matchExprs, orderBy, offset, limit,
                                             idx_names, kb_ids, rank_feature=rank_feature)
-                total = self.dataStore.getTotal(res)
+                total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
             else:
                 matchDense = self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
@@ -127,20 +127,20 @@ class Dealer:
 
                 res = self.dataStore.search(src, highlightFields, filters, matchExprs, orderBy, offset, limit,
                                             idx_names, kb_ids, rank_feature=rank_feature)
-                total = self.dataStore.getTotal(res)
+                total = self.dataStore.get_total(res)
                 logging.debug("Dealer.search TOTAL: {}".format(total))
 
                 # If result is empty, try again with lower min_match
                 if total == 0:
                     if filters.get("doc_id"):
                         res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
-                        total = self.dataStore.getTotal(res)
+                        total = self.dataStore.get_total(res)
                     else:
                         matchText, _ = self.qryr.question(qst, min_match=0.1)
                         matchDense.extra_options["similarity"] = 0.17
                         res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr],
                                                     orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
-                        total = self.dataStore.getTotal(res)
+                        total = self.dataStore.get_total(res)
                     logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
             for k in keywords:
@@ -153,17 +153,17 @@ class Dealer:
                     kwds.add(kk)
 
         logging.debug(f"TOTAL: {total}")
-        ids = self.dataStore.getChunkIds(res)
+        ids = self.dataStore.get_chunk_ids(res)
         keywords = list(kwds)
-        highlight = self.dataStore.getHighlight(res, keywords, "content_with_weight")
-        aggs = self.dataStore.getAggregation(res, "docnm_kwd")
+        highlight = self.dataStore.get_highlight(res, keywords, "content_with_weight")
+        aggs = self.dataStore.get_aggregation(res, "docnm_kwd")
         return self.SearchResult(
             total=total,
             ids=ids,
             query_vector=q_vec,
             aggregation=aggs,
             highlight=highlight,
-            field=self.dataStore.getFields(res, src + ["_score"]),
+            field=self.dataStore.get_fields(res, src + ["_score"]),
             keywords=keywords
         )
 
@@ -347,7 +347,7 @@ class Dealer:
         ## For rank feature(tag_fea) scores.
         rank_fea = self._rank_feature_scores(rank_feature, sres)
 
-        return tkweight * (np.array(tksim)+rank_fea) + vtweight * vtsim, tksim, vtsim
+        return tkweight * np.array(tksim) + vtweight * vtsim + rank_fea, tksim, vtsim
 
     def hybrid_similarity(self, ans_embd, ins_embd, ans, inst):
         return self.qryr.hybrid_similarity(ans_embd,
@@ -384,7 +384,7 @@ class Dealer:
                                                    rank_feature=rank_feature)
         else:
             lower_case_doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
-            if lower_case_doc_engine == "elasticsearch":
+            if lower_case_doc_engine in ["elasticsearch","opensearch"]:
                 # ElasticSearch doesn't normalize each way score before fusion.
                 sim, tsim, vsim = self.rerank(
                     sres, question, 1 - vector_similarity_weight, vector_similarity_weight,
@@ -488,7 +488,7 @@ class Dealer:
         for p in range(offset, max_count, bs):
             es_res = self.dataStore.search(fields, [], condition, [], orderBy, p, bs, index_name(tenant_id),
                                            kb_ids)
-            dict_chunks = self.dataStore.getFields(es_res, fields)
+            dict_chunks = self.dataStore.get_fields(es_res, fields)
             for id, doc in dict_chunks.items():
                 doc["id"] = id
             if dict_chunks:
@@ -501,11 +501,11 @@ class Dealer:
         if not self.dataStore.indexExist(index_name(tenant_id), kb_ids[0]):
             return []
         res = self.dataStore.search([], [], {}, [], OrderByExpr(), 0, 0, index_name(tenant_id), kb_ids, ["tag_kwd"])
-        return self.dataStore.getAggregation(res, "tag_kwd")
+        return self.dataStore.get_aggregation(res, "tag_kwd")
 
     def all_tags_in_portion(self, tenant_id: str, kb_ids: list[str], S=1000):
         res = self.dataStore.search([], [], {}, [], OrderByExpr(), 0, 0, index_name(tenant_id), kb_ids, ["tag_kwd"])
-        res = self.dataStore.getAggregation(res, "tag_kwd")
+        res = self.dataStore.get_aggregation(res, "tag_kwd")
         total = np.sum([c for _, c in res])
         return {t: (c + 1) / (total + S) for t, c in res}
 
@@ -513,7 +513,7 @@ class Dealer:
         idx_nm = index_name(tenant_id)
         match_txt = self.qryr.paragraph(doc["title_tks"] + " " + doc["content_ltks"], doc.get("important_kwd", []), keywords_topn)
         res = self.dataStore.search([], [], {}, [match_txt], OrderByExpr(), 0, 0, idx_nm, kb_ids, ["tag_kwd"])
-        aggs = self.dataStore.getAggregation(res, "tag_kwd")
+        aggs = self.dataStore.get_aggregation(res, "tag_kwd")
         if not aggs:
             return False
         cnt = np.sum([c for _, c in aggs])
@@ -529,7 +529,7 @@ class Dealer:
             idx_nms = [index_name(tid) for tid in tenant_ids]
         match_txt, _ = self.qryr.question(question, min_match=0.0)
         res = self.dataStore.search([], [], {}, [match_txt], OrderByExpr(), 0, 0, idx_nms, kb_ids, ["tag_kwd"])
-        aggs = self.dataStore.getAggregation(res, "tag_kwd")
+        aggs = self.dataStore.get_aggregation(res, "tag_kwd")
         if not aggs:
             return {}
         cnt = np.sum([c for _, c in aggs])
@@ -552,7 +552,7 @@ class Dealer:
         es_res = self.dataStore.search(["content_with_weight"], [], {"doc_id": doc_id, "toc_kwd": "toc"}, [], OrderByExpr(), 0, 128, idx_nms,
                                        kb_ids)
         toc = []
-        dict_chunks = self.dataStore.getFields(es_res, ["content_with_weight"])
+        dict_chunks = self.dataStore.get_fields(es_res, ["content_with_weight"])
         for _, doc in dict_chunks.items():
             try:
                 toc.extend(json.loads(doc["content_with_weight"]))

@@ -26,7 +26,9 @@ from typing import Any, Union, Tuple
 from agent.component import component_class
 from agent.component.base import ComponentBase
 from api.db.services.file_service import FileService
+from api.db.services.task_service import has_canceled
 from common.misc_utils import get_uuid, hash_str2int
+from common.exceptions import TaskCanceledException
 from rag.prompts.generator import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
 
@@ -126,6 +128,7 @@ class Graph:
             self.components[k]["obj"].reset()
         try:
             REDIS_CONN.delete(f"{self.task_id}-logs")
+            REDIS_CONN.delete(f"{self.task_id}-cancel")
         except Exception as e:
             logging.exception(e)
 
@@ -153,6 +156,33 @@ class Graph:
     def get_tenant_id(self):
         return self._tenant_id
 
+    def get_value_with_variable(self,value: str) -> Any:
+        pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*")
+        out_parts = []
+        last = 0
+
+        for m in pat.finditer(value):
+            out_parts.append(value[last:m.start()])
+            key = m.group(1)
+            v = self.get_variable_value(key)
+            if v is None:
+                rep = ""
+            elif isinstance(v, partial):
+                buf = []
+                for chunk in v():
+                    buf.append(chunk)
+                rep = "".join(buf)
+            elif isinstance(v, str):
+                rep = v
+            else:
+                rep = json.dumps(v, ensure_ascii=False)
+
+            out_parts.append(rep)
+            last = m.end()
+
+        out_parts.append(value[last:])
+        return("".join(out_parts))
+
     def get_variable_value(self, exp: str) -> Any:
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
         if exp.find("@") < 0:
@@ -169,7 +199,7 @@ class Graph:
         if not rest:
             return root_val
         return self.get_variable_param_value(root_val,rest)
-    
+
     def get_variable_param_value(self, obj: Any, path: str) -> Any:
         cur = obj
         if not path:
@@ -187,6 +217,17 @@ class Graph:
             else:
                 cur = getattr(cur, key, None)
         return cur
+
+    def is_canceled(self) -> bool:
+        return has_canceled(self.task_id)
+
+    def cancel_task(self) -> bool:
+        try:
+            REDIS_CONN.set(f"{self.task_id}-cancel", "x")
+        except Exception as e:
+            logging.exception(e)
+            return False
+        return True
 
 
 class Canvas(Graph):
@@ -212,7 +253,7 @@ class Canvas(Graph):
             "sys.conversation_turns": 0,
             "sys.files": []
         }
-            
+
         self.retrieval = self.dsl["retrieval"]
         self.memory = self.dsl.get("memory", [])
 
@@ -229,18 +270,19 @@ class Canvas(Graph):
             self.retrieval = []
             self.memory = []
         for k in self.globals.keys():
-            if isinstance(self.globals[k], str):
-                self.globals[k] = ""
-            elif isinstance(self.globals[k], int):
-                self.globals[k] = 0
-            elif isinstance(self.globals[k], float):
-                self.globals[k] = 0
-            elif isinstance(self.globals[k], list):
-                self.globals[k] = []
-            elif isinstance(self.globals[k], dict):
-                self.globals[k] = {}
-            else:
-                self.globals[k] = None
+            if k.startswith("sys."):
+                if isinstance(self.globals[k], str):
+                    self.globals[k] = ""
+                elif isinstance(self.globals[k], int):
+                    self.globals[k] = 0
+                elif isinstance(self.globals[k], float):
+                    self.globals[k] = 0
+                elif isinstance(self.globals[k], list):
+                    self.globals[k] = []
+                elif isinstance(self.globals[k], dict):
+                    self.globals[k] = {}
+                else:
+                    self.globals[k] = None
 
     def run(self, **kwargs):
         st = time.perf_counter()
@@ -249,6 +291,12 @@ class Canvas(Graph):
         self.add_user_input(kwargs.get("query"))
         for k, cpn in self.components.items():
             self.components[k]["obj"].reset(True)
+
+        if kwargs.get("webhook_payload"):
+            for k, cpn in self.components.items():
+                if self.components[k]["obj"].component_name.lower() == "webhook":
+                    for kk, vv in kwargs["webhook_payload"].items():
+                        self.components[k]["obj"].set_output(kk, vv)
 
         for k in kwargs.keys():
             if k in ["query", "user_id", "files"] and kwargs[k]:
@@ -275,18 +323,37 @@ class Canvas(Graph):
             self.path.append("begin")
             self.retrieval.append({"chunks": [], "doc_aggs": []})
 
+        if self.is_canceled():
+            msg = f"Task {self.task_id} has been canceled before starting."
+            logging.info(msg)
+            raise TaskCanceledException(msg)
+
         yield decorate("workflow_started", {"inputs": kwargs.get("inputs")})
         self.retrieval.append({"chunks": {}, "doc_aggs": {}})
 
         def _run_batch(f, t):
+            if self.is_canceled():
+                msg = f"Task {self.task_id} has been canceled during batch execution."
+                logging.info(msg)
+                raise TaskCanceledException(msg)
+
             with ThreadPoolExecutor(max_workers=5) as executor:
                 thr = []
-                for i in range(f, t):
+                i = f
+                while i < t:
                     cpn = self.get_component_obj(self.path[i])
                     if cpn.component_name.lower() in ["begin", "userfillup"]:
                         thr.append(executor.submit(cpn.invoke, inputs=kwargs.get("inputs", {})))
+                        i += 1
                     else:
-                        thr.append(executor.submit(cpn.invoke, **cpn.get_input()))
+                        for _, ele in cpn.get_input_elements().items():
+                            if isinstance(ele, dict) and ele.get("_cpn_id") and ele.get("_cpn_id") not in self.path[:i] and self.path[0].lower().find("userfillup") < 0:
+                                self.path.pop(i)
+                                t -= 1
+                                break
+                        else:
+                            thr.append(executor.submit(cpn.invoke, **cpn.get_input()))
+                            i += 1
                 for t in thr:
                     t.result()
 
@@ -316,6 +383,7 @@ class Canvas(Graph):
                     "thoughts": self.get_component_thoughts(self.path[i])
                 })
             _run_batch(idx, to)
+            to = len(self.path)
             # post processing of components invocation
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])
@@ -338,6 +406,10 @@ class Canvas(Graph):
                     else:
                         yield decorate("message", {"content": cpn_obj.output("content")})
                         cite = re.search(r"\[ID:[ 0-9]+\]",  cpn_obj.output("content"))
+
+                    if isinstance(cpn_obj.output("attachment"), tuple):
+                        yield decorate("message", {"attachment": cpn_obj.output("attachment")})
+                        
                     yield decorate("message_end", {"reference": self.get_reference() if cite else None})
 
                     while partials:
@@ -410,9 +482,10 @@ class Canvas(Graph):
                 for c in path:
                     o = self.get_component_obj(c)
                     if o.component_name.lower() == "userfillup":
+                        o.invoke()
                         another_inputs.update(o.get_input_elements())
                         if o.get_param("enable_tips"):
-                            tips = o.get_param("tips")
+                            tips = o.output("tips")
                 self.path = path
                 yield decorate("user_inputs", {"inputs": another_inputs, "tips": tips})
                 return
@@ -426,6 +499,14 @@ class Canvas(Graph):
                            "created_at": st,
                        })
             self.history.append(("assistant", self.get_component_obj(self.path[-1]).output()))
+        elif "Task has been canceled" in self.error:
+            yield decorate("workflow_finished",
+                       {
+                           "inputs": kwargs.get("inputs"),
+                           "outputs": "Task has been canceled",
+                           "elapsed_time": time.perf_counter() - st,
+                           "created_at": st,
+                       })
 
     def is_reff(self, exp: str) -> bool:
         exp = exp.strip("{").strip("}")

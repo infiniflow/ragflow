@@ -4,12 +4,15 @@ import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { buildNodeOutputOptions } from '@/utils/canvas-util';
 import { DefaultOptionType } from 'antd/es/select';
 import { t } from 'i18next';
+import { isEmpty, toLower } from 'lodash';
 import get from 'lodash/get';
+import { MessageSquareCode } from 'lucide-react';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   AgentDialogueMode,
   BeginId,
   BeginQueryType,
+  JsonSchemaDataType,
   Operator,
   VariableType,
 } from '../constant';
@@ -18,6 +21,10 @@ import { buildBeginInputListFromObject } from '../form/begin-form/utils';
 import { BeginQuery } from '../interface';
 import OperatorIcon from '../operator-icon';
 import useGraphStore from '../store';
+import {
+  useFindAgentStructuredOutputLabelByValue,
+  useFindAgentStructuredOutputTypeByValue,
+} from './use-build-structured-output';
 
 export function useSelectBeginNodeDataInputs() {
   const getNode = useGraphStore((state) => state.getNode);
@@ -135,6 +142,38 @@ export function useBuildBeginVariableOptions() {
   return options;
 }
 
+const Env = 'env.';
+
+export function useBuildConversationVariableOptions() {
+  const { data } = useFetchAgent();
+
+  const conversationVariables = useMemo(
+    () => data?.dsl?.variables ?? {},
+    [data?.dsl?.variables],
+  );
+
+  const options = useMemo(() => {
+    return [
+      {
+        label: <span>{t('flow.conversationVariable')}</span>,
+        title: t('flow.conversationVariable'),
+        options: Object.entries(conversationVariables).map(([key, value]) => {
+          const keyWithPrefix = `${Env}${key}`;
+          return {
+            label: keyWithPrefix,
+            parentLabel: <span>{t('flow.conversationVariable')}</span>,
+            icon: <MessageSquareCode className="size-3" />,
+            value: keyWithPrefix,
+            type: value.type,
+          };
+        }),
+      },
+    ];
+  }, [conversationVariables]);
+
+  return options;
+}
+
 export const useBuildVariableOptions = (nodeId?: string, parentId?: string) => {
   const nodeOutputOptions = useBuildNodeOutputOptions(nodeId);
   const parentNodeOutputOptions = useBuildNodeOutputOptions(parentId);
@@ -151,24 +190,57 @@ export function useBuildQueryVariableOptions(n?: RAGFlowNodeType) {
   const { data } = useFetchAgent();
   const node = useContext(AgentFormContext) || n;
   const options = useBuildVariableOptions(node?.id, node?.parentId);
+
+  const conversationOptions = useBuildConversationVariableOptions();
+
   const nextOptions = useMemo(() => {
     const globals = data?.dsl?.globals ?? {};
-    const globalOptions = Object.entries(globals).map(([key, value]) => ({
-      label: key,
-      value: key,
-      icon: <OperatorIcon name={Operator.Begin} className="block" />,
-      parentLabel: <span>{t('flow.beginInput')}</span>,
-      type: Array.isArray(value)
-        ? `${VariableType.Array}${key === AgentGlobals.SysFiles ? '<file>' : ''}`
-        : typeof value,
-    }));
+    const globalOptions = Object.entries(globals)
+      .filter(([key]) => !key.startsWith(Env))
+      .map(([key, value]) => ({
+        label: key,
+        value: key,
+        icon: <OperatorIcon name={Operator.Begin} className="block" />,
+        parentLabel: <span>{t('flow.beginInput')}</span>,
+        type: Array.isArray(value)
+          ? `${VariableType.Array}${key === AgentGlobals.SysFiles ? '<file>' : ''}`
+          : typeof value,
+      }));
+
     return [
-      { ...options[0], options: [...options[0]?.options, ...globalOptions] },
+      {
+        ...options[0],
+        options: [...options[0]?.options, ...globalOptions],
+      },
       ...options.slice(1),
+      ...conversationOptions,
     ];
-  }, [data.dsl?.globals, options]);
+  }, [conversationOptions, data?.dsl?.globals, options]);
 
   return nextOptions;
+}
+
+export function useFilterQueryVariableOptionsByTypes(
+  types?: JsonSchemaDataType[],
+) {
+  const nextOptions = useBuildQueryVariableOptions();
+
+  const filteredOptions = useMemo(() => {
+    return !isEmpty(types)
+      ? nextOptions.map((x) => {
+          return {
+            ...x,
+            options: x.options.filter(
+              (y) =>
+                types?.some((x) => toLower(y.type).includes(x)) ||
+                y.type === undefined, // agent structured output
+            ),
+          };
+        })
+      : nextOptions;
+  }, [nextOptions, types]);
+
+  return filteredOptions;
 }
 
 export function useBuildComponentIdOptions(nodeId?: string, parentId?: string) {
@@ -238,7 +310,7 @@ export const useGetComponentLabelByValue = (nodeId: string) => {
   return getLabel;
 };
 
-export function useGetVariableLabelByValue(nodeId: string) {
+export function useFlattenQueryVariableOptions(nodeId?: string) {
   const { getNode } = useGraphStore((state) => state);
   const nextOptions = useBuildQueryVariableOptions(getNode(nodeId));
 
@@ -248,11 +320,44 @@ export function useGetVariableLabelByValue(nodeId: string) {
     }, []);
   }, [nextOptions]);
 
-  const getLabel = useCallback(
+  return flattenOptions;
+}
+
+export function useGetVariableLabelOrTypeByValue(nodeId?: string) {
+  const flattenOptions = useFlattenQueryVariableOptions(nodeId);
+  const findAgentStructuredOutputTypeByValue =
+    useFindAgentStructuredOutputTypeByValue();
+  const findAgentStructuredOutputLabel =
+    useFindAgentStructuredOutputLabelByValue();
+
+  const getItem = useCallback(
     (val?: string) => {
-      return flattenOptions.find((x) => x.value === val)?.label;
+      return flattenOptions.find((x) => x.value === val);
     },
     [flattenOptions],
   );
-  return getLabel;
+
+  const getLabel = useCallback(
+    (val?: string) => {
+      const item = getItem(val);
+      if (item) {
+        return (
+          <div>
+            {item.parentLabel} / {item.label}
+          </div>
+        );
+      }
+      return getItem(val)?.label || findAgentStructuredOutputLabel(val);
+    },
+    [findAgentStructuredOutputLabel, getItem],
+  );
+
+  const getType = useCallback(
+    (val?: string) => {
+      return getItem(val)?.type || findAgentStructuredOutputTypeByValue(val);
+    },
+    [findAgentStructuredOutputTypeByValue, getItem],
+  );
+
+  return { getLabel, getType };
 }

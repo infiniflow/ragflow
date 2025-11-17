@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.21.1"
+version = "0.22.0"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -43,12 +43,13 @@ dependencies = [
     "flask-login==0.6.3",
     "flask-session==0.8.0",
     "google-search-results==2.4.2",
+    "google-auth-oauthlib>=1.2.0,<2.0.0",
     "groq==0.9.0",
     "hanziconv==0.3.2",
     "html-text==0.6.2",
     "httpx[socks]>=0.28.1,<0.29.0",
     "huggingface-hub>=0.25.0,<0.26.0",
-    "infinity-sdk==0.6.2",
+    "infinity-sdk==0.6.5",
     "infinity-emb>=0.0.66,<0.0.67",
     "itsdangerous==2.1.2",
     "json-repair==0.35.0",
@@ -144,6 +145,7 @@ dependencies = [
     "markdownify>=1.2.0",
     "captcha>=0.7.1",
     "pip>=25.2",
+    "pypandoc>=1.16",
 ]
 
 [dependency-groups]

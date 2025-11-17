@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PIL import Image
 
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from common.connection_utils import timeout
 from rag.app.picture import vision_llm_chunk as picture_vision_llm_chunk
@@ -33,6 +33,7 @@ def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
         for figure_data in figures_data_without_positions
         if isinstance(figure_data[1], Image.Image)
     ]
+
 
 def vision_figure_parser_docx_wrapper(sections,tbls,callback=None,**kwargs):
     try:
@@ -50,7 +51,8 @@ def vision_figure_parser_docx_wrapper(sections,tbls,callback=None,**kwargs):
             callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
     return tbls
 
-def vision_figure_parser_pdf_wrapper(tbls,callback=None,**kwargs):
+
+def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
     try:
         vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
         callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
@@ -71,6 +73,7 @@ def vision_figure_parser_pdf_wrapper(tbls,callback=None,**kwargs):
         except Exception as e:
             callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
     return tbls
+
 
 shared_executor = ThreadPoolExecutor(max_workers=10)
 

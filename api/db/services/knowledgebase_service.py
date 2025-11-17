@@ -17,13 +17,14 @@ from datetime import datetime
 
 from peewee import fn, JOIN
 
-from api.db import StatusEnum, TenantPermission
+from api.db import TenantPermission
 from api.db.db_models import DB, Document, Knowledgebase, User, UserTenant, UserCanvas
 from api.db.services.common_service import CommonService
 from common.time_utils import current_timestamp, datetime_format
 from api.db.services import duplicate_name
 from api.db.services.user_service import TenantService
 from common.misc_utils import get_uuid
+from common.constants import StatusEnum
 from api.constants import DATASET_NAME_LIMIT
 from api.utils.api_utils import get_parser_config, get_data_error_result
 
@@ -91,7 +92,7 @@ class KnowledgebaseService(CommonService):
         # Returns:
         #     If all documents are parsed successfully, returns (True, None)
         #     If any document is not fully parsed, returns (False, error_message)
-        from api.db import TaskStatus
+        from common.constants import TaskStatus
         from api.db.services.document_service import DocumentService
 
         # Get knowledge base information
@@ -200,6 +201,7 @@ class KnowledgebaseService(CommonService):
         # will get all permitted kb, be cautious.
         fields = [
             cls.model.name,
+            cls.model.avatar,
             cls.model.language,
             cls.model.permission,
             cls.model.doc_num,
@@ -422,6 +424,7 @@ class KnowledgebaseService(CommonService):
 
         # Default parser_config (align with kb_app.create) — do not accept external overrides
         payload["parser_config"] = get_parser_config(parser_id, kwargs.get("parser_config"))
+
         return payload
 
 

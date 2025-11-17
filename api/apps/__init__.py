@@ -24,7 +24,7 @@ from flask_cors import CORS
 from flasgger import Swagger
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
-from api.db import StatusEnum
+from common.constants import StatusEnum
 from api.db.db_models import close_connection
 from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
@@ -33,7 +33,7 @@ from api.utils import commands
 from flask_mail import Mail
 from flask_session import Session
 from flask_login import LoginManager
-from api import settings
+from common import settings
 from api.utils.api_utils import server_error_response
 from api.constants import API_VERSION
 
@@ -96,12 +96,12 @@ login_manager.init_app(app)
 commands.register_commands(app)
 
 
-def search_pages_path(pages_dir):
+def search_pages_path(page_path):
     app_path_list = [
-        path for path in pages_dir.glob("*_app.py") if not path.name.startswith(".")
+        path for path in page_path.glob("*_app.py") if not path.name.startswith(".")
     ]
     api_path_list = [
-        path for path in pages_dir.glob("*sdk/*.py") if not path.name.startswith(".")
+        path for path in page_path.glob("*sdk/*.py") if not path.name.startswith(".")
     ]
     app_path_list.extend(api_path_list)
     return app_path_list
@@ -138,7 +138,7 @@ pages_dir = [
 ]
 
 client_urls_prefix = [
-    register_page(path) for dir in pages_dir for path in search_pages_path(dir)
+    register_page(path) for directory in pages_dir for path in search_pages_path(directory)
 ]
 
 
@@ -177,5 +177,7 @@ def load_user(web_request):
 
 
 @app.teardown_request
-def _db_close(exc):
+def _db_close(exception):
+    if exception:
+        logging.exception(f"Request failed: {exception}")
     close_connection()

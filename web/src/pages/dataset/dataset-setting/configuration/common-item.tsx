@@ -7,11 +7,14 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
+import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
+import { useMemo, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import {
+  useHandleKbEmbedding,
   useHasParsedDocument,
   useSelectChunkMethodList,
   useSelectEmbeddingModelOptions,
@@ -62,11 +65,17 @@ export function ChunkMethodItem(props: IProps) {
     />
   );
 }
-export function EmbeddingModelItem({ line = 1, isEdit = true }: IProps) {
+export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   const embeddingModelOptions = useSelectEmbeddingModelOptions();
+  const { handleChange } = useHandleKbEmbedding();
   const disabled = useHasParsedDocument(isEdit);
+  const oldValue = useMemo(() => {
+    const embdStr = form.getValues('embd_id');
+    return embdStr || '';
+  }, [form]);
+  const [loading, setLoading] = useState(false);
   return (
     <>
       <FormField
@@ -93,14 +102,33 @@ export function EmbeddingModelItem({ line = 1, isEdit = true }: IProps) {
                 className={cn('text-muted-foreground', { 'w-3/4': line === 1 })}
               >
                 <FormControl>
-                  <SelectWithSearch
-                    onChange={field.onChange}
-                    value={field.value}
-                    options={embeddingModelOptions}
-                    disabled={isEdit ? disabled : false}
-                    placeholder={t('embeddingModelPlaceholder')}
-                    triggerClassName="!bg-bg-base"
-                  />
+                  <Spin
+                    spinning={loading}
+                    className={cn(' rounded-lg after:bg-bg-base', {
+                      'opacity-20': loading,
+                    })}
+                  >
+                    <SelectWithSearch
+                      onChange={async (value) => {
+                        field.onChange(value);
+                        if (isEdit && disabled) {
+                          setLoading(true);
+                          const res = await handleChange({
+                            embed_id: value,
+                            callback: field.onChange,
+                          });
+                          if (res.code !== 0) {
+                            field.onChange(oldValue);
+                          }
+                          setLoading(false);
+                        }
+                      }}
+                      value={field.value}
+                      options={embeddingModelOptions}
+                      placeholder={t('embeddingModelPlaceholder')}
+                      triggerClassName="!bg-bg-base"
+                    />
+                  </Spin>
                 </FormControl>
               </div>
             </div>

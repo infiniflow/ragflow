@@ -21,7 +21,7 @@ from copy import deepcopy
 from typing import Any, Generator
 import json_repair
 from functools import partial
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from agent.component.base import ComponentBase, ComponentParamBase
@@ -207,6 +207,9 @@ class LLM(ComponentBase):
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("LLM processing"):
+            return
+
         def clean_formated_answer(ans: str) -> str:
             ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
             ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
@@ -216,13 +219,16 @@ class LLM(ComponentBase):
         error: str = ""
         output_structure=None
         try:
-            output_structure=self._param.outputs['structured']
+            output_structure = self._param.outputs['structured']
         except Exception:
             pass
-        if output_structure:
+        if output_structure and isinstance(output_structure, dict) and output_structure.get("properties"):
             schema=json.dumps(output_structure, ensure_ascii=False, indent=2)
             prompt += structured_output_prompt(schema)
             for _ in range(self._param.max_retries+1):
+                if self.check_if_canceled("LLM processing"):
+                    return
+
                 _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
                 error = ""
                 ans = self._generate(msg)
@@ -248,6 +254,9 @@ class LLM(ComponentBase):
             return
 
         for _ in range(self._param.max_retries+1):
+            if self.check_if_canceled("LLM processing"):
+                return
+
             _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
             error = ""
             ans = self._generate(msg)
@@ -269,6 +278,9 @@ class LLM(ComponentBase):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         answer = ""
         for ans in self._generate_streamly(msg):
+            if self.check_if_canceled("LLM streaming"):
+                return
+
             if ans.find("**ERROR**") >= 0:
                 if self.get_exception_default_value():
                     self.set_output("content", self.get_exception_default_value())

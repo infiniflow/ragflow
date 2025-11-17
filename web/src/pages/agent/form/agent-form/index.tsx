@@ -41,6 +41,7 @@ import { PromptEditor } from '../components/prompt-editor';
 import { QueryVariable } from '../components/query-variable';
 import { AgentTools, Agents } from './agent-tools';
 import { StructuredOutputDialog } from './structured-output-dialog';
+import { StructuredOutputPanel } from './structured-output-panel';
 import { useBuildPromptExtraPromptOptions } from './use-build-prompt-options';
 import { useShowStructuredOutputDialog } from './use-show-structured-output-dialog';
 import { useValues } from './use-values';
@@ -211,7 +212,7 @@ function AgentForm({ node }: INextOperatorForm) {
                   <FormItem className="flex-1">
                     <FormLabel>{t('flow.maxRetries')}</FormLabel>
                     <FormControl>
-                      <NumberInput {...field} max={8}></NumberInput>
+                      <NumberInput {...field} max={8} min={0}></NumberInput>
                     </FormControl>
                   </FormItem>
                 )}
@@ -236,7 +237,7 @@ function AgentForm({ node }: INextOperatorForm) {
                     <FormItem className="flex-1">
                       <FormLabel>{t('flow.maxRounds')}</FormLabel>
                       <FormControl>
-                        <NumberInput {...field}></NumberInput>
+                        <NumberInput {...field} min={0}></NumberInput>
                       </FormControl>
                     </FormItem>
                   )}
@@ -275,13 +276,16 @@ function AgentForm({ node }: INextOperatorForm) {
             </section>
           </Collapse>
           <Output list={outputList}></Output>
-          <section>
+          <section className="space-y-2">
             <div className="flex justify-between items-center">
-              structured_output
+              {t('flow.structuredOutput.structuredOutput')}
               <Button variant={'outline'} onClick={showStructuredOutputDialog}>
                 {t('flow.structuredOutput.configuration')}
               </Button>
             </div>
+            <StructuredOutputPanel
+              value={initialStructuredOutput}
+            ></StructuredOutputPanel>
           </section>
         </FormWrapper>
       </Form>

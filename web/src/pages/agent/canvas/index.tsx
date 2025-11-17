@@ -45,6 +45,7 @@ import {
   useShowDrawer,
   useShowLogSheet,
 } from '../hooks/use-show-drawer';
+import { useStopMessageUnmount } from '../hooks/use-stop-message';
 import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
@@ -60,6 +61,7 @@ import { FileNode } from './node/file-node';
 import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
+import { ListOperationsNode } from './node/list-operations-node';
 import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
 import ParserNode from './node/parser-node';
@@ -72,6 +74,8 @@ import { SwitchNode } from './node/switch-node';
 import { TemplateNode } from './node/template-node';
 import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
+import { VariableAggregatorNode } from './node/variable-aggregator-node';
+import { VariableAssignerNode } from './node/variable-assigner-node';
 
 export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
@@ -98,6 +102,9 @@ export const nodeTypes: NodeTypes = {
   splitterNode: SplitterNode,
   contextNode: ExtractorNode,
   dataOperationsNode: DataOperationsNode,
+  listOperationsNode: ListOperationsNode,
+  variableAssignerNode: VariableAssignerNode,
+  variableAggregatorNode: VariableAggregatorNode,
 };
 
 const edgeTypes = {
@@ -150,7 +157,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     currentEventListWithoutMessageById,
     clearEventList,
     currentMessageId,
+    currentTaskId,
   } = useCacheChatLog();
+
+  const { stopMessage } = useStopMessageUnmount(chatVisible, currentTaskId);
 
   const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
     setCurrentMessageId,
@@ -167,9 +177,11 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   useEffect(() => {
     if (!chatVisible) {
+      stopMessage(currentTaskId);
       clearEventList();
     }
-  }, [chatVisible, clearEventList]);
+  }, [chatVisible, clearEventList, currentTaskId, stopMessage]);
+
   const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
     if (messageId === currentMessageId) {
       setLastSendLoading(loading);

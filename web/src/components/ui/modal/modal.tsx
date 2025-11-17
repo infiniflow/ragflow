@@ -86,6 +86,9 @@ const Modal: ModalType = ({
     onOk?.();
   }, [onOk, onOpenChange]);
   const handleChange = (open: boolean) => {
+    if (!open && !maskClosable) {
+      return;
+    }
     onOpenChange?.(open);
     console.log('open', open, onOpenChange);
     if (open && !disabled) {
@@ -108,7 +111,7 @@ const Modal: ModalType = ({
           <button
             type="button"
             onClick={() => handleCancel()}
-            className="px-2 py-1 border border-input rounded-md hover:bg-muted"
+            className="px-2 py-1 border border-border-button rounded-md hover:bg-bg-card hover:text-text-primary "
           >
             {cancelText ?? t('modal.cancelText')}
           </button>
@@ -132,7 +135,7 @@ const Modal: ModalType = ({
     return (
       <div
         className={cn(
-          'flex items-center justify-end px-6 py-4',
+          'flex items-center justify-end px-6 py-6',
           footerClassName,
         )}
       >
@@ -185,6 +188,7 @@ const Modal: ModalType = ({
                     <button
                       type="button"
                       className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-muted focus-visible:outline-none"
+                      onClick={handleCancel}
                     >
                       {closeIcon}
                     </button>

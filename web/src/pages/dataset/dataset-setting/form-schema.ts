@@ -37,6 +37,7 @@ export const formSchema = z
             threshold: z.number().optional(),
             max_cluster: z.number().optional(),
             random_seed: z.number().optional(),
+            scope: z.string().optional(),
           })
           .refine(
             (data) => {
@@ -76,6 +77,17 @@ export const formSchema = z
       })
       .optional(),
     pagerank: z.number(),
+    connectors: z
+      .array(
+        z.object({
+          id: z.string().optional(),
+          name: z.string().optional(),
+          source: z.string().optional(),
+          ststus: z.string().optional(),
+          auto_parse: z.string().optional(),
+        }),
+      )
+      .optional(),
     // icon: z.array(z.instanceof(File)),
   })
   .superRefine((data, ctx) => {
