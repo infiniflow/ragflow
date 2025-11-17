@@ -116,6 +116,9 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'https://fsn1.your-objectstorage.com',
       tooltip: t('setting.S3CompatibleEndpointUrlTip'),
+      shouldRender: (formValues) => {
+        return formValues?.config?.bucket_type === 's3_compatible';
+      },
     },
     {
       label: 'Prefix',
