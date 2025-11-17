@@ -69,7 +69,7 @@ class SlimConnectorWithPermSync(ABC):
 
 
 class CheckpointedConnectorWithPermSync(ABC):
-    """Checkpointed connector interface (with permission sync)"""
+    """Checkpoint connector interface (with permission sync)"""
 
     @abstractmethod
     def load_from_checkpoint(
@@ -143,7 +143,7 @@ class CredentialsProviderInterface(abc.ABC, Generic[T]):
 
     @abc.abstractmethod
     def is_dynamic(self) -> bool:
-        """If dynamic, the credentials may change during usage ... maening the client
+        """If dynamic, the credentials may change during usage ... meaning the client
         needs to use the locking features of the credentials provider to operate
         correctly.
 
