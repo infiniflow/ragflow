@@ -698,3 +698,96 @@ def remove_member(department_id: str, user_id: str) -> Response:
         logging.exception(e)
         return server_error_response(e)
 
+
+@manager.route("/<department_id>/members", methods=["GET"])  # noqa: F821
+@login_required
+def list_members(department_id: str) -> Response:
+    """List all users in a department.
+    
+    Any team member can list users from any department in their team.
+    
+    ---
+    tags:
+      - Department
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: department_id
+        required: true
+        type: string
+        description: Department ID
+    responses:
+      200:
+        description: Department members retrieved successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: User-department relationship ID.
+                  user_id:
+                    type: string
+                    description: User ID.
+                  status:
+                    type: string
+                    description: Relationship status.
+                  nickname:
+                    type: string
+                    description: User nickname.
+                  email:
+                    type: string
+                    description: User email.
+                  avatar:
+                    type: string
+                    description: User avatar.
+                  is_active:
+                    type: boolean
+                    description: Whether user is active.
+            message:
+              type: string
+              description: Success message.
+      401:
+        description: Unauthorized.
+      403:
+        description: Forbidden - not a team member.
+      404:
+        description: Department not found.
+    """
+    # Get department and verify it exists
+    success, department = DepartmentService.get_by_id(department_id)
+    
+    if not success or not department:
+        return get_data_error_result(message="Department not found.")
+    
+    # Check if user is a member of the team (any team member can view department members)
+    if not is_team_member(department.tenant_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message="You must be a member of the team to view department members.",
+            code=RetCode.PERMISSION_ERROR,
+        )
+    
+    try:
+        # Get all users in the department
+        members: List[Dict[str, Any]] = UserDepartmentService.get_by_department_id(department_id)
+        
+        # Filter only valid members (status == VALID)
+        valid_members: List[Dict[str, Any]] = [
+            member for member in members
+            if member.get("status") == StatusEnum.VALID.value
+        ]
+        
+        return get_json_result(
+            data=valid_members,
+            message=f"Retrieved {len(valid_members)} member(s) from department.",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return server_error_response(e)
+
