@@ -4,7 +4,7 @@ import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { useCallback } from 'react';
 import { Operator } from '../constant';
 import useGraphStore from '../store';
-import { buildDslComponentsByGraph, buildDslGobalVariables } from '../utils';
+import { buildDslComponentsByGraph, buildDslGlobalVariables } from '../utils';
 
 export const useBuildDslData = () => {
   const { data } = useFetchAgent();
@@ -13,7 +13,7 @@ export const useBuildDslData = () => {
   const buildDslData = useCallback(
     (
       currentNodes?: RAGFlowNodeType[],
-      otherParam?: { gobalVariables: Record<string, GlobalVariableType> },
+      otherParam?: { globalVariables: Record<string, GlobalVariableType> },
     ) => {
       const nodesToProcess = currentNodes ?? nodes;
 
@@ -41,13 +41,13 @@ export const useBuildDslData = () => {
         data.dsl.components,
       );
 
-      const gobalVariables = buildDslGobalVariables(
+      const globalVariables = buildDslGlobalVariables(
         data.dsl,
-        otherParam?.gobalVariables,
+        otherParam?.globalVariables,
       );
       return {
         ...data.dsl,
-        ...gobalVariables,
+        ...globalVariables,
         graph: { nodes: filteredNodes, edges: filteredEdges },
         components: dslComponents,
       };
