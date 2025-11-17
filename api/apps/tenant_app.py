@@ -296,6 +296,14 @@ def create_team() -> Response:
             code=RetCode.ARGUMENT_ERROR,
         )
 
+    # Validate credit value (must be non-negative if provided)
+    if credit is not None and credit < 0:
+        return get_json_result(
+            data=False,
+            message="Credit must be a non-negative integer!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
     # Determine user_id (use provided or current_user as default)
     owner_user_id: Optional[str] = user_id
     if not owner_user_id:
