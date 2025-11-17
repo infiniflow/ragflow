@@ -463,12 +463,15 @@ class ComponentBase(ABC):
         return self._param.outputs.get("_ERROR", {}).get("value")
 
     def reset(self, only_output=False):
-        for k in self._param.outputs.keys():
-            self._param.outputs[k]["value"] = None
+        outputs: dict = self._param.outputs # for better performance
+        for k in outputs.keys():
+            outputs[k]["value"] = None
         if only_output:
             return
-        for k in self._param.inputs.keys():
-            self._param.inputs[k]["value"] = None
+
+        inputs: dict = self._param.inputs # for better performance
+        for k in inputs.keys():
+            inputs[k]["value"] = None
         self._param.debug_inputs = {}
 
     def get_input(self, key: str=None) -> Union[Any, dict[str, Any]]:

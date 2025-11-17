@@ -298,8 +298,6 @@ class Canvas(Graph):
                     for kk, vv in kwargs["webhook_payload"].items():
                         self.components[k]["obj"].set_output(kk, vv)
 
-            self.components[k]["obj"].reset(True)
-
         for k in kwargs.keys():
             if k in ["query", "user_id", "files"] and kwargs[k]:
                 if k == "files":
@@ -408,6 +406,10 @@ class Canvas(Graph):
                     else:
                         yield decorate("message", {"content": cpn_obj.output("content")})
                         cite = re.search(r"\[ID:[ 0-9]+\]",  cpn_obj.output("content"))
+
+                    if isinstance(cpn_obj.output("attachment"), tuple):
+                        yield decorate("message", {"attachment": cpn_obj.output("attachment")})
+                        
                     yield decorate("message_end", {"reference": self.get_reference() if cite else None})
 
                     while partials:

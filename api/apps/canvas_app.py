@@ -426,7 +426,6 @@ def test_db_connect():
             try:
                 import trino
                 import os
-                from trino.auth import BasicAuthentication
             except Exception as e:
                 return server_error_response(f"Missing dependency 'trino'. Please install: pip install trino, detail: {e}")
 
@@ -438,7 +437,7 @@ def test_db_connect():
 
             auth = None
             if http_scheme == "https" and req.get("password"):
-                auth = BasicAuthentication(req.get("username") or "ragflow", req["password"])
+                auth = trino.BasicAuthentication(req.get("username") or "ragflow", req["password"])
 
             conn = trino.dbapi.connect(
                 host=req["host"],
@@ -471,8 +470,8 @@ def test_db_connect():
 @login_required
 def getlistversion(canvas_id):
     try:
-        list =sorted([c.to_dict() for c in UserCanvasVersionService.list_by_canvas_id(canvas_id)], key=lambda x: x["update_time"]*-1)
-        return get_json_result(data=list)
+        versions =sorted([c.to_dict() for c in UserCanvasVersionService.list_by_canvas_id(canvas_id)], key=lambda x: x["update_time"]*-1)
+        return get_json_result(data=versions)
     except Exception as e:
         return get_data_error_result(message=f"Error getting history files: {e}")
 

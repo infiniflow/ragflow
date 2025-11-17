@@ -48,17 +48,35 @@ from common.data_source.exceptions import RateLimitTriedTooManyTimesError
 from common.data_source.interfaces import CT, CheckpointedConnector, CheckpointOutputWrapper, ConfluenceUser, LoadFunction, OnyxExtensionType, SecondsSinceUnixEpoch, TokenResponse
 from common.data_source.models import BasicExpertInfo, Document
 
+_TZ_SUFFIX_PATTERN = re.compile(r"([+-])([\d:]+)$")
+
 
 def datetime_from_string(datetime_string: str) -> datetime:
     datetime_string = datetime_string.strip()
 
+    match_jira_format = _TZ_SUFFIX_PATTERN.search(datetime_string)
+    if match_jira_format:
+        sign, tz_field = match_jira_format.groups()
+        digits = tz_field.replace(":", "")
+
+        if digits.isdigit() and 1 <= len(digits) <= 4:
+            if len(digits) >= 3:
+                hours = digits[:-2].rjust(2, "0")
+                minutes = digits[-2:]
+            else:
+                hours = digits.rjust(2, "0")
+                minutes = "00"
+
+            normalized = f"{sign}{hours}:{minutes}"
+            datetime_string = f"{datetime_string[: match_jira_format.start()]}{normalized}"
+
     # Handle the case where the datetime string ends with 'Z' (Zulu time)
-    if datetime_string.endswith('Z'):
-        datetime_string = datetime_string[:-1] + '+00:00'
+    if datetime_string.endswith("Z"):
+        datetime_string = datetime_string[:-1] + "+00:00"
 
     # Handle timezone format "+0000" -> "+00:00"
-    if datetime_string.endswith('+0000'):
-        datetime_string = datetime_string[:-5] + '+00:00'
+    if datetime_string.endswith("+0000"):
+        datetime_string = datetime_string[:-5] + "+00:00"
 
     datetime_object = datetime.fromisoformat(datetime_string)
 
@@ -480,7 +498,7 @@ def get_file_ext(file_name: str) -> str:
 
 
 def is_accepted_file_ext(file_ext: str, extension_type: OnyxExtensionType) -> bool:
-    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'}
+    image_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp"}
     text_extensions = {".txt", ".md", ".mdx", ".conf", ".log", ".json", ".csv", ".tsv", ".xml", ".yml", ".yaml", ".sql"}
     document_extensions = {".pdf", ".docx", ".pptx", ".xlsx", ".eml", ".epub", ".html"}
 
@@ -900,6 +918,18 @@ def load_all_docs_from_checkpoint_connector(
         connector=connector,
         load=lambda checkpoint: connector.load_from_checkpoint(start=start, end=end, checkpoint=checkpoint),
     )
+
+
+_ATLASSIAN_CLOUD_DOMAINS = (".atlassian.net", ".jira.com", ".jira-dev.com")
+
+
+def is_atlassian_cloud_url(url: str) -> bool:
+    try:
+        host = urlparse(url).hostname or ""
+    except ValueError:
+        return False
+    host = host.lower()
+    return any(host.endswith(domain) for domain in _ATLASSIAN_CLOUD_DOMAINS)
 
 
 def get_cloudId(base_url: str) -> str:

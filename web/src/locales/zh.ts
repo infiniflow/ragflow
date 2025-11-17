@@ -684,6 +684,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
     },
     setting: {
+      cropTip: '拖动选区可以选择要图片的裁剪位置，滚动可以放大/缩小选区',
+      cropImage: '剪裁图片',
       selectModelPlaceholder: '请选择模型',
       configureModelTitle: '配置模型',
       confluenceIsCloudTip:
@@ -714,6 +716,23 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '需要索引其 “我的云端硬盘” 的邮箱，多个邮箱用逗号分隔（建议包含管理员）。',
       google_driveSharedFoldersTip:
         '需要同步的 Google Drive 文件夹链接，多个链接用逗号分隔。',
+      jiraDescription: '接入 Jira 工作区，持续同步Issues、评论与附件。',
+      jiraBaseUrlTip:
+        'Jira 的 Base URL，例如：https://your-domain.atlassian.net。',
+      jiraProjectKeyTip: '可选：仅同步指定的项目（如 RAG）。',
+      jiraJqlTip: '可选：自定义 JQL 过滤条件，留空则使用项目 / 时间范围。',
+      jiraBatchSizeTip: '每次向 Jira 请求的 Issue 数量上限。',
+      jiraCommentsTip: '同步评论。',
+      jiraAttachmentsTip: '开启后会将附件下载为独立文档。',
+      jiraAttachmentSizeTip: '超过该字节阈值的附件会被跳过。',
+      jiraLabelsTip: '需要跳过的标签（逗号分隔）。',
+      jiraBlacklistTip: '这些邮箱作者的评论会被忽略。',
+      jiraScopedTokenTip:
+        '仅当凭证为 Atlassian scoped token（api.atlassian.com）时生效。',
+      jiraEmailTip: '与 API Token 对应的 Jira 账户邮箱。',
+      jiraTokenTip:
+        '在 https://id.atlassian.com/manage-profile/security/api-tokens 生成的 API Token。 (Clould only)',
+      jiraPasswordTip: '可选：仅 Jira Server/Data Center 环境需要的密码字段。',
       availableSourcesDescription: '选择要添加的数据源',
       availableSources: '可用数据源',
       datasourceDescription: '管理您的数据源和连接',
@@ -954,6 +973,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      downloadFileTypeTip: '文件下载的类型',
+      downloadFileType: '文件类型',
+      formatTypeError: '格式或类型错误',
       variableNameMessage: '名称只能包含字母和下划线',
       variableDescription: '变量的描述',
       defaultValue: '默认值',
@@ -1505,6 +1527,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       codeDescription: '它允许开发人员编写自定义 Python 逻辑。',
       dataOperations: '数据操作',
       dataOperationsDescription: '对数据对象执行各种操作。',
+      listOperations: '列表操作',
+      listOperationsDescription: '对列表对象执行各种操作。',
       variableAssigner: '变量赋值器',
       variableAssignerDescription:
         '此组件对数据对象执行操作，包括提取、筛选和编辑数据中的键和值。',
@@ -1675,6 +1699,19 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         appendOrUpdate: '追加或更新',
         removeKeys: '删除键',
         renameKeys: '重命名键',
+      },
+      ListOperationsOptions: {
+        topN: '取前N项',
+        head: '取前第N项',
+        tail: '取后第N项',
+        sort: '排序',
+        filter: '筛选',
+        dropDuplicates: '去重',
+      },
+      sortMethod: '排序方式',
+      SortMethodOptions: {
+        asc: '升序',
+        desc: '降序',
       },
     },
     footer: {

@@ -308,7 +308,7 @@ def get_filter():
 
 @manager.route("/infos", methods=["POST"])  # noqa: F821
 @login_required
-def docinfos():
+def doc_infos():
     req = request.json
     doc_ids = req["doc_ids"]
     for doc_id in doc_ids:
@@ -508,11 +508,28 @@ def get(doc_id):
         ext = ext.group(1) if ext else None
         if ext:
             if doc.type == FileType.VISUAL.value:
+
                 content_type = CONTENT_TYPE_MAP.get(ext, f"image/{ext}")
             else:
                 content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
             response.headers.set("Content-Type", content_type)
         return response
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/download/<attachment_id>", methods=["GET"])  # noqa: F821
+@login_required
+def download_attachment(attachment_id):
+    try:
+        ext = request.args.get("ext", "markdown")
+        data = settings.STORAGE_IMPL.get(current_user.id, attachment_id)
+        # data = settings.STORAGE_IMPL.get("eb500d50bb0411f0907561d2782adda5", attachment_id)
+        response = flask.make_response(data)
+        response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
+
+        return response
+
     except Exception as e:
         return server_error_response(e)
 
@@ -544,6 +561,7 @@ def change_parser():
                 return get_data_error_result(message="Tenant not found!")
             if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
                 settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+        return None
 
     try:
         if "pipeline_id" in req and req["pipeline_id"] != "":

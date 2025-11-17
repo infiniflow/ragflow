@@ -91,7 +91,7 @@ Nope. The knowledge graph does *not* update *until* you regenerate a knowledge g
 
 ### How to remove a generated knowledge graph?
 
-On the **Configuration** page of your dataset, find the **Knoweledge graph** field and click the recycle bin button to the right of the field.
+On the **Configuration** page of your dataset, find the **Knowledge graph** field and click the recycle bin button to the right of the field.
 
 ### Where is the created knowledge graph stored?
 

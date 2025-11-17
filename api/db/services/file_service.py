@@ -31,7 +31,7 @@ from common.misc_utils import get_uuid
 from common.constants import TaskStatus, FileSource, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService
-from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img
+from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img, sanitize_path
 from rag.llm.cv_model import GptV4
 from common import settings
 
@@ -329,7 +329,7 @@ class FileService(CommonService):
         current_id = start_id
         while current_id:
             e, file = cls.get_by_id(current_id)
-            if file.parent_id != file.id and e:
+            if e and file.parent_id != file.id:
                 parent_folders.append(file)
                 current_id = file.parent_id
             else:
@@ -423,12 +423,14 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def upload_document(self, kb, file_objs, user_id, src="local"):
+    def upload_document(self, kb, file_objs, user_id, src="local", parent_path: str | None = None):
         root_folder = self.get_root_folder(user_id)
         pf_id = root_folder["id"]
         self.init_knowledgebase_docs(pf_id, user_id)
         kb_root_folder = self.get_kb_folder(user_id)
         kb_folder = self.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
+
+        safe_parent_path = sanitize_path(parent_path)
 
         err, files = [], []
         for file in file_objs:
@@ -439,7 +441,7 @@ class FileService(CommonService):
                 if filetype == FileType.OTHER.value:
                     raise RuntimeError("This type of file has not been supported yet!")
 
-                location = filename
+                location = filename if not safe_parent_path else f"{safe_parent_path}/{filename}"
                 while settings.STORAGE_IMPL.obj_exist(kb.id, location):
                     location += "_"
 

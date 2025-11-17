@@ -470,7 +470,7 @@ class InfinityConnection(DocStoreConnection):
             df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, ["id"])
-        res_fields = self.getFields(res, res.columns.tolist())
+        res_fields = self.get_fields(res, res.columns.tolist())
         return res_fields.get(chunkId, None)
 
     def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
@@ -599,7 +599,7 @@ class InfinityConnection(DocStoreConnection):
             col_to_remove = list(removeValue.keys())
             row_to_opt = table_instance.output(col_to_remove + ["id"]).filter(filter).to_df()
             logger.debug(f"INFINITY search table {str(table_name)}, filter {filter}, result: {str(row_to_opt[0])}")
-            row_to_opt = self.getFields(row_to_opt, col_to_remove)
+            row_to_opt = self.get_fields(row_to_opt, col_to_remove)
             for id, old_v in row_to_opt.items():
                 for k, remove_v in removeValue.items():
                     if remove_v in old_v[k]:
@@ -639,17 +639,17 @@ class InfinityConnection(DocStoreConnection):
     Helper functions for search result
     """
 
-    def getTotal(self, res: tuple[pd.DataFrame, int] | pd.DataFrame) -> int:
+    def get_total(self, res: tuple[pd.DataFrame, int] | pd.DataFrame) -> int:
         if isinstance(res, tuple):
             return res[1]
         return len(res)
 
-    def getChunkIds(self, res: tuple[pd.DataFrame, int] | pd.DataFrame) -> list[str]:
+    def get_chunk_ids(self, res: tuple[pd.DataFrame, int] | pd.DataFrame) -> list[str]:
         if isinstance(res, tuple):
             res = res[0]
         return list(res["id"])
 
-    def getFields(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, fields: list[str]) -> dict[str, dict]:
+    def get_fields(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, fields: list[str]) -> dict[str, dict]:
         if isinstance(res, tuple):
             res = res[0]
         if not fields:
@@ -690,7 +690,7 @@ class InfinityConnection(DocStoreConnection):
 
         return res2.set_index("id").to_dict(orient="index")
 
-    def getHighlight(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, keywords: list[str], fieldnm: str):
+    def get_highlight(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, keywords: list[str], fieldnm: str):
         if isinstance(res, tuple):
             res = res[0]
         ans = {}
@@ -732,7 +732,7 @@ class InfinityConnection(DocStoreConnection):
                 ans[id] = txt
         return ans
 
-    def getAggregation(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, fieldnm: str):
+    def get_aggregation(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, fieldnm: str):
         """
         Manual aggregation for tag fields since Infinity doesn't provide native aggregation
         """

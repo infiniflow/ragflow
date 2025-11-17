@@ -70,7 +70,7 @@ class ConnectorService(CommonService):
     def rebuild(cls, kb_id:str, connector_id: str, tenant_id:str):
         e, conn = cls.get_by_id(connector_id)
         if not e:
-            return
+            return None
         SyncLogsService.filter_delete([SyncLogs.connector_id==connector_id, SyncLogs.kb_id==kb_id])
         docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}", kb_id=kb_id)
         err = FileService.delete_docs([d.id for d in docs], tenant_id)
@@ -125,11 +125,11 @@ class SyncLogsService(CommonService):
             )
 
         query = query.distinct().order_by(cls.model.update_time.desc())
-        totbal = query.count()
+        total = query.count()
         if page_number:
             query = query.paginate(page_number, items_per_page)
 
-        return list(query.dicts()), totbal
+        return list(query.dicts()), total
 
     @classmethod
     def start(cls, id, connector_id):
@@ -242,7 +242,7 @@ class Connector2KbService(CommonService):
                 "id": get_uuid(),
                 "connector_id": conn_id,
                 "kb_id": kb_id,
-                "auto_parse": conn.get("auto_parse", "1")   
+                "auto_parse": conn.get("auto_parse", "1")
             })
             SyncLogsService.schedule(conn_id, kb_id, reindex=True)
 
