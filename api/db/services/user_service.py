@@ -419,7 +419,8 @@ class UserDepartmentService(CommonService):
         """
         if "id" not in kwargs:
             kwargs["id"] = get_uuid()
-        obj = cls.model(**kwargs).save(force_insert=True)
+        obj = cls.model(**kwargs)
+        obj.save(force_insert=True)
         return obj
     
     @classmethod

@@ -39,6 +39,8 @@ from api.utils.api_utils import (
 
 from common.constants import RetCode, StatusEnum
 from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, datetime_format
+from datetime import datetime
 
 manager = Blueprint("department", __name__)
 
@@ -193,6 +195,156 @@ def create_department() -> Response:
         return get_json_result(
             data=department.to_dict(),
             message=f"Department '{name}' created successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return server_error_response(e)
+
+
+@manager.route("/<department_id>", methods=["PUT"])  # noqa: F821
+@login_required
+def update_department(department_id: str) -> Response:
+    """Update a department's details.
+    
+    Only team owners, admins, or department members can update departments.
+    
+    ---
+    tags:
+      - Department
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: department_id
+        required: true
+        type: string
+        description: Department ID
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            name:
+              type: string
+              description: Department name (optional).
+            description:
+              type: string
+              description: Department description (optional).
+    responses:
+      200:
+        description: Department updated successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              description: Updated department information.
+            message:
+              type: string
+              description: Success message.
+      400:
+        description: Invalid request.
+      401:
+        description: Unauthorized.
+      403:
+        description: Forbidden - not team owner, admin, or department member.
+      404:
+        description: Department not found.
+    """
+    if request.json is None:
+        return get_json_result(
+            data=False,
+            message="Request body is required!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    
+    # Get department and verify it exists
+    success: bool
+    department: Optional[Department]
+    success, department = DepartmentService.get_by_id(department_id)
+    
+    if not success or not department:
+        return get_data_error_result(message="Department not found.")
+    
+    # Check if user is team owner or admin
+    is_admin_or_owner: bool = is_team_admin_or_owner(department.tenant_id, current_user.id)
+    
+    # Check if user is a member of the department
+    user_department: Optional[UserDepartment] = UserDepartmentService.filter_by_department_and_user_id(
+        department_id, current_user.id
+    )
+    is_department_member: bool = (
+        user_department is not None and 
+        user_department.status == StatusEnum.VALID.value
+    )
+    
+    # User must be either team owner/admin OR department member
+    if not is_admin_or_owner and not is_department_member:
+        return get_json_result(
+            data=False,
+            message="Only team owners, admins, or department members can update departments.",
+            code=RetCode.PERMISSION_ERROR,
+        )
+    
+    req: Dict[str, Any] = request.json
+    update_data: Dict[str, Any] = {
+        "update_time": current_timestamp(),
+        "update_date": datetime_format(datetime.now()),
+    }
+    
+    # Update name if provided
+    if "name" in req:
+        name: str = req.get("name", "").strip()
+        if name:
+            if len(name) > 128:
+                return get_json_result(
+                    data=False,
+                    message="Department name must be 128 characters or less!",
+                    code=RetCode.ARGUMENT_ERROR,
+                )
+            update_data["name"] = name
+        else:
+            return get_json_result(
+                data=False,
+                message="Department name cannot be empty!",
+                code=RetCode.ARGUMENT_ERROR,
+            )
+    
+    # Update description if provided
+    if "description" in req:
+        description: Optional[str] = req.get("description")
+        if description is not None:
+            description = description.strip() if isinstance(description, str) else None
+            update_data["description"] = description if description else None
+    
+    # If no fields to update (only update_time and update_date were set), return error
+    if len(update_data) == 2:  # Only update_time and update_date
+        return get_json_result(
+            data=False,
+            message="No fields provided to update. Please provide 'name' and/or 'description'.",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    
+    try:
+        from api.db.db_models import DB
+        
+        # Update the department
+        with DB.connection_context():
+            Department.update(update_data).where(
+                (Department.id == department_id) &
+                (Department.status == StatusEnum.VALID.value)
+            ).execute()
+        
+        # Get updated department
+        success, updated_department = DepartmentService.get_by_id(department_id)
+        
+        if not success or not updated_department:
+            return get_data_error_result(message="Department updated but could not retrieve updated data.")
+        
+        return get_json_result(
+            data=updated_department.to_dict(),
+            message="Department updated successfully!",
         )
     except Exception as e:
         logging.exception(e)
@@ -436,7 +588,7 @@ def remove_member(department_id: str, user_id: str) -> Response:
         
         # Soft delete by setting status to invalid
         with DB.connection_context():
-            UserDepartment.model.update({"status": StatusEnum.INVALID.value}).where(
+            UserDepartment.update({"status": StatusEnum.INVALID.value}).where(
                 (UserDepartment.id == user_department.id)
             ).execute()
         
