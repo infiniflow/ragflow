@@ -866,7 +866,6 @@ export enum VariableAssignerLogicalNumberOperator {
 export enum VariableAssignerLogicalArrayOperator {
   Overwrite = VariableAssignerLogicalOperator.Overwrite,
   Clear = VariableAssignerLogicalOperator.Clear,
-  Set = VariableAssignerLogicalOperator.Set,
   Append = 'append',
   Extend = 'extend',
   RemoveFirst = 'remove_first',
