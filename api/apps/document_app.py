@@ -20,7 +20,6 @@ import re
 from pathlib import Path
 from quart import request, make_response
 from api.apps import current_user, login_required
-
 from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, FileType
@@ -526,7 +525,7 @@ def download_attachment(attachment_id):
         ext = request.args.get("ext", "markdown")
         data = settings.STORAGE_IMPL.get(current_user.id, attachment_id)
         # data = settings.STORAGE_IMPL.get("eb500d50bb0411f0907561d2782adda5", attachment_id)
-        response = flask.make_response(data)
+        response = make_response(data)
         response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
 
         return response
