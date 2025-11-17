@@ -211,8 +211,7 @@ def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", da
 
 
 def token_required(func):
-    @wraps(func)
-    async def decorated_function(*args, **kwargs):
+    def get_tenant_id(**kwargs):
         if os.environ.get("DISABLE_SDK"):
             return get_json_result(data=False, message="`Authorization` can't be empty")
         authorization_str = request.headers.get("Authorization")
@@ -226,11 +225,20 @@ def token_required(func):
         if not objs:
             return get_json_result(data=False, message="Authentication error: API key is invalid!", code=RetCode.AUTHENTICATION_ERROR)
         kwargs["tenant_id"] = objs[0].tenant_id
+        return kwargs
 
-        if inspect.iscoroutinefunction(func):
-            return await func(*args, **kwargs)
+    @wraps(func)
+    def decorated_function(*args, **kwargs):
+        kwargs = get_tenant_id(**kwargs)
         return func(*args, **kwargs)
 
+    @wraps(func)
+    async def adecorated_function(*args, **kwargs):
+        kwargs = get_tenant_id(**kwargs)
+        return await func(*args, **kwargs)
+
+    if inspect.iscoroutinefunction(func):
+        return adecorated_function
     return decorated_function
 
 
