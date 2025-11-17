@@ -15,7 +15,7 @@ export const VariableAssignerSchema = {
     z.object({
       variable: z.string().optional(),
       operator: z.string().optional(),
-      parameter: z.string().or(z.number()).optional(),
+      parameter: z.string().or(z.number()).or(z.boolean()).optional(),
     }),
   ),
 };
@@ -44,6 +44,8 @@ function VariableAssignerForm({ node }: INextOperatorForm) {
         <DynamicVariables name="variables" label="Variables"></DynamicVariables>
         {/* <Output list={outputList} isFormRequired></Output> */}
       </FormWrapper>
+      {/* <DevTool control={form.control} placement="top-left" /> */}
+      {/* set up the dev tool */}
     </Form>
   );
 }

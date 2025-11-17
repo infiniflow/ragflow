@@ -232,8 +232,11 @@ export function useFilterQueryVariableOptionsByTypes(
             ...x,
             options: x.options.filter(
               (y) =>
-                types?.some((x) => toLower(y.type).includes(x)) ||
-                y.type === undefined, // agent structured output
+                types?.some((x) =>
+                  toLower(x).startsWith('array')
+                    ? toLower(y.type).includes(toLower(x))
+                    : toLower(y.type) === toLower(x),
+                ) || y.type === undefined, // agent structured output
             ),
           };
         })

@@ -1,8 +1,8 @@
-import NumberInput from '@/components/originui/number-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { useIsDarkTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
@@ -66,6 +66,14 @@ const EmptyFields = [
   VariableAssignerLogicalArrayOperator.RemoveLast,
 ];
 
+const EmptyValueMap = {
+  [JsonSchemaDataType.String]: '',
+  [JsonSchemaDataType.Number]: 0,
+  [JsonSchemaDataType.Boolean]: 'yes',
+  [JsonSchemaDataType.Object]: {},
+  [JsonSchemaDataType.Array]: [],
+};
+
 export function DynamicVariables({
   name,
   label,
@@ -78,7 +86,7 @@ export function DynamicVariables({
   const { getType } = useGetVariableLabelOrTypeByValue();
   const isDarkTheme = useIsDarkTheme();
 
-  const { fields, remove, append } = useFieldArray({
+  const { fields, remove, append, update } = useFieldArray({
     name: name,
     control: form.control,
   });
@@ -94,7 +102,15 @@ export function DynamicVariables({
   );
 
   const renderParameter = useCallback(
-    (keyFieldName: string, operatorFieldName: string) => {
+    (
+      keyFieldName: string,
+      operatorFieldName: string,
+      valueFieldAlias: string,
+    ) => {
+      console.log(
+        '🚀 ~ DynamicVariables ~ valueFieldAlias:',
+        form.getValues(valueFieldAlias),
+      );
       const logicalOperator = form.getValues(operatorFieldName);
       const type = getVariableType(keyFieldName);
 
@@ -104,14 +120,16 @@ export function DynamicVariables({
         logicalOperator === VariableAssignerLogicalOperator.Overwrite ||
         VariableAssignerLogicalArrayOperator.Extend === logicalOperator
       ) {
-        return <QueryVariable types={[type]} hideLabel></QueryVariable>;
+        return (
+          <QueryVariable types={[type]} hideLabel pureQuery></QueryVariable>
+        );
       } else if (logicalOperator === VariableAssignerLogicalOperator.Set) {
         if (type === JsonSchemaDataType.Boolean) {
           return <RadioButton></RadioButton>;
         }
 
         if (type === JsonSchemaDataType.Number) {
-          return <NumberInput className="w-full"></NumberInput>;
+          return <Input className="w-full" type="number"></Input>;
         }
 
         if (type === JsonSchemaDataType.Object) {
@@ -136,37 +154,69 @@ export function DynamicVariables({
           (x) => logicalOperator === x,
         )
       ) {
-        return <NumberInput className="w-full"></NumberInput>;
+        return <Input className="w-full" type="number"></Input>;
       } else if (
         logicalOperator === VariableAssignerLogicalArrayOperator.Append
       ) {
         const subType = type.match(/<([^>]+)>/).at(1);
-        return <QueryVariable types={[subType]} hideLabel></QueryVariable>;
+        return (
+          <QueryVariable types={[subType]} hideLabel pureQuery></QueryVariable>
+        );
       }
     },
     [form, getVariableType, isDarkTheme],
   );
 
   const handleVariableChange = useCallback(
-    (operatorFieldAlias: string, valueFieldAlias: string) => () => {
-      form.setValue(
+    (operatorFieldAlias: string, valueFieldAlias: string) => {
+      console.log(
+        '🚀 ~ DynamicVariables ~ operatorFieldAlias:',
         operatorFieldAlias,
-        VariableAssignerLogicalOperator.Overwrite,
-        { shouldDirty: true, shouldValidate: true },
       );
-      form.setValue(valueFieldAlias, undefined);
+      return () => {
+        form.setValue(
+          operatorFieldAlias,
+          VariableAssignerLogicalOperator.Overwrite,
+          { shouldDirty: true, shouldValidate: true },
+        );
+
+        form.setValue(valueFieldAlias, '', {
+          shouldDirty: true,
+          shouldValidate: true,
+        });
+      };
     },
     [form],
   );
 
   const handleOperatorChange = useCallback(
-    (valueFieldAlias: string) => {
-      form.setValue(valueFieldAlias, undefined, {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
+    (
+      valueFieldAlias: string,
+      keyFieldAlias: string,
+      value: string,
+      index: number,
+    ) => {
+      const type = getVariableType(keyFieldAlias);
+      console.log('🚀 ~ DynamicVariables ~ type:', type);
+
+      let parameter = EmptyValueMap[type as keyof typeof EmptyValueMap];
+
+      if (value === VariableAssignerLogicalOperator.Overwrite) {
+        parameter = '';
+      }
+
+      if (value !== VariableAssignerLogicalOperator.Clear) {
+        form.setValue(valueFieldAlias, parameter, {
+          shouldDirty: true,
+          shouldValidate: true,
+        });
+
+        // form.trigger(valueFieldAlias);
+
+        // update(index, { [valueField]: parameter });
+      }
     },
-    [form],
+    [form, getVariableType],
   );
 
   return (
@@ -204,7 +254,12 @@ export function DynamicVariables({
                       <SelectWithSearch
                         value={value}
                         onChange={(val) => {
-                          handleOperatorChange(valueFieldAlias);
+                          handleOperatorChange(
+                            valueFieldAlias,
+                            keyFieldAlias,
+                            val,
+                            index,
+                          );
                           onChange(val);
                         }}
                         options={buildLogicalOptions(
@@ -215,7 +270,11 @@ export function DynamicVariables({
                   </RAGFlowFormItem>
                 </div>
                 <RAGFlowFormItem name={valueFieldAlias} className="w-full">
-                  {renderParameter(keyFieldAlias, operatorFieldAlias)}
+                  {renderParameter(
+                    keyFieldAlias,
+                    operatorFieldAlias,
+                    valueFieldAlias,
+                  )}
                 </RAGFlowFormItem>
               </div>
 
