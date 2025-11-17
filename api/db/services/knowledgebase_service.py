@@ -423,7 +423,10 @@ class KnowledgebaseService(CommonService):
             "parser_config": parser_config,
             **kwargs
         }
-        
+
+        # Default parser_config (align with kb_app.create) — do not accept external overrides
+        payload["parser_config"] = get_parser_config(parser_id, kwargs.get("parser_config"))
+
         return payload
 
 
