@@ -25,7 +25,7 @@ from common.misc_utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request, \
     get_mcp_tools
 from api.utils.web_utils import get_float, safe_json_parse
-from rag.utils.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
+from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
