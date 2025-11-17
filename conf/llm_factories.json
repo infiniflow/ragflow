@@ -4839,6 +4839,639 @@
                     "is_tools": false
                 }
             ]
+        },
+        {
+            "name": "JieKou.AI",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK",
+            "status": "1",
+            "llm": [
+                {
+                    "llm_name": "Sao10K/L3-8B-Stheno-v3.2",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "baichuan/baichuan-m2-32b",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "baidu/ernie-4.5-300b-a47b-paddle",
+                    "tags": "LLM,CHAT,123K",
+                    "max_tokens": 123000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "baidu/ernie-4.5-vl-424b-a47b",
+                    "tags": "LLM,CHAT,123K",
+                    "max_tokens": 123000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-3-5-haiku-20241022",
+                    "tags": "LLM,CHAT,200K",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-3-5-sonnet-20241022",
+                    "tags": "LLM,CHAT,200K",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-3-7-sonnet-20250219",
+                    "tags": "LLM,CHAT,200K",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-3-haiku-20240307",
+                    "tags": "LLM,CHAT,200K",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-haiku-4-5-20251001",
+                    "tags": "LLM,CHAT,20K,IMAGE2TEXT",
+                    "max_tokens": 20000,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-opus-4-1-20250805",
+                    "tags": "LLM,CHAT,200K",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-opus-4-20250514",
+                    "tags": "LLM,CHAT,200K",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-sonnet-4-20250514",
+                    "tags": "LLM,CHAT,200K",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "claude-sonnet-4-5-20250929",
+                    "tags": "LLM,CHAT,200K,IMAGE2TEXT",
+                    "max_tokens": 200000,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek/deepseek-r1-0528",
+                    "tags": "LLM,CHAT,163K",
+                    "max_tokens": 163840,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek/deepseek-v3-0324",
+                    "tags": "LLM,CHAT,163K",
+                    "max_tokens": 163840,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek/deepseek-v3.1",
+                    "tags": "LLM,CHAT,163K",
+                    "max_tokens": 163840,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "doubao-1-5-pro-32k-250115",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "doubao-1.5-pro-32k-character-250715",
+                    "tags": "LLM,CHAT,200K",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.0-flash-20250609",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.0-flash-lite",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.5-flash",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.5-flash-lite",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.5-flash-lite-preview-06-17",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.5-flash-lite-preview-09-2025",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.5-flash-preview-05-20",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.5-pro",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gemini-2.5-pro-preview-06-05",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "google/gemma-3-12b-it",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "google/gemma-3-27b-it",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-4.1",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1047576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-4.1-mini",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1047576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-4.1-nano",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1047576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-4o",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-4o-mini",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5",
+                    "tags": "LLM,CHAT,400K",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5-chat-latest",
+                    "tags": "LLM,CHAT,400K",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5-codex",
+                    "tags": "LLM,CHAT,400K,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5-mini",
+                    "tags": "LLM,CHAT,400K",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5-nano",
+                    "tags": "LLM,CHAT,400K",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5-pro",
+                    "tags": "LLM,CHAT,400K,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.1",
+                    "tags": "LLM,CHAT,400K",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.1-chat-latest",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.1-codex",
+                    "tags": "LLM,CHAT,400K",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "grok-3",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "grok-3-mini",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "grok-4-0709",
+                    "tags": "LLM,CHAT,256K",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "grok-4-fast-non-reasoning",
+                    "tags": "LLM,CHAT,2M,IMAGE2TEXT",
+                    "max_tokens": 2000000,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "grok-4-fast-reasoning",
+                    "tags": "LLM,CHAT,2M,IMAGE2TEXT",
+                    "max_tokens": 2000000,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "grok-code-fast-1",
+                    "tags": "LLM,CHAT,256K",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gryphe/mythomax-l2-13b",
+                    "tags": "LLM,CHAT,4K",
+                    "max_tokens": 4096,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.1-8b-instruct",
+                    "tags": "LLM,CHAT,16K",
+                    "max_tokens": 16384,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.2-3b-instruct",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "meta-llama/llama-3.3-70b-instruct",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "meta-llama/llama-4-maverick-17b-128e-instruct-fp8",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "meta-llama/llama-4-scout-17b-16e-instruct",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "minimaxai/minimax-m1-80k",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "mistralai/mistral-7b-instruct",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "mistralai/mistral-nemo",
+                    "tags": "LLM,CHAT,60K",
+                    "max_tokens": 60288,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "moonshotai/kimi-k2-0905",
+                    "tags": "LLM,CHAT,262K",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "moonshotai/kimi-k2-instruct",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "o1",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "o1-mini",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "o3",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "o3-mini",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "openai/gpt-oss-120b",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "openai/gpt-oss-20b",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen/qwen-2.5-72b-instruct",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen/qwen-mt-plus",
+                    "tags": "LLM,CHAT,4K",
+                    "max_tokens": 4096,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "qwen/qwen2.5-7b-instruct",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen/qwen2.5-vl-72b-instruct",
+                    "tags": "LLM,CHAT,32K",
+                    "max_tokens": 32768,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "qwen/qwen3-235b-a22b-fp8",
+                    "tags": "LLM,CHAT,40K",
+                    "max_tokens": 40960,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "qwen/qwen3-235b-a22b-instruct-2507",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen/qwen3-235b-a22b-thinking-2507",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen/qwen3-30b-a3b-fp8",
+                    "tags": "LLM,CHAT,40K",
+                    "max_tokens": 40960,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "qwen/qwen3-32b-fp8",
+                    "tags": "LLM,CHAT,40K",
+                    "max_tokens": 40960,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "qwen/qwen3-8b-fp8",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "qwen/qwen3-coder-480b-a35b-instruct",
+                    "tags": "LLM,CHAT,262K",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen/qwen3-next-80b-a3b-instruct",
+                    "tags": "LLM,CHAT,65K",
+                    "max_tokens": 65536,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen/qwen3-next-80b-a3b-thinking",
+                    "tags": "LLM,CHAT,65K",
+                    "max_tokens": 65536,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "sao10k/l3-70b-euryale-v2.1",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "sao10k/l3-8b-lunaris",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "sao10k/l31-70b-euryale-v2.2",
+                    "tags": "LLM,CHAT,8K",
+                    "max_tokens": 8192,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "thudm/glm-4.1v-9b-thinking",
+                    "tags": "LLM,CHAT,65K",
+                    "max_tokens": 65536,
+                    "model_type": "chat",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "zai-org/glm-4.5",
+                    "tags": "LLM,CHAT,131K",
+                    "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "zai-org/glm-4.5v",
+                    "tags": "LLM,CHAT,65K",
+                    "max_tokens": 65536,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "baai/bge-m3",
+                    "tags": "TEXT EMBEDDING,8K",
+                    "max_tokens": 8192,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "qwen/qwen3-embedding-0.6b",
+                    "tags": "TEXT EMBEDDING,32K",
+                    "max_tokens": 32768,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "qwen/qwen3-embedding-8b",
+                    "tags": "TEXT EMBEDDING,32K",
+                    "max_tokens": 32768,
+                    "model_type": "embedding"
+                },
+                {
+                    "llm_name": "baai/bge-reranker-v2-m3",
+                    "tags": "RE-RANK,8K",
+                    "max_tokens": 8000,
+                    "model_type": "reranker"
+                },
+                {
+                    "llm_name": "qwen/qwen3-reranker-8b",
+                    "tags": "RE-RANK,32K",
+                    "max_tokens": 32768,
+                    "model_type": "reranker"
+                }
+            ]
         }
     ]
 }
