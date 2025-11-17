@@ -226,7 +226,7 @@ async def update(tenant_id, chat_id):
 
 @manager.route("/chats", methods=["DELETE"])  # noqa: F821
 @token_required
-async def delete(tenant_id):
+async def delete_chats(tenant_id):
     errors = []
     success_count = 0
     req = await request.json
@@ -249,8 +249,8 @@ async def delete(tenant_id):
             errors.append(f"Assistant({id}) not found.")
             continue
         temp_dict = {"status": StatusEnum.INVALID.value}
-        DialogService.update_by_id(id, temp_dict)
-        success_count += 1
+        success_count += DialogService.update_by_id(id, temp_dict)
+        print(success_count, "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$", flush=True)
 
     if errors:
         if success_count > 0:
