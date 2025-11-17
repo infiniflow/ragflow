@@ -125,7 +125,7 @@ async def login():
         user.update_date = (datetime_format(datetime.now()),)
         user.save()
         msg = "Welcome back!"
-        
+
         return await construct_response(data=response_data, auth=user.get_id(), message=msg)
     else:
         return get_json_result(
@@ -738,7 +738,7 @@ async def user_add():
             raise Exception(f"Same email: {email_address} exists!")
         user = users[0]
         login_user(user)
-        return construct_response(
+        return await construct_response(
             data=user.to_json(),
             auth=user.get_id(),
             message=f"{nickname}, welcome aboard!",
