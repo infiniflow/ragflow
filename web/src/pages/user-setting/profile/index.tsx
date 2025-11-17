@@ -13,13 +13,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { RAGFlowSelect } from '@/components/ui/select';
 import { useTranslate } from '@/hooks/common-hooks';
 import { TimezoneList } from '@/pages/user-setting/constants';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -230,6 +224,7 @@ const ProfilePage: FC = () => {
           title={modalTitle[editType]}
           open={isEditing}
           showfooter={false}
+          maskClosable={false}
           titleClassName="text-base"
           onOpenChange={(open) => {
             if (!open) {
@@ -281,23 +276,14 @@ const ProfilePage: FC = () => {
                         <FormLabel className="text-sm text-text-secondary whitespace-nowrap">
                           {t('timezone')}
                         </FormLabel>
-                        <Select
+                        <RAGFlowSelect
+                          options={TimezoneList.map((timeStr) => {
+                            return { value: timeStr, label: timeStr };
+                          })}
+                          placeholder="Select a timeZone"
                           onValueChange={field.onChange}
                           value={field.value}
-                        >
-                          <FormControl className="w-full bg-bg-input border-border-default">
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a timeZone" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {TimezoneList.map((timeStr) => (
-                              <SelectItem key={timeStr} value={timeStr}>
-                                {timeStr}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        />
                       </div>
                       <div className="flex w-full pt-1">
                         <div className="w-1/4"></div>
