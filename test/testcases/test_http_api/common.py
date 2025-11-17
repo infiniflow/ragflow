@@ -411,3 +411,33 @@ def create_team(
         url=url, headers=headers, auth=auth, json=payload
     )
     return res.json()
+
+
+# DEPARTMENT MANAGEMENT
+DEPARTMENT_API_URL: str = f"/{VERSION}/department"
+
+
+def create_department(
+    auth: Union[AuthBase, str, None],
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Create a new department.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        payload: Optional JSON payload containing department data (e.g., name, tenant_id, description).
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the created department data.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{DEPARTMENT_API_URL}/create"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
