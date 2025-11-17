@@ -732,6 +732,33 @@ Example: general/v2/`,
         'Comma-separated emails whose “My Drive” contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
+      jiraDescription:
+        'Connect your Jira workspace to sync issues, comments, and attachments.',
+      jiraBaseUrlTip:
+        'Base URL of your Jira site (e.g., https://your-domain.atlassian.net).',
+      jiraProjectKeyTip:
+        'Optional: limit syncing to a single project key (e.g., ENG).',
+      jiraJqlTip:
+        'Optional JQL filter. Leave blank to rely on project/time filters.',
+      jiraBatchSizeTip:
+        'Maximum number of issues requested from Jira per batch.',
+      jiraCommentsTip:
+        'Include Jira comments in the generated markdown document.',
+      jiraAttachmentsTip:
+        'Download attachments as separate documents during sync.',
+      jiraAttachmentSizeTip:
+        'Attachments larger than this number of bytes will be skipped.',
+      jiraLabelsTip:
+        'Labels that should be skipped while indexing (comma separated).',
+      jiraBlacklistTip:
+        'Comments whose author email matches these entries will be ignored.',
+      jiraScopedTokenTip:
+        'Enable this when using scoped Atlassian tokens (api.atlassian.com).',
+      jiraEmailTip: 'Email associated with the Jira account/API token.',
+      jiraTokenTip:
+        'API token generated from https://id.atlassian.com/manage-profile/security/api-tokens.',
+      jiraPasswordTip:
+        'Optional password for Jira Server/Data Center environments.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
@@ -1009,6 +1036,8 @@ Example: general/v2/`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      downloadFileTypeTip: 'The file type to download',
+      downloadFileType: 'Download file type',
       formatTypeError: 'Format or type error',
       variableNameMessage:
         'Variable name can only contain letters and underscores',
@@ -1591,6 +1620,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       codeDescription: 'It allows developers to write custom Python logic.',
       dataOperations: 'Data operations',
       dataOperationsDescription: 'Perform various operations on a Data object.',
+      listOperations: 'List operations',
+      listOperationsDescription: 'Perform operations on a list.',
       variableAssigner: 'Variable assigner',
       variableAssignerDescription:
         'This component performs operations on Data objects, including extracting, filtering, and editing keys and values in the Data.',
@@ -1805,6 +1836,19 @@ Important structured information may include: names, dates, locations, events, k
         appendOrUpdate: 'Append or update',
         removeKeys: 'Remove keys',
         renameKeys: 'Rename keys',
+      },
+      ListOperationsOptions: {
+        topN: 'Top N',
+        head: 'Head',
+        tail: 'Tail',
+        sort: 'Sort',
+        filter: 'Filter',
+        dropDuplicates: 'Drop duplicates',
+      },
+      sortMethod: 'Sort method',
+      SortMethodOptions: {
+        asc: 'Ascending',
+        desc: 'Descending',
       },
     },
     llmTools: {
