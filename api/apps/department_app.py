@@ -206,7 +206,7 @@ def create_department() -> Response:
 def update_department(department_id: str) -> Response:
     """Update a department's details.
     
-    Only team owners, admins, or department members can update departments.
+    Only department members can update departments.
     
     ---
     tags:
@@ -248,7 +248,7 @@ def update_department(department_id: str) -> Response:
       401:
         description: Unauthorized.
       403:
-        description: Forbidden - not team owner, admin, or department member.
+        description: Forbidden - not a department member.
       404:
         description: Department not found.
     """
@@ -267,9 +267,6 @@ def update_department(department_id: str) -> Response:
     if not success or not department:
         return get_data_error_result(message="Department not found.")
     
-    # Check if user is team owner or admin
-    is_admin_or_owner: bool = is_team_admin_or_owner(department.tenant_id, current_user.id)
-    
     # Check if user is a member of the department
     user_department: Optional[UserDepartment] = UserDepartmentService.filter_by_department_and_user_id(
         department_id, current_user.id
@@ -279,11 +276,11 @@ def update_department(department_id: str) -> Response:
         user_department.status == StatusEnum.VALID.value
     )
     
-    # User must be either team owner/admin OR department member
-    if not is_admin_or_owner and not is_department_member:
+    # User must be a member of the department to update it
+    if not is_department_member:
         return get_json_result(
             data=False,
-            message="Only team owners, admins, or department members can update departments.",
+            message="You must be a member of this department to update it.",
             code=RetCode.PERMISSION_ERROR,
         )
     
@@ -345,6 +342,107 @@ def update_department(department_id: str) -> Response:
         return get_json_result(
             data=updated_department.to_dict(),
             message="Department updated successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return server_error_response(e)
+
+
+@manager.route("/<department_id>", methods=["DELETE"])  # noqa: F821
+@login_required
+def delete_department(department_id: str) -> Response:
+    """Delete a department.
+    
+    Only team owners or admins who are also department members can delete departments.
+    This will also remove all user-department relationships for this department.
+    
+    ---
+    tags:
+      - Department
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: department_id
+        required: true
+        type: string
+        description: Department ID
+    responses:
+      200:
+        description: Department deleted successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: boolean
+              description: Deletion success status.
+            message:
+              type: string
+              description: Success message.
+      401:
+        description: Unauthorized.
+      403:
+        description: Forbidden - not a department member or not team owner/admin.
+      404:
+        description: Department not found.
+    """
+    # Get department and verify it exists
+    success: bool
+    department: Optional[Department]
+    success, department = DepartmentService.get_by_id(department_id)
+    
+    if not success or not department:
+        return get_data_error_result(message="Department not found.")
+    
+    # Check if user is a member of the department
+    user_department: Optional[UserDepartment] = UserDepartmentService.filter_by_department_and_user_id(
+        department_id, current_user.id
+    )
+    is_department_member: bool = (
+        user_department is not None and 
+        user_department.status == StatusEnum.VALID.value
+    )
+    
+    # User must be a member of the department to delete it
+    if not is_department_member:
+        return get_json_result(
+            data=False,
+            message="You must be a member of this department to delete it.",
+            code=RetCode.PERMISSION_ERROR,
+        )
+    
+    # Additionally, user must be team owner or admin to delete
+    if not is_team_admin_or_owner(department.tenant_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message="Only team owners or admins can delete departments.",
+            code=RetCode.PERMISSION_ERROR,
+        )
+    
+    try:
+        from api.db.db_models import DB
+        
+        # Soft delete the department and all related user_department records
+        with DB.connection_context():
+            # Soft delete all user-department relationships for this department
+            UserDepartment.update({"status": StatusEnum.INVALID.value}).where(
+                (UserDepartment.department_id == department_id) &
+                (UserDepartment.status == StatusEnum.VALID.value)
+            ).execute()
+            
+            # Soft delete the department itself
+            Department.update({
+                "status": StatusEnum.INVALID.value,
+                "update_time": current_timestamp(),
+                "update_date": datetime_format(datetime.now()),
+            }).where(
+                (Department.id == department_id) &
+                (Department.status == StatusEnum.VALID.value)
+            ).execute()
+        
+        return get_json_result(
+            data=True,
+            message="Department and all its member relationships deleted successfully!",
         )
     except Exception as e:
         logging.exception(e)
