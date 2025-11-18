@@ -1,6 +1,10 @@
 import { JSONSchema } from '@/components/jsonjoy-builder';
-import { get, isPlainObject } from 'lodash';
+import { get, isPlainObject, toLower } from 'lodash';
 import { JsonSchemaDataType } from '../constant';
+
+function predicate(types: string[], type: string) {
+  return types.some((x) => toLower(x) === toLower(type));
+}
 
 export function hasSpecificTypeChild(
   data: Record<string, any> | Array<any>,
@@ -8,7 +12,7 @@ export function hasSpecificTypeChild(
 ) {
   if (Array.isArray(data)) {
     for (const value of data) {
-      if (isPlainObject(value) && types.some((x) => x === value.type)) {
+      if (isPlainObject(value) && predicate(types, value.type)) {
         return true;
       }
       if (hasSpecificTypeChild(value, types)) {
@@ -19,7 +23,7 @@ export function hasSpecificTypeChild(
 
   if (isPlainObject(data)) {
     for (const value of Object.values(data)) {
-      if (isPlainObject(value) && types.some((x) => x === value.type)) {
+      if (isPlainObject(value) && predicate(types, value.type)) {
         return true;
       }
 

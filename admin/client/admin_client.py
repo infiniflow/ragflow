@@ -378,7 +378,7 @@ class AdminCLI(Cmd):
                         self.session.headers.update({
                             'Content-Type': 'application/json',
                             'Authorization': response.headers['Authorization'],
-                            'User-Agent': 'RAGFlow-CLI/0.22.0'
+                            'User-Agent': 'RAGFlow-CLI/0.22.1'
                         })
                         print("Authentication successful.")
                         return True

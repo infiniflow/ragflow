@@ -55,6 +55,10 @@ def create():
         **req
     )
 
+    code = req.get("code")
+    if code:
+        return get_data_error_result(code=code, message=req.get("message"))
+
     try:
         if not KnowledgebaseService.save(**req):
             return get_data_error_result()
@@ -914,6 +918,6 @@ def check_embedding():
     }
     if summary["avg_cos_sim"] > 0.9:
         return get_json_result(data={"summary": summary, "results": results})
-    return get_json_result(code=RetCode.NOT_EFFECTIVE, message="failed", data={"summary": summary, "results": results})
+    return get_json_result(code=RetCode.NOT_EFFECTIVE, message="Embedding model switch failed: the average similarity between old and new vectors is below 0.9, indicating incompatible vector spaces.", data={"summary": summary, "results": results})
 
 

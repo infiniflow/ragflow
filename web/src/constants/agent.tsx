@@ -169,3 +169,13 @@ export const SwitchOperatorOptions = [
     icon: <CircleSlash2 className="size-4" />,
   },
 ];
+
+export const AgentStructuredOutputField = 'structured';
+
+export enum JsonSchemaDataType {
+  String = 'string',
+  Number = 'number',
+  Boolean = 'boolean',
+  Array = 'array',
+  Object = 'object',
+}
