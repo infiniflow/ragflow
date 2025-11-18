@@ -4,6 +4,7 @@ import {
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
 import { cn } from '@/lib/utils';
+import { getStructuredDatatype } from '@/utils/canvas-util';
 import { get, isEmpty, isPlainObject } from 'lodash';
 import { ChevronRight } from 'lucide-react';
 import { PropsWithChildren, ReactNode, useCallback } from 'react';
@@ -62,22 +63,28 @@ export function StructuredOutputSecondaryMenu({
                 value: option.value + `.${key}`,
               };
 
-              const dataType = get(value, 'type');
+              const { dataType, compositeDataType } =
+                getStructuredDatatype(value);
 
               if (
                 isEmpty(types) ||
                 (!isEmpty(types) &&
-                  (types?.some((x) => x === dataType) ||
+                  (types?.some((x) => x === compositeDataType) ||
                     hasSpecificTypeChild(value ?? {}, types)))
               ) {
                 return (
                   <li key={key} className="pl-1">
                     <div
-                      onClick={handleSubMenuClick(nextOption, dataType)}
+                      onClick={handleSubMenuClick(
+                        nextOption,
+                        compositeDataType,
+                      )}
                       className="hover:bg-bg-card p-1 text-text-primary rounded-sm flex justify-between"
                     >
                       {key}
-                      <span className="text-text-secondary">{dataType}</span>
+                      <span className="text-text-secondary">
+                        {compositeDataType}
+                      </span>
                     </div>
                     {[JsonSchemaDataType.Object, JsonSchemaDataType.Array].some(
                       (x) => x === dataType,
@@ -122,7 +129,7 @@ export function StructuredOutputSecondaryMenu({
         side="left"
         align="start"
         className={cn(
-          'min-w-[140px]  border border-border rounded-md shadow-lg p-0',
+          'min-w-72  border border-border rounded-md shadow-lg p-0',
         )}
       >
         <section className="p-2">
