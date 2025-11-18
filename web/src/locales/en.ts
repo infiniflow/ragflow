@@ -705,6 +705,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
       s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from. 
 Example: general/v2/`,
+      S3CompatibleEndpointUrlTip: `Required for S3 compatible Storage Box. Specify the S3-compatible endpoint URL.
+Example: https://fsn1.your-objectstorage.com`,
       addDataSourceModalTital: 'Create your {{name}} connector',
       deleteSourceModalTitle: 'Delete data source',
       deleteSourceModalContent: `
