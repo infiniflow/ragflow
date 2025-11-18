@@ -1,4 +1,10 @@
+import {
+  AgentStructuredOutputField,
+  JsonSchemaDataType,
+  Operator,
+} from '@/constants/agent';
 import { BaseNode } from '@/interfaces/database/agent';
+
 import { Edge } from '@xyflow/react';
 import { isEmpty } from 'lodash';
 import { ComponentType, ReactNode } from 'react';
@@ -23,6 +29,12 @@ export function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
   }, []);
 }
 
+export function isAgentStructured(id?: string, label?: string) {
+  return (
+    label === AgentStructuredOutputField && id?.startsWith(`${Operator.Agent}:`)
+  );
+}
+
 export function buildOutputOptions(
   outputs: Record<string, any> = {},
   nodeId?: string,
@@ -34,7 +46,9 @@ export function buildOutputOptions(
     value: `${nodeId}@${x}`,
     parentLabel,
     icon,
-    type: outputs[x]?.type,
+    type: isAgentStructured(nodeId, x)
+      ? JsonSchemaDataType.Object
+      : outputs[x]?.type,
   }));
 }
 

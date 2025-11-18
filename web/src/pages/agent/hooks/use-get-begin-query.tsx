@@ -1,7 +1,7 @@
-import { AgentGlobals } from '@/constants/agent';
+import { AgentGlobals, AgentStructuredOutputField } from '@/constants/agent';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { buildNodeOutputOptions } from '@/utils/canvas-util';
+import { buildNodeOutputOptions, isAgentStructured } from '@/utils/canvas-util';
 import { DefaultOptionType } from 'antd/es/select';
 import { t } from 'i18next';
 import { isEmpty, toLower } from 'lodash';
@@ -236,7 +236,11 @@ export function useFilterQueryVariableOptionsByTypes(
                   toLower(x).startsWith('array')
                     ? toLower(y.type).includes(toLower(x))
                     : toLower(y.type) === toLower(x),
-                ) || y.type === undefined, // agent structured output
+                ) ||
+                isAgentStructured(
+                  y.value,
+                  y.value.slice(-AgentStructuredOutputField.length),
+                ), // agent structured output
             ),
           };
         })
