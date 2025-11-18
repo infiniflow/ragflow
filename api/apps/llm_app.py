@@ -16,8 +16,9 @@
 import logging
 import json
 import os
-from flask import request
-from flask_login import login_required, current_user
+from quart import request
+
+from api.apps import login_required, current_user
 from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
 from api.db.services.llm_service import LLMService
 from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
@@ -33,7 +34,7 @@ from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel
 def factories():
     try:
         fac = get_allowed_llm_factories()
-        fac = [f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI"]]
+        fac = [f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI", "Builtin"]]
         llms = LLMService.get_all()
         mdl_types = {}
         for m in llms:
@@ -52,8 +53,8 @@ def factories():
 @manager.route("/set_api_key", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("llm_factory", "api_key")
-def set_api_key():
-    req = request.json
+async def set_api_key():
+    req = await request.json
     # test if api key works
     chat_passed, embd_passed, rerank_passed = False, False, False
     factory = req["llm_factory"]
@@ -122,8 +123,8 @@ def set_api_key():
 @manager.route("/add_llm", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("llm_factory")
-def add_llm():
-    req = request.json
+async def add_llm():
+    req = await request.json
     factory = req["llm_factory"]
     api_key = req.get("api_key", "x")
     llm_name = req.get("llm_name")
@@ -142,11 +143,11 @@ def add_llm():
 
     elif factory == "Tencent Hunyuan":
         req["api_key"] = apikey_json(["hunyuan_sid", "hunyuan_sk"])
-        return set_api_key()
+        return await set_api_key()
 
     elif factory == "Tencent Cloud":
         req["api_key"] = apikey_json(["tencent_cloud_sid", "tencent_cloud_sk"])
-        return set_api_key()
+        return await set_api_key()
 
     elif factory == "Bedrock":
         # For Bedrock, due to its special authentication method
@@ -267,8 +268,8 @@ def add_llm():
 @manager.route("/delete_llm", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("llm_factory", "llm_name")
-def delete_llm():
-    req = request.json
+async def delete_llm():
+    req = await request.json
     TenantLLMService.filter_delete([TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"], TenantLLM.llm_name == req["llm_name"]])
     return get_json_result(data=True)
 
@@ -276,8 +277,8 @@ def delete_llm():
 @manager.route("/enable_llm", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("llm_factory", "llm_name")
-def enable_llm():
-    req = request.json
+async def enable_llm():
+    req = await request.json
     TenantLLMService.filter_update(
         [TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"], TenantLLM.llm_name == req["llm_name"]], {"status": str(req.get("status", "1"))}
     )
@@ -287,8 +288,8 @@ def enable_llm():
 @manager.route("/delete_factory", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("llm_factory")
-def delete_factory():
-    req = request.json
+async def delete_factory():
+    req = await request.json
     TenantLLMService.filter_delete([TenantLLM.tenant_id == current_user.id, TenantLLM.llm_factory == req["llm_factory"]])
     return get_json_result(data=True)
 
@@ -348,7 +349,7 @@ def list_app():
         facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key and o.status == StatusEnum.VALID.value])
         status = {(o.llm_name + "@" + o.llm_factory) for o in objs if o.status == StatusEnum.VALID.value}
         llms = LLMService.get_all()
-        llms = [m.to_dict() for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted and (m.llm_name + "@" + m.fid) in status]
+        llms = [m.to_dict() for m in llms if m.status == StatusEnum.VALID.value and m.fid not in weighted and (m.fid == 'Builtin' or (m.llm_name + "@" + m.fid) in status)]
         for m in llms:
             m["available"] = m["fid"] in facts or m["llm_name"].lower() == "flag-embedding" or m["fid"] in self_deployed
             if "tei-" in os.getenv("COMPOSE_PROFILES", "") and m["model_type"] == LLMType.EMBEDDING and m["fid"] == "Builtin" and m["llm_name"] == os.getenv("TEI_MODEL", ""):
@@ -358,7 +359,7 @@ def list_app():
         for o in objs:
             if o.llm_name + "@" + o.llm_factory in llm_set:
                 continue
-            llms.append({"llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True})
+            llms.append({"llm_name": o.llm_name, "model_type": o.model_type, "fid": o.llm_factory, "available": True, "status": StatusEnum.VALID.value})
 
         res = {}
         for m in llms:

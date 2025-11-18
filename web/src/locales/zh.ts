@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      back: '返回',
       noResults: '无结果。',
       selectPlaceholder: '请选择',
       selectAll: '全选',
@@ -260,9 +261,15 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      generationScopeTip: '选择 RAPTOR 的生成范围：整个知识库或单个文件。',
+      generationScope: '生成范围',
+      scopeSingleFile: '单文件',
+      scopeDataset: '整库',
+
+      autoParse: '自动解析',
       rebuildTip: '从所有已关联的数据源重新下载文件并再次解析。',
       baseInfo: '基础信息',
-      gobalIndex: '全局索引',
+      globalIndex: '全局索引',
       dataSource: '数据源',
       linkSourceSetTip: '管理与此数据集的数据源链接',
       linkDataSource: '链接数据源',
@@ -677,6 +684,16 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
     },
     setting: {
+      cropTip: '拖动选区可以选择要图片的裁剪位置，滚动可以放大/缩小选区',
+      cropImage: '剪裁图片',
+      selectModelPlaceholder: '请选择模型',
+      configureModelTitle: '配置模型',
+      confluenceIsCloudTip:
+        '检查这是否是 Confluence Cloud 实例，如果是 Confluence 服务/数据中心，则取消选中。',
+      confluenceWikiBaseUrlTip:
+        'Confluence Wiki 的基础 URL（例如 https://your-domain.atlassian.net/wiki）',
+      s3PrefixTip: `指定 S3 存储桶内的文件夹路径，用于读取文件。
+示例：general/v2/`,
       addDataSourceModalTital: '创建你的 {{name}} 链接',
       deleteSourceModalTitle: '删除数据源链接',
       deleteSourceModalContent: `
@@ -690,6 +707,32 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
       discordDescription: ' 连接你的 Discord 服务器以访问和分析聊天数据。',
       notionDescription: ' 同步 Notion 页面与数据库，用于知识检索。',
+      google_driveDescription:
+        '通过 OAuth 连接 Google Drive，并同步指定的文件夹或云端硬盘。',
+      google_driveTokenTip:
+        '请上传由 OAuth helper 或 Google Cloud Console 导出的 OAuth token JSON。也支持上传 “installed” 或 “web” 类型的 client_secret JSON。若为首次同步，将自动弹出浏览器完成 OAuth 授权流程；如果该 JSON 已包含 refresh token，将会被自动复用。',
+      google_drivePrimaryAdminTip: '拥有相应 Drive 访问权限的管理员邮箱。',
+      google_driveMyDriveEmailsTip:
+        '需要索引其 “我的云端硬盘” 的邮箱，多个邮箱用逗号分隔（建议包含管理员）。',
+      google_driveSharedFoldersTip:
+        '需要同步的 Google Drive 文件夹链接，多个链接用逗号分隔。',
+      jiraDescription: '接入 Jira 工作区，持续同步Issues、评论与附件。',
+      jiraBaseUrlTip:
+        'Jira 的 Base URL，例如：https://your-domain.atlassian.net。',
+      jiraProjectKeyTip: '可选：仅同步指定的项目（如 RAG）。',
+      jiraJqlTip: '可选：自定义 JQL 过滤条件，留空则使用项目 / 时间范围。',
+      jiraBatchSizeTip: '每次向 Jira 请求的 Issue 数量上限。',
+      jiraCommentsTip: '同步评论。',
+      jiraAttachmentsTip: '开启后会将附件下载为独立文档。',
+      jiraAttachmentSizeTip: '超过该字节阈值的附件会被跳过。',
+      jiraLabelsTip: '需要跳过的标签（逗号分隔）。',
+      jiraBlacklistTip: '这些邮箱作者的评论会被忽略。',
+      jiraScopedTokenTip:
+        '仅当凭证为 Atlassian scoped token（api.atlassian.com）时生效。',
+      jiraEmailTip: '与 API Token 对应的 Jira 账户邮箱。',
+      jiraTokenTip:
+        '在 https://id.atlassian.com/manage-profile/security/api-tokens 生成的 API Token。 (Clould only)',
+      jiraPasswordTip: '可选：仅 Jira Server/Data Center 环境需要的密码字段。',
       availableSourcesDescription: '选择要添加的数据源',
       availableSources: '可用数据源',
       datasourceDescription: '管理您的数据源和连接',
@@ -930,6 +973,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      downloadFileTypeTip: '文件下载的类型',
+      downloadFileType: '文件类型',
+      formatTypeError: '格式或类型错误',
+      variableNameMessage: '名称只能包含字母和下划线',
+      variableDescription: '变量的描述',
+      defaultValue: '默认值',
+      conversationVariable: '会话变量',
       recommended: '推荐',
       customerSupport: '客户支持',
       marketing: '营销',
@@ -1477,6 +1527,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       codeDescription: '它允许开发人员编写自定义 Python 逻辑。',
       dataOperations: '数据操作',
       dataOperationsDescription: '对数据对象执行各种操作。',
+      listOperations: '列表操作',
+      listOperationsDescription: '对列表对象执行各种操作。',
       variableAssigner: '变量赋值器',
       variableAssignerDescription:
         '此组件对数据对象执行操作，包括提取、筛选和编辑数据中的键和值。',
@@ -1648,6 +1700,19 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         removeKeys: '删除键',
         renameKeys: '重命名键',
       },
+      ListOperationsOptions: {
+        topN: '取前N项',
+        head: '取前第N项',
+        tail: '取后第N项',
+        sort: '排序',
+        filter: '筛选',
+        dropDuplicates: '去重',
+      },
+      sortMethod: '排序方式',
+      SortMethodOptions: {
+        asc: '升序',
+        desc: '降序',
+      },
     },
     footer: {
       profile: 'All rights reserved @ React',
@@ -1755,8 +1820,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       changeStepModalCancelText: '取消',
       unlinkPipelineModalTitle: '解绑pipeline',
       unlinkPipelineModalContent: `
-      <p>一旦取消链接，该数据集将不再连接到当前数据管道。</p> 
-      <p>正在解析的文件将继续解析，直到完成。</p> 
+      <p>一旦取消链接，该数据集将不再连接到当前数据管道。</p>
+      <p>正在解析的文件将继续解析，直到完成。</p>
       <p>尚未解析的文件将不再被处理。</p> <br/>
       <p>你确定要继续吗?</p> `,
       unlinkPipelineModalConfirmText: '解绑',

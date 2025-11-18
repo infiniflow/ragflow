@@ -1,4 +1,6 @@
 import {
+  DSL,
+  GlobalVariableType,
   IAgentForm,
   ICategorizeForm,
   ICategorizeItem,
@@ -326,7 +328,6 @@ export const buildDslComponentsByGraph = (
         case Operator.DataOperations:
           params = transformDataOperationsParams(params);
           break;
-
         default:
           break;
       }
@@ -344,6 +345,32 @@ export const buildDslComponentsByGraph = (
     });
 
   return components;
+};
+
+export const buildDslGlobalVariables = (
+  dsl: DSL,
+  globalVariables?: Record<string, GlobalVariableType>,
+) => {
+  if (!globalVariables) {
+    return { globals: dsl.globals, variables: dsl.variables || {} };
+  }
+
+  let globalVariablesTemp: Record<string, any> = {};
+  let globalSystem: Record<string, any> = {};
+  Object.keys(dsl.globals)?.forEach((key) => {
+    if (key.indexOf('sys') > -1) {
+      globalSystem[key] = dsl.globals[key];
+    }
+  });
+  Object.keys(globalVariables).forEach((key) => {
+    globalVariablesTemp['env.' + key] = globalVariables[key].value;
+  });
+
+  const globalVariablesResult = {
+    ...globalSystem,
+    ...globalVariablesTemp,
+  };
+  return { globals: globalVariablesResult, variables: globalVariables };
 };
 
 export const receiveMessageError = (res: any) =>

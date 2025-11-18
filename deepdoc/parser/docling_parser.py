@@ -61,7 +61,9 @@ class DoclingParser(RAGFlowPdfParser):
         self.page_images: list[Image.Image] = []
         self.page_from = 0
         self.page_to = 10_000
-
+        self.outlines = []
+   
+        
     def check_installation(self) -> bool:
         if DocumentConverter is None:
             self.logger.warning("[Docling] 'docling' is not importable, please: pip install docling")
@@ -186,9 +188,6 @@ class DoclingParser(RAGFlowPdfParser):
                 yield (DoclingContentType.EQUATION.value, text, bbox)
 
     def _transfer_to_sections(self, doc) -> list[tuple[str, str]]:
-        """
-        和 MinerUParser 保持一致：返回 [(section_text, line_tag), ...]
-        """
         sections: list[tuple[str, str]] = []
         for typ, payload, bbox in self._iter_doc_items(doc):
             if typ == DoclingContentType.TEXT.value:

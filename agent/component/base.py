@@ -393,7 +393,7 @@ class ComponentParamBase(ABC):
 class ComponentBase(ABC):
     component_name: str
     thread_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
-    variable_ref_patt = r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z:0-9_.-]+|sys\.[a-z_]+)\} *\}*"
+    variable_ref_patt = r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
 
     def __str__(self):
         """
@@ -416,6 +416,20 @@ class ComponentBase(ABC):
         self._id = id
         self._param = param
         self._param.check()
+
+    def is_canceled(self) -> bool:
+        return self._canvas.is_canceled()
+
+    def check_if_canceled(self, message: str = "") -> bool:
+        if self.is_canceled():
+            task_id = getattr(self._canvas, 'task_id', 'unknown')
+            log_message = f"Task {task_id} has been canceled"
+            if message:
+                log_message += f" during {message}"
+            logging.info(log_message)
+            self.set_output("_ERROR", "Task has been canceled")
+            return True
+        return False
 
     def invoke(self, **kwargs) -> dict[str, Any]:
         self.set_output("_created_time", time.perf_counter())
@@ -449,12 +463,15 @@ class ComponentBase(ABC):
         return self._param.outputs.get("_ERROR", {}).get("value")
 
     def reset(self, only_output=False):
-        for k in self._param.outputs.keys():
-            self._param.outputs[k]["value"] = None
+        outputs: dict = self._param.outputs # for better performance
+        for k in outputs.keys():
+            outputs[k]["value"] = None
         if only_output:
             return
-        for k in self._param.inputs.keys():
-            self._param.inputs[k]["value"] = None
+
+        inputs: dict = self._param.inputs # for better performance
+        for k in inputs.keys():
+            inputs[k]["value"] = None
         self._param.debug_inputs = {}
 
     def get_input(self, key: str=None) -> Union[Any, dict[str, Any]]:

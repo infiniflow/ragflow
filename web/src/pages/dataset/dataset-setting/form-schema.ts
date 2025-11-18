@@ -37,6 +37,7 @@ export const formSchema = z
             threshold: z.number().optional(),
             max_cluster: z.number().optional(),
             random_seed: z.number().optional(),
+            scope: z.string().optional(),
           })
           .refine(
             (data) => {
@@ -83,6 +84,7 @@ export const formSchema = z
           name: z.string().optional(),
           source: z.string().optional(),
           ststus: z.string().optional(),
+          auto_parse: z.string().optional(),
         }),
       )
       .optional(),

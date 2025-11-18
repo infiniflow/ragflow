@@ -21,7 +21,7 @@ from typing import Any, Callable, Coroutine, Optional, Type, Union
 import asyncio
 import trio
 from functools import wraps
-from flask import make_response, jsonify
+from quart import make_response, jsonify
 from common.constants import RetCode
 
 TimeoutException = Union[Type[BaseException], BaseException]
@@ -103,7 +103,7 @@ def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: 
     return decorator
 
 
-def construct_response(code=RetCode.SUCCESS, message="success", data=None, auth=None):
+async def construct_response(code=RetCode.SUCCESS, message="success", data=None, auth=None):
     result_dict = {"code": code, "message": message, "data": data}
     response_dict = {}
     for key, value in result_dict.items():
@@ -111,7 +111,7 @@ def construct_response(code=RetCode.SUCCESS, message="success", data=None, auth=
             continue
         else:
             response_dict[key] = value
-    response = make_response(jsonify(response_dict))
+    response = await make_response(jsonify(response_dict))
     if auth:
         response.headers["Authorization"] = auth
     response.headers["Access-Control-Allow-Origin"] = "*"

@@ -5,6 +5,7 @@ import {
 import {
   AgentGlobals,
   AgentGlobalsSysQueryWithBrace,
+  AgentStructuredOutputField,
   CodeTemplateStrMap,
   ComparisonOperator,
   Operator,
@@ -12,7 +13,11 @@ import {
   SwitchOperatorOptions,
   initialLlmBaseValues,
 } from '@/constants/agent';
-export { Operator } from '@/constants/agent';
+export {
+  AgentStructuredOutputField,
+  JsonSchemaDataType,
+  Operator,
+} from '@/constants/agent';
 
 export * from './pipeline';
 
@@ -417,6 +422,7 @@ export const initialIterationValues = {
   items_ref: '',
   outputs: {},
 };
+
 export const initialIterationStartValues = {
   outputs: {
     item: {
@@ -440,13 +446,11 @@ export const initialCodeValues = {
 
 export const initialWaitingDialogueValues = {};
 
-export const AgentStructuredOutputField = 'structured';
-
 export const initialAgentValues = {
   ...initialLlmBaseValues,
   description: '',
   user_prompt: '',
-  sys_prompt: t('flow.sysPromptDefultValue'),
+  sys_prompt: t('flow.sysPromptDefaultValue'),
   prompts: [{ role: PromptRole.User, content: `{${AgentGlobals.SysQuery}}` }],
   message_history_window_size: 12,
   max_retries: 3,
@@ -595,6 +599,35 @@ export const initialDataOperationsValues = {
     },
   },
 };
+export enum SortMethod {
+  Asc = 'asc',
+  Desc = 'desc',
+}
+
+export enum ListOperations {
+  TopN = 'topN',
+  Head = 'head',
+  Tail = 'tail',
+  Filter = 'filter',
+  Sort = 'sort',
+  DropDuplicates = 'drop_duplicates',
+}
+
+export const initialListOperationsValues = {
+  query: '',
+  operations: ListOperations.TopN,
+  outputs: {
+    result: {
+      type: 'Array<?>',
+    },
+    first: {
+      type: '?',
+    },
+    last: {
+      type: '?',
+    },
+  },
+};
 
 export const initialVariableAssignerValues = {};
 
@@ -673,6 +706,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Tool]: [Operator.Begin],
   [Operator.Placeholder]: [Operator.Begin],
   [Operator.DataOperations]: [Operator.Begin],
+  [Operator.ListOperations]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
   [Operator.Splitter]: [Operator.Begin],
   [Operator.HierarchicalMerger]: [Operator.Begin],
@@ -729,6 +763,7 @@ export const NodeMap = {
   [Operator.HierarchicalMerger]: 'splitterNode',
   [Operator.Extractor]: 'contextNode',
   [Operator.DataOperations]: 'dataOperationsNode',
+  [Operator.ListOperations]: 'listOperationsNode',
   [Operator.VariableAssigner]: 'variableAssignerNode',
   [Operator.VariableAggregator]: 'variableAggregatorNode',
 };
@@ -807,10 +842,34 @@ export const DROPDOWN_HORIZONTAL_OFFSET = 28;
 export const DROPDOWN_VERTICAL_OFFSET = 74;
 export const PREVENT_CLOSE_DELAY = 300;
 
-export enum JsonSchemaDataType {
-  String = 'string',
-  Number = 'number',
-  Boolean = 'boolean',
-  Array = 'array',
-  Object = 'object',
+export enum VariableAssignerLogicalOperator {
+  Overwrite = 'overwrite',
+  Clear = 'clear',
+  Set = 'set',
+}
+
+export enum VariableAssignerLogicalNumberOperator {
+  Overwrite = VariableAssignerLogicalOperator.Overwrite,
+  Clear = VariableAssignerLogicalOperator.Clear,
+  Set = VariableAssignerLogicalOperator.Set,
+  Add = '+=',
+  Subtract = '-=',
+  Multiply = '*=',
+  Divide = '/=',
+}
+
+export enum VariableAssignerLogicalArrayOperator {
+  Overwrite = VariableAssignerLogicalOperator.Overwrite,
+  Clear = VariableAssignerLogicalOperator.Clear,
+  Append = 'append',
+  Extend = 'extend',
+  RemoveFirst = 'remove_first',
+  RemoveLast = 'remove_last',
+}
+
+export enum ExportFileType {
+  PDF = 'pdf',
+  HTML = 'html',
+  Markdown = 'md',
+  DOCX = 'docx',
 }

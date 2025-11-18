@@ -73,7 +73,7 @@ Creating a tag set is *not* for once and for all. Oftentimes, you may find it ne
 ### Update tag set in tag frequency table
 
 1. Navigate to the **Configuration** page in your tag set.
-2. Click the **Table** tab under **Tag view** to view the tag frequncy table, where you can update tag names or delete tags.
+2. Click the **Table** tab under **Tag view** to view the tag frequency table, where you can update tag names or delete tags.
 
 :::danger IMPORTANT
 When a tag set is updated, you must re-parse the documents in your dataset so that their tags can be updated accordingly.

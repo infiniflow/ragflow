@@ -14,7 +14,7 @@ import { useForm } from 'react-hook-form';
 
 const formSchema = z.object({
   title: z.string().min(1, {}),
-  avatar: z.string().optional(),
+  avatar: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
   permission: z.string(),
 });

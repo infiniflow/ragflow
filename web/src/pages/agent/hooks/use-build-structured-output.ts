@@ -7,8 +7,11 @@ import {
 } from '../constant';
 import useGraphStore from '../store';
 
+function splitValue(value?: string) {
+  return typeof value === 'string' ? value?.split('@') : [];
+}
 function getNodeId(value: string) {
-  return value.split('@').at(0);
+  return splitValue(value).at(0);
 }
 
 export function useShowSecondaryMenu() {
@@ -63,7 +66,7 @@ export function useFindAgentStructuredOutputLabel() {
       }>,
     ) => {
       // agent structured output
-      const fields = value.split('@');
+      const fields = splitValue(value);
       if (
         getOperatorTypeFromId(fields.at(0)) === Operator.Agent &&
         fields.at(1)?.startsWith(AgentStructuredOutputField)
@@ -130,7 +133,7 @@ export function useFindAgentStructuredOutputTypeByValue() {
       if (!value) {
         return;
       }
-      const fields = value.split('@');
+      const fields = splitValue(value);
       const nodeId = fields.at(0);
       const jsonSchema = filterStructuredOutput(value);
 
@@ -152,4 +155,25 @@ export function useFindAgentStructuredOutputTypeByValue() {
   );
 
   return findAgentStructuredOutputTypeByValue;
+}
+
+export function useFindAgentStructuredOutputLabelByValue() {
+  const { getNode } = useGraphStore((state) => state);
+
+  const findAgentStructuredOutputLabel = useCallback(
+    (value?: string) => {
+      if (value) {
+        const operatorName = getNode(getNodeId(value ?? ''))?.data.name;
+
+        if (operatorName) {
+          return operatorName + ' / ' + splitValue(value).at(1);
+        }
+      }
+
+      return '';
+    },
+    [getNode],
+  );
+
+  return findAgentStructuredOutputLabel;
 }

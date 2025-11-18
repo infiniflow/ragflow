@@ -17,13 +17,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from operator import attrgetter
 
 import pytest
-from configs import DATASET_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN
+from configs import DATASET_NAME_LIMIT, DEFAULT_PARSER_CONFIG, HOST_ADDRESS, INVALID_API_TOKEN
 from hypothesis import example, given, settings
 from ragflow_sdk import DataSet, RAGFlow
 from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
-from configs import DEFAULT_PARSER_CONFIG
+
 
 @pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
@@ -95,9 +95,8 @@ class TestDatasetCreate:
         payload = {"name": name}
         client.create_dataset(**payload)
 
-        with pytest.raises(Exception) as excinfo:
-            client.create_dataset(**payload)
-        assert str(excinfo.value) == f"Dataset name '{name}' already exists", str(excinfo.value)
+        dataset = client.create_dataset(**payload)
+        assert dataset.name == name + "(1)", str(dataset)
 
     @pytest.mark.p3
     def test_name_case_insensitive(self, client):
@@ -106,9 +105,8 @@ class TestDatasetCreate:
         client.create_dataset(**payload)
 
         payload = {"name": name.lower()}
-        with pytest.raises(Exception) as excinfo:
-            client.create_dataset(**payload)
-        assert str(excinfo.value) == f"Dataset name '{name.lower()}' already exists", str(excinfo.value)
+        dataset = client.create_dataset(**payload)
+        assert dataset.name == name.lower() + "(1)", str(dataset)
 
     @pytest.mark.p2
     def test_avatar(self, client, tmp_path):

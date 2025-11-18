@@ -21,9 +21,8 @@ from functools import partial
 from typing import TypedDict, List, Any
 from agent.component.base import ComponentParamBase, ComponentBase
 from common.misc_utils import hash_str2int
-from rag.llm.chat_model import ToolCallSession
 from rag.prompts.generator import kb_prompt
-from rag.utils.mcp_tool_call_conn import MCPToolCallSession
+from common.mcp_tool_call_conn import MCPToolCallSession, ToolCallSession
 from timeit import default_timer as timer
 
 
@@ -125,6 +124,9 @@ class ToolBase(ComponentBase):
         return self._param.get_meta()
 
     def invoke(self, **kwargs):
+        if self.check_if_canceled("Tool processing"):
+            return
+
         self.set_output("_created_time", time.perf_counter())
         try:
             res = self._invoke(**kwargs)

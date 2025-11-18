@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
 import { ArrowBigLeft } from 'lucide-react';
 import React from 'react';
 import { useNavigate } from 'umi';
@@ -33,7 +34,7 @@ const BackButton: React.FC<BackButtonProps> = ({
       {...props}
     >
       <ArrowBigLeft className="h-4 w-4" />
-      {children || 'Back'}
+      {children || t('common.back')}
     </Button>
   );
 };

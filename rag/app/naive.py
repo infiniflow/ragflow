@@ -62,7 +62,7 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
 
     if not pdf_parser.check_installation():
         callback(-1, "MinerU not found.")
-        return None, None
+        return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
@@ -70,6 +70,7 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
         callback=callback,
         output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
         backend=os.environ.get("MINERU_BACKEND", "pipeline"),
+        server_url=os.environ.get("MINERU_SERVER_URL", ""),
         delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
     )
     return sections, tables, pdf_parser
@@ -80,7 +81,7 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
 
     if not pdf_parser.check_installation():
         callback(-1, "Docling not found.")
-        return None, None
+        return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
@@ -97,7 +98,7 @@ def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese",
 
     if not tcadp_parser.check_installation():
         callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
-        return None, None
+        return None, None, tcadp_parser
 
     sections, tables = tcadp_parser.parse_pdf(
         filepath=filename,
@@ -478,12 +479,14 @@ class Markdown(MarkdownParser):
         images = []
         # Find all image URLs in text
         for url in image_urls:
+            if not url:
+                continue
             try:
                 # check if the url is a local file or a remote URL
                 if url.startswith(('http://', 'https://')):
                     # For remote URLs, download the image
                     response = requests.get(url, stream=True, timeout=30)
-                    if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
+                    if response.status_code == 200 and response.headers['Content-Type'] and response.headers['Content-Type'].startswith('image/'):
                         img = Image.open(BytesIO(response.content)).convert('RGB')
                         images.append(img)
                 else:

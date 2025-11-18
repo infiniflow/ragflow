@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      back: 'Back',
       noResults: 'No results.',
       selectPlaceholder: 'select value',
       selectAll: 'Select all',
@@ -274,10 +275,16 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      generationScopeTip:
+        'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
+      scopeDataset: 'Dataset',
+      generationScope: 'Generation Scope',
+      scopeSingleFile: 'Single File',
+      autoParse: 'Auto Parse',
       rebuildTip:
         'Re-downloads files from the linked data source and parses them again.',
       baseInfo: 'Basic Info',
-      gobalIndex: 'Global Index',
+      globalIndex: 'Global Index',
       dataSource: 'Data Source',
       linkSourceSetTip: 'Manage data source linkage with this dataset',
       linkDataSource: 'Link Data Source',
@@ -687,6 +694,19 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      cropTip:
+        'Drag the selection area to choose the cropping position of the image, and scroll to zoom in/out',
+      cropImage: 'Crop image',
+      selectModelPlaceholder: 'Select model',
+      configureModelTitle: 'Configure model',
+      confluenceIsCloudTip:
+        'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
+      confluenceWikiBaseUrlTip:
+        'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
+      s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from. 
+Example: general/v2/`,
+      S3CompatibleEndpointUrlTip: `Required for S3 compatible Storage Box. Specify the S3-compatible endpoint URL.
+Example: https://fsn1.your-objectstorage.com`,
       addDataSourceModalTital: 'Create your {{name}} connector',
       deleteSourceModalTitle: 'Delete data source',
       deleteSourceModalContent: `
@@ -704,8 +724,45 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Link your Discord server to access and analyze chat data.',
       notionDescription:
         'Sync pages and databases from Notion for knowledge retrieval.',
+      google_driveDescription:
+        'Connect your Google Drive via OAuth and sync specific folders or drives.',
+      google_driveTokenTip:
+        'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
+      google_drivePrimaryAdminTip:
+        'Email address that has access to the Drive content being synced.',
+      google_driveMyDriveEmailsTip:
+        'Comma-separated emails whose “My Drive” contents should be indexed (include the primary admin).',
+      google_driveSharedFoldersTip:
+        'Comma-separated Google Drive folder links to crawl.',
+      jiraDescription:
+        'Connect your Jira workspace to sync issues, comments, and attachments.',
+      jiraBaseUrlTip:
+        'Base URL of your Jira site (e.g., https://your-domain.atlassian.net).',
+      jiraProjectKeyTip:
+        'Optional: limit syncing to a single project key (e.g., ENG).',
+      jiraJqlTip:
+        'Optional JQL filter. Leave blank to rely on project/time filters.',
+      jiraBatchSizeTip:
+        'Maximum number of issues requested from Jira per batch.',
+      jiraCommentsTip:
+        'Include Jira comments in the generated markdown document.',
+      jiraAttachmentsTip:
+        'Download attachments as separate documents during sync.',
+      jiraAttachmentSizeTip:
+        'Attachments larger than this number of bytes will be skipped.',
+      jiraLabelsTip:
+        'Labels that should be skipped while indexing (comma separated).',
+      jiraBlacklistTip:
+        'Comments whose author email matches these entries will be ignored.',
+      jiraScopedTokenTip:
+        'Enable this when using scoped Atlassian tokens (api.atlassian.com).',
+      jiraEmailTip: 'Email associated with the Jira account/API token.',
+      jiraTokenTip:
+        'API token generated from https://id.atlassian.com/manage-profile/security/api-tokens.',
+      jiraPasswordTip:
+        'Optional password for Jira Server/Data Center environments.',
       availableSourcesDescription: 'Select a data source to add',
-      availableSources: 'Available Sources',
+      availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
       save: 'Save',
       search: 'Search',
@@ -724,7 +781,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Please enter your current password to change your password.',
       model: 'Model providers',
       systemModelDescription: 'Please complete these settings before beginning',
-      dataSources: 'Data Sources',
+      dataSources: 'Data sources',
       team: 'Team',
       system: 'System',
       logout: 'Log out',
@@ -763,8 +820,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Please enter the API key (for locally deployed model,ignore this).',
       apiKeyTip:
         'The API key can be obtained by registering the corresponding LLM supplier.',
-      showMoreModels: 'View Models',
-      hideModels: 'Hide Models',
+      showMoreModels: 'View models',
+      hideModels: 'Hide models',
       baseUrl: 'Base-Url',
       baseUrlTip:
         'If your API key is from OpenAI, just ignore it. Any other intermediate providers will give this base url with the API key.',
@@ -789,7 +846,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       ttsModel: 'TTS',
       ttsModelTip:
         'The default text-to-speech model. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
-      workspace: 'Workspace',
+      workspace: 'workspace',
       upgrade: 'Upgrade',
       addLlmTitle: 'Add LLM',
       editLlmTitle: 'Edit {{name}} Model',
@@ -897,11 +954,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       add: 'Add',
       updateDate: 'Date',
       role: 'State',
-      invite: 'Invite Member',
+      invite: 'Invite member',
       agree: 'Accept',
       refuse: 'Decline',
-      teamMembers: 'Team Members',
-      joinedTeams: 'Joined Teams',
+      teamMembers: 'Team members',
+      joinedTeams: 'Joined teams',
       sureDelete: 'Are you sure to remove this member?',
       quit: 'Quit',
       sureQuit: 'Are you sure you want to quit the team you joined?',
@@ -981,6 +1038,14 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      downloadFileTypeTip: 'The file type to download',
+      downloadFileType: 'Download file type',
+      formatTypeError: 'Format or type error',
+      variableNameMessage:
+        'Variable name can only contain letters and underscores',
+      variableDescription: 'Variable Description',
+      defaultValue: 'Default Value',
+      conversationVariable: 'Conversation variable',
       recommended: 'Recommended',
       customerSupport: 'Customer Support',
       marketing: 'Marketing',
@@ -1037,10 +1102,10 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       exceptionMethod: 'Exception method',
       maxRounds: 'Max reflection rounds',
       delayEfterError: 'Delay after error',
-      maxRetries: 'Max reflection rounds',
+      maxRetries: 'Max retry rounds',
       advancedSettings: 'Advanced Settings',
       addTools: 'Add Tools',
-      sysPromptDefultValue: `
+      sysPromptDefaultValue: `
       <role>
         You are a helpful assistant, an AI assistant specialized in problem-solving for the user.
         If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.
@@ -1497,7 +1562,6 @@ This delimiter is used to split the input text into several text pieces echo of 
       },
       addVariable: 'Add variable',
       variableSettings: 'Variable settings',
-      globalVariables: 'Global variables',
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
       addCategory: 'Add category',
@@ -1558,6 +1622,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       codeDescription: 'It allows developers to write custom Python logic.',
       dataOperations: 'Data operations',
       dataOperationsDescription: 'Perform various operations on a Data object.',
+      listOperations: 'List operations',
+      listOperationsDescription: 'Perform operations on a list.',
       variableAssigner: 'Variable assigner',
       variableAssignerDescription:
         'This component performs operations on Data objects, including extracting, filtering, and editing keys and values in the Data.',
@@ -1773,6 +1839,19 @@ Important structured information may include: names, dates, locations, events, k
         removeKeys: 'Remove keys',
         renameKeys: 'Rename keys',
       },
+      ListOperationsOptions: {
+        topN: 'Top N',
+        head: 'Head',
+        tail: 'Tail',
+        sort: 'Sort',
+        filter: 'Filter',
+        dropDuplicates: 'Drop duplicates',
+      },
+      sortMethod: 'Sort method',
+      SortMethodOptions: {
+        asc: 'Ascending',
+        desc: 'Descending',
+      },
     },
     llmTools: {
       bad_calculator: {
@@ -1797,7 +1876,7 @@ Important structured information may include: names, dates, locations, events, k
       addMCP: 'Add MCP',
       editMCP: 'Edit MCP',
       toolsAvailable: 'tools available',
-      mcpServers: 'MCP Servers',
+      mcpServers: 'MCP servers',
       customizeTheListOfMcpServers: 'Customize the list of MCP servers',
       cachedTools: 'cached tools',
       bulkManage: 'Bulk manage',
@@ -1895,8 +1974,8 @@ Important structured information may include: names, dates, locations, events, k
       processing: 'Processing',
     },
     admin: {
-      loginTitle: 'RAGFlow ADMIN',
-      title: 'RAGFlow admin',
+      loginTitle: 'Admin Console',
+      title: 'RAGFlow',
       confirm: 'Confirm',
       close: 'Close',
       yes: 'Yes',
@@ -1931,13 +2010,14 @@ Important structured information may include: names, dates, locations, events, k
       roles: 'Roles',
       monitoring: 'Monitoring',
 
+      back: 'Back',
       active: 'Active',
       inactive: 'Inactive',
       enable: 'Enable',
       disable: 'Disable',
       all: 'All',
       actions: 'Actions',
-      newUser: 'New User',
+      newUser: 'New user',
       email: 'Email',
       name: 'Name',
       nickname: 'Nickname',
@@ -1956,6 +2036,7 @@ Important structured information may include: names, dates, locations, events, k
       lastUpdateTime: 'Last update time',
 
       isAnonymous: 'Is Anonymous',
+      isSuperuser: 'Is Superuser',
 
       deleteUser: 'Delete user',
       deleteUserConfirmation: 'Are you sure you want to delete this user?',
@@ -1980,6 +2061,7 @@ Important structured information may include: names, dates, locations, events, k
 
       extraInfo: 'Extra information',
       serviceDetail: `Service {{name}} detail`,
+      taskExecutorDetail: 'Task executor detail',
 
       whitelistManagement: 'Whitelist management',
       exportAsExcel: 'Export Excel',
@@ -1990,7 +2072,7 @@ Important structured information may include: names, dates, locations, events, k
       deleteWhitelistEmailConfirmation:
         'Are you sure you want to delete this email from whitelist? This action cannot be undone.',
 
-      importWhitelist: 'Import whitelist (excel)',
+      importWhitelist: 'Import whitelist (Excel)',
       importSelectExcelFile: 'Excel file (.xlsx)',
       importOverwriteExistingEmails: 'Overwrite existing emails',
       importInvalidExcelFile: 'Please select a valid Excel file',

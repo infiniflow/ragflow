@@ -109,6 +109,7 @@ export enum Operator {
   SearXNG = 'SearXNG',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
+  ListOperations = 'ListOperations',
   VariableAssigner = 'VariableAssigner',
   VariableAggregator = 'VariableAggregator',
   File = 'File', // pipeline
@@ -168,3 +169,13 @@ export const SwitchOperatorOptions = [
     icon: <CircleSlash2 className="size-4" />,
   },
 ];
+
+export const AgentStructuredOutputField = 'structured';
+
+export enum JsonSchemaDataType {
+  String = 'string',
+  Number = 'number',
+  Boolean = 'boolean',
+  Array = 'array',
+  Object = 'object',
+}

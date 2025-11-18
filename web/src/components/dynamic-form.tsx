@@ -61,6 +61,13 @@ export interface FormFieldConfig {
   horizontal?: boolean;
   onChange?: (value: any) => void;
   tooltip?: React.ReactNode;
+  customValidate?: (
+    value: any,
+    formValues: any,
+  ) => string | boolean | Promise<string | boolean>;
+  dependencies?: string[];
+  schema?: ZodSchema;
+  shouldRender?: (formValues: any) => boolean;
 }
 
 // Component props interface
@@ -70,6 +77,10 @@ interface DynamicFormProps<T extends FieldValues> {
   className?: string;
   children?: React.ReactNode;
   defaultValues?: DefaultValues<T>;
+  onFieldUpdate?: (
+    fieldName: string,
+    updatedField: Partial<FormFieldConfig>,
+  ) => void;
 }
 
 // Form ref interface
@@ -77,6 +88,8 @@ export interface DynamicFormRef {
   submit: () => void;
   getValues: () => any;
   reset: (values?: any) => void;
+  watch: (field: string, callback: (value: any) => void) => () => void;
+  updateFieldType: (fieldName: string, newType: FormFieldType) => void;
 }
 
 // Generate Zod validation schema based on field configurations
@@ -88,36 +101,40 @@ const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
     let fieldSchema: ZodSchema;
 
     // Create base validation schema based on field type
-    switch (field.type) {
-      case FormFieldType.Email:
-        fieldSchema = z.string().email('Please enter a valid email address');
-        break;
-      case FormFieldType.Number:
-        fieldSchema = z.coerce.number();
-        if (field.validation?.min !== undefined) {
-          fieldSchema = (fieldSchema as z.ZodNumber).min(
-            field.validation.min,
-            field.validation.message ||
-              `Value cannot be less than ${field.validation.min}`,
-          );
-        }
-        if (field.validation?.max !== undefined) {
-          fieldSchema = (fieldSchema as z.ZodNumber).max(
-            field.validation.max,
-            field.validation.message ||
-              `Value cannot be greater than ${field.validation.max}`,
-          );
-        }
-        break;
-      case FormFieldType.Checkbox:
-        fieldSchema = z.boolean();
-        break;
-      case FormFieldType.Tag:
-        fieldSchema = z.array(z.string());
-        break;
-      default:
-        fieldSchema = z.string();
-        break;
+    if (field.schema) {
+      fieldSchema = field.schema;
+    } else {
+      switch (field.type) {
+        case FormFieldType.Email:
+          fieldSchema = z.string().email('Please enter a valid email address');
+          break;
+        case FormFieldType.Number:
+          fieldSchema = z.coerce.number();
+          if (field.validation?.min !== undefined) {
+            fieldSchema = (fieldSchema as z.ZodNumber).min(
+              field.validation.min,
+              field.validation.message ||
+                `Value cannot be less than ${field.validation.min}`,
+            );
+          }
+          if (field.validation?.max !== undefined) {
+            fieldSchema = (fieldSchema as z.ZodNumber).max(
+              field.validation.max,
+              field.validation.message ||
+                `Value cannot be greater than ${field.validation.max}`,
+            );
+          }
+          break;
+        case FormFieldType.Checkbox:
+          fieldSchema = z.boolean();
+          break;
+        case FormFieldType.Tag:
+          fieldSchema = z.array(z.string());
+          break;
+        default:
+          fieldSchema = z.string();
+          break;
+      }
     }
 
     // Handle required fields
@@ -277,6 +294,7 @@ const DynamicForm = {
         className = '',
         children,
         defaultValues: formDefaultValues = {} as DefaultValues<T>,
+        onFieldUpdate,
       }: DynamicFormProps<T>,
       ref: React.Ref<any>,
     ) => {
@@ -293,9 +311,89 @@ const DynamicForm = {
 
       // Initialize form
       const form = useForm<T>({
-        resolver: zodResolver(schema),
+        resolver: async (data, context, options) => {
+          const zodResult = await zodResolver(schema)(data, context, options);
+
+          let combinedErrors = { ...zodResult.errors };
+
+          const fieldErrors: Record<string, { type: string; message: string }> =
+            {};
+          for (const field of fields) {
+            if (field.customValidate && data[field.name] !== undefined) {
+              try {
+                const result = await field.customValidate(
+                  data[field.name],
+                  data,
+                );
+                if (typeof result === 'string') {
+                  fieldErrors[field.name] = {
+                    type: 'custom',
+                    message: result,
+                  };
+                } else if (result === false) {
+                  fieldErrors[field.name] = {
+                    type: 'custom',
+                    message:
+                      field.validation?.message || `${field.label} is invalid`,
+                  };
+                }
+              } catch (error) {
+                fieldErrors[field.name] = {
+                  type: 'custom',
+                  message:
+                    error instanceof Error
+                      ? error.message
+                      : 'Validation failed',
+                };
+              }
+            }
+          }
+
+          combinedErrors = {
+            ...combinedErrors,
+            ...fieldErrors,
+          } as any;
+          console.log('combinedErrors', combinedErrors);
+          return {
+            values: Object.keys(combinedErrors).length ? {} : data,
+            errors: combinedErrors,
+          } as any;
+        },
         defaultValues,
       });
+
+      useEffect(() => {
+        const dependencyMap: Record<string, string[]> = {};
+
+        fields.forEach((field) => {
+          if (field.dependencies && field.dependencies.length > 0) {
+            field.dependencies.forEach((dep) => {
+              if (!dependencyMap[dep]) {
+                dependencyMap[dep] = [];
+              }
+              dependencyMap[dep].push(field.name);
+            });
+          }
+        });
+
+        const subscriptions = Object.keys(dependencyMap).map((depField) => {
+          return form.watch((values: any, { name }) => {
+            if (name === depField && dependencyMap[depField]) {
+              dependencyMap[depField].forEach((dependentField) => {
+                form.trigger(dependentField as any);
+              });
+            }
+          });
+        });
+
+        return () => {
+          subscriptions.forEach((sub) => {
+            if (sub.unsubscribe) {
+              sub.unsubscribe();
+            }
+          });
+        };
+      }, [fields, form]);
 
       // Expose form methods via ref
       useImperativeHandle(ref, () => ({
@@ -311,6 +409,29 @@ const DynamicForm = {
         setError: form.setError,
         clearErrors: form.clearErrors,
         trigger: form.trigger,
+        watch: (field: string, callback: (value: any) => void) => {
+          const { unsubscribe } = form.watch((values: any) => {
+            if (values && values[field] !== undefined) {
+              callback(values[field]);
+            }
+          });
+          return unsubscribe;
+        },
+
+        onFieldUpdate: (
+          fieldName: string,
+          updatedField: Partial<FormFieldConfig>,
+        ) => {
+          setTimeout(() => {
+            if (onFieldUpdate) {
+              onFieldUpdate(fieldName, updatedField);
+            } else {
+              console.warn(
+                'onFieldUpdate prop is not provided. Cannot update field type.',
+              );
+            }
+          }, 0);
+        },
       }));
 
       useEffect(() => {
@@ -520,17 +641,22 @@ const DynamicForm = {
                       }
                     : fieldProps;
                   return (
-                    <Input
-                      {...finalFieldProps}
-                      type={field.type}
-                      placeholder={field.placeholder}
-                    />
+                    <div className="w-full">
+                      <Input
+                        {...finalFieldProps}
+                        type={field.type}
+                        placeholder={field.placeholder}
+                      />
+                    </div>
                   );
                 }}
               </RAGFlowFormItem>
             );
         }
       };
+
+      // Watch all form values to re-render when they change (for shouldRender checks)
+      const formValues = form.watch();
 
       return (
         <Form {...form}>
@@ -542,11 +668,19 @@ const DynamicForm = {
             }}
           >
             <>
-              {fields.map((field) => (
-                <div key={field.name} className={cn({ hidden: field.hidden })}>
-                  {renderField(field)}
-                </div>
-              ))}
+              {fields.map((field) => {
+                const shouldShow = field.shouldRender
+                  ? field.shouldRender(formValues)
+                  : true;
+                return (
+                  <div
+                    key={field.name}
+                    className={cn({ hidden: field.hidden || !shouldShow })}
+                  >
+                    {renderField(field)}
+                  </div>
+                );
+              })}
               {children}
             </>
           </form>

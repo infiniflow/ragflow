@@ -28,6 +28,7 @@ import {
   History,
   LaptopMinimalCheck,
   Logs,
+  MessageSquareCode,
   ScreenShare,
   Settings,
   Upload,
@@ -38,6 +39,7 @@ import { useParams } from 'umi';
 import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
 import { Operator } from './constant';
+import { GlobalParamSheet } from './gobal-variable-sheet';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
 import { useHandleExportJsonFile } from './hooks/use-export-json';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
@@ -124,6 +126,12 @@ export default function Agent() {
   } = useSetModalState();
 
   const {
+    visible: globalParamSheetVisible,
+    showModal: showGlobalParamSheet,
+    hideModal: hideGlobalParamSheet,
+  } = useSetModalState();
+
+  const {
     isParsing,
     logs,
     messageId,
@@ -205,6 +213,13 @@ export default function Agent() {
             loading={loading}
           >
             <LaptopMinimalCheck /> {t('flow.save')}
+          </ButtonLoading>
+          <ButtonLoading
+            variant={'secondary'}
+            onClick={() => showGlobalParamSheet()}
+            loading={loading}
+          >
+            <MessageSquareCode /> {t('flow.conversationVariable')}
           </ButtonLoading>
           <Button variant={'secondary'} onClick={handleButtonRunClick}>
             <CirclePlay />
@@ -298,6 +313,12 @@ export default function Agent() {
           run={runPipeline}
           loading={pipelineRunning}
         ></PipelineRunSheet>
+      )}
+      {globalParamSheetVisible && (
+        <GlobalParamSheet
+          data={{}}
+          hideModal={hideGlobalParamSheet}
+        ></GlobalParamSheet>
       )}
     </section>
   );

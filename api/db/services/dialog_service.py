@@ -342,7 +342,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
         for ans in chat_solo(dialog, messages, stream):
             yield ans
-        return
+        return None
 
     chat_start_ts = timer()
 
@@ -386,7 +386,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         ans = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
         if ans:
             yield ans
-            return
+            return None
 
     for p in prompt_config["parameters"]:
         if p["key"] == "knowledge":
@@ -617,9 +617,16 @@ def chat(dialog, messages, stream=True, **kwargs):
         res["audio_binary"] = tts(tts_mdl, answer)
         yield res
 
+    return None
+
 
 def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
-    sys_prompt = "You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question."
+    sys_prompt = """
+You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question. 
+Ensure that:
+1. Field names should not start with a digit. If any field name starts with a digit, use double quotes around it.
+2. Write only the SQL, no explanations or additional text.
+"""
     user_prompt = """
 Table name: {};
 Table of database fields are as follows:
@@ -640,6 +647,7 @@ Please write the SQL, only SQL, without any other explanations or text.
         sql = re.sub(r".*select ", "select ", sql.lower())
         sql = re.sub(r" +", " ", sql)
         sql = re.sub(r"([;；]|```).*", "", sql)
+        sql = re.sub(r"&", "and", sql)
         if sql[: len("select ")] != "select ":
             return None, None
         if not re.search(r"((sum|avg|max|min)\(|group by )", sql.lower()):
@@ -739,7 +747,7 @@ Please write the SQL, only SQL, without any other explanations or text.
 
 def tts(tts_mdl, text):
     if not tts_mdl or not text:
-        return
+        return None
     bin = b""
     for chunk in tts_mdl.tts(text):
         bin += chunk

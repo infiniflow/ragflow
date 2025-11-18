@@ -59,7 +59,7 @@ You can also change a file's chunking method on the **Files** page.
 ![change chunking method](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/change_chunking_method.jpg)
 
 <details>
-  <summary>From v0.21.1 onward, RAGFlow supports ingestion pipeline for customized data ingestion and cleansing workflows.</summary>
+  <summary>From v0.21.0 onward, RAGFlow supports ingestion pipeline for customized data ingestion and cleansing workflows.</summary>
    
   To use a customized data pipeline:
 
@@ -76,13 +76,8 @@ You can also change a file's chunking method on the **Files** page.
 
 An embedding model converts chunks into embeddings. It cannot be changed once the dataset has chunks. To switch to a different embedding model, you must delete all existing chunks in the dataset. The obvious reason is that we *must* ensure that files in a specific dataset are converted to embeddings using the *same* embedding model (ensure that they are compared in the same embedding space).
 
-The following embedding models can be deployed locally:
-
-- BAAI/bge-large-zh-v1.5
-- maidalun1020/bce-embedding-base_v1
-
 :::danger IMPORTANT
-These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
+Some embedding models are optimized for specific languages, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
 ### Upload file
@@ -138,7 +133,7 @@ See [Run retrieval test](./run_retrieval_test.md) for details.
 
 ## Search for dataset
 
-As of RAGFlow v0.21.1, the search feature is still in a rudimentary form, supporting only dataset search by name.
+As of RAGFlow v0.22.0, the search feature is still in a rudimentary form, supporting only dataset search by name.
 
 ![search dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/search_datasets.jpg)
 

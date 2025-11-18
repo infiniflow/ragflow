@@ -44,15 +44,18 @@ function ServiceDetail({ content }: ServiceDetailProps) {
 
     if (isPlainObject(content)) {
       return (
-        <dl className="text-sm text-text-primary grid grid-cols-[auto,1fr] border border-card rounded-xl overflow-hidden bg-bg-card">
+        <dl className="text-sm text-text-primary grid grid-cols-[minmax(20%,auto),1fr] rounded-xl overflow-hidden bg-bg-card">
           {Object.entries<any>(content).map(([key, value]) => (
-            <div key={key} className="contents">
-              <dt className="px-3 py-2 bg-bg-card">
+            <div
+              key={key}
+              className="contents [:not(:last-child)]>*]border-b-0.5 [:not(:last-child)>*]:border-border-button"
+            >
+              <dt className="px-4 py-2.5 bg-bg-card">
                 <pre>
                   <code>{key}</code>
                 </pre>
               </dt>
-              <dd className="px-3 py-2">
+              <dd className="px-4 py-2.5">
                 <pre>
                   <code>{JSON.stringify(value)}</code>
                 </pre>
@@ -65,8 +68,8 @@ function ServiceDetail({ content }: ServiceDetailProps) {
 
     if (typeof content === 'string') {
       return (
-        <div className="rounded-lg p-4 border border-border-button bg-bg-input">
-          <pre className="text-sm">
+        <div className="rounded-xl p-4 bg-bg-card text-sm text-text-primary">
+          <pre>
             <code>
               {typeof content === 'string'
                 ? content

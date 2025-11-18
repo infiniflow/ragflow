@@ -99,8 +99,10 @@
     --bg-canvas: 246 246 247;
     --bg-list: 246 246 247;
     /* Button ,Body text, Input completed text */
-    --text-primary: #161618;
-    --text-secondary: #75787a;
+
+    /* #161618 */
+    --text-primary: 22 22 24;
+    --text-secondary: 117 120 122;
     --text-disabled: #b2b5b7;
     /* input placeholder color */
     --text-input-tip: #b2b5b7;
@@ -126,6 +128,10 @@
     --bg-group: rgba(90, 183, 126, 0.1);
     --bg-member: rgba(92, 150, 200, 0.1);
     --bg-department: rgba(136, 102, 211, 0.1);
+
+    /* --*-inverse: colors in dark mode */
+    --text-primary-inverse: 246 246 247;
+    --text-secondary-inverse: 178 181 183;
   }
 
   .dark {
@@ -231,13 +237,19 @@
     --bg-input: rgba(255, 255, 255, 0.05);
     --bg-canvas: 0 0 0;
     --bg-list: 56 56 58;
-    --text-primary: #f6f6f7;
-    --text-secondary: #b2b5b7;
+
+    /* #f6f6f7 */
+    --text-primary: 246 246 247;
+    --text-secondary: 178 181 183;
     --text-disabled: #75787a;
     --text-input-tip: #75787a;
     --border-default: rgba(255, 255, 255, 0.2);
     --border-accent: #ffffff;
     --border-button: rgba(255, 255, 255, 0.1);
+
+    /* *-inverse: colors in light mode */
+    --text-primary-inverse: 22 22 24;
+    --text-secondary-inverse: 117 120 122;
   }
 }
 

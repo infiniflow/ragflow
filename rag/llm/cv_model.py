@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import re
 import base64
 import json
 import os
@@ -31,7 +32,6 @@ from zhipuai import ZhipuAI
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
-
 
 class Base(ABC):
     def __init__(self, **kwargs):
@@ -115,6 +115,28 @@ class Base(ABC):
         yield tk_count
 
     @staticmethod
+    def image2base64_rawvalue(self, image):
+        # Return a base64 string without data URL header
+        if isinstance(image, bytes):
+            b64 = base64.b64encode(image).decode("utf-8")
+            return b64
+        if isinstance(image, BytesIO):
+            data = image.getvalue()
+            b64 = base64.b64encode(data).decode("utf-8")
+            return b64
+        with BytesIO() as buffered:
+            try:
+                image.save(buffered, format="JPEG")
+            except Exception:
+                 # reset buffer before saving PNG
+                buffered.seek(0)
+                buffered.truncate()
+                image.save(buffered, format="PNG")
+            data = buffered.getvalue()
+            b64 = base64.b64encode(data).decode("utf-8")
+        return b64
+
+    @staticmethod
     def image2base64(image):
         # Return a data URL with the correct MIME to avoid provider mismatches
         if isinstance(image, bytes):
@@ -186,6 +208,7 @@ class GptV4(Base):
             model=self.model_name,
             messages=self.prompt(b64),
             extra_body=self.extra_body,
+            unused = None,
         )
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
@@ -246,42 +269,41 @@ class QWenCV(GptV4):
             tmp.write(video_bytes)
             tmp_path = tmp.name
 
-        video_path = f"file://{tmp_path}"
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "video": video_path,
-                        "fps": 2,
-                    },
-                    {
-                        "text": "Please summarize this video in proper sentences.",
-                    },
-                ],
-            }
-        ]
+            video_path = f"file://{tmp_path}"
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "video": video_path,
+                            "fps": 2,
+                        },
+                        {
+                            "text": "Please summarize this video in proper sentences.",
+                        },
+                    ],
+                }
+            ]
 
-        def call_api():
-            response = MultiModalConversation.call(
-                api_key=self.api_key,
-                model=self.model_name,
-                messages=messages,
-            )
-            summary = response["output"]["choices"][0]["message"].content[0]["text"]
-            return summary, num_tokens_from_string(summary)
+            def call_api():
+                response = MultiModalConversation.call(
+                    api_key=self.api_key,
+                    model=self.model_name,
+                    messages=messages,
+                )
+                summary = response["output"]["choices"][0]["message"].content[0]["text"]
+                return summary, num_tokens_from_string(summary)
 
-        try:
-            return call_api()
-        except Exception as e1:
-            import dashscope
-
-            dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
             try:
                 return call_api()
-            except Exception as e2:
-                raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
+            except Exception as e1:
+                import dashscope
 
+                dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
+                try:
+                    return call_api()
+                except Exception as e2:
+                    raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
 
 
 class HunyuanCV(GptV4):
@@ -302,6 +324,122 @@ class Zhipu4V(GptV4):
         self.lang = lang
         Base.__init__(self, **kwargs)
 
+
+    def _clean_conf(self, gen_conf):
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+        gen_conf = self._clean_conf_plealty(gen_conf)
+        return gen_conf
+
+
+    def _clean_conf_plealty(self, gen_conf):
+        if "presence_penalty" in gen_conf:
+            del gen_conf["presence_penalty"]
+        if "frequency_penalty" in gen_conf:
+            del gen_conf["frequency_penalty"]
+        return gen_conf
+
+
+    def _request(self, msg, stream, gen_conf={}):
+        response = requests.post(
+            self.base_url,
+            json={
+                "model": self.model_name,
+                "messages": msg,
+                "stream": stream,
+                **gen_conf
+            },
+            headers= {
+            "Authorization": f"Bearer {self.api_key}",  
+            "Content-Type": "application/json",
+            }
+        )
+        return response.json()
+
+
+    def chat(self, system, history, gen_conf, images=None, stream=False, **kwargs):
+        if system and history and history[0].get("role") != "system":
+            history.insert(0, {"role": "system", "content": system})
+
+        gen_conf = self._clean_conf(gen_conf)
+
+        logging.info(json.dumps(history, ensure_ascii=False, indent=2))
+        response = self.client.chat.completions.create(model=self.model_name, messages=self._form_history(system, history, images), stream=False, **gen_conf)
+        content = response.choices[0].message.content.strip()
+
+        cleaned = re.sub(r"<\|(begin_of_box|end_of_box)\|>", "", content).strip()
+        return cleaned, total_token_count_from_response(response)
+    
+
+    def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
+        from rag.llm.chat_model import LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN 
+        from rag.nlp import is_chinese
+
+        if system and history and history[0].get("role") != "system":
+            history.insert(0, {"role": "system", "content": system})
+        gen_conf = self._clean_conf(gen_conf)
+        ans = ""
+        tk_count = 0
+        try:
+            logging.info(json.dumps(history, ensure_ascii=False, indent=2))
+            response = self.client.chat.completions.create(model=self.model_name, messages=self._form_history(system, history, images), stream=True, **gen_conf)
+            for resp in response:
+                if not resp.choices[0].delta.content:
+                    continue
+                delta = resp.choices[0].delta.content
+                ans = delta
+                if resp.choices[0].finish_reason == "length":
+                    if is_chinese(ans):
+                        ans += LENGTH_NOTIFICATION_CN
+                    else:
+                        ans += LENGTH_NOTIFICATION_EN
+                    tk_count = total_token_count_from_response(resp)
+                if resp.choices[0].finish_reason == "stop":
+                    tk_count = total_token_count_from_response(resp)
+                yield ans
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield tk_count
+
+
+    def describe(self, image):
+        return self.describe_with_prompt(image)
+
+
+    def describe_with_prompt(self, image, prompt=None):
+        b64 = self.image2base64(image)
+        if prompt is None:
+            prompt = "Describe this image."
+
+        # Chat messages
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": { "url": b64 }
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+            }
+        ]
+
+        resp = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            stream=False
+        )
+
+        content = resp.choices[0].message.content.strip()
+        cleaned = re.sub(r"<\|(begin_of_box|end_of_box)\|>", "", content).strip()
+
+        return cleaned, num_tokens_from_string(cleaned)
+    
 
 class StepFunCV(GptV4):
     _FACTORY_NAME = "StepFun"
@@ -464,7 +602,7 @@ class GPUStackCV(GptV4):
 
 
 class LocalCV(Base):
-    _FACTORY_NAME = "Moonshot"
+    _FACTORY_NAME = "Local"
 
     def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
         pass
@@ -614,23 +752,38 @@ class GeminiCV(Base):
             if self.lang.lower() == "chinese"
             else "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out."
         )
-        b64 = self.image2base64(image)
-        with BytesIO(base64.b64decode(b64)) as bio:
-            with open(bio) as img:
-                input = [prompt, img]
-                res = self.model.generate_content(input)
-                return res.text, total_token_count_from_response(res)
+
+        if image is bytes:
+            with BytesIO(image) as bio:
+                with open(bio) as img:
+                    input = [prompt, img]
+                    res = self.model.generate_content(input)
+                    return res.text, total_token_count_from_response(res)
+        else:
+            b64 = self.image2base64_rawvalue(image)
+            with BytesIO(base64.b64decode(b64)) as bio:
+                with open(bio) as img:
+                    input = [prompt, img]
+                    res = self.model.generate_content(input)
+                    return res.text, total_token_count_from_response(res)
 
     def describe_with_prompt(self, image, prompt=None):
         from PIL.Image import open
-
-        b64 = self.image2base64(image)
         vision_prompt = prompt if prompt else vision_llm_describe_prompt()
-        with BytesIO(base64.b64decode(b64)) as bio:
-            with open(bio) as img:
-                input = [vision_prompt, img]
-                res = self.model.generate_content(input)
-                return res.text, total_token_count_from_response(res)
+
+        if image is bytes:
+            with BytesIO(image) as bio:
+                with open(bio) as img:
+                    input = [vision_prompt, img]
+                    res = self.model.generate_content(input)
+                    return res.text, total_token_count_from_response(res)
+        else:
+            b64 = self.image2base64_rawvalue(image)
+            with BytesIO(base64.b64decode(b64)) as bio:
+                with open(bio) as img:
+                    input = [vision_prompt, img]
+                    res = self.model.generate_content(input)
+                    return res.text, total_token_count_from_response(res)
 
 
     def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
@@ -975,3 +1128,12 @@ class GoogleCV(AnthropicCV, GeminiCV):
         else:
             for ans in GeminiCV.chat_streamly(self, system, history, gen_conf, images):
                 yield ans
+
+
+class MoonshotCV(GptV4):
+    _FACTORY_NAME = "Moonshot"
+
+    def __init__(self, key, model_name="moonshot-v1-8k-vision-preview", lang="Chinese", base_url="https://api.moonshot.cn/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.moonshot.cn/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
