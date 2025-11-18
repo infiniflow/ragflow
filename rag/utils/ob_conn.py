@@ -1435,13 +1435,13 @@ class OBConnection(DocStoreConnection):
     Helper functions for search result
     """
 
-    def getTotal(self, res) -> int:
+    def get_total(self, res) -> int:
         return res.total
 
-    def getChunkIds(self, res) -> list[str]:
+    def get_chunk_ids(self, res) -> list[str]:
         return [row["id"] for row in res.chunks]
 
-    def getFields(self, res, fields: list[str]) -> dict[str, dict]:
+    def get_fields(self, res, fields: list[str]) -> dict[str, dict]:
         result = {}
         for row in res.chunks:
             data = {}
@@ -1511,7 +1511,7 @@ class OBConnection(DocStoreConnection):
                 last_pos = token_pos
         return re.sub(r'</em><em>', '', highlighted_txt)
 
-    def getHighlight(self, res, keywords: list[str], fieldnm: str):
+    def get_highlight(self, res, keywords: list[str], fieldnm: str):
         ans = {}
         if len(res.chunks) == 0 or len(keywords) == 0:
             return ans
@@ -1527,7 +1527,7 @@ class OBConnection(DocStoreConnection):
                 ans[d["id"]] = highlighted_txt
         return ans
 
-    def getAggregation(self, res, fieldnm: str):
+    def get_aggregation(self, res, fieldnm: str):
         if len(res.chunks) == 0:
             return []
 
