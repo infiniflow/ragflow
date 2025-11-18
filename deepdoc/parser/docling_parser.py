@@ -61,7 +61,9 @@ class DoclingParser(RAGFlowPdfParser):
         self.page_images: list[Image.Image] = []
         self.page_from = 0
         self.page_to = 10_000
-
+        self.outlines = []
+   
+        
     def check_installation(self) -> bool:
         if DocumentConverter is None:
             self.logger.warning("[Docling] 'docling' is not importable, please: pip install docling")

@@ -59,6 +59,7 @@ class MinerUParser(RAGFlowPdfParser):
         self.mineru_api = mineru_api.rstrip("/")
         self.mineru_server_url = mineru_server_url.rstrip("/")
         self.using_api = False
+        self.outlines = []
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def _extract_zip_no_root(self, zip_path, extract_to, root_dir):

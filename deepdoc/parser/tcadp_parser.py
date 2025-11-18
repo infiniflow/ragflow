@@ -47,6 +47,7 @@ class TencentCloudAPIClient:
         self.secret_id = secret_id
         self.secret_key = secret_key
         self.region = region
+        self.outlines = []
         
         # Create credentials
         self.cred = credential.Credential(secret_id, secret_key)
