@@ -47,6 +47,7 @@ export const DataSourceInfo = {
     name: 'Moodle',
     description: t(`setting.${DataSourceKey.MOODLE}Description`),
     icon: <SvgIcon name={'data-source/moodle'} width={38} />,
+  },
   [DataSourceKey.JIRA]: {
     name: 'Jira',
     description: t(`setting.${DataSourceKey.JIRA}Description`),
@@ -121,7 +122,7 @@ export const DataSourceFormFields = {
       required: false,
       placeholder: 'https://fsn1.your-objectstorage.com',
       tooltip: t('setting.S3CompatibleEndpointUrlTip'),
-      shouldRender: (formValues) => {
+      shouldRender: (formValues: any) => {
         return formValues?.config?.bucket_type === 's3_compatible';
       },
     },
@@ -305,6 +306,8 @@ export const DataSourceFormFields = {
       name: 'config.credentials.moodle_token',
       type: FormFieldType.Password,
       required: true,
+    },
+  ],
   [DataSourceKey.JIRA]: [
     {
       label: 'Jira Base URL',
@@ -576,6 +579,9 @@ export const DataSourceFormDefaultValues = {
       moodle_url: '',
       credentials: {
         moodle_token: '',
+      },
+    },
+  },
   [DataSourceKey.JIRA]: {
     name: '',
     source: DataSourceKey.JIRA,
