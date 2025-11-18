@@ -43,7 +43,7 @@ class TestUserSecurity:
         ],
     )
     def test_sql_injection_in_email(
-        self, WebApiAuth: RAGFlowWebApiAuth, malicious_email: str
+        self, web_api_auth: RAGFlowWebApiAuth, malicious_email: str
     ) -> None:
         """Test SQL injection attempts in email field are properly handled."""
         payload: dict[str, str] = {
@@ -51,7 +51,7 @@ class TestUserSecurity:
             "email": malicious_email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         # Should fail validation, not execute SQL
         assert res["code"] != 0, (
             f"SQL injection attempt should be rejected: {malicious_email}"
@@ -70,7 +70,7 @@ class TestUserSecurity:
         ],
     )
     def test_xss_in_nickname(
-        self, WebApiAuth: RAGFlowWebApiAuth, xss_payload: str
+        self, web_api_auth: RAGFlowWebApiAuth, xss_payload: str
     ) -> None:
         """Test XSS attempts in nickname field are sanitized."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -79,7 +79,7 @@ class TestUserSecurity:
             "email": unique_email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         if res["code"] == 0:
             # Nickname should be sanitized
             nickname: str = res["data"]["nickname"]
@@ -95,7 +95,7 @@ class TestUserSecurity:
 
     @pytest.mark.p1
     def test_password_not_in_response(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Ensure plain password never appears in response."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -105,7 +105,7 @@ class TestUserSecurity:
             "email": unique_email,
             "password": password,
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0, res
         # Response should contain hashed password, not plain text
         response_str: str = str(res["data"])
@@ -134,7 +134,7 @@ class TestUserSecurity:
         ],
     )
     def test_weak_password_handling(
-        self, WebApiAuth: RAGFlowWebApiAuth, weak_password: str
+        self, web_api_auth: RAGFlowWebApiAuth, weak_password: str
     ) -> None:
         """Test handling of weak passwords."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -143,7 +143,7 @@ class TestUserSecurity:
             "email": unique_email,
             "password": weak_password,
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         # Should reject empty/whitespace passwords at minimum
         if not weak_password or not weak_password.strip():
             assert res["code"] != 0, (
@@ -152,10 +152,10 @@ class TestUserSecurity:
 
     @pytest.mark.p2
     def test_unauthorized_superuser_creation(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test that regular users cannot escalate privileges."""
-        # Note: This test assumes WebApiAuth represents a regular user
+        # Note: This test assumes web_api_auth represents a regular user
         # In production, only admins should be able to create superusers
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
         payload: dict[str, Any] = {
@@ -164,7 +164,7 @@ class TestUserSecurity:
             "password": "test123",
             "is_superuser": True,
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         
         # The API currently allows this, but in production this should be restricted
         # For now, we document the expected behavior
@@ -175,7 +175,7 @@ class TestUserSecurity:
 
     @pytest.mark.p2
     def test_password_hashing_is_secure(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Verify passwords are hashed using secure algorithm."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -185,7 +185,7 @@ class TestUserSecurity:
             "email": unique_email,
             "password": password,
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0, res
         
         # Check password is hashed
@@ -213,7 +213,7 @@ class TestUserSecurity:
         ],
     )
     def test_control_character_injection(
-        self, WebApiAuth: RAGFlowWebApiAuth, injection_attempt: dict[str, str]
+        self, web_api_auth: RAGFlowWebApiAuth, injection_attempt: dict[str, str]
     ) -> None:
         """Test protection against control character injection."""
         # Complete the payload with required fields
@@ -224,7 +224,7 @@ class TestUserSecurity:
         }
         payload.update(injection_attempt)
         
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         
         # Should either reject or sanitize control characters
         if res["code"] == 0:
@@ -242,7 +242,7 @@ class TestUserSecurity:
 
     @pytest.mark.p3
     def test_session_token_security(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test that access tokens are properly secured."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -251,7 +251,7 @@ class TestUserSecurity:
             "email": unique_email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0, res
         
         # Check that access_token exists and is properly formatted
@@ -267,7 +267,7 @@ class TestUserSecurity:
 
     @pytest.mark.p3
     def test_email_case_sensitivity(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test email uniqueness is case-insensitive."""
         base_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -278,7 +278,7 @@ class TestUserSecurity:
             "email": base_email.lower(),
             "password": "test123",
         }
-        res1: dict[str, Any] = create_user(WebApiAuth, payload1)
+        res1: dict[str, Any] = create_user(web_api_auth, payload1)
         assert res1["code"] == 0, res1
         
         # Try to create another user with uppercase version of same email
@@ -287,7 +287,7 @@ class TestUserSecurity:
             "email": base_email.upper(),
             "password": "test123",
         }
-        res2: dict[str, Any] = create_user(WebApiAuth, payload2)
+        res2: dict[str, Any] = create_user(web_api_auth, payload2)
         
         # Should reject duplicate email regardless of case
         # Note: Current implementation may allow this, but it should be fixed
@@ -296,7 +296,7 @@ class TestUserSecurity:
 
     @pytest.mark.p3
     def test_concurrent_user_creation_same_email(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test race condition protection for duplicate emails."""
         import concurrent.futures
@@ -305,7 +305,7 @@ class TestUserSecurity:
         
         def create_with_email(index: int) -> dict[str, Any]:
             return create_user(
-                WebApiAuth,
+                web_api_auth,
                 {
                     "nickname": f"test{index}",
                     "email": email,

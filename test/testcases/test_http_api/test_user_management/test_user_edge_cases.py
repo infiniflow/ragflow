@@ -33,7 +33,7 @@ class TestUserEdgeCases:
 
     @pytest.mark.p2
     def test_extremely_long_nickname(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test nickname with extreme length."""
         long_nickname: str = "A" * 1000
@@ -43,7 +43,7 @@ class TestUserEdgeCases:
             "email": unique_email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         
         # Should either accept (and possibly truncate) or reject with clear error
         if res["code"] == 0:
@@ -61,7 +61,7 @@ class TestUserEdgeCases:
 
     @pytest.mark.p2
     def test_unicode_in_all_fields(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test unicode characters in various fields."""
         # Use ASCII-safe email local part (unicode in display name)
@@ -72,7 +72,7 @@ class TestUserEdgeCases:
             "email": unique_email,
             "password": "密码123!",  # Chinese + ASCII
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         
         # Should handle unicode properly
         if res["code"] == 0:
@@ -83,7 +83,7 @@ class TestUserEdgeCases:
 
     @pytest.mark.p2
     def test_emoji_in_nickname(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test emoji characters in nickname."""
         nickname_with_emoji: str = "Test User 😀🎉🔥"
@@ -93,7 +93,7 @@ class TestUserEdgeCases:
             "email": unique_email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         
         # Should handle emoji properly (either accept or reject gracefully)
         if res["code"] == 0:
@@ -114,7 +114,7 @@ class TestUserEdgeCases:
         ],
     )
     def test_special_characters_in_email(
-        self, WebApiAuth: RAGFlowWebApiAuth, special_email: str
+        self, web_api_auth: RAGFlowWebApiAuth, special_email: str
     ) -> None:
         """Test various special characters in email."""
         payload: dict[str, str] = {
@@ -122,13 +122,13 @@ class TestUserEdgeCases:
             "email": special_email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0, f"Failed for email: {special_email}, {res}"
         assert res["data"]["email"] == special_email
 
     @pytest.mark.p2
     def test_whitespace_handling_in_fields(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test whitespace handling in various fields."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -137,7 +137,7 @@ class TestUserEdgeCases:
             "email": f"  {unique_email}  ",  # Spaces around email
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         
         # Should handle whitespace (trim or accept)
         if res["code"] == 0:
@@ -151,7 +151,7 @@ class TestUserEdgeCases:
 
     @pytest.mark.p2
     def test_null_byte_in_input(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test null byte injection in input fields."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -160,7 +160,7 @@ class TestUserEdgeCases:
             "email": unique_email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         
         # Should handle or reject null bytes
         if res["code"] == 0:
@@ -171,7 +171,7 @@ class TestUserEdgeCases:
 
     @pytest.mark.p2
     def test_very_long_email(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test email exceeding typical length limits."""
         # Create email with very long local part (250 chars)
@@ -182,7 +182,7 @@ class TestUserEdgeCases:
             "email": email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         
         # Should reject overly long emails (RFC 5321 limits local part to 64 chars)
         assert res["code"] != 0, "Very long email should be rejected"
@@ -193,7 +193,7 @@ class TestUserEdgeCases:
 
     @pytest.mark.p2
     def test_email_with_multiple_at_signs(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test email with multiple @ signs."""
         payload: dict[str, str] = {
@@ -201,7 +201,7 @@ class TestUserEdgeCases:
             "email": "user@@example.com",
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         
         # Should reject invalid email format
         assert res["code"] != 0, "Email with multiple @ should be rejected"
@@ -209,7 +209,7 @@ class TestUserEdgeCases:
 
     @pytest.mark.p2
     def test_email_with_spaces(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test email containing spaces."""
         payload: dict[str, str] = {
@@ -217,7 +217,7 @@ class TestUserEdgeCases:
             "email": "user name@example.com",
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         
         # Should reject email with spaces
         assert res["code"] != 0, "Email with spaces should be rejected"
@@ -225,7 +225,7 @@ class TestUserEdgeCases:
 
     @pytest.mark.p3
     def test_leading_trailing_dots_in_email(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test email with leading/trailing dots."""
         invalid_emails: list[str] = [
@@ -240,14 +240,14 @@ class TestUserEdgeCases:
                 "email": email,
                 "password": "test123",
             }
-            res: dict[str, Any] = create_user(WebApiAuth, payload)
+            res: dict[str, Any] = create_user(web_api_auth, payload)
             
             # These should be rejected as invalid
             assert res["code"] != 0, f"Invalid email should be rejected: {email}"
 
     @pytest.mark.p3
     def test_empty_string_vs_none_in_optional_fields(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test difference between empty string and None for optional fields."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -258,7 +258,7 @@ class TestUserEdgeCases:
             "email": unique_email,
             "password": "test123",
         }
-        res_empty: dict[str, Any] = create_user(WebApiAuth, payload_empty)
+        res_empty: dict[str, Any] = create_user(web_api_auth, payload_empty)
         
         # Empty nickname should be accepted per current API behavior
         assert res_empty["code"] == 0, "Empty nickname should be accepted"
@@ -266,12 +266,12 @@ class TestUserEdgeCases:
 
     @pytest.mark.p3
     def test_pagination_with_no_results(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test list_users pagination when no users exist."""
         # Assuming clear_users fixture has cleared all test users
         res: dict[str, Any] = list_users(
-            WebApiAuth, params={"page": 1, "page_size": 10}
+            web_api_auth, params={"page": 1, "page_size": 10}
         )
         
         # Should return empty list, not error
@@ -281,13 +281,13 @@ class TestUserEdgeCases:
 
     @pytest.mark.p3
     def test_pagination_beyond_available_pages(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test requesting page beyond available data."""
         # Create one user
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
         create_user(
-            WebApiAuth,
+            web_api_auth,
             {
                 "nickname": "test",
                 "email": unique_email,
@@ -297,7 +297,7 @@ class TestUserEdgeCases:
         
         # Request page 100
         res: dict[str, Any] = list_users(
-            WebApiAuth, params={"page": 100, "page_size": 10}
+            web_api_auth, params={"page": 100, "page_size": 10}
         )
         
         # Should return empty results, not error
@@ -306,11 +306,11 @@ class TestUserEdgeCases:
 
     @pytest.mark.p3
     def test_zero_page_size(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test pagination with page_size of 0."""
         res: dict[str, Any] = list_users(
-            WebApiAuth, params={"page": 1, "page_size": 0}
+            web_api_auth, params={"page": 1, "page_size": 0}
         )
         
         # Should reject invalid page size
@@ -319,11 +319,11 @@ class TestUserEdgeCases:
 
     @pytest.mark.p3
     def test_negative_page_number(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test pagination with negative page number."""
         res: dict[str, Any] = list_users(
-            WebApiAuth, params={"page": -1, "page_size": 10}
+            web_api_auth, params={"page": -1, "page_size": 10}
         )
         
         # Should reject negative page number
@@ -332,11 +332,11 @@ class TestUserEdgeCases:
 
     @pytest.mark.p3
     def test_excessive_page_size(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test pagination with very large page_size."""
         res: dict[str, Any] = list_users(
-            WebApiAuth, params={"page": 1, "page_size": 10000}
+            web_api_auth, params={"page": 1, "page_size": 10000}
         )
         
         # Should either cap page size or reject
@@ -349,7 +349,7 @@ class TestUserEdgeCases:
 
     @pytest.mark.p3
     def test_special_characters_in_password(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test password with various special characters."""
         special_passwords: list[str] = [
@@ -367,7 +367,7 @@ class TestUserEdgeCases:
                 "email": unique_email,
                 "password": password,
             }
-            res: dict[str, Any] = create_user(WebApiAuth, payload)
+            res: dict[str, Any] = create_user(web_api_auth, payload)
             
             # Should accept special characters in password
             assert res["code"] == 0, (
@@ -376,7 +376,7 @@ class TestUserEdgeCases:
 
     @pytest.mark.p3
     def test_json_injection_in_fields(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test JSON injection attempts."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -385,7 +385,7 @@ class TestUserEdgeCases:
             "email": unique_email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         
         # Should treat as literal string, not parse as JSON
         if res["code"] == 0:
@@ -395,7 +395,7 @@ class TestUserEdgeCases:
 
     @pytest.mark.p3
     def test_path_traversal_in_nickname(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test path traversal attempts in nickname."""
         traversal_attempts: list[str] = [
@@ -411,7 +411,7 @@ class TestUserEdgeCases:
                 "email": unique_email,
                 "password": "test123",
             }
-            res: dict[str, Any] = create_user(WebApiAuth, payload)
+            res: dict[str, Any] = create_user(web_api_auth, payload)
             
             # Should either reject or sanitize path traversal attempts
             # At minimum, should not allow actual file system access

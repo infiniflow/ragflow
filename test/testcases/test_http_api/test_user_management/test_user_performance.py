@@ -35,7 +35,7 @@ class TestUserPerformance:
 
     @pytest.mark.p2
     def test_list_users_performance_small_dataset(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test list_users performance with small dataset."""
         # Create 20 users
@@ -43,7 +43,7 @@ class TestUserPerformance:
         for i in range(20):
             unique_email: str = f"perf_small_{i}_{uuid.uuid4().hex[:4]}@example.com"
             res: dict[str, Any] = create_user(
-                WebApiAuth,
+                web_api_auth,
                 {
                     "nickname": f"user_{i}",
                     "email": unique_email,
@@ -55,7 +55,7 @@ class TestUserPerformance:
         
         # Test list performance without pagination
         start: float = time.time()
-        res: dict[str, Any] = list_users(WebApiAuth)
+        res: dict[str, Any] = list_users(web_api_auth)
         duration: float = time.time() - start
         
         assert res["code"] == 0, res
@@ -65,14 +65,14 @@ class TestUserPerformance:
 
     @pytest.mark.p2
     def test_list_users_pagination_performance(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test pagination performance with moderate dataset."""
         # Create 50 users
         for i in range(50):
             unique_email: str = f"perf_test_{i}_{uuid.uuid4().hex[:4]}@example.com"
             create_user(
-                WebApiAuth,
+                web_api_auth,
                 {
                     "nickname": f"user_{i}",
                     "email": unique_email,
@@ -83,7 +83,7 @@ class TestUserPerformance:
         # Test pagination performance
         start: float = time.time()
         res: dict[str, Any] = list_users(
-            WebApiAuth, params={"page": 1, "page_size": 10}
+            web_api_auth, params={"page": 1, "page_size": 10}
         )
         duration: float = time.time() - start
         
@@ -95,7 +95,7 @@ class TestUserPerformance:
 
     @pytest.mark.p3
     def test_concurrent_user_creation(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test concurrent user creation without conflicts."""
         count: int = 20
@@ -103,7 +103,7 @@ class TestUserPerformance:
         def create_test_user(index: int) -> dict[str, Any]:
             unique_email: str = f"concurrent_{index}_{uuid.uuid4().hex[:8]}@example.com"
             return create_user(
-                WebApiAuth,
+                web_api_auth,
                 {
                     "nickname": f"user_{index}",
                     "email": unique_email,
@@ -136,7 +136,7 @@ class TestUserPerformance:
 
     @pytest.mark.p3
     def test_user_creation_response_time(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test individual user creation response time."""
         response_times: list[float] = []
@@ -145,7 +145,7 @@ class TestUserPerformance:
             unique_email: str = f"timing_{i}_{uuid.uuid4().hex[:8]}@example.com"
             start: float = time.time()
             res: dict[str, Any] = create_user(
-                WebApiAuth,
+                web_api_auth,
                 {
                     "nickname": f"user_{i}",
                     "email": unique_email,
@@ -172,7 +172,7 @@ class TestUserPerformance:
 
     @pytest.mark.p3
     def test_sequential_vs_concurrent_creation_comparison(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Compare sequential vs concurrent user creation performance."""
         count: int = 10
@@ -182,7 +182,7 @@ class TestUserPerformance:
         for i in range(count):
             unique_email: str = f"seq_{i}_{uuid.uuid4().hex[:8]}@example.com"
             create_user(
-                WebApiAuth,
+                web_api_auth,
                 {
                     "nickname": f"seq_user_{i}",
                     "email": unique_email,
@@ -195,7 +195,7 @@ class TestUserPerformance:
         def create_concurrent_user(index: int) -> dict[str, Any]:
             unique_email: str = f"conc_{index}_{uuid.uuid4().hex[:8]}@example.com"
             return create_user(
-                WebApiAuth,
+                web_api_auth,
                 {
                     "nickname": f"conc_user_{index}",
                     "email": unique_email,
@@ -231,7 +231,7 @@ class TestUserPerformance:
 
     @pytest.mark.p3
     def test_pagination_consistency_under_load(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test pagination consistency during concurrent modifications."""
         # Create initial set of users
@@ -239,7 +239,7 @@ class TestUserPerformance:
         for i in range(initial_count):
             unique_email: str = f"pag_{i}_{uuid.uuid4().hex[:8]}@example.com"
             create_user(
-                WebApiAuth,
+                web_api_auth,
                 {
                     "nickname": f"user_{i}",
                     "email": unique_email,
@@ -249,13 +249,13 @@ class TestUserPerformance:
         
         # Test pagination while users are being created
         def paginate_users() -> dict[str, Any]:
-            return list_users(WebApiAuth, params={"page": 1, "page_size": 10})
+            return list_users(web_api_auth, params={"page": 1, "page_size": 10})
         
         def create_more_users() -> None:
             for i in range(5):
                 unique_email: str = f"new_{i}_{uuid.uuid4().hex[:8]}@example.com"
                 create_user(
-                    WebApiAuth,
+                    web_api_auth,
                     {
                         "nickname": f"new_user_{i}",
                         "email": unique_email,
@@ -284,14 +284,14 @@ class TestUserPerformance:
 
     @pytest.mark.p3
     def test_memory_efficiency_large_list(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test memory efficiency when listing many users."""
         # Create 100 users
         for i in range(100):
             unique_email: str = f"mem_{i}_{uuid.uuid4().hex[:8]}@example.com"
             create_user(
-                WebApiAuth,
+                web_api_auth,
                 {
                     "nickname": f"user_{i}",
                     "email": unique_email,
@@ -300,7 +300,7 @@ class TestUserPerformance:
             )
         
         # List all users (without pagination)
-        res: dict[str, Any] = list_users(WebApiAuth)
+        res: dict[str, Any] = list_users(web_api_auth)
         
         assert res["code"] == 0, res
         # Should return results without memory issues
@@ -311,7 +311,7 @@ class TestUserPerformance:
     @pytest.mark.p3
     @pytest.mark.skip(reason="Stress test - run manually")
     def test_sustained_load(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test system stability under sustained load (manual run)."""
         duration_seconds: int = 60  # Run for 1 minute
@@ -328,7 +328,7 @@ class TestUserPerformance:
             for i in range(requests_per_second):
                 unique_email: str = f"load_{request_count}_{uuid.uuid4().hex[:8]}@example.com"
                 res: dict[str, Any] = create_user(
-                    WebApiAuth,
+                    web_api_auth,
                     {
                         "nickname": f"user_{request_count}",
                         "email": unique_email,
@@ -362,7 +362,7 @@ class TestUserPerformance:
 
     @pytest.mark.p3
     def test_large_payload_handling(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test handling of large request payloads."""
         # Create user with large nickname (but within limits)
@@ -371,7 +371,7 @@ class TestUserPerformance:
         
         start: float = time.time()
         res: dict[str, Any] = create_user(
-            WebApiAuth,
+            web_api_auth,
             {
                 "nickname": large_nickname,
                 "email": unique_email,

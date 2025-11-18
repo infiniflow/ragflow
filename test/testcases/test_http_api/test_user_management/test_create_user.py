@@ -132,7 +132,7 @@ class TestUserCreate:
     )
     def test_required_fields(
         self,
-        WebApiAuth,
+        web_api_auth,
         payload: dict[str, Any],
         expected_code: int,
         expected_message: str,
@@ -142,7 +142,7 @@ class TestUserCreate:
             # Use unique email to avoid conflicts
             unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
             payload["email"] = unique_email
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
             assert res["data"]["nickname"] == payload["nickname"]
@@ -167,7 +167,7 @@ class TestUserCreate:
     )
     def test_email_validation(
         self,
-        WebApiAuth,
+        web_api_auth,
         email: str,
         expected_code: int,
         expected_message: str,
@@ -181,7 +181,7 @@ class TestUserCreate:
             "email": email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
             assert res["data"]["email"] == email
@@ -201,7 +201,7 @@ class TestUserCreate:
     )
     def test_nickname(
         self,
-        WebApiAuth,
+        web_api_auth,
         nickname: str,
         expected_code: int,
         expected_message: str,
@@ -213,7 +213,7 @@ class TestUserCreate:
             "email": unique_email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
             assert res["data"]["nickname"] == nickname
@@ -222,7 +222,7 @@ class TestUserCreate:
 
     @pytest.mark.p1
     def test_duplicate_email(
-        self, WebApiAuth
+        self, web_api_auth
     ) -> None:
         """Test that creating a user with duplicate email fails."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -231,7 +231,7 @@ class TestUserCreate:
             "email": unique_email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0
 
         # Try to create another user with the same email
@@ -240,7 +240,7 @@ class TestUserCreate:
             "email": unique_email,
             "password": "test123",
         }
-        res2: dict[str, Any] = create_user(WebApiAuth, payload2)
+        res2: dict[str, Any] = create_user(web_api_auth, payload2)
         assert res2["code"] == 103
         assert "has already registered" in res2["message"]
 
@@ -255,7 +255,7 @@ class TestUserCreate:
     )
     def test_is_superuser(
         self,
-        WebApiAuth,
+        web_api_auth,
         is_superuser: bool | None,
         expected_value: bool,
     ) -> None:
@@ -269,13 +269,13 @@ class TestUserCreate:
         if is_superuser is not None:
             payload["is_superuser"] = is_superuser
 
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0
         assert res["data"]["is_superuser"] == expected_value
 
     @pytest.mark.p2
     def test_password_hashing(
-        self, WebApiAuth
+        self, web_api_auth
     ) -> None:
         """Test that password is properly hashed when stored."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -285,7 +285,7 @@ class TestUserCreate:
             "email": unique_email,
             "password": password,  # Plain text password
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0
         # Password should be hashed in the response (not plain text)
         assert "password" in res["data"], (
@@ -299,7 +299,7 @@ class TestUserCreate:
 
     @pytest.mark.p2
     def test_plain_text_password_accepted(
-        self, WebApiAuth
+        self, web_api_auth
     ) -> None:
         """Test that plain text password is accepted."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -308,14 +308,14 @@ class TestUserCreate:
             "email": unique_email,
             "password": "plain_text_password",  # Plain text, no encryption
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         # Should succeed with plain text password
         assert res["code"] == 0
         assert res["data"]["email"] == unique_email
 
     @pytest.mark.p3
     def test_concurrent_create(
-        self, WebApiAuth
+        self, web_api_auth
     ) -> None:
         """Test concurrent user creation with multiple threads."""
         count: int = 10
@@ -329,7 +329,7 @@ class TestUserCreate:
                     "password": "test123",
                 }
                 futures.append(
-                    executor.submit(create_user, WebApiAuth, payload)
+                    executor.submit(create_user, web_api_auth, payload)
                 )
             responses: list[Future[dict[str, Any]]] = list(
                 as_completed(futures)
@@ -341,7 +341,7 @@ class TestUserCreate:
 
     @pytest.mark.p2
     def test_user_creation_response_structure(
-        self, WebApiAuth
+        self, web_api_auth
     ) -> None:
         """Test that user creation returns the expected response structure."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -350,7 +350,7 @@ class TestUserCreate:
             "email": unique_email,
             "password": "test123",
         }
-        res: dict[str, Any] = create_user(WebApiAuth, payload)
+        res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0
         assert "data" in res
         assert "id" in res["data"]

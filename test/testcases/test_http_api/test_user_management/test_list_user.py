@@ -71,17 +71,17 @@ class TestUserList:
 
     # @pytest.mark.p1
     # def test_list_empty_users(
-    #     self, HttpApiAuth: RAGFlowHttpApiAuth
+    #     self, http_api_auth: RAGFlowHttpApiAuth
     # ) -> None:
     #     """Test listing users when no users exist."""
-    #     res: dict[str, Any] = list_users(HttpApiAuth)
+    #     res: dict[str, Any] = list_users(http_api_auth)
     #     assert res["code"] == 0, res
     #     assert isinstance(res["data"], list)
     #     assert len(res["data"]) == 0
 
     @pytest.mark.p1
     def test_list_single_user(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test listing a single user."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -90,12 +90,12 @@ class TestUserList:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(WebApiAuth, create_payload)
+        create_res: dict[str, Any] = create_user(web_api_auth, create_payload)
         # Skip if creation fails (password encryption issue in test)
         if create_res["code"] != 0:
             pytest.skip("User creation failed, skipping list test")
 
-        list_res: dict[str, Any] = list_users(WebApiAuth)
+        list_res: dict[str, Any] = list_users(web_api_auth)
         assert list_res["code"] == 0, list_res
         assert isinstance(list_res["data"], list)
         assert len(list_res["data"]) >= 1
@@ -105,7 +105,7 @@ class TestUserList:
 
     @pytest.mark.p1
     def test_list_multiple_users(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test listing multiple users."""
         created_emails: list[str] = []
@@ -117,7 +117,7 @@ class TestUserList:
                 "password": encrypt_password("test123"),
             }
             create_res: dict[str, Any] = create_user(
-                WebApiAuth, create_payload
+                web_api_auth, create_payload
             )
             if create_res["code"] == 0:
                 created_emails.append(unique_email)
@@ -125,7 +125,7 @@ class TestUserList:
         if not created_emails:
             pytest.skip("No users created, skipping list test")
 
-        list_res: dict[str, Any] = list_users(WebApiAuth)
+        list_res: dict[str, Any] = list_users(web_api_auth)
         assert list_res["code"] == 0, list_res
         assert isinstance(list_res["data"], list)
         assert len(list_res["data"]) >= len(created_emails)
@@ -136,7 +136,7 @@ class TestUserList:
 
     @pytest.mark.p1
     def test_list_users_with_email_filter(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test listing users filtered by email."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -145,13 +145,13 @@ class TestUserList:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(WebApiAuth, create_payload)
+        create_res: dict[str, Any] = create_user(web_api_auth, create_payload)
         if create_res["code"] != 0:
             pytest.skip("User creation failed, skipping filter test")
 
         # List with email filter
         params: dict[str, str] = {"email": unique_email}
-        list_res: dict[str, Any] = list_users(WebApiAuth, params=params)
+        list_res: dict[str, Any] = list_users(web_api_auth, params=params)
         assert list_res["code"] == 0, list_res
         assert isinstance(list_res["data"], list)
         assert len(list_res["data"]) >= 1
@@ -161,22 +161,22 @@ class TestUserList:
 
     @pytest.mark.p1
     def test_list_users_with_invalid_email_filter(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test listing users with invalid email filter."""
         params: dict[str, str] = {"email": "invalid_email_format"}
-        list_res: dict[str, Any] = list_users(WebApiAuth, params=params)
+        list_res: dict[str, Any] = list_users(web_api_auth, params=params)
         assert list_res["code"] != 0
         assert "Invalid email address" in list_res["message"]
 
     @pytest.mark.p1
     def test_list_users_with_nonexistent_email_filter(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test listing users with non-existent email filter."""
         nonexistent_email: str = f"nonexistent_{uuid.uuid4().hex[:8]}@example.com"
         params: dict[str, str] = {"email": nonexistent_email}
-        list_res: dict[str, Any] = list_users(WebApiAuth, params=params)
+        list_res: dict[str, Any] = list_users(web_api_auth, params=params)
         assert list_res["code"] == 0, list_res
         assert isinstance(list_res["data"], list)
         assert len(list_res["data"]) == 0
@@ -196,7 +196,7 @@ class TestUserList:
     )
     def test_list_users_with_pagination(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         page: int,
         page_size: int,
         expected_valid: bool,
@@ -212,7 +212,7 @@ class TestUserList:
                 "password": encrypt_password("test123"),
             }
             create_res: dict[str, Any] = create_user(
-                WebApiAuth, create_payload
+                web_api_auth, create_payload
             )
             if create_res["code"] == 0:
                 created_count += 1
@@ -221,7 +221,7 @@ class TestUserList:
             pytest.skip("No users created, skipping pagination test")
 
         params: dict[str, int] = {"page": page, "page_size": page_size}
-        list_res: dict[str, Any] = list_users(WebApiAuth, params=params)
+        list_res: dict[str, Any] = list_users(web_api_auth, params=params)
 
         if expected_valid:
             assert list_res["code"] == 0, list_res
@@ -234,7 +234,7 @@ class TestUserList:
 
     @pytest.mark.p1
     def test_list_users_pagination_boundaries(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test pagination boundary conditions."""
         # Create 5 users with a unique email pattern for filtering
@@ -248,7 +248,7 @@ class TestUserList:
                 "password": encrypt_password("test123"),
             }
             create_res: dict[str, Any] = create_user(
-                WebApiAuth, create_payload
+                web_api_auth, create_payload
             )
             if create_res["code"] == 0:
                 created_emails.append(unique_email)
@@ -257,18 +257,18 @@ class TestUserList:
             pytest.skip("Not enough users created, skipping boundary test")
 
         # Get total count of all users to calculate pagination boundaries
-        list_res_all: dict[str, Any] = list_users(WebApiAuth)
+        list_res_all: dict[str, Any] = list_users(web_api_auth)
         total_users: int = len(list_res_all["data"])
 
         # Test first page
         params: dict[str, int] = {"page": 1, "page_size": 2}
-        list_res: dict[str, Any] = list_users(WebApiAuth, params=params)
+        list_res: dict[str, Any] = list_users(web_api_auth, params=params)
         assert list_res["code"] == 0, list_res
         assert len(list_res["data"]) == 2
 
         # Test that pagination returns consistent page sizes
         params = {"page": 2, "page_size": 2}
-        list_res = list_users(WebApiAuth, params=params)
+        list_res = list_users(web_api_auth, params=params)
         assert list_res["code"] == 0, list_res
         assert len(list_res["data"]) == 2
 
@@ -278,23 +278,23 @@ class TestUserList:
         last_page: int = (total_users + page_size - 1) // page_size
         if last_page > 0:
             params = {"page": last_page, "page_size": page_size}
-            list_res = list_users(WebApiAuth, params=params)
+            list_res = list_users(web_api_auth, params=params)
             assert list_res["code"] == 0, list_res
             assert len(list_res["data"]) <= page_size
 
         # Test page beyond available data
         # Use a page number that's definitely beyond available data
         params = {"page": total_users + 10, "page_size": 2}
-        list_res = list_users(WebApiAuth, params=params)
+        list_res = list_users(web_api_auth, params=params)
         assert list_res["code"] == 0, list_res
         assert len(list_res["data"]) == 0
 
     @pytest.mark.p1
     def test_list_users_response_structure(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test that user listing returns the expected response structure."""
-        res: dict[str, Any] = list_users(WebApiAuth)
+        res: dict[str, Any] = list_users(web_api_auth)
         assert res["code"] == 0
         assert "data" in res
         assert isinstance(res["data"], list)
@@ -311,24 +311,24 @@ class TestUserList:
 
     @pytest.mark.p1
     def test_list_users_with_invalid_page_params(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test listing users with invalid pagination parameters."""
         # Test invalid page (non-integer)
         params: dict[str, str] = {"page": "invalid", "page_size": "10"}
-        list_res: dict[str, Any] = list_users(WebApiAuth, params=params)
+        list_res: dict[str, Any] = list_users(web_api_auth, params=params)
         # Should handle gracefully or return error
         # The exact behavior depends on implementation
         assert "code" in list_res
 
         # Test invalid page_size (non-integer)
         params = {"page": "1", "page_size": "invalid"}
-        list_res = list_users(WebApiAuth, params=params)
+        list_res = list_users(web_api_auth, params=params)
         assert "code" in list_res
 
     @pytest.mark.p2
     def test_list_users_combined_filters(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test listing users with combined filters."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -337,7 +337,7 @@ class TestUserList:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(WebApiAuth, create_payload)
+        create_res: dict[str, Any] = create_user(web_api_auth, create_payload)
         if create_res["code"] != 0:
             pytest.skip("User creation failed, skipping combined filter test")
 
@@ -347,7 +347,7 @@ class TestUserList:
             "page": 1,
             "page_size": 10,
         }
-        list_res: dict[str, Any] = list_users(WebApiAuth, params=params)
+        list_res: dict[str, Any] = list_users(web_api_auth, params=params)
         assert list_res["code"] == 0, list_res
         assert isinstance(list_res["data"], list)
         # Should return at least the created user
@@ -355,7 +355,7 @@ class TestUserList:
 
     @pytest.mark.p2
     def test_list_users_performance_with_many_users(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test listing performance with multiple users."""
         # Create several users
@@ -368,7 +368,7 @@ class TestUserList:
                 "password": encrypt_password("test123"),
             }
             create_res: dict[str, Any] = create_user(
-                WebApiAuth, create_payload
+                web_api_auth, create_payload
             )
             if create_res["code"] == 0:
                 created_count += 1
@@ -377,7 +377,7 @@ class TestUserList:
             pytest.skip("No users created, skipping performance test")
 
         # List all users
-        list_res: dict[str, Any] = list_users(WebApiAuth)
+        list_res: dict[str, Any] = list_users(web_api_auth)
         assert list_res["code"] == 0, list_res
         assert isinstance(list_res["data"], list)
         # Should return at least the created users

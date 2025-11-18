@@ -57,7 +57,7 @@ class TestAuthorization:
         invalid_auth: RAGFlowWebApiAuth | None,
         expected_code: int,
         expected_message: str,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
     ) -> None:
         """Test user deletion with invalid or missing authentication."""
         # Create a test user first
@@ -67,7 +67,7 @@ class TestAuthorization:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(WebApiAuth, create_payload)
+        create_res: dict[str, Any] = create_user(web_api_auth, create_payload)
         if create_res["code"] != 0:
             pytest.skip("User creation failed, skipping auth test")
 
@@ -83,7 +83,7 @@ class TestAuthorization:
     @pytest.mark.p1
     def test_user_can_only_delete_themselves(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
     ) -> None:
         """Test that users can only delete their own account."""
         # Create another user
@@ -93,7 +93,7 @@ class TestAuthorization:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(WebApiAuth, create_payload)
+        create_res: dict[str, Any] = create_user(web_api_auth, create_payload)
         assert create_res["code"] == 0, "Failed to create second user"
         other_user_id: str = create_res["data"]["id"]
 
@@ -101,7 +101,7 @@ class TestAuthorization:
         delete_payload: dict[str, Any] = {
             "user_id": other_user_id,
         }
-        res: dict[str, Any] = delete_user(WebApiAuth, delete_payload)
+        res: dict[str, Any] = delete_user(web_api_auth, delete_payload)
         assert res["code"] == 403, f"Expected 403 FORBIDDEN, got {res}"
         assert "only delete your own account" in res["message"].lower()
 
@@ -112,50 +112,50 @@ class TestUserDelete:
 
     @pytest.mark.p1
     def test_delete_user_missing_identifier(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test deletion without user_id or email."""
         delete_payload: dict[str, str] = {}
-        res: dict[str, Any] = delete_user(WebApiAuth, delete_payload)
+        res: dict[str, Any] = delete_user(web_api_auth, delete_payload)
         assert res["code"] == 101
         assert "Either user_id or email must be provided" in res["message"]
 
     @pytest.mark.p1
     def test_delete_user_not_found_by_id(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test deletion of non-existent user by ID."""
         delete_payload: dict[str, str] = {
             "user_id": "non_existent_user_id_12345",
         }
-        res: dict[str, Any] = delete_user(WebApiAuth, delete_payload)
+        res: dict[str, Any] = delete_user(web_api_auth, delete_payload)
         assert res["code"] == 102
         assert "User not found" in res["message"]
 
     @pytest.mark.p1
     def test_delete_user_invalid_email_format(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test deletion with invalid email format."""
         delete_payload: dict[str, str] = {"email": "invalid_email_format"}
-        res: dict[str, Any] = delete_user(WebApiAuth, delete_payload)
+        res: dict[str, Any] = delete_user(web_api_auth, delete_payload)
         assert res["code"] == 103
         assert "Invalid email address" in res["message"]
 
     @pytest.mark.p3
     def test_delete_user_idempotency(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test that deleting a non-existent user returns consistent error."""
         non_existent_id: str = f"nonexistent_{uuid.uuid4().hex[:16]}"
 
         # First attempt
         delete_payload: dict[str, str] = {"user_id": non_existent_id}
-        res1: dict[str, Any] = delete_user(WebApiAuth, delete_payload)
+        res1: dict[str, Any] = delete_user(web_api_auth, delete_payload)
         assert res1["code"] == 102
 
         # Second attempt (should return same error)
-        res2: dict[str, Any] = delete_user(WebApiAuth, delete_payload)
+        res2: dict[str, Any] = delete_user(web_api_auth, delete_payload)
         assert res2["code"] == 102
         assert res1["code"] == res2["code"]
 
