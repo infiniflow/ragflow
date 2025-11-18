@@ -67,6 +67,7 @@ export interface FormFieldConfig {
   ) => string | boolean | Promise<string | boolean>;
   dependencies?: string[];
   schema?: ZodSchema;
+  shouldRender?: (formValues: any) => boolean;
 }
 
 // Component props interface
@@ -654,6 +655,9 @@ const DynamicForm = {
         }
       };
 
+      // Watch all form values to re-render when they change (for shouldRender checks)
+      const formValues = form.watch();
+
       return (
         <Form {...form}>
           <form
@@ -664,11 +668,19 @@ const DynamicForm = {
             }}
           >
             <>
-              {fields.map((field) => (
-                <div key={field.name} className={cn({ hidden: field.hidden })}>
-                  {renderField(field)}
-                </div>
-              ))}
+              {fields.map((field) => {
+                const shouldShow = field.shouldRender
+                  ? field.shouldRender(formValues)
+                  : true;
+                return (
+                  <div
+                    key={field.name}
+                    className={cn({ hidden: field.hidden || !shouldShow })}
+                  >
+                    {renderField(field)}
+                  </div>
+                );
+              })}
               {children}
             </>
           </form>
