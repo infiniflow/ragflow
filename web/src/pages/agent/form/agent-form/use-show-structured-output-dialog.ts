@@ -1,27 +1,25 @@
 import { JSONSchema } from '@/components/jsonjoy-builder';
+import { AgentStructuredOutputField } from '@/constants/agent';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useCallback } from 'react';
-import useGraphStore from '../../store';
+import { UseFormReturn } from 'react-hook-form';
 
-export function useShowStructuredOutputDialog(nodeId?: string) {
+export function useShowStructuredOutputDialog(form: UseFormReturn<any>) {
   const {
     visible: structuredOutputDialogVisible,
     showModal: showStructuredOutputDialog,
     hideModal: hideStructuredOutputDialog,
   } = useSetModalState();
-  const { updateNodeForm, getNode } = useGraphStore((state) => state);
 
-  const initialStructuredOutput = getNode(nodeId)?.data.form.outputs.structured;
+  const initialStructuredOutput = form.getValues(AgentStructuredOutputField);
 
   const handleStructuredOutputDialogOk = useCallback(
     (values: JSONSchema) => {
       // Sync data to canvas
-      if (nodeId) {
-        updateNodeForm(nodeId, values, ['outputs', 'structured']);
-      }
+      form.setValue(AgentStructuredOutputField, values);
       hideStructuredOutputDialog();
     },
-    [hideStructuredOutputDialog, nodeId, updateNodeForm],
+    [form, hideStructuredOutputDialog],
   );
 
   return {

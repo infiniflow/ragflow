@@ -6,7 +6,7 @@ import {
 import { BaseNode } from '@/interfaces/database/agent';
 
 import { Edge } from '@xyflow/react';
-import { isEmpty } from 'lodash';
+import { get, isEmpty } from 'lodash';
 import { ComponentType, ReactNode } from 'react';
 
 export function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
@@ -86,4 +86,16 @@ export function buildNodeOutputOptions({
         <Icon name={x.data.name} />,
       ),
     }));
+}
+
+export function getStructuredDatatype(value: Record<string, any> | unknown) {
+  const dataType = get(value, 'type');
+  const arrayItemsType = get(value, 'items.type', JsonSchemaDataType.String);
+
+  const compositeDataType =
+    dataType === JsonSchemaDataType.Array
+      ? `${dataType}<${arrayItemsType}>`
+      : dataType;
+
+  return { dataType, compositeDataType };
 }
