@@ -71,7 +71,7 @@ for arg in "$@"; do
       ENABLE_TASKEXECUTOR=0
       shift
       ;;
-    --disable-datasyn)
+    --disable-datasync)
       ENABLE_DATASYNC=0
       shift
       ;;
