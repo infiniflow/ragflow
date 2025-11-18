@@ -851,6 +851,13 @@ export enum VariableAssignerLogicalNumberOperator {
   Divide = '/=',
 }
 
+export const VariableAssignerLogicalNumberOperatorLabelMap = {
+  [VariableAssignerLogicalNumberOperator.Add]: 'add',
+  [VariableAssignerLogicalNumberOperator.Subtract]: 'subtract',
+  [VariableAssignerLogicalNumberOperator.Multiply]: 'multiply',
+  [VariableAssignerLogicalNumberOperator.Divide]: 'divide',
+};
+
 export enum VariableAssignerLogicalArrayOperator {
   Overwrite = VariableAssignerLogicalOperator.Overwrite,
   Clear = VariableAssignerLogicalOperator.Clear,

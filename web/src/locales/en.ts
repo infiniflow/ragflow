@@ -1852,6 +1852,19 @@ Important structured information may include: names, dates, locations, events, k
         asc: 'Ascending',
         desc: 'Descending',
       },
+      variableAssignerLogicalOperatorOptions: {
+        overwrite: 'Overwrite',
+        clear: 'Clear',
+        set: 'Set',
+        '+=': 'Add',
+        '-=': 'Subtract',
+        '*=': 'Multiply',
+        '/=': 'Divide',
+        append: 'Append',
+        extend: 'Extend',
+        removeFirst: 'Remove first',
+        removeLast: 'Remove last',
+      },
     },
     llmTools: {
       bad_calculator: {
