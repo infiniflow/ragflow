@@ -22,6 +22,14 @@ from requests.auth import AuthBase
 from requests_toolbelt import MultipartEncoder
 from utils.file_utils import create_txt_file
 
+# Import login_as_user from root conftest
+import importlib.util
+_root_conftest_path = Path(__file__).parent.parent / "conftest.py"
+_root_spec = importlib.util.spec_from_file_location("root_conftest", _root_conftest_path)
+_root_conftest_module = importlib.util.module_from_spec(_root_spec)
+_root_spec.loader.exec_module(_root_conftest_module)
+login_as_user = _root_conftest_module.login_as_user
+
 HEADERS = {"Content-Type": "application/json"}
 DATASETS_API_URL = f"/api/{VERSION}/datasets"
 FILE_API_URL = f"/api/{VERSION}/datasets/{{dataset_id}}/documents"
@@ -550,6 +558,86 @@ def remove_department_member(
     """
     url: str = f"{HOST_ADDRESS}{DEPARTMENT_API_URL}/{department_id}/members/{user_id}"
     res: requests.Response = requests.delete(
+        url=url, headers=headers, auth=auth
+    )
+    return res.json()
+
+
+def update_department(
+    auth: Union[AuthBase, str, None],
+    department_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Update a department's details.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        department_id: The department ID to update.
+        payload: Optional JSON payload containing update data (e.g., name, description).
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the updated department data.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{DEPARTMENT_API_URL}/{department_id}"
+    res: requests.Response = requests.put(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
+def delete_department(
+    auth: Union[AuthBase, str, None],
+    department_id: str,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Delete a department.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        department_id: The department ID to delete.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the deletion result.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{DEPARTMENT_API_URL}/{department_id}"
+    res: requests.Response = requests.delete(
+        url=url, headers=headers, auth=auth
+    )
+    return res.json()
+
+
+def list_department_members(
+    auth: Union[AuthBase, str, None],
+    department_id: str,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """List all members in a department.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        department_id: The department ID to list members from.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the list of department members.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{DEPARTMENT_API_URL}/{department_id}/members"
+    res: requests.Response = requests.get(
         url=url, headers=headers, auth=auth
     )
     return res.json()
