@@ -31,7 +31,8 @@ from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.constants import RetCode
 from common.misc_utils import get_uuid
-from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
+from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result, \
+    request_json
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken, Task
@@ -55,7 +56,7 @@ def templates():
 @validate_request("canvas_ids")
 @login_required
 async def rm():
-    req = await request.json
+    req = await request_json()
     for i in req["canvas_ids"]:
         if not UserCanvasService.accessible(i, current_user.id):
             return get_json_result(
@@ -69,7 +70,7 @@ async def rm():
 @validate_request("dsl", "title")
 @login_required
 async def save():
-    req = await request.json
+    req = await request_json()
     if not isinstance(req["dsl"], str):
         req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
     req["dsl"] = json.loads(req["dsl"])
@@ -128,7 +129,7 @@ def getsse(canvas_id):
 @validate_request("id")
 @login_required
 async def run():
-    req = await request.json
+    req = await request_json()
     query = req.get("query", "")
     files = req.get("files", [])
     inputs = req.get("inputs", {})
@@ -185,7 +186,7 @@ async def run():
 @validate_request("id", "dsl", "component_id")
 @login_required
 async def rerun():
-    req = await request.json
+    req = await request_json()
     doc = PipelineOperationLogService.get_documents_info(req["id"])
     if not doc:
         return get_data_error_result(message="Document not found.")
@@ -223,7 +224,7 @@ def cancel(task_id):
 @validate_request("id")
 @login_required
 async def reset():
-    req = await request.json
+    req = await request_json()
     if not UserCanvasService.accessible(req["id"], current_user.id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
@@ -342,7 +343,7 @@ def input_form():
 @validate_request("id", "component_id", "params")
 @login_required
 async def debug():
-    req = await request.json
+    req = await request_json()
     if not UserCanvasService.accessible(req["id"], current_user.id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
@@ -374,7 +375,7 @@ async def debug():
 @validate_request("db_type", "database", "username", "host", "port", "password")
 @login_required
 async def test_db_connect():
-    req = await request.json
+    req = await request_json()
     try:
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
@@ -519,7 +520,7 @@ def list_canvas():
 @validate_request("id", "title", "permission")
 @login_required
 async def setting():
-    req = await request.json
+    req = await request_json()
     req["user_id"] = current_user.id
 
     if not UserCanvasService.accessible(req["id"], current_user.id):

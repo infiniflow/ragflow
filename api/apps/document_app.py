@@ -36,7 +36,7 @@ from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
     server_error_response,
-    validate_request,
+    validate_request, request_json,
 )
 from api.utils.file_utils import filename_type, thumbnail
 from common.file_utils import get_project_base_directory
@@ -153,7 +153,7 @@ async def web_crawl():
 @login_required
 @validate_request("name", "kb_id")
 async def create():
-    req = await request.json
+    req = await request_json()
     kb_id = req["kb_id"]
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -309,7 +309,7 @@ async def get_filter():
 @manager.route("/infos", methods=["POST"])  # noqa: F821
 @login_required
 async def doc_infos():
-    req = await request.json
+    req = await request_json()
     doc_ids = req["doc_ids"]
     for doc_id in doc_ids:
         if not DocumentService.accessible(doc_id, current_user.id):
@@ -381,7 +381,7 @@ async def change_status():
 @login_required
 @validate_request("doc_id")
 async def rm():
-    req = await request.json
+    req = await request_json()
     doc_ids = req["doc_id"]
     if isinstance(doc_ids, str):
         doc_ids = [doc_ids]
@@ -402,7 +402,7 @@ async def rm():
 @login_required
 @validate_request("doc_ids", "run")
 async def run():
-    req = await request.json
+    req = await request_json()
     for doc_id in req["doc_ids"]:
         if not DocumentService.accessible(doc_id, current_user.id):
             return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
@@ -449,7 +449,7 @@ async def run():
 @login_required
 @validate_request("doc_id", "name")
 async def rename():
-    req = await request.json
+    req = await request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
@@ -539,7 +539,7 @@ async def download_attachment(attachment_id):
 @validate_request("doc_id")
 async def change_parser():
 
-    req = await request.json
+    req = await request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
@@ -679,7 +679,7 @@ async def parse():
 @login_required
 @validate_request("doc_id", "meta")
 async def set_meta():
-    req = await request.json
+    req = await request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
