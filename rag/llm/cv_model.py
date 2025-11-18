@@ -33,8 +33,6 @@ from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 
-from rag.llm.chat_model import LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN
-from rag.nlp import is_chinese
 class Base(ABC):
     def __init__(self, **kwargs):
         # Configure retry parameters
@@ -374,7 +372,7 @@ class Zhipu4V(GptV4):
     
 
     def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
-        from rag.llm.chat_model import LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN
+        from rag.llm.chat_model import LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN 
         from rag.nlp import is_chinese
 
         if system and history and history[0].get("role") != "system":
