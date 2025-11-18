@@ -819,7 +819,7 @@ def check_embedding():
             return []
 
         n = min(n, total)
-        offsets = sorted(random.sample(range(total), n))
+        offsets = sorted(random.sample(range(min(total,1000)), n))
         out = []
 
         for off in offsets:
