@@ -13,8 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from flask import Response, request
-from flask_login import current_user, login_required
+from quart import Response, request
+from api.apps import current_user, login_required
 
 from api.db.db_models import MCPServer
 from api.db.services.mcp_server_service import MCPServerService
@@ -30,7 +30,7 @@ from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_too
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required
-def list_mcp() -> Response:
+async def list_mcp() -> Response:
     keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 0))
     items_per_page = int(request.args.get("page_size", 0))
@@ -40,7 +40,7 @@ def list_mcp() -> Response:
     else:
         desc = True
 
-    req = request.get_json()
+    req = await request.get_json()
     mcp_ids = req.get("mcp_ids", [])
     try:
         servers = MCPServerService.get_servers(current_user.id, mcp_ids, 0, 0, orderby, desc, keywords) or []
@@ -72,8 +72,8 @@ def detail() -> Response:
 @manager.route("/create", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name", "url", "server_type")
-def create() -> Response:
-    req = request.get_json()
+async def create() -> Response:
+    req = await request.get_json()
 
     server_type = req.get("server_type", "")
     if server_type not in VALID_MCP_SERVER_TYPES:
@@ -127,8 +127,8 @@ def create() -> Response:
 @manager.route("/update", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("mcp_id")
-def update() -> Response:
-    req = request.get_json()
+async def update() -> Response:
+    req = await request.get_json()
 
     mcp_id = req.get("mcp_id", "")
     e, mcp_server = MCPServerService.get_by_id(mcp_id)
@@ -183,8 +183,8 @@ def update() -> Response:
 @manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("mcp_ids")
-def rm() -> Response:
-    req = request.get_json()
+async def rm() -> Response:
+    req = await request.get_json()
     mcp_ids = req.get("mcp_ids", [])
 
     try:
@@ -201,8 +201,8 @@ def rm() -> Response:
 @manager.route("/import", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("mcpServers")
-def import_multiple() -> Response:
-    req = request.get_json()
+async def import_multiple() -> Response:
+    req = await request.get_json()
     servers = req.get("mcpServers", {})
     if not servers:
         return get_data_error_result(message="No MCP servers provided.")
@@ -268,8 +268,8 @@ def import_multiple() -> Response:
 @manager.route("/export", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("mcp_ids")
-def export_multiple() -> Response:
-    req = request.get_json()
+async def export_multiple() -> Response:
+    req = await request.get_json()
     mcp_ids = req.get("mcp_ids", [])
 
     if not mcp_ids:
@@ -300,8 +300,8 @@ def export_multiple() -> Response:
 @manager.route("/list_tools", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("mcp_ids")
-def list_tools() -> Response:
-    req = request.get_json()
+async def list_tools() -> Response:
+    req = await request.get_json()
     mcp_ids = req.get("mcp_ids", [])
     if not mcp_ids:
         return get_data_error_result(message="No MCP server IDs provided.")
@@ -347,8 +347,8 @@ def list_tools() -> Response:
 @manager.route("/test_tool", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("mcp_id", "tool_name", "arguments")
-def test_tool() -> Response:
-    req = request.get_json()
+async def test_tool() -> Response:
+    req = await request.get_json()
     mcp_id = req.get("mcp_id", "")
     if not mcp_id:
         return get_data_error_result(message="No MCP server ID provided.")
@@ -380,8 +380,8 @@ def test_tool() -> Response:
 @manager.route("/cache_tools", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("mcp_id", "tools")
-def cache_tool() -> Response:
-    req = request.get_json()
+async def cache_tool() -> Response:
+    req = await request.get_json()
     mcp_id = req.get("mcp_id", "")
     if not mcp_id:
         return get_data_error_result(message="No MCP server ID provided.")
@@ -403,8 +403,8 @@ def cache_tool() -> Response:
 
 @manager.route("/test_mcp", methods=["POST"])  # noqa: F821
 @validate_request("url", "server_type")
-def test_mcp() -> Response:
-    req = request.get_json()
+async def test_mcp() -> Response:
+    req = await request.get_json()
 
     url = req.get("url", "")
     if not url:

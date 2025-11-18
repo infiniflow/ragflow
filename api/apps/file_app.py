@@ -17,10 +17,8 @@ import logging
 import os
 import pathlib
 import re
-
-import flask
-from flask import request
-from flask_login import login_required, current_user
+from quart import request, make_response
+from api.apps import login_required, current_user
 
 from api.common.check_team_permission import check_file_team_permission
 from api.db.services.document_service import DocumentService
@@ -40,17 +38,19 @@ from common import settings
 @manager.route('/upload', methods=['POST'])  # noqa: F821
 @login_required
 # @validate_request("parent_id")
-def upload():
-    pf_id = request.form.get("parent_id")
+async def upload():
+    form = await request.form
+    pf_id = form.get("parent_id")
 
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
         pf_id = root_folder["id"]
 
-    if 'file' not in request.files:
+    files = await request.files
+    if 'file' not in files:
         return get_json_result(
             data=False, message='No file part!', code=RetCode.ARGUMENT_ERROR)
-    file_objs = request.files.getlist('file')
+    file_objs = files.getlist('file')
 
     for file_obj in file_objs:
         if file_obj.filename == '':
@@ -123,10 +123,10 @@ def upload():
 @manager.route('/create', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("name")
-def create():
-    req = request.json
-    pf_id = request.json.get("parent_id")
-    input_file_type = request.json.get("type")
+async def create():
+    req = await request.json
+    pf_id = await request.json.get("parent_id")
+    input_file_type = await request.json.get("type")
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
         pf_id = root_folder["id"]
@@ -238,8 +238,8 @@ def get_all_parent_folders():
 @manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("file_ids")
-def rm():
-    req = request.json
+async def rm():
+    req = await request.json
     file_ids = req["file_ids"]
 
     def _delete_single_file(file):
@@ -299,8 +299,8 @@ def rm():
 @manager.route('/rename', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_id", "name")
-def rename():
-    req = request.json
+async def rename():
+    req = await request.json
     try:
         e, file = FileService.get_by_id(req["file_id"])
         if not e:
@@ -338,7 +338,7 @@ def rename():
 
 @manager.route('/get/<file_id>', methods=['GET'])  # noqa: F821
 @login_required
-def get(file_id):
+async def get(file_id):
     try:
         e, file = FileService.get_by_id(file_id)
         if not e:
@@ -351,7 +351,7 @@ def get(file_id):
             b, n = File2DocumentService.get_storage_address(file_id=file_id)
             blob = settings.STORAGE_IMPL.get(b, n)
 
-        response = flask.make_response(blob)
+        response = await make_response(blob)
         ext = re.search(r"\.([^.]+)$", file.name.lower())
         ext = ext.group(1) if ext else None
         if ext:
@@ -368,8 +368,8 @@ def get(file_id):
 @manager.route("/mv", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("src_file_ids", "dest_file_id")
-def move():
-    req = request.json
+async def move():
+    req = await request.json
     try:
         file_ids = req["src_file_ids"]
         dest_parent_id = req["dest_file_id"]
