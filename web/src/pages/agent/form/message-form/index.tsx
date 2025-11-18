@@ -8,12 +8,14 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { RAGFlowSelect } from '@/components/ui/select';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
 import { memo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { ExportFileType } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { PromptEditor } from '../components/prompt-editor';
@@ -33,10 +35,14 @@ function MessageForm({ node }: INextOperatorForm) {
         }),
       )
       .optional(),
+    output_format: z.string().optional(),
   });
 
   const form = useForm({
-    defaultValues: values,
+    defaultValues: {
+      ...values,
+      output_format: values.output_format,
+    },
     resolver: zodResolver(FormSchema),
   });
 
@@ -50,6 +56,39 @@ function MessageForm({ node }: INextOperatorForm) {
   return (
     <Form {...form}>
       <FormWrapper>
+        <FormContainer>
+          <FormItem>
+            <FormLabel tooltip={t('flow.downloadFileTypeTip')}>
+              {t('flow.downloadFileType')}
+            </FormLabel>
+            <FormField
+              control={form.control}
+              name={`output_format`}
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormControl>
+                    <RAGFlowSelect
+                      options={Object.keys(ExportFileType).map(
+                        (key: string) => {
+                          return {
+                            value:
+                              ExportFileType[
+                                key as keyof typeof ExportFileType
+                              ],
+                            label: key,
+                          };
+                        },
+                      )}
+                      {...field}
+                      onValueChange={field.onChange}
+                      placeholder={t('flow.messagePlaceholder')}
+                    ></RAGFlowSelect>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </FormItem>
+        </FormContainer>
         <FormContainer>
           <FormItem>
             <FormLabel tooltip={t('flow.msgTip')}>{t('flow.msg')}</FormLabel>

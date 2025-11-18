@@ -417,6 +417,7 @@ export const initialIterationValues = {
   items_ref: '',
   outputs: {},
 };
+
 export const initialIterationStartValues = {
   outputs: {
     item: {
@@ -595,6 +596,35 @@ export const initialDataOperationsValues = {
     },
   },
 };
+export enum SortMethod {
+  Asc = 'asc',
+  Desc = 'desc',
+}
+
+export enum ListOperations {
+  TopN = 'topN',
+  Head = 'head',
+  Tail = 'tail',
+  Filter = 'filter',
+  Sort = 'sort',
+  DropDuplicates = 'drop_duplicates',
+}
+
+export const initialListOperationsValues = {
+  query: '',
+  operations: ListOperations.TopN,
+  outputs: {
+    result: {
+      type: 'Array<?>',
+    },
+    first: {
+      type: '?',
+    },
+    last: {
+      type: '?',
+    },
+  },
+};
 
 export const initialVariableAssignerValues = {};
 
@@ -673,6 +703,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Tool]: [Operator.Begin],
   [Operator.Placeholder]: [Operator.Begin],
   [Operator.DataOperations]: [Operator.Begin],
+  [Operator.ListOperations]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
   [Operator.Splitter]: [Operator.Begin],
   [Operator.HierarchicalMerger]: [Operator.Begin],
@@ -729,6 +760,7 @@ export const NodeMap = {
   [Operator.HierarchicalMerger]: 'splitterNode',
   [Operator.Extractor]: 'contextNode',
   [Operator.DataOperations]: 'dataOperationsNode',
+  [Operator.ListOperations]: 'listOperationsNode',
   [Operator.VariableAssigner]: 'variableAssignerNode',
   [Operator.VariableAggregator]: 'variableAggregatorNode',
 };
@@ -813,4 +845,36 @@ export enum JsonSchemaDataType {
   Boolean = 'boolean',
   Array = 'array',
   Object = 'object',
+}
+
+export enum VariableAssignerLogicalOperator {
+  Overwrite = 'overwrite',
+  Clear = 'clear',
+  Set = 'set',
+}
+
+export enum VariableAssignerLogicalNumberOperator {
+  Overwrite = VariableAssignerLogicalOperator.Overwrite,
+  Clear = VariableAssignerLogicalOperator.Clear,
+  Set = VariableAssignerLogicalOperator.Set,
+  Add = '+=',
+  Subtract = '-=',
+  Multiply = '*=',
+  Divide = '/=',
+}
+
+export enum VariableAssignerLogicalArrayOperator {
+  Overwrite = VariableAssignerLogicalOperator.Overwrite,
+  Clear = VariableAssignerLogicalOperator.Clear,
+  Append = 'append',
+  Extend = 'extend',
+  RemoveFirst = 'remove_first',
+  RemoveLast = 'remove_last',
+}
+
+export enum ExportFileType {
+  PDF = 'pdf',
+  HTML = 'html',
+  Markdown = 'md',
+  DOCX = 'docx',
 }

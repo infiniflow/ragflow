@@ -20,33 +20,40 @@
 
 
 import copy
+import faulthandler
+import logging
+import os
+import signal
 import sys
 import threading
 import time
 import traceback
+from datetime import datetime, timezone
 from typing import Any
+
+import trio
 
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from common.log_utils import init_root_logger
-from common.config_utils import show_configs
-from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector
-import logging
-import os
-from datetime import datetime, timezone
-import signal
-import trio
-import faulthandler
-from common.constants import FileSource, TaskStatus
 from common import settings
-from common.versions import get_ragflow_version
+from common.config_utils import show_configs
+from common.constants import FileSource, TaskStatus
+from common.data_source import (
+    BlobStorageConnector,
+    DiscordConnector,
+    GoogleDriveConnector,
+    JiraConnector,
+    NotionConnector,
+)
+from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.data_source.utils import load_all_docs_from_checkpoint_connector
-from common.data_source.config import INDEX_BATCH_SIZE
+from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
+from common.versions import get_ragflow_version
 
-MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
+MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 task_limiter = trio.Semaphore(MAX_CONCURRENT_TASKS)
 
 
@@ -72,31 +79,32 @@ class SyncBase:
                         min_update = min([doc.doc_updated_at for doc in document_batch])
                         max_update = max([doc.doc_updated_at for doc in document_batch])
                         next_update = max([next_update, max_update])
-                        docs = [{
-                            "id": doc.id,
-                            "connector_id": task["connector_id"],
-                            "source": self.SOURCE_NAME,
-                            "semantic_identifier": doc.semantic_identifier,
-                            "extension": doc.extension,
-                            "size_bytes": doc.size_bytes,
-                            "doc_updated_at": doc.doc_updated_at,
-                            "blob": doc.blob
-                        } for doc in document_batch]
+                        docs = [
+                            {
+                                "id": doc.id,
+                                "connector_id": task["connector_id"],
+                                "source": self.SOURCE_NAME,
+                                "semantic_identifier": doc.semantic_identifier,
+                                "extension": doc.extension,
+                                "size_bytes": doc.size_bytes,
+                                "doc_updated_at": doc.doc_updated_at,
+                                "blob": doc.blob,
+                            }
+                            for doc in document_batch
+                        ]
 
                         e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
                         err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
                         SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
                         doc_num += len(docs)
 
-                    logging.info("{} docs synchronized till {}".format(doc_num, next_update))
+                    prefix = "[Jira] " if self.SOURCE_NAME == FileSource.JIRA else ""
+                    logging.info(f"{prefix}{doc_num} docs synchronized till {next_update}")
                     SyncLogsService.done(task["id"], task["connector_id"])
                     task["poll_range_start"] = next_update
 
         except Exception as ex:
-            msg = '\n'.join([
-                ''.join(traceback.format_exception_only(None, ex)).strip(),
-                ''.join(traceback.format_exception(None, ex, ex.__traceback__)).strip()
-            ])
+            msg = "\n".join(["".join(traceback.format_exception_only(None, ex)).strip(), "".join(traceback.format_exception(None, ex, ex.__traceback__)).strip()])
             SyncLogsService.update_by_id(task["id"], {"status": TaskStatus.FAIL, "full_exception_trace": msg, "error_msg": str(ex)})
 
         SyncLogsService.schedule(task["connector_id"], task["kb_id"], task["poll_range_start"])
@@ -109,21 +117,16 @@ class S3(SyncBase):
     SOURCE_NAME: str = FileSource.S3
 
     async def _generate(self, task: dict):
-        self.connector = BlobStorageConnector(
-            bucket_type=self.conf.get("bucket_type", "s3"),
-            bucket_name=self.conf["bucket_name"],
-            prefix=self.conf.get("prefix", "")
-        )
+        self.connector = BlobStorageConnector(bucket_type=self.conf.get("bucket_type", "s3"), bucket_name=self.conf["bucket_name"], prefix=self.conf.get("prefix", ""))
         self.connector.load_credentials(self.conf["credentials"])
-        document_batch_generator = self.connector.load_from_state() if task["reindex"]=="1" or not task["poll_range_start"] \
-            else  self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+        document_batch_generator = (
+            self.connector.load_from_state()
+            if task["reindex"] == "1" or not task["poll_range_start"]
+            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+        )
 
-        begin_info = "totally" if task["reindex"]=="1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
-        logging.info("Connect to {}: {}(prefix/{}) {}".format(self.conf.get("bucket_type", "s3"),
-                                                                  self.conf["bucket_name"],
-                                                                  self.conf.get("prefix", ""),
-                                                                  begin_info
-                                                                  ))
+        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
+        logging.info("Connect to {}: {}(prefix/{}) {}".format(self.conf.get("bucket_type", "s3"), self.conf["bucket_name"], self.conf.get("prefix", ""), begin_info))
         return document_batch_generator
 
 
@@ -131,8 +134,8 @@ class Confluence(SyncBase):
     SOURCE_NAME: str = FileSource.CONFLUENCE
 
     async def _generate(self, task: dict):
-        from common.data_source.interfaces import StaticCredentialsProvider
         from common.data_source.config import DocumentSource
+        from common.data_source.interfaces import StaticCredentialsProvider
 
         self.connector = ConfluenceConnector(
             wiki_base=self.conf["wiki_base"],
@@ -141,11 +144,7 @@ class Confluence(SyncBase):
             # page_id=self.conf.get("page_id", ""),
         )
 
-        credentials_provider = StaticCredentialsProvider(
-            tenant_id=task["tenant_id"],
-            connector_name=DocumentSource.CONFLUENCE,
-            credential_json=self.conf["credentials"]
-        )
+        credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"], connector_name=DocumentSource.CONFLUENCE, credential_json=self.conf["credentials"])
         self.connector.set_credentials_provider(credentials_provider)
 
         # Determine the time range for synchronization based on reindex or poll_range_start
@@ -174,10 +173,13 @@ class Notion(SyncBase):
     async def _generate(self, task: dict):
         self.connector = NotionConnector(root_page_id=self.conf["root_page_id"])
         self.connector.load_credentials(self.conf["credentials"])
-        document_generator = self.connector.load_from_state() if task["reindex"]=="1" or not task["poll_range_start"] \
-            else  self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+        document_generator = (
+            self.connector.load_from_state()
+            if task["reindex"] == "1" or not task["poll_range_start"]
+            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+        )
 
-        begin_info = "totally" if task["reindex"]=="1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
+        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
         logging.info("Connect to Notion: root({}) {}".format(self.conf["root_page_id"], begin_info))
         return document_generator
 
@@ -194,13 +196,16 @@ class Discord(SyncBase):
             server_ids=server_ids.split(",") if server_ids else [],
             channel_names=channel_names.split(",") if channel_names else [],
             start_date=datetime(1970, 1, 1, tzinfo=timezone.utc).strftime("%Y-%m-%d"),
-            batch_size=self.conf.get("batch_size", 1024)
+            batch_size=self.conf.get("batch_size", 1024),
         )
         self.connector.load_credentials(self.conf["credentials"])
-        document_generator = self.connector.load_from_state() if task["reindex"]=="1" or not task["poll_range_start"] \
-            else  self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+        document_generator = (
+            self.connector.load_from_state()
+            if task["reindex"] == "1" or not task["poll_range_start"]
+            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+        )
 
-        begin_info = "totally" if task["reindex"]=="1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
+        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
         logging.info("Connect to Discord: servers({}),  channel({}) {}".format(server_ids, channel_names, begin_info))
         return document_generator
 
@@ -285,7 +290,7 @@ class GoogleDrive(SyncBase):
             admin_email = self.connector.primary_admin_email
         except RuntimeError:
             admin_email = "unknown"
-        logging.info("Connect to Google Drive as %s %s", admin_email, begin_info)
+        logging.info(f"Connect to Google Drive as {admin_email} {begin_info}")
         return document_batches()
 
     def _persist_rotated_credentials(self, connector_id: str, credentials: dict[str, Any]) -> None:
@@ -303,7 +308,93 @@ class Jira(SyncBase):
     SOURCE_NAME: str = FileSource.JIRA
 
     async def _generate(self, task: dict):
-        pass
+        connector_kwargs = {
+            "jira_base_url": self.conf["base_url"],
+            "project_key": self.conf.get("project_key"),
+            "jql_query": self.conf.get("jql_query"),
+            "batch_size": self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            "include_comments": self.conf.get("include_comments", True),
+            "include_attachments": self.conf.get("include_attachments", False),
+            "labels_to_skip": self._normalize_list(self.conf.get("labels_to_skip")),
+            "comment_email_blacklist": self._normalize_list(self.conf.get("comment_email_blacklist")),
+            "scoped_token": self.conf.get("scoped_token", False),
+            "attachment_size_limit": self.conf.get("attachment_size_limit"),
+            "timezone_offset": self.conf.get("timezone_offset"),
+        }
+
+        self.connector = JiraConnector(**connector_kwargs)
+
+        credentials = self.conf.get("credentials")
+        if not credentials:
+            raise ValueError("Jira connector is missing credentials.")
+
+        self.connector.load_credentials(credentials)
+        self.connector.validate_connector_settings()
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = 0.0
+            begin_info = "totally"
+        else:
+            start_time = task["poll_range_start"].timestamp()
+            begin_info = f"from {task['poll_range_start']}"
+
+        end_time = datetime.now(timezone.utc).timestamp()
+
+        raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            pending_docs = []
+            iterations = 0
+            iteration_limit = 100_000
+
+            while checkpoint.has_more:
+                wrapper = CheckpointOutputWrapper()
+                generator = wrapper(
+                    self.connector.load_from_checkpoint(
+                        start_time,
+                        end_time,
+                        checkpoint,
+                    )
+                )
+                for document, failure, next_checkpoint in generator:
+                    if failure is not None:
+                        logging.warning(
+                            f"[Jira] Jira connector failure: {getattr(failure, 'failure_message', failure)}"
+                        )
+                        continue
+                    if document is not None:
+                        pending_docs.append(document)
+                        if len(pending_docs) >= batch_size:
+                            yield pending_docs
+                            pending_docs = []
+                    if next_checkpoint is not None:
+                        checkpoint = next_checkpoint
+
+                iterations += 1
+                if iterations > iteration_limit:
+                    logging.error(f"[Jira] Task {task.get('id')} exceeded iteration limit ({iteration_limit}).")
+                    raise RuntimeError("Too many iterations while loading Jira documents.")
+
+            if pending_docs:
+                yield pending_docs
+
+        logging.info(f"[Jira] Connect to Jira {connector_kwargs['jira_base_url']} {begin_info}")
+        return document_batches()
+
+    @staticmethod
+    def _normalize_list(values: Any) -> list[str] | None:
+        if values is None:
+            return None
+        if isinstance(values, str):
+            values = [item.strip() for item in values.split(",")]
+        return [str(value).strip() for value in values if value is not None and str(value).strip()]
 
 
 class SharePoint(SyncBase):
@@ -337,8 +428,9 @@ func_factory = {
     FileSource.JIRA: Jira,
     FileSource.SHAREPOINT: SharePoint,
     FileSource.SLACK: Slack,
-    FileSource.TEAMS: Teams
+    FileSource.TEAMS: Teams,
 }
+
 
 async def dispatch_tasks():
     async with trio.open_nursery() as nursery:
@@ -385,7 +477,7 @@ async def main():
                                   __/ |
                                  |___/
     """)
-    logging.info(f'RAGFlow version: {get_ragflow_version()}')
+    logging.info(f"RAGFlow version: {get_ragflow_version()}")
     show_configs()
     settings.init_settings()
     if sys.platform != "win32":

@@ -4893,6 +4893,14 @@ wheels = [
 ]
 
 [[package]]
+name = "pypandoc"
+version = "1.16"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/24/77/af1fc54740a0712988f9518e629d38edc7b8ffccd7549203f19c3d8a2db6/pypandoc-1.16-py3-none-any.whl", hash = "sha256:868f390d48388743e7a5885915cbbaa005dea36a825ecdfd571f8c523416c822", size = 19425, upload-time = "2025-11-08T15:44:38.429Z" },
+]
+
+[[package]]
 name = "pyparsing"
 version = "3.2.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -5292,6 +5300,7 @@ dependencies = [
     { name = "pyicu" },
     { name = "pymysql" },
     { name = "pyodbc" },
+    { name = "pypandoc" },
     { name = "pypdf" },
     { name = "pypdf2" },
     { name = "python-calamine" },
@@ -5447,6 +5456,7 @@ requires-dist = [
     { name = "pyicu", specifier = ">=2.15.3,<3.0.0" },
     { name = "pymysql", specifier = ">=1.1.1,<2.0.0" },
     { name = "pyodbc", specifier = ">=5.2.0,<6.0.0" },
+    { name = "pypandoc", specifier = ">=1.16" },
     { name = "pypdf", specifier = "==6.0.0" },
     { name = "pypdf2", specifier = ">=3.0.1,<4.0.0" },
     { name = "python-calamine", specifier = ">=0.4.0" },

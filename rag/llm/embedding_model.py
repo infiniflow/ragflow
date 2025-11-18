@@ -931,3 +931,12 @@ class DeerAPIEmbed(OpenAIEmbed):
         if not base_url:
             base_url = "https://api.deerapi.com/v1"
         super().__init__(key, model_name, base_url)
+
+
+class JiekouAIEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "Jiekou.AI"
+
+    def __init__(self, key, model_name, base_url="https://api.jiekou.ai/openai/v1/embeddings"):
+        if not base_url:
+            base_url = "https://api.jiekou.ai/openai/v1/embeddings"
+        super().__init__(key, model_name, base_url)

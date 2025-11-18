@@ -13,6 +13,7 @@ def get_current_tz_offset() -> int:
     return round(time_diff.total_seconds() / 3600)
 
 
+ONE_MINUTE = 60
 ONE_HOUR = 3600
 ONE_DAY = ONE_HOUR * 24
 
@@ -31,6 +32,7 @@ class BlobType(str, Enum):
     R2 = "r2"
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
     OCI_STORAGE = "oci_storage"
+    S3_COMPATIBLE = "s3_compatible"
 
 
 class DocumentSource(str, Enum):
@@ -42,9 +44,11 @@ class DocumentSource(str, Enum):
     OCI_STORAGE = "oci_storage"
     SLACK = "slack"
     CONFLUENCE = "confluence"
+    JIRA = "jira"
     GOOGLE_DRIVE = "google_drive"
     GMAIL = "gmail"
     DISCORD = "discord"
+    S3_COMPATIBLE = "s3_compatible"
 
 
 class FileOrigin(str, Enum):
@@ -176,6 +180,21 @@ CONFLUENCE_SYNC_TIME_BUFFER_SECONDS = int(
 
 GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD = int(
     os.environ.get("GOOGLE_DRIVE_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
+)
+
+JIRA_CONNECTOR_LABELS_TO_SKIP = [
+    ignored_tag
+    for ignored_tag in os.environ.get("JIRA_CONNECTOR_LABELS_TO_SKIP", "").split(",")
+    if ignored_tag
+]
+JIRA_CONNECTOR_MAX_TICKET_SIZE = int(
+    os.environ.get("JIRA_CONNECTOR_MAX_TICKET_SIZE", 100 * 1024)
+)
+JIRA_SYNC_TIME_BUFFER_SECONDS = int(
+    os.environ.get("JIRA_SYNC_TIME_BUFFER_SECONDS", ONE_MINUTE)
+)
+JIRA_TIMEZONE_OFFSET = float(
+    os.environ.get("JIRA_TIMEZONE_OFFSET", get_current_tz_offset())
 )
 
 OAUTH_SLACK_CLIENT_ID = os.environ.get("OAUTH_SLACK_CLIENT_ID", "")
