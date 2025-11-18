@@ -47,13 +47,13 @@ class TestAuthorization:
         invalid_auth: RAGFlowWebApiAuth | None,
         expected_code: int,
         expected_message: str,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
     ) -> None:
         """Test department creation with invalid or missing authentication."""
         # First create a team to use as tenant_id
         team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
         team_payload: dict[str, str] = {"name": team_name}
-        team_res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         if team_res["code"] != 0:
             pytest.skip("Team creation failed, skipping auth test")
         
@@ -76,13 +76,13 @@ class TestDepartmentCreate:
 
     @pytest.mark.p1
     def test_create_department_with_name_and_tenant_id(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a department with name and tenant_id."""
         # First create a team
         team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
         team_payload: dict[str, str] = {"name": team_name}
-        team_res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert team_res["code"] == 0, team_res
         tenant_id: str = team_res["data"]["id"]
         
@@ -92,7 +92,7 @@ class TestDepartmentCreate:
             "name": dept_name,
             "tenant_id": tenant_id,
         }
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         assert res["code"] == 0, res
         assert "data" in res
         assert res["data"]["name"] == dept_name
@@ -102,13 +102,13 @@ class TestDepartmentCreate:
 
     @pytest.mark.p1
     def test_create_department_with_description(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a department with description."""
         # First create a team
         team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
         team_payload: dict[str, str] = {"name": team_name}
-        team_res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert team_res["code"] == 0, team_res
         tenant_id: str = team_res["data"]["id"]
         
@@ -120,26 +120,26 @@ class TestDepartmentCreate:
             "tenant_id": tenant_id,
             "description": description,
         }
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         assert res["code"] == 0, res
         assert res["data"]["name"] == dept_name
         assert res["data"]["description"] == description
 
     @pytest.mark.p1
     def test_create_department_missing_name(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a department without name."""
         # First create a team
         team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
         team_payload: dict[str, str] = {"name": team_name}
-        team_res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert team_res["code"] == 0, team_res
         tenant_id: str = team_res["data"]["id"]
         
         # Try to create department without name
         dept_payload: dict[str, str] = {"tenant_id": tenant_id}
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         assert res["code"] == 101
         assert "name" in res["message"].lower() or "required" in res[
             "message"
@@ -147,19 +147,19 @@ class TestDepartmentCreate:
 
     @pytest.mark.p1
     def test_create_department_empty_name(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a department with empty name."""
         # First create a team
         team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
         team_payload: dict[str, str] = {"name": team_name}
-        team_res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert team_res["code"] == 0, team_res
         tenant_id: str = team_res["data"]["id"]
         
         # Try to create department with empty name
         dept_payload: dict[str, str] = {"name": "", "tenant_id": tenant_id}
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         assert res["code"] == 101
         assert "name" in res["message"].lower() or "empty" in res[
             "message"
@@ -167,12 +167,12 @@ class TestDepartmentCreate:
 
     @pytest.mark.p1
     def test_create_department_missing_tenant_id(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a department without tenant_id."""
         # Try to create department without tenant_id
         dept_payload: dict[str, str] = {"name": "Test Department"}
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         assert res["code"] == 101
         assert "tenant_id" in res["message"].lower() or "required" in res[
             "message"
@@ -180,14 +180,14 @@ class TestDepartmentCreate:
 
     @pytest.mark.p1
     def test_create_department_invalid_tenant_id(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a department with non-existent tenant_id."""
         dept_payload: dict[str, str] = {
             "name": "Test Department Invalid Tenant",
             "tenant_id": "non_existent_tenant_id_12345",
         }
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         # Permission check happens before tenant existence check,
         # so invalid tenant_id results in permission error (108) not data error (102)
         assert res["code"] == 108
@@ -197,13 +197,13 @@ class TestDepartmentCreate:
 
     @pytest.mark.p1
     def test_create_department_name_too_long(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a department with name exceeding 128 characters."""
         # First create a team
         team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
         team_payload: dict[str, str] = {"name": team_name}
-        team_res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert team_res["code"] == 0, team_res
         tenant_id: str = team_res["data"]["id"]
         
@@ -215,7 +215,7 @@ class TestDepartmentCreate:
             "name": long_name,
             "tenant_id": tenant_id,
         }
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         # API doesn't validate length, so it may succeed or fail at database level
         # If it succeeds, the name might be truncated; if it fails, we get an exception error
         assert res["code"] in (0, 100)  # Success or exception error
@@ -226,7 +226,7 @@ class TestDepartmentCreate:
 
     @pytest.mark.p1
     def test_create_department_not_team_owner_or_admin(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a department when user is not team owner or admin."""
         # This test would require creating a team with a different user
@@ -236,13 +236,13 @@ class TestDepartmentCreate:
 
     @pytest.mark.p1
     def test_create_department_response_structure(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test that department creation returns the expected response structure."""
         # First create a team
         team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
         team_payload: dict[str, str] = {"name": team_name}
-        team_res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert team_res["code"] == 0, team_res
         tenant_id: str = team_res["data"]["id"]
         
@@ -252,7 +252,7 @@ class TestDepartmentCreate:
             "name": dept_name,
             "tenant_id": tenant_id,
         }
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         assert res["code"] == 0
         assert "data" in res
         assert isinstance(res["data"], dict)
@@ -266,13 +266,13 @@ class TestDepartmentCreate:
 
     @pytest.mark.p1
     def test_create_multiple_departments_same_team(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating multiple departments for the same team."""
         # First create a team
         team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
         team_payload: dict[str, str] = {"name": team_name}
-        team_res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert team_res["code"] == 0, team_res
         tenant_id: str = team_res["data"]["id"]
         
@@ -282,7 +282,7 @@ class TestDepartmentCreate:
             "name": dept_name_1,
             "tenant_id": tenant_id,
         }
-        res1: dict[str, Any] = create_department(WebApiAuth, dept_payload_1)
+        res1: dict[str, Any] = create_department(web_api_auth, dept_payload_1)
         assert res1["code"] == 0, res1
         dept_id_1: str = res1["data"]["id"]
 
@@ -292,7 +292,7 @@ class TestDepartmentCreate:
             "name": dept_name_2,
             "tenant_id": tenant_id,
         }
-        res2: dict[str, Any] = create_department(WebApiAuth, dept_payload_2)
+        res2: dict[str, Any] = create_department(web_api_auth, dept_payload_2)
         assert res2["code"] == 0, res2
         dept_id_2: str = res2["data"]["id"]
 
@@ -305,13 +305,13 @@ class TestDepartmentCreate:
 
     @pytest.mark.p2
     def test_create_department_with_whitespace_name(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a department with whitespace-only name."""
         # First create a team
         team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
         team_payload: dict[str, str] = {"name": team_name}
-        team_res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert team_res["code"] == 0, team_res
         tenant_id: str = team_res["data"]["id"]
         
@@ -320,7 +320,7 @@ class TestDepartmentCreate:
             "name": "   ",
             "tenant_id": tenant_id,
         }
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         # Should fail validation
         assert res["code"] == 101
         assert "name" in res["message"].lower() or "empty" in res[
@@ -329,13 +329,13 @@ class TestDepartmentCreate:
 
     @pytest.mark.p2
     def test_create_department_special_characters_in_name(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a department with special characters in name."""
         # First create a team
         team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
         team_payload: dict[str, str] = {"name": team_name}
-        team_res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert team_res["code"] == 0, team_res
         tenant_id: str = team_res["data"]["id"]
         
@@ -345,17 +345,17 @@ class TestDepartmentCreate:
             "name": dept_name,
             "tenant_id": tenant_id,
         }
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         # Should succeed if special chars are allowed
         assert res["code"] in (0, 101)
 
     @pytest.mark.p2
     def test_create_department_empty_payload(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a department with empty payload."""
         dept_payload: dict[str, Any] = {}
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         assert res["code"] == 101
         assert "required" in res["message"].lower() or "name" in res[
             "message"
@@ -363,13 +363,13 @@ class TestDepartmentCreate:
 
     @pytest.mark.p3
     def test_create_department_unicode_name(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a department with unicode characters in name."""
         # First create a team
         team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
         team_payload: dict[str, str] = {"name": team_name}
-        team_res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert team_res["code"] == 0, team_res
         tenant_id: str = team_res["data"]["id"]
         
@@ -379,7 +379,7 @@ class TestDepartmentCreate:
             "name": dept_name,
             "tenant_id": tenant_id,
         }
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         # Should succeed if unicode is supported
         assert res["code"] in (0, 101)
 

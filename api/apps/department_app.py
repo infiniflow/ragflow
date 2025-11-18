@@ -22,7 +22,7 @@ from flask import Blueprint, Response, request
 from flask_login import current_user, login_required
 
 from api.db import UserTenantRole
-from api.db.db_models import Department, Tenant, User, UserDepartment, UserTenant
+from api.db.db_models import DB, Department, Tenant, User, UserDepartment, UserTenant
 from api.db.services.user_service import (
     DepartmentService,
     TenantService,
@@ -324,8 +324,6 @@ def update_department(department_id: str) -> Response:
         )
     
     try:
-        from api.db.db_models import DB
-        
         # Update the department
         with DB.connection_context():
             Department.update(update_data).where(
@@ -420,8 +418,6 @@ def delete_department(department_id: str) -> Response:
         )
     
     try:
-        from api.db.db_models import DB
-        
         # Soft delete the department and all related user_department records
         with DB.connection_context():
             # Soft delete all user-department relationships for this department
@@ -672,8 +668,6 @@ def remove_member(department_id: str, user_id: str) -> Response:
         )
     
     try:
-        from api.db.db_models import DB
-        
         # Check if user is in the department
         user_department: Optional[UserDepartment] = UserDepartmentService.filter_by_department_and_user_id(
             department_id, user_id

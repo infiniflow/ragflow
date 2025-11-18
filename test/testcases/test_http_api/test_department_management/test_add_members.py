@@ -26,6 +26,7 @@ from common import (
     create_department,
     create_team,
     create_user,
+    login_as_user,
 )
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
@@ -52,13 +53,13 @@ class TestAuthorization:
         invalid_auth: RAGFlowWebApiAuth | None,
         expected_code: int,
         expected_message: str,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
     ) -> None:
         """Test adding members with invalid or missing authentication."""
         # Create a team and department first
         team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
         team_payload: dict[str, str] = {"name": team_name}
-        team_res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         if team_res["code"] != 0:
             pytest.skip("Team creation failed, skipping auth test")
         
@@ -69,7 +70,7 @@ class TestAuthorization:
             "name": dept_name,
             "tenant_id": tenant_id,
         }
-        dept_res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        dept_res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         if dept_res["code"] != 0:
             pytest.skip("Department creation failed, skipping auth test")
         
@@ -88,28 +89,28 @@ class TestAddMembers:
     """Comprehensive tests for adding members to a department."""
 
     @pytest.fixture
-    def test_team(self, WebApiAuth: RAGFlowWebApiAuth) -> dict[str, Any]:
+    def test_team(self, web_api_auth: RAGFlowWebApiAuth) -> dict[str, Any]:
         """Create a test team for use in tests."""
         team_payload: dict[str, str] = {"name": f"Test Team {uuid.uuid4().hex[:8]}"}
-        res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert res["code"] == 0
         return res["data"]
 
     @pytest.fixture
     def test_department(
-        self, WebApiAuth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
     ) -> dict[str, Any]:
         """Create a test department for use in tests."""
         dept_payload: dict[str, str] = {
             "name": f"Test Department {uuid.uuid4().hex[:8]}",
             "tenant_id": test_team["id"],
         }
-        res: dict[str, Any] = create_department(WebApiAuth, dept_payload)
+        res: dict[str, Any] = create_department(web_api_auth, dept_payload)
         assert res["code"] == 0
         return res["data"]
 
     @pytest.fixture
-    def test_users(self, WebApiAuth: RAGFlowWebApiAuth) -> list[dict[str, Any]]:
+    def test_users(self, web_api_auth: RAGFlowWebApiAuth) -> list[dict[str, Any]]:
         """Create test users for use in tests."""
         users = []
         for i in range(3):
@@ -119,7 +120,7 @@ class TestAddMembers:
                 "password": "TestPassword123!",
                 "nickname": f"Test User {i}",
             }
-            user_res: dict[str, Any] = create_user(WebApiAuth, user_payload)
+            user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
             if user_res["code"] == 0:
                 users.append({"email": email, "id": user_res["data"]["id"]})
         return users
@@ -127,20 +128,20 @@ class TestAddMembers:
     @pytest.fixture
     def team_with_users(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         test_team: dict[str, Any],
         test_users: list[dict[str, Any]],
     ) -> dict[str, Any]:
         """Add test users to the team."""
         for user in test_users:
             add_payload: dict[str, list[str]] = {"users": [user["email"]]}
-            add_users_to_team(WebApiAuth, test_team["id"], add_payload)
+            add_users_to_team(web_api_auth, test_team["id"], add_payload)
         return test_team
 
     @pytest.mark.p1
     def test_add_single_member(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         test_department: dict[str, Any],
         team_with_users: dict[str, Any],
         test_users: list[dict[str, Any]],
@@ -152,7 +153,7 @@ class TestAddMembers:
         user_id: str = test_users[0]["id"]
         add_payload: dict[str, list[str]] = {"user_ids": [user_id]}
         res: dict[str, Any] = add_department_members(
-            WebApiAuth, test_department["id"], add_payload
+            web_api_auth, test_department["id"], add_payload
         )
         
         assert res["code"] == 0, res
@@ -166,7 +167,7 @@ class TestAddMembers:
     @pytest.mark.p1
     def test_add_multiple_members(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         test_department: dict[str, Any],
         team_with_users: dict[str, Any],
         test_users: list[dict[str, Any]],
@@ -178,7 +179,7 @@ class TestAddMembers:
         user_ids: list[str] = [user["id"] for user in test_users[:2]]
         add_payload: dict[str, list[str]] = {"user_ids": user_ids}
         res: dict[str, Any] = add_department_members(
-            WebApiAuth, test_department["id"], add_payload
+            web_api_auth, test_department["id"], add_payload
         )
         
         assert res["code"] == 0, res
@@ -189,13 +190,13 @@ class TestAddMembers:
     @pytest.mark.p1
     def test_add_member_missing_user_ids(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         test_department: dict[str, Any],
     ) -> None:
         """Test adding members without user_ids."""
         add_payload: dict[str, Any] = {}
         res: dict[str, Any] = add_department_members(
-            WebApiAuth, test_department["id"], add_payload
+            web_api_auth, test_department["id"], add_payload
         )
         
         assert res["code"] == 101
@@ -206,13 +207,13 @@ class TestAddMembers:
     @pytest.mark.p1
     def test_add_member_empty_user_ids(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         test_department: dict[str, Any],
     ) -> None:
         """Test adding members with empty user_ids array."""
         add_payload: dict[str, list[str]] = {"user_ids": []}
         res: dict[str, Any] = add_department_members(
-            WebApiAuth, test_department["id"], add_payload
+            web_api_auth, test_department["id"], add_payload
         )
         
         assert res["code"] == 101
@@ -223,7 +224,7 @@ class TestAddMembers:
     @pytest.mark.p1
     def test_add_member_invalid_user_id(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         test_department: dict[str, Any],
     ) -> None:
         """Test adding a non-existent user."""
@@ -231,7 +232,7 @@ class TestAddMembers:
             "user_ids": ["non_existent_user_id_12345"]
         }
         res: dict[str, Any] = add_department_members(
-            WebApiAuth, test_department["id"], add_payload
+            web_api_auth, test_department["id"], add_payload
         )
         
         assert res["code"] == 0  # API returns success with failed list
@@ -243,7 +244,7 @@ class TestAddMembers:
     @pytest.mark.p1
     def test_add_member_user_not_in_team(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         test_department: dict[str, Any],
         test_users: list[dict[str, Any]],
     ) -> None:
@@ -258,14 +259,14 @@ class TestAddMembers:
             "password": "TestPassword123!",
             "nickname": "Not In Team User",
         }
-        user_res: dict[str, Any] = create_user(WebApiAuth, user_payload)
+        user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
         if user_res["code"] != 0:
             pytest.skip("User creation failed")
         
         user_id: str = user_res["data"]["id"]
         add_payload: dict[str, list[str]] = {"user_ids": [user_id]}
         res: dict[str, Any] = add_department_members(
-            WebApiAuth, test_department["id"], add_payload
+            web_api_auth, test_department["id"], add_payload
         )
         
         assert res["code"] == 0  # API returns success with failed list
@@ -276,7 +277,7 @@ class TestAddMembers:
     @pytest.mark.p1
     def test_add_duplicate_member(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         test_department: dict[str, Any],
         team_with_users: dict[str, Any],
         test_users: list[dict[str, Any]],
@@ -290,14 +291,14 @@ class TestAddMembers:
         # Add user first time
         add_payload: dict[str, list[str]] = {"user_ids": [user_id]}
         res1: dict[str, Any] = add_department_members(
-            WebApiAuth, test_department["id"], add_payload
+            web_api_auth, test_department["id"], add_payload
         )
         assert res1["code"] == 0
         assert len(res1["data"]["added"]) == 1
         
         # Try to add same user again
         res2: dict[str, Any] = add_department_members(
-            WebApiAuth, test_department["id"], add_payload
+            web_api_auth, test_department["id"], add_payload
         )
         assert res2["code"] == 0  # API returns success with failed list
         assert len(res2["data"]["added"]) == 0
@@ -307,7 +308,7 @@ class TestAddMembers:
     @pytest.mark.p1
     def test_add_member_invalid_department_id(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         team_with_users: dict[str, Any],
         test_users: list[dict[str, Any]],
     ) -> None:
@@ -318,7 +319,7 @@ class TestAddMembers:
         user_id: str = test_users[0]["id"]
         add_payload: dict[str, list[str]] = {"user_ids": [user_id]}
         res: dict[str, Any] = add_department_members(
-            WebApiAuth, "non_existent_department_id_12345", add_payload
+            web_api_auth, "non_existent_department_id_12345", add_payload
         )
         
         assert res["code"] == 102
@@ -329,13 +330,13 @@ class TestAddMembers:
     @pytest.mark.p1
     def test_add_member_invalid_user_id_format(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         test_department: dict[str, Any],
     ) -> None:
         """Test adding members with invalid user ID formats."""
         add_payload: dict[str, list[Any]] = {"user_ids": ["", "   ", 123, None]}
         res: dict[str, Any] = add_department_members(
-            WebApiAuth, test_department["id"], add_payload
+            web_api_auth, test_department["id"], add_payload
         )
         
         assert res["code"] == 0  # API returns success with failed list
@@ -350,7 +351,7 @@ class TestAddMembers:
     @pytest.mark.p1
     def test_add_member_mixed_valid_invalid(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         test_department: dict[str, Any],
         team_with_users: dict[str, Any],
         test_users: list[dict[str, Any]],
@@ -365,7 +366,7 @@ class TestAddMembers:
             "user_ids": [valid_user_id, invalid_user_id]
         }
         res: dict[str, Any] = add_department_members(
-            WebApiAuth, test_department["id"], add_payload
+            web_api_auth, test_department["id"], add_payload
         )
         
         assert res["code"] == 0
@@ -376,18 +377,75 @@ class TestAddMembers:
 
     @pytest.mark.p2
     def test_add_member_not_team_owner_or_admin(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test adding members when user is not team owner or admin."""
-        # This test would require creating a team with a different user
-        # and then trying to add members as a non-admin user
-        # For now, we'll skip this as it requires multi-user setup
-        pytest.skip("Requires multi-user setup to test permission restrictions")
+        # Create a team (current user is owner)
+        team_name: str = f"Test Team {uuid.uuid4().hex[:8]}"
+        team_payload: dict[str, str] = {"name": team_name}
+        team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
+        assert team_res["code"] == 0, "Failed to create team"
+        tenant_id: str = team_res["data"]["id"]
+        
+        # Create a department
+        dept_payload: dict[str, str] = {
+            "name": f"Test Department {uuid.uuid4().hex[:8]}",
+            "tenant_id": tenant_id,
+        }
+        dept_res: dict[str, Any] = create_department(web_api_auth, dept_payload)
+        assert dept_res["code"] == 0, "Failed to create department"
+        department_id: str = dept_res["data"]["id"]
+        
+        # Create a normal user (not admin/owner)
+        normal_user_email: str = f"normaluser_{uuid.uuid4().hex[:8]}@example.com"
+        normal_user_password: str = "TestPassword123!"
+        normal_user_payload: dict[str, str] = {
+            "email": normal_user_email,
+            "password": normal_user_password,
+            "nickname": "Normal User",
+        }
+        normal_user_res: dict[str, Any] = create_user(web_api_auth, normal_user_payload)
+        assert normal_user_res["code"] == 0, "Failed to create normal user"
+        
+        # Add the normal user to the team as a normal member (not admin)
+        add_team_payload: dict[str, list[str]] = {"users": [normal_user_email]}
+        add_team_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_team_payload)
+        assert add_team_res["code"] == 0, "Failed to add user to team"
+        
+        # Create another user to add to the department
+        another_user_email: str = f"anotheruser_{uuid.uuid4().hex[:8]}@example.com"
+        another_user_password: str = "TestPassword123!"
+        another_user_payload: dict[str, str] = {
+            "email": another_user_email,
+            "password": another_user_password,
+            "nickname": "Another User",
+        }
+        another_user_res: dict[str, Any] = create_user(web_api_auth, another_user_payload)
+        assert another_user_res["code"] == 0, "Failed to create another user"
+        another_user_id: str = another_user_res["data"]["id"]
+        
+        # Add another user to the team
+        add_another_team_payload: dict[str, list[str]] = {"users": [another_user_email]}
+        add_another_team_res: dict[str, Any] = add_users_to_team(
+            web_api_auth, tenant_id, add_another_team_payload
+        )
+        assert add_another_team_res["code"] == 0, "Failed to add another user to team"
+        
+        # Login as the normal user (not admin/owner)
+        normal_user_auth: RAGFlowWebApiAuth = login_as_user(normal_user_email, normal_user_password)
+        
+        # Try to add a member as the normal user (should fail)
+        add_payload: dict[str, list[str]] = {"user_ids": [another_user_id]}
+        add_res: dict[str, Any] = add_department_members(
+            normal_user_auth, department_id, add_payload
+        )
+        assert add_res["code"] == 108, f"Expected permission error (108), got {add_res}"
+        assert "only team owners or admins" in add_res["message"].lower()
 
     @pytest.mark.p2
     def test_add_member_response_structure(
         self,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
         test_department: dict[str, Any],
         team_with_users: dict[str, Any],
         test_users: list[dict[str, Any]],
@@ -399,7 +457,7 @@ class TestAddMembers:
         user_id: str = test_users[0]["id"]
         add_payload: dict[str, list[str]] = {"user_ids": [user_id]}
         res: dict[str, Any] = add_department_members(
-            WebApiAuth, test_department["id"], add_payload
+            web_api_auth, test_department["id"], add_payload
         )
         
         assert res["code"] == 0
