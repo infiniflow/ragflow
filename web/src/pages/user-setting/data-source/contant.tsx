@@ -105,8 +105,20 @@ export const DataSourceFormFields = {
         { label: 'R2', value: 'r2' },
         { label: 'Google Cloud Storage', value: 'google_cloud_storage' },
         { label: 'OCI Storage', value: 'oci_storage' },
+        { label: 'S3 Compatible', value: 's3_compatible' },
       ],
       required: true,
+    },
+    {
+      label: 'Endpoint URL',
+      name: 'config.credentials.endpoint_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'https://fsn1.your-objectstorage.com',
+      tooltip: t('setting.S3CompatibleEndpointUrlTip'),
+      shouldRender: (formValues) => {
+        return formValues?.config?.bucket_type === 's3_compatible';
+      },
     },
     {
       label: 'Prefix',
@@ -483,6 +495,7 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         aws_access_key_id: '',
         aws_secret_access_key: '',
+        endpoint_url: '',
       },
     },
   },
