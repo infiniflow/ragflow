@@ -52,7 +52,7 @@ def chunks_format(reference):
             "similarity": chunk.get("similarity"),
             "vector_similarity": chunk.get("vector_similarity"),
             "term_similarity": chunk.get("term_similarity"),
-            "doc_type": chunk.get("doc_type_kwd"),
+            "doc_type": get_value(chunk, "doc_type_kwd", "doc_type"),
         }
         for chunk in reference.get("chunks", [])
     ]
