@@ -496,7 +496,7 @@ const DynamicForm = {
                     <Textarea
                       {...finalFieldProps}
                       placeholder={field.placeholder}
-                      className="resize-none"
+                      // className="resize-none"
                     />
                   );
                 }}
@@ -544,7 +544,7 @@ const DynamicForm = {
                 render={({ field: formField }) => (
                   <FormItem
                     className={cn('flex items-center w-full', {
-                      'flex-row items-start space-x-3 space-y-0':
+                      'flex-row items-center space-x-3 space-y-0':
                         !field.horizontal,
                     })}
                   >

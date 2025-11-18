@@ -61,9 +61,10 @@ function buildLlmOptionsWithIcon(x: IThirdOAIModel) {
       <div className="flex items-center justify-center gap-6">
         <LlmIcon
           name={getLLMIconName(x.fid, x.llm_name)}
-          width={26}
-          height={26}
+          width={24}
+          height={24}
           size={'small'}
+          imgClass="size-6"
         />
         <span>{getRealModelName(x.llm_name)}</span>
       </div>

@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { Settings, Trash2 } from 'lucide-react';
@@ -32,17 +33,19 @@ export const AddedSourceCard = (props: IAddedSourceCardProps) => {
           >
             <div className="text-sm text-text-secondary ">{item.name}</div>
             <div className="text-sm text-text-secondary  flex gap-2">
-              <Settings
-                className="cursor-pointer"
-                size={14}
+              <Button
+                variant={'ghost'}
+                className="rounded-lg px-2 py-1 bg-transparent hover:bg-bg-card"
                 onClick={() => {
                   toDetail(item.id);
                 }}
-              />
+              >
+                <Settings size={14} />
+              </Button>
               {/* <ConfirmDeleteDialog onOk={() => handleDelete(item)}> */}
-              <Trash2
-                className="cursor-pointer"
-                size={14}
+              <Button
+                variant={'ghost'}
+                className="rounded-lg px-2 py-1 bg-transparent hover:bg-state-error-5 hover:text-state-error"
                 onClick={() =>
                   delSourceModal({
                     data: item,
@@ -51,7 +54,9 @@ export const AddedSourceCard = (props: IAddedSourceCardProps) => {
                     },
                   })
                 }
-              />
+              >
+                <Trash2 className="cursor-pointer" size={14} />
+              </Button>
               {/* </ConfirmDeleteDialog> */}
             </div>
           </div>

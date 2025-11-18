@@ -78,7 +78,7 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
     <div className="rounded-lg bg-bg-input scrollbar-auto overflow-hidden border border-border-default">
       <Table rootClassName="rounded-lg">
         <TableHeader className="bg-bg-title">
-          <TableRow>
+          <TableRow className="hover:bg-bg-title">
             <TableHead className="h-12 px-4">{t('common.name')}</TableHead>
             <TableHead
               className="h-12 px-4 cursor-pointer"

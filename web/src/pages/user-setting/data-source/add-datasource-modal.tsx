@@ -40,17 +40,17 @@ const AddDataSourceModal = ({
   return (
     <Modal
       title={
-        <div className="flex flex-col">
-          {sourceData?.icon}
+        <div className="flex flex-col gap-4">
+          <div className="size-6">{sourceData?.icon}</div>
           {t('setting.addDataSourceModalTital', { name: sourceData?.name })}
         </div>
       }
       open={visible || false}
       onOpenChange={(open) => !open && hideModal?.()}
       // onOk={() => handleOk()}
-      okText={t('common.ok')}
+      okText={t('common.confirm')}
       cancelText={t('common.cancel')}
-      showfooter={false}
+      footer={<div className="p-4"></div>}
     >
       <DynamicForm.Root
         fields={fields}
@@ -63,7 +63,7 @@ const AddDataSourceModal = ({
           ] as FieldValues
         }
       >
-        <div className="flex items-center justify-end w-full gap-2 py-4">
+        <div className=" absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">
           <DynamicForm.CancelButton
             handleCancel={() => {
               hideModal?.();
@@ -71,7 +71,7 @@ const AddDataSourceModal = ({
           />
           <DynamicForm.SavingButton
             submitLoading={loading || false}
-            buttonText={t('common.ok')}
+            buttonText={t('common.confirm')}
             submitFunc={(values: FieldValues) => {
               handleOk(values);
             }}

@@ -143,12 +143,12 @@ const ProfilePage: FC = () => {
               {profile.userName}
             </div>
             <Button
-              variant={'secondary'}
+              variant={'ghost'}
               type="button"
               onClick={() => handleEditClick(EditType.editName)}
-              className="text-sm text-text-secondary flex gap-1 px-1"
+              className="text-sm text-text-secondary flex gap-1 px-1 border border-border-button"
             >
-              <PenLine size={12} /> Edit
+              <PenLine size={12} /> {t('edit')}
             </Button>
           </div>
         </div>
@@ -175,12 +175,12 @@ const ProfilePage: FC = () => {
               {profile.timeZone}
             </div>
             <Button
-              variant={'secondary'}
+              variant={'ghost'}
               type="button"
               onClick={() => handleEditClick(EditType.editTimeZone)}
-              className="text-sm text-text-secondary flex gap-1 px-1"
+              className="text-sm text-text-secondary flex gap-1 px-1 border border-border-button"
             >
-              <PenLine size={12} /> Edit
+              <PenLine size={12} /> {t('edit')}
             </Button>
           </div>
         </div>
@@ -208,12 +208,12 @@ const ProfilePage: FC = () => {
               {profile.currPasswd ? '********' : ''}
             </div>
             <Button
-              variant={'secondary'}
+              variant={'ghost'}
               type="button"
               onClick={() => handleEditClick(EditType.editPassword)}
-              className="text-sm text-text-secondary flex gap-1 px-1"
+              className="text-sm text-text-secondary flex gap-1 px-1 border border-border-button"
             >
-              <PenLine size={12} /> Edit
+              <PenLine size={12} /> {t('edit')}
             </Button>
           </div>
         </div>
@@ -304,7 +304,7 @@ const ProfilePage: FC = () => {
                         <div className="flex flex-col w-full gap-2">
                           <FormLabel
                             required
-                            className="text-sm flex justify-between text-text-secondary whitespace-nowrap"
+                            className="text-sm flex text-text-secondary whitespace-nowrap"
                           >
                             {t('currentPassword')}
                           </FormLabel>

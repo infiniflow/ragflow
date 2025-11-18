@@ -71,6 +71,7 @@ export default function McpServer() {
                 className="w-40"
                 value={searchString}
                 onChange={handleInputChange}
+                placeholder={t('common.search')}
               ></SearchInput>
               <Button variant={'secondary'} onClick={switchSelectionMode}>
                 {isSelectionMode ? (

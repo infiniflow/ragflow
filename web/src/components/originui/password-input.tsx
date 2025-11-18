@@ -2,7 +2,6 @@
 
 'use client';
 
-import { EyeIcon, EyeOffIcon } from 'lucide-react';
 import React, { useId, useState } from 'react';
 import { Input, InputProps } from '../ui/input';
 
@@ -33,11 +32,11 @@ export default React.forwardRef<HTMLInputElement, InputProps>(
             aria-pressed={isVisible}
             aria-controls="password"
           >
-            {isVisible ? (
+            {/* {isVisible ? (
               <EyeOffIcon size={16} aria-hidden="true" />
             ) : (
               <EyeIcon size={16} aria-hidden="true" />
-            )}
+            )} */}
           </button>
         </div>
       </div>
