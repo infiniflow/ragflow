@@ -48,7 +48,7 @@ requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSON
 async def request_json():
     try:
         return await request.json
-    except:
+    except Exception:
         return {}
 
 def serialize_for_json(obj):
