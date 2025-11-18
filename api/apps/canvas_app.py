@@ -159,10 +159,10 @@ async def run():
     except Exception as e:
         return server_error_response(e)
 
-    def sse():
+    async def sse():
         nonlocal canvas, user_id
         try:
-            for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+            async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
                 yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
             cvs.dsl = json.loads(str(canvas))

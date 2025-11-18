@@ -283,7 +283,7 @@ class Canvas(Graph):
                 else:
                     self.globals[k] = None
 
-    def run(self, **kwargs):
+    async def run(self, **kwargs):
         st = time.perf_counter()
         self.message_id = get_uuid()
         created_at = int(time.time())
