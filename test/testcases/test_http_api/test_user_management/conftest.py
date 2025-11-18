@@ -81,7 +81,7 @@ def generate_unique_email(prefix: str = "test") -> str:
 
 
 @pytest.fixture(scope="function")
-def clear_users(request, HttpApiAuth):
+def clear_users(request, http_api_auth):
     """Fixture to clean up users created during tests."""
     created_user_ids: list[str] = []
 
@@ -95,19 +95,19 @@ def clear_users(request, HttpApiAuth):
 
 
 @pytest.fixture(name="test_user")
-def fixture_test_user(WebApiAuth: RAGFlowWebApiAuth) -> dict[str, Any]:
+def fixture_test_user(web_api_auth: RAGFlowWebApiAuth) -> dict[str, Any]:
     """Get the current authenticated user's information for update tests.
 
     Since users can only update their own account, we use the authenticated
     user's information instead of creating a new user.
 
     Args:
-        WebApiAuth: Authenticated user's auth object.
+        web_api_auth: Authenticated user's auth object.
 
     Returns:
         Dictionary containing user_id, email, and original_nickname.
     """
-    res: dict[str, Any] = get_user_info(WebApiAuth)
+    res: dict[str, Any] = get_user_info(web_api_auth)
     assert res["code"] == 0, f"Failed to get user info: {res}"
 
     user_data: dict[str, Any] = res["data"]
