@@ -19,7 +19,8 @@ import logging
 import uuid
 from functools import wraps
 from datetime import datetime
-from flask import request, jsonify
+
+from flask import jsonify, request
 from flask_login import current_user, login_user
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 

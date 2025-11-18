@@ -18,11 +18,8 @@ import os.path
 import pathlib
 import re
 from pathlib import Path
-
-import flask
-from flask import request
-from flask_login import current_user, login_required
-
+from quart import request, make_response
+from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, FileType
@@ -39,7 +36,7 @@ from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
     server_error_response,
-    validate_request,
+    validate_request, request_json,
 )
 from api.utils.file_utils import filename_type, thumbnail
 from common.file_utils import get_project_base_directory
@@ -53,14 +50,16 @@ from common import settings
 @manager.route("/upload", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id")
-def upload():
-    kb_id = request.form.get("kb_id")
+async def upload():
+    form = await request.form
+    kb_id = form.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    if "file" not in request.files:
+    files = await request.files
+    if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
-    file_objs = request.files.getlist("file")
+    file_objs = files.getlist("file")
     for file_obj in file_objs:
         if file_obj.filename == "":
             return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
@@ -87,12 +86,13 @@ def upload():
 @manager.route("/web_crawl", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id", "name", "url")
-def web_crawl():
-    kb_id = request.form.get("kb_id")
+async def web_crawl():
+    form = await request.form
+    kb_id = form.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    name = request.form.get("name")
-    url = request.form.get("url")
+    name = form.get("name")
+    url = form.get("url")
     if not is_valid_url(url):
         return get_json_result(data=False, message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
     e, kb = KnowledgebaseService.get_by_id(kb_id)
@@ -152,8 +152,8 @@ def web_crawl():
 @manager.route("/create", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name", "kb_id")
-def create():
-    req = request.json
+async def create():
+    req = await request_json()
     kb_id = req["kb_id"]
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -208,7 +208,7 @@ def create():
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required
-def list_docs():
+async def list_docs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -230,7 +230,7 @@ def list_docs():
     create_time_from = int(request.args.get("create_time_from", 0))
     create_time_to = int(request.args.get("create_time_to", 0))
 
-    req = request.get_json()
+    req = await request.get_json()
 
     run_status = req.get("run_status", [])
     if run_status:
@@ -270,8 +270,8 @@ def list_docs():
 
 @manager.route("/filter", methods=["POST"])  # noqa: F821
 @login_required
-def get_filter():
-    req = request.get_json()
+async def get_filter():
+    req = await request.get_json()
 
     kb_id = req.get("kb_id")
     if not kb_id:
@@ -308,8 +308,8 @@ def get_filter():
 
 @manager.route("/infos", methods=["POST"])  # noqa: F821
 @login_required
-def doc_infos():
-    req = request.json
+async def doc_infos():
+    req = await request_json()
     doc_ids = req["doc_ids"]
     for doc_id in doc_ids:
         if not DocumentService.accessible(doc_id, current_user.id):
@@ -340,8 +340,8 @@ def thumbnails():
 @manager.route("/change_status", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids", "status")
-def change_status():
-    req = request.get_json()
+async def change_status():
+    req = await request.get_json()
     doc_ids = req.get("doc_ids", [])
     status = str(req.get("status", ""))
 
@@ -380,8 +380,8 @@ def change_status():
 @manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id")
-def rm():
-    req = request.json
+async def rm():
+    req = await request_json()
     doc_ids = req["doc_id"]
     if isinstance(doc_ids, str):
         doc_ids = [doc_ids]
@@ -401,8 +401,8 @@ def rm():
 @manager.route("/run", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids", "run")
-def run():
-    req = request.json
+async def run():
+    req = await request_json()
     for doc_id in req["doc_ids"]:
         if not DocumentService.accessible(doc_id, current_user.id):
             return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
@@ -448,8 +448,8 @@ def run():
 @manager.route("/rename", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id", "name")
-def rename():
-    req = request.json
+async def rename():
+    req = await request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
@@ -495,14 +495,14 @@ def rename():
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
 # @login_required
-def get(doc_id):
+async def get(doc_id):
     try:
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
             return get_data_error_result(message="Document not found!")
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
-        response = flask.make_response(settings.STORAGE_IMPL.get(b, n))
+        response = await make_response(settings.STORAGE_IMPL.get(b, n))
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())
         ext = ext.group(1) if ext else None
@@ -520,12 +520,12 @@ def get(doc_id):
 
 @manager.route("/download/<attachment_id>", methods=["GET"])  # noqa: F821
 @login_required
-def download_attachment(attachment_id):
+async def download_attachment(attachment_id):
     try:
         ext = request.args.get("ext", "markdown")
         data = settings.STORAGE_IMPL.get(current_user.id, attachment_id)
         # data = settings.STORAGE_IMPL.get("eb500d50bb0411f0907561d2782adda5", attachment_id)
-        response = flask.make_response(data)
+        response = await make_response(data)
         response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
 
         return response
@@ -537,9 +537,9 @@ def download_attachment(attachment_id):
 @manager.route("/change_parser", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id")
-def change_parser():
+async def change_parser():
 
-    req = request.json
+    req = await request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
@@ -590,13 +590,13 @@ def change_parser():
 
 @manager.route("/image/<image_id>", methods=["GET"])  # noqa: F821
 # @login_required
-def get_image(image_id):
+async def get_image(image_id):
     try:
         arr = image_id.split("-")
         if len(arr) != 2:
             return get_data_error_result(message="Image not found.")
         bkt, nm = image_id.split("-")
-        response = flask.make_response(settings.STORAGE_IMPL.get(bkt, nm))
+        response = await make_response(settings.STORAGE_IMPL.get(bkt, nm))
         response.headers.set("Content-Type", "image/JPEG")
         return response
     except Exception as e:
@@ -606,24 +606,25 @@ def get_image(image_id):
 @manager.route("/upload_and_parse", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id")
-def upload_and_parse():
-    if "file" not in request.files:
+async def upload_and_parse():
+    files = await request.file
+    if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
-    file_objs = request.files.getlist("file")
+    file_objs = files.getlist("file")
     for file_obj in file_objs:
         if file_obj.filename == "":
             return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
 
-    doc_ids = doc_upload_and_parse(request.form.get("conversation_id"), file_objs, current_user.id)
-
+    form = await request.form
+    doc_ids = doc_upload_and_parse(form.get("conversation_id"), file_objs, current_user.id)
     return get_json_result(data=doc_ids)
 
 
 @manager.route("/parse", methods=["POST"])  # noqa: F821
 @login_required
-def parse():
-    url = request.json.get("url") if request.json else ""
+async def parse():
+    url = await request.json.get("url") if await request.json else ""
     if url:
         if not is_valid_url(url):
             return get_json_result(data=False, message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
@@ -664,10 +665,11 @@ def parse():
         txt = FileService.parse_docs([f], current_user.id)
         return get_json_result(data=txt)
 
-    if "file" not in request.files:
+    files = await request.files
+    if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
-    file_objs = request.files.getlist("file")
+    file_objs = files.getlist("file")
     txt = FileService.parse_docs(file_objs, current_user.id)
 
     return get_json_result(data=txt)
@@ -676,8 +678,8 @@ def parse():
 @manager.route("/set_meta", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id", "meta")
-def set_meta():
-    req = request.json
+async def set_meta():
+    req = await request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:

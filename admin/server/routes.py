@@ -17,7 +17,7 @@
 import secrets
 
 from flask import Blueprint, request
-from flask_login import current_user, logout_user, login_required
+from flask_login import current_user, login_required, logout_user
 
 from auth import login_verify, login_admin, check_admin_auth
 from responses import success_response, error_response
@@ -30,12 +30,12 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
 
 
 @admin_bp.route('/login', methods=['POST'])
-def login():
-    if not request.json:
+async def login():
+    if not await request.json:
         return error_response('Authorize admin failed.' ,400)
     try:
-        email = request.json.get("email", "")
-        password = request.json.get("password", "")
+        email = await request.json.get("email", "")
+        password = await request.json.get("password", "")
         return login_admin(email, password)
     except Exception as e:
         return error_response(str(e), 500)
@@ -76,9 +76,9 @@ def list_users():
 @admin_bp.route('/users', methods=['POST'])
 @login_required
 @check_admin_auth
-def create_user():
+async def create_user():
     try:
-        data = request.get_json()
+        data = await request.get_json()
         if not data or 'username' not in data or 'password' not in data:
             return error_response("Username and password are required", 400)
 
@@ -120,9 +120,9 @@ def delete_user(username):
 @admin_bp.route('/users/<username>/password', methods=['PUT'])
 @login_required
 @check_admin_auth
-def change_password(username):
+async def change_password(username):
     try:
-        data = request.get_json()
+        data = await request.get_json()
         if not data or 'new_password' not in data:
             return error_response("New password is required", 400)
 
@@ -139,9 +139,9 @@ def change_password(username):
 @admin_bp.route('/users/<username>/activate', methods=['PUT'])
 @login_required
 @check_admin_auth
-def alter_user_activate_status(username):
+async def alter_user_activate_status(username):
     try:
-        data = request.get_json()
+        data = await request.get_json()
         if not data or 'activate_status' not in data:
             return error_response("Activation status is required", 400)
         activate_status = data['activate_status']
@@ -253,9 +253,9 @@ def restart_service(service_id):
 @admin_bp.route('/roles', methods=['POST'])
 @login_required
 @check_admin_auth
-def create_role():
+async def create_role():
     try:
-        data = request.get_json()
+        data = await request.get_json()
         if not data or 'role_name' not in data:
             return error_response("Role name is required", 400)
         role_name: str = data['role_name']
@@ -269,9 +269,9 @@ def create_role():
 @admin_bp.route('/roles/<role_name>', methods=['PUT'])
 @login_required
 @check_admin_auth
-def update_role(role_name: str):
+async def update_role(role_name: str):
     try:
-        data = request.get_json()
+        data = await request.get_json()
         if not data or 'description' not in data:
             return error_response("Role description is required", 400)
         description: str = data['description']
@@ -317,9 +317,9 @@ def get_role_permission(role_name: str):
 @admin_bp.route('/roles/<role_name>/permission', methods=['POST'])
 @login_required
 @check_admin_auth
-def grant_role_permission(role_name: str):
+async def grant_role_permission(role_name: str):
     try:
-        data = request.get_json()
+        data = await request.get_json()
         if not data or 'actions' not in data or 'resource' not in data:
             return error_response("Permission is required", 400)
         actions: list = data['actions']
@@ -333,9 +333,9 @@ def grant_role_permission(role_name: str):
 @admin_bp.route('/roles/<role_name>/permission', methods=['DELETE'])
 @login_required
 @check_admin_auth
-def revoke_role_permission(role_name: str):
+async def revoke_role_permission(role_name: str):
     try:
-        data = request.get_json()
+        data = await request.get_json()
         if not data or 'actions' not in data or 'resource' not in data:
             return error_response("Permission is required", 400)
         actions: list = data['actions']
@@ -349,9 +349,9 @@ def revoke_role_permission(role_name: str):
 @admin_bp.route('/users/<user_name>/role', methods=['PUT'])
 @login_required
 @check_admin_auth
-def update_user_role(user_name: str):
+async def update_user_role(user_name: str):
     try:
-        data = request.get_json()
+        data = await request.get_json()
         if not data or 'role_name' not in data:
             return error_response("Role name is required", 400)
         role_name: str = data['role_name']

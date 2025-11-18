@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import wraps
 
-from flask_login import UserMixin
+from quart_auth import AuthUser
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from peewee import InterfaceError, OperationalError, BigIntegerField, BooleanField, CharField, CompositeKey, DateTimeField, Field, FloatField, IntegerField, Metadata, Model, TextField
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
@@ -595,7 +595,7 @@ def fill_db_model_object(model_object, human_model_dict):
     return model_object
 
 
-class User(DataBaseModel, UserMixin):
+class User(DataBaseModel, AuthUser):
     id = CharField(max_length=32, primary_key=True)
     access_token = CharField(max_length=255, null=True, index=True)
     nickname = CharField(max_length=100, null=False, help_text="nicky name", index=True)

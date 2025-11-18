@@ -41,6 +41,7 @@ from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.doc_store_conn import OrderByExpr
 from common import settings
 
+
 class DocumentService(CommonService):
     model = Document
 

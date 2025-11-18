@@ -14,8 +14,7 @@
 #  limitations under the License.
 #
 
-from flask import request
-from flask_login import login_required, current_user
+from quart import request
 from api.db.services import duplicate_name
 from api.db.services.dialog_service import DialogService
 from common.constants import StatusEnum
@@ -26,13 +25,14 @@ from api.utils.api_utils import server_error_response, get_data_error_result, va
 from common.misc_utils import get_uuid
 from common.constants import RetCode
 from api.utils.api_utils import get_json_result
+from api.apps import login_required, current_user
 
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @validate_request("prompt_config")
 @login_required
-def set_dialog():
-    req = request.json
+async def set_dialog():
+    req = await request.json
     dialog_id = req.get("dialog_id", "")
     is_create = not dialog_id
     name = req.get("name", "New Dialog")
@@ -169,18 +169,19 @@ def list_dialogs():
 
 @manager.route('/next', methods=['POST'])  # noqa: F821
 @login_required
-def list_dialogs_next():
-    keywords = request.args.get("keywords", "")
-    page_number = int(request.args.get("page", 0))
-    items_per_page = int(request.args.get("page_size", 0))
-    parser_id = request.args.get("parser_id")
-    orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc", "true").lower() == "false":
+async def list_dialogs_next():
+    args = request.args
+    keywords = args.get("keywords", "")
+    page_number = int(args.get("page", 0))
+    items_per_page = int(args.get("page_size", 0))
+    parser_id = args.get("parser_id")
+    orderby = args.get("orderby", "create_time")
+    if args.get("desc", "true").lower() == "false":
         desc = False
     else:
         desc = True
 
-    req = request.get_json()
+    req = await request.get_json()
     owner_ids = req.get("owner_ids", [])
     try:
         if not owner_ids:
@@ -207,8 +208,8 @@ def list_dialogs_next():
 @manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("dialog_ids")
-def rm():
-    req = request.json
+async def rm():
+    req = await request.json
     dialog_list=[]
     tenants = UserTenantService.query(user_id=current_user.id)
     try:

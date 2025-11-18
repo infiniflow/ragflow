@@ -18,8 +18,7 @@ import json
 import re
 
 import xxhash
-from flask import request
-from flask_login import current_user, login_required
+from quart import request
 
 from api.db.services.dialog_service import meta_filter
 from api.db.services.document_service import DocumentService
@@ -27,7 +26,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
-from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request
+from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request, \
+    request_json
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
@@ -35,13 +35,14 @@ from rag.prompts.generator import gen_meta_filter, cross_languages, keyword_extr
 from common.string_utils import remove_redundant_spaces
 from common.constants import RetCode, LLMType, ParserType, PAGERANK_FLD
 from common import settings
+from api.apps import login_required, current_user
 
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("doc_id")
-def list_chunk():
-    req = request.json
+async def list_chunk():
+    req = await request_json()
     doc_id = req["doc_id"]
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
@@ -121,8 +122,8 @@ def get():
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("doc_id", "chunk_id", "content_with_weight")
-def set():
-    req = request.json
+async def set():
+    req = await request_json()
     d = {
         "id": req["chunk_id"],
         "content_with_weight": req["content_with_weight"]}
@@ -178,8 +179,8 @@ def set():
 @manager.route('/switch', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("chunk_ids", "available_int", "doc_id")
-def switch():
-    req = request.json
+async def switch():
+    req = await request_json()
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
@@ -198,8 +199,8 @@ def switch():
 @manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("chunk_ids", "doc_id")
-def rm():
-    req = request.json
+async def rm():
+    req = await request_json()
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
@@ -222,8 +223,8 @@ def rm():
 @manager.route('/create', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("doc_id", "content_with_weight")
-def create():
-    req = request.json
+async def create():
+    req = await request_json()
     chunck_id = xxhash.xxh64((req["content_with_weight"] + req["doc_id"]).encode("utf-8")).hexdigest()
     d = {"id": chunck_id, "content_ltks": rag_tokenizer.tokenize(req["content_with_weight"]),
          "content_with_weight": req["content_with_weight"]}
@@ -280,8 +281,8 @@ def create():
 @manager.route('/retrieval_test', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("kb_id", "question")
-def retrieval_test():
-    req = request.json
+async def retrieval_test():
+    req = await request_json()
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
     question = req["question"]

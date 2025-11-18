@@ -24,7 +24,6 @@ from api.db import InputType
 from api.db.db_models import Connector, SyncLogs, Connector2Kb, Knowledgebase
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
-from api.db.services.file_service import FileService
 from common.misc_utils import get_uuid
 from common.constants import TaskStatus
 from common.time_utils import current_timestamp, timestamp_to_date
@@ -68,6 +67,7 @@ class ConnectorService(CommonService):
 
     @classmethod
     def rebuild(cls, kb_id:str, connector_id: str, tenant_id:str):
+        from api.db.services.file_service import FileService
         e, conn = cls.get_by_id(connector_id)
         if not e:
             return None
@@ -191,6 +191,7 @@ class SyncLogsService(CommonService):
 
     @classmethod
     def duplicate_and_parse(cls, kb, docs, tenant_id, src, auto_parse=True):
+        from api.db.services.file_service import FileService
         if not docs:
             return None
 

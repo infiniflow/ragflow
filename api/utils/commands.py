@@ -18,7 +18,7 @@ import base64
 import click
 import re
 
-from flask import Flask
+from quart import Quart
 from werkzeug.security import generate_password_hash
 
 from api.db.services import UserService
@@ -73,6 +73,7 @@ def reset_email(email, new_email, email_confirm):
     UserService.update_user(user[0].id,user_dict)
     click.echo(click.style('Congratulations!, email has been reset.', fg='green'))
 
-def register_commands(app: Flask):
+
+def register_commands(app: Quart):
     app.cli.add_command(reset_password)
     app.cli.add_command(reset_email)

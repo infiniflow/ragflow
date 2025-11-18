@@ -15,6 +15,7 @@
 #
 
 import functools
+import inspect
 import json
 import logging
 import os
@@ -24,14 +25,12 @@ from functools import wraps
 
 import requests
 import trio
-from flask import (
+from quart import (
     Response,
     jsonify,
+    request
 )
-from flask_login import current_user
-from flask import (
-    request as flask_request,
-)
+
 from peewee import OperationalError
 
 from common.constants import ActiveEnum
@@ -45,6 +44,12 @@ from common import settings
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 
+
+async def request_json():
+    try:
+        return await request.json
+    except Exception:
+        return {}
 
 def serialize_for_json(obj):
     """
@@ -105,31 +110,37 @@ def server_error_response(e):
 
 
 def validate_request(*args, **kwargs):
+    def process_args(input_arguments):
+        no_arguments = []
+        error_arguments = []
+        for arg in args:
+            if arg not in input_arguments:
+                no_arguments.append(arg)
+        for k, v in kwargs.items():
+            config_value = input_arguments.get(k, None)
+            if config_value is None:
+                no_arguments.append(k)
+            elif isinstance(v, (tuple, list)):
+                if config_value not in v:
+                    error_arguments.append((k, set(v)))
+            elif config_value != v:
+                error_arguments.append((k, v))
+        if no_arguments or error_arguments:
+            error_string = ""
+            if no_arguments:
+                error_string += "required argument are missing: {}; ".format(",".join(no_arguments))
+            if error_arguments:
+                error_string += "required argument values: {}".format(",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
+            return error_string
+
     def wrapper(func):
         @wraps(func)
-        def decorated_function(*_args, **_kwargs):
-            input_arguments = flask_request.json or flask_request.form.to_dict()
-            no_arguments = []
-            error_arguments = []
-            for arg in args:
-                if arg not in input_arguments:
-                    no_arguments.append(arg)
-            for k, v in kwargs.items():
-                config_value = input_arguments.get(k, None)
-                if config_value is None:
-                    no_arguments.append(k)
-                elif isinstance(v, (tuple, list)):
-                    if config_value not in v:
-                        error_arguments.append((k, set(v)))
-                elif config_value != v:
-                    error_arguments.append((k, v))
-            if no_arguments or error_arguments:
-                error_string = ""
-                if no_arguments:
-                    error_string += "required argument are missing: {}; ".format(",".join(no_arguments))
-                if error_arguments:
-                    error_string += "required argument values: {}".format(",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
-                return get_json_result(code=RetCode.ARGUMENT_ERROR, message=error_string)
+        async def decorated_function(*_args, **_kwargs):
+            errs = process_args(await request.json or (await request.form).to_dict())
+            if errs:
+                return get_json_result(code=RetCode.ARGUMENT_ERROR, message=errs)
+            if inspect.iscoroutinefunction(func):
+                return await func(*_args, **_kwargs)
             return func(*_args, **_kwargs)
 
         return decorated_function
@@ -138,30 +149,34 @@ def validate_request(*args, **kwargs):
 
 
 def not_allowed_parameters(*params):
-    def decorator(f):
-        def wrapper(*args, **kwargs):
-            input_arguments = flask_request.json or flask_request.form.to_dict()
+    def decorator(func):
+        async def wrapper(*args, **kwargs):
+            input_arguments = await request.json or (await request.form).to_dict()
             for param in params:
                 if param in input_arguments:
                     return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")
-            return f(*args, **kwargs)
-
+            if inspect.iscoroutinefunction(func):
+                return await func(*args, **kwargs)
+            return func(*args, **kwargs)
         return wrapper
 
     return decorator
 
 
-def active_required(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
+def active_required(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
         from api.db.services import UserService
+        from api.apps import current_user
 
         user_id = current_user.id
         usr = UserService.filter_by_id(user_id)
         # check is_active
         if not usr or not usr.is_active == ActiveEnum.ACTIVE.value:
             return get_json_result(code=RetCode.FORBIDDEN, message="User isn't active, please activate first.")
-        return f(*args, **kwargs)
+        if inspect.iscoroutinefunction(func):
+            return await func(*args, **kwargs)
+        return func(*args, **kwargs)
 
     return wrapper
 
@@ -173,12 +188,15 @@ def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=Non
 
 def apikey_required(func):
     @wraps(func)
-    def decorated_function(*args, **kwargs):
-        token = flask_request.headers.get("Authorization").split()[1]
+    async def decorated_function(*args, **kwargs):
+        token = request.headers.get("Authorization").split()[1]
         objs = APIToken.query(token=token)
         if not objs:
             return build_error_result(message="API-KEY is invalid!", code=RetCode.FORBIDDEN)
         kwargs["tenant_id"] = objs[0].tenant_id
+        if inspect.iscoroutinefunction(func):
+            return await func(*args, **kwargs)
+
         return func(*args, **kwargs)
 
     return decorated_function
@@ -199,23 +217,38 @@ def construct_json_result(code: RetCode = RetCode.SUCCESS, message="success", da
 
 
 def token_required(func):
-    @wraps(func)
-    def decorated_function(*args, **kwargs):
+    def get_tenant_id(**kwargs):
         if os.environ.get("DISABLE_SDK"):
-            return get_json_result(data=False, message="`Authorization` can't be empty")
-        authorization_str = flask_request.headers.get("Authorization")
+            return False, get_json_result(data=False, message="`Authorization` can't be empty")
+        authorization_str = request.headers.get("Authorization")
         if not authorization_str:
-            return get_json_result(data=False, message="`Authorization` can't be empty")
+            return False, get_json_result(data=False, message="`Authorization` can't be empty")
         authorization_list = authorization_str.split()
         if len(authorization_list) < 2:
-            return get_json_result(data=False, message="Please check your authorization format.")
+            return False, get_json_result(data=False, message="Please check your authorization format.")
         token = authorization_list[1]
         objs = APIToken.query(token=token)
         if not objs:
-            return get_json_result(data=False, message="Authentication error: API key is invalid!", code=RetCode.AUTHENTICATION_ERROR)
+            return False, get_json_result(data=False, message="Authentication error: API key is invalid!", code=RetCode.AUTHENTICATION_ERROR)
         kwargs["tenant_id"] = objs[0].tenant_id
+        return True, kwargs
+
+    @wraps(func)
+    def decorated_function(*args, **kwargs):
+        e, kwargs = get_tenant_id(**kwargs)
+        if not e:
+            return kwargs
         return func(*args, **kwargs)
 
+    @wraps(func)
+    async def adecorated_function(*args, **kwargs):
+        e, kwargs = get_tenant_id(**kwargs)
+        if not e:
+            return kwargs
+        return await func(*args, **kwargs)
+
+    if inspect.iscoroutinefunction(func):
+        return adecorated_function
     return decorated_function
 
 

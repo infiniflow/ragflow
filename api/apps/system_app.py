@@ -17,7 +17,7 @@ import logging
 from datetime import datetime
 import json
 
-from flask_login import login_required, current_user
+from api.apps import login_required, current_user
 
 from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService
@@ -34,7 +34,7 @@ from common.time_utils import current_timestamp, datetime_format
 from timeit import default_timer as timer
 
 from rag.utils.redis_conn import REDIS_CONN
-from flask import jsonify
+from quart import jsonify
 from api.utils.health_utils import run_health_checks
 from common import settings
 

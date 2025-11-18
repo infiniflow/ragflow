@@ -18,7 +18,6 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from flask_login import current_user
 from peewee import fn
 
 from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileType
@@ -34,6 +33,7 @@ from api.db.services.task_service import TaskService
 from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img, sanitize_path
 from rag.llm.cv_model import GptV4
 from common import settings
+from api.apps import current_user
 
 
 class FileService(CommonService):

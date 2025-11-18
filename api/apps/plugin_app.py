@@ -15,8 +15,8 @@
 #
 
 
-from flask import Response
-from flask_login import login_required
+from quart import Response
+from api.apps import login_required
 from api.utils.api_utils import get_json_result
 from plugin import GlobalPluginManager
 

@@ -17,7 +17,7 @@ from collections import Counter
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from flask import Request
+from quart import Request
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -32,7 +32,7 @@ from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 from api.constants import DATASET_NAME_LIMIT
 
 
-def validate_and_parse_json_request(request: Request, validator: type[BaseModel], *, extras: dict[str, Any] | None = None, exclude_unset: bool = False) -> tuple[dict[str, Any] | None, str | None]:
+async def validate_and_parse_json_request(request: Request, validator: type[BaseModel], *, extras: dict[str, Any] | None = None, exclude_unset: bool = False) -> tuple[dict[str, Any] | None, str | None]:
     """
     Validates and parses JSON requests through a multi-stage validation pipeline.
 
@@ -81,7 +81,7 @@ def validate_and_parse_json_request(request: Request, validator: type[BaseModel]
            from the final output after validation
     """
     try:
-        payload = request.get_json() or {}
+        payload = await request.get_json() or {}
     except UnsupportedMediaType:
         return None, f"Unsupported content type: Expected application/json, got {request.content_type}"
     except BadRequest:

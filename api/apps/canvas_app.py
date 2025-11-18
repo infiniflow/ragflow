@@ -18,12 +18,8 @@ import logging
 import re
 import sys
 from functools import partial
-
-import flask
 import trio
-from flask import request, Response
-from flask_login import login_required, current_user
-
+from quart import request, Response, make_response
 from agent.component import LLM
 from api.db import CanvasCategory, FileType
 from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
@@ -35,7 +31,8 @@ from api.db.services.user_service import TenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.constants import RetCode
 from common.misc_utils import get_uuid
-from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result
+from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result, \
+    request_json
 from agent.canvas import Canvas
 from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken, Task
@@ -46,6 +43,7 @@ from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
+from api.apps import login_required, current_user
 
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
@@ -57,8 +55,9 @@ def templates():
 @manager.route('/rm', methods=['POST'])  # noqa: F821
 @validate_request("canvas_ids")
 @login_required
-def rm():
-    for i in request.json["canvas_ids"]:
+async def rm():
+    req = await request_json()
+    for i in req["canvas_ids"]:
         if not UserCanvasService.accessible(i, current_user.id):
             return get_json_result(
                 data=False, message='Only owner of canvas authorized for this operation.',
@@ -70,8 +69,8 @@ def rm():
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @validate_request("dsl", "title")
 @login_required
-def save():
-    req = request.json
+async def save():
+    req = await request_json()
     if not isinstance(req["dsl"], str):
         req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
     req["dsl"] = json.loads(req["dsl"])
@@ -129,8 +128,8 @@ def getsse(canvas_id):
 @manager.route('/completion', methods=['POST'])  # noqa: F821
 @validate_request("id")
 @login_required
-def run():
-    req = request.json
+async def run():
+    req = await request_json()
     query = req.get("query", "")
     files = req.get("files", [])
     inputs = req.get("inputs", {})
@@ -160,10 +159,10 @@ def run():
     except Exception as e:
         return server_error_response(e)
 
-    def sse():
+    async def sse():
         nonlocal canvas, user_id
         try:
-            for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
+            async for ans in canvas.run(query=query, files=files, user_id=user_id, inputs=inputs):
                 yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
             cvs.dsl = json.loads(str(canvas))
@@ -179,15 +178,15 @@ def run():
     resp.headers.add_header("Connection", "keep-alive")
     resp.headers.add_header("X-Accel-Buffering", "no")
     resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
-    resp.call_on_close(lambda: canvas.cancel_task())
+    #resp.call_on_close(lambda: canvas.cancel_task())
     return resp
 
 
 @manager.route('/rerun', methods=['POST'])  # noqa: F821
 @validate_request("id", "dsl", "component_id")
 @login_required
-def rerun():
-    req = request.json
+async def rerun():
+    req = await request_json()
     doc = PipelineOperationLogService.get_documents_info(req["id"])
     if not doc:
         return get_data_error_result(message="Document not found.")
@@ -224,8 +223,8 @@ def cancel(task_id):
 @manager.route('/reset', methods=['POST'])  # noqa: F821
 @validate_request("id")
 @login_required
-def reset():
-    req = request.json
+async def reset():
+    req = await request_json()
     if not UserCanvasService.accessible(req["id"], current_user.id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
@@ -245,7 +244,7 @@ def reset():
 
 
 @manager.route("/upload/<canvas_id>", methods=["POST"])  # noqa: F821
-def upload(canvas_id):
+async def upload(canvas_id):
     e, cvs = UserCanvasService.get_by_canvas_id(canvas_id)
     if not e:
         return get_data_error_result(message="canvas not found.")
@@ -311,7 +310,8 @@ def upload(canvas_id):
         except Exception as e:
             return  server_error_response(e)
 
-    file = request.files['file']
+    files = await request.files
+    file = files['file']
     try:
         DocumentService.check_doc_health(user_id, file.filename)
         return get_json_result(data=structured(file.filename, filename_type(file.filename), file.read(), file.content_type))
@@ -342,8 +342,8 @@ def input_form():
 @manager.route('/debug', methods=['POST'])  # noqa: F821
 @validate_request("id", "component_id", "params")
 @login_required
-def debug():
-    req = request.json
+async def debug():
+    req = await request_json()
     if not UserCanvasService.accessible(req["id"], current_user.id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',
@@ -374,8 +374,8 @@ def debug():
 @manager.route('/test_db_connect', methods=['POST'])  # noqa: F821
 @validate_request("db_type", "database", "username", "host", "port", "password")
 @login_required
-def test_db_connect():
-    req = request.json
+async def test_db_connect():
+    req = await request_json()
     try:
         if req["db_type"] in ["mysql", "mariadb"]:
             db = MySQLDatabase(req["database"], user=req["username"], host=req["host"], port=req["port"],
@@ -519,8 +519,8 @@ def list_canvas():
 @manager.route('/setting', methods=['POST'])  # noqa: F821
 @validate_request("id", "title", "permission")
 @login_required
-def setting():
-    req = request.json
+async def setting():
+    req = await request_json()
     req["user_id"] = current_user.id
 
     if not UserCanvasService.accessible(req["id"], current_user.id):
@@ -601,8 +601,8 @@ def prompts():
 
 
 @manager.route('/download', methods=['GET'])  # noqa: F821
-def download():
+async def download():
     id = request.args.get("id")
     created_by = request.args.get("created_by")
     blob = FileService.get_blob(created_by, id)
-    return flask.make_response(blob)
+    return await make_response(blob)

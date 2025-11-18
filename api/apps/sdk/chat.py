@@ -14,22 +14,20 @@
 #  limitations under the License.
 #
 import logging
-
-from flask import request
-
+from quart import request
 from api.db.services.dialog_service import DialogService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
-from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required
+from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required, request_json
 
 
 @manager.route("/chats", methods=["POST"])  # noqa: F821
 @token_required
-def create(tenant_id):
-    req = request.json
+async def create(tenant_id):
+    req = await request_json()
     ids = [i for i in req.get("dataset_ids", []) if i]
     for kb_id in ids:
         kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
@@ -145,10 +143,10 @@ def create(tenant_id):
 
 @manager.route("/chats/<chat_id>", methods=["PUT"])  # noqa: F821
 @token_required
-def update(tenant_id, chat_id):
+async def update(tenant_id, chat_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You do not own the chat")
-    req = request.json
+    req = await request_json()
     ids = req.get("dataset_ids", [])
     if "show_quotation" in req:
         req["do_refer"] = req.pop("show_quotation")
@@ -228,10 +226,10 @@ def update(tenant_id, chat_id):
 
 @manager.route("/chats", methods=["DELETE"])  # noqa: F821
 @token_required
-def delete(tenant_id):
+async def delete_chats(tenant_id):
     errors = []
     success_count = 0
-    req = request.json
+    req = await request_json()
     if not req:
         ids = None
     else:
@@ -251,8 +249,8 @@ def delete(tenant_id):
             errors.append(f"Assistant({id}) not found.")
             continue
         temp_dict = {"status": StatusEnum.INVALID.value}
-        DialogService.update_by_id(id, temp_dict)
-        success_count += 1
+        success_count += DialogService.update_by_id(id, temp_dict)
+        print(success_count, "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$", flush=True)
 
     if errors:
         if success_count > 0:
