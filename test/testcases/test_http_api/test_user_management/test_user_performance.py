@@ -24,7 +24,7 @@ from typing import Any
 
 import pytest
 
-from common import create_user, list_users
+from ..common import create_user, list_users
 from libs.auth import RAGFlowWebApiAuth
 
 

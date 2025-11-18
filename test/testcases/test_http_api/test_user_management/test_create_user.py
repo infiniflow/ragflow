@@ -25,7 +25,7 @@ import pytest
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from Cryptodome.PublicKey import RSA
 
-from common import create_user
+from ..common import create_user
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
 

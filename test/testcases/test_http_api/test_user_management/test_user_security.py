@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from common import create_user
+from ..common import create_user
 from libs.auth import RAGFlowWebApiAuth
 
 

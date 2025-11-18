@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from common import create_user, update_user
+from ..common import create_user, update_user
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
 
