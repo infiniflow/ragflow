@@ -37,21 +37,8 @@ from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.config_utils import show_configs
-from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector
-import logging
-import os
-from datetime import datetime, timezone
-import signal
-import trio
-import faulthandler
+from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector
 from common.constants import FileSource, TaskStatus
-from common.data_source import (
-    BlobStorageConnector,
-    DiscordConnector,
-    GoogleDriveConnector,
-    JiraConnector,
-    NotionConnector,
-)
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
