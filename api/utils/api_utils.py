@@ -45,6 +45,12 @@ from common import settings
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 
 
+async def request_json():
+    try:
+        return await request.json
+    except:
+        return {}
+
 def serialize_for_json(obj):
     """
     Recursively serialize objects to make them JSON serializable.
