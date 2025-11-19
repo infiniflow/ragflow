@@ -14,7 +14,7 @@ Released on November 19, 2025.
 ### Improvements
 
 - Agent:
-  - Added support for exporting Agent outputs in Word or Markdown formats.
+  - Supports exporting Agent outputs in Word or Markdown formats.
   - Adds a **List operations** component.
   - Adds a **Variable aggregator** component.
 - Data sources:
