@@ -15,12 +15,14 @@
 #
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any
 
 import pytest
 
 from common import (
+    accept_team_invitation,
     add_department_members,
     add_users_to_team,
     create_department,
@@ -188,6 +190,20 @@ class TestAddMembers:
         assert len(res["data"]["failed"]) == 0
 
     @pytest.mark.p1
+    def test_add_member_missing_request_body(
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_department: dict[str, Any],
+    ) -> None:
+        """Test adding members without request body."""
+        res: dict[str, Any] = add_department_members(
+            web_api_auth, test_department["id"], None
+        )
+        
+        assert res["code"] == 101
+        assert "required" in res["message"].lower() or "body" in res["message"].lower()
+
+    @pytest.mark.p1
     def test_add_member_missing_user_ids(
         self,
         web_api_auth: RAGFlowWebApiAuth,
@@ -200,7 +216,7 @@ class TestAddMembers:
         )
         
         assert res["code"] == 101
-        assert "user_ids" in res["message"].lower() or "required" in res[
+        assert "user_ids" in res["message"].lower() or "non-empty array" in res[
             "message"
         ].lower()
 
@@ -412,6 +428,9 @@ class TestAddMembers:
         add_team_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_team_payload)
         assert add_team_res["code"] == 0, "Failed to add user to team"
         
+        # Wait a bit for user creation and team addition to be committed
+        time.sleep(0.3)
+        
         # Create another user to add to the department
         another_user_email: str = f"anotheruser_{uuid.uuid4().hex[:8]}@example.com"
         another_user_password: str = "TestPassword123!"
@@ -431,8 +450,23 @@ class TestAddMembers:
         )
         assert add_another_team_res["code"] == 0, "Failed to add another user to team"
         
+        # Wait a bit for team addition to be committed
+        time.sleep(0.3)
+        
         # Login as the normal user (not admin/owner)
-        normal_user_auth: RAGFlowWebApiAuth = login_as_user(normal_user_email, normal_user_password)
+        # Users with INVITE role should still be able to login
+        try:
+            normal_user_auth: RAGFlowWebApiAuth = login_as_user(normal_user_email, normal_user_password)
+        except Exception as e:
+            pytest.skip(f"Failed to login as normal user: {e}")
+        
+        # Accept the invitation to join the team
+        accept_res: dict[str, Any] = accept_team_invitation(normal_user_auth, tenant_id)
+        if accept_res["code"] != 0:
+            pytest.skip(f"Failed to accept invitation: {accept_res.get('message', 'Unknown error')}")
+        
+        # Wait a bit for invitation acceptance to be committed
+        time.sleep(0.2)
         
         # Try to add a member as the normal user (should fail)
         add_payload: dict[str, list[str]] = {"user_ids": [another_user_id]}

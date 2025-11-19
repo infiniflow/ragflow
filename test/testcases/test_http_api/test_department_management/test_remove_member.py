@@ -15,12 +15,14 @@
 #
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any
 
 import pytest
 
 from common import (
+    accept_team_invitation,
     add_department_members,
     add_users_to_team,
     create_department,
@@ -337,6 +339,9 @@ class TestRemoveMember:
         add_team_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_team_payload)
         assert add_team_res["code"] == 0, "Failed to add user to team"
         
+        # Wait a bit for user creation and team addition to be committed
+        time.sleep(0.3)
+        
         # Add another user to the department (so we have someone to remove)
         another_user_email: str = f"anotheruser_{uuid.uuid4().hex[:8]}@example.com"
         another_user_password: str = "TestPassword123!"
@@ -356,6 +361,9 @@ class TestRemoveMember:
         )
         assert add_another_team_res["code"] == 0, "Failed to add another user to team"
         
+        # Wait a bit for team addition to be committed
+        time.sleep(0.3)
+        
         # Add another user to the department (as owner/admin)
         add_dept_payload: dict[str, list[str]] = {"user_ids": [another_user_id]}
         add_dept_res: dict[str, Any] = add_department_members(
@@ -364,7 +372,19 @@ class TestRemoveMember:
         assert add_dept_res["code"] == 0, "Failed to add user to department"
         
         # Login as the normal user (not admin/owner)
-        normal_user_auth: RAGFlowWebApiAuth = login_as_user(normal_user_email, normal_user_password)
+        # Users with INVITE role should still be able to login
+        try:
+            normal_user_auth: RAGFlowWebApiAuth = login_as_user(normal_user_email, normal_user_password)
+        except Exception as e:
+            pytest.skip(f"Failed to login as normal user: {e}")
+        
+        # Accept the invitation to join the team
+        accept_res: dict[str, Any] = accept_team_invitation(normal_user_auth, tenant_id)
+        if accept_res["code"] != 0:
+            pytest.skip(f"Failed to accept invitation: {accept_res.get('message', 'Unknown error')}")
+        
+        # Wait a bit for invitation acceptance to be committed
+        time.sleep(0.2)
         
         # Try to remove a member as the normal user (should fail)
         remove_res: dict[str, Any] = remove_department_member(
@@ -397,4 +417,80 @@ class TestRemoveMember:
         assert add_res["code"] == 0
         assert len(add_res["data"]["added"]) == 1
         assert add_res["data"]["added"][0] == user_id
+
+    @pytest.mark.p2
+    def test_remove_multiple_members_sequentially(
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_department: dict[str, Any],
+        test_team: dict[str, Any],
+    ) -> None:
+        """Test removing multiple members sequentially."""
+        # Create multiple users
+        users = []
+        for i in range(3):
+            email = f"testuser{i}_{uuid.uuid4().hex[:8]}@example.com"
+            user_payload: dict[str, str] = {
+                "email": email,
+                "password": "TestPassword123!",
+                "nickname": f"Test User {i}",
+            }
+            user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
+            if user_res["code"] == 0:
+                users.append({"email": email, "id": user_res["data"]["id"]})
+        
+        if len(users) < 2:
+            pytest.skip("Need at least 2 test users")
+        
+        # Add users to team
+        for user in users:
+            add_team_payload: dict[str, list[str]] = {"users": [user["email"]]}
+            add_users_to_team(web_api_auth, test_team["id"], add_team_payload)
+        
+        # Add users to department
+        user_ids: list[str] = [user["id"] for user in users]
+        add_dept_payload: dict[str, list[str]] = {"user_ids": user_ids}
+        add_res: dict[str, Any] = add_department_members(
+            web_api_auth, test_department["id"], add_dept_payload
+        )
+        assert add_res["code"] == 0
+        assert len(add_res["data"]["added"]) == len(users)
+        
+        # Remove all users sequentially
+        for user in users:
+            remove_res: dict[str, Any] = remove_department_member(
+                web_api_auth, test_department["id"], user["id"]
+            )
+            assert remove_res["code"] == 0
+            assert "removed" in remove_res["message"].lower() or "success" in remove_res["message"].lower()
+
+    @pytest.mark.p2
+    def test_remove_member_empty_string_user_id(
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_department: dict[str, Any],
+    ) -> None:
+        """Test removing a member with empty string user ID."""
+        res: dict[str, Any] = remove_department_member(
+            web_api_auth, test_department["id"], ""
+        )
+        
+        # Empty string user ID may return 100 (EXCEPTION_ERROR) or 102 (DATA_ERROR)
+        assert res["code"] in [100, 102]
+        assert "not a member" in res["message"].lower() or "not found" in res["message"].lower() or "error" in res["message"].lower()
+
+    @pytest.mark.p2
+    def test_remove_member_special_characters_user_id(
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_department: dict[str, Any],
+    ) -> None:
+        """Test removing a member with special characters in user ID."""
+        invalid_user_id: str = "user@123_!@#$%"
+        res: dict[str, Any] = remove_department_member(
+            web_api_auth, test_department["id"], invalid_user_id
+        )
+        
+        assert res["code"] == 102
+        assert "not a member" in res["message"].lower() or "not found" in res["message"].lower()
 

@@ -17,7 +17,7 @@
 import base64
 import os
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pytest
 import requests
@@ -81,7 +81,13 @@ def encrypt_password(password: str) -> str:
     return base64.b64encode(encrypted_password).decode()
 
 
-def register():
+def register() -> Optional[str]:
+    """Register the test user.
+    
+    Returns:
+        str: Authorization token if registration succeeded and user was logged in,
+             None if user already exists
+    """
     url: str = HOST_ADDRESS + f"/{VERSION}/user/register"
     name: str = "qa"
     # Encrypt the plain password "123" before sending
@@ -89,9 +95,21 @@ def register():
     encrypted_password: str = encrypt_password(plain_password)
     register_data = {"email": EMAIL, "nickname": name, "password": encrypted_password}
     res: requests.Response = requests.post(url=url, json=register_data)
-    res: Dict[str, Any] = res.json()
-    if res.get("code") != 0 and "has already registered" not in res.get("message"):
-        raise Exception(res.get("message"))
+    res_json: Dict[str, Any] = res.json()
+    if res_json.get("code") != 0 and "has already registered" not in res_json.get("message"):
+        print(f"Registration failed with code {res_json.get('code')}: {res_json.get('message')}")
+        raise Exception(res_json.get("message"))
+    elif res_json.get("code") == 0:
+        print(f"Registration successful for {EMAIL}")
+        # Registration endpoint logs user in and returns auth token
+        auth_token: str = res.headers.get("Authorization", "")
+        if auth_token:
+            print(f"Received auth token from registration")
+            return auth_token
+        else:
+            print(f"Warning: No auth token in registration response")
+            return None
+    return None
 
 
 def login():
@@ -106,6 +124,102 @@ def login():
         raise Exception(res.get("message"))
     auth: str = response.headers["Authorization"]
     return auth
+
+
+def delete_user_from_db(email: str) -> bool:
+    """Delete a user directly from the database using SQL.
+    
+    This is a helper function for cleanup when a user exists with wrong password.
+    Uses direct SQL to avoid import conflicts with test helper modules.
+    
+    Args:
+        email: Email of the user to delete
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        import subprocess
+        import sys
+        import os
+        
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
+        
+        # Create a temporary Python script to hard delete the user
+        delete_script = f"""
+import sys
+sys.path.insert(0, '{project_root}')
+
+# Remove test directories from path to avoid conflicts
+test_paths = [p for p in sys.path if 'test/testcases' in p or 'testcases' in p]
+for p in test_paths:
+    if p in sys.path:
+        sys.path.remove(p)
+
+try:
+    from api.db.db_models import DB, User, Tenant, UserTenant, File
+    
+    users = list(User.select().where(User.email == '{email}'))
+    if users:
+        with DB.atomic():
+            for user in users:
+                user_id = user.id
+                # Hard delete related records and user
+                try:
+                    # Delete user-tenant relationships
+                    UserTenant.delete().where(UserTenant.user_id == user_id).execute()
+                    UserTenant.delete().where(UserTenant.tenant_id == user_id).execute()
+                    
+                    # Delete files owned by user
+                    File.delete().where(File.created_by == user_id).execute()
+                    File.delete().where(File.tenant_id == user_id).execute()
+                    
+                    # Delete tenant
+                    Tenant.delete().where(Tenant.id == user_id).execute()
+                    
+                    # Finally delete user
+                    User.delete().where(User.id == user_id).execute()
+                except Exception as e:
+                    print(f"Warning during cleanup: {{e}}")
+        print(f"DELETED_USER:{email}")
+    else:
+        print(f"USER_NOT_FOUND:{email}")
+except Exception as e:
+    print(f"ERROR:{{e}}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+"""
+        
+        # Run the delete script in a subprocess to avoid import conflicts
+        result = subprocess.run(
+            [sys.executable, "-c", delete_script],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        output = result.stdout + result.stderr
+        
+        if "DELETED_USER:" in output:
+            print(f"Successfully deleted user {email} from database")
+            return True
+        elif "USER_NOT_FOUND:" in output:
+            print(f"User {email} not found in database")
+            return False
+        else:
+            print(f"Failed to delete user from database")
+            if output:
+                print(f"Output: {output}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print(f"Timeout while trying to delete user from database")
+        return False
+    except Exception as e:
+        print(f"Failed to delete user from database: {e}")
+        return False
 
 
 def login_as_user(email: str, password: str) -> RAGFlowWebApiAuth:
@@ -140,21 +254,88 @@ def login_as_user(email: str, password: str) -> RAGFlowWebApiAuth:
 
 @pytest.fixture(scope="session")
 def auth():
-    try:
-        register()
-    except Exception as e:
-        print(e)
+    """Session fixture to authenticate test user.
+    
+    This fixture tries to login with the test user. If login fails because
+    the user doesn't exist, it registers the user first. If the user exists
+    with a different password, it provides instructions to fix the issue.
+    
+    Returns:
+        str: Authentication token
+    
+    Raises:
+        Exception: If authentication fails
+    """
+    # First, try to login (user might already exist with correct password)
     try:
         auth: str = login()
+        print(f"Successfully logged in as {EMAIL}")
         return auth
-    except Exception as e:
-        error_msg = str(e)
-        if "Email and password do not match" in error_msg:
+    except Exception as login_error:
+        login_error_msg = str(login_error)
+        
+        # If user doesn't exist, try to register
+        if "is not registered" in login_error_msg:
+            print(f"User {EMAIL} not found, attempting to register...")
+            try:
+                auth_token: Optional[str] = register()
+                if auth_token:
+                    print(f"Successfully registered and logged in as {EMAIL}")
+                    return auth_token
+                else:
+                    # Try login if register didn't return auth token
+                    auth: str = login()
+                    print(f"Successfully registered and logged in as {EMAIL}")
+                    return auth
+            except Exception as register_error:
+                raise Exception(
+                    f"Failed to register user {EMAIL}: {register_error}"
+                ) from register_error
+        
+        # If user exists but password doesn't match
+        elif "Email and password do not match" in login_error_msg:
+            print(f"User {EMAIL} exists but password doesn't match. Attempting to delete and recreate...")
+            
+            # Try to delete the user from database directly
+            if delete_user_from_db(EMAIL):
+                # Delay to ensure deletion is committed to database
+                time.sleep(1.0)
+                
+                # Now try to register and login
+                try:
+                    print(f"Attempting to register user {EMAIL}...")
+                    auth_token: Optional[str] = register()
+                    if auth_token:
+                        print(f"Successfully recreated user {EMAIL} with correct password")
+                        return auth_token
+                    else:
+                        # Try login if register didn't return auth token
+                        print(f"Registration completed, now attempting login...")
+                        auth: str = login()
+                        print(f"Successfully recreated user {EMAIL} with correct password")
+                        return auth
+                except Exception as recreate_error:
+                    recreate_error_msg = str(recreate_error)
+                    print(f"Recreation failed: {recreate_error_msg}")
+                    raise Exception(
+                        f"Failed to recreate user after deletion: {recreate_error_msg}"
+                    ) from recreate_error
+            else:
+                # If database deletion failed, provide instructions
+                raise Exception(
+                    f"Login failed: User {EMAIL} exists but password doesn't match.\n"
+                    f"Automatic cleanup failed. To fix this issue:\n"
+                    f"1. Manually delete the user from the database, OR\n"
+                    f"2. Reset the password in the database to '123', OR\n"
+                    f"3. Update EMAIL in configs.py to use a different test user\n"
+                    f"Original error: {login_error_msg}"
+                ) from login_error
+        
+        # Other login errors
+        else:
             raise Exception(
-                f"Login failed: User {EMAIL} exists but password doesn't match. "
-                f"Please ensure the user has the correct password or delete the user first."
-            ) from e
-        raise
+                f"Login failed with unexpected error: {login_error_msg}"
+            ) from login_error
 
 
 @pytest.fixture(scope="session")

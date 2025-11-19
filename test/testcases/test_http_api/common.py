@@ -477,8 +477,36 @@ def remove_users_from_team(
     return res.json()
 
 
+def accept_team_invitation(
+    auth: Union[AuthBase, str, None],
+    tenant_id: str,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Accept a team invitation.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        tenant_id: The tenant/team ID to accept invitation for.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the acceptance result.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{TEAM_API_URL}/update-request/{tenant_id}"
+    payload: Dict[str, bool] = {"accept": True}
+    res: requests.Response = requests.put(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
 # DEPARTMENT MANAGEMENT
 DEPARTMENT_API_URL: str = f"/{VERSION}/department"
+GROUP_API_URL: str = f"/{VERSION}/group"
 
 
 def create_department(
@@ -639,5 +667,32 @@ def list_department_members(
     url: str = f"{HOST_ADDRESS}{DEPARTMENT_API_URL}/{department_id}/members"
     res: requests.Response = requests.get(
         url=url, headers=headers, auth=auth
+    )
+    return res.json()
+
+
+# GROUP MANAGEMENT
+def create_group(
+    auth: Union[AuthBase, str, None],
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Create a new group.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        payload: Optional JSON payload containing group data (e.g., name, tenant_id, description).
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the created group data.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{GROUP_API_URL}/create"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth, json=payload
     )
     return res.json()
