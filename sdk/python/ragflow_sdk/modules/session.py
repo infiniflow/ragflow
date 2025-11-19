@@ -14,12 +14,45 @@
 #  limitations under the License.
 #
 
+from typing import Any, Literal, Optional, TYPE_CHECKING, TypedDict
+
 import json
+
 from .base import Base
 
+if TYPE_CHECKING:
+    from ..ragflow import RAGFlow
+
+__all__ = 'Session', 'Message'
+
+Role = Literal["assistant", "user"]
+SessionType = Literal["chat", "agent"]
+
+class MessageDict(TypedDict):
+    role: Role
+    content: str
+
+class UpdateMessage(TypedDict):
+    name: str
 
 class Session(Base):
-    def __init__(self, rag, res_dict):
+    __slots__ = (
+        'id',
+        'name',
+        'messages',
+        'chat_id',
+        'agent_id',
+        '__session_type',
+    )
+
+    id: Optional[str]
+    name: str
+    messages: list[MessageDict]
+    chat_id: Optional[str]
+    agent_id: Optional[str]
+    __session_type: SessionType
+
+    def __init__(self, rag: "RAGFlow", res_dict: dict[str, Any]) -> None:
         self.id = None
         self.name = "New session"
         self.messages = [{"role": "assistant", "content": "Hi! I am your assistant, can I help you?"}]
@@ -33,7 +66,8 @@ class Session(Base):
         super().__init__(rag, res_dict)
 
 
-    def ask(self, question="", stream=False, **kwargs):
+    # TODO: Proper typing of kwargs. What are the agent/chat specific kwargs?
+    def ask(self, question: str="", stream: bool=False, **kwargs):
         """
         Ask a question to the session. If stream=True, yields Message objects as they arrive (SSE streaming).
         If stream=False, returns a single Message object for the final answer.
@@ -79,12 +113,14 @@ class Session(Base):
             yield self._structure_answer(json_data["data"])
         
 
-    def _structure_answer(self, json_data):
+    def _structure_answer(self, json_data) -> "Message":
         if self.__session_type == "agent":
            answer = json_data["data"]["content"]
         elif self.__session_type == "chat":
             answer = json_data["answer"]
-        reference = json_data.get("reference", {})
+        else:
+            raise Exception(f"Unknown session type: {self.__session_type}")
+        reference = json_data.get("reference")
         temp_dict = {
             "content": answer,
             "role": "assistant"
@@ -109,16 +145,41 @@ class Session(Base):
                         json_data, stream=stream)
         return res
 
-    def update(self, update_message):
+    def update(self, update_message: UpdateMessage) -> None:
         res = self.put(f"/chats/{self.chat_id}/sessions/{self.id}",
                        update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))
 
+class ChunkDict(TypedDict):
+    id: str
+    content: str
+    image_id: Optional[str]
+    document_id: str
+    document_name: str
+    position: list[str]
+    dataset_id: str
+    similarity: float
+    vector_similarity: float
+    term_similarity: float
 
 class Message(Base):
-    def __init__(self, rag, res_dict):
+    __slots__ = (
+        'content',
+        'reference',
+        'role',
+        'prompt',
+        'id',
+    )
+
+    content: str
+    reference: Optional[list[ChunkDict]]
+    role: Role
+    prompt: Optional[str]
+    id: Optional[str]
+
+    def __init__(self, rag: "RAGFlow", res_dict: dict[str, Any]) -> None:
         self.content = "Hi! I am your assistant, can I help you?"
         self.reference = None
         self.role = "assistant"

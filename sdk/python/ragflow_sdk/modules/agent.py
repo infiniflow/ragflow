@@ -14,12 +14,31 @@
 #  limitations under the License.
 #
 
+from typing import Any, Optional, TYPE_CHECKING
 from .base import Base
 from .session import Session
 
+if TYPE_CHECKING:
+    from ..ragflow import RAGFlow
+
+__all__ = 'Agent',
 
 class Agent(Base):
-    def __init__(self, rag, res_dict):
+    __slots__ = (
+        'id',
+        'avatar',
+        'canvas_type',
+        'description',
+        'dsl',
+    )
+
+    id: Optional[str]
+    avatar: Optional[str]
+    canvas_type: Optional[str]
+    description: Optional[str]
+    dsl: Optional["Agent.Dsl"]
+
+    def __init__(self, rag: "RAGFlow", res_dict: dict[str, Any]) -> None:
         self.id  = None
         self.avatar = None
         self.canvas_type = None
@@ -28,7 +47,25 @@ class Agent(Base):
         super().__init__(rag, res_dict)
 
     class Dsl(Base):
-        def __init__(self, rag, res_dict):
+        __slots__ = (
+            'answer',
+            'components',
+            'graph',
+            'history',
+            'messages',
+            'path',
+            'reference',
+        )
+        # TODO: Proper typing including TypedDict for the dicts. Where is the specification of the DSL?
+        answer: list[Any]
+        components: dict[str, Any]
+        graph: dict[str, Any]
+        history: list[Any]
+        messages: list[Any]
+        path: list[Any]
+        reference: list[Any]
+
+        def __init__(self, rag: "RAGFlow", res_dict: dict[str, Any]) -> None:
             self.answer = []
             self.components = {
                 "begin": {
@@ -65,8 +102,8 @@ class Agent(Base):
             self.reference = []
             super().__init__(rag, res_dict)
 
-    
-    def create_session(self, **kwargs) -> Session:
+    # TODO: Proper typing of kwargs. Where are these parameters defined?
+    def create_session(self, **kwargs: dict[str, Any]) -> Session:
         res = self.post(f"/agents/{self.id}/sessions", json=kwargs)
         res = res.json()
         if res.get("code") == 0:
@@ -75,7 +112,7 @@ class Agent(Base):
 
     
     def list_sessions(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True,
-                      id: str = None) -> list[Session]:
+                      id: Optional[str] = None) -> list[Session]:
         res = self.get(f"/agents/{self.id}/sessions",
                        {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id})
         res = res.json()
@@ -87,7 +124,7 @@ class Agent(Base):
             return result_list
         raise Exception(res.get("message"))
     
-    def delete_sessions(self, ids: list[str] | None = None):
+    def delete_sessions(self, ids: list[str] | None = None) -> None:
         res = self.rm(f"/agents/{self.id}/sessions", {"ids": ids})
         res = res.json()
         if res.get("code") != 0:

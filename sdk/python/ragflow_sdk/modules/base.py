@@ -14,21 +14,31 @@
 #  limitations under the License.
 #
 
+from typing import Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from requests import Response
+    from requests.sessions import _Files, _Params
+    from ..ragflow import RAGFlow
 
 class Base:
-    def __init__(self, rag, res_dict):
+    __slots__ = 'rag',
+
+    rag: "RAGFlow"
+
+    def __init__(self, rag: "RAGFlow", res_dict: dict[str, Any]) -> None:
         self.rag = rag
         self._update_from_dict(rag, res_dict)
 
-    def _update_from_dict(self, rag, res_dict):
+    def _update_from_dict(self, rag: "RAGFlow", res_dict: dict[str, Any]) -> None:
         for k, v in res_dict.items():
             if isinstance(v, dict):
-                self.__dict__[k] = Base(rag, v)
+                setattr(self, k, Base(rag, v))
             else:
-                self.__dict__[k] = v
+                setattr(self, k, v)
 
-    def to_json(self):
-        pr = {}
+    def to_json(self) -> dict[str, Any]:
+        pr: dict[str, Any] = {}
         for name in dir(self):
             value = getattr(self, name)
             if not name.startswith("__") and not callable(value) and name != "rag":
@@ -38,21 +48,21 @@ class Base:
                     pr[name] = value
         return pr
 
-    def post(self, path, json=None, stream=False, files=None):
+    def post(self, path: str, json: Any=None, stream: bool=False, files: Optional["_Files"]=None) -> "Response":
         res = self.rag.post(path, json, stream=stream, files=files)
         return res
 
-    def get(self, path, params=None):
+    def get(self, path: str, params: Optional["_Params"]=None) -> "Response":
         res = self.rag.get(path, params)
         return res
 
-    def rm(self, path, json):
+    def rm(self, path: str, json: Any) -> "Response":
         res = self.rag.delete(path, json)
         return res
 
-    def put(self, path, json):
+    def put(self, path: str, json: Any) -> "Response":
         res = self.rag.put(path, json)
         return res
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.to_json())
