@@ -4,6 +4,7 @@ import { Form } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { memo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -25,7 +26,11 @@ import { SelectKeys } from './select-keys';
 import { Updates } from './updates';
 
 export const RetrievalPartialSchema = {
-  query: z.array(z.object({ input: z.string().optional() })),
+  query: z.array(
+    z.object({
+      input: z.string().min(1, { message: t('flow.queryRequired') }),
+    }),
+  ),
   operations: z.string(),
   select_keys: z.array(z.object({ name: z.string().optional() })).optional(),
   remove_keys: z.array(z.object({ name: z.string().optional() })).optional(),
