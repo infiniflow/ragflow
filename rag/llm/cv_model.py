@@ -350,7 +350,7 @@ class Zhipu4V(GptV4):
                 **gen_conf
             },
             headers= {
-            "Authorization": f"Bearer {self.api_key}",  
+            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             }
         )
@@ -369,10 +369,10 @@ class Zhipu4V(GptV4):
 
         cleaned = re.sub(r"<\|(begin_of_box|end_of_box)\|>", "", content).strip()
         return cleaned, total_token_count_from_response(response)
-    
+
 
     def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
-        from rag.llm.chat_model import LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN 
+        from rag.llm.chat_model import LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN
         from rag.nlp import is_chinese
 
         if system and history and history[0].get("role") != "system":
@@ -439,7 +439,7 @@ class Zhipu4V(GptV4):
         cleaned = re.sub(r"<\|(begin_of_box|end_of_box)\|>", "", content).strip()
 
         return cleaned, num_tokens_from_string(cleaned)
-    
+
 
 class StepFunCV(GptV4):
     _FACTORY_NAME = "StepFun"
@@ -723,29 +723,80 @@ class GeminiCV(Base):
     _FACTORY_NAME = "Gemini"
 
     def __init__(self, key, model_name="gemini-1.0-pro-vision-latest", lang="Chinese", **kwargs):
-        from google.generativeai import GenerativeModel, client
+        from google import genai
 
-        client.configure(api_key=key)
-        _client = client.get_default_generative_client()
-        self.api_key=key
+        self.api_key = key
         self.model_name = model_name
-        self.model = GenerativeModel(model_name=self.model_name)
-        self.model._client = _client
+        self.client = genai.Client(api_key=key)
         self.lang = lang
         Base.__init__(self, **kwargs)
+        logging.info(f"[GeminiCV] Initialized with model={self.model_name} lang={self.lang}")
+
+    def _image_to_part(self, image):
+        from google.genai import types
+
+        if isinstance(image, str) and image.startswith("data:") and ";base64," in image:
+            header, b64data = image.split(",", 1)
+            mime = header.split(":", 1)[1].split(";", 1)[0]
+            data = base64.b64decode(b64data)
+        else:
+            data_url = self.image2base64(image)
+            header, b64data = data_url.split(",", 1)
+            mime = header.split(":", 1)[1].split(";", 1)[0]
+            data = base64.b64decode(b64data)
+
+        return types.Part(
+            inline_data=types.Blob(
+                mime_type=mime,
+                data=data,
+            )
+        )
 
     def _form_history(self, system, history, images=None):
-        hist = []
-        if system:
-            hist.append({"role": "user", "parts": [system, history[0]["content"]]})
+        from google.genai import types
+
+        contents = []
+        images = images or []
+        system_len = len(system) if isinstance(system, str) else 0
+        history_len = len(history) if history else 0
+        images_len = len(images)
+        logging.info(f"[GeminiCV] _form_history called: system_len={system_len} history_len={history_len} images_len={images_len}")
+
+        image_parts = []
         for img in images:
-            hist[0]["parts"].append(("data:image/jpeg;base64," + img) if img[:4]!="data" else img)
-        for h in history[1:]:
-            hist.append({"role": "user" if h["role"]=="user" else "model", "parts": [h["content"]]})
-        return hist
+            try:
+                image_parts.append(self._image_to_part(img))
+            except Exception:
+                continue
+
+        remaining_history = history or []
+        if system or remaining_history:
+            parts = []
+            if system:
+                parts.append(types.Part(text=system))
+            if remaining_history:
+                first = remaining_history[0]
+                parts.append(types.Part(text=first.get("content", "")))
+                remaining_history = remaining_history[1:]
+            parts.extend(image_parts)
+            contents.append(types.Content(role="user", parts=parts))
+        elif image_parts:
+            contents.append(types.Content(role="user", parts=image_parts))
+
+        role_map = {"user": "user", "assistant": "model", "system": "user"}
+        for h in remaining_history:
+            role = role_map.get(h.get("role"), "user")
+            contents.append(
+                types.Content(
+                    role=role,
+                    parts=[types.Part(text=h.get("content", ""))],
+                )
+            )
+
+        return contents
 
     def describe(self, image):
-        from PIL.Image import open
+        from google.genai import types
 
         prompt = (
             "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。"
@@ -753,74 +804,106 @@ class GeminiCV(Base):
             else "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out."
         )
 
-        if image is bytes:
-            with BytesIO(image) as bio:
-                with open(bio) as img:
-                    input = [prompt, img]
-                    res = self.model.generate_content(input)
-                    return res.text, total_token_count_from_response(res)
-        else:
-            b64 = self.image2base64_rawvalue(image)
-            with BytesIO(base64.b64decode(b64)) as bio:
-                with open(bio) as img:
-                    input = [prompt, img]
-                    res = self.model.generate_content(input)
-                    return res.text, total_token_count_from_response(res)
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part(text=prompt),
+                    self._image_to_part(image),
+                ],
+            )
+        ]
+
+        res = self.client.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+        )
+        return res.text, total_token_count_from_response(res)
 
     def describe_with_prompt(self, image, prompt=None):
-        from PIL.Image import open
+        from google.genai import types
+
+
         vision_prompt = prompt if prompt else vision_llm_describe_prompt()
 
-        if image is bytes:
-            with BytesIO(image) as bio:
-                with open(bio) as img:
-                    input = [vision_prompt, img]
-                    res = self.model.generate_content(input)
-                    return res.text, total_token_count_from_response(res)
-        else:
-            b64 = self.image2base64_rawvalue(image)
-            with BytesIO(base64.b64decode(b64)) as bio:
-                with open(bio) as img:
-                    input = [vision_prompt, img]
-                    res = self.model.generate_content(input)
-                    return res.text, total_token_count_from_response(res)
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part(text=vision_prompt),
+                    self._image_to_part(image),
+                ],
+            )
+        ]
+
+        res = self.client.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+        )
+        return res.text, total_token_count_from_response(res)
 
 
     def chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
         if video_bytes:
             try:
+                size = len(video_bytes) if video_bytes else 0
+                logging.info(f"[GeminiCV] chat called with video: filename={filename} size={size}")
                 summary, summary_num_tokens = self._process_video(video_bytes, filename)
                 return summary, summary_num_tokens
             except Exception as e:
+                logging.info(f"[GeminiCV] chat video error: {e}")
                 return "**ERROR**: " + str(e), 0
 
-        generation_config = dict(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7))
+        from google.genai import types
+
+        history_len = len(history) if history else 0
+        images_len = len(images) if images else 0
+        logging.info(f"[GeminiCV] chat called: history_len={history_len} images_len={images_len} gen_conf={gen_conf}")
+
+        generation_config = types.GenerateContentConfig(
+            temperature=gen_conf.get("temperature", 0.3),
+            top_p=gen_conf.get("top_p", 0.7),
+        )
         try:
-            response = self.model.generate_content(
-                self._form_history(system, history, images),
-                generation_config=generation_config)
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=self._form_history(system, history, images),
+                config=generation_config,
+            )
             ans = response.text
-            return ans, total_token_count_from_response(ans)
+            logging.info("[GeminiCV] chat completed")
+            return ans, total_token_count_from_response(response)
         except Exception as e:
+            logging.warning(f"[GeminiCV] chat error: {e}")
             return "**ERROR**: " + str(e), 0
 
     def chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         response = None
         try:
-            generation_config = dict(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7))
-            response = self.model.generate_content(
-                self._form_history(system, history, images),
-                generation_config=generation_config,
-                stream=True,
+            from google.genai import types
+
+            generation_config = types.GenerateContentConfig(
+                temperature=gen_conf.get("temperature", 0.3),
+                top_p=gen_conf.get("top_p", 0.7),
+            )
+            history_len = len(history) if history else 0
+            images_len = len(images) if images else 0
+            logging.info(f"[GeminiCV] chat_streamly called: history_len={history_len} images_len={images_len} gen_conf={gen_conf}")
+
+            response_stream = self.client.models.generate_content_stream(
+                model=self.model_name,
+                contents=self._form_history(system, history, images),
+                config=generation_config,
             )
 
-            for resp in response:
-                if not resp.text:
-                    continue
-                ans = resp.text
-                yield ans
+            for chunk in response_stream:
+                if chunk.text:
+                    ans += chunk.text
+                    yield chunk.text
+            logging.info("[GeminiCV] chat_streamly completed")
         except Exception as e:
+            logging.warning(f"[GeminiCV] chat_streamly error: {e}")
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_token_count_from_response(response)
@@ -830,7 +913,8 @@ class GeminiCV(Base):
         from google.genai import types
 
         video_size_mb = len(video_bytes) / (1024 * 1024)
-        client = genai.Client(api_key=self.api_key)
+        client = self.client if hasattr(self, "client") else genai.Client(api_key=self.api_key)
+        logging.info(f"[GeminiCV] _process_video called: filename={filename} size_mb={video_size_mb:.2f}")
 
         tmp_path = None
         try:
@@ -856,10 +940,10 @@ class GeminiCV(Base):
                 )
 
             summary = response.text or ""
-            logging.info(f"Video summarized: {summary[:32]}...")
+            logging.info(f"[GeminiCV] Video summarized: {summary[:32]}...")
             return summary, num_tokens_from_string(summary)
         except Exception as e:
-            logging.error(f"Video processing failed: {e}")
+            logging.warning(f"[GeminiCV] Video processing failed: {e}")
             raise
         finally:
             if tmp_path and tmp_path.exists():
