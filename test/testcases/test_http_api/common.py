@@ -564,6 +564,62 @@ def update_team(
     return res.json()
 
 
+def promote_admin(
+    auth: Union[AuthBase, str, None],
+    tenant_id: str,
+    user_id: str,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Promote a user to admin in a team.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        tenant_id: The team ID.
+        user_id: The user ID to promote to admin.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the promotion result.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{TEAM_API_URL}/{tenant_id}/admin/{user_id}/promote"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth
+    )
+    return res.json()
+
+
+def demote_admin(
+    auth: Union[AuthBase, str, None],
+    tenant_id: str,
+    user_id: str,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Demote an admin to normal member in a team.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        tenant_id: The team ID.
+        user_id: The user ID to demote from admin.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the demotion result.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{TEAM_API_URL}/{tenant_id}/admin/{user_id}/demote"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth
+    )
+    return res.json()
+
+
 # DEPARTMENT MANAGEMENT
 DEPARTMENT_API_URL: str = f"/{VERSION}/department"
 GROUP_API_URL: str = f"/{VERSION}/group"
