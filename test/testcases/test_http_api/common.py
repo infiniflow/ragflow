@@ -505,6 +505,34 @@ def accept_team_invitation(
     return res.json()
 
 
+def update_team(
+    auth: Union[AuthBase, str, None],
+    tenant_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Update a team (tenant).
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        tenant_id: The team ID to update.
+        payload: Optional JSON payload containing update data (e.g., name, llm_id, embd_id, credit).
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the updated team data.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{TEAM_API_URL}/{tenant_id}"
+    res: requests.Response = requests.put(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
 # DEPARTMENT MANAGEMENT
 DEPARTMENT_API_URL: str = f"/{VERSION}/department"
 GROUP_API_URL: str = f"/{VERSION}/group"
