@@ -101,14 +101,18 @@ def stats():
                 "to_date",
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             "agent" if "canvas_id" in request.args else None)
-        res = {
-            "pv": [(o["dt"], o["pv"]) for o in objs],
-            "uv": [(o["dt"], o["uv"]) for o in objs],
-            "speed": [(o["dt"], float(o["tokens"]) / (float(o["duration"] + 0.1))) for o in objs],
-            "tokens": [(o["dt"], float(o["tokens"]) / 1000.) for o in objs],
-            "round": [(o["dt"], o["round"]) for o in objs],
-            "thumb_up": [(o["dt"], o["thumb_up"]) for o in objs]
-        }
+
+        res = {"pv": [], "uv": [], "speed": [], "tokens": [], "round": [], "thumb_up": []}
+
+        for obj in objs:
+            dt = obj["dt"]
+            res["pv"].append((dt, obj["pv"]))
+            res["uv"].append((dt, obj["uv"]))
+            res["speed"].append((dt, float(obj["tokens"]) / (float(obj["duration"]) + 0.1))) # +0.1 to avoid division by zero
+            res["tokens"].append((dt, float(obj["tokens"]) / 1000.0)) # convert to thousands
+            res["round"].append((dt, obj["round"]))
+            res["thumb_up"].append((dt, obj["thumb_up"]))
+
         return get_json_result(data=res)
     except Exception as e:
         return server_error_response(e)
