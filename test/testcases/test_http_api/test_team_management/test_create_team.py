@@ -47,7 +47,7 @@ class TestAuthorization:
         invalid_auth: RAGFlowWebApiAuth | None,
         expected_code: int,
         expected_message: str,
-        WebApiAuth: RAGFlowWebApiAuth,
+        web_api_auth: RAGFlowWebApiAuth,
     ) -> None:
         """Test team creation with invalid or missing authentication."""
         # Try to create team with invalid auth
@@ -66,7 +66,7 @@ class TestTeamCreate:
 
     @pytest.mark.p1
     def test_create_team_with_name_and_user_id(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a team with name and user_id."""
         # Create team (user_id is optional, defaults to current authenticated user)
@@ -74,7 +74,7 @@ class TestTeamCreate:
         team_payload: dict[str, str] = {
             "name": team_name,
         }
-        res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert res["code"] == 0, res
         assert "data" in res
         assert res["data"]["name"] == team_name
@@ -85,12 +85,12 @@ class TestTeamCreate:
 
     @pytest.mark.p1
     def test_create_team_missing_name(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a team without name."""
         # Try to create team without name
         team_payload: dict[str, str] = {}
-        res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert res["code"] == 101
         assert "name" in res["message"].lower() or "required" in res[
             "message"
@@ -98,12 +98,12 @@ class TestTeamCreate:
 
     @pytest.mark.p1
     def test_create_team_empty_name(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a team with empty name."""
         # Try to create team with empty name
         team_payload: dict[str, str] = {"name": ""}
-        res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert res["code"] == 101
         assert "name" in res["message"].lower() or "required" in res[
             "message"
@@ -111,36 +111,36 @@ class TestTeamCreate:
 
     @pytest.mark.p1
     def test_create_team_name_too_long(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a team with name exceeding 100 characters."""
         # Try to create team with name too long
         long_name: str = "A" * 101
         team_payload: dict[str, str] = {"name": long_name}
-        res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert res["code"] == 101
         assert "100" in res["message"] or "length" in res["message"].lower()
 
     @pytest.mark.p1
     def test_create_team_invalid_user_id(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a team with non-existent user_id."""
         team_payload: dict[str, str] = {
             "name": "Test Team Invalid User",
             "user_id": "non_existent_user_id_12345",
         }
-        res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert res["code"] == 102
         assert "not found" in res["message"].lower()
 
     @pytest.mark.p1
     def test_create_team_missing_user_id(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a team without user_id (should use current authenticated user)."""
         team_payload: dict[str, str] = {"name": "Test Team No User"}
-        res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        res: dict[str, Any] = create_team(web_api_auth, team_payload)
         # Should succeed since user_id defaults to current authenticated user
         assert res["code"] == 0
         assert "data" in res
@@ -149,7 +149,7 @@ class TestTeamCreate:
 
     @pytest.mark.p1
     def test_create_team_response_structure(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test that team creation returns the expected response structure."""
         # Create team
@@ -157,7 +157,7 @@ class TestTeamCreate:
         team_payload: dict[str, str] = {
             "name": team_name,
         }
-        res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert res["code"] == 0
         assert "data" in res
         assert isinstance(res["data"], dict)
@@ -170,7 +170,7 @@ class TestTeamCreate:
 
     @pytest.mark.p1
     def test_create_multiple_teams_same_user(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating multiple teams for the same user."""
         # Create first team
@@ -178,7 +178,7 @@ class TestTeamCreate:
         team_payload_1: dict[str, str] = {
             "name": team_name_1,
         }
-        res1: dict[str, Any] = create_team(WebApiAuth, team_payload_1)
+        res1: dict[str, Any] = create_team(web_api_auth, team_payload_1)
         assert res1["code"] == 0, res1
         team_id_1: str = res1["data"]["id"]
 
@@ -187,7 +187,7 @@ class TestTeamCreate:
         team_payload_2: dict[str, str] = {
             "name": team_name_2,
         }
-        res2: dict[str, Any] = create_team(WebApiAuth, team_payload_2)
+        res2: dict[str, Any] = create_team(web_api_auth, team_payload_2)
         assert res2["code"] == 0, res2
         team_id_2: str = res2["data"]["id"]
 
@@ -198,14 +198,14 @@ class TestTeamCreate:
 
     @pytest.mark.p2
     def test_create_team_with_whitespace_name(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a team with whitespace-only name."""
         # Try to create team with whitespace-only name
         team_payload: dict[str, str] = {
             "name": "   ",
         }
-        res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        res: dict[str, Any] = create_team(web_api_auth, team_payload)
         # Should fail validation
         assert res["code"] == 101
         assert "name" in res["message"].lower() or "required" in res[
@@ -214,7 +214,7 @@ class TestTeamCreate:
 
     @pytest.mark.p2
     def test_create_team_special_characters_in_name(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a team with special characters in name."""
         # Create team with special characters
@@ -222,17 +222,17 @@ class TestTeamCreate:
         team_payload: dict[str, str] = {
             "name": team_name,
         }
-        res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        res: dict[str, Any] = create_team(web_api_auth, team_payload)
         # Should succeed if special chars are allowed
         assert res["code"] in (0, 101)
 
     @pytest.mark.p2
     def test_create_team_empty_payload(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a team with empty payload."""
         team_payload: dict[str, Any] = {}
-        res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert res["code"] == 101
         assert "required" in res["message"].lower() or "name" in res[
             "message"
@@ -240,7 +240,7 @@ class TestTeamCreate:
 
     @pytest.mark.p3
     def test_create_team_unicode_name(
-        self, WebApiAuth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth
     ) -> None:
         """Test creating a team with unicode characters in name."""
         # Create team with unicode name
@@ -248,7 +248,7 @@ class TestTeamCreate:
         team_payload: dict[str, str] = {
             "name": team_name,
         }
-        res: dict[str, Any] = create_team(WebApiAuth, team_payload)
+        res: dict[str, Any] = create_team(web_api_auth, team_payload)
         # Should succeed if unicode is supported
         assert res["code"] in (0, 101)
 
