@@ -1646,6 +1646,7 @@ The variable aggregation node (originally the variable assignment node) is a cru
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       query: 'Query variables',
+      queryRequired: 'Query is required',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add Agent',
