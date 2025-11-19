@@ -1934,6 +1934,7 @@ Important structured information may include: names, dates, locations, events, k
       japanese: 'Japanese',
       korean: 'Korean',
       vietnamese: 'Vietnamese',
+      russian: 'Русский',
     },
     pagination: {
       total: 'Total {{total}}',
