@@ -895,8 +895,8 @@ async def check_embedding():
             if sim_mix > sim:
                 sim = sim_mix
                 mode = "title+content"
-        except Exception:
-            return get_error_data_result(message="embedding failure")
+        except Exception as e:
+            return get_error_data_result(message=f"Embedding failure: {e}")
 
         eff_sims.append(sim)
         results.append({
