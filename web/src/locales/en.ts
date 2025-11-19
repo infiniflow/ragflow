@@ -818,8 +818,7 @@ Example: https://fsn1.your-objectstorage.com`,
       modelsToBeAdded: 'Models to be added',
       addTheModel: 'Add',
       apiKey: 'API-Key',
-      apiKeyMessage:
-        'Please enter the API key (for locally deployed model,ignore this).',
+      apiKeyMessage: 'Please enter the API key',
       apiKeyTip:
         'The API key can be obtained by registering the corresponding LLM supplier.',
       showMoreModels: 'View models',
