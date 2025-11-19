@@ -47,7 +47,9 @@ class ListOperations(ComponentBase,ABC):
     def _invoke(self, **kwargs):
         self.input_objects=[]
         inputs = getattr(self._param, "query", None)
-        self.inputs=self._canvas.get_variable_value(inputs)
+        self.inputs = self._canvas.get_variable_value(inputs)
+        if not isinstance(self.inputs, list):
+            raise TypeError("The input of List Operations should be an array.")
         self.set_input_value(inputs, self.inputs)
         if self._param.operations == "topN":
             self._topN()
