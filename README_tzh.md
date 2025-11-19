@@ -85,6 +85,7 @@
 
 ## 🔥 近期更新
 
+- 2025-11-19 支援 Gemini 3 Pro.
 - 2025-11-12 支援從 Confluence、AWS S3、Discord、Google Drive 進行資料同步。
 - 2025-10-23 支援 MinerU 和 Docling 作為文件解析方法。
 - 2025-10-15 支援可編排的資料管道。

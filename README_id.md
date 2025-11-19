@@ -85,6 +85,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2025-11-19 Mendukung Gemini 3 Pro.
 - 2025-11-12 Mendukung sinkronisasi data dari Confluence, AWS S3, Discord, Google Drive.
 - 2025-10-23 Mendukung MinerU & Docling sebagai metode penguraian dokumen.
 - 2025-10-15 Dukungan untuk jalur data yang terorkestrasi.
