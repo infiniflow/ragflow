@@ -1549,6 +1549,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       task: '任务',
       beginInputTip: '通过定义输入参数，此内容可以被后续流程中的其他组件访问。',
       query: '查询变量',
+      queryRequired: '查询变量是必填项',
       queryTip: '选择您想要使用的变量',
       agent: '智能体',
       addAgent: '添加智能体',

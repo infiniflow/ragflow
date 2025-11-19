@@ -48,7 +48,7 @@ const JsonSchemaVisualizer: FC<JsonSchemaVisualizerProps> = ({
 
     try {
       const parsedJson = JSON.parse(value);
-      if (onChange) {
+      if (onChange && typeof parsedJson !== 'number') {
         onChange(parsedJson);
       }
     } catch (_error) {
