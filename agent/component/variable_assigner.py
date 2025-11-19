@@ -47,12 +47,14 @@ class VariableAssigner(ComponentBase,ABC):
             return
         else:
             for item in self._param.variables:
+                if any([not item.get("variable"), not item.get("operator"), not item.get("parameter")]):
+                    assert "Variable is not complete."
                 variable=item["variable"]
                 operator=item["operator"]
                 parameter=item["parameter"]
                 variable_value=self._canvas.get_variable_value(variable)
                 new_variable=self._operate(variable_value,operator,parameter)
-                self._canvas.set_variable_value(variable,new_variable)
+                self._canvas.set_variable_value(variable, new_variable)
 
     def _operate(self,variable,operator,parameter):
         if operator == "overwrite":
@@ -122,7 +124,8 @@ class VariableAssigner(ComponentBase,ABC):
         elif len(variable)!=0 and not isinstance(parameter,type(variable[0])):
             return "ERROR:PARAMETER_NOT_LIST_ELEMENT_TYPE"
         else:
-            return variable+parameter
+            variable.append(parameter)
+            return variable
 
     def _extend(self,variable,parameter):
         parameter=self._canvas.get_variable_value(parameter)
@@ -135,7 +138,7 @@ class VariableAssigner(ComponentBase,ABC):
         elif len(variable)!=0 and len(parameter)!=0 and not isinstance(parameter[0],type(variable[0])):
             return "ERROR:PARAMETER_NOT_LIST_ELEMENT_TYPE"
         else:
-            return variable+parameter
+            return variable + parameter
 
     def _remove_first(self,variable):
         if len(variable)==0:
@@ -153,7 +156,6 @@ class VariableAssigner(ComponentBase,ABC):
         else:
             return variable[:-1]
 
-    
     def is_number(self, value):
         if isinstance(value, bool):
             return False
@@ -161,19 +163,19 @@ class VariableAssigner(ComponentBase,ABC):
 
     def _add(self,variable,parameter):
         if self.is_number(variable) and self.is_number(parameter):
-            return variable+parameter
+            return variable + parameter
         else:
             return "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
 
     def _subtract(self,variable,parameter):
         if self.is_number(variable) and self.is_number(parameter):
-            return variable-parameter
+            return variable - parameter
         else:
             return "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
 
     def _multiply(self,variable,parameter):
         if self.is_number(variable) and self.is_number(parameter):
-            return variable*parameter
+            return variable * parameter
         else:
             return "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
 
@@ -185,3 +187,6 @@ class VariableAssigner(ComponentBase,ABC):
                 return variable/parameter
         else:
             return  "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
+
+    def thoughts(self) -> str:
+        return "Assign variables from canvas."
