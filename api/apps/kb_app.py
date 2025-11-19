@@ -886,6 +886,7 @@ async def check_embedding():
 
         try:
             v, _ = emb_mdl.encode([title, txt_in])
+            assert len(v[1]) == len(ck["vector"]), f"The dimension ({len(v[1])}) of given embedding model is different from the original ({len(ck['vector'])})"
             sim_content = _cos_sim(v[1], ck["vector"])
             title_w = 0.1
             qv_mix = title_w * v[0] + (1 - title_w) * v[1]
@@ -896,7 +897,7 @@ async def check_embedding():
                 sim = sim_mix
                 mode = "title+content"
         except Exception as e:
-            return get_error_data_result(message=f"Embedding failure: {e}")
+            return get_error_data_result(message=f"Embedding failure. {e}")
 
         eff_sims.append(sim)
         results.append({
