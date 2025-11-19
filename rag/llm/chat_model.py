@@ -1423,6 +1423,9 @@ class LiteLLMBase(ABC):
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
             self.api_key = json.loads(key).get("api_key", "")
             self.provider_order = json.loads(key).get("provider_order", "")
+        elif self.provider == SupportedLiteLLMProvider.Ollama and key is str and key.startswith("{"):
+            temp_api_key = self.api_key
+            self.api_key = json.loads(key).get("api_key", temp_api_key)
 
     def _get_delay(self):
         """Calculate retry delay time"""
