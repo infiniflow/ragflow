@@ -85,6 +85,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2025-11-19 Supports Gemini 3 Pro.
 - 2025-11-12 Supports data synchronization from Confluence, AWS S3, Discord, Google Drive.
 - 2025-10-23 Supports MinerU & Docling as document parsing methods.
 - 2025-10-15 Supports orchestrable ingestion pipeline.
@@ -93,8 +94,6 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 - 2025-05-23 Adds a Python/JavaScript code executor component to Agent.
 - 2025-05-05 Supports cross-language query.
 - 2025-03-19 Supports using a multi-modal model to make sense of images within PDF or DOCX files.
-- 2024-12-18 Upgrades Document Layout Analysis model in DeepDoc.
-- 2024-08-22 Support text to SQL statements through RAG.
 
 ## 🎉 Stay Tuned
 
