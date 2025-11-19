@@ -33,7 +33,6 @@ from api.db.services.task_service import TaskService
 from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img, sanitize_path
 from rag.llm.cv_model import GptV4
 from common import settings
-from api.apps import current_user
 
 
 class FileService(CommonService):
@@ -184,6 +183,7 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def create_folder(cls, file, parent_id, name, count):
+        from api.apps import current_user
         # Recursively create folder structure
         # Args:
         #     file: Current file object
@@ -508,6 +508,7 @@ class FileService(CommonService):
     @staticmethod
     def parse(filename, blob, img_base64=True, tenant_id=None):
         from rag.app import audio, email, naive, picture, presentation
+        from api.apps import current_user
 
         def dummy(prog=None, msg=""):
             pass
