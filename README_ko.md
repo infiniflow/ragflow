@@ -67,6 +67,7 @@
 
 ## 🔥 업데이트
 
+- 2025-11-19 Gemini 3 Pro를 지원합니다.
 - 2025-11-12 Confluence, AWS S3, Discord, Google Drive에서 데이터 동기화를 지원합니다.
 - 2025-10-23 문서 파싱 방법으로 MinerU 및 Docling을 지원합니다.
 - 2025-10-15 조정된 데이터 파이프라인 지원.
