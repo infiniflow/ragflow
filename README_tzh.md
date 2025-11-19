@@ -191,7 +191,8 @@
 ```bash
    $ cd ragflow/docker
    
-   # 可選：使用穩定版標籤（查看發佈：https://github.com/infiniflow/ragflow/releases），例：git checkout v0.22.1
+   # git checkout v0.22.1
+   # 可選：使用穩定版標籤（查看發佈：https://github.com/infiniflow/ragflow/releases）
    # 此步驟確保程式碼中的 entrypoint.sh 檔案與 Docker 映像版本一致。
 
    # Use CPU for DeepDoc tasks:
