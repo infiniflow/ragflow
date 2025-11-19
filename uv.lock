@@ -5280,7 +5280,7 @@ wheels = [
 
 [[package]]
 name = "ragflow"
-version = "0.22.0"
+version = "0.22.1"
 source = { virtual = "." }
 dependencies = [
     { name = "akshare" },
