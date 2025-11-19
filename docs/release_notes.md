@@ -7,6 +7,28 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+Released on November 19, 2025.
+
+### Bug Fixes
+
+- **Knowledge Base Embedding Models**: Fixed an issue where knowledge base embedding models became unavailable since v0.22.0.
+- **Document Parsing**: Fixing image merging issues.
+- **Chat History**: Fixed a bug where images and text were not correctly displayed together in historical chat records.
+
+### Improvements
+
+- **Agent**:
+  - Added support for exporting Agent outputs in Word formats.
+  - Introduced new list operations and enhanced the **Variable Aggregator** component capabilities.
+- **Data Sources**:
+  - Expanded data source support to include S3-compatible storage services.
+  - Added new integration support for JIRA.
+- **User Profile**: Optimized and beautified the layout of the personal center interface.
+
+### Support new models
+
+- Gemini 3 Pro Preview
+
 ## v0.22.0
 
 Released on November 12, 2025.
@@ -77,7 +99,7 @@ Released on October 15, 2025.
 - Redesigns RAGFlow's Login and Registration pages.
 - Upgrades RAGFlow's document engine Infinity to v0.6.0.
 
-### Added models
+### Support new models
 
 - Tongyi Qwen 3 series
 - Claude Sonnet 4.5
@@ -100,7 +122,7 @@ Released on September 10, 2025.
   - **Execute SQL** component enhanced: Replaces the original variable reference component with a text input field, allowing users to write free-form SQL queries and reference variables. See [here](./guides/agent/agent_component_reference/execute_sql.md).
 - Chat: Re-enables **Reasoning** and **Cross-language search**.
 
-### Added models
+### Support new models
 
 - Meituan LongCat
 - Kimi: kimi-k2-turbo-preview and kimi-k2-0905-preview
@@ -139,7 +161,7 @@ Released on August 27, 2025.
   - Improves Markdown file parsing, with AST support to avoid unintended chunking.
   - Enhances HTML parsing, supporting bs4-based HTML tag traversal.
 
-### Added models
+### Support new models
 
 ZHIPU GLM-4.5
 
@@ -200,7 +222,7 @@ Released on August 8, 2025.
 - The **Retrieval** component now supports the dynamic specification of dataset names using variables.
 - The user interface now includes a French language option.
 
-### Added Models
+### Support new models
 
 - GPT-5
 - Claude 4.1
@@ -264,7 +286,7 @@ Released on June 23, 2025.
 - Added support for models installed via Ollama or VLLM when creating a dataset through the API. [#8069](https://github.com/infiniflow/ragflow/pull/8069)
 - Enabled role-based authentication for S3 bucket access. [#8149](https://github.com/infiniflow/ragflow/pull/8149)
 
-### Added models
+### Support new models
 
 - Qwen 3 Embedding. [#8184](https://github.com/infiniflow/ragflow/pull/8184) 
 - Voyage Multimodal 3. [#7987](https://github.com/infiniflow/ragflow/pull/7987)
