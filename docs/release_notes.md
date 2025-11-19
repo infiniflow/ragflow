@@ -7,25 +7,29 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.22.1
+
 Released on November 19, 2025.
-
-### Bug Fixes
-
-- **Knowledge Base Embedding Models**: Fixed an issue where knowledge base embedding models became unavailable since v0.22.0.
-- **Document Parsing**: Fixing image merging issues.
-- **Chat History**: Fixed a bug where images and text were not correctly displayed together in historical chat records.
 
 ### Improvements
 
-- **Agent**:
-  - Added support for exporting Agent outputs in Word formats.
-  - Introduced new list operations and enhanced the **Variable Aggregator** component capabilities.
-- **Data Sources**:
-  - Expanded data source support to include S3-compatible storage services.
-  - Added new integration support for JIRA.
-- **User Profile**: Optimized and beautified the layout of the personal center interface.
+- Agent:
+  - Supports exporting Agent outputs in Word or Markdown formats.
+  - Adds a **List operations** component.
+  - Adds a **Variable aggregator** component.
+- Data sources:
+  - Supports S3-compatible data sources, e.g., MinIO.
+  - Adds data synchronization with JIRA.
+- Continues the redesign of the **Profile** page layouts.
+- Upgrades the Flask web framework from synchronous to asynchronous, increasing concurrency and preventing blocking issues caused when requesting upstream LLM services.
 
-### Support new models
+### Fixed issues
+
+- A v0.22.0 issue: Users failed to upload files or switch embedding model in a dataset containing parsed files using a built-in model from a `-slim` RAGFlow edition.
+- Image concatenated in Word documents. [#11310](https://github.com/infiniflow/ragflow/pull/11310)
+- Mixed images and text were not correctly displayed in the chat history.
+
+### Newly supported models
 
 - Gemini 3 Pro Preview
 
@@ -99,7 +103,7 @@ Released on October 15, 2025.
 - Redesigns RAGFlow's Login and Registration pages.
 - Upgrades RAGFlow's document engine Infinity to v0.6.0.
 
-### Support new models
+### Newly supported models
 
 - Tongyi Qwen 3 series
 - Claude Sonnet 4.5
@@ -122,7 +126,7 @@ Released on September 10, 2025.
   - **Execute SQL** component enhanced: Replaces the original variable reference component with a text input field, allowing users to write free-form SQL queries and reference variables. See [here](./guides/agent/agent_component_reference/execute_sql.md).
 - Chat: Re-enables **Reasoning** and **Cross-language search**.
 
-### Support new models
+### Newly supported models
 
 - Meituan LongCat
 - Kimi: kimi-k2-turbo-preview and kimi-k2-0905-preview
@@ -161,7 +165,7 @@ Released on August 27, 2025.
   - Improves Markdown file parsing, with AST support to avoid unintended chunking.
   - Enhances HTML parsing, supporting bs4-based HTML tag traversal.
 
-### Support new models
+### Newly supported models
 
 ZHIPU GLM-4.5
 
@@ -222,7 +226,7 @@ Released on August 8, 2025.
 - The **Retrieval** component now supports the dynamic specification of dataset names using variables.
 - The user interface now includes a French language option.
 
-### Support new models
+### Newly supported models
 
 - GPT-5
 - Claude 4.1
@@ -286,7 +290,7 @@ Released on June 23, 2025.
 - Added support for models installed via Ollama or VLLM when creating a dataset through the API. [#8069](https://github.com/infiniflow/ragflow/pull/8069)
 - Enabled role-based authentication for S3 bucket access. [#8149](https://github.com/infiniflow/ragflow/pull/8149)
 
-### Support new models
+### Newly supported models
 
 - Qwen 3 Embedding. [#8184](https://github.com/infiniflow/ragflow/pull/8184) 
 - Voyage Multimodal 3. [#7987](https://github.com/infiniflow/ragflow/pull/7987)
