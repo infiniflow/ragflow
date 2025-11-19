@@ -131,7 +131,7 @@ def sync_construct_response(code=RetCode.SUCCESS, message="success", data=None, 
             continue
         else:
             response_dict[key] = value
-    response = flask.make_response(jsonify(response_dict))
+    response = flask.make_response(flask.jsonify(response_dict))
     if auth:
         response.headers["Authorization"] = auth
     response.headers["Access-Control-Allow-Origin"] = "*"
