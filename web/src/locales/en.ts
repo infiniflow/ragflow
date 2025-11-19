@@ -1855,7 +1855,7 @@ Important structured information may include: names, dates, locations, events, k
         desc: 'Descending',
       },
       variableAssignerLogicalOperatorOptions: {
-        overwrite: 'Overwrite',
+        overwrite: 'Overwritten By',
         clear: 'Clear',
         set: 'Set',
         '+=': 'Add',

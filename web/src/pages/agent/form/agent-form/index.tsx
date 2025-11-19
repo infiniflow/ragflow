@@ -22,12 +22,13 @@ import { Switch } from '@/components/ui/switch';
 import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
   AgentExceptionMethod,
+  AgentStructuredOutputField,
   NodeHandleId,
   VariableType,
 } from '../../constant';
@@ -126,6 +127,17 @@ function AgentForm({ node }: INextOperatorForm) {
     hideStructuredOutputDialog,
     handleStructuredOutputDialogOk,
   } = useShowStructuredOutputDialog(node?.id);
+
+  const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
+
+  const handleShowStructuredOutput = useCallback(
+    (val: boolean) => {
+      if (node?.id && val) {
+        updateNodeForm(node?.id, {}, ['outputs', AgentStructuredOutputField]);
+      }
+    },
+    [node?.id, updateNodeForm],
+  );
 
   useEffect(() => {
     if (exceptionMethod !== AgentExceptionMethod.Goto) {
@@ -293,7 +305,10 @@ function AgentForm({ node }: INextOperatorForm) {
                   <Switch
                     id="airplane-mode"
                     checked={field.value}
-                    onCheckedChange={field.onChange}
+                    onCheckedChange={(val) => {
+                      handleShowStructuredOutput(val);
+                      field.onChange(val);
+                    }}
                   />
                 </div>
               )}
