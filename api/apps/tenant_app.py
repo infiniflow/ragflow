@@ -14,9 +14,10 @@
 #  limitations under the License.
 #
 import logging
+from threading import Thread
 from typing import Any, Dict, List, Optional, Set, Union
 
-from flask import Response, request
+from flask import Response, request, Blueprint
 from flask_login import current_user, login_required
 
 from api.apps import smtp_mail_server
@@ -43,7 +44,7 @@ from api.utils.api_utils import (
 from api.utils.web_utils import send_invite_email
 from common import settings
 
-
+manager = Blueprint("tenant", __name__)
 def is_team_admin_or_owner(tenant_id: str, user_id: str) -> bool:
     """
     Check if a user is an OWNER or ADMIN of a team.
@@ -143,8 +144,6 @@ def create(tenant_id):
         status=StatusEnum.VALID.value)
 
     if smtp_mail_server and settings.SMTP_CONF:
-        from threading import Thread
-
         user_name = ""
         _, user = UserService.get_by_id(current_user.id)
         if user:
@@ -974,7 +973,6 @@ def add_users(tenant_id: str) -> Response:
             
             # Send invitation email if configured
             if smtp_mail_server and settings.SMTP_CONF:
-                from threading import Thread
                 user_name: str = ""
                 _, user = UserService.get_by_id(current_user.id)
                 if user:
