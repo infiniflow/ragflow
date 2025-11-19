@@ -318,7 +318,7 @@ class MinerUParser(RAGFlowPdfParser):
 
     def _line_tag(self, bx):
         pn = [bx["page_idx"] + 1]
-        positions = bx["bbox"]
+        positions = bx.get("bbox", (0, 0, 0, 0))
         x0, top, x1, bott = positions
 
         if hasattr(self, "page_images") and self.page_images and len(self.page_images) > bx["page_idx"]:
