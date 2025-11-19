@@ -160,7 +160,7 @@ const ProfilePage: FC = () => {
             <AvatarUpload
               value={profile.avatar}
               onChange={handleAvatarUpload}
-              tips={'This will be displayed on your profile.'}
+              tips={t('avatarTip')}
             />
           </div>
         </div>
