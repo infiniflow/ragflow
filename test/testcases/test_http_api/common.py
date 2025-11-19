@@ -22,13 +22,14 @@ from requests.auth import AuthBase
 from requests_toolbelt import MultipartEncoder
 from utils.file_utils import create_txt_file
 
-# Import login_as_user from root conftest
+# Import login_as_user and encrypt_password from root conftest
 import importlib.util
 _root_conftest_path = Path(__file__).parent.parent / "conftest.py"
 _root_spec = importlib.util.spec_from_file_location("root_conftest", _root_conftest_path)
 _root_conftest_module = importlib.util.module_from_spec(_root_spec)
 _root_spec.loader.exec_module(_root_conftest_module)
 login_as_user = _root_conftest_module.login_as_user
+encrypt_password = _root_conftest_module.encrypt_password
 
 HEADERS = {"Content-Type": "application/json"}
 DATASETS_API_URL = f"/api/{VERSION}/datasets"
@@ -694,5 +695,89 @@ def create_group(
     url: str = f"{HOST_ADDRESS}{GROUP_API_URL}/create"
     res: requests.Response = requests.post(
         url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
+def add_group_members(
+    auth: Union[AuthBase, str, None],
+    group_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Add members to a group.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        group_id: The group ID to add members to.
+        payload: Optional JSON payload containing user_ids list.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing added and failed user lists.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{GROUP_API_URL}/{group_id}/members/add"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
+def remove_group_member(
+    auth: Union[AuthBase, str, None],
+    group_id: str,
+    user_id: str,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Remove a user from a group.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        group_id: The group ID to remove member from.
+        user_id: The user ID to remove from the group.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the removal result.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{GROUP_API_URL}/{group_id}/members/{user_id}"
+    res: requests.Response = requests.delete(
+        url=url, headers=headers, auth=auth
+    )
+    return res.json()
+
+
+def list_group_members(
+    auth: Union[AuthBase, str, None],
+    group_id: str,
+    params: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """List all members of a group.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        group_id: The group ID to list members for.
+        params: Optional query parameters for filtering/pagination.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the list of members.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{GROUP_API_URL}/{group_id}/members"
+    res: requests.Response = requests.get(
+        url=url, headers=headers, auth=auth, params=params
     )
     return res.json()
