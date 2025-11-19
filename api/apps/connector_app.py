@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import json
 import logging
 import time
@@ -20,9 +21,7 @@ import uuid
 from html import escape
 from typing import Any
 
-import flask
-import trio
-from quart import request
+from quart import request, make_response
 from google_auth_oauthlib.flow import Flow
 
 from api.db import InputType
@@ -59,7 +58,7 @@ async def set_connector():
         }
         ConnectorService.save(**conn)
 
-    await trio.sleep(1)
+    await asyncio.sleep(1)
     e, conn = ConnectorService.get_by_id(req["id"])
 
     return get_json_result(data=conn.to_dict())
@@ -147,7 +146,7 @@ def _get_web_client_config(credentials: dict[str, Any]) -> dict[str, Any]:
     return {"web": web_section}
 
 
-def _render_web_oauth_popup(flow_id: str, success: bool, message: str):
+async def _render_web_oauth_popup(flow_id: str, success: bool, message: str):
     status = "success" if success else "error"
     auto_close = "window.close();" if success else ""
     escaped_message = escape(message)
@@ -165,7 +164,7 @@ def _render_web_oauth_popup(flow_id: str, success: bool, message: str):
         payload_json=payload_json,
         auto_close=auto_close,
     )
-    response = flask.make_response(html, 200)
+    response = await make_response(html, 200)
     response.headers["Content-Type"] = "text/html; charset=utf-8"
     return response
 
@@ -232,31 +231,31 @@ async def start_google_drive_web_oauth():
 
 
 @manager.route("/google-drive/oauth/web/callback", methods=["GET"])  # noqa: F821
-def google_drive_web_oauth_callback():
+async def google_drive_web_oauth_callback():
     state_id = request.args.get("state")
     error = request.args.get("error")
     error_description = request.args.get("error_description") or error
 
     if not state_id:
-        return _render_web_oauth_popup("", False, "Missing OAuth state parameter.")
+        return await _render_web_oauth_popup("", False, "Missing OAuth state parameter.")
 
     state_cache = REDIS_CONN.get(_web_state_cache_key(state_id))
     if not state_cache:
-        return _render_web_oauth_popup(state_id, False, "Authorization session expired. Please restart from the main window.")
+        return await _render_web_oauth_popup(state_id, False, "Authorization session expired. Please restart from the main window.")
 
     state_obj = json.loads(state_cache)
     client_config = state_obj.get("client_config")
     if not client_config:
         REDIS_CONN.delete(_web_state_cache_key(state_id))
-        return _render_web_oauth_popup(state_id, False, "Authorization session was invalid. Please retry.")
+        return await _render_web_oauth_popup(state_id, False, "Authorization session was invalid. Please retry.")
 
     if error:
         REDIS_CONN.delete(_web_state_cache_key(state_id))
-        return _render_web_oauth_popup(state_id, False, error_description or "Authorization was cancelled.")
+        return await _render_web_oauth_popup(state_id, False, error_description or "Authorization was cancelled.")
 
     code = request.args.get("code")
     if not code:
-        return _render_web_oauth_popup(state_id, False, "Missing authorization code from Google.")
+        return await _render_web_oauth_popup(state_id, False, "Missing authorization code from Google.")
 
     try:
         flow = Flow.from_client_config(client_config, scopes=GOOGLE_SCOPES[DocumentSource.GOOGLE_DRIVE])
@@ -265,7 +264,7 @@ def google_drive_web_oauth_callback():
     except Exception as exc:  # pragma: no cover - defensive
         logging.exception("Failed to exchange Google OAuth code: %s", exc)
         REDIS_CONN.delete(_web_state_cache_key(state_id))
-        return _render_web_oauth_popup(state_id, False, "Failed to exchange tokens with Google. Please retry.")
+        return await _render_web_oauth_popup(state_id, False, "Failed to exchange tokens with Google. Please retry.")
 
     creds_json = flow.credentials.to_json()
     result_payload = {
@@ -275,7 +274,7 @@ def google_drive_web_oauth_callback():
     REDIS_CONN.set_obj(_web_result_cache_key(state_id), result_payload, WEB_FLOW_TTL_SECS)
     REDIS_CONN.delete(_web_state_cache_key(state_id))
 
-    return _render_web_oauth_popup(state_id, True, "Authorization completed successfully.")
+    return await _render_web_oauth_popup(state_id, True, "Authorization completed successfully.")
 
 
 @manager.route("/google-drive/oauth/web/result", methods=["POST"])  # noqa: F821
