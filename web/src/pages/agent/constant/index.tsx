@@ -5,14 +5,20 @@ import {
 import {
   AgentGlobals,
   AgentGlobalsSysQueryWithBrace,
+  AgentStructuredOutputField,
   CodeTemplateStrMap,
   ComparisonOperator,
+  JsonSchemaDataType,
   Operator,
   ProgrammingLanguage,
   SwitchOperatorOptions,
   initialLlmBaseValues,
 } from '@/constants/agent';
-export { Operator } from '@/constants/agent';
+export {
+  AgentStructuredOutputField,
+  JsonSchemaDataType,
+  Operator,
+} from '@/constants/agent';
 
 export * from './pipeline';
 
@@ -441,8 +447,6 @@ export const initialCodeValues = {
 
 export const initialWaitingDialogueValues = {};
 
-export const AgentStructuredOutputField = 'structured';
-
 export const initialAgentValues = {
   ...initialLlmBaseValues,
   description: '',
@@ -460,21 +464,14 @@ export const initialAgentValues = {
   tools: [],
   mcp: [],
   cite: true,
+  showStructuredOutput: false,
+  [AgentStructuredOutputField]: {},
   outputs: {
-    // structured_output: {
-    //   topic: {
-    //     type: 'string',
-    //     description:
-    //       'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
-    //     enum: ['general', 'news'],
-    //     default: 'general',
-    //   },
-    // },
     content: {
       type: 'string',
       value: '',
     },
-    [AgentStructuredOutputField]: {},
+    // [AgentStructuredOutputField]: {},
   },
 };
 
@@ -614,15 +611,15 @@ export const initialListOperationsValues = {
   query: '',
   operations: ListOperations.TopN,
   outputs: {
-    result: {
-      type: 'Array<?>',
-    },
-    first: {
-      type: '?',
-    },
-    last: {
-      type: '?',
-    },
+    // result: {
+    //   type: 'Array<?>',
+    // },
+    // first: {
+    //   type: '?',
+    // },
+    // last: {
+    //   type: '?',
+    // },
   },
 };
 
@@ -704,13 +701,14 @@ export const RestrictedUpstreamMap = {
   [Operator.Placeholder]: [Operator.Begin],
   [Operator.DataOperations]: [Operator.Begin],
   [Operator.ListOperations]: [Operator.Begin],
+  [Operator.VariableAssigner]: [Operator.Begin],
+  [Operator.VariableAggregator]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
   [Operator.Splitter]: [Operator.Begin],
   [Operator.HierarchicalMerger]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
-  [Operator.VariableAssigner]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -839,12 +837,36 @@ export const DROPDOWN_HORIZONTAL_OFFSET = 28;
 export const DROPDOWN_VERTICAL_OFFSET = 74;
 export const PREVENT_CLOSE_DELAY = 300;
 
-export enum JsonSchemaDataType {
-  String = 'string',
-  Number = 'number',
-  Boolean = 'boolean',
-  Array = 'array',
-  Object = 'object',
+export enum VariableAssignerLogicalOperator {
+  Overwrite = 'overwrite',
+  Clear = 'clear',
+  Set = 'set',
+}
+
+export enum VariableAssignerLogicalNumberOperator {
+  Overwrite = VariableAssignerLogicalOperator.Overwrite,
+  Clear = VariableAssignerLogicalOperator.Clear,
+  Set = VariableAssignerLogicalOperator.Set,
+  Add = '+=',
+  Subtract = '-=',
+  Multiply = '*=',
+  Divide = '/=',
+}
+
+export const VariableAssignerLogicalNumberOperatorLabelMap = {
+  [VariableAssignerLogicalNumberOperator.Add]: 'add',
+  [VariableAssignerLogicalNumberOperator.Subtract]: 'subtract',
+  [VariableAssignerLogicalNumberOperator.Multiply]: 'multiply',
+  [VariableAssignerLogicalNumberOperator.Divide]: 'divide',
+};
+
+export enum VariableAssignerLogicalArrayOperator {
+  Overwrite = VariableAssignerLogicalOperator.Overwrite,
+  Clear = VariableAssignerLogicalOperator.Clear,
+  Append = 'append',
+  Extend = 'extend',
+  RemoveFirst = 'remove_first',
+  RemoveLast = 'remove_last',
 }
 
 export enum ExportFileType {
@@ -853,3 +875,22 @@ export enum ExportFileType {
   Markdown = 'md',
   DOCX = 'docx',
 }
+
+export enum TypesWithArray {
+  String = 'string',
+  Number = 'number',
+  Boolean = 'boolean',
+  Object = 'object',
+  ArrayString = 'array<string>',
+  ArrayNumber = 'array<number>',
+  ArrayBoolean = 'array<boolean>',
+  ArrayObject = 'array<object>',
+}
+
+export const ArrayFields = [
+  JsonSchemaDataType.Array,
+  TypesWithArray.ArrayBoolean,
+  TypesWithArray.ArrayNumber,
+  TypesWithArray.ArrayString,
+  TypesWithArray.ArrayObject,
+];

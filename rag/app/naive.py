@@ -70,6 +70,7 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
         callback=callback,
         output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
         backend=os.environ.get("MINERU_BACKEND", "pipeline"),
+        server_url=os.environ.get("MINERU_SERVER_URL", ""),
         delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
     )
     return sections, tables, pdf_parser

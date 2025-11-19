@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      confirm: 'Confirm',
       back: 'Back',
       noResults: 'No results.',
       selectPlaceholder: 'select value',
@@ -694,6 +695,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      edit: 'Edit',
       cropTip:
         'Drag the selection area to choose the cropping position of the image, and scroll to zoom in/out',
       cropImage: 'Crop image',
@@ -705,6 +707,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
       s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from. 
 Example: general/v2/`,
+      S3CompatibleEndpointUrlTip: `Required for S3 compatible Storage Box. Specify the S3-compatible endpoint URL.
+Example: https://fsn1.your-objectstorage.com`,
       addDataSourceModalTital: 'Create your {{name}} connector',
       deleteSourceModalTitle: 'Delete data source',
       deleteSourceModalContent: `
@@ -1058,7 +1062,7 @@ Example: general/v2/`,
       apiKeyPlaceholder:
         'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
       flowStart: 'Start',
-      flowNum: 'Num',
+      flowNum: 'N',
       test: 'Test',
       extractDepth: 'Extract Depth',
       format: 'Format',
@@ -1849,6 +1853,19 @@ Important structured information may include: names, dates, locations, events, k
       SortMethodOptions: {
         asc: 'Ascending',
         desc: 'Descending',
+      },
+      variableAssignerLogicalOperatorOptions: {
+        overwrite: 'Overwrite',
+        clear: 'Clear',
+        set: 'Set',
+        '+=': 'Add',
+        '-=': 'Subtract',
+        '*=': 'Multiply',
+        '/=': 'Divide',
+        append: 'Append',
+        extend: 'Extend',
+        removeFirst: 'Remove first',
+        removeLast: 'Remove last',
       },
     },
     llmTools: {

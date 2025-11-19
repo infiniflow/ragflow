@@ -58,6 +58,7 @@ export enum LLMFactory {
   Longcat = 'LongCat',
   CometAPI = 'CometAPI',
   DeerAPI = 'DeerAPI',
+  JiekouAI = 'Jiekou.AI',
   Builtin = 'Builtin',
   BurnCloud = 'BurnCloud',
 }
@@ -123,6 +124,7 @@ export const IconMap = {
   [LLMFactory.Longcat]: 'longcat',
   [LLMFactory.CometAPI]: 'cometapi',
   [LLMFactory.DeerAPI]: 'deerapi',
+  [LLMFactory.JiekouAI]: 'jiekouai',
   [LLMFactory.Builtin]: 'builtin',
   [LLMFactory.BurnCloud]: 'burncloud',
 };

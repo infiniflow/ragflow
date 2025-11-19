@@ -4,7 +4,7 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
-import { Info } from 'lucide-react';
+import { CircleQuestionMark } from 'lucide-react';
 
 const TooltipProvider = TooltipPrimitive.Provider;
 
@@ -39,7 +39,7 @@ export const FormTooltip = ({ tooltip }: { tooltip: React.ReactNode }) => {
           e.preventDefault(); // Prevent clicking the tooltip from triggering form save
         }}
       >
-        <Info className="size-3 ml-2" />
+        <CircleQuestionMark className="size-3 ml-2" />
       </TooltipTrigger>
       <TooltipContent>{tooltip}</TooltipContent>
     </Tooltip>

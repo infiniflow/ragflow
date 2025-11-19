@@ -48,7 +48,8 @@ class SupportedLiteLLMProvider(StrEnum):
     NovitaAI = "NovitaAI"
     Lingyi_AI = "01.AI"
     GiteeAI = "GiteeAI"
-    AI_302 = "302.AI",
+    AI_302 = "302.AI"
+    JiekouAI = "Jiekou.AI"
     BurnCloud = "BurnCloud"
 
 
@@ -70,6 +71,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.GiteeAI: "https://ai.gitee.com/v1/",
     SupportedLiteLLMProvider.AI_302: "https://api.302.ai/v1",
     SupportedLiteLLMProvider.Anthropic: "https://api.anthropic.com/",
+    SupportedLiteLLMProvider.JiekouAI: "https://api.jiekou.ai/openai",
 }
 
 
@@ -100,6 +102,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Lingyi_AI: "openai/",
     SupportedLiteLLMProvider.GiteeAI: "openai/",
     SupportedLiteLLMProvider.AI_302: "openai/",
+    SupportedLiteLLMProvider.JiekouAI: "openai/",
     SupportedLiteLLMProvider.BurnCloud: "burncloud/",
 }
 
