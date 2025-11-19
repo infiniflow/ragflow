@@ -148,6 +148,44 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     fi; \
     uv sync --python 3.10 --frozen
 
+# Pre-install CPU-only PyTorch to prevent GPU version from being installed at runtime
+# This significantly reduces image size by avoiding CUDA dependencies
+RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple; \
+    else \
+        uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu; \
+    fi
+
+# Pre-install optional dependencies that are normally installed at runtime
+# This prevents downloading dependencies on every container startup
+RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
+    if [ "$NEED_MIRROR" == "1" ]; then \
+        uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling==2.58.0"; \
+    else \
+        uv pip install --no-cache-dir "docling==2.58.0"; \
+    fi
+
+# Pre-install mineru in a separate directory that can be used at runtime
+# Install CPU-only PyTorch first to avoid GPU dependencies unless explicitly needed
+# Set BUILD_MINERU=1 during build to include mineru, otherwise skip to save space
+ARG BUILD_MINERU=1
+RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
+    if [ "$BUILD_MINERU" = "1" ]; then \
+        mkdir -p /ragflow/uv_tools && \
+        uv venv /ragflow/uv_tools/.venv && \
+        if [ "$NEED_MIRROR" == "1" ]; then \
+            uv pip install --python /ragflow/uv_tools/.venv/bin/python torch torchvision --index-url https://download.pytorch.org/whl/cpu -i https://mirrors.aliyun.com/pypi/simple --extra-index-url https://pypi.org/simple && \
+            uv pip install --python /ragflow/uv_tools/.venv/bin/python -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple --extra-index-url https://pypi.org/simple; \
+        else \
+            uv pip install --python /ragflow/uv_tools/.venv/bin/python torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+            uv pip install --python /ragflow/uv_tools/.venv/bin/python -U "mineru[core]"; \
+        fi; \
+    else \
+        echo "Skipping mineru installation (BUILD_MINERU=0)"; \
+        mkdir -p /ragflow/uv_tools; \
+    fi
+
 COPY web web
 COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
@@ -170,6 +208,9 @@ WORKDIR /ragflow
 ENV VIRTUAL_ENV=/ragflow/.venv
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+
+# Copy pre-installed mineru environment
+COPY --from=builder /ragflow/uv_tools /ragflow/uv_tools
 
 ENV PYTHONPATH=/ragflow/
 

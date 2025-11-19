@@ -101,8 +101,24 @@ def once(func):
 @once
 def pip_install_torch():
     device = os.getenv("DEVICE", "cpu")
-    if device=="cpu":
+    if device == "cpu":
         return
+    
     logging.info("Installing pytorch")
-    pkg_names = ["torch>=2.5.0,<3.0.0"]
-    subprocess.check_call([sys.executable, "-m", "pip", "install", *pkg_names])
+    
+    # Check if GPU PyTorch is explicitly requested
+    gpu_pytorch = os.getenv("GPU_PYTORCH", "false").lower() == "true"
+    
+    if gpu_pytorch:
+        # Install GPU version of PyTorch
+        logging.info("Installing GPU PyTorch (large download with CUDA dependencies)")
+        pkg_names = ["torch>=2.5.0,<3.0.0"]
+        subprocess.check_call([sys.executable, "-m", "pip", "install", *pkg_names])
+    else:
+        # Install CPU-only version to avoid CUDA dependencies
+        logging.info("Installing CPU-only PyTorch to avoid CUDA dependencies")
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", 
+            "torch>=2.5.0,<3.0.0", "torchvision",
+            "--index-url", "https://download.pytorch.org/whl/cpu"
+        ])

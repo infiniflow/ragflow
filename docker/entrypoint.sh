@@ -188,10 +188,18 @@ function start_mcp_server() {
 
 function ensure_docling() {
     [[ "${USE_DOCLING}" == "true" ]] || { echo "[docling] disabled by USE_DOCLING"; return 0; }
+    
+    # Check if docling is already available in the virtual environment
+    if python3 -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" 2>/dev/null; then
+        echo "[docling] found in virtual environment"
+        return 0
+    fi
+    
+    # Fallback to runtime installation if not found (shouldn't happen with optimized Dockerfile)
+    echo "[docling] not found, installing at runtime..."
     python3 -c 'import pip' >/dev/null 2>&1 || python3 -m ensurepip --upgrade || true
     DOCLING_PIN="${DOCLING_VERSION:-==2.58.0}"
-    python3 -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
-      || python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
+    python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
 }
 
 function ensure_mineru() {
@@ -203,13 +211,26 @@ function ensure_mineru() {
     local venv_dir="${default_prefix}/.venv"
     local exe="${MINERU_EXECUTABLE:-${venv_dir}/bin/mineru}"
 
+    # Check if the pre-installed mineru is available
     if [[ -x "${exe}" ]]; then
-      echo "[mineru] found: ${exe}"
+      echo "[mineru] found pre-installed: ${exe}"
       export MINERU_EXECUTABLE="${exe}"
-      return 0
+      
+      # Verify it works
+      if "${MINERU_EXECUTABLE}" --help >/dev/null 2>&1; then
+          echo "[mineru] pre-installed version is working"
+          return 0
+      else
+          echo "[mineru] pre-installed version not working, will reinstall"
+      fi
     fi
 
-    echo "[mineru] not found, bootstrapping with uv ..."
+    # Check if mineru was excluded during build
+    if [[ ! -d "${venv_dir}" ]]; then
+        echo "[mineru] not included in build (BUILD_MINERU=0), installing at runtime..."
+    else
+        echo "[mineru] not found or not working, bootstrapping with uv ..."
+    fi
 
     (
         set -e
@@ -217,12 +238,19 @@ function ensure_mineru() {
         cd "${default_prefix}"
         [[ -d "${venv_dir}" ]] || uv venv "${venv_dir}"
 
-        source "${venv_dir}/bin/activate"
-        uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple --extra-index-url https://pypi.org/simple
-        deactivate
+        # Install CPU-only PyTorch first to avoid CUDA dependencies
+        echo "[mineru] installing CPU-only PyTorch to avoid CUDA packages..."
+        uv pip install --python "${venv_dir}/bin/python" torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        
+        # Then install mineru
+        uv pip install --python "${venv_dir}/bin/python" -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple --extra-index-url https://pypi.org/simple
     )
     export MINERU_EXECUTABLE="${exe}"
     if ! "${MINERU_EXECUTABLE}" --help >/dev/null 2>&1; then
+      echo "[mineru] installation failed: ${MINERU_EXECUTABLE} not working" >&2
+      return 1
+    fi
+    echo "[mineru] installed: ${MINERU_EXECUTABLE}"
       echo "[mineru] installation failed: ${MINERU_EXECUTABLE} not working" >&2
       return 1
     fi
