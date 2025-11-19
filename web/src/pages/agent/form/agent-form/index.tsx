@@ -28,7 +28,6 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
   AgentExceptionMethod,
-  AgentStructuredOutputField,
   NodeHandleId,
   VariableType,
 } from '../../constant';
@@ -74,7 +73,6 @@ const FormSchema = z.object({
   ...LargeModelFilterFormSchema,
   cite: z.boolean().optional(),
   showStructuredOutput: z.boolean().optional(),
-  [AgentStructuredOutputField]: z.record(z.any()),
 });
 
 export type AgentFormSchemaType = z.infer<typeof FormSchema>;
@@ -127,7 +125,7 @@ function AgentForm({ node }: INextOperatorForm) {
     structuredOutputDialogVisible,
     hideStructuredOutputDialog,
     handleStructuredOutputDialogOk,
-  } = useShowStructuredOutputDialog(form);
+  } = useShowStructuredOutputDialog(node?.id);
 
   useEffect(() => {
     if (exceptionMethod !== AgentExceptionMethod.Goto) {
@@ -284,9 +282,7 @@ function AgentForm({ node }: INextOperatorForm) {
               )}
             </section>
           </Collapse>
-          <RAGFlowFormItem name={AgentStructuredOutputField} className="hidden">
-            <Input></Input>
-          </RAGFlowFormItem>
+
           <Output list={outputList}>
             <RAGFlowFormItem name="showStructuredOutput">
               {(field) => (

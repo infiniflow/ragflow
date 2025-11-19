@@ -22,7 +22,8 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
           ...nextValues,
           outputs: {
             ...values.outputs,
-            [AgentStructuredOutputField]: values[AgentStructuredOutputField],
+            [AgentStructuredOutputField]:
+              values[AgentStructuredOutputField] ?? {},
           },
         };
       } else {
