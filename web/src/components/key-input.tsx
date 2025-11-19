@@ -8,7 +8,10 @@ type KeyInputProps = {
 } & Omit<InputProps, 'onChange'>;
 
 export const KeyInput = forwardRef<HTMLInputElement, KeyInputProps>(
-  function KeyInput({ value, onChange, searchValue = /[^a-zA-Z0-9_]/g }, ref) {
+  function KeyInput(
+    { value, onChange, searchValue = /[^a-zA-Z0-9_]/g, ...props },
+    ref,
+  ) {
     const handleChange = useCallback(
       (e: ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value ?? '';
@@ -18,6 +21,6 @@ export const KeyInput = forwardRef<HTMLInputElement, KeyInputProps>(
       [onChange, searchValue],
     );
 
-    return <Input value={value} onChange={handleChange} ref={ref} />;
+    return <Input {...props} value={value} onChange={handleChange} ref={ref} />;
   },
 );

@@ -1430,6 +1430,13 @@
             "rank": "980",
             "llm": [
                 {
+                    "llm_name": "gemini-3-pro-preview",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": "image2text",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "gemini-2.5-flash",
                     "tags": "LLM,CHAT,1024K,IMAGE2TEXT",
                     "max_tokens": 1048576,
