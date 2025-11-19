@@ -301,7 +301,7 @@ class Canvas(Graph):
             self.retrieval = []
             self.memory = []
         for k in self.globals.keys():
-            if k.startswith("sys."):
+            if k.startswith("sys.") or k.startswith("env."):
                 if isinstance(self.globals[k], str):
                     self.globals[k] = ""
                 elif isinstance(self.globals[k], int):
