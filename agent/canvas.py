@@ -25,7 +25,6 @@ from typing import Any, Union, Tuple
 
 from agent.component import component_class
 from agent.component.base import ComponentBase
-from api.db.services.file_service import FileService
 from api.db.services.task_service import has_canceled
 from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
@@ -217,6 +216,38 @@ class Graph:
             else:
                 cur = getattr(cur, key, None)
         return cur
+    
+    def set_variable_value(self, exp: str,value):
+        exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
+        if exp.find("@") < 0:
+            self.globals[exp] = value
+            return
+        cpn_id, var_nm = exp.split("@")
+        cpn = self.get_component(cpn_id)
+        if not cpn:
+            raise Exception(f"Can't find variable: '{cpn_id}@{var_nm}'")
+        parts = var_nm.split(".", 1)
+        root_key = parts[0]
+        rest = parts[1] if len(parts) > 1 else ""
+        if not rest:
+            cpn["obj"].set_output(root_key, value)
+            return
+        root_val = cpn["obj"].output(root_key)
+        if not root_val:
+            root_val = {}
+        cpn["obj"].set_output(root_key, self.set_variable_param_value(root_val,rest,value))
+
+    def set_variable_param_value(self, obj: Any, path: str, value) -> Any:
+        cur = obj
+        keys = path.split('.')
+        if not path:
+            return value
+        for key in keys:
+            if key not in cur or not isinstance(cur[key], dict):
+                cur[key] = {}
+            cur = cur[key]
+        cur[keys[-1]] = value
+        return obj
 
     def is_canceled(self) -> bool:
         return has_canceled(self.task_id)
@@ -284,7 +315,7 @@ class Canvas(Graph):
                 else:
                     self.globals[k] = None
 
-    def run(self, **kwargs):
+    async def run(self, **kwargs):
         st = time.perf_counter()
         self.message_id = get_uuid()
         created_at = int(time.time())
@@ -549,6 +580,7 @@ class Canvas(Graph):
         return self.components[cpnnm]["obj"].get_input_elements()
 
     def get_files(self, files: Union[None, list[dict]]) -> list[str]:
+        from api.db.services.file_service import FileService
         if not files:
             return  []
         def image_to_base64(file):

@@ -33,7 +33,6 @@ function VariableAssignerForm({ node }: INextOperatorForm) {
     defaultValues: defaultValues,
     mode: 'onChange',
     resolver: zodResolver(FormSchema),
-    shouldUnregister: true,
   });
 
   useWatchFormChange(node?.id, form, true);

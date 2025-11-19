@@ -67,21 +67,22 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
   return (
     <div className={`w-full rounded-lg border border-border-button`}>
       {/* Header */}
-      <div className="flex h-16  items-center justify-between p-4 cursor-pointer transition-colors">
+      <div className="flex h-16  items-center justify-between p-4 cursor-pointer transition-colors text-text-secondary">
         <div className="flex items-center space-x-3">
           <LlmIcon name={item.name} />
           <div>
-            <h3 className="font-medium">{item.name}</h3>
+            <div className="font-medium text-xl">{item.name}</div>
           </div>
         </div>
 
         <div className="flex items-center space-x-2">
           <Button
+            variant={'ghost'}
             onClick={(e) => {
               e.stopPropagation();
               handleApiKeyClick();
             }}
-            className="px-3 py-1 text-sm bg-bg-input hover:bg-bg-input text-text-primary  rounded-md transition-colors flex items-center space-x-1"
+            className="px-3 py-1 text-sm    rounded-md transition-colors flex items-center space-x-1 border border-border-default"
           >
             <SettingOutlined />
             <span>
@@ -90,23 +91,24 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
           </Button>
 
           <Button
+            variant={'ghost'}
             onClick={(e) => {
               e.stopPropagation();
               handleShowMoreClick();
             }}
-            className="px-3 py-1 text-sm bg-bg-input hover:bg-bg-input text-text-primary rounded-md transition-colors flex items-center space-x-1"
+            className="px-3 py-1 text-sm   rounded-md transition-colors flex items-center space-x-1 border border-border-default"
           >
             <span>{visible ? t('hideModels') : t('showMoreModels')}</span>
             {!visible ? <ChevronsDown /> : <ChevronsUp />}
           </Button>
 
           <Button
-            variant={'secondary'}
+            variant={'ghost'}
             onClick={(e) => {
               e.stopPropagation();
               handleDeleteFactory();
             }}
-            className="p-1 text-text-primary hover:text-state-error transition-colors"
+            className="  hover:text-state-error hover:bg-state-error-5 transition-colors border border-border-default"
           >
             <Trash2 />
           </Button>

@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { Editor } from '@monaco-editor/react';
+import Editor, { loader } from '@monaco-editor/react';
 import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
 import { X } from 'lucide-react';
 import { ReactNode, useCallback } from 'react';
@@ -22,6 +22,8 @@ import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-quer
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
 import { QueryVariable } from '../components/query-variable';
 import { useBuildLogicalOptions } from './use-build-logical-options';
+
+loader.config({ paths: { vs: '/vs' } });
 
 type SelectKeysProps = {
   name: string;
@@ -70,7 +72,7 @@ const EmptyValueMap = {
   [JsonSchemaDataType.String]: '',
   [JsonSchemaDataType.Number]: 0,
   [JsonSchemaDataType.Boolean]: 'yes',
-  [JsonSchemaDataType.Object]: {},
+  [JsonSchemaDataType.Object]: '{}',
   [JsonSchemaDataType.Array]: [],
 };
 
@@ -86,7 +88,7 @@ export function DynamicVariables({
   const { getType } = useGetVariableLabelOrTypeByValue();
   const isDarkTheme = useIsDarkTheme();
 
-  const { fields, remove, append, update } = useFieldArray({
+  const { fields, remove, append } = useFieldArray({
     name: name,
     control: form.control,
   });
@@ -102,15 +104,7 @@ export function DynamicVariables({
   );
 
   const renderParameter = useCallback(
-    (
-      keyFieldName: string,
-      operatorFieldName: string,
-      valueFieldAlias: string,
-    ) => {
-      console.log(
-        '🚀 ~ DynamicVariables ~ valueFieldAlias:',
-        form.getValues(valueFieldAlias),
-      );
+    (keyFieldName: string, operatorFieldName: string) => {
       const logicalOperator = form.getValues(operatorFieldName);
       const type = getVariableType(keyFieldName);
 
@@ -169,10 +163,6 @@ export function DynamicVariables({
 
   const handleVariableChange = useCallback(
     (operatorFieldAlias: string, valueFieldAlias: string) => {
-      console.log(
-        '🚀 ~ DynamicVariables ~ operatorFieldAlias:',
-        operatorFieldAlias,
-      );
       return () => {
         form.setValue(
           operatorFieldAlias,
@@ -190,14 +180,8 @@ export function DynamicVariables({
   );
 
   const handleOperatorChange = useCallback(
-    (
-      valueFieldAlias: string,
-      keyFieldAlias: string,
-      value: string,
-      index: number,
-    ) => {
+    (valueFieldAlias: string, keyFieldAlias: string, value: string) => {
       const type = getVariableType(keyFieldAlias);
-      console.log('🚀 ~ DynamicVariables ~ type:', type);
 
       let parameter = EmptyValueMap[type as keyof typeof EmptyValueMap];
 
@@ -210,10 +194,6 @@ export function DynamicVariables({
           shouldDirty: true,
           shouldValidate: true,
         });
-
-        // form.trigger(valueFieldAlias);
-
-        // update(index, { [valueField]: parameter });
       }
     },
     [form, getVariableType],
@@ -258,7 +238,6 @@ export function DynamicVariables({
                             valueFieldAlias,
                             keyFieldAlias,
                             val,
-                            index,
                           );
                           onChange(val);
                         }}
@@ -270,11 +249,7 @@ export function DynamicVariables({
                   </RAGFlowFormItem>
                 </div>
                 <RAGFlowFormItem name={valueFieldAlias} className="w-full">
-                  {renderParameter(
-                    keyFieldAlias,
-                    operatorFieldAlias,
-                    valueFieldAlias,
-                  )}
+                  {renderParameter(keyFieldAlias, operatorFieldAlias)}
                 </RAGFlowFormItem>
               </div>
 
