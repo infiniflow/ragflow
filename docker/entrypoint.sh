@@ -249,12 +249,10 @@ function ensure_mineru() {
     if ! "${MINERU_EXECUTABLE}" --help >/dev/null 2>&1; then
       echo "[mineru] installation failed: ${MINERU_EXECUTABLE} not working" >&2
       return 1
-    fi
-    echo "[mineru] installed: ${MINERU_EXECUTABLE}"
-      echo "[mineru] installation failed: ${MINERU_EXECUTABLE} not working" >&2
+    else
+      echo "[mineru] installed: ${MINERU_EXECUTABLE}"
       return 1
     fi
-    echo "[mineru] installed: ${MINERU_EXECUTABLE}"
 }
 # -----------------------------------------------------------------------------
 # Start components based on flags
