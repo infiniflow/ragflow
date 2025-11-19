@@ -19,6 +19,7 @@ import {
   VariableAssignerLogicalOperator,
 } from '../../constant';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
+import { getArrayElementType } from '../../utils';
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
 import { QueryVariable } from '../components/query-variable';
 import { useBuildLogicalOptions } from './use-build-logical-options';
@@ -152,9 +153,13 @@ export function DynamicVariables({
       } else if (
         logicalOperator === VariableAssignerLogicalArrayOperator.Append
       ) {
-        const subType = type.match(/<([^>]+)>/).at(1);
+        const subType = getArrayElementType(type);
         return (
-          <QueryVariable types={[subType]} hideLabel pureQuery></QueryVariable>
+          <QueryVariable
+            types={[subType as JsonSchemaDataType]}
+            hideLabel
+            pureQuery
+          ></QueryVariable>
         );
       }
     },

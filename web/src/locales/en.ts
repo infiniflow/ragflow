@@ -1062,7 +1062,7 @@ Example: https://fsn1.your-objectstorage.com`,
       apiKeyPlaceholder:
         'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
       flowStart: 'Start',
-      flowNum: 'Num',
+      flowNum: 'N',
       test: 'Test',
       extractDepth: 'Extract Depth',
       format: 'Format',
