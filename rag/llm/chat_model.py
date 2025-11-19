@@ -1423,7 +1423,7 @@ class LiteLLMBase(ABC):
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
             self.api_key = json.loads(key).get("api_key", "")
             self.provider_order = json.loads(key).get("provider_order", "")
-        elif self.provider == SupportedLiteLLMProvider.Ollama and key is str and key.startswith("{"):
+        elif self.provider == SupportedLiteLLMProvider.Ollama:
             temp_api_key = self.api_key
             self.api_key = json.loads(key).get("api_key", temp_api_key)
 
