@@ -781,3 +781,29 @@ def list_group_members(
         url=url, headers=headers, auth=auth, params=params
     )
     return res.json()
+
+
+def delete_group(
+    auth: Union[AuthBase, str, None],
+    group_id: str,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Delete a group.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        group_id: The group ID to delete.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the deletion result.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{GROUP_API_URL}/{group_id}"
+    res: requests.Response = requests.delete(
+        url=url, headers=headers, auth=auth
+    )
+    return res.json()
