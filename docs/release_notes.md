@@ -25,7 +25,7 @@ Released on November 19, 2025.
 
 ### Fixed issues
 
-- A v0.22.0 issue: Users failed to upload files or switch embedding model in a dataset containing parsed files using a built-in model from a `-slim` RAGFlow edition.
+- A v0.22.0 issue: Users failed to upload files or switch embedding model in a dataset containing parsed files using a built-in model from a `-full` RAGFlow edition.
 - Image concatenated in Word documents. [#11310](https://github.com/infiniflow/ragflow/pull/11310)
 - Mixed images and text were not correctly displayed in the chat history.
 
