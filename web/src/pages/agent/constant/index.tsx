@@ -5,7 +5,6 @@ import {
 import {
   AgentGlobals,
   AgentGlobalsSysQueryWithBrace,
-  AgentStructuredOutputField,
   CodeTemplateStrMap,
   ComparisonOperator,
   JsonSchemaDataType,
@@ -465,7 +464,6 @@ export const initialAgentValues = {
   mcp: [],
   cite: true,
   showStructuredOutput: false,
-  [AgentStructuredOutputField]: {},
   outputs: {
     content: {
       type: 'string',
