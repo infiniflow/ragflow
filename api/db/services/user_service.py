@@ -23,7 +23,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from api.db import UserTenantRole
 from api.db.db_models import DB, UserTenant
-from api.db.db_models import User, Tenant, Department, UserDepartment
+from api.db.db_models import User, Tenant, Department, UserDepartment, Group, GroupUser
 from api.db.services.common_service import CommonService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
@@ -471,5 +471,199 @@ class UserDepartmentService(CommonService):
             cls.model.select(*fields)
             .join(User, on=((cls.model.user_id == User.id) & (cls.model.status == StatusEnum.VALID.value)))
             .where(cls.model.department_id == department_id)
+            .dicts()
+        )
+
+
+class GroupService(CommonService):
+    """Service class for managing group-related database operations.
+
+    This class extends CommonService to provide functionality for group management,
+    including group creation, retrieval, and tenant-based queries.
+
+    Attributes:
+        model: The Group model class for database operations.
+    """
+    model = Group
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_tenant_id(cls, tenant_id: str) -> List[Dict[str, Any]]:
+        """Get all groups for a given tenant.
+
+        Args:
+            tenant_id: The tenant ID to query groups for.
+
+        Returns:
+            List of group dictionaries with all fields.
+        """
+        return list(cls.model.select()
+                    .where(
+                        (cls.model.tenant_id == tenant_id) & 
+                        (cls.model.status == StatusEnum.VALID.value)
+                    )
+                    .order_by(cls.model.create_time.desc())
+                    .dicts())
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_id(cls, group_id: str) -> Tuple[bool, Optional[Group]]:
+        """Get a group by its ID.
+
+        Args:
+            group_id: The group ID.
+
+        Returns:
+            Tuple of (success: bool, group: Group or None).
+        """
+        try:
+            group: Optional[Group] = cls.model.get_or_none(
+                (cls.model.id == group_id) & 
+                (cls.model.status == StatusEnum.VALID.value)
+            )
+            if group:
+                return True, group
+        except Exception:
+            pass
+        return False, None
+
+    @classmethod
+    @DB.connection_context()
+    def filter_by_tenant_and_id(cls, tenant_id: str, group_id: str) -> Optional[Group]:
+        """Get a group by tenant ID and group ID.
+
+        Args:
+            tenant_id: The tenant ID.
+            group_id: The group ID.
+
+        Returns:
+            Group instance or None if not found.
+        """
+        try:
+            group: Optional[Group] = cls.model.select().where(
+                (cls.model.tenant_id == tenant_id) & 
+                (cls.model.id == group_id) & 
+                (cls.model.status == StatusEnum.VALID.value)
+            ).first()
+            return group
+        except peewee.DoesNotExist:
+            return None
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_tenant_and_name(cls, tenant_id: str, name: str) -> Optional[Group]:
+        """Get a group by tenant ID and name.
+
+        Args:
+            tenant_id: The tenant ID.
+            name: The group name.
+
+        Returns:
+            Group instance or None if not found.
+        """
+        try:
+            group: Optional[Group] = cls.model.select().where(
+                (cls.model.tenant_id == tenant_id) & 
+                (cls.model.name == name) & 
+                (cls.model.status == StatusEnum.VALID.value)
+            ).first()
+            return group
+        except peewee.DoesNotExist:
+            return None
+
+    @classmethod
+    @DB.connection_context()
+    def save(cls, **kwargs: Any) -> Group:
+        """Save a group to the database.
+
+        Args:
+            **kwargs: Group fields including id, tenant_id, name, description, created_by, status.
+
+        Returns:
+            The saved Group instance.
+        """
+        if "id" not in kwargs:
+            kwargs["id"] = get_uuid()
+        obj: Group = cls.model(**kwargs)
+        obj.save(force_insert=True)
+        return obj
+
+
+class GroupUserService(CommonService):
+    """Service class for managing user-group relationship operations.
+    
+    This class extends CommonService to handle the many-to-many relationship
+    between users and groups.
+    
+    Attributes:
+        model: The GroupUser model class for database operations.
+    """
+    model = GroupUser
+    
+    @classmethod
+    @DB.connection_context()
+    def save(cls, **kwargs: Any) -> GroupUser:
+        """Save a user-group relationship.
+        
+        Args:
+            **kwargs: GroupUser fields (id, group_id, user_id, status).
+            
+        Returns:
+            Created GroupUser instance.
+        """
+        if "id" not in kwargs:
+            kwargs["id"] = get_uuid()
+        obj: GroupUser = cls.model(**kwargs)
+        obj.save(force_insert=True)
+        return obj
+    
+    @classmethod
+    @DB.connection_context()
+    def filter_by_group_and_user_id(
+        cls, group_id: str, user_id: str
+    ) -> Optional[GroupUser]:
+        """Get a user-group relationship by group ID and user ID.
+        
+        Args:
+            group_id: The group ID.
+            user_id: The user ID.
+            
+        Returns:
+            GroupUser instance or None if not found.
+        """
+        try:
+            group_user: Optional[GroupUser] = cls.model.select().where(
+                (cls.model.group_id == group_id) &
+                (cls.model.user_id == user_id)
+            ).first()
+            return group_user
+        except peewee.DoesNotExist:
+            return None
+    
+    @classmethod
+    @DB.connection_context()
+    def get_by_group_id(cls, group_id: str) -> List[Dict[str, Any]]:
+        """Get all users in a group.
+        
+        Args:
+            group_id: The group ID.
+            
+        Returns:
+            List of user dictionaries with group relationship info.
+        """
+        fields = [
+            cls.model.id,
+            cls.model.user_id,
+            cls.model.status,
+            User.nickname,
+            User.email,
+            User.avatar,
+            User.is_active,
+            User.status,
+        ]
+        return list(
+            cls.model.select(*fields)
+            .join(User, on=((cls.model.user_id == User.id) & (cls.model.status == StatusEnum.VALID.value)))
+            .where(cls.model.group_id == group_id)
             .dicts()
         )
