@@ -6,6 +6,7 @@ interface NumberInputProps {
   value?: number;
   onChange?: (value: number) => void;
   height?: number | string;
+  min?: number;
 }
 
 const NumberInput: React.FC<NumberInputProps> = ({
@@ -13,6 +14,7 @@ const NumberInput: React.FC<NumberInputProps> = ({
   value: initialValue,
   onChange,
   height,
+  min = 0,
 }) => {
   const [value, setValue] = useState<number>(() => {
     return initialValue ?? 0;
@@ -76,6 +78,7 @@ const NumberInput: React.FC<NumberInputProps> = ({
         onChange={handleChange}
         className="w-full flex-1 text-center bg-transparent focus:outline-none"
         style={style}
+        min={min}
       />
       <button
         type="button"

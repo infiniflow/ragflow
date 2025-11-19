@@ -1,6 +1,8 @@
 import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { buildSelectOptions } from '@/utils/component-util';
 import { t } from 'i18next';
+import { TypesWithArray } from '../constant';
+export { TypesWithArray } from '../constant';
 // const TypesWithoutArray = Object.values(JsonSchemaDataType).filter(
 //   (item) => item !== JsonSchemaDataType.Array,
 // );
@@ -8,17 +10,6 @@ import { t } from 'i18next';
 //   ...TypesWithoutArray,
 //   ...TypesWithoutArray.map((item) => `array<${item}>`),
 // ];
-
-export enum TypesWithArray {
-  String = 'string',
-  Number = 'number',
-  Boolean = 'boolean',
-  Object = 'object',
-  ArrayString = 'array<string>',
-  ArrayNumber = 'array<number>',
-  ArrayBoolean = 'array<boolean>',
-  ArrayObject = 'array<object>',
-}
 
 export const GlobalFormFields = [
   {

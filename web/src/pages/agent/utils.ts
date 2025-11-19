@@ -732,3 +732,7 @@ export function buildBeginQueryWithObject(
 
   return nextInputs;
 }
+
+export function getArrayElementType(type: string) {
+  return typeof type === 'string' ? type.match(/<([^>]+)>/)?.at(1) ?? '' : '';
+}
