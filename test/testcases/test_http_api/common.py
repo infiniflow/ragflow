@@ -481,6 +481,7 @@ def remove_users_from_team(
 def accept_team_invitation(
     auth: Union[AuthBase, str, None],
     tenant_id: str,
+    role: Optional[str] = None,
     *,
     headers: Dict[str, str] = HEADERS,
 ) -> Dict[str, Any]:
@@ -489,6 +490,7 @@ def accept_team_invitation(
     Args:
         auth: Authentication object (AuthBase subclass), token string, or None.
         tenant_id: The tenant/team ID to accept invitation for.
+        role: Optional role to assign after acceptance (normal, admin). Defaults to normal.
         headers: Optional HTTP headers. Defaults to HEADERS.
 
     Returns:
@@ -498,7 +500,36 @@ def accept_team_invitation(
         requests.RequestException: If the HTTP request fails.
     """
     url: str = f"{HOST_ADDRESS}{TEAM_API_URL}/update-request/{tenant_id}"
-    payload: Dict[str, bool] = {"accept": True}
+    payload: Dict[str, Any] = {"accept": True}
+    if role:
+        payload["role"] = role
+    res: requests.Response = requests.put(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
+def reject_team_invitation(
+    auth: Union[AuthBase, str, None],
+    tenant_id: str,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Reject a team invitation.
+
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        tenant_id: The tenant/team ID to reject invitation for.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+
+    Returns:
+        JSON response as a dictionary containing the rejection result.
+
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{TEAM_API_URL}/update-request/{tenant_id}"
+    payload: Dict[str, bool] = {"accept": False}
     res: requests.Response = requests.put(
         url=url, headers=headers, auth=auth, json=payload
     )
