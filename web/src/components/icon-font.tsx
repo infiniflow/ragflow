@@ -1,15 +1,16 @@
 import { FileIconMap } from '@/constants/file';
 import { cn } from '@/lib/utils';
 import { getExtension } from '@/utils/document-util';
+import { CSSProperties } from 'react';
 
 type IconFontType = {
   name: string;
-
   className?: string;
+  style?: CSSProperties;
 };
 
-export const IconFont = ({ name, className }: IconFontType) => (
-  <svg className={cn('size-4', className)}>
+export const IconFont = ({ name, className, style }: IconFontType) => (
+  <svg className={cn('size-4', className)} style={style}>
     <use xlinkHref={`#icon-${name}`} />
   </svg>
 );

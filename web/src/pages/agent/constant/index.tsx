@@ -868,7 +868,7 @@ export enum VariableAssignerLogicalArrayOperator {
 }
 
 export enum ExportFileType {
-  PDF = 'pdf',
+  // PDF = 'pdf',
   HTML = 'html',
   Markdown = 'md',
   DOCX = 'docx',

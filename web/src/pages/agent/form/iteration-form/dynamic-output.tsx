@@ -1,6 +1,7 @@
 'use client';
 
 import { FormContainer } from '@/components/form-container';
+import { KeyInput } from '@/components/key-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { BlockButton, Button } from '@/components/ui/button';
 import {
@@ -9,7 +10,6 @@ import {
   FormItem,
   FormMessage,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { t } from 'i18next';
@@ -67,10 +67,10 @@ export function DynamicOutputForm({ node }: IProps) {
               render={({ field }) => (
                 <FormItem className="flex-1">
                   <FormControl>
-                    <Input
+                    <KeyInput
                       {...field}
                       placeholder={t('common.pleaseInput')}
-                    ></Input>
+                    ></KeyInput>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
