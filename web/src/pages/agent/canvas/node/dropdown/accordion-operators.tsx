@@ -81,7 +81,6 @@ export function AccordionOperators({
               Operator.DataOperations,
               Operator.VariableAssigner,
               Operator.ListOperations,
-              Operator.VariableAssigner,
               Operator.VariableAggregator,
             ]}
             isCustomDropdown={isCustomDropdown}
