@@ -817,7 +817,7 @@ def create_user() -> Response:
               description: User email.
             password:
               type: string
-              description: User password (plain text).
+              description: User password (plain text or RSA-encrypted).
             is_superuser:
               type: boolean
               description: Whether the user should be a superuser (admin).
@@ -921,16 +921,25 @@ def create_user() -> Response:
     nickname = sanitize_nickname(nickname)
     
     is_superuser: bool = bool(req.get("is_superuser", False))
-    # Accept plain text password (no encryption required)
-    password: str = str(req.get("password", ""))
+    
+    # Accept both encrypted (like /user/register) and plain text passwords
+    password_input: str = str(req.get("password", ""))
     
     # Validate password is not empty
-    if not password or not password.strip():
+    if not password_input or not password_input.strip():
         return get_json_result(
             data=False,
             message="Password cannot be empty!",
             code=RetCode.ARGUMENT_ERROR,
         )
+    
+    # Try to decrypt password (if it's RSA-encrypted like from /user/register)
+    # If decryption fails, treat as plain text (backward compatibility)
+    try:
+        password: str = decrypt(password_input)
+    except BaseException:
+        # Not encrypted, use as plain text
+        password = password_input
 
     user_dict: Dict[str, Any] = {
         "access_token": get_uuid(),
