@@ -79,8 +79,9 @@ class SyncBase:
                         min_update = min([doc.doc_updated_at for doc in document_batch])
                         max_update = max([doc.doc_updated_at for doc in document_batch])
                         next_update = max([next_update, max_update])
-                        docs = [
-                            {
+                        docs = []
+                        for doc in document_batch:
+                            doc_dict = {
                                 "id": doc.id,
                                 "connector_id": task["connector_id"],
                                 "source": self.SOURCE_NAME,
@@ -90,8 +91,10 @@ class SyncBase:
                                 "doc_updated_at": doc.doc_updated_at,
                                 "blob": doc.blob,
                             }
-                            for doc in document_batch
-                        ]
+                            # Add metadata if present
+                            if doc.metadata:
+                                doc_dict["metadata"] = doc.metadata
+                            docs.append(doc_dict)
 
                         e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
                         err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
