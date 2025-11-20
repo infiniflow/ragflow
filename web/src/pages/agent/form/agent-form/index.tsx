@@ -6,6 +6,7 @@ import {
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -15,20 +16,21 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Input, NumberInput } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
   AgentExceptionMethod,
+  AgentStructuredOutputField,
   NodeHandleId,
   VariableType,
-  initialAgentValues,
 } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
@@ -71,17 +73,18 @@ const FormSchema = z.object({
   exception_default_value: z.string().optional(),
   ...LargeModelFilterFormSchema,
   cite: z.boolean().optional(),
+  showStructuredOutput: z.boolean().optional(),
 });
 
 export type AgentFormSchemaType = z.infer<typeof FormSchema>;
-
-const outputList = buildOutputList(initialAgentValues.outputs);
 
 function AgentForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
   const { edges, deleteEdgesBySourceAndSourceHandle } = useGraphStore(
     (state) => state,
   );
+
+  const outputList = buildOutputList(node?.data.form.outputs);
 
   const defaultValues = useValues(node);
 
@@ -112,6 +115,11 @@ function AgentForm({ node }: INextOperatorForm) {
     name: 'exception_method',
   });
 
+  const showStructuredOutput = useWatch({
+    control: form.control,
+    name: 'showStructuredOutput',
+  });
+
   const {
     initialStructuredOutput,
     showStructuredOutputDialog,
@@ -119,6 +127,17 @@ function AgentForm({ node }: INextOperatorForm) {
     hideStructuredOutputDialog,
     handleStructuredOutputDialogOk,
   } = useShowStructuredOutputDialog(node?.id);
+
+  const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
+
+  const handleShowStructuredOutput = useCallback(
+    (val: boolean) => {
+      if (node?.id && val) {
+        updateNodeForm(node?.id, {}, ['outputs', AgentStructuredOutputField]);
+      }
+    },
+    [node?.id, updateNodeForm],
+  );
 
   useEffect(() => {
     if (exceptionMethod !== AgentExceptionMethod.Goto) {
@@ -275,18 +294,43 @@ function AgentForm({ node }: INextOperatorForm) {
               )}
             </section>
           </Collapse>
-          <Output list={outputList}></Output>
-          <section className="space-y-2">
-            <div className="flex justify-between items-center">
-              {t('flow.structuredOutput.structuredOutput')}
-              <Button variant={'outline'} onClick={showStructuredOutputDialog}>
-                {t('flow.structuredOutput.configuration')}
-              </Button>
-            </div>
-            <StructuredOutputPanel
-              value={initialStructuredOutput}
-            ></StructuredOutputPanel>
-          </section>
+
+          <Output list={outputList}>
+            <RAGFlowFormItem name="showStructuredOutput">
+              {(field) => (
+                <div className="flex items-center space-x-2">
+                  <Label htmlFor="airplane-mode">
+                    {t('flow.structuredOutput.structuredOutput')}
+                  </Label>
+                  <Switch
+                    id="airplane-mode"
+                    checked={field.value}
+                    onCheckedChange={(val) => {
+                      handleShowStructuredOutput(val);
+                      field.onChange(val);
+                    }}
+                  />
+                </div>
+              )}
+            </RAGFlowFormItem>
+          </Output>
+          {showStructuredOutput && (
+            <section className="space-y-2">
+              <div className="flex justify-between items-center">
+                {t('flow.structuredOutput.structuredOutput')}
+                <Button
+                  variant={'outline'}
+                  onClick={showStructuredOutputDialog}
+                >
+                  {t('flow.structuredOutput.configuration')}
+                </Button>
+              </div>
+
+              <StructuredOutputPanel
+                value={initialStructuredOutput}
+              ></StructuredOutputPanel>
+            </section>
+          )}
         </FormWrapper>
       </Form>
       {structuredOutputDialogVisible && (

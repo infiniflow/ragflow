@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      confirm: 'Confirm',
       back: 'Back',
       noResults: 'No results.',
       selectPlaceholder: 'select value',
@@ -24,6 +25,7 @@ export default {
       portugueseBr: 'Portuguese (Brazil)',
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
+      russian: 'Russian',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -703,6 +705,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      edit: 'Edit',
       cropTip:
         'Drag the selection area to choose the cropping position of the image, and scroll to zoom in/out',
       cropImage: 'Crop image',
@@ -714,6 +717,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
       s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from. 
 Example: general/v2/`,
+      S3CompatibleEndpointUrlTip: `Required for S3 compatible Storage Box. Specify the S3-compatible endpoint URL.
+Example: https://fsn1.your-objectstorage.com`,
       addDataSourceModalTital: 'Create your {{name}} connector',
       deleteSourceModalTitle: 'Delete data source',
       deleteSourceModalContent: `
@@ -823,8 +828,7 @@ Example: general/v2/`,
       modelsToBeAdded: 'Models to be added',
       addTheModel: 'Add',
       apiKey: 'API-Key',
-      apiKeyMessage:
-        'Please enter the API key (for locally deployed model,ignore this).',
+      apiKeyMessage: 'Please enter the API key',
       apiKeyTip:
         'The API key can be obtained by registering the corresponding LLM supplier.',
       showMoreModels: 'View models',
@@ -1067,7 +1071,7 @@ Example: general/v2/`,
       apiKeyPlaceholder:
         'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
       flowStart: 'Start',
-      flowNum: 'Num',
+      flowNum: 'N',
       test: 'Test',
       extractDepth: 'Extract Depth',
       format: 'Format',
@@ -1651,6 +1655,7 @@ The variable aggregation node (originally the variable assignment node) is a cru
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       query: 'Query variables',
+      queryRequired: 'Query is required',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add Agent',
@@ -1757,6 +1762,8 @@ The variable aggregation node (originally the variable assignment node) is a cru
 The Indexer will store the content in the corresponding data structures for the selected methods.`,
       // file: 'File',
       parserMethod: 'PDF parser',
+      tableResultType: 'Table Result Type',
+      markdownImageResponseType: 'Markdown Image Response Type',
       // systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',
@@ -1859,6 +1866,19 @@ Important structured information may include: names, dates, locations, events, k
         asc: 'Ascending',
         desc: 'Descending',
       },
+      variableAssignerLogicalOperatorOptions: {
+        overwrite: 'Overwritten By',
+        clear: 'Clear',
+        set: 'Set',
+        '+=': 'Add',
+        '-=': 'Subtract',
+        '*=': 'Multiply',
+        '/=': 'Divide',
+        append: 'Append',
+        extend: 'Extend',
+        removeFirst: 'Remove first',
+        removeLast: 'Remove last',
+      },
     },
     llmTools: {
       bad_calculator: {
@@ -1926,6 +1946,7 @@ Important structured information may include: names, dates, locations, events, k
       japanese: 'Japanese',
       korean: 'Korean',
       vietnamese: 'Vietnamese',
+      russian: 'Russian',
     },
     pagination: {
       total: 'Total {{total}}',

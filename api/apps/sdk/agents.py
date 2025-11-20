@@ -27,7 +27,7 @@ from common.constants import RetCode
 from common.misc_utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_error_data_result, get_json_result, token_required
 from api.utils.api_utils import get_result
-from flask import request, Response
+from quart import request, Response
 
 
 @manager.route('/agents', methods=['GET'])  # noqa: F821
@@ -41,19 +41,19 @@ def list_agents(tenant_id):
             return get_error_data_result("The agent doesn't exist.")
     page_number = int(request.args.get("page", 1))
     items_per_page = int(request.args.get("page_size", 30))
-    orderby = request.args.get("orderby", "update_time")
+    order_by = request.args.get("orderby", "update_time")
     if request.args.get("desc") == "False" or request.args.get("desc") == "false":
         desc = False
     else:
         desc = True
-    canvas = UserCanvasService.get_list(tenant_id, page_number, items_per_page, orderby, desc, id, title)
+    canvas = UserCanvasService.get_list(tenant_id, page_number, items_per_page, order_by, desc, id, title)
     return get_result(data=canvas)
 
 
 @manager.route("/agents", methods=["POST"])  # noqa: F821
 @token_required
-def create_agent(tenant_id: str):
-    req: dict[str, Any] = cast(dict[str, Any], request.json)
+async def create_agent(tenant_id: str):
+    req: dict[str, Any] = cast(dict[str, Any], await request.json)
     req["user_id"] = tenant_id
 
     if req.get("dsl") is not None:
@@ -89,8 +89,8 @@ def create_agent(tenant_id: str):
 
 @manager.route("/agents/<agent_id>", methods=["PUT"])  # noqa: F821
 @token_required
-def update_agent(tenant_id: str, agent_id: str):
-    req: dict[str, Any] = {k: v for k, v in cast(dict[str, Any], request.json).items() if v is not None}
+async def update_agent(tenant_id: str, agent_id: str):
+    req: dict[str, Any] = {k: v for k, v in cast(dict[str, Any], (await request.json)).items() if v is not None}
     req["user_id"] = tenant_id
 
     if req.get("dsl") is not None:
@@ -135,8 +135,8 @@ def delete_agent(tenant_id: str, agent_id: str):
 
 @manager.route('/webhook/<agent_id>', methods=['POST'])  # noqa: F821
 @token_required
-def webhook(tenant_id: str, agent_id: str):
-    req = request.json
+async def webhook(tenant_id: str, agent_id: str):
+    req = await request.json
     if not UserCanvasService.accessible(req["id"], tenant_id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',

@@ -32,6 +32,7 @@ class BlobType(str, Enum):
     R2 = "r2"
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
     OCI_STORAGE = "oci_storage"
+    S3_COMPATIBLE = "s3_compatible"
 
 
 class DocumentSource(str, Enum):
@@ -47,6 +48,7 @@ class DocumentSource(str, Enum):
     GOOGLE_DRIVE = "google_drive"
     GMAIL = "gmail"
     DISCORD = "discord"
+    S3_COMPATIBLE = "s3_compatible"
 
 
 class FileOrigin(str, Enum):

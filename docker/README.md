@@ -77,7 +77,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `SVR_HTTP_PORT`  
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW-IMAGE`  
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.22.0`. The RAGFlow Docker image does not include embedding models.
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.22.1`. The RAGFlow Docker image does not include embedding models.
 
   
 > [!TIP]  
@@ -137,6 +137,15 @@ The [.env](./.env) file contains important environment variables for Docker.
   - `user`: The username for MinIO.
   - `password`: The password for MinIO.
   - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
+
+- `oceanbase`
+  - `scheme`: The connection scheme. Set to `mysql` to use mysql config, or other values to use config below.
+  - `config`:
+    - `db_name`: The OceanBase database name.
+    - `user`: The username for OceanBase.
+    - `password`: The password for OceanBase.
+    - `host`: The hostname of the OceanBase service.
+    - `port`: The port of OceanBase.
 
 - `oss`
   - `access_key`: The access key ID used to authenticate requests to the OSS service.

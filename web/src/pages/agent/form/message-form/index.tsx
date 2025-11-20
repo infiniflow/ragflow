@@ -81,7 +81,8 @@ function MessageForm({ node }: INextOperatorForm) {
                       )}
                       {...field}
                       onValueChange={field.onChange}
-                      placeholder={t('flow.messagePlaceholder')}
+                      placeholder={t('common.selectPlaceholder')}
+                      allowClear
                     ></RAGFlowSelect>
                   </FormControl>
                 </FormItem>

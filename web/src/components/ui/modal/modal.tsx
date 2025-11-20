@@ -86,6 +86,9 @@ const Modal: ModalType = ({
     onOk?.();
   }, [onOk, onOpenChange]);
   const handleChange = (open: boolean) => {
+    if (!open && !maskClosable) {
+      return;
+    }
     onOpenChange?.(open);
     console.log('open', open, onOpenChange);
     if (open && !disabled) {
@@ -185,6 +188,7 @@ const Modal: ModalType = ({
                     <button
                       type="button"
                       className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-muted focus-visible:outline-none"
+                      onClick={handleCancel}
                     >
                       {closeIcon}
                     </button>

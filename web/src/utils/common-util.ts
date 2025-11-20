@@ -46,6 +46,7 @@ const orderFactoryList = [
   LLMFactory.Ai302,
   LLMFactory.CometAPI,
   LLMFactory.DeerAPI,
+  LLMFactory.JiekouAI,
 ];
 
 export const sortLLmFactoryListBySpecifiedOrder = (list: IFactory[]) => {

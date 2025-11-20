@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      confirm: '确定',
       back: '返回',
       noResults: '无结果。',
       selectPlaceholder: '请选择',
@@ -691,6 +692,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
     },
     setting: {
+      edit: '编辑',
       cropTip: '拖动选区可以选择要图片的裁剪位置，滚动可以放大/缩小选区',
       cropImage: '剪裁图片',
       selectModelPlaceholder: '请选择模型',
@@ -793,7 +795,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       modelsToBeAdded: '待添加的模型',
       addTheModel: '添加',
       apiKey: 'API-Key',
-      apiKeyMessage: '请输入api key（如果是本地部署的模型，请忽略它）',
+      apiKeyMessage: '请输入api key',
       apiKeyTip: 'API key可以通过注册相应的LLM供应商来获取。',
       showMoreModels: '展示更多模型',
       hideModels: '隐藏模型',
@@ -1554,6 +1556,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       task: '任务',
       beginInputTip: '通过定义输入参数，此内容可以被后续流程中的其他组件访问。',
       query: '查询变量',
+      queryRequired: '查询变量是必填项',
       queryTip: '选择您想要使用的变量',
       agent: '智能体',
       addAgent: '添加智能体',
@@ -1633,6 +1636,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
 Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       filenameEmbdWeight: '文件名嵌入权重',
       parserMethod: '解析方法',
+      tableResultType: '表格返回形式',
+      markdownImageResponseType: '图片返回形式',
       systemPromptPlaceholder:
         '请输入用于图像分析的系统提示词，若为空则使用系统缺省值',
       exportJson: '导出 JSON',
@@ -1719,6 +1724,19 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       SortMethodOptions: {
         asc: '升序',
         desc: '降序',
+      },
+      variableAssignerLogicalOperatorOptions: {
+        overwrite: '覆盖',
+        clear: '清除',
+        set: '设置',
+        add: '加',
+        subtract: '减',
+        multiply: '乘',
+        divide: '除',
+        append: '追加',
+        extend: '扩展',
+        removeFirst: '移除第一个',
+        removeLast: '移除最后一个',
       },
     },
     footer: {

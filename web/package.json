@@ -69,6 +69,7 @@
     "classnames": "^2.5.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.4",
+    "cron-validate": "^1.4.5",
     "dayjs": "^1.11.10",
     "dompurify": "^3.1.6",
     "eventsource-parser": "^1.1.2",
@@ -116,10 +117,10 @@
     "uuid": "^9.0.1",
     "xlsx": "^0.18.5",
     "zod": "^3.23.8",
-    "cron-validate": "^1.4.5",
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@hookform/devtools": "^4.4.0",
     "@react-dev-inspector/umi4-plugin": "^2.0.1",
     "@redux-devtools/extension": "^3.3.0",
     "@storybook/addon-docs": "^9.1.4",

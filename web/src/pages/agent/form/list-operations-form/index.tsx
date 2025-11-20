@@ -13,20 +13,22 @@ import { Separator } from '@/components/ui/separator';
 import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-operator-options';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import {
+  ArrayFields,
   DataOperationsOperatorOptions,
-  JsonSchemaDataType,
   ListOperations,
   SortMethod,
   initialListOperationsValues,
 } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
+import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
+import { getArrayElementType } from '../../utils';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output, OutputSchema } from '../components/output';
@@ -36,7 +38,7 @@ import { QueryVariable } from '../components/query-variable';
 export const RetrievalPartialSchema = {
   query: z.string(),
   operations: z.string(),
-  n: z.number().int().min(0).optional(),
+  n: z.number().int().min(1).optional(),
   sort_method: z.string().optional(),
   filter: z
     .object({
@@ -47,14 +49,36 @@ export const RetrievalPartialSchema = {
   ...OutputSchema,
 };
 
+const NumFields = [
+  ListOperations.TopN,
+  ListOperations.Head,
+  ListOperations.Tail,
+];
+
+function showField(operations: string) {
+  const showNum = NumFields.includes(operations as ListOperations);
+  const showSortMethod = [ListOperations.Sort].includes(
+    operations as ListOperations,
+  );
+  const showFilter = [ListOperations.Filter].includes(
+    operations as ListOperations,
+  );
+
+  return {
+    showNum,
+    showSortMethod,
+    showFilter,
+  };
+}
+
 export const FormSchema = z.object(RetrievalPartialSchema);
 
 export type ListOperationsFormSchemaType = z.infer<typeof FormSchema>;
 
-const outputList = buildOutputList(initialListOperationsValues.outputs);
-
 function ListOperationsForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
+
+  const { getType } = useGetVariableLabelOrTypeByValue();
 
   const defaultValues = useFormValues(initialListOperationsValues, node);
 
@@ -62,10 +86,30 @@ function ListOperationsForm({ node }: INextOperatorForm) {
     defaultValues: defaultValues,
     mode: 'onChange',
     resolver: zodResolver(FormSchema),
-    shouldUnregister: true,
+    // shouldUnregister: true,
   });
 
   const operations = useWatch({ control: form.control, name: 'operations' });
+
+  const query = useWatch({ control: form.control, name: 'query' });
+
+  const subType = getArrayElementType(getType(query));
+
+  const currentOutputs = useMemo(() => {
+    return {
+      result: {
+        type: `Array<${subType}>`,
+      },
+      first: {
+        type: subType,
+      },
+      last: {
+        type: subType,
+      },
+    };
+  }, [subType]);
+
+  const outputList = buildOutputList(currentOutputs);
 
   const ListOperationsOptions = buildOptions(
     ListOperations,
@@ -79,9 +123,39 @@ function ListOperationsForm({ node }: INextOperatorForm) {
     `flow.SortMethodOptions`,
     true,
   );
+
   const operatorOptions = useBuildSwitchOperatorOptions(
     DataOperationsOperatorOptions,
   );
+
+  const { showFilter, showNum, showSortMethod } = showField(operations);
+
+  const handleOperationsChange = useCallback(
+    (operations: string) => {
+      const { showFilter, showNum, showSortMethod } = showField(operations);
+
+      if (showNum) {
+        form.setValue('n', 1, { shouldDirty: true });
+      }
+
+      if (showSortMethod) {
+        form.setValue('sort_method', SortMethodOptions.at(0)?.value, {
+          shouldDirty: true,
+        });
+      }
+      if (showFilter) {
+        form.setValue('filter.operator', operatorOptions.at(0)?.value, {
+          shouldDirty: true,
+        });
+      }
+    },
+    [SortMethodOptions, form, operatorOptions],
+  );
+
+  useEffect(() => {
+    form.setValue('outputs', currentOutputs, { shouldDirty: true });
+  }, [currentOutputs, form]);
+
   useWatchFormChange(node?.id, form, true);
 
   return (
@@ -90,37 +164,46 @@ function ListOperationsForm({ node }: INextOperatorForm) {
         <QueryVariable
           name="query"
           className="flex-1"
-          types={[JsonSchemaDataType.Array]}
+          types={ArrayFields as any[]}
         ></QueryVariable>
         <Separator />
         <RAGFlowFormItem name="operations" label={t('flow.operations')}>
-          <SelectWithSearch options={ListOperationsOptions} />
+          {(field) => (
+            <SelectWithSearch
+              options={ListOperationsOptions}
+              value={field.value}
+              onChange={(val) => {
+                handleOperationsChange(val);
+                field.onChange(val);
+              }}
+            />
+          )}
         </RAGFlowFormItem>
-        {[
-          ListOperations.TopN,
-          ListOperations.Head,
-          ListOperations.Tail,
-        ].includes(operations as ListOperations) && (
+        {showNum && (
           <FormField
             control={form.control}
             name="n"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('flowNum')}</FormLabel>
+                <FormLabel>{t('flow.flowNum')}</FormLabel>
                 <FormControl>
-                  <NumberInput {...field} className="w-full"></NumberInput>
+                  <NumberInput
+                    {...field}
+                    className="w-full"
+                    min={1}
+                  ></NumberInput>
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
         )}
-        {[ListOperations.Sort].includes(operations as ListOperations) && (
+        {showSortMethod && (
           <RAGFlowFormItem name="sort_method" label={t('flow.sortMethod')}>
             <SelectWithSearch options={SortMethodOptions} />
           </RAGFlowFormItem>
         )}
-        {[ListOperations.Filter].includes(operations as ListOperations) && (
+        {showFilter && (
           <div className="flex items-center gap-2">
             <RAGFlowFormItem name="filter.operator" className="flex-1">
               <SelectWithSearch options={operatorOptions}></SelectWithSearch>
