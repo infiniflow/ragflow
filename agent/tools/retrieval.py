@@ -137,7 +137,7 @@ class Retrieval(ToolBase, ABC):
                 if not doc_ids:
                     doc_ids = None
             elif self._param.meta_data_filter.get("method") == "manual":
-                filters=self._param.meta_data_filter["manual"]
+                filters = self._param.meta_data_filter["manual"]
                 for flt in filters:
                     pat = re.compile(self.variable_ref_patt)
                     s = flt["value"]
@@ -166,8 +166,8 @@ class Retrieval(ToolBase, ABC):
                     out_parts.append(s[last:])
                     flt["value"] = "".join(out_parts)
                 doc_ids.extend(meta_filter(metas, filters, self._param.meta_data_filter.get("logic", "and")))
-                if not doc_ids:
-                    doc_ids = None
+                if filters and not doc_ids:
+                    doc_ids = ["-999"]
 
         if self._param.cross_languages:
             query = cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)
