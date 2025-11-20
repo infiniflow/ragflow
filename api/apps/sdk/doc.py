@@ -1442,7 +1442,7 @@ async def retrieval_test(tenant_id):
         if doc_id not in doc_ids_list:
             return get_error_data_result(f"The datasets don't own the document {doc_id}")
     if not doc_ids:
-        metadata_condition = req.get("metadata_condition", {})
+        metadata_condition = req.get("metadata_condition", {}) or {}
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
