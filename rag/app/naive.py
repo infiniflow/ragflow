@@ -111,13 +111,7 @@ def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese",
 
 
 def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
-    parser_config = kwargs.get("parser_config", {})
-    layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
-
-    if isinstance(layout_recognizer, bool):
-        layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
-
-    if layout_recognizer == "Plain Text":
+    if kwargs.get("layout_recognizer", "") == "Plain Text":
         pdf_parser = PlainParser()
     else:
         vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT, llm_name=kwargs.get("layout_recognizer", ""), lang=kwargs.get("lang", "Chinese"))
