@@ -120,7 +120,7 @@ async def retrieval(tenant_id):
     retrieval_setting = req.get("retrieval_setting", {})
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
-    metadata_condition = req.get("metadata_condition", {})
+    metadata_condition = req.get("metadata_condition", {}) or {}
     metas = DocumentService.get_meta_by_kbs([kb_id])
 
     doc_ids = []
@@ -132,7 +132,7 @@ async def retrieval(tenant_id):
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
         if metadata_condition:
-            doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition)))
+            doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         if not doc_ids and metadata_condition:
             doc_ids = ["-999"]
         ranks = settings.retriever.retrieval(

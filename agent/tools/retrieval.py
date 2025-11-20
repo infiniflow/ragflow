@@ -132,8 +132,8 @@ class Retrieval(ToolBase, ABC):
             metas = DocumentService.get_meta_by_kbs(kb_ids)
             if self._param.meta_data_filter.get("method") == "auto":
                 chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT)
-                filters = gen_meta_filter(chat_mdl, metas, query)
-                doc_ids.extend(meta_filter(metas, filters))
+                filters: dict = gen_meta_filter(chat_mdl, metas, query)
+                doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
                     doc_ids = None
             elif self._param.meta_data_filter.get("method") == "manual":
@@ -165,7 +165,7 @@ class Retrieval(ToolBase, ABC):
 
                     out_parts.append(s[last:])
                     flt["value"] = "".join(out_parts)
-                doc_ids.extend(meta_filter(metas, filters))
+                doc_ids.extend(meta_filter(metas, filters, self._param.meta_data_filter.get("logic", "and")))
                 if not doc_ids:
                     doc_ids = None
 

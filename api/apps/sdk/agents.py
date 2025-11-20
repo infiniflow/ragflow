@@ -159,10 +159,10 @@ async def webhook(tenant_id: str, agent_id: str):
             data=False, message=str(e),
             code=RetCode.EXCEPTION_ERROR)
 
-    def sse():
+    async def sse():
         nonlocal canvas
         try:
-            for ans in canvas.run(query=req.get("query", ""), files=req.get("files", []), user_id=req.get("user_id", tenant_id), webhook_payload=req):
+            async for ans in canvas.run(query=req.get("query", ""), files=req.get("files", []), user_id=req.get("user_id", tenant_id), webhook_payload=req):
                 yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
 
             cvs.dsl = json.loads(str(canvas))

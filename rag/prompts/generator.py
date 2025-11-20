@@ -429,7 +429,7 @@ def rank_memories(chat_mdl, goal:str, sub_goal:str, tool_call_summaries: list[st
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
 
 
-def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> list:
+def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> dict:
     sys_prompt = PROMPT_JINJA_ENV.from_string(META_FILTER).render(
         current_date=datetime.datetime.today().strftime('%Y-%m-%d'),
         metadata_keys=json.dumps(meta_data),
@@ -440,11 +440,13 @@ def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> list:
     ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
     try:
         ans = json_repair.loads(ans)
-        assert isinstance(ans, list), ans
+        assert isinstance(ans, dict), ans
+        assert "conditions" in ans and isinstance(ans["conditions"], list), ans
         return ans
     except Exception:
         logging.exception(f"Loading json failure: {ans}")
-    return []
+
+    return {"conditions": []}
 
 
 def gen_json(system_prompt:str, user_prompt:str, chat_mdl, gen_conf = None):

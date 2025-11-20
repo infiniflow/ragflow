@@ -287,7 +287,7 @@ def convert_conditions(metadata_condition):
     ]
 
 
-def meta_filter(metas: dict, filters: list[dict]):
+def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
     doc_ids = set([])
 
     def filter_out(v2docs, operator, value):
@@ -331,7 +331,10 @@ def meta_filter(metas: dict, filters: list[dict]):
             if not doc_ids:
                 doc_ids = set(ids)
             else:
-                doc_ids = doc_ids & set(ids)
+                if logic == "and":
+                    doc_ids = doc_ids & set(ids)
+                else:
+                    doc_ids = doc_ids | set(ids)
             if not doc_ids:
                 return []
     return list(doc_ids)
@@ -407,12 +410,12 @@ def chat(dialog, messages, stream=True, **kwargs):
     if dialog.meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(dialog.kb_ids)
         if dialog.meta_data_filter.get("method") == "auto":
-            filters = gen_meta_filter(chat_mdl, metas, questions[-1])
-            attachments.extend(meta_filter(metas, filters))
+            filters: dict = gen_meta_filter(chat_mdl, metas, questions[-1])
+            attachments.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
             if not attachments:
                 attachments = None
         elif dialog.meta_data_filter.get("method") == "manual":
-            attachments.extend(meta_filter(metas, dialog.meta_data_filter["manual"]))
+            attachments.extend(meta_filter(metas, dialog.meta_data_filter["manual"], dialog.meta_data_filter.get("logic", "and")))
             if not attachments:
                 attachments = None
 
@@ -778,12 +781,12 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
     if meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         if meta_data_filter.get("method") == "auto":
-            filters = gen_meta_filter(chat_mdl, metas, question)
-            doc_ids.extend(meta_filter(metas, filters))
+            filters: dict = gen_meta_filter(chat_mdl, metas, question)
+            doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
             if not doc_ids:
                 doc_ids = None
         elif meta_data_filter.get("method") == "manual":
-            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"]))
+            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
             if not doc_ids:
                 doc_ids = None
 
@@ -853,12 +856,12 @@ def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     if meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         if meta_data_filter.get("method") == "auto":
-            filters = gen_meta_filter(chat_mdl, metas, question)
-            doc_ids.extend(meta_filter(metas, filters))
+            filters: dict = gen_meta_filter(chat_mdl, metas, question)
+            doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
             if not doc_ids:
                 doc_ids = None
         elif meta_data_filter.get("method") == "manual":
-            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"]))
+            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
             if not doc_ids:
                 doc_ids = None
 
