@@ -415,9 +415,10 @@ def chat(dialog, messages, stream=True, **kwargs):
             if not attachments:
                 attachments = None
         elif dialog.meta_data_filter.get("method") == "manual":
-            attachments.extend(meta_filter(metas, dialog.meta_data_filter["manual"], dialog.meta_data_filter.get("logic", "and")))
-            if not attachments:
-                attachments = None
+            conds = dialog.meta_data_filter["manual"]
+            attachments.extend(meta_filter(metas, conds, dialog.meta_data_filter.get("logic", "and")))
+            if conds and not attachments:
+                attachments = ["-999"]
 
     if prompt_config.get("keyword", False):
         questions[-1] += keyword_extraction(chat_mdl, questions[-1])
@@ -787,8 +788,8 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
                 doc_ids = None
         elif meta_data_filter.get("method") == "manual":
             doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
-            if not doc_ids:
-                doc_ids = None
+            if meta_data_filter["manual"] and not doc_ids:
+                doc_ids = ["-999"]
 
     kbinfos = retriever.retrieval(
         question=question,
@@ -862,8 +863,8 @@ def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
                 doc_ids = None
         elif meta_data_filter.get("method") == "manual":
             doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
-            if not doc_ids:
-                doc_ids = None
+            if meta_data_filter["manual"] and not doc_ids:
+                doc_ids = ["-999"]
 
     ranks = settings.retriever.retrieval(
         question=question,
