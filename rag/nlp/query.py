@@ -83,6 +83,7 @@ class FulltextQueryer:
         return txt
 
     def question(self, txt, tbl="qa", min_match: float = 0.6):
+        original_query = txt
         txt = FulltextQueryer.add_space_between_eng_zh(txt)
         txt = re.sub(
             r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>]+",
@@ -127,7 +128,7 @@ class FulltextQueryer:
                 q.append(txt)
             query = " ".join(q)
             return MatchTextExpr(
-                self.query_fields, query, 100
+                self.query_fields, query, 100, {"original_query": original_query}
             ), keywords
 
         def need_fine_grained_tokenize(tk):
@@ -212,7 +213,7 @@ class FulltextQueryer:
             if not query:
                 query = otxt
             return MatchTextExpr(
-                self.query_fields, query, 100, {"minimum_should_match": min_match}
+                self.query_fields, query, 100, {"minimum_should_match": min_match, "original_query": original_query}
             ), keywords
         return None, keywords
 
@@ -259,6 +260,7 @@ class FulltextQueryer:
             content_tks = [c.strip() for c in content_tks.strip() if c.strip()]
         tks_w = self.tw.weights(content_tks, preprocess=False)
 
+        origin_keywords = keywords.copy()
         keywords = [f'"{k.strip()}"' for k in keywords]
         for tk, w in sorted(tks_w, key=lambda x: x[1] * -1)[:keywords_topn]:
             tk_syns = self.syn.lookup(tk)
@@ -274,4 +276,4 @@ class FulltextQueryer:
                 keywords.append(f"{tk}^{w}")
 
         return MatchTextExpr(self.query_fields, " ".join(keywords), 100,
-                             {"minimum_should_match": min(3, len(keywords) // 10)})
+                             {"minimum_should_match": min(3, len(keywords) / 10), "original_query": " ".join(origin_keywords)})

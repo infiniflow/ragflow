@@ -28,6 +28,14 @@ os:
 infinity:
   uri: 'localhost:23817'
   db_name: 'default_db'
+oceanbase:
+  scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
+  config:
+    db_name: 'test'
+    user: 'root@ragflow'
+    password: 'infini_rag_flow'
+    host: 'localhost'
+    port: 2881
 redis:
   db: 1
   password: 'infini_rag_flow'
