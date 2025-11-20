@@ -379,7 +379,7 @@ class RAGFlowPdfParser:
             x0s = []
             for x in x0s_raw:
                 if abs(x - min_x0) < INDENT_TOL:
-                    x0s.append([min_x0])   # 缩进视为同一列
+                    x0s.append([min_x0])
                 else:
                     x0s.append([x])
             x0s = np.array(x0s, dtype=float)
@@ -436,13 +436,6 @@ class RAGFlowPdfParser:
             grouped = defaultdict(list)
             for b in bxs:
                 grouped[b["col_id"]].append(b)
-
-            logging.info(f"\n======= Page {pg} column grouping =======")
-            for col_id, group in grouped.items():
-                logging.info(f"Column {col_id}: {len(group)} boxes")
-                for item in group:
-                    logging.info(f"  -> box: x0={item['x0']}, x1={item['x1']}, y0={item['top']}, y1={item['bottom']}")
-            logging.info("======================================\n")
 
         return boxes
 
