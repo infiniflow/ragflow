@@ -15,6 +15,7 @@
 #
 import logging
 from datetime import datetime
+import os
 from typing import Tuple, List
 
 from anthropic import BaseModel
@@ -103,7 +104,8 @@ class SyncLogsService(CommonService):
             Knowledgebase.avatar.alias("kb_avatar"),
             Connector2Kb.auto_parse,
             cls.model.from_beginning.alias("reindex"),
-            cls.model.status
+            cls.model.status,
+            cls.model.update_time
         ]
         if not connector_id:
             fields.append(Connector.config)
@@ -116,7 +118,11 @@ class SyncLogsService(CommonService):
         if connector_id:
             query = query.where(cls.model.connector_id == connector_id)
         else:
-            interval_expr = SQL("INTERVAL `t2`.`refresh_freq` MINUTE")
+            database_type = os.getenv("DB_TYPE", "mysql")
+            if "postgres" in database_type.lower():
+                interval_expr = SQL("make_interval(mins => t2.refresh_freq)")
+            else:
+                interval_expr = SQL("INTERVAL `t2`.`refresh_freq` MINUTE")
             query = query.where(
                 Connector.input_type == InputType.POLL,
                 Connector.status == TaskStatus.SCHEDULE,
