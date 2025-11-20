@@ -981,7 +981,7 @@ async def retrieval_test_embedded():
                 doc_ids = None
         elif meta_data_filter.get("method") == "manual":
             doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
-            if not doc_ids:
+            if meta_data_filter["manual"] and not doc_ids:
                 doc_ids = ["-999"]
 
     try:
