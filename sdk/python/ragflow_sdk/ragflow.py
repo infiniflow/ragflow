@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from typing import Optional
+from typing import Any, Literal, Optional, TYPE_CHECKING
 
 import requests
 
@@ -22,9 +22,25 @@ from .modules.chat import Chat
 from .modules.chunk import Chunk
 from .modules.dataset import DataSet
 
+if TYPE_CHECKING:
+    from requests.sessions import _Files, _Params
+
+__all__ = 'RAGFlow',
+
+OrderBy = Literal["create_time", "update_time"]
 
 class RAGFlow:
-    def __init__(self, api_key, base_url, version="v1"):
+    __slots__ = (
+        'user_key',
+        'api_url',
+        'authorization_header',
+    )
+
+    user_key: str
+    api_url: str
+    authorization_header: dict[str, str]
+
+    def __init__(self, api_key: str, base_url: str, version: str="v1") -> None:
         """
         api_url: http://<host_address>/api/v1
         """
@@ -32,19 +48,19 @@ class RAGFlow:
         self.api_url = f"{base_url}/api/{version}"
         self.authorization_header = {"Authorization": "{} {}".format("Bearer", self.user_key)}
 
-    def post(self, path, json=None, stream=False, files=None):
+    def post(self, path: str, json: Any=None, stream: bool=False, files: Optional["_Files"]=None) -> requests.Response:
         res = requests.post(url=self.api_url + path, json=json, headers=self.authorization_header, stream=stream, files=files)
         return res
 
-    def get(self, path, params=None, json=None):
+    def get(self, path: str, params: Optional["_Params"]=None, json: Any=None) -> requests.Response:
         res = requests.get(url=self.api_url + path, params=params, headers=self.authorization_header, json=json)
         return res
 
-    def delete(self, path, json):
+    def delete(self, path: str, json: Any=None) -> requests.Response:
         res = requests.delete(url=self.api_url + path, json=json, headers=self.authorization_header)
         return res
 
-    def put(self, path, json):
+    def put(self, path: str, json: Any=None) -> requests.Response:
         res = requests.put(url=self.api_url + path, json=json, headers=self.authorization_header)
         return res
 
@@ -75,19 +91,19 @@ class RAGFlow:
             return DataSet(self, res["data"])
         raise Exception(res["message"])
 
-    def delete_datasets(self, ids: list[str] | None = None):
+    def delete_datasets(self, ids: list[str] | None = None) -> None:
         res = self.delete("/datasets", {"ids": ids})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
 
-    def get_dataset(self, name: str):
+    def get_dataset(self, name: str) -> DataSet:
         _list = self.list_datasets(name=name)
         if len(_list) > 0:
             return _list[0]
         raise Exception("Dataset %s not found" % name)
 
-    def list_datasets(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None) -> list[DataSet]:
+    def list_datasets(self, page: int = 1, page_size: int = 30, orderby: OrderBy = "create_time", desc: bool = True, id: str | None = None, name: str | None = None) -> list[DataSet]:
         res = self.get(
             "/datasets",
             {
@@ -107,7 +123,7 @@ class RAGFlow:
             return result_list
         raise Exception(res["message"])
 
-    def create_chat(self, name: str, avatar: str = "", dataset_ids=None, llm: Chat.LLM | None = None, prompt: Chat.Prompt | None = None) -> Chat:
+    def create_chat(self, name: str, avatar: str = "", dataset_ids: Optional[list[str]]=None, llm: Chat.LLM | None = None, prompt: Chat.Prompt | None = None) -> Chat:
         if dataset_ids is None:
             dataset_ids = []
         dataset_list = []
@@ -159,7 +175,7 @@ class RAGFlow:
             return Chat(self, res["data"])
         raise Exception(res["message"])
 
-    def delete_chats(self, ids: list[str] | None = None):
+    def delete_chats(self, ids: list[str] | None = None) -> None:
         res = self.delete("/chats", {"ids": ids})
         res = res.json()
         if res.get("code") != 0:
@@ -187,19 +203,19 @@ class RAGFlow:
 
     def retrieve(
         self,
-        dataset_ids,
-        document_ids=None,
-        question="",
-        page=1,
-        page_size=30,
-        similarity_threshold=0.2,
-        vector_similarity_weight=0.3,
-        top_k=1024,
+        dataset_ids: list[str],
+        document_ids: Optional[list[str]]=None,
+        question: str="",
+        page: int=1,
+        page_size: int=30,
+        similarity_threshold: float=0.2,
+        vector_similarity_weight: float=0.3,
+        top_k: int=1024,
         rerank_id: str | None = None,
         keyword: bool = False,
         cross_languages: list[str]|None = None,
-        metadata_condition: dict | None = None,
-    ):
+        metadata_condition: dict[str, Any] | None = None,
+    ) -> list[Chunk]:
         if document_ids is None:
             document_ids = []
         data_json = {
@@ -220,7 +236,7 @@ class RAGFlow:
         res = self.post("/retrieval", json=data_json)
         res = res.json()
         if res.get("code") == 0:
-            chunks = []
+            chunks: list[Chunk] = []
             for chunk_data in res["data"].get("chunks"):
                 chunk = Chunk(self, chunk_data)
                 chunks.append(chunk)
@@ -240,7 +256,7 @@ class RAGFlow:
             },
         )
         res = res.json()
-        result_list = []
+        result_list: list[Agent] = []
         if res.get("code") == 0:
             for data in res["data"]:
                 result_list.append(Agent(self, data))

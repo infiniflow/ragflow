@@ -14,18 +14,97 @@
 #  limitations under the License.
 #
 
+from typing import Any, Literal, NotRequired, Optional, TYPE_CHECKING, TypedDict
+
 import json
 
 from .base import Base
 from .chunk import Chunk
 
+if TYPE_CHECKING:
+    from ..ragflow import RAGFlow
+
+__all__ = 'Document',
+
+ChunkMethod = Literal["naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "email"]
+
+LayoutRecognize = Literal["DeepDOC", "Plain Text", "Naive"]
+
+class RaptorParams(TypedDict):
+    use_raptor: NotRequired[bool]
+
+class GraphragParams(TypedDict):
+    use_graphrag: NotRequired[bool]
+
+class ParserConfigParams(TypedDict):
+    filename_embd_weight: NotRequired[int|float]
+
+    # chunk_method=naive
+    chunk_token_num: NotRequired[int]
+    delimiter: NotRequired[str]
+    html4excel: NotRequired[bool]
+    layout_recognize: NotRequired[LayoutRecognize|bool]
+
+    # chunk_method=raptor
+    raptor: NotRequired[RaptorParams]
+
+    # chunk_method=knowledge-graph
+    entity_types: NotRequired[list[str]]
+
+    graphrag: NotRequired[GraphragParams]
+
+class UpdateMessage(TypedDict):
+    display_name: NotRequired[str]
+    meta_fields: NotRequired[dict[str, Any]]
+    chunk_method: NotRequired[ChunkMethod]
+    parser_config: NotRequired[ParserConfigParams]
 
 class Document(Base):
+    __slots__ = (
+        'id',
+        'name',
+        'thumbnail',
+        'dataset_id',
+        'chunk_method',
+        'parser_config',
+        'source_type',
+        'type',
+        'created_by',
+        'progress',
+        'progress_msg',
+        'process_begin_at',
+        'process_duration',
+        'run',
+        'status',
+        'meta_fields',
+        'blob',
+        'keywords',
+    )
+
     class ParserConfig(Base):
-        def __init__(self, rag, res_dict):
+        def __init__(self, rag: "RAGFlow", res_dict: dict[str, Any]) -> None:
             super().__init__(rag, res_dict)
 
-    def __init__(self, rag, res_dict):
+    id: str
+    name: str
+    thumbnail: Optional[str]
+    dataset_id: Optional[str]
+    chunk_method: Optional[str]
+    parser_config: dict[str, Any]
+    source_type: str
+    type: str
+    created_by: str
+    progress: float
+    progress_msg: str
+    process_begin_at: Optional[str]
+    process_duration: float
+    run: str
+    status: str
+    meta_fields: dict[str, Any]
+    blob: bytes
+    keywords: set[str]
+
+    def __init__(self, rag: "RAGFlow", res_dict: dict[str, Any]) -> None:
         self.id = ""
         self.name = ""
         self.thumbnail = None
@@ -46,11 +125,11 @@ class Document(Base):
         self.status = "1"
         self.meta_fields = {}
         for k in list(res_dict.keys()):
-            if k not in self.__dict__:
+            if not hasattr(self, k):
                 res_dict.pop(k)
         super().__init__(rag, res_dict)
 
-    def update(self, update_message: dict):
+    def update(self, update_message: UpdateMessage) -> "Document":
         if "meta_fields" in update_message:
             if not isinstance(update_message["meta_fields"], dict):
                 raise Exception("meta_fields must be a dictionary")
@@ -69,32 +148,32 @@ class Document(Base):
             response = res.json()
             actual_keys = set(response.keys())
             if actual_keys == error_keys:
-                raise Exception(res.get("message"))
+                raise Exception(response.get("message"))
             else:
                 return res.content
         except json.JSONDecodeError:
             return res.content
 
-    def list_chunks(self, page=1, page_size=30, keywords="", id=""):
+    def list_chunks(self, page: int=1, page_size: int=30, keywords: str="", id: str="") -> list[Chunk]:
         data = {"keywords": keywords, "page": page, "page_size": page_size, "id": id}
         res = self.get(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", data)
         res = res.json()
         if res.get("code") == 0:
-            chunks = []
+            chunks: list[Chunk] = []
             for data in res["data"].get("chunks"):
                 chunk = Chunk(self.rag, data)
                 chunks.append(chunk)
             return chunks
         raise Exception(res.get("message"))
 
-    def add_chunk(self, content: str, important_keywords: list[str] = [], questions: list[str] = []):
+    def add_chunk(self, content: str, important_keywords: list[str] = [], questions: list[str] = []) -> Chunk:
         res = self.post(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", {"content": content, "important_keywords": important_keywords, "questions": questions})
         res = res.json()
         if res.get("code") == 0:
             return Chunk(self.rag, res["data"].get("chunk"))
         raise Exception(res.get("message"))
 
-    def delete_chunks(self, ids: list[str] | None = None):
+    def delete_chunks(self, ids: list[str] | None = None) -> None:
         res = self.rm(f"/datasets/{self.dataset_id}/documents/{self.id}/chunks", {"chunk_ids": ids})
         res = res.json()
         if res.get("code") != 0:
