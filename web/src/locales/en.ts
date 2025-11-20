@@ -729,8 +729,7 @@ Example: https://fsn1.your-objectstorage.com`,
         'Sync pages and databases from Notion for knowledge retrieval.',
       google_driveDescription:
         'Connect your Google Drive via OAuth and sync specific folders or drives.',
-      webdavDescription:
-        'Connect to WebDAV servers (including Nextcloud, ownCloud) to sync files.',
+      webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:
         'Optional: Specify a folder path on the WebDAV server (e.g., /Documents). Leave empty to sync from root.',
       google_driveTokenTip:
