@@ -132,7 +132,7 @@ async def retrieval(tenant_id):
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
         if metadata_condition:
-            doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition)))
+            doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         if not doc_ids and metadata_condition:
             doc_ids = ["-999"]
         ranks = settings.retriever.retrieval(
