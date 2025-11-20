@@ -116,7 +116,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=No
     else:
         vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT, llm_name=kwargs.get("layout_recognizer", ""), lang=kwargs.get("lang", "Chinese"))
         pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
-    
+
     sections, tables = pdf_parser(
         filename if not binary else binary,
         from_page=from_page,
@@ -504,7 +504,7 @@ class Markdown(MarkdownParser):
 
         return images if images else None
 
-    def __call__(self, filename, binary=None, separate_tables=True,delimiter=None):
+    def __call__(self, filename, binary=None, separate_tables=True, delimiter=None):
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
@@ -602,7 +602,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         _SerializedRelationships.load_from_xml = load_from_xml_v2
         sections, tables = Docx()(filename, binary)
 
-        tables=vision_figure_parser_docx_wrapper(sections=sections,tbls=tables,callback=callback,**kwargs)
+        tables = vision_figure_parser_docx_wrapper(sections=sections, tbls=tables, callback=callback, **kwargs)
 
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
@@ -653,18 +653,47 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         if name in ["tcadp", "docling", "mineru"]:
             parser_config["chunk_token_num"] = 0
-        
+
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        excel_parser = ExcelParser()
-        if parser_config.get("html4excel"):
-            sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
+
+        # Check if tcadp_parser is selected for spreadsheet files
+        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+        if layout_recognizer == "TCADP Parser":
+            table_result_type = parser_config.get("table_result_type", "1")
+            markdown_image_response_type = parser_config.get("markdown_image_response_type", "1")
+            tcadp_parser = TCADPParser(
+                table_result_type=table_result_type,
+                markdown_image_response_type=markdown_image_response_type
+            )
+            if not tcadp_parser.check_installation():
+                callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
+                return res
+
+            # Determine file type based on extension
+            file_type = "XLSX" if re.search(r"\.xlsx?$", filename, re.IGNORECASE) else "CSV"
+
+            sections, tables = tcadp_parser.parse_pdf(
+                filepath=filename,
+                binary=binary,
+                callback=callback,
+                output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""),
+                file_type=file_type
+            )
+            parser_config["chunk_token_num"] = 0
+            res = tokenize_table(tables, doc, is_english)
+            callback(0.8, "Finish parsing.")
         else:
-            sections = [(_, "") for _ in excel_parser(binary) if _]
-        parser_config["chunk_token_num"] = 12800
+            # Default DeepDOC parser
+            excel_parser = ExcelParser()
+            if parser_config.get("html4excel"):
+                sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
+            else:
+                sections = [(_, "") for _ in excel_parser(binary) if _]
+            parser_config["chunk_token_num"] = 12800
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -676,7 +705,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
-        sections, tables = markdown_parser(filename, binary, separate_tables=False,delimiter=parser_config.get("delimiter", "\n!?;。；！？"))
+        sections, tables = markdown_parser(filename, binary, separate_tables=False, delimiter=parser_config.get("delimiter", "\n!?;。；！？"))
 
         try:
             vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)

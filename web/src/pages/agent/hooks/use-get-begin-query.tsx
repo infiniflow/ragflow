@@ -317,14 +317,18 @@ export const useGetComponentLabelByValue = (nodeId: string) => {
   return getLabel;
 };
 
+export function flatOptions(options: DefaultOptionType[]) {
+  return options.reduce<DefaultOptionType[]>((pre, cur) => {
+    return [...pre, ...cur.options];
+  }, []);
+}
+
 export function useFlattenQueryVariableOptions(nodeId?: string) {
   const { getNode } = useGraphStore((state) => state);
   const nextOptions = useBuildQueryVariableOptions(getNode(nodeId));
 
   const flattenOptions = useMemo(() => {
-    return nextOptions.reduce<DefaultOptionType[]>((pre, cur) => {
-      return [...pre, ...cur.options];
-    }, []);
+    return flatOptions(nextOptions);
   }, [nextOptions]);
 
   return flattenOptions;

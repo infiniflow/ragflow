@@ -25,6 +25,7 @@ export default {
       portugueseBr: 'Portuguese (Brazil)',
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
+      russian: 'Russian',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -1645,6 +1646,7 @@ The variable aggregation node (originally the variable assignment node) is a cru
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       query: 'Query variables',
+      queryRequired: 'Query is required',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add Agent',
@@ -1751,6 +1753,8 @@ The variable aggregation node (originally the variable assignment node) is a cru
 The Indexer will store the content in the corresponding data structures for the selected methods.`,
       // file: 'File',
       parserMethod: 'PDF parser',
+      tableResultType: 'Table Result Type',
+      markdownImageResponseType: 'Markdown Image Response Type',
       // systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',
@@ -1854,7 +1858,7 @@ Important structured information may include: names, dates, locations, events, k
         desc: 'Descending',
       },
       variableAssignerLogicalOperatorOptions: {
-        overwrite: 'Overwrite',
+        overwrite: 'Overwritten By',
         clear: 'Clear',
         set: 'Set',
         '+=': 'Add',
@@ -1933,6 +1937,7 @@ Important structured information may include: names, dates, locations, events, k
       japanese: 'Japanese',
       korean: 'Korean',
       vietnamese: 'Vietnamese',
+      russian: 'Russian',
     },
     pagination: {
       total: 'Total {{total}}',
