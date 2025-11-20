@@ -422,10 +422,10 @@ class Dealer:
                 tsim = sim
                 vsim = sim
 
-        if not sim:
+        sim_np = np.array(sim, dtype=np.float64)
+        if sim_np.size == 0:
             return ranks
 
-        sim_np = np.array(sim, dtype=np.float64)
         sorted_idx = np.argsort(sim_np * -1)
 
         valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= similarity_threshold]
@@ -461,7 +461,7 @@ class Dealer:
                 "kb_id": chunk["kb_id"],
                 "important_kwd": chunk.get("important_kwd", []),
                 "image_id": chunk.get("img_id", ""),
-                "similarity": float(sim[i]),
+                "similarity": float(sim_np[i]),
                 "vector_similarity": float(vsim[i]),
                 "term_similarity": float(tsim[i]),
                 "vector": chunk.get(vector_column, zero_vector),
