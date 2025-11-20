@@ -428,17 +428,15 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
         return resp
     else:
         # For non-streaming, just return the response directly
-        response = next(
-            completion_openai(
+        async for response in completion_openai(
                 tenant_id,
                 agent_id,
                 question,
                 session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
                 stream=False,
                 **req,
-            )
-        )
-        return jsonify(response)
+            ):
+            return jsonify(response)
 
 
 @manager.route("/agents/<agent_id>/completions", methods=["POST"])  # noqa: F821
