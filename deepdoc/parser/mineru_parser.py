@@ -476,7 +476,7 @@ class MinerUParser(RAGFlowPdfParser):
                     item[key] = str((subdir / item[key]).resolve())
         return data
 
-    def _transfer_to_sections(self, outputs: list[dict[str, Any]]):
+    def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None):
         sections = []
         for output in outputs:
             match output["type"]:
@@ -497,7 +497,11 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.DISCARDED:
                     pass
 
-            if section:
+            if section and parse_method == "manual":
+                sections.append((section, output["type"], self._line_tag(output)))
+            elif section and parse_method == "paper":
+                sections.append((section + self._line_tag(output), output["type"]))
+            else:
                 sections.append((section, self._line_tag(output)))
         return sections
 
@@ -516,6 +520,7 @@ class MinerUParser(RAGFlowPdfParser):
         method: str = "auto",
         server_url: Optional[str] = None,
         delete_output: bool = True,
+        parse_method: str = "raw"
     ) -> tuple:
         import shutil
 
@@ -565,7 +570,8 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
-            return self._transfer_to_sections(outputs), self._transfer_to_tables(outputs)
+                
+            return self._transfer_to_sections(outputs, parse_method), self._transfer_to_tables(outputs)
         finally:
             if temp_pdf and temp_pdf.exists():
                 try:

@@ -213,6 +213,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             lang = lang,
             callback = callback,
             pdf_cls = Pdf,
+            parse_method = "manual",
             **kwargs
         )
 
@@ -225,7 +226,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             elif len(section) != 3:
                 raise ValueError(f"Unexpected section length: {len(section)} (value={section!r})")
 
-            txt, sec_id, poss = section
+            txt, layoutno, poss = section
             if isinstance(poss, str):
                 poss = pdf_parser.extract_positions(poss)
                 first = poss[0]          # tuple: ([pn], x1, x2, y1, y2)
@@ -235,7 +236,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                     pn = pn[0]           # [pn] -> pn
                     poss[0] = (pn, *first[1:])
 
-            return (txt, sec_id, poss)
+            return (txt, layoutno, poss)
         
 
         sections = [_normalize_section(sec) for sec in sections]
