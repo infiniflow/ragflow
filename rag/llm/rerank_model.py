@@ -234,7 +234,11 @@ class CoHereRerank(Base):
     def __init__(self, key, model_name, base_url=None):
         from cohere import Client
 
-        self.client = Client(api_key=key, base_url=base_url)
+        # Only pass base_url if it's a non-empty string, otherwise use default Cohere API endpoint
+        client_kwargs = {"api_key": key}
+        if base_url and base_url.strip():
+            client_kwargs["base_url"] = base_url
+        self.client = Client(**client_kwargs)
         self.model_name = model_name.split("___")[0]
 
     def similarity(self, query: str, texts: list):
