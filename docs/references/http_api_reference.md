@@ -2085,6 +2085,7 @@ curl --request POST \
           "dataset_ids": ["b2a62730759d11ef987d0242ac120004"],
           "document_ids": ["77df9ef4759a11ef8bdd0242ac120004"],
           "metadata_condition": {
+            "logic": "and",
             "conditions": [
               {
                 "name": "author",
