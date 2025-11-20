@@ -1,7 +1,7 @@
+import JsonEditor from '@/components/json-edit';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Segmented } from '@/components/ui/segmented';
-import { Editor } from '@monaco-editor/react';
 import { t } from 'i18next';
 import { Trash2, X } from 'lucide-react';
 import { useCallback } from 'react';
@@ -31,32 +31,80 @@ export const useObjectFields = () => {
     },
     [],
   );
+  const validateKeys = (
+    obj: any,
+    path: (string | number)[] = [],
+  ): Array<{ path: (string | number)[]; message: string }> => {
+    const errors: Array<{ path: (string | number)[]; message: string }> = [];
 
+    if (obj !== null && typeof obj === 'object' && !Array.isArray(obj)) {
+      for (const key in obj) {
+        if (obj.hasOwnProperty(key)) {
+          if (!/^[a-zA-Z_]+$/.test(key)) {
+            errors.push({
+              path: [...path, key],
+              message: `Key "${key}" is invalid. Keys can only contain letters and underscores.`,
+            });
+          }
+          const nestedErrors = validateKeys(obj[key], [...path, key]);
+          errors.push(...nestedErrors);
+        }
+      }
+    } else if (Array.isArray(obj)) {
+      obj.forEach((item, index) => {
+        const nestedErrors = validateKeys(item, [...path, index]);
+        errors.push(...nestedErrors);
+      });
+    }
+
+    return errors;
+  };
   const objectRender = useCallback((field: FieldValues) => {
-    const fieldValue =
-      typeof field.value === 'object'
-        ? JSON.stringify(field.value, null, 2)
-        : JSON.stringify({}, null, 2);
-    console.log('object-render-field', field, fieldValue);
+    // const fieldValue =
+    //   typeof field.value === 'object'
+    //     ? JSON.stringify(field.value, null, 2)
+    //     : JSON.stringify({}, null, 2);
+    // console.log('object-render-field', field, fieldValue);
     return (
-      <Editor
-        height={200}
-        defaultLanguage="json"
-        theme="vs-dark"
-        value={fieldValue}
+      // <Editor
+      //   height={200}
+      //   defaultLanguage="json"
+      //   theme="vs-dark"
+      //   value={fieldValue}
+      //   onChange={field.onChange}
+      // />
+      <JsonEditor
+        value={field.value}
         onChange={field.onChange}
+        height="400px"
+        options={{
+          mode: 'code',
+          navigationBar: false,
+          mainMenuBar: true,
+          history: true,
+          onValidate: (json) => {
+            return validateKeys(json);
+          },
+        }}
       />
     );
   }, []);
 
   const objectValidate = useCallback((value: any) => {
     try {
-      if (!JSON.parse(value)) {
-        throw new Error(t('knowledgeDetails.formatTypeError'));
+      if (validateKeys(value, [])?.length > 0) {
+        throw new Error(t('flow.formatTypeError'));
+      }
+      if (!z.object({}).safeParse(value).success) {
+        throw new Error(t('flow.formatTypeError'));
+      }
+      if (value && typeof value === 'string' && !JSON.parse(value)) {
+        throw new Error(t('flow.formatTypeError'));
       }
       return true;
     } catch (e) {
-      throw new Error(t('knowledgeDetails.formatTypeError'));
+      console.log('object-render-error', e, value);
+      throw new Error(t('flow.formatTypeError'));
     }
   }, []);
 
@@ -219,6 +267,10 @@ export const useObjectFields = () => {
   };
   const handleCustomSchema = (value: TypesWithArray) => {
     switch (value) {
+      case TypesWithArray.Object:
+        return z.object({});
+      case TypesWithArray.ArrayObject:
+        return z.array(z.object({}));
       case TypesWithArray.ArrayString:
         return z.array(z.string());
       case TypesWithArray.ArrayNumber:
