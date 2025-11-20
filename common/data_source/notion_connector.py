@@ -341,6 +341,18 @@ class NotionConnector(LoadConnector, PollConnector):
                     if text:
                         cur_result_text_arr.append(text)
 
+                if result_type == "bulleted_list_item":
+                    if cur_result_text_arr:
+                        cur_result_text_arr[0] = f"- {cur_result_text_arr[0]}"
+                    else:
+                        cur_result_text_arr = ["- "]
+
+                if result_type == "numbered_list_item":
+                    if cur_result_text_arr:
+                        cur_result_text_arr[0] = f"1. {cur_result_text_arr[0]}"
+                    else:
+                        cur_result_text_arr = ["1. "]
+
                 if result_type == "to_do":
                     checked = result_obj.get("checked")
                     checkbox_prefix = "[x]" if checked else "[ ]"
