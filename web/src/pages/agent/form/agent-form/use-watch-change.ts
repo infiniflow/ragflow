@@ -17,20 +17,13 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
         prompts: [{ role: PromptRole.User, content: values.prompts }],
       };
 
-      if (values.showStructuredOutput) {
-        nextValues = {
-          ...nextValues,
-          outputs: {
-            ...values.outputs,
-            [AgentStructuredOutputField]:
-              values[AgentStructuredOutputField] ?? {},
-          },
-        };
-      } else {
+      if (!values.showStructuredOutput) {
         nextValues = {
           ...nextValues,
           outputs: omit(values.outputs, [AgentStructuredOutputField]),
         };
+      } else {
+        nextValues = omit(nextValues, 'outputs');
       }
       updateNodeForm(id, nextValues);
     }

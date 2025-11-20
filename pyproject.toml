@@ -49,7 +49,7 @@ dependencies = [
     "html-text==0.6.2",
     "httpx[socks]>=0.28.1,<0.29.0",
     "huggingface-hub>=0.25.0,<0.26.0",
-    "infinity-sdk==0.6.5",
+    "infinity-sdk==0.6.6",
     "infinity-emb>=0.0.66,<0.0.67",
     "itsdangerous==2.1.2",
     "json-repair==0.35.0",
@@ -149,6 +149,7 @@ dependencies = [
     "captcha>=0.7.1",
     "pip>=25.2",
     "pypandoc>=1.16",
+    "pyobvector==0.2.18",
 ]
 
 [dependency-groups]
