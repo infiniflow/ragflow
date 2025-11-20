@@ -52,6 +52,8 @@ export interface IKnowledgeResult {
 
 export interface Raptor {
   use_raptor: boolean;
+  strategy?: string;
+  cron?: string;
 }
 
 export interface ParserConfig {
@@ -66,7 +68,7 @@ export interface ParserConfig {
   raptor?: Raptor;
   tag_kb_ids?: string[];
   topn_tags?: number;
-  graphrag?: { use_graphrag?: boolean };
+  graphrag?: { use_graphrag?: boolean; entity_types?: string[]; method?: string; resolution?: boolean; community?: boolean; strategy?: string; cron?: string };
 }
 
 export interface IKnowledgeFileParserConfig {

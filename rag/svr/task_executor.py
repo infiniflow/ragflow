@@ -51,7 +51,7 @@ import faulthandler
 import numpy as np
 from peewee import DoesNotExist
 from common.constants import LLMType, ParserType, PipelineTaskType
-from api.db.services.document_service import DocumentService
+from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.file2document_service import File2DocumentService
@@ -68,6 +68,7 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
+from croniter import croniter
 
 BATCH_SIZE = 64
 
@@ -641,6 +642,8 @@ async def run_dataflow(task: dict):
     logging.info("[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks),  embedding_token_consumption, task_time_cost))
     PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
 
+    trigger_update_after(task_dataset_id, doc_id)
+
 
 @timeout(3600)
 async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_size, callback=None, doc_ids=[]):
@@ -746,6 +749,27 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
             return False
     return True
 
+
+def trigger_update_after(kb_id: str, doc_id: str):
+    try:
+        ok, kb = KnowledgebaseService.get_by_id(kb_id)
+        if not ok:
+            return
+        conf = kb.parser_config or {}
+        gconf = conf.get("graphrag") or {}
+        rconf = conf.get("raptor") or {}
+        if gconf.get("use_graphrag") and gconf.get("strategy") == "update_after":
+            docs, _ = DocumentService.get_by_kb_id(kb_id=kb.id, page_number=0, items_per_page=0, orderby="create_time", desc=False, keywords="", run_status=[], types=[], suffix=[])
+            sample_document = docs[0] if docs else {"id": doc_id}
+            tid = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="graphrag", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=[doc_id])
+            KnowledgebaseService.update_by_id(kb.id, {"graphrag_task_id": tid})
+        if rconf.get("use_raptor") and rconf.get("strategy") == "update_after":
+            docs, _ = DocumentService.get_by_kb_id(kb_id=kb.id, page_number=0, items_per_page=0, orderby="create_time", desc=False, keywords="", run_status=[], types=[], suffix=[])
+            sample_document = docs[0] if docs else {"id": doc_id}
+            tid = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty="raptor", priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=[doc_id])
+            KnowledgebaseService.update_by_id(kb.id, {"raptor_task_id": tid})
+    except Exception:
+        pass
 
 @timeout(60*60*3, 1)
 async def do_handle_task(task):
@@ -948,6 +972,7 @@ async def do_handle_task(task):
         "Chunk doc({}), page({}-{}), chunks({}), token({}), elapsed:{:.2f}".format(task_document_name, task_from_page,
                                                                                    task_to_page, len(chunks),
                                                                                    token_count, task_time_cost))
+    trigger_update_after(task_dataset_id, task_doc_id)
 
 
 async def handle_task():
@@ -1062,6 +1087,90 @@ async def task_manager():
         task_limiter.release()
 
 
+async def _due(cron: str, last_finish: datetime):
+    try:
+        if not cron:
+            return False
+        if not croniter.is_valid(cron):
+            return False
+        slot = datetime.now().replace(second=0, microsecond=0)
+        prev_time = croniter(cron, slot).get_prev(datetime)
+        if last_finish and last_finish >= prev_time:
+            return False
+        return True
+    except Exception:
+        return False
+
+
+async def scheduler():
+    while not stop_event.is_set():
+        try:
+            def _doc_finish_ts_ms(doc):
+                pb = doc.get("process_begin_at")
+                dur = doc.get("process_duration") or 0
+                if not pb:
+                    return None
+                try:
+                    pb_ts_ms = int(pb.timestamp() * 1000)
+                except Exception:
+                    return None
+                return pb_ts_ms + int(dur * 1000)
+
+            def _schedule_if_needed(kb, changed_docs, ty):
+                if not changed_docs:
+                    return
+                if ty == "graphrag":
+                    task_id = kb.graphrag_task_id
+                else:
+                    task_id = kb.raptor_task_id
+                skip = False
+                if task_id:
+                    ok, t = TaskService.get_by_id(task_id)
+                    skip = bool(ok and t and t.progress not in [-1, 1])
+                if skip:
+                    return
+                sample_document = changed_docs[0]
+                document_ids = [d["id"] for d in changed_docs]
+                tid = queue_raptor_o_graphrag_tasks(sample_doc_id=sample_document, ty=ty, priority=0, fake_doc_id=GRAPH_RAPTOR_FAKE_DOC_ID, doc_ids=document_ids)
+                if ty == "graphrag":
+                    KnowledgebaseService.update_by_id(kb.id, {"graphrag_task_id": tid})
+                else:
+                    KnowledgebaseService.update_by_id(kb.id, {"raptor_task_id": tid})
+
+            ids = KnowledgebaseService.get_all_ids()
+            for kb_id in ids:
+                ok, kb = KnowledgebaseService.get_by_id(kb_id)
+                if not ok:
+                    continue
+                conf = kb.parser_config or {}
+                gconf = (conf.get("graphrag") or {})
+                rconf = (conf.get("raptor") or {})
+                if gconf.get("use_graphrag") and gconf.get("strategy") == "timed" and gconf.get("cron"):
+                    if await _due(gconf.get("cron"), kb.graphrag_task_finish_at):
+                        documents, _ = DocumentService.get_by_kb_id(kb_id=kb.id, page_number=0, items_per_page=0, orderby="create_time", desc=False, keywords="", run_status=[], types=[], suffix=[])
+                        if documents:
+                            finish_dt = kb.graphrag_task_finish_at
+                            changed_docs = documents
+                            if finish_dt:
+                                finish_ts_ms = int(finish_dt.timestamp() * 1000)
+                                changed_docs = [d for d in documents if (lambda t: t is not None and t > finish_ts_ms)(_doc_finish_ts_ms(d))]
+                            _schedule_if_needed(kb, changed_docs, "graphrag")
+                if rconf.get("use_raptor") and rconf.get("strategy") == "timed" and rconf.get("cron"):
+                    if await _due(rconf.get("cron"), kb.raptor_task_finish_at):
+                        documents, _ = DocumentService.get_by_kb_id(kb_id=kb.id, page_number=0, items_per_page=0, orderby="create_time", desc=False, keywords="", run_status=[], types=[], suffix=[])
+                        if documents:
+                            finish_dt = kb.raptor_task_finish_at
+                            changed_docs = documents
+                            if finish_dt:
+                                finish_ts_ms = int(finish_dt.timestamp() * 1000)
+                                changed_docs = [d for d in documents if (lambda t: t is not None and t > finish_ts_ms)(_doc_finish_ts_ms(d))]
+                            _schedule_if_needed(kb, changed_docs, "raptor")
+        except Exception as e:
+            logging.exception(e)
+            pass
+        await trio.sleep(60) # Special tasks take a long time to run, so the start time of scheduled tasks does not need to be very precise
+
+
 async def main():
     logging.info(r"""
     ____                      __  _
@@ -1089,6 +1198,7 @@ async def main():
 
     async with trio.open_nursery() as nursery:
         nursery.start_soon(report_status)
+        nursery.start_soon(scheduler)
         while not stop_event.is_set():
             await task_limiter.acquire()
             nursery.start_soon(task_manager)

@@ -18,6 +18,8 @@ import {
   FormLabel,
   FormMessage,
 } from '../ui/form';
+import { ExpandedInput } from '../ui/input';
+import { Radio } from '../ui/radio';
 import { RAGFlowSelect } from '../ui/select';
 import { Switch } from '../ui/switch';
 
@@ -119,6 +121,10 @@ const GraphRagItems = ({
     control: form.control,
     name: 'parser_config.graphrag.use_graphrag',
   });
+  const strategy = useWatch({
+    control: form.control,
+    name: 'parser_config.graphrag.strategy',
+  });
 
   const methodOptions = useMemo(() => {
     return [MethodValue.Light, MethodValue.General].map((x) => ({
@@ -136,6 +142,60 @@ const GraphRagItems = ({
 
   return (
     <FormContainer className={cn({ 'mb-4': marginBottom }, className)}>
+      <FormField
+        control={form.control}
+        name={'parser_config.graphrag.strategy'}
+        render={({ field }) => {
+          return (
+            <FormItem className=" items-center space-y-0 ">
+              <div className="flex items-start">
+                <FormLabel className="text-sm whitespace-nowrap w-1/4">
+                  {t('graphRagStrategy')}
+                </FormLabel>
+                <div className="w-3/4">
+                  <FormControl>
+                    <Radio.Group {...field}>
+                      <div className={'flex gap-4 w-full text-text-secondary '}>
+                        <Radio value="manual">{t('strategyManual')}</Radio>
+                        <Radio value="update_after">{t('strategyUpdateAfter')}</Radio>
+                        <Radio value="timed">{t('strategyTimed')}</Radio>
+                      </div>
+                    </Radio.Group>
+                  </FormControl>
+                </div>
+              </div>
+              <div className="flex pt-1">
+                <div className="w-1/4"></div>
+                <FormMessage />
+              </div>
+            </FormItem>
+          );
+        }}
+      />
+      {strategy === 'timed' && (
+        <FormField
+          control={form.control}
+          name={'parser_config.graphrag.cron'}
+          render={({ field }) => (
+            <FormItem className=" items-center space-y-0 ">
+              <div className="flex items-center">
+                <FormLabel className="text-sm whitespace-nowrap w-1/4">
+                  {t('cronExpression')}
+                </FormLabel>
+                <div className="w-3/4">
+                  <FormControl>
+                    <ExpandedInput {...field} className="w-full" placeholder={t('cronPlaceholder')} />
+                  </FormControl>
+                </div>
+              </div>
+              <div className="flex pt-1">
+                <div className="w-1/4"></div>
+                <FormMessage />
+              </div>
+            </FormItem>
+          )}
+        />
+      )}
       <UseGraphRagFormField
         data={data}
         onDelete={onDelete}

@@ -194,6 +194,15 @@ export default {
         'Le modèle de réordonnancement est très consommateur de temps.',
     },
     knowledgeConfiguration: {
+      useGraphRag: 'Génération du graphe de connaissances',
+      useRaptor: 'Utiliser RAPTOR pour améliorer la récupération',
+      raptorStrategy: 'Stratégie de génération RAPTOR',
+      graphRagStrategy: 'Stratégie de génération GraphRAG',
+      strategyManual: 'Manuel',
+      strategyUpdateAfter: 'Après mise à jour',
+      strategyTimed: 'Planifié',
+      cronExpression: 'Expression cron',
+      cronPlaceholder: 'Veuillez saisir une expression cron',
       titleDescription:
         'Modifiez ici la configuration de votre base de connaissances, notamment la méthode de découpage.',
       name: 'Nom de la base de connaissances',
@@ -234,6 +243,7 @@ export default {
         'Affichera une explication visuelle des catégories de base de connaissances',
       // Les contenus HTML comme "book", "laws", etc. sont laissés en l’état pour ne pas altérer leur structure technique.
       useRaptor: 'Utiliser RAPTOR pour améliorer la récupération',
+      
       useRaptorTip:
         'Activez RAPTOR pour les questions nécessitant plusieurs étapes. Voir https: //ragflow.io/docs/dev/enable_raptor pour plus d’informations.',
       prompt: 'Prompt',

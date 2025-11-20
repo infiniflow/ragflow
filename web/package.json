@@ -116,6 +116,7 @@
     "uuid": "^9.0.1",
     "xlsx": "^0.18.5",
     "zod": "^3.23.8",
+    "cron-validate": "^1.4.5",
     "zustand": "^4.5.2"
   },
   "devDependencies": {
