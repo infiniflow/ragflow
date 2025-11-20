@@ -1629,6 +1629,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
 Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       filenameEmbdWeight: '文件名嵌入权重',
       parserMethod: '解析方法',
+      tableResultType: '表格返回形式',
+      markdownImageResponseType: '图片返回形式',
       systemPromptPlaceholder:
         '请输入用于图像分析的系统提示词，若为空则使用系统缺省值',
       exportJson: '导出 JSON',

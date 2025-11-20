@@ -1752,6 +1752,8 @@ The variable aggregation node (originally the variable assignment node) is a cru
 The Indexer will store the content in the corresponding data structures for the selected methods.`,
       // file: 'File',
       parserMethod: 'PDF parser',
+      tableResultType: 'Table Result Type',
+      markdownImageResponseType: 'Markdown Image Response Type',
       // systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',

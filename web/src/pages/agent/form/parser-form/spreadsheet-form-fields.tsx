@@ -8,9 +8,8 @@ import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { LanguageFormField, ParserMethodFormField } from './common-form-fields';
+import { ParserMethodFormField } from './common-form-fields';
 import { CommonProps } from './interface';
-import { useSetInitialLanguage } from './use-set-initial-language';
 import { buildFieldNameWithPrefix } from './utils';
 
 const tableResultTypeOptions: SelectWithSearchFlagOptionType[] = [
@@ -23,7 +22,7 @@ const markdownImageResponseTypeOptions: SelectWithSearchFlagOptionType[] = [
   { label: 'Text', value: '1' },
 ];
 
-export function PdfFormFields({ prefix }: CommonProps) {
+export function SpreadsheetFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const form = useFormContext();
 
@@ -33,22 +32,20 @@ export function PdfFormFields({ prefix }: CommonProps) {
     name: parseMethodName,
   });
 
-  const languageShown = useMemo(() => {
-    return (
-      !isEmpty(parseMethod) &&
-      parseMethod !== ParseDocumentType.DeepDOC &&
-      parseMethod !== ParseDocumentType.PlainText &&
-      parseMethod !== ParseDocumentType.TCADPParser
-    );
-  }, [parseMethod]);
+  // Spreadsheet only supports DeepDOC and TCADPParser
+  const optionsWithoutLLM = [
+    { label: ParseDocumentType.DeepDOC, value: ParseDocumentType.DeepDOC },
+    {
+      label: ParseDocumentType.TCADPParser,
+      value: ParseDocumentType.TCADPParser,
+    },
+  ];
 
   const tcadpOptionsShown = useMemo(() => {
     return (
       !isEmpty(parseMethod) && parseMethod === ParseDocumentType.TCADPParser
     );
   }, [parseMethod]);
-
-  useSetInitialLanguage({ prefix, languageShown });
 
   useEffect(() => {
     if (isEmpty(form.getValues(parseMethodName))) {
@@ -88,8 +85,10 @@ export function PdfFormFields({ prefix }: CommonProps) {
 
   return (
     <>
-      <ParserMethodFormField prefix={prefix}></ParserMethodFormField>
-      {languageShown && <LanguageFormField prefix={prefix}></LanguageFormField>}
+      <ParserMethodFormField
+        prefix={prefix}
+        optionsWithoutLLM={optionsWithoutLLM}
+      ></ParserMethodFormField>
       {tcadpOptionsShown && (
         <>
           <RAGFlowFormItem
