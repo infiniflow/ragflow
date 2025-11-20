@@ -982,7 +982,7 @@ async def retrieval_test_embedded():
         elif meta_data_filter.get("method") == "manual":
             doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
             if not doc_ids:
-                doc_ids = None
+                doc_ids = ["-999"]
 
     try:
         tenants = UserTenantService.query(user_id=tenant_id)

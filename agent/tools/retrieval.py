@@ -167,7 +167,7 @@ class Retrieval(ToolBase, ABC):
                     flt["value"] = "".join(out_parts)
                 doc_ids.extend(meta_filter(metas, filters, self._param.meta_data_filter.get("logic", "and")))
                 if not doc_ids:
-                    doc_ids = None
+                    doc_ids = ["-999"]
 
         if self._param.cross_languages:
             query = cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)
