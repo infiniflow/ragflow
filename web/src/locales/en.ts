@@ -25,6 +25,7 @@ export default {
       portugueseBr: 'Portuguese (Brazil)',
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
+      russian: 'Russian',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -1936,6 +1937,7 @@ Important structured information may include: names, dates, locations, events, k
       japanese: 'Japanese',
       korean: 'Korean',
       vietnamese: 'Vietnamese',
+      russian: 'Russian',
     },
     pagination: {
       total: 'Total {{total}}',
