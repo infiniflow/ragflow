@@ -15,6 +15,7 @@
 #
 import logging
 from datetime import datetime
+import os
 from typing import Tuple, List
 
 from anthropic import BaseModel
@@ -24,7 +25,6 @@ from api.db import InputType
 from api.db.db_models import Connector, SyncLogs, Connector2Kb, Knowledgebase
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
-from api.db.services.file_service import FileService
 from common.misc_utils import get_uuid
 from common.constants import TaskStatus
 from common.time_utils import current_timestamp, timestamp_to_date
@@ -68,6 +68,7 @@ class ConnectorService(CommonService):
 
     @classmethod
     def rebuild(cls, kb_id:str, connector_id: str, tenant_id:str):
+        from api.db.services.file_service import FileService
         e, conn = cls.get_by_id(connector_id)
         if not e:
             return None
@@ -103,7 +104,8 @@ class SyncLogsService(CommonService):
             Knowledgebase.avatar.alias("kb_avatar"),
             Connector2Kb.auto_parse,
             cls.model.from_beginning.alias("reindex"),
-            cls.model.status
+            cls.model.status,
+            cls.model.update_time
         ]
         if not connector_id:
             fields.append(Connector.config)
@@ -116,7 +118,11 @@ class SyncLogsService(CommonService):
         if connector_id:
             query = query.where(cls.model.connector_id == connector_id)
         else:
-            interval_expr = SQL("INTERVAL `t2`.`refresh_freq` MINUTE")
+            database_type = os.getenv("DB_TYPE", "mysql")
+            if "postgres" in database_type.lower():
+                interval_expr = SQL("make_interval(mins => t2.refresh_freq)")
+            else:
+                interval_expr = SQL("INTERVAL `t2`.`refresh_freq` MINUTE")
             query = query.where(
                 Connector.input_type == InputType.POLL,
                 Connector.status == TaskStatus.SCHEDULE,
@@ -191,6 +197,7 @@ class SyncLogsService(CommonService):
 
     @classmethod
     def duplicate_and_parse(cls, kb, docs, tenant_id, src, auto_parse=True):
+        from api.db.services.file_service import FileService
         if not docs:
             return None
 

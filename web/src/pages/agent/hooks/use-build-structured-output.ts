@@ -1,3 +1,4 @@
+import { getStructuredDatatype } from '@/utils/canvas-util';
 import { get, isPlainObject } from 'lodash';
 import { ReactNode, useCallback } from 'react';
 import {
@@ -106,10 +107,10 @@ export function useFindAgentStructuredOutputTypeByValue() {
       if (isPlainObject(values) && properties) {
         for (const [key, value] of Object.entries(properties)) {
           const nextPath = path ? `${path}.${key}` : key;
-          const dataType = get(value, 'type');
+          const { dataType, compositeDataType } = getStructuredDatatype(value);
 
           if (nextPath === target) {
-            return dataType;
+            return compositeDataType;
           }
 
           if (

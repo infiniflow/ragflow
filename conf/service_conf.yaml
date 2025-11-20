@@ -28,6 +28,14 @@ os:
 infinity:
   uri: 'localhost:23817'
   db_name: 'default_db'
+oceanbase:
+  scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
+  config:
+    db_name: 'test'
+    user: 'root@ragflow'
+    password: 'infini_rag_flow'
+    host: 'localhost'
+    port: 2881
 redis:
   db: 1
   password: 'infini_rag_flow'
@@ -139,5 +147,3 @@ user_default_llm:
 #  secret_id: 'tencent_secret_id'
 #  secret_key: 'tencent_secret_key'
 #  region: 'tencent_region'
-#  table_result_type: '1'
-#  markdown_image_response_type: '1'

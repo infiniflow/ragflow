@@ -1,6 +1,7 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Input } from '@/components/ui/input';
 import { t } from 'i18next';
+import { PropsWithChildren } from 'react';
 import { z } from 'zod';
 
 export type OutputType = {
@@ -11,7 +12,7 @@ export type OutputType = {
 type OutputProps = {
   list: Array<OutputType>;
   isFormRequired?: boolean;
-};
+} & PropsWithChildren;
 
 export function transferOutputs(outputs: Record<string, any>) {
   return Object.entries(outputs).map(([key, value]) => ({
@@ -24,10 +25,16 @@ export const OutputSchema = {
   outputs: z.record(z.any()),
 };
 
-export function Output({ list, isFormRequired = false }: OutputProps) {
+export function Output({
+  list,
+  isFormRequired = false,
+  children,
+}: OutputProps) {
   return (
     <section className="space-y-2">
-      <div className="text-sm">{t('flow.output')}</div>
+      <div className="text-sm flex items-center justify-between">
+        {t('flow.output')} <span>{children}</span>
+      </div>
       <ul>
         {list.map((x, idx) => (
           <li

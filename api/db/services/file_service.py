@@ -18,7 +18,6 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from flask_login import current_user
 from peewee import fn
 
 from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileType
@@ -184,6 +183,7 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def create_folder(cls, file, parent_id, name, count):
+        from api.apps import current_user
         # Recursively create folder structure
         # Args:
         #     file: Current file object
@@ -508,6 +508,7 @@ class FileService(CommonService):
     @staticmethod
     def parse(filename, blob, img_base64=True, tenant_id=None):
         from rag.app import audio, email, naive, picture, presentation
+        from api.apps import current_user
 
         def dummy(prog=None, msg=""):
             pass
