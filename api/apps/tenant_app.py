@@ -1019,13 +1019,13 @@ def add_users(tenant_id: str) -> Response:
         )
 
 
-@manager.route('/<tenant_id>/users/remove', methods=['POST'])  # noqa: F821
+@manager.route('/<tenant_id>/user/remove', methods=['POST'])  # noqa: F821
 @login_required
-@validate_request("user_ids")
-def remove_users(tenant_id: str) -> Response:
+@validate_request("user_id")
+def remove_user(tenant_id: str) -> Response:
     """
-    Remove one or more users from a team. Only OWNER or ADMIN can remove users.
-    Owners cannot be removed. Supports both single user and bulk operations.
+    Remove a user from a team. Only OWNER or ADMIN can remove users.
+    Owners cannot be removed.
     
     ---
     tags:
@@ -1044,28 +1044,26 @@ def remove_users(tenant_id: str) -> Response:
         schema:
           type: object
           required:
-            - user_ids
+            - user_id
           properties:
-            user_ids:
-              type: array
-              description: List of user IDs to remove
-              items:
-                type: string
+            user_id:
+              type: string
+              description: User ID to remove
     responses:
       200:
-        description: Users removed successfully
+        description: User removed successfully
         schema:
           type: object
           properties:
             data:
               type: object
               properties:
-                removed:
-                  type: array
-                  description: Successfully removed user IDs
-                failed:
-                  type: array
-                  description: Users that failed to be removed with error messages
+                user_id:
+                  type: string
+                  description: Removed user ID
+                email:
+                  type: string
+                  description: Removed user email
             message:
               type: string
       400:
@@ -1084,103 +1082,74 @@ def remove_users(tenant_id: str) -> Response:
         )
     
     req: Dict[str, Any] = request.json if request.json is not None else {}
-    user_ids: List[str] = req.get("user_ids", [])
+    user_id: Optional[str] = req.get("user_id")
     
-    if not isinstance(user_ids, list) or len(user_ids) == 0:
+    if not user_id or not isinstance(user_id, str):
         return get_json_result(
             data=False,
-            message="'user_ids' must be a non-empty array.",
+            message="'user_id' must be a non-empty string.",
             code=RetCode.ARGUMENT_ERROR
         )
     
-    removed_users: List[Dict[str, str]] = []
-    failed_users: List[Dict[str, str]] = []
-    
-    # Get all admins/owners for validation (check if removing would leave team without admin/owner)
-    all_user_tenants: List[Any] = UserTenantService.query(tenant_id=tenant_id)
-    admin_owner_ids: Set[str] = {
-        ut.user_id for ut in all_user_tenants 
-        if ut.role in [UserTenantRole.OWNER, UserTenantRole.ADMIN] and ut.status == StatusEnum.VALID.value
-    }
-    
-    for user_id in user_ids:
-        if not isinstance(user_id, str):
-            failed_users.append({
-                "user_id": str(user_id),
-                "error": "Invalid user ID format."
-            })
-            continue
+    try:
+        # Check if user exists in the team
+        user_tenant = UserTenantService.filter_by_tenant_and_user_id(tenant_id, user_id)
+        if not user_tenant:
+            return get_json_result(
+                data=False,
+                message="User is not a member of this team.",
+                code=RetCode.DATA_ERROR
+            )
         
-        try:
-            # Check if user exists in the team
-            user_tenant = UserTenantService.filter_by_tenant_and_user_id(tenant_id, user_id)
-            if not user_tenant:
-                failed_users.append({
-                    "user_id": user_id,
-                    "error": "User is not a member of this team."
-                })
-                continue
-            
-            # Prevent removing the owner
-            if user_tenant.role == UserTenantRole.OWNER:
-                failed_users.append({
-                    "user_id": user_id,
-                    "error": "Cannot remove the team owner."
-                })
-                continue
-            
-            # Prevent removing yourself if you're the only admin
-            if user_id == current_user.id and user_tenant.role == UserTenantRole.ADMIN:
-                remaining_admins: Set[str] = admin_owner_ids - {user_id}
-                if len(remaining_admins) == 0:
-                    failed_users.append({
-                        "user_id": user_id,
-                        "error": "Cannot remove yourself. At least one owner or admin must remain in the team."
-                    })
-                    continue
-            
-            # Remove user from team
-            UserTenantService.filter_delete([
-                UserTenant.tenant_id == tenant_id,
-                UserTenant.user_id == user_id
-            ])
-            
-            # Get user info for response
-            user: Optional[Any] = UserService.filter_by_id(user_id)
-            user_email: str = user.email if user else "Unknown"
-            
-            removed_users.append({
+        # Prevent removing the owner
+        if user_tenant.role == UserTenantRole.OWNER:
+            return get_json_result(
+                data=False,
+                message="Cannot remove the team owner.",
+                code=RetCode.DATA_ERROR
+            )
+        
+        # Get all admins/owners for validation (check if removing would leave team without admin/owner)
+        all_user_tenants: List[Any] = UserTenantService.query(tenant_id=tenant_id)
+        admin_owner_ids: Set[str] = {
+            ut.user_id for ut in all_user_tenants 
+            if ut.role in [UserTenantRole.OWNER, UserTenantRole.ADMIN] and ut.status == StatusEnum.VALID.value
+        }
+        
+        # Prevent removing yourself if you're the only admin
+        if user_id == current_user.id and user_tenant.role == UserTenantRole.ADMIN:
+            remaining_admins: Set[str] = admin_owner_ids - {user_id}
+            if len(remaining_admins) == 0:
+                return get_json_result(
+                    data=False,
+                    message="Cannot remove yourself. At least one owner or admin must remain in the team.",
+                    code=RetCode.DATA_ERROR
+                )
+        
+        # Remove user from team
+        UserTenantService.filter_delete([
+            UserTenant.tenant_id == tenant_id,
+            UserTenant.user_id == user_id
+        ])
+        
+        # Get user info for response
+        user: Optional[Any] = UserService.filter_by_id(user_id)
+        user_email: str = user.email if user else "Unknown"
+        
+        return get_json_result(
+            data={
                 "user_id": user_id,
                 "email": user_email
-            })
-            
-        except Exception as e:
-            logging.exception(f"Error removing user {user_id}: {e}")
-            failed_users.append({
-                "user_id": user_id,
-                "error": f"Failed to remove user: {str(e)}"
-            })
-    
-    result: Dict[str, List[Dict[str, str]]] = {
-        "removed": removed_users,
-        "failed": failed_users
-    }
-    
-    if failed_users and not removed_users:
-        return get_json_result(
-            data=result,
-            message=f"Failed to remove all users. {len(failed_users)} error(s).",
-            code=RetCode.DATA_ERROR
+            },
+            message="User removed successfully."
         )
-    elif failed_users:
+        
+    except Exception as e:
+        logging.exception(f"Error removing user {user_id}: {e}")
         return get_json_result(
-            data=result,
-            message=f"Removed {len(removed_users)} user(s). {len(failed_users)} user(s) failed."
-        )
-    else:
-        return get_json_result(
-            data=result,
-            message=f"Successfully removed {len(removed_users)} user(s)."
+            data=False,
+            message=f"Failed to remove user: {str(e)}",
+            code=RetCode.EXCEPTION_ERROR
         )
 
 

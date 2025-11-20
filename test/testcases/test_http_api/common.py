@@ -450,19 +450,19 @@ def add_users_to_team(
     return res.json()
 
 
-def remove_users_from_team(
+def remove_user_from_team(
     auth: Union[AuthBase, str, None],
     tenant_id: str,
     payload: Optional[Dict[str, Any]] = None,
     *,
     headers: Dict[str, str] = HEADERS,
 ) -> Dict[str, Any]:
-    """Remove users from a team (tenant).
+    """Remove a user from a team (tenant).
 
     Args:
         auth: Authentication object (AuthBase subclass), token string, or None.
-        tenant_id: The tenant/team ID to remove users from.
-        payload: Optional JSON payload containing user_ids list.
+        tenant_id: The tenant/team ID to remove user from.
+        payload: Optional JSON payload containing user_id string.
         headers: Optional HTTP headers. Defaults to HEADERS.
 
     Returns:
@@ -471,7 +471,7 @@ def remove_users_from_team(
     Raises:
         requests.RequestException: If the HTTP request fails.
     """
-    url: str = f"{HOST_ADDRESS}{TEAM_API_URL}/{tenant_id}/users/remove"
+    url: str = f"{HOST_ADDRESS}{TEAM_API_URL}/{tenant_id}/user/remove"
     res: requests.Response = requests.post(
         url=url, headers=headers, auth=auth, json=payload
     )

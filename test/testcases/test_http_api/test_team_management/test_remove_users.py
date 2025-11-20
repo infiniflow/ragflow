@@ -27,7 +27,7 @@ from common import (
     create_user,
     encrypt_password,
     login_as_user,
-    remove_users_from_team,
+    remove_user_from_team,
 )
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
@@ -83,16 +83,16 @@ class TestAuthorization:
         add_users_to_team(web_api_auth, tenant_id, add_payload)
 
         # Try to remove user with invalid auth
-        remove_payload: dict[str, list[str]] = {"user_ids": [user_id]}
-        res: dict[str, Any] = remove_users_from_team(invalid_auth, tenant_id, remove_payload)
+        remove_payload: dict[str, str] = {"user_id": user_id}
+        res: dict[str, Any] = remove_user_from_team(invalid_auth, tenant_id, remove_payload)
         assert res["code"] == expected_code, res
         if expected_message:
             assert expected_message in res["message"]
 
 
 @pytest.mark.p1
-class TestRemoveUsers:
-    """Comprehensive tests for removing users from a team."""
+class TestRemoveUser:
+    """Comprehensive tests for removing a user from a team."""
 
     @pytest.fixture
     def test_team(self, web_api_auth: RAGFlowWebApiAuth) -> dict[str, Any]:
@@ -151,36 +151,36 @@ class TestRemoveUsers:
         tenant_id: str = team_with_users["team"]["id"]
         user_id: str = team_with_users["users"][0]["id"]
 
-        remove_payload: dict[str, list[str]] = {"user_ids": [user_id]}
-        res: dict[str, Any] = remove_users_from_team(web_api_auth, tenant_id, remove_payload)
+        remove_payload: dict[str, str] = {"user_id": user_id}
+        res: dict[str, Any] = remove_user_from_team(web_api_auth, tenant_id, remove_payload)
 
         assert res["code"] == 0, res
         assert "data" in res
-        assert "removed" in res["data"]
-        assert len(res["data"]["removed"]) == 1
-        assert res["data"]["removed"][0]["user_id"] == user_id
-        assert "failed" in res["data"]
-        assert len(res["data"]["failed"]) == 0
+        assert res["data"]["user_id"] == user_id
+        assert "email" in res["data"]
 
     @pytest.mark.p1
     def test_remove_multiple_users(
         self, web_api_auth: RAGFlowWebApiAuth, team_with_users: dict[str, Any]
     ) -> None:
-        """Test removing multiple users in bulk."""
+        """Test removing multiple users one by one."""
         if len(team_with_users["users"]) < 2:
             pytest.skip("Need at least 2 users in team")
         
         tenant_id: str = team_with_users["team"]["id"]
         user_ids: list[str] = [user["id"] for user in team_with_users["users"][:2]]
 
-        remove_payload: dict[str, list[str]] = {"user_ids": user_ids}
-        res: dict[str, Any] = remove_users_from_team(web_api_auth, tenant_id, remove_payload)
+        # Remove first user
+        remove_payload1: dict[str, str] = {"user_id": user_ids[0]}
+        res1: dict[str, Any] = remove_user_from_team(web_api_auth, tenant_id, remove_payload1)
+        assert res1["code"] == 0, res1
+        assert res1["data"]["user_id"] == user_ids[0]
 
-        assert res["code"] == 0, res
-        assert len(res["data"]["removed"]) == 2
-        assert len(res["data"]["failed"]) == 0
-        removed_ids = {user["user_id"] for user in res["data"]["removed"]}
-        assert removed_ids == set(user_ids)
+        # Remove second user
+        remove_payload2: dict[str, str] = {"user_id": user_ids[1]}
+        res2: dict[str, Any] = remove_user_from_team(web_api_auth, tenant_id, remove_payload2)
+        assert res2["code"] == 0, res2
+        assert res2["data"]["user_id"] == user_ids[1]
 
     @pytest.mark.p1
     def test_remove_user_not_in_team(
@@ -194,14 +194,12 @@ class TestRemoveUsers:
         # Use a user that was not added to the team
         user_id: str = test_users[3]["id"]
 
-        remove_payload: dict[str, list[str]] = {"user_ids": [user_id]}
-        res: dict[str, Any] = remove_users_from_team(web_api_auth, tenant_id, remove_payload)
+        remove_payload: dict[str, str] = {"user_id": user_id}
+        res: dict[str, Any] = remove_user_from_team(web_api_auth, tenant_id, remove_payload)
 
-        # API returns error code when all removals fail
+        # API returns error code when removal fails
         assert res["code"] == 102  # DATA_ERROR
-        assert len(res["data"]["removed"]) == 0
-        assert len(res["data"]["failed"]) == 1
-        assert "not a member" in res["data"]["failed"][0]["error"].lower()
+        assert "not a member" in res["message"].lower()
 
     @pytest.mark.p1
     def test_remove_owner(
@@ -211,20 +209,18 @@ class TestRemoveUsers:
         tenant_id: str = test_team["id"]
         owner_id: str = test_team["owner_id"]
 
-        remove_payload: dict[str, list[str]] = {"user_ids": [owner_id]}
-        res: dict[str, Any] = remove_users_from_team(web_api_auth, tenant_id, remove_payload)
+        remove_payload: dict[str, str] = {"user_id": owner_id}
+        res: dict[str, Any] = remove_user_from_team(web_api_auth, tenant_id, remove_payload)
 
-        # API returns error code when all removals fail
+        # API returns error code when removal fails
         assert res["code"] == 102  # DATA_ERROR
-        assert len(res["data"]["removed"]) == 0
-        assert len(res["data"]["failed"]) == 1
-        assert "owner" in res["data"]["failed"][0]["error"].lower()
+        assert "owner" in res["message"].lower()
 
     @pytest.mark.p1
     def test_remove_users_partial_success(
         self, web_api_auth: RAGFlowWebApiAuth, team_with_users: dict[str, Any], test_users: list[dict[str, Any]]
     ) -> None:
-        """Test removing users where some succeed and some fail."""
+        """Test removing users one by one where some succeed and some fail."""
         if not team_with_users["users"] or len(test_users) < 4:
             pytest.skip("Need users in team and at least 4 test users")
         
@@ -233,52 +229,52 @@ class TestRemoveUsers:
         valid_user_id: str = team_with_users["users"][0]["id"]
         invalid_user_id: str = test_users[3]["id"]  # Not in team
 
-        remove_payload: dict[str, list[str]] = {"user_ids": [valid_user_id, invalid_user_id]}
-        res: dict[str, Any] = remove_users_from_team(web_api_auth, tenant_id, remove_payload)
+        # First remove valid user - should succeed
+        remove_payload1: dict[str, str] = {"user_id": valid_user_id}
+        res1: dict[str, Any] = remove_user_from_team(web_api_auth, tenant_id, remove_payload1)
+        assert res1["code"] == 0, res1
+        assert res1["data"]["user_id"] == valid_user_id
 
-        assert res["code"] == 0, res
-        assert len(res["data"]["removed"]) == 1
-        assert len(res["data"]["failed"]) == 1
-        assert res["data"]["removed"][0]["user_id"] == valid_user_id
-        assert "not a member" in res["data"]["failed"][0]["error"].lower()
+        # Then try to remove invalid user - should fail
+        remove_payload2: dict[str, str] = {"user_id": invalid_user_id}
+        res2: dict[str, Any] = remove_user_from_team(web_api_auth, tenant_id, remove_payload2)
+        assert res2["code"] == 102  # DATA_ERROR
+        assert "not a member" in res2["message"].lower()
 
     @pytest.mark.p1
-    def test_remove_users_empty_list(
+    def test_remove_users_empty_user_id(
         self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
     ) -> None:
-        """Test removing users with empty list."""
+        """Test removing user with empty user_id."""
         tenant_id: str = test_team["id"]
-        remove_payload: dict[str, list[str]] = {"user_ids": []}
+        remove_payload: dict[str, str] = {"user_id": ""}
 
-        res: dict[str, Any] = remove_users_from_team(web_api_auth, tenant_id, remove_payload)
+        res: dict[str, Any] = remove_user_from_team(web_api_auth, tenant_id, remove_payload)
         assert res["code"] == 101  # ARGUMENT_ERROR
         assert "non-empty" in res["message"].lower() or "empty" in res["message"].lower()
 
     @pytest.mark.p1
-    def test_remove_users_missing_user_ids_field(
+    def test_remove_users_missing_user_id_field(
         self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
     ) -> None:
-        """Test removing users without 'user_ids' field."""
+        """Test removing user without 'user_id' field."""
         tenant_id: str = test_team["id"]
         remove_payload: dict[str, Any] = {}
 
-        res: dict[str, Any] = remove_users_from_team(web_api_auth, tenant_id, remove_payload)
+        res: dict[str, Any] = remove_user_from_team(web_api_auth, tenant_id, remove_payload)
         assert res["code"] == 101  # ARGUMENT_ERROR
 
     @pytest.mark.p1
     def test_remove_users_invalid_user_id_format(
         self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
     ) -> None:
-        """Test removing users with invalid user ID format."""
+        """Test removing user with invalid user ID format."""
         tenant_id: str = test_team["id"]
-        remove_payload: dict[str, list[Any]] = {"user_ids": [12345]}  # Not a string
+        remove_payload: dict[str, Any] = {"user_id": 12345}  # Not a string
 
-        res: dict[str, Any] = remove_users_from_team(web_api_auth, tenant_id, remove_payload)
-        # API returns error code when all removals fail
-        assert res["code"] == 102  # DATA_ERROR
-        assert len(res["data"]["removed"]) == 0
-        assert len(res["data"]["failed"]) == 1
-        assert "invalid" in res["data"]["failed"][0]["error"].lower()
+        res: dict[str, Any] = remove_user_from_team(web_api_auth, tenant_id, remove_payload)
+        # API returns error code when removal fails
+        assert res["code"] == 101  # ARGUMENT_ERROR (validation should catch non-string)
 
     @pytest.mark.p1
     def test_remove_users_not_owner_or_admin(
@@ -305,8 +301,8 @@ class TestRemoveUsers:
 
         # Try to remove the other user (normal user should not be able to)
         other_user_id: str = test_users[1]["id"]
-        remove_payload: dict[str, list[str]] = {"user_ids": [other_user_id]}
-        res: dict[str, Any] = remove_users_from_team(normal_user_auth, tenant_id, remove_payload)
+        remove_payload: dict[str, str] = {"user_id": other_user_id}
+        res: dict[str, Any] = remove_user_from_team(normal_user_auth, tenant_id, remove_payload)
         assert res["code"] == 108  # PERMISSION_ERROR
         assert "owner" in res["message"].lower() or "admin" in res["message"].lower()
 
@@ -346,15 +342,13 @@ class TestRemoveUsers:
         admin_user_id: str = test_users[0]["id"]
 
         # Try to remove the admin (should fail - last admin cannot remove themselves)
-        remove_payload: dict[str, list[str]] = {"user_ids": [admin_user_id]}
-        res: dict[str, Any] = remove_users_from_team(admin_auth, tenant_id, remove_payload)
-        # API may return error code when all removals fail, or permission error if role not updated
+        remove_payload: dict[str, str] = {"user_id": admin_user_id}
+        res: dict[str, Any] = remove_user_from_team(admin_auth, tenant_id, remove_payload)
+        # API may return error code when removal fails, or permission error if role not updated
         assert res["code"] in [102, 108]  # DATA_ERROR or PERMISSION_ERROR
         if res["code"] == 102:
-            # If we get DATA_ERROR, check the failed entry
-            assert len(res["data"]["removed"]) == 0
-            assert len(res["data"]["failed"]) == 1
-            assert "cannot remove yourself" in res["data"]["failed"][0]["error"].lower() or "at least one" in res["data"]["failed"][0]["error"].lower()
+            # If we get DATA_ERROR, check the message
+            assert "cannot remove yourself" in res["message"].lower() or "at least one" in res["message"].lower()
         else:
             # If we get PERMISSION_ERROR, the user might not have admin role yet
             assert "owner" in res["message"].lower() or "admin" in res["message"].lower()
@@ -363,14 +357,14 @@ class TestRemoveUsers:
     def test_remove_users_invalid_tenant_id(
         self, web_api_auth: RAGFlowWebApiAuth, test_users: list[dict[str, Any]]
     ) -> None:
-        """Test removing users from a non-existent team."""
+        """Test removing user from a non-existent team."""
         if not test_users:
             pytest.skip("No test users created")
         
         invalid_tenant_id: str = f"invalid_{uuid.uuid4().hex[:8]}"
-        remove_payload: dict[str, list[str]] = {"user_ids": [test_users[0]["id"]]}
+        remove_payload: dict[str, str] = {"user_id": test_users[0]["id"]}
 
-        res: dict[str, Any] = remove_users_from_team(web_api_auth, invalid_tenant_id, remove_payload)
+        res: dict[str, Any] = remove_user_from_team(web_api_auth, invalid_tenant_id, remove_payload)
         assert res["code"] != 0
         assert "not found" in res["message"].lower() or res["code"] in [100, 102, 108]
 
