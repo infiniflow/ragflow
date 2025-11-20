@@ -5,9 +5,9 @@ import {
 import {
   AgentGlobals,
   AgentGlobalsSysQueryWithBrace,
-  AgentStructuredOutputField,
   CodeTemplateStrMap,
   ComparisonOperator,
+  JsonSchemaDataType,
   Operator,
   ProgrammingLanguage,
   SwitchOperatorOptions,
@@ -464,7 +464,6 @@ export const initialAgentValues = {
   mcp: [],
   cite: true,
   showStructuredOutput: false,
-  [AgentStructuredOutputField]: {},
   outputs: {
     content: {
       type: 'string',
@@ -610,15 +609,15 @@ export const initialListOperationsValues = {
   query: '',
   operations: ListOperations.TopN,
   outputs: {
-    result: {
-      type: 'Array<?>',
-    },
-    first: {
-      type: '?',
-    },
-    last: {
-      type: '?',
-    },
+    // result: {
+    //   type: 'Array<?>',
+    // },
+    // first: {
+    //   type: '?',
+    // },
+    // last: {
+    //   type: '?',
+    // },
   },
 };
 
@@ -869,8 +868,27 @@ export enum VariableAssignerLogicalArrayOperator {
 }
 
 export enum ExportFileType {
-  PDF = 'pdf',
+  // PDF = 'pdf',
   HTML = 'html',
   Markdown = 'md',
   DOCX = 'docx',
 }
+
+export enum TypesWithArray {
+  String = 'string',
+  Number = 'number',
+  Boolean = 'boolean',
+  Object = 'object',
+  ArrayString = 'array<string>',
+  ArrayNumber = 'array<number>',
+  ArrayBoolean = 'array<boolean>',
+  ArrayObject = 'array<object>',
+}
+
+export const ArrayFields = [
+  JsonSchemaDataType.Array,
+  TypesWithArray.ArrayBoolean,
+  TypesWithArray.ArrayNumber,
+  TypesWithArray.ArrayString,
+  TypesWithArray.ArrayObject,
+];

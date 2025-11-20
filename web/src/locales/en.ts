@@ -818,8 +818,7 @@ Example: https://fsn1.your-objectstorage.com`,
       modelsToBeAdded: 'Models to be added',
       addTheModel: 'Add',
       apiKey: 'API-Key',
-      apiKeyMessage:
-        'Please enter the API key (for locally deployed model,ignore this).',
+      apiKeyMessage: 'Please enter the API key',
       apiKeyTip:
         'The API key can be obtained by registering the corresponding LLM supplier.',
       showMoreModels: 'View models',
@@ -1062,7 +1061,7 @@ Example: https://fsn1.your-objectstorage.com`,
       apiKeyPlaceholder:
         'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
       flowStart: 'Start',
-      flowNum: 'Num',
+      flowNum: 'N',
       test: 'Test',
       extractDepth: 'Extract Depth',
       format: 'Format',
@@ -1646,6 +1645,7 @@ The variable aggregation node (originally the variable assignment node) is a cru
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       query: 'Query variables',
+      queryRequired: 'Query is required',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add Agent',
@@ -1855,7 +1855,7 @@ Important structured information may include: names, dates, locations, events, k
         desc: 'Descending',
       },
       variableAssignerLogicalOperatorOptions: {
-        overwrite: 'Overwrite',
+        overwrite: 'Overwritten By',
         clear: 'Clear',
         set: 'Set',
         '+=': 'Add',

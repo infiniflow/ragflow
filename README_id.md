@@ -85,6 +85,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2025-11-19 Mendukung Gemini 3 Pro.
 - 2025-11-12 Mendukung sinkronisasi data dari Confluence, AWS S3, Discord, Google Drive.
 - 2025-10-23 Mendukung MinerU & Docling sebagai metode penguraian dokumen.
 - 2025-10-15 Dukungan untuk jalur data yang terorkestrasi.
@@ -191,7 +192,8 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 ```bash
    $ cd ragflow/docker
    
-   # Opsional: gunakan tag stabil (lihat releases: https://github.com/infiniflow/ragflow/releases), contoh: git checkout v0.22.1
+   # git checkout v0.22.1
+   # Opsional: gunakan tag stabil (lihat releases: https://github.com/infiniflow/ragflow/releases)
    # This steps ensures the **entrypoint.sh** file in the code matches the Docker image version.
 
    # Use CPU for DeepDoc tasks:

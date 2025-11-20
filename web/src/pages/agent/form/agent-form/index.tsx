@@ -22,7 +22,7 @@ import { Switch } from '@/components/ui/switch';
 import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -74,7 +74,6 @@ const FormSchema = z.object({
   ...LargeModelFilterFormSchema,
   cite: z.boolean().optional(),
   showStructuredOutput: z.boolean().optional(),
-  [AgentStructuredOutputField]: z.record(z.any()),
 });
 
 export type AgentFormSchemaType = z.infer<typeof FormSchema>;
@@ -127,7 +126,18 @@ function AgentForm({ node }: INextOperatorForm) {
     structuredOutputDialogVisible,
     hideStructuredOutputDialog,
     handleStructuredOutputDialogOk,
-  } = useShowStructuredOutputDialog(form);
+  } = useShowStructuredOutputDialog(node?.id);
+
+  const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
+
+  const handleShowStructuredOutput = useCallback(
+    (val: boolean) => {
+      if (node?.id && val) {
+        updateNodeForm(node?.id, {}, ['outputs', AgentStructuredOutputField]);
+      }
+    },
+    [node?.id, updateNodeForm],
+  );
 
   useEffect(() => {
     if (exceptionMethod !== AgentExceptionMethod.Goto) {
@@ -284,9 +294,7 @@ function AgentForm({ node }: INextOperatorForm) {
               )}
             </section>
           </Collapse>
-          <RAGFlowFormItem name={AgentStructuredOutputField} className="hidden">
-            <Input></Input>
-          </RAGFlowFormItem>
+
           <Output list={outputList}>
             <RAGFlowFormItem name="showStructuredOutput">
               {(field) => (
@@ -297,7 +305,10 @@ function AgentForm({ node }: INextOperatorForm) {
                   <Switch
                     id="airplane-mode"
                     checked={field.value}
-                    onCheckedChange={field.onChange}
+                    onCheckedChange={(val) => {
+                      handleShowStructuredOutput(val);
+                      field.onChange(val);
+                    }}
                   />
                 </div>
               )}
