@@ -378,12 +378,12 @@ export const MultiSelect = React.forwardRef<
           align="start"
           onEscapeKeyDown={() => setIsPopoverOpen(false)}
         >
-          <Command>
+          <Command className="p-5 pb-8">
             <CommandInput
               placeholder={t('common.search') + '...'}
               onKeyDown={handleInputKeyDown}
             />
-            <CommandList>
+            <CommandList className="mt-2">
               <CommandEmpty>No results found.</CommandEmpty>
               <CommandGroup>
                 {showSelectAll && (
@@ -437,9 +437,9 @@ export const MultiSelect = React.forwardRef<
                     })}
                   </CommandGroup>
                 ))}
-              <CommandSeparator />
               <CommandGroup>
-                <div className="flex items-center justify-between">
+                <div className=" absolute bottom-1 left-1 right-1 flex items-center justify-between mx-5 bg-bg-base border-t border-border-button">
+                  <CommandSeparator />
                   {selectedValues.length > 0 && (
                     <>
                       <CommandItem
