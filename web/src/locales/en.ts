@@ -25,6 +25,7 @@ export default {
       portugueseBr: 'Portuguese (Brazil)',
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
+      russian: 'Russian',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -1752,6 +1753,8 @@ The variable aggregation node (originally the variable assignment node) is a cru
 The Indexer will store the content in the corresponding data structures for the selected methods.`,
       // file: 'File',
       parserMethod: 'PDF parser',
+      tableResultType: 'Table Result Type',
+      markdownImageResponseType: 'Markdown Image Response Type',
       // systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',
@@ -1934,6 +1937,7 @@ Important structured information may include: names, dates, locations, events, k
       japanese: 'Japanese',
       korean: 'Korean',
       vietnamese: 'Vietnamese',
+      russian: 'Russian',
     },
     pagination: {
       total: 'Total {{total}}',

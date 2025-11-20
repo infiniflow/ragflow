@@ -214,6 +214,36 @@ function transformParserParams(params: ParserFormSchemaType) {
             parse_method: cur.parse_method,
             lang: cur.lang,
           };
+          // Only include TCADP parameters if TCADP Parser is selected
+          if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
+            filteredSetup.table_result_type = cur.table_result_type;
+            filteredSetup.markdown_image_response_type =
+              cur.markdown_image_response_type;
+          }
+          break;
+        case FileType.Spreadsheet:
+          filteredSetup = {
+            ...filteredSetup,
+            parse_method: cur.parse_method,
+          };
+          // Only include TCADP parameters if TCADP Parser is selected
+          if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
+            filteredSetup.table_result_type = cur.table_result_type;
+            filteredSetup.markdown_image_response_type =
+              cur.markdown_image_response_type;
+          }
+          break;
+        case FileType.PowerPoint:
+          filteredSetup = {
+            ...filteredSetup,
+            parse_method: cur.parse_method,
+          };
+          // Only include TCADP parameters if TCADP Parser is selected
+          if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
+            filteredSetup.table_result_type = cur.table_result_type;
+            filteredSetup.markdown_image_response_type =
+              cur.markdown_image_response_type;
+          }
           break;
         case FileType.Image:
           filteredSetup = {
