@@ -59,6 +59,7 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
     mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
     mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
     pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
+    parse_method = kwargs.get("parse_method", "raw")
 
     if not pdf_parser.check_installation():
         callback(-1, "MinerU not found.")
@@ -72,12 +73,14 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
         backend=os.environ.get("MINERU_BACKEND", "pipeline"),
         server_url=os.environ.get("MINERU_SERVER_URL", ""),
         delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+        parse_method=parse_method
     )
     return sections, tables, pdf_parser
 
 
 def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     pdf_parser = DoclingParser()
+    parse_method = kwargs.get("parse_method", "raw")
 
     if not pdf_parser.check_installation():
         callback(-1, "Docling not found.")
@@ -89,6 +92,7 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
         callback=callback,
         output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
         delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+        parse_method=parse_method
     )
     return sections, tables, pdf_parser
 
