@@ -1434,6 +1434,7 @@ async def retrieval_test(tenant_id):
     question = req["question"]
     doc_ids = req.get("document_ids", [])
     use_kg = req.get("use_kg", False)
+    toc_enhance = req.get("toc_enhance", False)
     langs = req.get("cross_languages", [])
     if not isinstance(doc_ids, list):
         return get_error_data_result("`documents` should be a list")
@@ -1487,6 +1488,11 @@ async def retrieval_test(tenant_id):
             highlight=highlight,
             rank_feature=label_question(question, kbs),
         )
+        if toc_enhance:
+            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
+            cks = settings.retriever.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
+            if cks:
+                ranks["chunks"] = cks
         if use_kg:
             ck = settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:

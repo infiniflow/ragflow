@@ -2072,6 +2072,7 @@ Retrieves chunks from specified datasets.
   - `"cross_languages"`: `list[string]`
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
+  - `"toc_enhance"`: `boolean`
 ##### Request example
 
 ```bash
@@ -2122,6 +2123,8 @@ curl --request POST \
   The number of chunks engaged in vector cosine computation. Defaults to `1024`.
 - `"use_kg"`: (*Body parameter*), `boolean`  
   The search includes text chunks related to the knowledge graph of the selected dataset to handle complex multi-hop queries. Defaults to `False`.
+- `"toc_enhance"`: (*Body parameter*), `boolean`  
+  The search includes table of content enhancement in order to boost rank of relevant chunks. Files parsed with `TOC Enhance` enabled is prerequisite. Defaults to `False`.
 - `"rerank_id"`: (*Body parameter*), `integer`  
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`  
@@ -2136,6 +2139,9 @@ curl --request POST \
   The languages that should be translated into, in order to achieve keywords retrievals in different languages.
 - `"metadata_condition"`: (*Body parameter*), `object`  
   The metadata condition used for filtering chunks:  
+  - `"logic"`: (*Body parameter*), `string`
+    - `"and"` Intersection of the result from each condition (default).
+    - `"or"` union of the result from each condition.
   - `"conditions"`: (*Body parameter*), `array`  
     A list of metadata filter conditions.  
     - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.

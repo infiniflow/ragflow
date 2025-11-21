@@ -67,7 +67,7 @@
 ## 🔥 最新情報
 
 - 2025-11-19 Gemini 3 Proをサポートしています
-- 2025-11-12 Confluence、AWS S3、Discord、Google Drive からのデータ同期をサポートします。
+- 2025-11-12 Confluence、S3、Notion、Discord、Google Drive からのデータ同期をサポートします。
 - 2025-10-23 ドキュメント解析方法として MinerU と Docling をサポートします。
 - 2025-10-15 オーケストレーションされたデータパイプラインのサポート。
 - 2025-08-08 OpenAI の最新 GPT-5 シリーズモデルをサポートします。
