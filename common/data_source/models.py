@@ -94,6 +94,7 @@ class Document(BaseModel):
     blob: bytes
     doc_updated_at: datetime
     size_bytes: int
+    metadata: Optional[dict[str, Any]] = None
 
 
 class BasicExpertInfo(BaseModel):

@@ -214,9 +214,22 @@ class SyncLogsService(CommonService):
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)
 
+        # Create a mapping from filename to metadata for later use
+        metadata_map = {}
+        for d in docs:
+            if d.get("metadata"):
+                filename = d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else "")
+                metadata_map[filename] = d["metadata"]
+
         kb_table_num_map = {}
-        for doc, _ in doc_blob_pairs:
+        for (doc, _), file_obj in zip(doc_blob_pairs, files):
             doc_ids.append(doc["id"])
+            
+            # Set metadata if available for this document
+            if file_obj.filename in metadata_map:
+                from api.db.services.document_service import DocumentService
+                DocumentService.update_by_id(doc["id"], {"meta_fields": metadata_map[file_obj.filename]})
+            
             if not auto_parse or auto_parse == "0":
                 continue
             DocumentService.run(tenant_id, doc, kb_table_num_map)
