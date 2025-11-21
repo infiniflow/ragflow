@@ -45,9 +45,9 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-primary',
           'disabled:cursor-not-allowed disabled:opacity-50 transition-colors',
           {
-            'pl-12': !!prefix,
-            'pr-12': !!suffix || isPasswordInput,
-            'pr-24': !!suffix && isPasswordInput,
+            'pl-[calc(1em+1.25rem)]': !!prefix,
+            'pr-[calc(1em+1.25rem)]': !!suffix || isPasswordInput,
+            'pr-[calc(2em+2rem)]': !!suffix && isPasswordInput,
           },
           type === 'number' &&
             '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
