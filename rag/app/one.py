@@ -99,6 +99,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             lang = lang,
             callback = callback,
             pdf_cls = Pdf,
+            layout_recognizer = layout_recognizer,
             **kwargs
         )
 
