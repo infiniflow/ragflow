@@ -318,7 +318,8 @@ export default {
 <p>標籤欄中，標籤之間用英文逗號分隔。</p>
 <i>不符合上述規則的文字行將被忽略。</i>
 `,
-      useRaptor: '使用 RAPTOR 文件增強策略',
+      useRaptor: '召回增強RAPTOR生成資訊',
+      raptorStrategy: '召回增強RAPTOR生成策略',
       useRaptorTip:
         '啟用 RAPTOR 以用於多跳問答任務。詳情請參見：https://ragflow.io/docs/dev/enable_raptor',
       prompt: '提示詞',
@@ -364,7 +365,13 @@ export default {
  `,
       tags: '標籤',
       addTag: '增加標籤',
-      useGraphRag: '提取知識圖譜',
+      useGraphRag: '知識圖譜生成資訊',
+      graphRagStrategy: '知識圖譜生成策略',
+      strategyManual: '手動',
+      strategyUpdateAfter: '更新後',
+      strategyTimed: '定時',
+      cronExpression: '定時生成 cron 表達式',
+      cronPlaceholder: '請輸入 cron 表達式',
       useGraphRagTip:
         '基於知識庫內所有切好的文本塊構建知識圖譜，用以提升多跳和複雜問題回答的正確率。請注意：構建知識圖譜將消耗大量 token 和時間。詳見 https://ragflow.io/docs/dev/construct_knowledge_graph。',
       graphRagMethod: '方法',

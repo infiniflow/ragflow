@@ -171,6 +171,13 @@ export default {
       autoQuestionsTip: `ランキングスコアを向上させるために、「システムモデル設定」で定義されたチャットモデルを使用して、ナレッジベースのチャンクごとにN個の質問を抽出します。 これにより、追加のトークンが消費されることに注意してください。 結果はチャンクリストで表示および編集できます。 質問抽出エラーはチャンク処理をブロックしません。空の結果が元のチャンクに追加されます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
     },
     knowledgeConfiguration: {
+      useGraphRag: 'ナレッジグラフ生成',
+      graphRagStrategy: 'GraphRAG 生成戦略',
+      strategyManual: '手動',
+      strategyUpdateAfter: '更新後',
+      strategyTimed: '定期',
+      cronExpression: 'Cron 式',
+      cronPlaceholder: 'Cron 式を入力してください',
       titleDescription:
         'ナレッジベースの設定、特にチャンク方法をここで更新してください。',
       name: 'ナレッジベース名',
@@ -287,6 +294,7 @@ export default {
 <p>その後、チャンクはLLMに入力され、ナレッジグラフとマインドマップのエンティティと関係を抽出します。</p>
 <p><b>エンティティタイプ</b>を設定することを忘れないでください。</p>`,
       useRaptor: 'RAPTORを使用して検索を強化',
+      raptorStrategy: 'RAPTOR 生成戦略',
       useRaptorTip:
         'マルチホップ質問応答タスクでRAPTORを有効にしてください。詳細は https://ragflow.io/docs/dev/enable_raptor をご覧ください。',
       prompt: 'プロンプト',

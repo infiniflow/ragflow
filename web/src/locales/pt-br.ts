@@ -201,6 +201,13 @@ export default {
       metaData: 'Metadados',
     },
     knowledgeConfiguration: {
+      useGraphRag: 'Geração de grafo de conhecimento',
+      graphRagStrategy: 'Estratégia de geração GraphRAG',
+      strategyManual: 'Manual',
+      strategyUpdateAfter: 'Após atualização',
+      strategyTimed: 'Agendado',
+      cronExpression: 'Expressão cron',
+      cronPlaceholder: 'Insira a expressão cron',
       titleDescription:
         'Atualize a configuração da sua base de conhecimento aqui, especialmente o método de fragmentação.',
       name: 'Nome da base de conhecimento',
@@ -262,6 +269,7 @@ export default {
       <li>Se o arquivo estiver no formato <b>CSV/TXT</b>, ele deve estar codificado em UTF-8 e usar TAB como delimitador para separar perguntas e respostas.</li>
       <p><i>Linhas de texto que não seguirem essas regras serão ignoradas, e cada par de Pergunta & Resposta será tratado como um fragmento distinto.</i></p>`,
       useRaptor: 'Usar RAPTOR para melhorar a recuperação',
+      raptorStrategy: 'Estratégia de geração RAPTOR',
       useRaptorTip:
         'Ative o RAPTOR para tarefas de perguntas e respostas multi-hop. Veja https://ragflow.io/docs/dev/enable_raptor para mais detalhes.',
       prompt: 'Prompt',
