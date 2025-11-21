@@ -181,3 +181,8 @@ export enum JsonSchemaDataType {
   Array = 'array',
   Object = 'object',
 }
+
+export enum SwitchLogicOperator {
+  And = 'and',
+  Or = 'or',
+}

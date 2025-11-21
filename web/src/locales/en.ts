@@ -1046,7 +1046,7 @@ Example: https://fsn1.your-objectstorage.com`,
       downloadFileType: 'Download file type',
       formatTypeError: 'Format or type error',
       variableNameMessage:
-        'Variable name can only contain letters and underscores',
+        'Variable name can only contain letters and underscores and numbers',
       variableDescription: 'Variable Description',
       defaultValue: 'Default Value',
       conversationVariable: 'Conversation variable',
