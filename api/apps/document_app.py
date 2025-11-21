@@ -607,7 +607,7 @@ async def get_image(image_id):
 @login_required
 @validate_request("conversation_id")
 async def upload_and_parse():
-    files = await request.file
+    files = await request.files
     if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
