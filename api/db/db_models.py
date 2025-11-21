@@ -653,50 +653,6 @@ class UserTenant(DataBaseModel):
         db_table = "user_tenant"
 
 
-class Department(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    tenant_id = CharField(max_length=32, null=False, help_text="Tenant ID", index=True)
-    name = CharField(max_length=128, null=False, help_text="Department name", index=True)
-    description = TextField(null=True, help_text="Department description")
-    created_by = CharField(max_length=32, null=False, help_text="User who created the department", index=True)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
-
-    class Meta:
-        db_table = "department"
-
-
-class UserDepartment(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    department_id = CharField(max_length=32, null=False, help_text="Department ID", index=True)
-    user_id = CharField(max_length=32, null=False, help_text="User ID", index=True)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
-
-    class Meta:
-        db_table = "user_department"
-
-
-class Group(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    tenant_id = CharField(max_length=32, null=False, help_text="Tenant ID", index=True)
-    name = CharField(max_length=128, null=False, help_text="Group name", index=True)
-    description = TextField(null=True, help_text="Group description")
-    created_by = CharField(max_length=32, null=False, help_text="User who created the group", index=True)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
-
-    class Meta:
-        db_table = "group"
-
-
-class GroupUser(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    group_id = CharField(max_length=32, null=False, help_text="Group ID", index=True)
-    user_id = CharField(max_length=32, null=False, help_text="User ID", index=True)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
-
-    class Meta:
-        db_table = "group_user"
-
-
 class InvitationCode(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     code = CharField(max_length=32, null=False, index=True)
