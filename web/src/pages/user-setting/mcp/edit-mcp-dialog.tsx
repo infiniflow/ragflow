@@ -150,7 +150,7 @@ export function EditMcpDialog({
                 </Button>
               }
             >
-              <div className="overflow-auto max-h-80 divide-y bg-bg-card rounded-md px-2.5">
+              <div className="overflow-auto max-h-80 divide-y-[0.5px] divide-border-button bg-bg-card rounded-md px-2.5 scrollbar-auto">
                 {nextTools?.map((x) => (
                   <McpToolCard key={x.name} data={x}></McpToolCard>
                 ))}

@@ -102,8 +102,8 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
           {Array.isArray(tagChild) && tagChild.length > 0 && <>{tagChild}</>}
           {!inputVisible && (
             <Button
-              variant="dashed"
-              className="w-fit flex items-center justify-center gap-2 bg-bg-card"
+              variant="ghost"
+              className="w-fit flex items-center justify-center gap-2 bg-bg-card border-dashed border"
               onClick={showInput}
               style={tagPlusStyle}
             >

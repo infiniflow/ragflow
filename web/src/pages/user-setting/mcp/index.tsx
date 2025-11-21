@@ -86,7 +86,7 @@ export default function McpServer() {
                 {t('mcp.import')}
               </Button>
               <Button onClick={showEditModal('')}>
-                <Plus className="size-3.5" /> {t('mcp.addMCP')}
+                <Plus className="size-3.5 font-medium" /> {t('mcp.addMCP')}
               </Button>
             </div>
           </section>

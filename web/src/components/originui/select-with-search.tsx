@@ -140,7 +140,7 @@ export const SelectWithSearch = forwardRef<
             ref={ref}
             disabled={disabled}
             className={cn(
-              '!bg-bg-input hover:bg-background border-border-button w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto',
+              '!bg-bg-input hover:bg-background border-border-button w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto group',
               triggerClassName,
             )}
           >
@@ -155,12 +155,12 @@ export const SelectWithSearch = forwardRef<
               {value && allowClear && (
                 <>
                   <XIcon
-                    className="h-4 mx-2 cursor-pointer text-text-disabled"
+                    className="h-4 mx-2 cursor-pointer text-text-disabled hidden group-hover:block"
                     onClick={handleClear}
                   />
                   <Separator
                     orientation="vertical"
-                    className="flex min-h-6 h-full"
+                    className=" min-h-6 h-full hidden group-hover:flex"
                   />
                 </>
               )}
@@ -173,12 +173,17 @@ export const SelectWithSearch = forwardRef<
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="border-input w-full min-w-[var(--radix-popper-anchor-width)] p-0"
+          className="border-border-button w-full min-w-[var(--radix-popper-anchor-width)] p-0"
           align="start"
         >
-          <Command>
-            <CommandInput placeholder={t('common.search') + '...'} />
-            <CommandList>
+          <Command className="p-5">
+            {options && options.length > 0 && (
+              <CommandInput
+                placeholder={t('common.search') + '...'}
+                className=" placeholder:text-text-disabled"
+              />
+            )}
+            <CommandList className="mt-2">
               <CommandEmpty>{t('common.noDataFound')}</CommandEmpty>
               {options.map((group, idx) => {
                 if (group.options) {
@@ -209,6 +214,7 @@ export const SelectWithSearch = forwardRef<
                       value={group.value}
                       disabled={group.disabled}
                       onSelect={handleSelect}
+                      className="min-h-10"
                     >
                       <span className="leading-none">{group.label}</span>
 

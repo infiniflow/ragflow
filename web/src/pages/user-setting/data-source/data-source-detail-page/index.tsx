@@ -67,11 +67,11 @@ const SourceDetailPage = () => {
           <div className="flex items-center  gap-1 w-full relative">
             <Input {...fieldProps} type={FormFieldType.Number} />
             <span className="absolute right-0 -translate-x-[58px] text-text-secondary italic ">
-              minutes
+              {t('setting.minutes')}
             </span>
             <button
               type="button"
-              className="text-text-secondary bg-bg-input rounded-sm text-xs h-full p-2 border border-border-button "
+              className="text-text-secondary bg-bg-input rounded-sm text-xs h-full p-2 border border-border-button hover:bg-border-button hover:text-text-primary"
               onClick={() => {
                 runSchedule();
               }}
@@ -112,7 +112,7 @@ const SourceDetailPage = () => {
           <div className="flex items-center  gap-1 w-full relative">
             <Input {...fieldProps} type={FormFieldType.Number} />
             <span className="absolute right-0 -translate-x-6 text-text-secondary italic ">
-              seconds
+              {t('setting.seconds')}
             </span>
           </div>
         ),

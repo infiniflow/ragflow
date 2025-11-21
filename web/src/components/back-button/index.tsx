@@ -29,7 +29,10 @@ const BackButton: React.FC<BackButtonProps> = ({
   return (
     <Button
       variant="ghost"
-      className={cn('gap-2 bg-bg-card border border-border-default', className)}
+      className={cn(
+        'gap-2 bg-bg-card border border-border-default hover:bg-border-button hover:text-text-primary',
+        className,
+      )}
       onClick={handleClick}
       {...props}
     >

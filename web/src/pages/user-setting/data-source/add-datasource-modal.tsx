@@ -62,6 +62,7 @@ const AddDataSourceModal = ({
             sourceData?.id as keyof typeof DataSourceFormDefaultValues
           ] as FieldValues
         }
+        labelClassName="font-normal"
       >
         <div className=" absolute bottom-0 right-0 left-0 flex items-center justify-end w-full gap-2 py-6 px-6">
           <DynamicForm.CancelButton

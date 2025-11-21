@@ -129,7 +129,9 @@ export const AvailableModels: FC<{
             <div className="flex items-center space-x-3 mb-3">
               <LlmIcon name={model.name} imgClass="h-8 w-8 text-text-primary" />
               <div className="flex-1">
-                <h3 className="font-medium truncate">{model.name}</h3>
+                <div className="font-normal text-base truncate">
+                  {model.name}
+                </div>
               </div>
               <Button className=" px-2 items-center gap-0 text-xs h-6  rounded-md transition-colors hidden group-hover:flex">
                 <Plus size={12} />

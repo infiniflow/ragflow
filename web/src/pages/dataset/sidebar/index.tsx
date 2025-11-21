@@ -92,7 +92,7 @@ export function SideBar({ refreshCount }: PropType) {
               key={itemIdx}
               variant={active ? 'secondary' : 'ghost'}
               className={cn(
-                'w-full justify-start gap-2.5 px-3 relative h-10 text-text-sub-title-invert',
+                'w-full justify-start gap-2.5 px-3 relative h-10 text-text-secondary',
                 {
                   'bg-bg-card': active,
                   'text-text-primary': active,

@@ -3,7 +3,6 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { Eye, EyeOff, Search } from 'lucide-react';
 import { useState } from 'react';
-import { Button } from './button';
 
 export interface InputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
@@ -50,6 +49,8 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             'pr-12': !!suffix || isPasswordInput,
             'pr-24': !!suffix && isPasswordInput,
           },
+          type === 'number' &&
+            '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
           className,
         )}
         value={inputValue ?? ''}
@@ -77,10 +78,10 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             </span>
           )}
           {isPasswordInput && (
-            <Button
-              variant="transparent"
+            <button
               type="button"
               className="
+                p-2 text-text-secondary
                 absolute border-0 right-1 top-[50%] translate-y-[-50%]
                 dark:peer-autofill/input:text-text-secondary-inverse
                 dark:peer-autofill/input:hover:text-text-primary-inverse
@@ -93,7 +94,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
               ) : (
                 <Eye className="size-[1em]" />
               )}
-            </Button>
+            </button>
           )}
         </div>
       );
