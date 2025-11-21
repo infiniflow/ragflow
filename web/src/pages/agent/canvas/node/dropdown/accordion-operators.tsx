@@ -62,6 +62,7 @@ export function AccordionOperators({
             operators={[
               Operator.Switch,
               Operator.Iteration,
+              Operator.Loop,
               Operator.Categorize,
             ]}
             isCustomDropdown={isCustomDropdown}

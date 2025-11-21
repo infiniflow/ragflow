@@ -625,6 +625,8 @@ export const initialVariableAssignerValues = {};
 
 export const initialVariableAggregatorValues = { outputs: {}, groups: [] };
 
+export const initialLoopValues = { outputs: {} };
+
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
   { top: 8, right: 18 },
@@ -707,6 +709,8 @@ export const RestrictedUpstreamMap = {
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
+  [Operator.Loop]: [Operator.Begin],
+  [Operator.LoopStart]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -759,6 +763,8 @@ export const NodeMap = {
   [Operator.ListOperations]: 'listOperationsNode',
   [Operator.VariableAssigner]: 'variableAssignerNode',
   [Operator.VariableAggregator]: 'variableAggregatorNode',
+  [Operator.Loop]: 'loopNode',
+  [Operator.LoopStart]: 'loopStartNode',
 };
 
 export enum BeginQueryType {

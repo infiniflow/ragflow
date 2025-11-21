@@ -32,6 +32,7 @@ import {
   initialJin10Values,
   initialKeywordExtractValues,
   initialListOperationsValues,
+  initialLoopValues,
   initialMessageValues,
   initialNoteValues,
   initialParserValues,
@@ -67,6 +68,63 @@ function isBottomSubAgent(type: string, position: Position) {
     (type === Operator.Agent && position === Position.Bottom) ||
     type === Operator.Tool
   );
+}
+
+const GroupStartNodeMap = {
+  [Operator.Iteration]: {
+    id: `${Operator.IterationStart}:${humanId()}`,
+    type: 'iterationStartNode',
+    position: { x: 50, y: 100 },
+    data: {
+      label: Operator.IterationStart,
+      name: Operator.IterationStart,
+      form: initialIterationStartValues,
+    },
+    extent: 'parent' as 'parent',
+  },
+  [Operator.Loop]: {
+    id: `${Operator.LoopStart}:${humanId()}`,
+    type: 'loopStartNode',
+    position: { x: 50, y: 100 },
+    data: {
+      label: Operator.LoopStart,
+      name: Operator.LoopStart,
+      form: {},
+    },
+    extent: 'parent' as 'parent',
+  },
+};
+
+function useAddGroupNode() {
+  const { addEdge, addNode } = useGraphStore((state) => state);
+
+  const addGroupNode = useCallback(
+    (operatorType: string, newNode: Node<any>, nodeId?: string) => {
+      newNode.width = 500;
+      newNode.height = 250;
+
+      const startNode: Node<any> =
+        GroupStartNodeMap[operatorType as keyof typeof GroupStartNodeMap];
+
+      startNode.parentId = newNode.id;
+
+      addNode(newNode);
+      addNode(startNode);
+
+      if (nodeId) {
+        addEdge({
+          source: nodeId,
+          target: newNode.id,
+          sourceHandle: NodeHandleId.Start,
+          targetHandle: NodeHandleId.End,
+        });
+      }
+      return newNode.id;
+    },
+    [addEdge, addNode],
+  );
+
+  return { addGroupNode };
 }
 export const useInitializeOperatorParams = () => {
   const llmId = useFetchModelId();
@@ -133,6 +191,8 @@ export const useInitializeOperatorParams = () => {
       [Operator.ListOperations]: initialListOperationsValues,
       [Operator.VariableAssigner]: initialVariableAssignerValues,
       [Operator.VariableAggregator]: initialVariableAggregatorValues,
+      [Operator.Loop]: initialLoopValues,
+      [Operator.LoopStart]: {},
     };
   }, [llmId]);
 
@@ -311,6 +371,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const { addChildEdge } = useAddChildEdge();
   const { addToolNode } = useAddToolNode();
   const { resizeIterationNode } = useResizeIterationNode();
+  const { addGroupNode } = useAddGroupNode();
   //   const [reactFlowInstance, setReactFlowInstance] =
   //     useState<ReactFlowInstance<any, any>>();
 
@@ -376,33 +437,8 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           }
         }
 
-        if (type === Operator.Iteration) {
-          newNode.width = 500;
-          newNode.height = 250;
-          const iterationStartNode: Node<any> = {
-            id: `${Operator.IterationStart}:${humanId()}`,
-            type: 'iterationStartNode',
-            position: { x: 50, y: 100 },
-            // draggable: false,
-            data: {
-              label: Operator.IterationStart,
-              name: Operator.IterationStart,
-              form: initialIterationStartValues,
-            },
-            parentId: newNode.id,
-            extent: 'parent',
-          };
-          addNode(newNode);
-          addNode(iterationStartNode);
-          if (nodeId) {
-            addEdge({
-              source: nodeId,
-              target: newNode.id,
-              sourceHandle: NodeHandleId.Start,
-              targetHandle: NodeHandleId.End,
-            });
-          }
-          return newNode.id;
+        if ([Operator.Iteration, Operator.Loop].includes(type as Operator)) {
+          return addGroupNode(type, newNode, nodeId);
         } else if (
           type === Operator.Agent &&
           params.position === Position.Bottom
@@ -456,6 +492,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
     [
       addChildEdge,
       addEdge,
+      addGroupNode,
       addNode,
       addToolNode,
       calculateNewlyBackChildPosition,

@@ -62,6 +62,7 @@ import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
 import { ListOperationsNode } from './node/list-operations-node';
+import { LoopNode, LoopStartNode } from './node/loop-node';
 import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
 import ParserNode from './node/parser-node';
@@ -105,6 +106,8 @@ export const nodeTypes: NodeTypes = {
   listOperationsNode: ListOperationsNode,
   variableAssignerNode: VariableAssignerNode,
   variableAggregatorNode: VariableAggregatorNode,
+  loopNode: LoopNode,
+  loopStartNode: LoopStartNode,
 };
 
 const edgeTypes = {
