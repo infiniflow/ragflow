@@ -736,9 +736,15 @@ Example: https://fsn1.your-objectstorage.com`,
       google_drivePrimaryAdminTip:
         'Email address that has access to the Drive content being synced.',
       google_driveMyDriveEmailsTip:
-        'Comma-separated emails whose “My Drive” contents should be indexed (include the primary admin).',
+        'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
+      moodleDescription:
+        'Connect to your Moodle LMS to sync course content, forums, and resources.',
+      moodleUrlTip:
+        'The base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
+      moodleTokenTip:
+        'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
       jiraDescription:
         'Connect your Jira workspace to sync issues, comments, and attachments.',
       jiraBaseUrlTip:
