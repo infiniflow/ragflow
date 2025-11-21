@@ -1,5 +1,4 @@
 import { FormContainer } from '@/components/form-container';
-import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -12,20 +11,20 @@ import {
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
+import { SwitchLogicOperator } from '@/constants/agent';
 import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-operator-options';
+import { useBuildSwitchLogicOperatorOptions } from '@/hooks/logic-hooks/use-build-options';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
-import { toLower } from 'lodash';
 import { X } from 'lucide-react';
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback } from 'react';
 import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { SwitchLogicOperatorOptions, VariableType } from '../../constant';
-import { useBuildQueryVariableOptions } from '../../hooks/use-get-begin-query';
 import { IOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
+import { QueryVariable } from '../components/query-variable';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
@@ -46,19 +45,6 @@ function ConditionCards({
   parentLength,
 }: ConditionCardsProps) {
   const form = useFormContext();
-
-  const nextOptions = useBuildQueryVariableOptions();
-
-  const finalOptions = useMemo(() => {
-    return nextOptions.map((x) => {
-      return {
-        ...x,
-        options: x.options.filter(
-          (y) => !toLower(y.type).includes(VariableType.Array),
-        ),
-      };
-    });
-  }, [nextOptions]);
 
   const switchOperatorOptions = useBuildSwitchOperatorOptions();
 
@@ -101,11 +87,11 @@ function ConditionCards({
                   render={({ field }) => (
                     <FormItem className="flex-1 min-w-0">
                       <FormControl>
-                        <SelectWithSearch
+                        <QueryVariable
+                          pureQuery
                           {...field}
-                          options={finalOptions}
-                          triggerClassName="text-accent-primary bg-transparent border-none truncate"
-                        ></SelectWithSearch>
+                          hideLabel
+                        ></QueryVariable>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -200,12 +186,7 @@ function SwitchForm({ node }: IOperatorForm) {
     control: form.control,
   });
 
-  const switchLogicOperatorOptions = useMemo(() => {
-    return SwitchLogicOperatorOptions.map((x) => ({
-      value: x,
-      label: t(`flow.switchLogicOperatorOptions.${x}`),
-    }));
-  }, [t]);
+  const switchLogicOperatorOptions = useBuildSwitchLogicOperatorOptions();
 
   useWatchFormChange(node?.id, form);
 
@@ -268,7 +249,7 @@ function SwitchForm({ node }: IOperatorForm) {
         <BlockButton
           onClick={() =>
             append({
-              logical_operator: SwitchLogicOperatorOptions[0],
+              logical_operator: SwitchLogicOperator.And,
               [ItemKey]: [
                 {
                   operator: switchOperatorOptions[0].value,

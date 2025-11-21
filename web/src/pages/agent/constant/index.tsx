@@ -5,11 +5,12 @@ import {
 import {
   AgentGlobals,
   AgentGlobalsSysQueryWithBrace,
-  AgentStructuredOutputField,
   CodeTemplateStrMap,
   ComparisonOperator,
+  JsonSchemaDataType,
   Operator,
   ProgrammingLanguage,
+  SwitchLogicOperator,
   SwitchOperatorOptions,
   initialLlmBaseValues,
 } from '@/constants/agent';
@@ -50,8 +51,6 @@ import {
 } from 'lucide-react';
 
 export const BeginId = 'begin';
-
-export const SwitchLogicOperatorOptions = ['and', 'or'];
 
 export const CommonOperatorList = Object.values(Operator).filter(
   (x) => x !== Operator.Note,
@@ -308,7 +307,7 @@ export const initialExeSqlValues = {
 export const initialSwitchValues = {
   conditions: [
     {
-      logical_operator: SwitchLogicOperatorOptions[0],
+      logical_operator: SwitchLogicOperator.And,
       items: [
         {
           operator: SwitchOperatorOptions[0].value,
@@ -463,21 +462,13 @@ export const initialAgentValues = {
   tools: [],
   mcp: [],
   cite: true,
+  showStructuredOutput: false,
   outputs: {
-    // structured_output: {
-    //   topic: {
-    //     type: 'string',
-    //     description:
-    //       'default:general. The category of the search.news is useful for retrieving real-time updates, particularly about politics, sports, and major current events covered by mainstream media sources. general is for broader, more general-purpose searches that may include a wide range of sources.',
-    //     enum: ['general', 'news'],
-    //     default: 'general',
-    //   },
-    // },
     content: {
       type: 'string',
       value: '',
     },
-    [AgentStructuredOutputField]: {},
+    // [AgentStructuredOutputField]: {},
   },
 };
 
@@ -617,15 +608,15 @@ export const initialListOperationsValues = {
   query: '',
   operations: ListOperations.TopN,
   outputs: {
-    result: {
-      type: 'Array<?>',
-    },
-    first: {
-      type: '?',
-    },
-    last: {
-      type: '?',
-    },
+    // result: {
+    //   type: 'Array<?>',
+    // },
+    // first: {
+    //   type: '?',
+    // },
+    // last: {
+    //   type: '?',
+    // },
   },
 };
 
@@ -707,13 +698,14 @@ export const RestrictedUpstreamMap = {
   [Operator.Placeholder]: [Operator.Begin],
   [Operator.DataOperations]: [Operator.Begin],
   [Operator.ListOperations]: [Operator.Begin],
+  [Operator.VariableAssigner]: [Operator.Begin],
+  [Operator.VariableAggregator]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
   [Operator.Splitter]: [Operator.Begin],
   [Operator.HierarchicalMerger]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
-  [Operator.VariableAssigner]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -858,6 +850,13 @@ export enum VariableAssignerLogicalNumberOperator {
   Divide = '/=',
 }
 
+export const VariableAssignerLogicalNumberOperatorLabelMap = {
+  [VariableAssignerLogicalNumberOperator.Add]: 'add',
+  [VariableAssignerLogicalNumberOperator.Subtract]: 'subtract',
+  [VariableAssignerLogicalNumberOperator.Multiply]: 'multiply',
+  [VariableAssignerLogicalNumberOperator.Divide]: 'divide',
+};
+
 export enum VariableAssignerLogicalArrayOperator {
   Overwrite = VariableAssignerLogicalOperator.Overwrite,
   Clear = VariableAssignerLogicalOperator.Clear,
@@ -868,8 +867,27 @@ export enum VariableAssignerLogicalArrayOperator {
 }
 
 export enum ExportFileType {
-  PDF = 'pdf',
+  // PDF = 'pdf',
   HTML = 'html',
   Markdown = 'md',
   DOCX = 'docx',
 }
+
+export enum TypesWithArray {
+  String = 'string',
+  Number = 'number',
+  Boolean = 'boolean',
+  Object = 'object',
+  ArrayString = 'array<string>',
+  ArrayNumber = 'array<number>',
+  ArrayBoolean = 'array<boolean>',
+  ArrayObject = 'array<object>',
+}
+
+export const ArrayFields = [
+  JsonSchemaDataType.Array,
+  TypesWithArray.ArrayBoolean,
+  TypesWithArray.ArrayNumber,
+  TypesWithArray.ArrayString,
+  TypesWithArray.ArrayObject,
+];

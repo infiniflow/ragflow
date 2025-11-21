@@ -1,6 +1,7 @@
 // src/components/AvailableModels.tsx
 import { LlmIcon } from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectLlmList } from '@/hooks/llm-hooks';
 import { Plus, Search } from 'lucide-react';
@@ -77,12 +78,12 @@ export const AvailableModels: FC<{
       {/* Search Bar */}
       <div className="mb-6">
         <div className="relative">
-          <input
+          <Input
             type="text"
             placeholder={t('search')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-3 pl-10 bg-bg-input border border-border-default rounded-lg focus:outline-none focus:ring-1 focus:ring-border-button transition-colors"
+            className="w-full px-4 py-2 pl-10 bg-bg-input border border-border-default rounded-lg focus:outline-none focus:ring-1 focus:ring-border-button transition-colors"
           />
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-secondary" />
         </div>
@@ -128,7 +129,9 @@ export const AvailableModels: FC<{
             <div className="flex items-center space-x-3 mb-3">
               <LlmIcon name={model.name} imgClass="h-8 w-8 text-text-primary" />
               <div className="flex-1">
-                <h3 className="font-medium truncate">{model.name}</h3>
+                <div className="font-normal text-base truncate">
+                  {model.name}
+                </div>
               </div>
               <Button className=" px-2 items-center gap-0 text-xs h-6  rounded-md transition-colors hidden group-hover:flex">
                 <Plus size={12} />

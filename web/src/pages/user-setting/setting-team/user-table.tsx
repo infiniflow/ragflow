@@ -19,7 +19,7 @@ import { TenantRole } from '../constants';
 import { useHandleDeleteUser } from './hooks';
 
 const ColorMap: Record<string, string> = {
-  [TenantRole.Normal]: 'bg-transparent text-text-primary',
+  [TenantRole.Normal]: 'bg-transparent text-white',
   [TenantRole.Invite]: 'bg-accent-primary-5 bg-accent-primary rounded-sm',
   [TenantRole.Owner]: 'bg-red-100 text-red-800',
 };
@@ -78,7 +78,7 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
     <div className="rounded-lg bg-bg-input scrollbar-auto overflow-hidden border border-border-default">
       <Table rootClassName="rounded-lg">
         <TableHeader className="bg-bg-title">
-          <TableRow>
+          <TableRow className="hover:bg-bg-title">
             <TableHead className="h-12 px-4">{t('common.name')}</TableHead>
             <TableHead
               className="h-12 px-4 cursor-pointer"
@@ -137,7 +137,7 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 p-0"
+                    className="h-8 w-8 p-0 hover:bg-state-error-5 hover:text-state-error"
                     onClick={handleDeleteTenantUser(record.user_id)}
                   >
                     <Trash2 className="h-4 w-4" />

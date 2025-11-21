@@ -32,6 +32,7 @@ class IterationParam(ComponentParamBase):
     def __init__(self):
         super().__init__()
         self.items_ref = ""
+        self.variable={}
 
     def get_input_form(self) -> dict[str, dict]:
         return {

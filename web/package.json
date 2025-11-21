@@ -79,6 +79,7 @@
     "input-otp": "^1.4.1",
     "js-base64": "^3.7.5",
     "jsencrypt": "^3.3.2",
+    "jsoneditor": "^10.4.2",
     "lexical": "^0.23.1",
     "lodash": "^4.17.21",
     "lucide-react": "^0.546.0",
