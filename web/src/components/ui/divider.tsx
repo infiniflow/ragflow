@@ -17,7 +17,7 @@ const Divider: React.FC<DividerProps> = ({
   direction = 'horizontal',
   type = 'horizontal',
   text,
-  color = 'border-muted-foreground/50',
+  color = 'border-border-button',
   margin = 'my-4',
   className = '',
 }) => {

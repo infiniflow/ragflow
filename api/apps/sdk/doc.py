@@ -1434,6 +1434,7 @@ async def retrieval_test(tenant_id):
     question = req["question"]
     doc_ids = req.get("document_ids", [])
     use_kg = req.get("use_kg", False)
+    toc_enhance = req.get("toc_enhance", False)
     langs = req.get("cross_languages", [])
     if not isinstance(doc_ids, list):
         return get_error_data_result("`documents` should be a list")
@@ -1445,6 +1446,8 @@ async def retrieval_test(tenant_id):
         metadata_condition = req.get("metadata_condition", {}) or {}
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+        if metadata_condition and not doc_ids:
+            doc_ids = ["-999"]
     similarity_threshold = float(req.get("similarity_threshold", 0.2))
     vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
     top = int(req.get("top_k", 1024))
@@ -1485,6 +1488,11 @@ async def retrieval_test(tenant_id):
             highlight=highlight,
             rank_feature=label_question(question, kbs),
         )
+        if toc_enhance:
+            chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
+            cks = settings.retriever.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
+            if cks:
+                ranks["chunks"] = cks
         if use_kg:
             ck = settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:

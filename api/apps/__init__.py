@@ -24,7 +24,7 @@ from flasgger import Swagger
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from quart_cors import cors
 from common.constants import StatusEnum
-from api.db.db_models import close_connection
+from api.db.db_models import close_connection, APIToken
 from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
 from api.utils import commands
@@ -124,6 +124,10 @@ def _load_user():
         user = UserService.query(
             access_token=access_token, status=StatusEnum.VALID.value
         )
+        if not user and len(authorization.split()) == 2:
+            objs = APIToken.query(token=authorization.split()[1])
+            if objs:
+                user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
         if user:
             if not user[0].access_token or not user[0].access_token.strip():
                 logging.warning(f"User {user[0].email} has empty access_token in database")

@@ -446,8 +446,8 @@ async def agent_completions(tenant_id, agent_id):
 
     if req.get("stream", True):
 
-        def generate():
-            for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
+        async def generate():
+            async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
                 if isinstance(answer, str):
                     try:
                         ans = json.loads(answer[5:])  # remove "data:"
@@ -471,7 +471,7 @@ async def agent_completions(tenant_id, agent_id):
     full_content = ""
     reference = {}
     final_ans = ""
-    for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
+    async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
         try:
             ans = json.loads(answer[5:])
 
@@ -873,7 +873,7 @@ async def agent_bot_completions(agent_id):
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
-    for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
+    async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
         return get_result(data=answer)
 
 
@@ -981,8 +981,8 @@ async def retrieval_test_embedded():
                 doc_ids = None
         elif meta_data_filter.get("method") == "manual":
             doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
-            if not doc_ids:
-                doc_ids = None
+            if meta_data_filter["manual"] and not doc_ids:
+                doc_ids = ["-999"]
 
     try:
         tenants = UserTenantService.query(user_id=tenant_id)
