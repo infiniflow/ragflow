@@ -63,6 +63,23 @@ def is_team_admin_or_owner(tenant_id: str, user_id: str) -> bool:
     return user_tenant.role in [UserTenantRole.OWNER, UserTenantRole.ADMIN]
 
 
+def is_team_owner(tenant_id: str, user_id: str) -> bool:
+    """
+    Check if a user is the OWNER of a team (not just admin).
+    
+    Args:
+        tenant_id: The team/tenant ID
+        user_id: The user ID to check
+        
+    Returns:
+        True if user is OWNER, False otherwise
+    """
+    user_tenant = UserTenantService.filter_by_tenant_and_user_id(tenant_id, user_id)
+    if not user_tenant:
+        return False
+    return user_tenant.role == UserTenantRole.OWNER
+
+
 def validate_model_id(user_id: str, model_id: Optional[str], model_type: str, context: str = "team") -> Optional[str]:
     """
     Validate that a model ID has been added by the user. Returns error message if invalid, None if valid.
@@ -1178,7 +1195,7 @@ def remove_user(tenant_id: str) -> Response:
 def promote_admin(tenant_id: str, user_id: str) -> Response:
     """Promote a team member to admin role.
     
-    Only team owners or admins can promote members to admin.
+    Only team owners can promote members to admin.
     Cannot promote the team owner (owner role is permanent).
     
     ---
@@ -1214,15 +1231,15 @@ def promote_admin(tenant_id: str, user_id: str) -> Response:
       401:
         description: Unauthorized.
       403:
-        description: Forbidden - not team owner or admin.
+        description: Forbidden - not team owner.
       404:
         description: User not found in team.
     """
-    # Check if current user is team owner or admin
-    if not is_team_admin_or_owner(tenant_id, current_user.id):
+    # Check if current user is team owner (only owners can promote admins)
+    if not is_team_owner(tenant_id, current_user.id):
         return get_json_result(
             data=False,
-            message="Only team owners or admins can promote members to admin.",
+            message="Only team owners can promote members to admin.",
             code=RetCode.PERMISSION_ERROR,
         )
     
@@ -1281,7 +1298,7 @@ def promote_admin(tenant_id: str, user_id: str) -> Response:
 def demote_admin(tenant_id: str, user_id: str) -> Response:
     """Demote a team admin to normal member.
     
-    Only team owners or admins can demote admins.
+    Only team owners can demote admins.
     Cannot demote the team owner (owner role is permanent).
     Cannot demote yourself if you're the only admin/owner.
     
@@ -1318,15 +1335,15 @@ def demote_admin(tenant_id: str, user_id: str) -> Response:
       401:
         description: Unauthorized.
       403:
-        description: Forbidden - not team owner or admin.
+        description: Forbidden - not team owner.
       404:
         description: User not found in team or not an admin.
     """
-    # Check if current user is team owner or admin
-    if not is_team_admin_or_owner(tenant_id, current_user.id):
+    # Check if current user is team owner (only owners can demote admins)
+    if not is_team_owner(tenant_id, current_user.id):
         return get_json_result(
             data=False,
-            message="Only team owners or admins can demote admins.",
+            message="Only team owners can demote admins.",
             code=RetCode.PERMISSION_ERROR,
         )
     
