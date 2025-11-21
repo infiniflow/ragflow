@@ -100,8 +100,8 @@ export function SideBar() {
           <ThemeToggle />
         </div>
         <Button
-          variant="outline"
-          className="w-full gap-3 !bg-bg-base border !border-border-button !text-text-secondary"
+          variant="ghost"
+          className="w-full gap-3 bg-bg-base border border-border-button"
           onClick={() => {
             logout();
           }}
