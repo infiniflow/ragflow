@@ -7,6 +7,7 @@ import {
   ICategorizeItemResult,
 } from '@/interfaces/database/agent';
 import { DSLComponents, RAGFlowNodeType } from '@/interfaces/database/flow';
+import { buildSelectOptions } from '@/utils/component-util';
 import { removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
@@ -30,6 +31,7 @@ import {
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
+  TypesWithArray,
 } from './constant';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
@@ -765,4 +767,8 @@ export function buildBeginQueryWithObject(
 
 export function getArrayElementType(type: string) {
   return typeof type === 'string' ? type.match(/<([^>]+)>/)?.at(1) ?? '' : '';
+}
+
+export function buildConversationVariableSelectOptions() {
+  return buildSelectOptions(Object.values(TypesWithArray));
 }
