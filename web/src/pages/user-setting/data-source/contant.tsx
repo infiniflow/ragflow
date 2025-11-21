@@ -11,6 +11,7 @@ export enum DataSourceKey {
   GOOGLE_DRIVE = 'google_drive',
   // GMAIL = 'gmail',
   JIRA = 'jira',
+  WEBDAV = 'webdav',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -46,6 +47,11 @@ export const DataSourceInfo = {
     name: 'Jira',
     description: t(`setting.${DataSourceKey.JIRA}Description`),
     icon: <SvgIcon name={'data-source/jira'} width={38} />,
+  },
+  [DataSourceKey.WEBDAV]: {
+    name: 'WebDAV',
+    description: t(`setting.${DataSourceKey.WEBDAV}Description`),
+    icon: <SvgIcon name={'data-source/webdav'} width={38} />,
   },
 };
 
@@ -387,6 +393,35 @@ export const DataSourceFormFields = {
       tooltip: t('setting.jiraPasswordTip'),
     },
   ],
+  [DataSourceKey.WEBDAV]: [
+    {
+      label: 'WebDAV Server URL',
+      name: 'config.base_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://webdav.example.com',
+    },
+    {
+      label: 'Username',
+      name: 'config.credentials.username',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.password',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Remote Path',
+      name: 'config.remote_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '/',
+      tooltip: t('setting.webdavRemotePathTip'),
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -474,6 +509,18 @@ export const DataSourceFormDefaultValues = {
         jira_user_email: '',
         jira_api_token: '',
         jira_password: '',
+      },
+    },
+  },
+  [DataSourceKey.WEBDAV]: {
+    name: '',
+    source: DataSourceKey.WEBDAV,
+    config: {
+      base_url: '',
+      remote_path: '/',
+      credentials: {
+        username: '',
+        password: '',
       },
     },
   },
