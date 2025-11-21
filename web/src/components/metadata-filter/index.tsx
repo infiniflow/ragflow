@@ -14,6 +14,7 @@ type MetadataFilterProps = {
 export const MetadataFilterSchema = {
   meta_data_filter: z
     .object({
+      logic: z.string().optional(),
       method: z.string().optional(),
       manual: z
         .array(
