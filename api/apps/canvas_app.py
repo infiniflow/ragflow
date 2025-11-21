@@ -18,6 +18,7 @@ import logging
 import re
 import sys
 from functools import partial
+from typing import Dict, Any, Optional
 import trio
 from quart import request, Response, make_response
 from agent.component import LLM
@@ -44,7 +45,8 @@ from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
 from api.apps import login_required, current_user
-
+from api.db.services.user_service import UserTenantService
+from common.constants import StatusEnum
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
 @login_required
@@ -69,11 +71,31 @@ async def rm():
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @validate_request("dsl", "title")
 @login_required
-async def save():
-    req = await request_json()
+async def save() -> Any:
+    req: Dict[str, Any] = await request_json()
     if not isinstance(req["dsl"], str):
         req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
     req["dsl"] = json.loads(req["dsl"])
+    
+    # Validate shared_tenant_id if provided
+    shared_tenant_id: Optional[str] = req.get("shared_tenant_id")
+    if shared_tenant_id:
+        if req.get("permission") != "team":
+            return get_json_result(
+                data=False,
+                message="shared_tenant_id can only be set when permission is 'team'",
+                code=RetCode.ARGUMENT_ERROR
+            )
+        # Verify user is a member of the shared tenant
+
+        user_tenant = UserTenantService.filter_by_tenant_and_user_id(shared_tenant_id, current_user.id)
+        if not user_tenant or user_tenant.status != StatusEnum.VALID.value:
+            return get_json_result(
+                data=False,
+                message=f"You are not a member of the selected team",
+                code=RetCode.PERMISSION_ERROR
+            )
+    
     cate = req.get("canvas_category", CanvasCategory.Agent)
     if "id" not in req:
         req["user_id"] = current_user.id

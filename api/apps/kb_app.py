@@ -17,6 +17,7 @@ import json
 import logging
 import random
 import re
+from typing import Dict, Any, Optional
 
 from quart import request
 import numpy as np
@@ -42,13 +43,35 @@ from rag.utils.doc_store_conn import OrderByExpr
 from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType, PAGERANK_FLD
 from common import settings
 from api.apps import login_required, current_user
+from common.constants import StatusEnum
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("name")
-async def create():
-    req = await request_json()
+async def create() -> Any:
+    req: Dict[str, Any] = await request_json()
+    
+    # Validate shared_tenant_id if provided
+    shared_tenant_id: Optional[str] = req.get("shared_tenant_id")
+    if shared_tenant_id:
+        if req.get("permission") != "team":
+            return get_json_result(
+                data=False,
+                message="shared_tenant_id can only be set when permission is 'team'",
+                code=RetCode.ARGUMENT_ERROR
+            )
+        # Verify user is a member of the shared tenant
+        user_tenant = UserTenantService.filter_by_tenant_and_user_id(shared_tenant_id, current_user.id)
+        if not user_tenant or user_tenant.status != StatusEnum.VALID.value:
+            return get_json_result(
+                data=False,
+                message=f"You are not a member of the selected team",
+                code=RetCode.PERMISSION_ERROR
+            )
+    
+    e: bool
+    res: Any
     e, res = KnowledgebaseService.create_with_name(
         name = req.pop("name", None),
         tenant_id = current_user.id,

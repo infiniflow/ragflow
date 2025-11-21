@@ -18,6 +18,7 @@
 import logging
 import os
 import json
+from typing import Dict, Any, Optional
 from quart import request
 from peewee import OperationalError
 from api.db.db_models import File
@@ -50,11 +51,12 @@ from api.utils.validation_utils import (
 from rag.nlp import search
 from common.constants import PAGERANK_FLD
 from common import settings
-
+from api.db.services.user_service import UserTenantService
+from common.constants import StatusEnum
 
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
 @token_required
-async def create(tenant_id):
+async def create(tenant_id: str) -> Any:
     """
     Create a new dataset.
     ---
@@ -116,9 +118,24 @@ async def create(tenant_id):
     # | embedding_model| embd_id     |
     # | chunk_method   | parser_id   |
 
+    req: Dict[str, Any]
+    err: Optional[Any]
     req, err = await validate_and_parse_json_request(request, CreateDatasetReq)
     if err is not None:
         return get_error_argument_result(err)
+    
+    # Validate shared_tenant_id if provided
+    shared_tenant_id: Optional[str] = req.get("shared_tenant_id")
+    if shared_tenant_id:
+        if req.get("permission") != "team":
+            return get_error_argument_result("shared_tenant_id can only be set when permission is 'team'")
+        # Verify user is a member of the shared tenant
+        
+        user_tenant = UserTenantService.filter_by_tenant_and_user_id(shared_tenant_id, tenant_id)
+        if not user_tenant or user_tenant.status != StatusEnum.VALID.value:
+            return get_error_permission_result(message=f"User is not a member of tenant '{shared_tenant_id}'")
+    
+    e: bool
     e, req = KnowledgebaseService.create_with_name(
         name = req.pop("name", None),
         tenant_id = tenant_id,
@@ -130,6 +147,8 @@ async def create(tenant_id):
         return req
 
     # Insert embedding model(embd id)
+    ok: bool
+    t: Any
     ok, t = TenantService.get_by_id(tenant_id)
     if not ok:
         return get_error_permission_result(message="Tenant not found")
