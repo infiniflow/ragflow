@@ -221,10 +221,12 @@ const RaptorFormFields = ({
                         defaultValue={0}
                         type="number"
                         suffix={
-                          <Shuffle
-                            className="size-3.5 cursor-pointer"
-                            onClick={handleGenerate}
-                          />
+                          <div className="w-7 flex justify-center items-center">
+                            <Shuffle
+                              className="size-3.5 cursor-pointer"
+                              onClick={handleGenerate}
+                            />
+                          </div>
                         }
                       />
                     </FormControl>

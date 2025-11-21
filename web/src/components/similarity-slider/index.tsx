@@ -59,6 +59,7 @@ interface SimilaritySliderFormFieldProps {
   similarityName?: string;
   vectorSimilarityWeightName?: string;
   isTooltipShown?: boolean;
+  numberInputClassName?: string;
 }
 
 export const initialSimilarityThresholdValue = {
@@ -86,6 +87,7 @@ export function SimilaritySliderFormField({
   similarityName = 'similarity_threshold',
   vectorSimilarityWeightName = 'vector_similarity_weight',
   isTooltipShown,
+  numberInputClassName,
 }: SimilaritySliderFormFieldProps) {
   const { t } = useTranslate('knowledgeDetails');
   const form = useFormContext();
@@ -101,6 +103,7 @@ export function SimilaritySliderFormField({
         step={0.01}
         layout={FormLayout.Vertical}
         tooltip={isTooltipShown && t('similarityThresholdTip')}
+        numberInputClassName={numberInputClassName}
       ></SliderInputFormField>
       <FormField
         control={form.control}
@@ -124,7 +127,7 @@ export function SimilaritySliderFormField({
                 isVector ? 'vectorSimilarityWeight' : 'keywordSimilarityWeight',
               )}
             </FormLabel>
-            <div className={cn('flex items-end gap-14 justify-between')}>
+            <div className={cn('flex items-end gap-4 justify-between')}>
               <FormControl>
                 <div className="flex flex-col flex-1 gap-2">
                   <div className="flex justify-between items-center">
@@ -158,6 +161,7 @@ export function SimilaritySliderFormField({
                   className={cn(
                     'h-6 w-10 p-0 text-center bg-bg-input border-border-default border text-text-secondary',
                     '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
+                    numberInputClassName,
                   )}
                   max={1}
                   min={0}
