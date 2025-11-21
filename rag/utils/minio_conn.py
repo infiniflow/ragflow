@@ -28,7 +28,48 @@ from common import settings
 class RAGFlowMinio:
     def __init__(self):
         self.conn = None
+        self.bucket = settings.MINIO.get('bucket', None)
+        self.prefix_path = settings.MINIO.get('prefix_path', None)
         self.__open__()
+
+    @staticmethod
+    def use_default_bucket(method):
+        def wrapper(self, bucket, *args, **kwargs):
+            # If there is a default bucket, use the default bucket
+            # but preserve the original bucket identifier so it can be
+            # used as a path prefix inside the physical/default bucket.
+            original_bucket = bucket
+            actual_bucket = self.bucket if self.bucket else bucket
+            if self.bucket:
+                # pass original identifier forward for use by other decorators
+                kwargs['_orig_bucket'] = original_bucket
+            return method(self, actual_bucket, *args, **kwargs)
+        return wrapper
+
+    @staticmethod
+    def use_prefix_path(method):
+        def wrapper(self, bucket, fnm, *args, **kwargs):
+            # If a default MINIO bucket is configured, the use_default_bucket
+            # decorator will have replaced the `bucket` arg with the physical
+            # bucket name and forwarded the original identifier as `_orig_bucket`.
+            # Prefer that original identifier when constructing the key path so
+            # objects are stored under <physical-bucket>/<identifier>/...
+            orig_bucket = kwargs.pop('_orig_bucket', None)
+
+            if self.prefix_path:
+                # If a prefix_path is configured, include it and then the identifier
+                if orig_bucket:
+                    fnm = f"{self.prefix_path}/{orig_bucket}/{fnm}"
+                else:
+                    fnm = f"{self.prefix_path}/{fnm}"
+            else:
+                # No prefix_path configured. If orig_bucket exists and the
+                # physical bucket equals configured default, use orig_bucket as a path.
+                if orig_bucket and bucket == self.bucket:
+                    fnm = f"{orig_bucket}/{fnm}"
+
+            return method(self, bucket, fnm, *args, **kwargs)
+        return wrapper
 
     def __open__(self):
         try:
@@ -41,7 +82,7 @@ class RAGFlowMinio:
             self.conn = Minio(settings.MINIO["host"],
                               access_key=settings.MINIO["user"],
                               secret_key=settings.MINIO["password"],
-                              secure=False
+                              secure=True
                               )
         except Exception:
             logging.exception(
@@ -52,20 +93,28 @@ class RAGFlowMinio:
         self.conn = None
 
     def health(self):
-        bucket, fnm, binary = "txtxtxtxt1", "txtxtxtxt1", b"_t@@@1"
-        if not self.conn.bucket_exists(bucket):
-            self.conn.make_bucket(bucket)
+        bucket = self.bucket if self.bucket else "ragflow-bucket"
+        fnm = "_health_check"
+        if self.prefix_path:
+            fnm = f"{self.prefix_path}/{fnm}"
+        binary = b"_t@@@1"
+        # Don't try to create bucket - it should already exist
+        # if not self.conn.bucket_exists(bucket):
+        #     self.conn.make_bucket(bucket)
         r = self.conn.put_object(bucket, fnm,
                                  BytesIO(binary),
                                  len(binary)
                                  )
         return r
 
-    def put(self, bucket, fnm, binary, tenant_id=None):
+    @use_default_bucket
+    @use_prefix_path
+    def put(self, bucket, fnm, binary):
         for _ in range(3):
             try:
-                if not self.conn.bucket_exists(bucket):
-                    self.conn.make_bucket(bucket)
+                # Note: bucket must already exist - we don't have permission to create buckets
+                # if not self.conn.bucket_exists(bucket):
+                #     self.conn.make_bucket(bucket)
 
                 r = self.conn.put_object(bucket, fnm,
                                          BytesIO(binary),
@@ -77,13 +126,17 @@ class RAGFlowMinio:
                 self.__open__()
                 time.sleep(1)
 
-    def rm(self, bucket, fnm, tenant_id=None):
+    @use_default_bucket
+    @use_prefix_path
+    def rm(self, bucket, fnm):
         try:
             self.conn.remove_object(bucket, fnm)
         except Exception:
             logging.exception(f"Fail to remove {bucket}/{fnm}:")
 
-    def get(self, bucket, filename, tenant_id=None):
+    @use_default_bucket
+    @use_prefix_path
+    def get(self, bucket, filename):
         for _ in range(1):
             try:
                 r = self.conn.get_object(bucket, filename)
@@ -92,9 +145,11 @@ class RAGFlowMinio:
                 logging.exception(f"Fail to get {bucket}/{filename}")
                 self.__open__()
                 time.sleep(1)
-        return None
+        return
 
-    def obj_exist(self, bucket, filename, tenant_id=None):
+    @use_default_bucket
+    @use_prefix_path
+    def obj_exist(self, bucket, filename):
         try:
             if not self.conn.bucket_exists(bucket):
                 return False
@@ -109,6 +164,7 @@ class RAGFlowMinio:
             logging.exception(f"obj_exist {bucket}/{filename} got exception")
             return False
 
+    @use_default_bucket
     def bucket_exists(self, bucket):
         try:
             if not self.conn.bucket_exists(bucket):
@@ -122,7 +178,9 @@ class RAGFlowMinio:
             logging.exception(f"bucket_exist {bucket} got exception")
             return False
 
-    def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
+    @use_default_bucket
+    @use_prefix_path
+    def get_presigned_url(self, bucket, fnm, expires):
         for _ in range(10):
             try:
                 return self.conn.get_presigned_url("GET", bucket, fnm, expires)
@@ -130,8 +188,9 @@ class RAGFlowMinio:
                 logging.exception(f"Fail to get_presigned {bucket}/{fnm}:")
                 self.__open__()
                 time.sleep(1)
-        return None
+        return
 
+    @use_default_bucket
     def remove_bucket(self, bucket):
         try:
             if self.conn.bucket_exists(bucket):
@@ -141,37 +200,3 @@ class RAGFlowMinio:
                 self.conn.remove_bucket(bucket)
         except Exception:
             logging.exception(f"Fail to remove bucket {bucket}")
-
-    def copy(self, src_bucket, src_path, dest_bucket, dest_path):
-        try:
-            if not self.conn.bucket_exists(dest_bucket):
-                self.conn.make_bucket(dest_bucket)
-
-            try:
-                self.conn.stat_object(src_bucket, src_path)
-            except Exception as e:
-                logging.exception(f"Source object not found: {src_bucket}/{src_path}, {e}")
-                return False
-
-            self.conn.copy_object(
-                dest_bucket,
-                dest_path,
-                CopySource(src_bucket, src_path),
-            )
-            return True
-
-        except Exception:
-            logging.exception(f"Fail to copy {src_bucket}/{src_path} -> {dest_bucket}/{dest_path}")
-            return False
-
-    def move(self, src_bucket, src_path, dest_bucket, dest_path):
-        try:
-            if self.copy(src_bucket, src_path, dest_bucket, dest_path):
-                self.rm(src_bucket, src_path)
-                return True
-            else:
-                logging.error(f"Copy failed, move aborted: {src_bucket}/{src_path}")
-                return False
-        except Exception:
-            logging.exception(f"Fail to move {src_bucket}/{src_path} -> {dest_bucket}/{dest_path}")
-            return False
