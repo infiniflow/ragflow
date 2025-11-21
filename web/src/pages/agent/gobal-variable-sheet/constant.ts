@@ -18,7 +18,7 @@ export const GlobalFormFields = [
     placeholder: t('common.namePlaceholder'),
     required: true,
     validation: {
-      pattern: /^[a-zA-Z_]+$/,
+      pattern: /^[a-zA-Z_0-9]+$/,
       message: t('flow.variableNameMessage'),
     },
     type: FormFieldType.Text,

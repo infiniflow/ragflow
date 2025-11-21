@@ -980,7 +980,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',
       formatTypeError: '格式或类型错误',
-      variableNameMessage: '名称只能包含字母和下划线',
+      variableNameMessage: '名称只能包含字母,数字和下划线',
       variableDescription: '变量的描述',
       defaultValue: '默认值',
       conversationVariable: '会话变量',

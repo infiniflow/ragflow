@@ -3,6 +3,7 @@ import { BlockButton, Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Segmented } from '@/components/ui/segmented';
 import { t } from 'i18next';
+import { isEmpty } from 'lodash';
 import { Trash2, X } from 'lucide-react';
 import { useCallback } from 'react';
 import { FieldValues } from 'react-hook-form';
@@ -36,14 +37,19 @@ export const useObjectFields = () => {
     path: (string | number)[] = [],
   ): Array<{ path: (string | number)[]; message: string }> => {
     const errors: Array<{ path: (string | number)[]; message: string }> = [];
-
-    if (obj !== null && typeof obj === 'object' && !Array.isArray(obj)) {
+    if (typeof obj === 'object' && !Array.isArray(obj)) {
+      if (isEmpty(obj)) {
+        errors.push({
+          path: [...path],
+          message: 'No empty parameters are allowed.',
+        });
+      }
       for (const key in obj) {
         if (obj.hasOwnProperty(key)) {
-          if (!/^[a-zA-Z_]+$/.test(key)) {
+          if (!/^[a-zA-Z_0-9]+$/.test(key)) {
             errors.push({
               path: [...path, key],
-              message: `Key "${key}" is invalid. Keys can only contain letters and underscores.`,
+              message: `Key "${key}" is invalid. Keys can only contain letters and underscores and numbers.`,
             });
           }
           const nestedErrors = validateKeys(obj[key], [...path, key]);
@@ -96,6 +102,21 @@ export const useObjectFields = () => {
         throw new Error(t('flow.formatTypeError'));
       }
       if (!z.object({}).safeParse(value).success) {
+        throw new Error(t('flow.formatTypeError'));
+      }
+      if (value && typeof value === 'string' && !JSON.parse(value)) {
+        throw new Error(t('flow.formatTypeError'));
+      }
+      return true;
+    } catch (e) {
+      console.log('object-render-error', e, value);
+      throw new Error(t('flow.formatTypeError'));
+    }
+  }, []);
+
+  const arrayObjectValidate = useCallback((value: any) => {
+    try {
+      if (validateKeys(value, [])?.length > 0) {
         throw new Error(t('flow.formatTypeError'));
       }
       if (value && typeof value === 'string' && !JSON.parse(value)) {
@@ -253,8 +274,9 @@ export const useObjectFields = () => {
   const handleCustomValidate = (value: TypesWithArray) => {
     switch (value) {
       case TypesWithArray.Object:
-      case TypesWithArray.ArrayObject:
         return objectValidate;
+      case TypesWithArray.ArrayObject:
+        return arrayObjectValidate;
       case TypesWithArray.ArrayString:
         return arrayStringValidate;
       case TypesWithArray.ArrayNumber:
@@ -284,6 +306,7 @@ export const useObjectFields = () => {
   return {
     objectRender,
     objectValidate,
+    arrayObjectValidate,
     arrayStringRender,
     arrayStringValidate,
     arrayNumberRender,
