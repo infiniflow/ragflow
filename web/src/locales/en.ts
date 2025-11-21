@@ -1,6 +1,7 @@
 export default {
   translation: {
     common: {
+      confirm: 'Confirm',
       back: 'Back',
       noResults: 'No results.',
       selectPlaceholder: 'select value',
@@ -24,6 +25,7 @@ export default {
       portugueseBr: 'Portuguese (Brazil)',
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
+      russian: 'Russian',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -694,6 +696,10 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      edit: 'Edit',
+      cropTip:
+        'Drag the selection area to choose the cropping position of the image, and scroll to zoom in/out',
+      cropImage: 'Crop image',
       selectModelPlaceholder: 'Select model',
       configureModelTitle: 'Configure model',
       confluenceIsCloudTip:
@@ -702,6 +708,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
       s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from. 
 Example: general/v2/`,
+      S3CompatibleEndpointUrlTip: `Required for S3 compatible Storage Box. Specify the S3-compatible endpoint URL.
+Example: https://fsn1.your-objectstorage.com`,
       addDataSourceModalTital: 'Create your {{name}} connector',
       deleteSourceModalTitle: 'Delete data source',
       deleteSourceModalContent: `
@@ -729,6 +737,33 @@ Example: general/v2/`,
         'Comma-separated emails whose “My Drive” contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
+      jiraDescription:
+        'Connect your Jira workspace to sync issues, comments, and attachments.',
+      jiraBaseUrlTip:
+        'Base URL of your Jira site (e.g., https://your-domain.atlassian.net).',
+      jiraProjectKeyTip:
+        'Optional: limit syncing to a single project key (e.g., ENG).',
+      jiraJqlTip:
+        'Optional JQL filter. Leave blank to rely on project/time filters.',
+      jiraBatchSizeTip:
+        'Maximum number of issues requested from Jira per batch.',
+      jiraCommentsTip:
+        'Include Jira comments in the generated markdown document.',
+      jiraAttachmentsTip:
+        'Download attachments as separate documents during sync.',
+      jiraAttachmentSizeTip:
+        'Attachments larger than this number of bytes will be skipped.',
+      jiraLabelsTip:
+        'Labels that should be skipped while indexing (comma separated).',
+      jiraBlacklistTip:
+        'Comments whose author email matches these entries will be ignored.',
+      jiraScopedTokenTip:
+        'Enable this when using scoped Atlassian tokens (api.atlassian.com).',
+      jiraEmailTip: 'Email associated with the Jira account/API token.',
+      jiraTokenTip:
+        'API token generated from https://id.atlassian.com/manage-profile/security/api-tokens.',
+      jiraPasswordTip:
+        'Optional password for Jira Server/Data Center environments.',
       availableSourcesDescription: 'Select a data source to add',
       availableSources: 'Available sources',
       datasourceDescription: 'Manage your data source and connections',
@@ -784,8 +819,7 @@ Example: general/v2/`,
       modelsToBeAdded: 'Models to be added',
       addTheModel: 'Add',
       apiKey: 'API-Key',
-      apiKeyMessage:
-        'Please enter the API key (for locally deployed model,ignore this).',
+      apiKeyMessage: 'Please enter the API key',
       apiKeyTip:
         'The API key can be obtained by registering the corresponding LLM supplier.',
       showMoreModels: 'View models',
@@ -1006,6 +1040,9 @@ Example: general/v2/`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      downloadFileTypeTip: 'The file type to download',
+      downloadFileType: 'Download file type',
+      formatTypeError: 'Format or type error',
       variableNameMessage:
         'Variable name can only contain letters and underscores',
       variableDescription: 'Variable Description',
@@ -1025,7 +1062,7 @@ Example: general/v2/`,
       apiKeyPlaceholder:
         'YOUR_API_KEY (obtained from https://serpapi.com/manage-api-key)',
       flowStart: 'Start',
-      flowNum: 'Num',
+      flowNum: 'N',
       test: 'Test',
       extractDepth: 'Extract Depth',
       format: 'Format',
@@ -1587,6 +1624,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       codeDescription: 'It allows developers to write custom Python logic.',
       dataOperations: 'Data operations',
       dataOperationsDescription: 'Perform various operations on a Data object.',
+      listOperations: 'List operations',
+      listOperationsDescription: 'Perform operations on a list.',
       variableAssigner: 'Variable assigner',
       variableAssignerDescription:
         'This component performs operations on Data objects, including extracting, filtering, and editing keys and values in the Data.',
@@ -1607,6 +1646,7 @@ The variable aggregation node (originally the variable assignment node) is a cru
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       query: 'Query variables',
+      queryRequired: 'Query is required',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add Agent',
@@ -1713,6 +1753,8 @@ The variable aggregation node (originally the variable assignment node) is a cru
 The Indexer will store the content in the corresponding data structures for the selected methods.`,
       // file: 'File',
       parserMethod: 'PDF parser',
+      tableResultType: 'Table Result Type',
+      markdownImageResponseType: 'Markdown Image Response Type',
       // systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',
@@ -1802,6 +1844,32 @@ Important structured information may include: names, dates, locations, events, k
         removeKeys: 'Remove keys',
         renameKeys: 'Rename keys',
       },
+      ListOperationsOptions: {
+        topN: 'Top N',
+        head: 'Head',
+        tail: 'Tail',
+        sort: 'Sort',
+        filter: 'Filter',
+        dropDuplicates: 'Drop duplicates',
+      },
+      sortMethod: 'Sort method',
+      SortMethodOptions: {
+        asc: 'Ascending',
+        desc: 'Descending',
+      },
+      variableAssignerLogicalOperatorOptions: {
+        overwrite: 'Overwritten By',
+        clear: 'Clear',
+        set: 'Set',
+        '+=': 'Add',
+        '-=': 'Subtract',
+        '*=': 'Multiply',
+        '/=': 'Divide',
+        append: 'Append',
+        extend: 'Extend',
+        removeFirst: 'Remove first',
+        removeLast: 'Remove last',
+      },
     },
     llmTools: {
       bad_calculator: {
@@ -1869,6 +1937,7 @@ Important structured information may include: names, dates, locations, events, k
       japanese: 'Japanese',
       korean: 'Korean',
       vietnamese: 'Vietnamese',
+      russian: 'Russian',
     },
     pagination: {
       total: 'Total {{total}}',

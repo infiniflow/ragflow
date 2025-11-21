@@ -80,6 +80,7 @@ class Session(Base):
         
 
     def _structure_answer(self, json_data):
+        answer = ""
         if self.__session_type == "agent":
            answer = json_data["data"]["content"]
         elif self.__session_type == "chat":

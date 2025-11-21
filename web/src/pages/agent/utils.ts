@@ -214,6 +214,36 @@ function transformParserParams(params: ParserFormSchemaType) {
             parse_method: cur.parse_method,
             lang: cur.lang,
           };
+          // Only include TCADP parameters if TCADP Parser is selected
+          if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
+            filteredSetup.table_result_type = cur.table_result_type;
+            filteredSetup.markdown_image_response_type =
+              cur.markdown_image_response_type;
+          }
+          break;
+        case FileType.Spreadsheet:
+          filteredSetup = {
+            ...filteredSetup,
+            parse_method: cur.parse_method,
+          };
+          // Only include TCADP parameters if TCADP Parser is selected
+          if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
+            filteredSetup.table_result_type = cur.table_result_type;
+            filteredSetup.markdown_image_response_type =
+              cur.markdown_image_response_type;
+          }
+          break;
+        case FileType.PowerPoint:
+          filteredSetup = {
+            ...filteredSetup,
+            parse_method: cur.parse_method,
+          };
+          // Only include TCADP parameters if TCADP Parser is selected
+          if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
+            filteredSetup.table_result_type = cur.table_result_type;
+            filteredSetup.markdown_image_response_type =
+              cur.markdown_image_response_type;
+          }
           break;
         case FileType.Image:
           filteredSetup = {
@@ -328,7 +358,6 @@ export const buildDslComponentsByGraph = (
         case Operator.DataOperations:
           params = transformDataOperationsParams(params);
           break;
-
         default:
           break;
       }
@@ -348,30 +377,30 @@ export const buildDslComponentsByGraph = (
   return components;
 };
 
-export const buildDslGobalVariables = (
+export const buildDslGlobalVariables = (
   dsl: DSL,
-  gobalVariables?: Record<string, GlobalVariableType>,
+  globalVariables?: Record<string, GlobalVariableType>,
 ) => {
-  if (!gobalVariables) {
+  if (!globalVariables) {
     return { globals: dsl.globals, variables: dsl.variables || {} };
   }
 
-  let gobalVariablesTemp: Record<string, any> = {};
-  let gobalSystem: Record<string, any> = {};
+  let globalVariablesTemp: Record<string, any> = {};
+  let globalSystem: Record<string, any> = {};
   Object.keys(dsl.globals)?.forEach((key) => {
     if (key.indexOf('sys') > -1) {
-      gobalSystem[key] = dsl.globals[key];
+      globalSystem[key] = dsl.globals[key];
     }
   });
-  Object.keys(gobalVariables).forEach((key) => {
-    gobalVariablesTemp['env.' + key] = gobalVariables[key].value;
+  Object.keys(globalVariables).forEach((key) => {
+    globalVariablesTemp['env.' + key] = globalVariables[key].value;
   });
 
-  const gobalVariablesResult = {
-    ...gobalSystem,
-    ...gobalVariablesTemp,
+  const globalVariablesResult = {
+    ...globalSystem,
+    ...globalVariablesTemp,
   };
-  return { globals: gobalVariablesResult, variables: gobalVariables };
+  return { globals: globalVariablesResult, variables: globalVariables };
 };
 
 export const receiveMessageError = (res: any) =>
@@ -732,4 +761,8 @@ export function buildBeginQueryWithObject(
   );
 
   return nextInputs;
+}
+
+export function getArrayElementType(type: string) {
+  return typeof type === 'string' ? type.match(/<([^>]+)>/)?.at(1) ?? '' : '';
 }

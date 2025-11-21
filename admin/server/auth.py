@@ -19,7 +19,8 @@ import logging
 import uuid
 from functools import wraps
 from datetime import datetime
-from flask import request, jsonify
+
+from flask import jsonify, request
 from flask_login import current_user, login_user
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
@@ -30,7 +31,7 @@ from common.constants import ActiveEnum, StatusEnum
 from api.utils.crypt import decrypt
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format, get_format_time
-from common.connection_utils import construct_response
+from common.connection_utils import sync_construct_response
 from common import settings
 
 
@@ -129,7 +130,7 @@ def login_admin(email: str, password: str):
     user.last_login_time = get_format_time()
     user.save()
     msg = "Welcome back!"
-    return construct_response(data=resp, auth=user.get_id(), message=msg)
+    return sync_construct_response(data=resp, auth=user.get_id(), message=msg)
 
 
 def check_admin(username: str, password: str):
@@ -169,7 +170,7 @@ def login_verify(f):
         username = auth.parameters['username']
         password = auth.parameters['password']
         try:
-            if check_admin(username, password) is False:
+            if not check_admin(username, password):
                 return jsonify({
                     "code": 500,
                     "message": "Access denied",

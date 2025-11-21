@@ -15,8 +15,8 @@
 #
 
 
-from flask import request
-from flask_login import current_user, login_required
+from quart import request
+from api.apps import current_user, login_required
 from langfuse import Langfuse
 
 from api.db.db_models import DB
@@ -27,8 +27,8 @@ from api.utils.api_utils import get_error_data_result, get_json_result, server_e
 @manager.route("/api_key", methods=["POST", "PUT"])  # noqa: F821
 @login_required
 @validate_request("secret_key", "public_key", "host")
-def set_api_key():
-    req = request.get_json()
+async def set_api_key():
+    req = await request.get_json()
     secret_key = req.get("secret_key", "")
     public_key = req.get("public_key", "")
     host = req.get("host", "")

@@ -15,7 +15,7 @@
 #
 import logging
 
-from flask import request, jsonify
+from quart import request, jsonify
 
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -29,7 +29,7 @@ from common import settings
 @manager.route('/dify/retrieval', methods=['POST'])  # noqa: F821
 @apikey_required
 @validate_request("knowledge_id", "query")
-def retrieval(tenant_id):
+async def retrieval(tenant_id):
     """
     Dify-compatible retrieval API
     ---
@@ -113,14 +113,14 @@ def retrieval(tenant_id):
       404:
         description: Knowledge base or document not found
     """
-    req = request.json
+    req = await request.json
     question = req["query"]
     kb_id = req["knowledge_id"]
     use_kg = req.get("use_kg", False)
     retrieval_setting = req.get("retrieval_setting", {})
     similarity_threshold = float(retrieval_setting.get("score_threshold", 0.0))
     top = int(retrieval_setting.get("top_k", 1024))
-    metadata_condition = req.get("metadata_condition", {})
+    metadata_condition = req.get("metadata_condition", {}) or {}
     metas = DocumentService.get_meta_by_kbs([kb_id])
 
     doc_ids = []
@@ -131,12 +131,10 @@ def retrieval(tenant_id):
             return build_error_result(message="Knowledgebase not found!", code=RetCode.NOT_FOUND)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
-        print(metadata_condition)
-        # print("after", convert_conditions(metadata_condition))
-        doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition)))
-        # print("doc_ids", doc_ids)
-        if not doc_ids and metadata_condition is not None:
-            doc_ids = ['-999']
+        if metadata_condition:
+            doc_ids.extend(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
+        if not doc_ids and metadata_condition:
+            doc_ids = ["-999"]
         ranks = settings.retriever.retrieval(
             question,
             embd_mdl,

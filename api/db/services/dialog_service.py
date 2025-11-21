@@ -287,7 +287,7 @@ def convert_conditions(metadata_condition):
     ]
 
 
-def meta_filter(metas: dict, filters: list[dict]):
+def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
     doc_ids = set([])
 
     def filter_out(v2docs, operator, value):
@@ -331,7 +331,10 @@ def meta_filter(metas: dict, filters: list[dict]):
             if not doc_ids:
                 doc_ids = set(ids)
             else:
-                doc_ids = doc_ids & set(ids)
+                if logic == "and":
+                    doc_ids = doc_ids & set(ids)
+                else:
+                    doc_ids = doc_ids | set(ids)
             if not doc_ids:
                 return []
     return list(doc_ids)
@@ -342,7 +345,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
         for ans in chat_solo(dialog, messages, stream):
             yield ans
-        return
+        return None
 
     chat_start_ts = timer()
 
@@ -386,7 +389,7 @@ def chat(dialog, messages, stream=True, **kwargs):
         ans = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
         if ans:
             yield ans
-            return
+            return None
 
     for p in prompt_config["parameters"]:
         if p["key"] == "knowledge":
@@ -407,14 +410,15 @@ def chat(dialog, messages, stream=True, **kwargs):
     if dialog.meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(dialog.kb_ids)
         if dialog.meta_data_filter.get("method") == "auto":
-            filters = gen_meta_filter(chat_mdl, metas, questions[-1])
-            attachments.extend(meta_filter(metas, filters))
+            filters: dict = gen_meta_filter(chat_mdl, metas, questions[-1])
+            attachments.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
             if not attachments:
                 attachments = None
         elif dialog.meta_data_filter.get("method") == "manual":
-            attachments.extend(meta_filter(metas, dialog.meta_data_filter["manual"]))
-            if not attachments:
-                attachments = None
+            conds = dialog.meta_data_filter["manual"]
+            attachments.extend(meta_filter(metas, conds, dialog.meta_data_filter.get("logic", "and")))
+            if conds and not attachments:
+                attachments = ["-999"]
 
     if prompt_config.get("keyword", False):
         questions[-1] += keyword_extraction(chat_mdl, questions[-1])
@@ -617,6 +621,8 @@ def chat(dialog, messages, stream=True, **kwargs):
         res["audio_binary"] = tts(tts_mdl, answer)
         yield res
 
+    return None
+
 
 def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
     sys_prompt = """
@@ -745,7 +751,7 @@ Please write the SQL, only SQL, without any other explanations or text.
 
 def tts(tts_mdl, text):
     if not tts_mdl or not text:
-        return
+        return None
     bin = b""
     for chunk in tts_mdl.tts(text):
         bin += chunk
@@ -776,14 +782,14 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
     if meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         if meta_data_filter.get("method") == "auto":
-            filters = gen_meta_filter(chat_mdl, metas, question)
-            doc_ids.extend(meta_filter(metas, filters))
+            filters: dict = gen_meta_filter(chat_mdl, metas, question)
+            doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
             if not doc_ids:
                 doc_ids = None
         elif meta_data_filter.get("method") == "manual":
-            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"]))
-            if not doc_ids:
-                doc_ids = None
+            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
+            if meta_data_filter["manual"] and not doc_ids:
+                doc_ids = ["-999"]
 
     kbinfos = retriever.retrieval(
         question=question,
@@ -851,14 +857,14 @@ def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     if meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         if meta_data_filter.get("method") == "auto":
-            filters = gen_meta_filter(chat_mdl, metas, question)
-            doc_ids.extend(meta_filter(metas, filters))
+            filters: dict = gen_meta_filter(chat_mdl, metas, question)
+            doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
             if not doc_ids:
                 doc_ids = None
         elif meta_data_filter.get("method") == "manual":
-            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"]))
-            if not doc_ids:
-                doc_ids = None
+            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
+            if meta_data_filter["manual"] and not doc_ids:
+                doc_ids = ["-999"]
 
     ranks = settings.retriever.retrieval(
         question=question,

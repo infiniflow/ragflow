@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.22.0">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.22.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -85,6 +85,7 @@
 
 ## 🔥 近期更新
 
+- 2025-11-19 支援 Gemini 3 Pro.
 - 2025-11-12 支援從 Confluence、AWS S3、Discord、Google Drive 進行資料同步。
 - 2025-10-23 支援 MinerU 和 Docling 作為文件解析方法。
 - 2025-10-15 支援可編排的資料管道。
@@ -185,12 +186,14 @@
 > 所有 Docker 映像檔都是為 x86 平台建置的。目前，我們不提供 ARM64 平台的 Docker 映像檔。
 > 如果您使用的是 ARM64 平台，請使用 [這份指南](https://ragflow.io/docs/dev/build_docker_image) 來建置適合您系統的 Docker 映像檔。
 
-> 執行以下指令會自動下載 RAGFlow Docker 映像 `v0.22.0`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.22.0` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。
+> 執行以下指令會自動下載 RAGFlow Docker 映像 `v0.22.1`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.22.1` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。
 
 ```bash
    $ cd ragflow/docker
    
-   # 可選：使用穩定版標籤（查看發佈：https://github.com/infiniflow/ragflow/releases），例：git checkout v0.22.0
+   # git checkout v0.22.1
+   # 可選：使用穩定版標籤（查看發佈：https://github.com/infiniflow/ragflow/releases）
+   # 此步驟確保程式碼中的 entrypoint.sh 檔案與 Docker 映像版本一致。
 
    # Use CPU for DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d

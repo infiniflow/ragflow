@@ -442,7 +442,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     tk_count = 0
     if len(tts) == len(cnts):
         vts, c = await trio.to_thread.run_sync(lambda: mdl.encode(tts[0: 1]))
-        tts = np.concatenate([vts[0] for _ in range(len(tts))], axis=0)
+        tts = np.tile(vts[0], (len(cnts), 1))
         tk_count += c
 
     @timeout(60)
@@ -465,8 +465,10 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     if not filename_embd_weight:
         filename_embd_weight = 0.1
     title_w = float(filename_embd_weight)
-    vects = (title_w * tts + (1 - title_w) *
-             cnts) if len(tts) == len(cnts) else cnts
+    if tts.ndim == 2 and cnts.ndim == 2 and tts.shape == cnts.shape:
+        vects = title_w * tts + (1 - title_w) * cnts
+    else:
+        vects = cnts
 
     assert len(vects) == len(docs)
     vector_size = 0
@@ -649,6 +651,8 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
 
     res = []
     tk_count = 0
+    max_errors = int(os.environ.get("RAPTOR_MAX_ERRORS", 3))
+
     async def generate(chunks, did):
         nonlocal tk_count, res
         raptor = Raptor(
@@ -658,6 +662,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             raptor_config["prompt"],
             raptor_config["max_token"],
             raptor_config["threshold"],
+            max_errors=max_errors,
         )
         original_length = len(chunks)
         chunks = await raptor(chunks, kb_parser_config["raptor"]["random_seed"], callback, row["id"])

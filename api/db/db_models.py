@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import wraps
 
-from flask_login import UserMixin
+from quart_auth import AuthUser
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from peewee import InterfaceError, OperationalError, BigIntegerField, BooleanField, CharField, CompositeKey, DateTimeField, Field, FloatField, IntegerField, Metadata, Model, TextField
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
@@ -305,6 +305,7 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
                     time.sleep(self.retry_delay * (2 ** attempt))
                 else:
                     raise
+        return None
 
 
 class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
@@ -594,7 +595,7 @@ def fill_db_model_object(model_object, human_model_dict):
     return model_object
 
 
-class User(DataBaseModel, UserMixin):
+class User(DataBaseModel, AuthUser):
     id = CharField(max_length=32, primary_key=True)
     access_token = CharField(max_length=255, null=True, index=True)
     nickname = CharField(max_length=100, null=False, help_text="nicky name", index=True)
@@ -772,7 +773,7 @@ class Document(DataBaseModel):
     thumbnail = TextField(null=True, help_text="thumbnail base64 string")
     kb_id = CharField(max_length=256, null=False, index=True)
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID", index=True)
-    pipeline_id = CharField(max_length=32, null=True, help_text="pipleline ID", index=True)
+    pipeline_id = CharField(max_length=32, null=True, help_text="pipeline ID", index=True)
     parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
     source_type = CharField(max_length=128, null=False, default="local", help_text="where dose this document come from", index=True)
     type = CharField(max_length=32, null=False, help_text="file extension", index=True)
@@ -876,7 +877,7 @@ class Dialog(DataBaseModel):
 class Conversation(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     dialog_id = CharField(max_length=32, null=False, index=True)
-    name = CharField(max_length=255, null=True, help_text="converastion name", index=True)
+    name = CharField(max_length=255, null=True, help_text="conversation name", index=True)
     message = JSONField(null=True)
     reference = JSONField(null=True, default=[])
     user_id = CharField(max_length=255, null=True, help_text="user_id", index=True)

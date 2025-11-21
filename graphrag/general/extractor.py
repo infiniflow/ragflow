@@ -114,7 +114,7 @@ class Extractor:
         async def extract_all(doc_id, chunks, max_concurrency=MAX_CONCURRENT_PROCESS_AND_EXTRACT_CHUNK, task_id=""):
             out_results = []
             error_count = 0
-            max_errors = 3
+            max_errors = int(os.environ.get("GRAPHRAG_MAX_ERRORS", 3))
 
             limiter = trio.Semaphore(max_concurrency)
 

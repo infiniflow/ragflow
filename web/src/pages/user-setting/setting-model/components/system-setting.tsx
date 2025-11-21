@@ -27,7 +27,6 @@ interface IProps {
 const SystemSetting = ({ onOk, loading }: IProps) => {
   const { systemSetting: initialValues, allOptions } =
     useFetchSystemModelSettingOnMount();
-  const { t: tcommon } = useTranslate('common');
   const { t } = useTranslate('setting');
 
   const [formData, setFormData] = useState({
@@ -149,7 +148,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
               <TooltipTrigger>
                 <CircleQuestionMark
                   size={12}
-                  className="ml-1 text-text-disabled text-xs"
+                  className="ml-1 text-text-secondary text-xs"
                 />
               </TooltipTrigger>
             </Tooltip>

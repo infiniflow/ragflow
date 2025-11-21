@@ -31,7 +31,6 @@ import traceback
 import threading
 import uuid
 
-from werkzeug.serving import run_simple
 from api.apps import app, smtp_mail_server
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
@@ -41,7 +40,7 @@ from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data
 from common.versions import get_ragflow_version
 from common.config_utils import show_configs
-from rag.utils.mcp_tool_call_conn import shutdown_all_mcp_sessions
+from common.mcp_tool_call_conn import shutdown_all_mcp_sessions
 from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
@@ -153,14 +152,7 @@ if __name__ == '__main__':
     # start http server
     try:
         logging.info("RAGFlow HTTP server start...")
-        run_simple(
-            hostname=settings.HOST_IP,
-            port=settings.HOST_PORT,
-            application=app,
-            threaded=True,
-            use_reloader=RuntimeConfig.DEBUG,
-            use_debugger=RuntimeConfig.DEBUG,
-        )
+        app.run(host=settings.HOST_IP, port=settings.HOST_PORT)
     except Exception:
         traceback.print_exc()
         stop_event.set()

@@ -12,9 +12,12 @@ export const LogicalOperatorIcon = function OperatorIcon({
     return (
       <IconFont
         name={icon}
-        className={cn('size-4', {
-          'rotate-180': value === '>',
-        })}
+        className={cn('size-4')}
+        style={
+          value === ComparisonOperator.GreatThan
+            ? { transform: 'rotate(180deg)' }
+            : undefined
+        }
       ></IconFont>
     );
   }

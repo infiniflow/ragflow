@@ -25,8 +25,21 @@ from common.config_utils import read_config
 from urllib.parse import urlparse
 
 
+class BaseConfig(BaseModel):
+    id: int
+    name: str
+    host: str
+    port: int
+    service_type: str
+    detail_func_name: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {'id': self.id, 'name': self.name, 'host': self.host, 'port': self.port,
+                'service_type': self.service_type}
+
+
 class ServiceConfigs:
-    configs = dict
+    configs = list[BaseConfig]
 
     def __init__(self):
         self.configs = []
@@ -43,19 +56,6 @@ class ServiceType(Enum):
     RAGFLOW_SERVER = "ragflow_server"
     TASK_EXECUTOR = "task_executor"
     FILE_STORE = "file_store"
-
-
-class BaseConfig(BaseModel):
-    id: int
-    name: str
-    host: str
-    port: int
-    service_type: str
-    detail_func_name: str
-
-    def to_dict(self) -> dict[str, Any]:
-        return {'id': self.id, 'name': self.name, 'host': self.host, 'port': self.port,
-                'service_type': self.service_type}
 
 
 class MetaConfig(BaseConfig):
@@ -227,7 +227,7 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
     ragflow_count = 0
     id_count = 0
     for k, v in raw_configs.items():
-        match (k):
+        match k:
             case "ragflow":
                 name: str = f'ragflow_{ragflow_count}'
                 host: str = v['host']

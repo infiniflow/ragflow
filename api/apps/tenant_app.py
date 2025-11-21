@@ -17,6 +17,8 @@ import logging
 from threading import Thread
 from typing import Any, Dict, List, Optional, Set, Union
 
+from quart import request
+from api.db import UserTenantRole
 from flask import Response, request, Blueprint
 from flask_login import current_user, login_required
 
@@ -43,6 +45,7 @@ from api.utils.api_utils import (
 )
 from api.utils.web_utils import send_invite_email
 from common import settings
+from api.apps import smtp_mail_server, login_required, current_user
 
 manager = Blueprint("tenant", __name__)
 def is_team_admin_or_owner(tenant_id: str, user_id: str) -> bool:
@@ -111,14 +114,14 @@ def user_list(tenant_id):
 @manager.route('/<tenant_id>/user', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("email")
-def create(tenant_id):
+async def create(tenant_id):
     if current_user.id != tenant_id:
         return get_json_result(
             data=False,
             message='No authorization.',
             code=RetCode.AUTHENTICATION_ERROR)
 
-    req = request.json
+    req = await request.json
     invite_user_email = req["email"]
     invite_users = UserService.query(email=invite_user_email)
     if not invite_users:

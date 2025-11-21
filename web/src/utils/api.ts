@@ -49,6 +49,8 @@ export default {
   llm_tools: `${api_host}/plugin/llm_tools`,
 
   // knowledge base
+
+  check_embedding: `${api_host}/kb/check_embedding`,
   kb_list: `${api_host}/kb/list`,
   create_kb: `${api_host}/kb/create`,
   update_kb: `${api_host}/kb/update`,
@@ -98,6 +100,8 @@ export default {
   document_change_parser: `${api_host}/document/change_parser`,
   document_thumbnails: `${api_host}/document/thumbnails`,
   get_document_file: `${api_host}/document/get`,
+  get_document_file_download: (docId: string) =>
+    `${api_host}/document/download/${docId}`,
   document_upload: `${api_host}/document/upload`,
   web_crawl: `${api_host}/document/web_crawl`,
   document_infos: `${api_host}/document/infos`,

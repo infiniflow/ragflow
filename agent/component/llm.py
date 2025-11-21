@@ -222,7 +222,7 @@ class LLM(ComponentBase):
             output_structure = self._param.outputs['structured']
         except Exception:
             pass
-        if output_structure:
+        if output_structure and isinstance(output_structure, dict) and output_structure.get("properties"):
             schema=json.dumps(output_structure, ensure_ascii=False, indent=2)
             prompt += structured_output_prompt(schema)
             for _ in range(self._param.max_retries+1):
@@ -249,7 +249,7 @@ class LLM(ComponentBase):
 
         downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
         ex = self.exception_handler()
-        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not output_structure and not (ex and ex["goto"]):
+        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not (ex and ex["goto"]):
             self.set_output("content", partial(self._stream_output, prompt, msg))
             return
 

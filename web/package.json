@@ -79,6 +79,7 @@
     "input-otp": "^1.4.1",
     "js-base64": "^3.7.5",
     "jsencrypt": "^3.3.2",
+    "jsoneditor": "^10.4.2",
     "lexical": "^0.23.1",
     "lodash": "^4.17.21",
     "lucide-react": "^0.546.0",
@@ -119,6 +120,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@hookform/devtools": "^4.4.0",
     "@react-dev-inspector/umi4-plugin": "^2.0.1",
     "@redux-devtools/extension": "^3.3.0",
     "@storybook/addon-docs": "^9.1.4",

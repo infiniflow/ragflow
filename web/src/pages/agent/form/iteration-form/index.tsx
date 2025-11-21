@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { JsonSchemaDataType } from '../../constant';
+import { ArrayFields } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
@@ -44,7 +44,7 @@ function IterationForm({ node }: INextOperatorForm) {
         <FormContainer>
           <QueryVariable
             name="items_ref"
-            types={[JsonSchemaDataType.Array]}
+            types={ArrayFields as any[]}
           ></QueryVariable>
         </FormContainer>
         <DynamicOutput node={node}></DynamicOutput>
