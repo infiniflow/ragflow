@@ -649,6 +649,7 @@ class UserTenant(DataBaseModel):
     role = CharField(max_length=32, null=False, help_text="UserTenantRole", index=True)
     invited_by = CharField(max_length=32, null=False, index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    permissions = JSONField(null=True, help_text="CRUD permissions for datasets and canvases", default={"dataset": {"create": False, "read": True, "update": False, "delete": False}, "canvas": {"create": False, "read": True, "update": False, "delete": False}})
 
     class Meta:
         db_table = "user_tenant"
@@ -1209,6 +1210,11 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("user_canvas", "shared_tenant_id", CharField(max_length=32, null=True, help_text="Specific tenant ID to share with when permission is 'team'", index=True)))
+    except Exception:
+        pass
+    try:
+        default_permissions = {"dataset": {"create": False, "read": True, "update": False, "delete": False}, "canvas": {"create": False, "read": True, "update": False, "delete": False}}
+        migrate(migrator.add_column("user_tenant", "permissions", JSONField(null=True, help_text="CRUD permissions for datasets and canvases", default=default_permissions)))
     except Exception:
         pass
     try:

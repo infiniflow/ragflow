@@ -16,7 +16,7 @@
 import json
 import logging
 import time
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Literal
 from uuid import uuid4
 from agent.canvas import Canvas
 from api.db import CanvasCategory, TenantPermission
@@ -28,10 +28,9 @@ from api.utils.api_utils import get_data_openai
 import tiktoken
 from peewee import fn
 from api.db.services.user_service import UserTenantService
-from common.constants import StatusEnum
-from api.db.services.user_service import UserTenantService
 from api.db import TenantPermission
 from common.constants import StatusEnum
+from api.common.permission_utils import has_permission
 
 class CanvasTemplateService(CommonService):
     model = CanvasTemplate
@@ -199,8 +198,12 @@ class UserCanvasService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def accessible(cls, canvas_id: str, tenant_id: str) -> bool:
-
+    def accessible(
+        cls,
+        canvas_id: str,
+        tenant_id: str,
+        required_permission: Literal["create", "read", "update", "delete"] = "read"
+    ) -> bool:
         
         e: bool
         c: Optional[Dict[str, Any]]
@@ -208,7 +211,7 @@ class UserCanvasService(CommonService):
         if not e or c is None:
             return False
 
-        # If user owns the canvas, always allow
+        # If user owns the canvas, always allow (full permissions)
         if c["user_id"] == tenant_id:
             return True
 
@@ -216,15 +219,17 @@ class UserCanvasService(CommonService):
         if c.get("permission") != TenantPermission.TEAM.value:
             return False
 
-        # If shared_tenant_id is specified, check if user is a member of that specific tenant
+        # Determine which tenant to check permissions for
         shared_tenant_id: Optional[str] = c.get("shared_tenant_id")
-        if shared_tenant_id:
-            user_tenant = UserTenantService.filter_by_tenant_and_user_id(shared_tenant_id, tenant_id)
-            return user_tenant is not None and user_tenant.status == StatusEnum.VALID.value
-
-        # Legacy behavior: check if user is a member of the canvas owner's tenant
-        tids: List[str] = [str(t.tenant_id) for t in UserTenantService.query(user_id=tenant_id, status=StatusEnum.VALID.value)]
-        return str(c["user_id"]) in tids
+        target_tenant_id: str = shared_tenant_id if shared_tenant_id else str(c["user_id"])
+        
+        # Check if user is a member of the target tenant
+        user_tenant = UserTenantService.filter_by_tenant_and_user_id(target_tenant_id, tenant_id)
+        if not user_tenant or user_tenant.status != StatusEnum.VALID.value:
+            return False
+        
+        # Check CRUD permissions
+        return has_permission(target_tenant_id, tenant_id, "canvas", required_permission)
 
 
 async def completion(tenant_id, agent_id, session_id=None, **kwargs):

@@ -43,7 +43,6 @@ from rag.utils.doc_store_conn import OrderByExpr
 from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType, PAGERANK_FLD
 from common import settings
 from api.apps import login_required, current_user
-from common.constants import StatusEnum
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821
@@ -105,19 +104,15 @@ async def update():
             message=f"Dataset name length is {len(req['name'])} which is large than {DATASET_NAME_LIMIT}")
     req["name"] = req["name"].strip()
 
-    if not KnowledgebaseService.accessible4deletion(req["kb_id"], current_user.id):
+    # Check if user has update permission
+    if not KnowledgebaseService.accessible(req["kb_id"], current_user.id, required_permission="update"):
         return get_json_result(
             data=False,
-            message='No authorization.',
-            code=RetCode.AUTHENTICATION_ERROR
+            message='You do not have update permission for this knowledge base.',
+            code=RetCode.PERMISSION_ERROR
         )
+    
     try:
-        if not KnowledgebaseService.query(
-                created_by=current_user.id, id=req["kb_id"]):
-            return get_json_result(
-                data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
-
         e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
         if not e:
             return get_data_error_result(
@@ -233,11 +228,12 @@ async def list_kbs():
 @validate_request("kb_id")
 async def rm():
     req = await request_json()
+    # Check if user has delete permission
     if not KnowledgebaseService.accessible4deletion(req["kb_id"], current_user.id):
         return get_json_result(
             data=False,
-            message='No authorization.',
-            code=RetCode.AUTHENTICATION_ERROR
+            message='You do not have delete permission for this knowledge base.',
+            code=RetCode.PERMISSION_ERROR
         )
     try:
         kbs = KnowledgebaseService.query(

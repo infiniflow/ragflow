@@ -17,10 +17,9 @@ import logging
 from threading import Thread
 from typing import Any, Dict, List, Optional, Set, Union
 
-from quart import request
-from api.db import UserTenantRole
 from flask import Response, request, Blueprint
 from flask_login import current_user, login_required
+from quart import request
 
 from api.apps import smtp_mail_server
 from api.db import FileType, UserTenantRole
@@ -33,10 +32,6 @@ from api.db.services.user_service import (
     UserService,
     UserTenantService,
 )
-
-from common.constants import RetCode, StatusEnum
-from common.misc_utils import get_uuid
-from common.time_utils import delta_seconds
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
@@ -44,8 +39,11 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.utils.web_utils import send_invite_email
+from api.common.permission_utils import get_user_permissions, update_user_permissions
 from common import settings
-from api.apps import smtp_mail_server, login_required, current_user
+from common.constants import RetCode, StatusEnum
+from common.misc_utils import get_uuid
+from common.time_utils import delta_seconds
 
 manager = Blueprint("tenant", __name__)
 def is_team_admin_or_owner(tenant_id: str, user_id: str) -> bool:
@@ -310,6 +308,12 @@ def create_team() -> Response:
     owner_user_id: Optional[str] = user_id
     if not owner_user_id:
         # Use current authenticated user as default
+        if not current_user or not hasattr(current_user, 'id') or not current_user.id:
+            return get_json_result(
+                data=False,
+                message="Unable to determine user ID. Please ensure you are authenticated.",
+                code=RetCode.UNAUTHORIZED,
+            )
         owner_user_id = current_user.id
 
     # Verify user exists
@@ -781,11 +785,17 @@ def update_request(tenant_id: str) -> Response:
         if accept:
             # Accept invitation - update role from INVITE to the specified role
             role: str = UserTenantRole.NORMAL.value
+            
+            # Set default permissions: read-only access to datasets and canvases
+            default_permissions: Dict[str, Any] = {
+                "dataset": {"create": False, "read": True, "update": False, "delete": False},
+                "canvas": {"create": False, "read": True, "update": False, "delete": False}
+            }
              
-            # Update role from INVITE to the specified role (defaults to NORMAL)
+            # Update role from INVITE to the specified role (defaults to NORMAL) and set default permissions
             UserTenantService.filter_update(
                 [UserTenant.tenant_id == tenant_id, UserTenant.user_id == current_user.id],
-                {"role": role, "status": StatusEnum.VALID.value}
+                {"role": role, "status": StatusEnum.VALID.value, "permissions": default_permissions}
             )
             return get_json_result(data=True, message=f"Successfully joined the team with role '{role}'.")
         else:
@@ -964,6 +974,12 @@ def add_users(tenant_id: str) -> Response:
                     })
                     continue
             
+            # Set default permissions: read-only access to datasets and canvases
+            default_permissions: Dict[str, Any] = {
+                "dataset": {"create": False, "read": True, "update": False, "delete": False},
+                "canvas": {"create": False, "read": True, "update": False, "delete": False}
+            }
+            
             # Send invitation - create user with INVITE role (user must accept to join)
             UserTenantService.save(
                 id=get_uuid(),
@@ -971,7 +987,8 @@ def add_users(tenant_id: str) -> Response:
                 tenant_id=tenant_id,
                 invited_by=current_user.id,
                 role=UserTenantRole.INVITE,  # Start with INVITE role
-                status=StatusEnum.VALID.value
+                status=StatusEnum.VALID.value,
+                permissions=default_permissions
             )
             
             # Send invitation email if configured
@@ -1378,6 +1395,288 @@ def demote_admin(tenant_id: str, user_id: str) -> Response:
         return get_json_result(
             data=True,
             message=f"User {user_email} has been demoted to normal member successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return server_error_response(e)
+
+
+@manager.route('/<tenant_id>/users/<user_id>/permissions', methods=['GET'])  # noqa: F821
+@login_required
+def get_user_permissions(tenant_id: str, user_id: str) -> Response:
+    """
+    Get CRUD permissions for a team member.
+    
+    Only team owners or admins can view permissions.
+    
+    ---
+    tags:
+      - Team
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        type: string
+        description: Team ID
+      - in: path
+        name: user_id
+        required: true
+        type: string
+        description: User ID to get permissions for
+    responses:
+      200:
+        description: Permissions retrieved successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              properties:
+                dataset:
+                  type: object
+                  properties:
+                    create:
+                      type: boolean
+                    read:
+                      type: boolean
+                    update:
+                      type: boolean
+                    delete:
+                      type: boolean
+                canvas:
+                  type: object
+                  properties:
+                    create:
+                      type: boolean
+                    read:
+                      type: boolean
+                    update:
+                      type: boolean
+                    delete:
+                      type: boolean
+            message:
+              type: string
+      401:
+        description: Unauthorized.
+      403:
+        description: Forbidden - not team owner or admin.
+      404:
+        description: User not found in team.
+    """
+    # Check if current user is team owner or admin
+    if not is_team_admin_or_owner(tenant_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message="Only team owners or admins can view permissions.",
+            code=RetCode.PERMISSION_ERROR,
+        )
+    
+    try:
+        # Check if target user exists in the team
+        user_tenant: Optional[UserTenant] = UserTenantService.filter_by_tenant_and_user_id(
+            tenant_id, user_id
+        )
+        
+        if not user_tenant:
+            return get_json_result(
+                data=False,
+                message="User is not a member of this team.",
+                code=RetCode.DATA_ERROR,
+            )
+        
+        permissions: Dict[str, Dict[str, bool]] = get_user_permissions(tenant_id, user_id)
+        
+        return get_json_result(
+            data=permissions,
+            message="Permissions retrieved successfully.",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return server_error_response(e)
+
+
+@manager.route('/<tenant_id>/users/<user_id>/permissions', methods=['PUT'])  # noqa: F821
+@login_required
+@validate_request("permissions")
+def update_user_permissions(tenant_id: str, user_id: str) -> Response:
+    """
+    Update CRUD permissions for a team member.
+    
+    Only team owners or admins can update permissions.
+    Owners and admins always have full permissions and cannot be restricted.
+    
+    ---
+    tags:
+      - Team
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        type: string
+        description: Team ID
+      - in: path
+        name: user_id
+        required: true
+        type: string
+        description: User ID to update permissions for
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - permissions
+          properties:
+            permissions:
+              type: object
+              description: Permissions to update (only provided fields will be updated)
+              properties:
+                dataset:
+                  type: object
+                  properties:
+                    create:
+                      type: boolean
+                    read:
+                      type: boolean
+                    update:
+                      type: boolean
+                    delete:
+                      type: boolean
+                canvas:
+                  type: object
+                  properties:
+                    create:
+                      type: boolean
+                    read:
+                      type: boolean
+                    update:
+                      type: boolean
+                    delete:
+                      type: boolean
+    responses:
+      200:
+        description: Permissions updated successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              description: Updated permissions
+            message:
+              type: string
+      400:
+        description: Invalid request.
+      401:
+        description: Unauthorized.
+      403:
+        description: Forbidden - not team owner or admin, or trying to restrict owner/admin.
+      404:
+        description: User not found in team.
+    """
+    # Check if current user is team owner or admin
+    if not is_team_admin_or_owner(tenant_id, current_user.id):
+        return get_json_result(
+            data=False,
+            message="Only team owners or admins can update permissions.",
+            code=RetCode.PERMISSION_ERROR,
+        )
+    
+    if request.json is None:
+        return get_json_result(
+            data=False,
+            message="Request body is required!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    
+    req: Dict[str, Any] = request.json
+    permissions: Optional[Dict[str, Any]] = req.get("permissions")
+    
+    if not permissions or not isinstance(permissions, dict):
+        return get_json_result(
+            data=False,
+            message="'permissions' must be a non-empty object.",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    
+    try:
+        # Check if target user exists in the team
+        user_tenant: Optional[UserTenant] = UserTenantService.filter_by_tenant_and_user_id(
+            tenant_id, user_id
+        )
+        
+        if not user_tenant:
+            return get_json_result(
+                data=False,
+                message="User is not a member of this team.",
+                code=RetCode.DATA_ERROR,
+            )
+        
+        # Owners and admins always have full permissions - cannot be restricted
+        if user_tenant.role in [UserTenantRole.OWNER, UserTenantRole.ADMIN]:
+            return get_json_result(
+                data=False,
+                message="Cannot update permissions for team owners or admins. They always have full permissions.",
+                code=RetCode.DATA_ERROR,
+            )
+        
+        # Validate permissions structure
+        valid_resource_types = {"dataset", "canvas"}
+        valid_permissions = {"create", "read", "update", "delete"}
+        
+        validated_permissions: Dict[str, Dict[str, bool]] = {}
+        for resource_type, perms in permissions.items():
+            if resource_type not in valid_resource_types:
+                return get_json_result(
+                    data=False,
+                    message=f"Invalid resource type '{resource_type}'. Must be one of: {', '.join(valid_resource_types)}",
+                    code=RetCode.ARGUMENT_ERROR,
+                )
+            
+            if not isinstance(perms, dict):
+                return get_json_result(
+                    data=False,
+                    message=f"Permissions for '{resource_type}' must be an object.",
+                    code=RetCode.ARGUMENT_ERROR,
+                )
+            
+            validated_permissions[resource_type] = {}
+            for perm_name, perm_value in perms.items():
+                if perm_name not in valid_permissions:
+                    return get_json_result(
+                        data=False,
+                        message=f"Invalid permission '{perm_name}' for '{resource_type}'. Must be one of: {', '.join(valid_permissions)}",
+                        code=RetCode.ARGUMENT_ERROR,
+                    )
+                
+                if not isinstance(perm_value, bool):
+                    return get_json_result(
+                        data=False,
+                        message=f"Permission value for '{resource_type}.{perm_name}' must be a boolean.",
+                        code=RetCode.ARGUMENT_ERROR,
+                    )
+                
+                validated_permissions[resource_type][perm_name] = perm_value
+        
+        # Update permissions
+        success: bool = update_user_permissions(tenant_id, user_id, validated_permissions)
+        
+        if not success:
+            return get_json_result(
+                data=False,
+                message="Failed to update permissions.",
+                code=RetCode.EXCEPTION_ERROR,
+            )
+        
+        # Get updated permissions for response
+        updated_permissions: Dict[str, Dict[str, bool]] = get_user_permissions(tenant_id, user_id)
+        
+        return get_json_result(
+            data=updated_permissions,
+            message="Permissions updated successfully.",
         )
     except Exception as e:
         logging.exception(e)

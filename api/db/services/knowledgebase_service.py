@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from datetime import datetime
+from typing import Optional, Literal
 
 from peewee import fn, JOIN
 
@@ -27,6 +28,8 @@ from common.misc_utils import get_uuid
 from common.constants import StatusEnum
 from api.constants import DATASET_NAME_LIMIT
 from api.utils.api_utils import get_parser_config, get_data_error_result
+from api.common.check_team_permission import check_kb_team_permission
+from common.constants import TaskStatus
 
 
 class KnowledgebaseService(CommonService):
@@ -50,37 +53,37 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def accessible4deletion(cls, kb_id, user_id):
+    def accessible4deletion(cls, kb_id: str, user_id: str) -> bool:
         """Check if a knowledge base can be deleted by a specific user.
 
         This method verifies whether a user has permission to delete a knowledge base
-        by checking if they are the creator of that knowledge base.
+        by checking if they are the creator or have delete permission via CRUD permissions.
 
         Args:
-            kb_id (str): The unique identifier of the knowledge base to check.
-            user_id (str): The unique identifier of the user attempting the deletion.
+            kb_id: The unique identifier of the knowledge base to check.
+            user_id: The unique identifier of the user attempting the deletion.
 
         Returns:
             bool: True if the user has permission to delete the knowledge base,
                   False if the user doesn't have permission or the knowledge base doesn't exist.
-
-        Example:
-            >>> KnowledgebaseService.accessible4deletion("kb123", "user456")
-            True
-
-        Note:
-            - This method only checks creator permissions
-            - A return value of False can mean either:
-                1. The knowledge base doesn't exist
-                2. The user is not the creator of the knowledge base
         """
-        # Check if a knowledge base can be deleted by a user
-        docs = cls.model.select(
-            cls.model.id).where(cls.model.id == kb_id, cls.model.created_by == user_id).paginate(0, 1)
-        docs = docs.dicts()
-        if not docs:
+        
+        # Get the knowledge base
+        ok: bool
+        kb: Optional[Knowledgebase]
+        ok, kb = cls.get_by_id(kb_id)
+        if not ok or kb is None:
             return False
-        return True
+        
+        # If user is the creator, always allow
+        if kb.created_by == user_id:
+            return True
+        
+        # Check team permissions with delete permission required
+        if kb.permission == "team":
+            return check_kb_team_permission(kb, user_id, required_permission="delete")
+        
+        return False
 
     @classmethod
     @DB.connection_context()
@@ -93,9 +96,9 @@ class KnowledgebaseService(CommonService):
         # Returns:
         #     If all documents are parsed successfully, returns (True, None)
         #     If any document is not fully parsed, returns (False, error_message)
-        from common.constants import TaskStatus
+        # Import here to avoid circular import
         from api.db.services.document_service import DocumentService
-
+        
         # Get knowledge base information
         kbs = cls.query(id=kb_id)
         if not kbs:
@@ -470,20 +473,33 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def accessible(cls, kb_id, user_id):
-        # Check if a knowledge base is accessible by a user
-        # Args:
-        #     kb_id: Knowledge base ID
-        #     user_id: User ID
-        # Returns:
-        #     Boolean indicating accessibility
-        docs = cls.model.select(
-            cls.model.id).join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.tenant_id)
-                               ).where(cls.model.id == kb_id, UserTenant.user_id == user_id).paginate(0, 1)
-        docs = docs.dicts()
-        if not docs:
+    def accessible(cls, kb_id: str, user_id: str, required_permission: Literal["create", "read", "update", "delete"] = "read") -> bool:
+        """Check if a knowledge base is accessible by a user with the required permission.
+        
+        Args:
+            kb_id: Knowledge base ID
+            user_id: User ID
+            required_permission: Required permission level ("create", "read", "update", "delete")
+        Returns:
+            Boolean indicating accessibility
+        """
+        
+        # Get the knowledge base
+        ok: bool
+        kb: Optional[Knowledgebase]
+        ok, kb = cls.get_by_id(kb_id)
+        if not ok or kb is None:
             return False
-        return True
+        
+        # If user is the creator, always allow
+        if kb.created_by == user_id:
+            return True
+        
+        # Check team permissions
+        if kb.permission == "team":
+            return check_kb_team_permission(kb, user_id, required_permission=required_permission)
+        
+        return False
 
     @classmethod
     @DB.connection_context()

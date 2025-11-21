@@ -14,17 +14,20 @@
 #  limitations under the License.
 #
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Literal
 
 from api.db import TenantPermission
 from api.db.db_models import File, Knowledgebase
-from api.db.services.file_service import FileService
-from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService, UserTenantService
+from api.common.permission_utils import has_permission
 from common.constants import StatusEnum
 
 
-def check_kb_team_permission(kb: Dict[str, Any] | Knowledgebase, other: str) -> bool:
+def check_kb_team_permission(
+    kb: Dict[str, Any] | Knowledgebase,
+    other: str,
+    required_permission: Literal["create", "read", "update", "delete"] = "read"
+) -> bool:
     kb = kb.to_dict() if isinstance(kb, Knowledgebase) else kb
 
     kb_tenant_id = kb["tenant_id"]
@@ -37,19 +40,23 @@ def check_kb_team_permission(kb: Dict[str, Any] | Knowledgebase, other: str) -> 
     if kb["permission"] != TenantPermission.TEAM:
         return False
 
-    # If shared_tenant_id is specified, check if user is a member of that specific tenant
+    # Determine which tenant to check permissions for
     shared_tenant_id: Optional[str] = kb.get("shared_tenant_id")
-    if shared_tenant_id:
-        # Check if user is a member of the shared tenant
-        user_tenant = UserTenantService.filter_by_tenant_and_user_id(shared_tenant_id, other)
-        return user_tenant is not None and user_tenant.status == StatusEnum.VALID.value
-
-    # Legacy behavior: if no shared_tenant_id, check if user is a member of the KB's tenant
-    joined_tenants: List[Dict[str, Any]] = TenantService.get_joined_tenants_by_user_id(other)
-    return any(tenant["tenant_id"] == kb_tenant_id for tenant in joined_tenants)
+    target_tenant_id: str = shared_tenant_id if shared_tenant_id else kb_tenant_id
+    
+    # Check if user is a member of the target tenant
+    user_tenant = UserTenantService.filter_by_tenant_and_user_id(target_tenant_id, other)
+    if not user_tenant or user_tenant.status != StatusEnum.VALID.value:
+        return False
+    
+    # Check CRUD permissions
+    return has_permission(target_tenant_id, other, "dataset", required_permission)
 
 
 def check_file_team_permission(file: Dict[str, Any] | File, other: str) -> bool:
+    # Import here to avoid circular import
+    from api.db.services.file_service import FileService
+    
     file = file.to_dict() if isinstance(file, File) else file
 
     file_tenant_id = file["tenant_id"]
@@ -60,6 +67,9 @@ def check_file_team_permission(file: Dict[str, Any] | File, other: str) -> bool:
 
     kb_ids: List[str] = [kb_info["kb_id"] for kb_info in FileService.get_kb_id_by_file_id(file_id)]
 
+    # Import here to avoid circular import
+    from api.db.services.knowledgebase_service import KnowledgebaseService
+    
     for kb_id in kb_ids:
         ok: bool
         kb: Optional[Knowledgebase]

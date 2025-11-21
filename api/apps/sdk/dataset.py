@@ -27,7 +27,7 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
-from api.db.services.user_service import TenantService
+from api.db.services.user_service import TenantService, UserTenantService
 from common.constants import RetCode, FileSource, StatusEnum
 from api.utils.api_utils import (
     deep_merge,
@@ -51,8 +51,6 @@ from api.utils.validation_utils import (
 from rag.nlp import search
 from common.constants import PAGERANK_FLD
 from common import settings
-from api.db.services.user_service import UserTenantService
-from common.constants import StatusEnum
 
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
 @token_required
@@ -238,6 +236,11 @@ async def delete(tenant_id):
         errors = []
         success_count = 0
         for kb_id, kb in kb_id_instance_pairs:
+            # Check delete permission for each dataset
+            if not KnowledgebaseService.accessible4deletion(kb_id, tenant_id):
+                errors.append(f"User lacks delete permission for dataset '{kb_id}'")
+                continue
+            
             for doc in DocumentService.query(kb_id=kb_id):
                 if not DocumentService.remove_document(doc, tenant_id):
                     errors.append(f"Remove document '{doc.id}' error for dataset '{kb_id}'")
@@ -346,10 +349,15 @@ async def update(tenant_id, dataset_id):
         return get_error_argument_result(message="No properties were modified")
 
     try:
+        # Check update permission
+        if not KnowledgebaseService.accessible(dataset_id, tenant_id, required_permission="update"):
+            return get_error_permission_result(
+                message=f"User lacks update permission for dataset '{dataset_id}'")
+        
         kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
         if kb is None:
             return get_error_permission_result(
-                message=f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'")
+                message=f"Dataset '{dataset_id}' not found")
 
         if req.get("parser_config"):
             req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])

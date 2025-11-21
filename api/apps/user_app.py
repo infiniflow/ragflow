@@ -23,10 +23,8 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Match
 
-from quart import redirect, request, session, make_response
+from quart import redirect, request, session, make_response, Response
 
-from flask import redirect, request, session, make_response, Response
-from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from api.apps.auth import get_auth_client
