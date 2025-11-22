@@ -179,7 +179,17 @@ def init_settings():
     try:
         with open(os.path.join(get_project_base_directory(), "conf", "llm_factories.json"), "r") as f:
             FACTORY_LLM_INFOS = json.load(f)["factory_llm_infos"]
-    except Exception:
+    except FileNotFoundError:
+        logging.warning(f"LLM factories config not found at {config_path}")
+        FACTORY_LLM_INFOS = []
+    except KeyError:
+        logging.warning("Invalid LLM factories config format")
+        FACTORY_LLM_INFOS = []
+    except json.JSONDecodeError:
+        logging.error("Invalid JSON in LLM factories config")
+        FACTORY_LLM_INFOS = []
+    except Exception as e:
+        logging.error(f"Unexpected error loading LLM factories config: {e}")
         FACTORY_LLM_INFOS = []
 
     global API_KEY
