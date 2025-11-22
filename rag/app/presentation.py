@@ -17,6 +17,7 @@
 import copy
 import re
 from io import BytesIO
+import os
 
 from PIL import Image
 
@@ -104,11 +105,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     if parser_config is None:
         parser_config = {}
     eng = lang.lower() == "english"
-    doc = {
-        "docnm_kwd": filename,
-        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
-    }
-    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
+    if os.getenv('DOC_ENGINE', 'elasticsearch') == 'infinity':
+        doc = {"docnm": filename}
+    else:
+        doc = {
+            "docnm_kwd": filename,
+            "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename)),
+        }
+        doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
     if re.search(r"\.pptx?$", filename, re.IGNORECASE):
         ppt_parser = Ppt()

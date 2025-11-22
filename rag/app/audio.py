@@ -24,8 +24,11 @@ from rag.nlp import rag_tokenizer, tokenize
 
 
 def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
-    doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
-    doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
+    if os.getenv('DOC_ENGINE', 'elasticsearch') == 'infinity':
+        doc = {"docnm": filename}
+    else:
+        doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
+        doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
 
     # is it English
     eng = lang.lower() == "english"  # is_english(sections)

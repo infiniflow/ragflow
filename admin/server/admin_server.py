@@ -20,6 +20,7 @@ import logging
 import time
 import threading
 import traceback
+import faulthandler
 
 from flask import Flask
 from flask_login import LoginManager
@@ -37,6 +38,7 @@ from common.versions import get_ragflow_version
 stop_event = threading.Event()
 
 if __name__ == '__main__':
+    faulthandler.enable()
     init_root_logger("admin_service")
     logging.info(r"""
         ____  ___   ______________                 ___       __          _     

@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime
 from io import BytesIO
+import os
 
 import trio
 import xxhash
@@ -112,7 +113,6 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def check_doc_health(cls, tenant_id: str, filename):
-        import os
         MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
         if 0 < MAX_FILE_NUM_PER_USER <= DocumentService.get_doc_count(tenant_id):
             raise RuntimeError("Exceed the maximum file number of a free user!")
@@ -999,20 +999,27 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
                 mind_map = json.dumps(mind_map.output, ensure_ascii=False, indent=2)
                 if len(mind_map) < 32:
                     raise Exception("Few content: " + mind_map)
-                cks.append({
+                chunk = {
                     "id": get_uuid(),
                     "doc_id": doc_id,
                     "kb_id": [kb.id],
-                    "docnm_kwd": doc_nm[doc_id],
-                    "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", doc_nm[doc_id])),
-                    "content_ltks": rag_tokenizer.tokenize("summary summarize 总结 概况 file 文件 概括"),
-                    "content_with_weight": mind_map,
                     "knowledge_graph_kwd": "mind_map"
-                })
+                }
+                if settings.DOC_ENGINE_INFINITY:
+                    chunk["docnm"] = doc_nm[doc_id]
+                    chunk["content"] = mind_map,
+                else:
+                    chunk["docnm_kwd"] = doc_nm[doc_id]
+                    chunk["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", doc_nm[doc_id])),
+                    chunk["content_with_weight"] = mind_map,
+                    chunk["content_ltks"] = rag_tokenizer.tokenize(mind_map),
+                    chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(mind_map),
+                cks.append(chunk)
             except Exception:
                 logging.exception("Mind map generation error")
 
-        vectors = embedding(doc_id, [c["content_with_weight"] for c in cks])
+        content_field = "content" if settings.DOC_ENGINE_INFINITY else "content_with_weight"
+        vectors = embedding(doc_id, [c[content_field] for c in cks])
         assert len(cks) == len(vectors)
         for i, d in enumerate(cks):
             v = vectors[i]

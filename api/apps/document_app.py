@@ -474,12 +474,18 @@ async def rename():
             FileService.update_by_id(file.id, {"name": req["name"]})
 
         tenant_id = DocumentService.get_tenant_id(req["doc_id"])
-        title_tks = rag_tokenizer.tokenize(req["name"])
-        es_body = {
-            "docnm_kwd": req["name"],
-            "title_tks": title_tks,
-            "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
-        }
+        if settings.DOC_ENGINE_INFINITY:
+            es_body = {
+                "docnm": req["name"],
+            }
+        else:
+            title_tks = rag_tokenizer.tokenize(req["name"])
+            es_body = {
+                "docnm_kwd": req["name"],
+                "title_tks": title_tks,
+                "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
+            }
+
         if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
             settings.docStoreConn.update(
                 {"doc_id": req["doc_id"]},

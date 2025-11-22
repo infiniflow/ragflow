@@ -35,8 +35,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.task_service import TaskService, queue_tasks
 from api.db.services.dialog_service import meta_filter, convert_conditions
-from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, \
-    request_json
+from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, request_json
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
@@ -533,49 +532,43 @@ def list_docs(dataset_id, tenant_id):
                     description: Processing status.
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
-      return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
     q = request.args
-    document_id = q.get("id")  
-    name        = q.get("name")
+    document_id = q.get("id")
+    name = q.get("name")
 
     if document_id and not DocumentService.query(id=document_id, kb_id=dataset_id):
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     if name and not DocumentService.query(name=name, kb_id=dataset_id):
         return get_error_data_result(message=f"You don't own the document {name}.")
 
-    page        = int(q.get("page", 1))
-    page_size   = int(q.get("page_size", 30))  
-    orderby     = q.get("orderby", "create_time")
-    desc        = str(q.get("desc", "true")).strip().lower() != "false"
-    keywords    = q.get("keywords", "")
+    page = int(q.get("page", 1))
+    page_size = int(q.get("page_size", 30))
+    orderby = q.get("orderby", "create_time")
+    desc = str(q.get("desc", "true")).strip().lower() != "false"
+    keywords = q.get("keywords", "")
 
     # filters - align with OpenAPI parameter names
-    suffix               = q.getlist("suffix") 
-    run_status           = q.getlist("run")   
-    create_time_from     = int(q.get("create_time_from", 0))  
-    create_time_to       = int(q.get("create_time_to", 0))    
+    suffix = q.getlist("suffix")
+    run_status = q.getlist("run")
+    create_time_from = int(q.get("create_time_from", 0))
+    create_time_to = int(q.get("create_time_to", 0))
 
     # map run status (accept text or numeric) - align with API parameter
     run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
     run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
 
-    docs, total = DocumentService.get_list(
-        dataset_id, page, page_size, orderby, desc, keywords, document_id, name, suffix, run_status_converted
-    )
+    docs, total = DocumentService.get_list(dataset_id, page, page_size, orderby, desc, keywords, document_id, name, suffix, run_status_converted)
 
     # time range filter (0 means no bound)
     if create_time_from or create_time_to:
-        docs = [
-            d for d in docs
-            if (create_time_from == 0 or d.get("create_time", 0) >= create_time_from)
-            and (create_time_to == 0 or d.get("create_time", 0) <= create_time_to)
-        ]
+        docs = [d for d in docs if (create_time_from == 0 or d.get("create_time", 0) >= create_time_from) and (create_time_to == 0 or d.get("create_time", 0) <= create_time_to)]
 
     # rename keys + map run status back to text for output
     key_mapping = {
         "chunk_num": "chunk_count",
-        "kb_id": "dataset_id", 
+        "kb_id": "dataset_id",
         "token_num": "token_count",
         "parser_id": "chunk_method",
     }
@@ -589,6 +582,7 @@ def list_docs(dataset_id, tenant_id):
         output_docs.append(renamed_doc)
 
     return get_result(data={"total": total, "docs": output_docs})
+
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
 @token_required
@@ -988,16 +982,22 @@ def list_chunks(tenant_id, dataset_id, document_id):
         res["total"] = 1
         final_chunk = {
             "id": chunk.get("id", chunk.get("chunk_id")),
-            "content": chunk["content_with_weight"],
             "document_id": chunk.get("doc_id", chunk.get("document_id")),
-            "docnm_kwd": chunk["docnm_kwd"],
-            "important_keywords": chunk.get("important_kwd", []),
-            "questions": chunk.get("question_kwd", []),
             "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
             "image_id": chunk.get("img_id", ""),
             "available": bool(chunk.get("available_int", 1)),
             "positions": chunk.get("position_int", []),
         }
+        if settings.DOC_ENGINE_INFINITY:
+            final_chunk["content"] = chunk["content"]
+            final_chunk["docnm_kwd"] = chunk.get("docnm", "")
+            final_chunk["important_keywords"] = chunk.get("important_keywords", "").split()
+            final_chunk["questions"] = chunk.get("questions", "").splitlines()
+        else:
+            final_chunk["content"] = chunk["content_with_weight"]
+            final_chunk["docnm_kwd"] = chunk.get("docnm_kwd", "")
+            final_chunk["important_keywords"] = chunk.get("important_kwd", [])
+            final_chunk["questions"] = chunk.get("question_kwd", [])
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
 
@@ -1007,16 +1007,22 @@ def list_chunks(tenant_id, dataset_id, document_id):
         for id in sres.ids:
             d = {
                 "id": id,
-                "content": (remove_redundant_spaces(sres.highlight[id]) if question and id in sres.highlight else sres.field[id].get("content_with_weight", "")),
                 "document_id": sres.field[id]["doc_id"],
-                "docnm_kwd": sres.field[id]["docnm_kwd"],
-                "important_keywords": sres.field[id].get("important_kwd", []),
-                "questions": sres.field[id].get("question_kwd", []),
                 "dataset_id": sres.field[id].get("kb_id", sres.field[id].get("dataset_id")),
                 "image_id": sres.field[id].get("img_id", ""),
                 "available": bool(int(sres.field[id].get("available_int", "1"))),
                 "positions": sres.field[id].get("position_int", []),
             }
+            if settings.DOC_ENGINE_INFINITY:
+                d["content"] = remove_redundant_spaces(sres.highlight[id]) if question and id in sres.highlight else sres.field[id].get("content", "")
+                d["docnm_kwd"] = sres.field[id].get("docnm", "")
+                d["important_keywords"] = sres.field[id].get("important_keywords", "").split()
+                d["questions"] = sres.field[id].get("questions", "").splitlines()
+            else:
+                d["content"] = remove_redundant_spaces(sres.highlight[id]) if question and id in sres.highlight else sres.field[id].get("content_with_weight", "")
+                d["docnm_kwd"] = sres.field[id].get("docnm_kwd", "")
+                d["important_keywords"] = sres.field[id].get("important_kwd", [])
+                d["questions"] = sres.field[id].get("question_kwd", [])
             res["chunks"].append(d)
             _ = Chunk(**d)  # validate the chunk
     return get_result(data=res)
@@ -1106,42 +1112,51 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         if not isinstance(req["questions"], list):
             return get_error_data_result("`questions` is required to be a list")
     chunk_id = xxhash.xxh64((req["content"] + document_id).encode("utf-8")).hexdigest()
+
     d = {
         "id": chunk_id,
-        "content_ltks": rag_tokenizer.tokenize(req["content"]),
-        "content_with_weight": req["content"],
+        "kb_id": dataset_id,
+        "doc_id": document_id,
+        "create_time": str(datetime.datetime.now()).replace("T", " ")[:19],
+        "create_timestamp_flt": datetime.datetime.now().timestamp(),
     }
-    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
-    d["important_kwd"] = req.get("important_keywords", [])
-    d["important_tks"] = rag_tokenizer.tokenize(" ".join(req.get("important_keywords", [])))
-    d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
-    d["question_tks"] = rag_tokenizer.tokenize("\n".join(req.get("questions", [])))
-    d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
-    d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
-    d["kb_id"] = dataset_id
-    d["docnm_kwd"] = doc.name
-    d["doc_id"] = document_id
+    questions = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
+    if settings.DOC_ENGINE_INFINITY:
+        d["content"] = req["content"]
+        d["important_keywords"] = " ".join(req.get("important_keywords", []))
+        d["questions"] = "\n".join(questions)
+        d["docnm"] = doc.name
+    else:
+        d["content_with_weight"] = req["content"]
+        d["content_ltks"] = rag_tokenizer.tokenize(req["content"])
+        d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+        d["important_kwd"] = req.get("important_keywords", [])
+        d["important_tks"] = rag_tokenizer.tokenize(" ".join(req.get("important_keywords", [])))
+        d["question_kwd"] = questions
+        d["question_tks"] = rag_tokenizer.tokenize("\n".join(questions))
+        d["docnm_kwd"] = doc.name
     embd_id = DocumentService.get_embd_id(document_id)
     embd_mdl = TenantLLMService.model_instance(tenant_id, LLMType.EMBEDDING.value, embd_id)
-    v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
+    v, c = embd_mdl.encode([doc.name, req["content"] if not questions else "\n".join(questions)])
     v = 0.1 * v[0] + 0.9 * v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
     settings.docStoreConn.insert([d], search.index_name(tenant_id), dataset_id)
 
     DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+    renamed_chunk = {
+        "id": chunk_id,
+        "document_id": document_id,
+        "content": req["content"],
+        "important_keywords": req.get("important_keywords", []),
+        "questions": questions,
+    }
     # rename keys
     key_mapping = {
-        "id": "id",
-        "content_with_weight": "content",
-        "doc_id": "document_id",
-        "important_kwd": "important_keywords",
-        "question_kwd": "questions",
         "kb_id": "dataset_id",
         "create_timestamp_flt": "create_timestamp",
         "create_time": "create_time",
         "document_keyword": "document",
     }
-    renamed_chunk = {}
     for key, value in d.items():
         if key in key_mapping:
             new_key = key_mapping.get(key, key)
@@ -1288,24 +1303,39 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     if not doc:
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
+    content_field = "content" if settings.DOC_ENGINE_INFINITY else "content_with_weight"
     req = await request_json()
-    if "content" in req:
+    if "content" in req and req["content"] is not None:
         content = req["content"]
     else:
-        content = chunk.get("content_with_weight", "")
-    d = {"id": chunk_id, "content_with_weight": content}
-    d["content_ltks"] = rag_tokenizer.tokenize(d["content_with_weight"])
-    d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+        content = chunk.get(content_field, "")
+    d = {"id": chunk_id}
+    if settings.DOC_ENGINE_INFINITY:
+        d["content"] = content
+    else:
+        d["content_with_weight"] = content
+        d["content_ltks"] = rag_tokenizer.tokenize(content)
+        d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     if "important_keywords" in req:
         if not isinstance(req["important_keywords"], list):
             return get_error_data_result("`important_keywords` should be a list")
-        d["important_kwd"] = req.get("important_keywords", [])
-        d["important_tks"] = rag_tokenizer.tokenize(" ".join(req["important_keywords"]))
+        important_keywords = req.get("important_keywords", [])
+        if settings.DOC_ENGINE_INFINITY:
+            d["important_keywords"] = " ".join(important_keywords)
+        else:
+            d["important_kwd"] = important_keywords
+            d["important_tks"] = rag_tokenizer.tokenize(" ".join(important_keywords))
     if "questions" in req:
         if not isinstance(req["questions"], list):
             return get_error_data_result("`questions` should be a list")
-        d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
-        d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["questions"]))
+        questions = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
+        if settings.DOC_ENGINE_INFINITY:
+            d["questions"] = "\n".join(questions)
+        else:
+            d["question_kwd"] = questions
+            d["question_tks"] = rag_tokenizer.tokenize("\n".join(questions))
+    else:
+        questions = []
     if "available" in req:
         d["available_int"] = int(req["available"])
     if "positions" in req:
@@ -1315,13 +1345,13 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     embd_id = DocumentService.get_embd_id(document_id)
     embd_mdl = TenantLLMService.model_instance(tenant_id, LLMType.EMBEDDING.value, embd_id)
     if doc.parser_id == ParserType.QA:
-        arr = [t for t in re.split(r"[\n\t]", d["content_with_weight"]) if len(t) > 1]
+        arr = [t for t in re.split(r"[\n\t]", d[content_field]) if len(t) > 1]
         if len(arr) != 2:
             return get_error_data_result(message="Q&A must be separated by TAB/ENTER key.")
         q, a = rmPrefix(arr[0]), rmPrefix(arr[1])
         d = beAdoc(d, arr[0], arr[1], not any([rag_tokenizer.is_chinese(t) for t in q + a]))
 
-    v, c = embd_mdl.encode([doc.name, d["content_with_weight"] if not d.get("question_kwd") else "\n".join(d["question_kwd"])])
+    v, c = embd_mdl.encode([doc.name, content if not questions else "\n".join(questions)])
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
     settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(tenant_id), dataset_id)
@@ -1493,9 +1523,10 @@ async def retrieval_test(tenant_id):
             cks = settings.retriever.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
             if cks:
                 ranks["chunks"] = cks
+        content_field = "content" if settings.DOC_ENGINE_INFINITY else "content_with_weight"
         if use_kg:
             ck = settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
-            if ck["content_with_weight"]:
+            if ck[content_field]:
                 ranks["chunks"].insert(0, ck)
 
         for c in ranks["chunks"]:
@@ -1504,15 +1535,26 @@ async def retrieval_test(tenant_id):
         ##rename keys
         renamed_chunks = []
         for chunk in ranks["chunks"]:
-            key_mapping = {
-                "chunk_id": "id",
-                "content_with_weight": "content",
-                "doc_id": "document_id",
-                "important_kwd": "important_keywords",
-                "question_kwd": "questions",
-                "docnm_kwd": "document_keyword",
-                "kb_id": "dataset_id",
-            }
+            if settings.DOC_ENGINE_INFINITY:
+                key_mapping = {
+                    "chunk_id": "id",
+                    "content": "content",
+                    "doc_id": "document_id",
+                    "important_keywords": "important_keywords",
+                    "questions": "questions",
+                    "docnm": "document_keyword",
+                    "kb_id": "dataset_id",
+                }
+            else:
+                key_mapping = {
+                    "chunk_id": "id",
+                    "content_with_weight": "content",
+                    "doc_id": "document_id",
+                    "important_kwd": "important_keywords",
+                    "question_kwd": "questions",
+                    "docnm_kwd": "document_keyword",
+                    "kb_id": "dataset_id",
+                }
             rename_chunk = {}
             for key, value in chunk.items():
                 new_key = key_mapping.get(key, key)

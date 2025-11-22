@@ -44,8 +44,8 @@ logger = logging.getLogger("ragflow.infinity_conn")
 
 
 def field_keyword(field_name: str):
-    # The "docnm_kwd" field is always a string, not list.
-    if field_name == "source_id" or (field_name.endswith("_kwd") and field_name != "docnm_kwd" and field_name != "knowledge_graph_kwd"):
+    # Treat "*_kwd" tag-like columns as keyword lists except knowledge_graph_kwd; source_id is also keyword-like.
+    if field_name == "source_id" or (field_name.endswith("_kwd") and field_name != "knowledge_graph_kwd"):
         return True
     return False
 
@@ -181,11 +181,15 @@ class InfinityConnection(DocStoreConnection):
                 logger.info(f"INFINITY added following column to table {table_name}: {field_name} {field_info}")
                 if field_info["type"] != "varchar" or "analyzer" not in field_info:
                     continue
-                inf_table.create_index(
-                    f"text_idx_{field_name}",
-                    IndexInfo(field_name, IndexType.FullText, {"ANALYZER": field_info["analyzer"]}),
-                    ConflictType.Ignore,
-                )
+                analyzers = field_info["analyzer"]
+                if isinstance(analyzers, str):
+                    analyzers = [analyzers]
+                for analyzer in analyzers:
+                    inf_table.create_index(
+                        f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}",
+                        IndexInfo(field_name, IndexType.FullText, {"ANALYZER": analyzer}),
+                        ConflictType.Ignore,
+                    )
 
     """
     Database operations
@@ -245,11 +249,15 @@ class InfinityConnection(DocStoreConnection):
         for field_name, field_info in schema.items():
             if field_info["type"] != "varchar" or "analyzer" not in field_info:
                 continue
-            inf_table.create_index(
-                f"text_idx_{field_name}",
-                IndexInfo(field_name, IndexType.FullText, {"ANALYZER": field_info["analyzer"]}),
-                ConflictType.Ignore,
-            )
+            analyzers = field_info["analyzer"]
+            if isinstance(analyzers, str):
+                analyzers = [analyzers]
+            for analyzer in analyzers:
+                inf_table.create_index(
+                    f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}",
+                    IndexInfo(field_name, IndexType.FullText, {"ANALYZER": analyzer}),
+                    ConflictType.Ignore,
+                )
         self.connPool.release_conn(inf_conn)
         logger.info(f"INFINITY created table {table_name}, vector size {vectorSize}")
 

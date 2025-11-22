@@ -57,8 +57,9 @@ async def run_graphrag(
     start = trio.current_time()
     tenant_id, kb_id, doc_id = row["tenant_id"], str(row["kb_id"]), row["doc_id"]
     chunks = []
-    for d in settings.retriever.chunk_list(doc_id, tenant_id, [kb_id], fields=["content_with_weight", "doc_id"], sort_by_position=True):
-        chunks.append(d["content_with_weight"])
+    content_field = "content" if settings.DOC_ENGINE_INFINITY else "content_with_weight"
+    for d in settings.retriever.chunk_list(doc_id, tenant_id, [kb_id], fields=[content_field, "doc_id"], sort_by_position=True):
+        chunks.append(d.get(content_field, ""))
 
     with trio.fail_after(max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000):
         subgraph = await generate_subgraph(
@@ -146,7 +147,8 @@ async def run_graphrag_for_kb(
     tenant_id, kb_id = row["tenant_id"], row["kb_id"]
     enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
     start = trio.current_time()
-    fields_for_chunks = ["content_with_weight", "doc_id"]
+    content_field = "content" if settings.DOC_ENGINE_INFINITY else "content_with_weight"
+    fields_for_chunks = [content_field, "doc_id"]
 
     if not doc_ids:
         logging.info(f"Fetching all docs for {kb_id}")
@@ -181,7 +183,7 @@ async def run_graphrag_for_kb(
             fields=fields_for_chunks,
             sort_by_position=True,
         ):
-            content = d["content_with_weight"]
+            content = d.get(content_field, "")
             if num_tokens_from_string(current_chunk + content) < 1024:
                 current_chunk += content
             else:
@@ -230,17 +232,7 @@ async def run_graphrag_for_kb(
                 callback(msg=f"{msg} start (chunks={len(chunks)}, timeout={deadline}s)")
                 with trio.fail_after(deadline):
                     sg = await generate_subgraph(
-                        kg_extractor,
-                        tenant_id,
-                        kb_id,
-                        doc_id,
-                        chunks,
-                        language,
-                        kb_parser_config.get("graphrag", {}).get("entity_types", []),
-                        chat_model,
-                        embedding_model,
-                        callback,
-                        task_id=row["id"]
+                        kg_extractor, tenant_id, kb_id, doc_id, chunks, language, kb_parser_config.get("graphrag", {}).get("entity_types", []), chat_model, embedding_model, callback, task_id=row["id"]
                     )
                 if sg:
                     subgraphs[doc_id] = sg
@@ -421,8 +413,9 @@ async def generate_subgraph(
     tidy_graph(subgraph, callback, check_attribute=False)
 
     subgraph.graph["source_id"] = [doc_id]
+    content_field = "content" if settings.DOC_ENGINE_INFINITY else "content_with_weight"
     chunk = {
-        "content_with_weight": json.dumps(nx.node_link_data(subgraph, edges="edges"), ensure_ascii=False),
+        content_field: json.dumps(nx.node_link_data(subgraph, edges="edges"), ensure_ascii=False),
         "knowledge_graph_kwd": "subgraph",
         "kb_id": kb_id,
         "source_id": [doc_id],
@@ -545,21 +538,35 @@ async def extract_community(
             "report": rep,
             "evidences": "\n".join([f.get("explanation", "") for f in stru["findings"]]),
         }
-        chunk = {
-            "id": get_uuid(),
-            "docnm_kwd": stru["title"],
-            "title_tks": rag_tokenizer.tokenize(stru["title"]),
-            "content_with_weight": json.dumps(obj, ensure_ascii=False),
-            "content_ltks": rag_tokenizer.tokenize(obj["report"] + " " + obj["evidences"]),
-            "knowledge_graph_kwd": "community_report",
-            "weight_flt": stru["weight"],
-            "entities_kwd": stru["entities"],
-            "important_kwd": stru["entities"],
-            "kb_id": kb_id,
-            "source_id": list(doc_ids),
-            "available_int": 0,
-        }
-        chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
+        if settings.DOC_ENGINE_INFINITY:
+            chunk = {
+                "id": get_uuid(),
+                "docnm": stru["title"],
+                "content": json.dumps(obj, ensure_ascii=False),
+                "knowledge_graph_kwd": "community_report",
+                "weight_flt": stru["weight"],
+                "entities_kwd": stru["entities"],
+                "important_keywords": " ".join(stru["entities"]) if isinstance(stru.get("entities"), list) else str(stru.get("entities", "")),
+                "kb_id": kb_id,
+                "source_id": list(doc_ids),
+                "available_int": 0,
+            }
+        else:
+            chunk = {
+                "id": get_uuid(),
+                "docnm_kwd": stru["title"],
+                "title_tks": rag_tokenizer.tokenize(stru["title"]),
+                "content_with_weight": json.dumps(obj, ensure_ascii=False),
+                "content_ltks": rag_tokenizer.tokenize(obj["report"] + " " + obj["evidences"]),
+                "knowledge_graph_kwd": "community_report",
+                "weight_flt": stru["weight"],
+                "entities_kwd": stru["entities"],
+                "important_kwd": stru["entities"],
+                "kb_id": kb_id,
+                "source_id": list(doc_ids),
+                "available_int": 0,
+            }
+            chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
         chunks.append(chunk)
 
     await trio.to_thread.run_sync(

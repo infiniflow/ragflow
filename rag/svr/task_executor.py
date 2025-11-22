@@ -270,13 +270,14 @@ async def build_chunks(task, progress_callback):
     if task["pagerank"]:
         doc[PAGERANK_FLD] = int(task["pagerank"])
     st = timer()
+    content_field = "content" if settings.DOC_ENGINE_INFINITY else "content_with_weight"
 
     @timeout(60)
     async def upload_to_minio(document, chunk):
         try:
             d = copy.deepcopy(document)
             d.update(chunk)
-            d["id"] = xxhash.xxh64((chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
+            d["id"] = xxhash.xxh64((chunk[content_field] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
             if not d.get("image"):
@@ -297,21 +298,23 @@ async def build_chunks(task, progress_callback):
 
     el = timer() - st
     logging.info("MINIO PUT({}) cost {:.3f} s".format(task["name"], el))
-
     if task["parser_config"].get("auto_keywords", 0):
         st = timer()
         progress_callback(msg="Start to generate keywords for every chunk ...")
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
 
         async def doc_keyword_extraction(chat_mdl, d, topn):
-            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords", {"topn": topn})
+            cached = get_llm_cache(chat_mdl.llm_name, d[content_field], "keywords", {"topn": topn})
             if not cached:
                 async with chat_limiter:
-                    cached = await trio.to_thread.run_sync(lambda: keyword_extraction(chat_mdl, d["content_with_weight"], topn))
-                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
+                    cached = await trio.to_thread.run_sync(lambda: keyword_extraction(chat_mdl, d[content_field], topn))
+                set_llm_cache(chat_mdl.llm_name, d[content_field], cached, "keywords", {"topn": topn})
             if cached:
-                d["important_kwd"] = cached.split(",")
-                d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
+                if settings.DOC_ENGINE_INFINITY:
+                    d["important_keywords"] = cached
+                else:
+                    d["important_kwd"] = cached.split(",")
+                    d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
             return
         async with trio.open_nursery() as nursery:
             for d in docs:
@@ -324,14 +327,17 @@ async def build_chunks(task, progress_callback):
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
 
         async def doc_question_proposal(chat_mdl, d, topn):
-            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question", {"topn": topn})
+            cached = get_llm_cache(chat_mdl.llm_name, d[content_field], "question", {"topn": topn})
             if not cached:
                 async with chat_limiter:
-                    cached = await trio.to_thread.run_sync(lambda: question_proposal(chat_mdl, d["content_with_weight"], topn))
-                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "question", {"topn": topn})
+                    cached = await trio.to_thread.run_sync(lambda: question_proposal(chat_mdl, d[content_field], topn))
+                set_llm_cache(chat_mdl.llm_name, d[content_field], cached, "question", {"topn": topn})
             if cached:
-                d["question_kwd"] = cached.split("\n")
-                d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
+                if settings.DOC_ENGINE_INFINITY:
+                    d["questions"] = cached
+                else:
+                    d["question_kwd"] = cached.split("\n")
+                    d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
         async with trio.open_nursery() as nursery:
             for d in docs:
                 nursery.start_soon(doc_question_proposal, chat_mdl, d, task["parser_config"]["auto_questions"])
@@ -361,22 +367,22 @@ async def build_chunks(task, progress_callback):
                 progress_callback(-1, msg="Task has been canceled.")
                 return None
             if settings.retriever.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(d[TAG_FLD]) > 0:
-                examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
+                examples.append({"content": d[content_field], TAG_FLD: d[TAG_FLD]})
             else:
                 docs_to_tag.append(d)
 
         async def doc_content_tagging(chat_mdl, d, topn_tags):
-            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], all_tags, {"topn": topn_tags})
+            cached = get_llm_cache(chat_mdl.llm_name, d[content_field], all_tags, {"topn": topn_tags})
             if not cached:
                 picked_examples = random.choices(examples, k=2) if len(examples)>2 else examples
                 if not picked_examples:
                     picked_examples.append({"content": "This is an example", TAG_FLD: {'example': 1}})
                 async with chat_limiter:
-                    cached = await trio.to_thread.run_sync(lambda: content_tagging(chat_mdl, d["content_with_weight"], all_tags, picked_examples, topn=topn_tags))
+                    cached = await trio.to_thread.run_sync(lambda: content_tagging(chat_mdl, d[content_field], all_tags, picked_examples, topn=topn_tags))
                 if cached:
                     cached = json.dumps(cached)
             if cached:
-                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, all_tags, {"topn": topn_tags})
+                set_llm_cache(chat_mdl.llm_name, d[content_field], cached, all_tags, {"topn": topn_tags})
                 d[TAG_FLD] = json.loads(cached)
         async with trio.open_nursery() as nursery:
             for d in docs_to_tag:
@@ -393,7 +399,11 @@ def build_TOC(task, docs, progress_callback):
         d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
         d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
     ))
-    toc: list[dict] = trio.run(run_toc_from_text, [d["content_with_weight"] for d in docs], chat_mdl, progress_callback)
+    if settings.DOC_ENGINE_INFINITY:
+        content_field = "content"
+    else:
+        content_field = "content_with_weight"
+    toc: list[dict] = trio.run(run_toc_from_text, [d[content_field] for d in docs], chat_mdl, progress_callback)
     logging.info("------------ T O C -------------\n"+json.dumps(toc, ensure_ascii=False, indent='  '))
     ii = 0
     while ii < len(toc):
@@ -411,11 +421,11 @@ def build_TOC(task, docs, progress_callback):
 
     if toc:
         d = copy.deepcopy(docs[-1])
-        d["content_with_weight"] = json.dumps(toc, ensure_ascii=False)
+        d[content_field] = json.dumps(toc, ensure_ascii=False)
         d["toc_kwd"] = "toc"
         d["available_int"] = 0
         d["page_num_int"] = [100000000]
-        d["id"] = xxhash.xxh64((d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
+        d["id"] = xxhash.xxh64((d[content_field] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
         return d
     return None
 
@@ -430,10 +440,16 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         parser_config = {}
     tts, cnts = [], []
     for d in docs:
-        tts.append(d.get("docnm_kwd", "Title"))
-        c = "\n".join(d.get("question_kwd", []))
-        if not c:
-            c = d["content_with_weight"]
+        if settings.DOC_ENGINE_INFINITY:
+            tts.append(d.get("docnm", "Title"))
+            c = d.get("questions", "")
+            if not c:
+                c = d["content"]
+        else:
+            tts.append(d.get("docnm_kwd", "Title"))
+            c = "\n".join(d.get("question_kwd", []))
+            if not c:
+                c = d["content_with_weight"]
         c = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", c)
         if not c:
             c = "None"
@@ -590,34 +606,48 @@ async def run_dataflow(task: dict):
     for ck in chunks:
         ck["doc_id"] = doc_id
         ck["kb_id"] = [str(task["kb_id"])]
-        ck["docnm_kwd"] = task["name"]
         ck["create_time"] = str(datetime.now()).replace("T", " ")[:19]
         ck["create_timestamp_flt"] = datetime.now().timestamp()
         ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
-        if "questions" in ck:
-            if "question_tks" not in ck:
-                ck["question_kwd"] = ck["questions"].split("\n")
-                ck["question_tks"] = rag_tokenizer.tokenize(str(ck["questions"]))
-            del ck["questions"]
-        if "keywords" in ck:
-            if "important_tks" not in ck:
-                ck["important_kwd"] = ck["keywords"].split(",")
-                ck["important_tks"] = rag_tokenizer.tokenize(str(ck["keywords"]))
-            del ck["keywords"]
-        if "summary" in ck:
-            if "content_ltks" not in ck:
-                ck["content_ltks"] = rag_tokenizer.tokenize(str(ck["summary"]))
-                ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
-            del ck["summary"]
         if "metadata" in ck:
             dict_update(ck["metadata"])
             del ck["metadata"]
-        if "content_with_weight" not in ck:
-            ck["content_with_weight"] = ck["text"]
         del ck["text"]
         if "positions" in ck:
             add_positions(ck, ck["positions"])
             del ck["positions"]
+
+        if settings.DOC_ENGINE_INFINITY:
+            ck["docnm"] = task["name"]
+            if "content" not in ck:
+                ck["content"] = ck["text"]
+            if "questions" in ck:
+                if "question" not in ck:
+                    ck["question"] = ck["questions"]
+                del ck["questions"]
+            if "keywords" in ck:
+                if "important_keywords" not in ck:
+                    ck["important_keywords"] = ck["keywords"]
+                del ck["keywords"]
+        else:
+            ck["docnm_kwd"] = task["name"]
+            if "content_with_weight" not in ck:
+                ck["content_with_weight"] = ck["text"]
+            if "summary" in ck:
+                if "content_ltks" not in ck:
+                    ck["content_ltks"] = rag_tokenizer.tokenize(str(ck["summary"]))
+                    ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
+                del ck["summary"]
+            if "questions" in ck:
+                if "question_tks" not in ck:
+                    ck["question_kwd"] = ck["questions"].split("\n")
+                    ck["question_tks"] = rag_tokenizer.tokenize(str(ck["questions"]))
+                del ck["questions"]
+            if "keywords" in ck:
+                if "important_tks" not in ck:
+                    ck["important_kwd"] = ck["keywords"].split(",")
+                    ck["important_tks"] = rag_tokenizer.tokenize(str(ck["keywords"]))
+                del ck["keywords"]
 
     if metadata:
         e, doc = DocumentService.get_by_id(doc_id)
@@ -669,8 +699,6 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
         doc = {
             "doc_id": did,
             "kb_id": [str(row["kb_id"])],
-            "docnm_kwd": row["name"],
-            "title_tks": rag_tokenizer.tokenize(row["name"]),
             "raptor_kwd": "raptor"
         }
         if row["pagerank"]:
@@ -682,9 +710,15 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
             d[vctr_nm] = vctr.tolist()
-            d["content_with_weight"] = content
-            d["content_ltks"] = rag_tokenizer.tokenize(content)
-            d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
+            if settings.DOC_ENGINE_INFINITY:
+                d["docnm"] = row["name"]
+                d["content"] = content
+            else:
+                d["docnm_kwd"] = row["name"]
+                d["title_tks"] = rag_tokenizer.tokenize(row["name"])
+                d["content_with_weight"] = content
+                d["content_ltks"] = rag_tokenizer.tokenize(content)
+                d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
             res.append(d)
             tk_count += num_tokens_from_string(content)
 
@@ -774,8 +808,7 @@ async def do_handle_task(task):
     progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
 
     # FIXME: workaround, Infinity doesn't support table parsing method, this check is to notify user
-    lower_case_doc_engine = settings.DOC_ENGINE.lower()
-    if lower_case_doc_engine == 'infinity' and task['parser_id'].lower() == 'table':
+    if settings.DOC_ENGINE_INFINITY and task['parser_id'].lower() == 'table':
         error_message = "Table parsing method is not supported by Infinity, please use other parsing methods or use Elasticsearch as the document engine."
         progress_callback(-1, msg=error_message)
         raise Exception(error_message)

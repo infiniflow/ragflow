@@ -117,20 +117,31 @@ class Tokenizer(ProcessBase):
             if from_upstream.chunks:
                 chunks = from_upstream.chunks
                 for i, ck in enumerate(chunks):
-                    ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", from_upstream.name))
-                    ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])
-                    if ck.get("questions"):
-                        ck["question_kwd"] = ck["questions"].split("\n")
-                        ck["question_tks"] = rag_tokenizer.tokenize(str(ck["questions"]))
-                    if ck.get("keywords"):
-                        ck["important_kwd"] = ck["keywords"].split(",")
-                        ck["important_tks"] = rag_tokenizer.tokenize(str(ck["keywords"]))
-                    if ck.get("summary"):
-                        ck["content_ltks"] = rag_tokenizer.tokenize(str(ck["summary"]))
-                        ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
-                    elif ck.get("text"):
-                        ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
-                        ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
+                    if settings.DOC_ENGINE_INFINITY:
+                        ck["docnm"] = from_upstream.name
+                        if ck.get("questions"):
+                            ck["question"] = ck["questions"]
+                        if ck.get("keywords"):
+                            ck["important_keywords"] = ck["keywords"]
+                        if ck.get("summary"):
+                            ck["content"] = ck["summary"]
+                        elif ck.get("text"):
+                            ck["content"] = ck["text"]
+                    else:
+                        ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", from_upstream.name))
+                        ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])
+                        if ck.get("questions"):
+                            ck["question_kwd"] = ck["questions"].split("\n")
+                            ck["question_tks"] = rag_tokenizer.tokenize(str(ck["questions"]))
+                        if ck.get("keywords"):
+                            ck["important_kwd"] = ck["keywords"].split(",")
+                            ck["important_tks"] = rag_tokenizer.tokenize(str(ck["keywords"]))
+                        if ck.get("summary"):
+                            ck["content_ltks"] = rag_tokenizer.tokenize(str(ck["summary"]))
+                            ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
+                        elif ck.get("text"):
+                            ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
+                            ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                     if i % 100 == 99:
                         self.callback(i * 1.0 / len(chunks) / parts)
 
@@ -146,7 +157,10 @@ class Tokenizer(ProcessBase):
                     return ""
 
                 ck = {"text": payload}
-                if "full_text" in self._param.search_method:
+                if settings.DOC_ENGINE_INFINITY:
+                    ck["docnm"] = from_upstream.name
+                    ck["content"] = payload
+                else:
                     ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", from_upstream.name))
                     ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])
                     ck["content_ltks"] = rag_tokenizer.tokenize(payload)
@@ -155,12 +169,17 @@ class Tokenizer(ProcessBase):
             else:
                 chunks = from_upstream.json_result
                 for i, ck in enumerate(chunks):
-                    ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", from_upstream.name))
-                    ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])
-                    if not ck.get("text"):
+                    content = ck.get("text", "")
+                    if not content:
                         continue
-                    ck["content_ltks"] = rag_tokenizer.tokenize(ck["text"])
-                    ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
+                    if settings.DOC_ENGINE_INFINITY:
+                        ck["docnm"] = from_upstream.name
+                        ck["content"] = content
+                    else:
+                        ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", from_upstream.name))
+                        ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])
+                        ck["content_ltks"] = rag_tokenizer.tokenize(content)
+                        ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
                     if i % 100 == 99:
                         self.callback(i * 1.0 / len(chunks) / parts)
 

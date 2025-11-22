@@ -18,6 +18,7 @@ import copy
 import logging
 import re
 from io import BytesIO
+import os
 from xpinyin import Pinyin
 import numpy as np
 import pandas as pd
@@ -375,7 +376,10 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
 
         eng = lang.lower() == "english"  # is_english(txts)
         for ii, row in df.iterrows():
-            d = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
+            if os.getenv('DOC_ENGINE', 'elasticsearch') == 'infinity':
+                d = {"docnm": filename}
+            else:
+                d = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
             row_txt = []
             for j in range(len(clmns)):
                 if row[clmns[j]] is None:
