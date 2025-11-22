@@ -56,7 +56,7 @@ export function InnerIterationNode({
   );
 }
 
-function InnerIterationStartNode({
+export function InnerIterationStartNode({
   isConnectable = true,
   id,
   selected,

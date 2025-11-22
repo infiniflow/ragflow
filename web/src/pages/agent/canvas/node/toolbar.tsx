@@ -58,7 +58,7 @@ export function ToolBar({
   const deleteNode: MouseEventHandler<HTMLDivElement> = useCallback(
     (e) => {
       e.stopPropagation();
-      if (label === Operator.Iteration) {
+      if ([Operator.Iteration, Operator.Loop].includes(label as Operator)) {
         deleteIterationNodeById(id);
       } else {
         deleteNodeById(id);
