@@ -80,6 +80,14 @@ export const useSelectDerivedConversationList = () => {
     });
   }, [conversationList, dialogId, prologue, t, setNewConversationRouteParams]);
 
+  const removeTemporaryConversation = useCallback((conversationId: string) => {
+    setList((prevList) => {
+      return prevList.filter(
+        (conversation) => conversation.id !== conversationId,
+      );
+    });
+  }, []);
+
   // When you first enter the page, select the top conversation card
 
   useEffect(() => {
@@ -89,6 +97,7 @@ export const useSelectDerivedConversationList = () => {
   return {
     list,
     addTemporaryConversation,
+    removeTemporaryConversation,
     loading,
     handleInputChange,
     searchString,

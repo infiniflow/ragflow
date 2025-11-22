@@ -29,6 +29,7 @@ export function Sessions({
   const {
     list: conversationList,
     addTemporaryConversation,
+    removeTemporaryConversation,
     handleInputChange,
     searchString,
   } = useSelectDerivedConversationList();
@@ -97,7 +98,10 @@ export function Sessions({
           >
             <CardContent className="px-3 py-2 flex justify-between items-center group gap-1">
               <div className="truncate">{x.name}</div>
-              <ConversationDropdown conversation={x}>
+              <ConversationDropdown
+                conversation={x}
+                removeTemporaryConversation={removeTemporaryConversation}
+              >
                 <MoreButton></MoreButton>
               </ConversationDropdown>
             </CardContent>

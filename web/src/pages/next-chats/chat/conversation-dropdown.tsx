@@ -14,16 +14,29 @@ import { useTranslation } from 'react-i18next';
 export function ConversationDropdown({
   children,
   conversation,
+  removeTemporaryConversation,
 }: PropsWithChildren & {
   conversation: IConversation;
+  removeTemporaryConversation?: (conversationId: string) => void;
 }) {
   const { t } = useTranslation();
 
   const { removeConversation } = useRemoveConversation();
 
   const handleDelete: MouseEventHandler<HTMLDivElement> = useCallback(() => {
-    removeConversation([conversation.id]);
-  }, [conversation.id, removeConversation]);
+    // 如果是临时对话（is_new 为 true），则使用前端删除逻辑
+    if (conversation.is_new && removeTemporaryConversation) {
+      removeTemporaryConversation(conversation.id);
+      removeConversation([]);
+    } else {
+      removeConversation([conversation.id]);
+    }
+  }, [
+    conversation.id,
+    conversation.is_new,
+    removeConversation,
+    removeTemporaryConversation,
+  ]);
 
   return (
     <DropdownMenu>
