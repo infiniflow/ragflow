@@ -1,7 +1,7 @@
 import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
-import { buildSelectOptions } from '@/utils/component-util';
 import { t } from 'i18next';
 import { TypesWithArray } from '../constant';
+import { buildConversationVariableSelectOptions } from '../utils';
 export { TypesWithArray } from '../constant';
 // const TypesWithoutArray = Object.values(JsonSchemaDataType).filter(
 //   (item) => item !== JsonSchemaDataType.Array,
@@ -18,7 +18,7 @@ export const GlobalFormFields = [
     placeholder: t('common.namePlaceholder'),
     required: true,
     validation: {
-      pattern: /^[a-zA-Z_]+$/,
+      pattern: /^[a-zA-Z_0-9]+$/,
       message: t('flow.variableNameMessage'),
     },
     type: FormFieldType.Text,
@@ -29,7 +29,7 @@ export const GlobalFormFields = [
     placeholder: '',
     required: true,
     type: FormFieldType.Select,
-    options: buildSelectOptions(Object.values(TypesWithArray)),
+    options: buildConversationVariableSelectOptions(),
   },
   {
     label: t('flow.defaultValue'),

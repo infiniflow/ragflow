@@ -696,6 +696,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      seconds: 'seconds',
+      minutes: 'minutes',
       edit: 'Edit',
       cropTip:
         'Drag the selection area to choose the cropping position of the image, and scroll to zoom in/out',
@@ -734,9 +736,15 @@ Example: https://fsn1.your-objectstorage.com`,
       google_drivePrimaryAdminTip:
         'Email address that has access to the Drive content being synced.',
       google_driveMyDriveEmailsTip:
-        'Comma-separated emails whose “My Drive” contents should be indexed (include the primary admin).',
+        'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
+      moodleDescription:
+        'Connect to your Moodle LMS to sync course content, forums, and resources.',
+      moodleUrlTip:
+        'The base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
+      moodleTokenTip:
+        'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
       jiraDescription:
         'Connect your Jira workspace to sync issues, comments, and attachments.',
       jiraBaseUrlTip:
@@ -1044,7 +1052,7 @@ Example: https://fsn1.your-objectstorage.com`,
       downloadFileType: 'Download file type',
       formatTypeError: 'Format or type error',
       variableNameMessage:
-        'Variable name can only contain letters and underscores',
+        'Variable name can only contain letters and underscores and numbers',
       variableDescription: 'Variable Description',
       defaultValue: 'Default Value',
       conversationVariable: 'Conversation variable',

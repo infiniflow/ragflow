@@ -44,6 +44,7 @@ export function ConfirmDeleteDialog({
       <AlertDialogContent
         onSelect={(e) => e.preventDefault()}
         onClick={(e) => e.stopPropagation()}
+        className="bg-bg-base"
       >
         <AlertDialogHeader>
           <AlertDialogTitle>
@@ -59,7 +60,7 @@ export function ConfirmDeleteDialog({
             {t('common.no')}
           </AlertDialogCancel>
           <AlertDialogAction
-            className="bg-state-error text-text-primary"
+            className="bg-state-error text-text-primary hover:text-text-primary hover:bg-state-error"
             onClick={onOk}
           >
             {t('common.yes')}

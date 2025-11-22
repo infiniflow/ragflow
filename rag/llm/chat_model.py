@@ -1635,6 +1635,15 @@ class LiteLLMBase(ABC):
                 provider_cfg["allow_fallbacks"] = False
                 extra_body["provider"] = provider_cfg
                 completion_args.update({"extra_body": extra_body})
+
+        # Ollama deployments commonly sit behind a reverse proxy that enforces
+        # Bearer auth. Ensure the Authorization header is set when an API key
+        # is provided, while respecting any user-supplied headers. #11350
+        extra_headers = deepcopy(completion_args.get("extra_headers") or {})
+        if self.provider == SupportedLiteLLMProvider.Ollama and self.api_key and "Authorization" not in extra_headers:
+            extra_headers["Authorization"] = f"Bearer {self.api_key}"
+        if extra_headers:
+            completion_args["extra_headers"] = extra_headers
         return completion_args
 
     def chat_with_tools(self, system: str, history: list, gen_conf: dict = {}):
