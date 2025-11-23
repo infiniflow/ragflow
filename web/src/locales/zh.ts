@@ -685,6 +685,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
     },
     setting: {
+      seconds: '秒',
+      minutes: '分',
       edit: '编辑',
       cropTip: '拖动选区可以选择要图片的裁剪位置，滚动可以放大/缩小选区',
       cropImage: '剪裁图片',
@@ -978,7 +980,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',
       formatTypeError: '格式或类型错误',
-      variableNameMessage: '名称只能包含字母和下划线',
+      variableNameMessage: '名称只能包含字母,数字和下划线',
       variableDescription: '变量的描述',
       defaultValue: '默认值',
       conversationVariable: '会话变量',
@@ -1629,6 +1631,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
 Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       filenameEmbdWeight: '文件名嵌入权重',
       parserMethod: '解析方法',
+      tableResultType: '表格返回形式',
+      markdownImageResponseType: '图片返回形式',
       systemPromptPlaceholder:
         '请输入用于图像分析的系统提示词，若为空则使用系统缺省值',
       exportJson: '导出 JSON',

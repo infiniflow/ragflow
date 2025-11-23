@@ -428,17 +428,15 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
         return resp
     else:
         # For non-streaming, just return the response directly
-        response = next(
-            completion_openai(
+        async for response in completion_openai(
                 tenant_id,
                 agent_id,
                 question,
                 session_id=req.pop("session_id", req.get("id", "")) or req.get("metadata", {}).get("id", ""),
                 stream=False,
                 **req,
-            )
-        )
-        return jsonify(response)
+            ):
+            return jsonify(response)
 
 
 @manager.route("/agents/<agent_id>/completions", methods=["POST"])  # noqa: F821
@@ -448,8 +446,8 @@ async def agent_completions(tenant_id, agent_id):
 
     if req.get("stream", True):
 
-        def generate():
-            for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
+        async def generate():
+            async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
                 if isinstance(answer, str):
                     try:
                         ans = json.loads(answer[5:])  # remove "data:"
@@ -473,7 +471,7 @@ async def agent_completions(tenant_id, agent_id):
     full_content = ""
     reference = {}
     final_ans = ""
-    for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
+    async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
         try:
             ans = json.loads(answer[5:])
 
@@ -875,7 +873,7 @@ async def agent_bot_completions(agent_id):
         resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
         return resp
 
-    for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
+    async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
         return get_result(data=answer)
 
 
@@ -977,14 +975,14 @@ async def retrieval_test_embedded():
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         if meta_data_filter.get("method") == "auto":
             chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
-            filters = gen_meta_filter(chat_mdl, metas, question)
-            doc_ids.extend(meta_filter(metas, filters))
+            filters: dict = gen_meta_filter(chat_mdl, metas, question)
+            doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
             if not doc_ids:
                 doc_ids = None
         elif meta_data_filter.get("method") == "manual":
-            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"]))
-            if not doc_ids:
-                doc_ids = None
+            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
+            if meta_data_filter["manual"] and not doc_ids:
+                doc_ids = ["-999"]
 
     try:
         tenants = UserTenantService.query(user_id=tenant_id)
