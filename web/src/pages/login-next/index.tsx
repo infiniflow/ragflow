@@ -186,26 +186,29 @@ const Login = () => {
                   {title === 'login' ? t('loginTitle') : t('signUpTitle')}
                 </h2>
               </div>
-              <div className=" w-full max-w-[540px] bg-bg-component backdrop-blur-sm rounded-2xl shadow-xl pt-14 pl-10 pr-10 pb-2 border border-border-button ">
+              <div className="w-full max-w-[540px] bg-bg-component backdrop-blur-sm rounded-2xl shadow-xl pt-14 px-10 pb-8 border border-border-button">
                 <Form {...form}>
                   <form
-                    className="flex flex-col gap-8 text-text-primary "
+                    className="flex flex-col gap-6 text-text-primary"
                     onSubmit={form.handleSubmit((data) => onCheck(data))}
                   >
                     <FormField
                       control={form.control}
                       name="email"
                       render={({ field }) => (
-                        <FormItem>
-                          <FormLabel required>{t('emailLabel')}</FormLabel>
+                        <FormItem className="space-y-2">
+                          <FormLabel required className="text-sm font-medium">
+                            {t('emailLabel')}
+                          </FormLabel>
                           <FormControl>
                             <Input
                               placeholder={t('emailPlaceholder')}
                               autoComplete="email"
+                              className="h-11 rounded-lg border-border-button focus:border-accent-primary transition-colors"
                               {...field}
                             />
                           </FormControl>
-                          <FormMessage />
+                          <FormMessage className="text-xs" />
                         </FormItem>
                       )}
                     />
@@ -214,16 +217,19 @@ const Login = () => {
                         control={form.control}
                         name="nickname"
                         render={({ field }) => (
-                          <FormItem>
-                            <FormLabel required>{t('nicknameLabel')}</FormLabel>
+                          <FormItem className="space-y-2">
+                            <FormLabel required className="text-sm font-medium">
+                              {t('nicknameLabel')}
+                            </FormLabel>
                             <FormControl>
                               <Input
                                 placeholder={t('nicknamePlaceholder')}
                                 autoComplete="username"
+                                className="h-11 rounded-lg border-border-button focus:border-accent-primary transition-colors"
                                 {...field}
                               />
                             </FormControl>
-                            <FormMessage />
+                            <FormMessage className="text-xs" />
                           </FormItem>
                         )}
                       />
@@ -233,8 +239,10 @@ const Login = () => {
                       control={form.control}
                       name="password"
                       render={({ field }) => (
-                        <FormItem>
-                          <FormLabel required>{t('passwordLabel')}</FormLabel>
+                        <FormItem className="space-y-2">
+                          <FormLabel required className="text-sm font-medium">
+                            {t('passwordLabel')}
+                          </FormLabel>
                           <FormControl>
                             <div className="relative">
                               <Input
@@ -245,6 +253,7 @@ const Login = () => {
                                     ? 'current-password'
                                     : 'new-password'
                                 }
+                                className="h-11 rounded-lg border-border-button focus:border-accent-primary transition-colors pr-10"
                                 {...field}
                               />
                               {/* <button
@@ -260,7 +269,7 @@ const Login = () => {
                               </button> */}
                             </div>
                           </FormControl>
-                          <FormMessage />
+                          <FormMessage className="text-xs" />
                         </FormItem>
                       )}
                     />
@@ -272,24 +281,28 @@ const Login = () => {
                         render={({ field }) => (
                           <FormItem>
                             <FormControl>
-                              <div className="flex gap-2">
+                              <div className="flex items-center gap-2.5">
                                 <Checkbox
                                   checked={field.value}
                                   onCheckedChange={(checked) => {
                                     field.onChange(checked);
                                   }}
+                                  className="border-border-button data-[state=checked]:bg-accent-primary data-[state=checked]:border-accent-primary"
                                 />
                                 <FormLabel
-                                  className={cn(' hover:text-text-primary', {
-                                    'text-text-disabled': !field.value,
-                                    'text-text-primary': field.value,
-                                  })}
+                                  className={cn(
+                                    'text-sm cursor-pointer transition-colors hover:text-text-primary',
+                                    {
+                                      'text-text-disabled': !field.value,
+                                      'text-text-primary': field.value,
+                                    },
+                                  )}
                                 >
                                   {t('rememberMe')}
                                 </FormLabel>
                               </div>
                             </FormControl>
-                            <FormMessage />
+                            <FormMessage className="text-xs" />
                           </FormItem>
                         )}
                       />
@@ -297,27 +310,29 @@ const Login = () => {
                     <ButtonLoading
                       type="submit"
                       loading={loading}
-                      className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full my-8"
+                      className="bg-metallic-gradient border-b-[#00BEB4] border-b-2 hover:bg-metallic-gradient hover:border-b-[#02bcdd] w-full h-11 rounded-lg mt-2 mb-4 font-medium text-base shadow-sm transition-all duration-200"
                     >
                       {title === 'login' ? t('login') : t('continue')}
                     </ButtonLoading>
                     {title === 'login' && channels && channels.length > 0 && (
-                      <div className="mt-3 border">
+                      <div className="mt-2 space-y-2.5 border-t border-border-button pt-4">
                         {channels.map((item) => (
                           <Button
                             variant={'transparent'}
                             key={item.channel}
                             onClick={() => handleLoginWithChannel(item.channel)}
-                            style={{ marginTop: 10 }}
+                            className="w-full h-11 rounded-lg border border-border-button bg-transparent hover:bg-bg-secondary hover:border-accent-primary/50 transition-all duration-200 mt-0"
                           >
-                            <div className="flex items-center">
+                            <div className="flex items-center justify-center gap-2.5">
                               <SvgIcon
                                 name={item.icon || 'sso'}
                                 width={20}
                                 height={20}
-                                style={{ marginRight: 5 }}
+                                className="mr-0"
                               />
-                              Sign in with {item.display_name}
+                              <span className="text-sm font-medium">
+                                Sign in with {item.display_name}
+                              </span>
                             </div>
                           </Button>
                         ))}
