@@ -120,6 +120,11 @@ const DataSource = () => {
       <div className="relative">
         <div className=" flex flex-col gap-4 max-h-[calc(100vh-230px)] overflow-y-auto overflow-x-hidden scrollbar-auto">
           <div className="flex flex-col gap-3">
+            {categorizedList?.length <= 0 && (
+              <div className="text-text-secondary w-full flex justify-center items-center h-20">
+                {t('setting.sourceEmptyTip')}
+              </div>
+            )}
             {categorizedList.map((item, index) => (
               <AddedSourceCard key={index} {...item} />
             ))}
@@ -127,9 +132,9 @@ const DataSource = () => {
           <section className="bg-transparent border-none mt-8">
             <header className="flex flex-row items-center justify-between space-y-0 p-0 pb-4">
               {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
-              <CardTitle className="text-2xl font-semibold">
+              <CardTitle className="text-2xl font-semibold ">
                 {t('setting.availableSources')}
-                <div className="text-sm text-text-secondary font-normal">
+                <div className="text-sm text-text-secondary font-normal mt-1.5">
                   {t('setting.availableSourcesDescription')}
                 </div>
               </CardTitle>

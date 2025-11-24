@@ -685,6 +685,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
     },
     setting: {
+      modelEmptyTip: '暂无可用模型，请先在右侧面板添加模型。',
+      sourceEmptyTip: '暂未添加任何数据源，请从下方选择一个进行连接。',
       seconds: '秒',
       minutes: '分',
       edit: '编辑',

@@ -161,6 +161,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
           options={options}
           onChange={(value) => handleFieldChange(id, value)}
           placeholder={t('selectModelPlaceholder')}
+          emptyData={t('modelEmptyTip')}
         />
       </div>
     );
