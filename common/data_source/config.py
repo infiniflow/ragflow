@@ -42,7 +42,6 @@ class DocumentSource(str, Enum):
     R2 = "r2"
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
     OCI_STORAGE = "oci_storage"
-    S3_COMPATIBLE = "s3_compatible"
     SLACK = "slack"
     CONFLUENCE = "confluence"
     JIRA = "jira"
