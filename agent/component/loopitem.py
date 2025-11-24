@@ -120,21 +120,34 @@ class LoopItem(ComponentBase, ABC):
         if self._idx == -1:
             return True
         parent = self.get_parent()
-
+        logical_operator = parent._param.logical_operator if hasattr(parent._param, "logical_operator") else "and"
+        conditions = []
         for item in parent._param.loop_termination_condition:
-            if any([not item.get("variable"),not item.get("operator")]):
-                assert "Loop Condition is not complete."
+            if not item.get("variable") or not item.get("operator"):
+                raise ValueError("Loop condition is incomplete.")
             var = self.canvas.get_variable(item["variable"])
             operator = item["operator"]
-            input_mode = getattr(item, "input_mode", "Constant")
+            input_mode = item.get("input_mode", "Constant")
+            
             if input_mode == "Varibale":
-                value = self.canvas.get_variable(getattr(item, "value",""))
+                value = self.canvas.get_variable(item.get("value", ""))
             elif input_mode == "Constant":
-                value = getattr(item, "value","")
+                value = item.get("value", "")
             else:
-                assert "Invalid input mode."
-            if self.evaluate_condition(var, operator, value):
-                return True
+                raise ValueError("Invalid input mode.")
+            conditions.append(self.evaluate_condition(var, operator, value))
+        should_end = (
+            all(conditions) if logical_operator == "and"
+            else any(conditions) if logical_operator == "or"
+            else None
+        )
+        if should_end is None:
+            raise ValueError("Invalid logical operator,should be 'and' or 'or'.")
+
+        if should_end:
+            self._idx = -1
+            return True
+    
         return False
 
     def next(self):
