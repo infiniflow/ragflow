@@ -138,7 +138,11 @@ async def save() -> Any:
 @login_required
 def get(canvas_id):
     if not UserCanvasService.accessible(canvas_id, current_user.id):
-        return get_data_error_result(message="canvas not found.")
+        return get_json_result(
+            data=False,
+            message='You do not have read permission for this canvas.',
+            code=RetCode.PERMISSION_ERROR
+        )
     e, c = UserCanvasService.get_by_canvas_id(canvas_id)
     return get_json_result(data=c)
 

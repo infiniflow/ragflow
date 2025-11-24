@@ -25,7 +25,7 @@ import pytest
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from Cryptodome.PublicKey import RSA
 
-from ..common import create_user
+from common import create_user
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
 
@@ -95,8 +95,8 @@ class TestUserCreate:
                     "email": "",
                     "password": "test123",
                 },
-                103,
-                "Invalid email address",
+                101,
+                "Email is required!",
             ),
             (
                 {
@@ -162,7 +162,7 @@ class TestUserCreate:
             ("user@", 103, "Invalid email address"),
             ("user@example", 103, "Invalid email address"),
             ("user@.com", 103, "Invalid email address"),
-            ("", 103, "Invalid email address"),
+            ("", 101, "Email is required!"),
         ],
     )
     def test_email_validation(

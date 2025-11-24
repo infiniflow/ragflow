@@ -794,7 +794,7 @@ async def user_add():
 @manager.route("/create", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("nickname", "email", "password")
-def create_user() -> Response:
+async def create_user() -> Response:
     """
     Create a new user.
 
@@ -848,14 +848,15 @@ def create_user() -> Response:
         schema:
           type: object
     """
-    if request.json is None:
+    req_json = await request.json
+    if req_json is None:
         return get_json_result(
             data=False,
             message="Request body is required!",
             code=RetCode.ARGUMENT_ERROR,
         )
 
-    req: Dict[str, Any] = request.json
+    req: Dict[str, Any] = req_json
     email_address: str = str(req.get("email", ""))
     
     # Validate email is provided
@@ -979,8 +980,7 @@ def create_user() -> Response:
 
 @manager.route("/update", methods=["PUT"])  # noqa: F821
 @login_required
-@validate_request()
-def update_user() -> Response:
+async def update_user() -> Response:
     """
     Update an existing user. Users can only update their own account.
     ---
@@ -1041,14 +1041,15 @@ def update_user() -> Response:
         schema:
           type: object
     """
-    if request.json is None:
+    req_json = await request.json
+    if req_json is None:
         return get_json_result(
             data=False,
             message="Request body is required!",
             code=RetCode.ARGUMENT_ERROR,
         )
 
-    req: Dict[str, Any] = request.json
+    req: Dict[str, Any] = req_json
     user_id: Optional[str] = req.get("user_id")
     email: Optional[str] = req.get("email")
     identified_by_user_id: bool = bool(user_id)
@@ -1362,8 +1363,7 @@ def list_users() -> Response:
 
 @manager.route("/delete", methods=["DELETE"])  # noqa: F821
 @login_required
-@validate_request()
-def delete_user() -> Response:
+async def delete_user() -> Response:
     """
     Delete a user. Users can only delete their own account.
 
@@ -1424,14 +1424,15 @@ def delete_user() -> Response:
             code=RetCode.UNAUTHORIZED,
         )
     
-    if request.json is None:
+    req_json = await request.json
+    if req_json is None:
         return get_json_result(
             data=False,
             message="Request body is required!",
             code=RetCode.ARGUMENT_ERROR,
         )
 
-    req: Dict[str, Any] = request.json
+    req: Dict[str, Any] = req_json
     user_id: Optional[str] = req.get("user_id")
     email: Optional[str] = req.get("email")
 

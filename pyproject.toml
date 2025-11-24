@@ -152,6 +152,7 @@ dependencies = [
     "pypandoc>=1.16",
     "pyobvector==0.2.18",
     "ruff>=0.14.4",
+    "reportlab>=4.4.3",
 ]
 
 [dependency-groups]

@@ -170,21 +170,30 @@ class KnowledgebaseService(CommonService):
             User.avatar.alias('tenant_avatar'),
             cls.model.update_time
         ]
+        # A KB is visible to a user if:
+        # - It is shared with one of the user's joined tenants (via shared_tenant_id)
+        #   and has TEAM permission, or
+        # - It is owned by the user (tenant_id == user_id)
+        visibility_expr = (
+            (
+                (cls.model.shared_tenant_id.in_(joined_tenant_ids))
+                & (cls.model.permission == TenantPermission.TEAM.value)
+            )
+            | (cls.model.tenant_id == user_id)
+        )
+
+        base_query = (
+            cls.model.select(*fields)
+            .join(User, on=(cls.model.tenant_id == User.id))
+            .where(visibility_expr & (cls.model.status == StatusEnum.VALID.value))
+        )
+
         if keywords:
-            kbs = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id)).where(
-                ((cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission ==
-                                                                TenantPermission.TEAM.value)) | (
-                    cls.model.tenant_id == user_id))
-                & (cls.model.status == StatusEnum.VALID.value),
-                (fn.LOWER(cls.model.name).contains(keywords.lower()))
+            kbs = base_query.where(
+                fn.LOWER(cls.model.name).contains(keywords.lower())
             )
         else:
-            kbs = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id)).where(
-                ((cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission ==
-                                                                TenantPermission.TEAM.value)) | (
-                    cls.model.tenant_id == user_id))
-                & (cls.model.status == StatusEnum.VALID.value)
-            )
+            kbs = base_query
         if parser_id:
             kbs = kbs.where(cls.model.parser_id == parser_id)
         if desc:
@@ -192,12 +201,21 @@ class KnowledgebaseService(CommonService):
         else:
             kbs = kbs.order_by(cls.model.getter_by(orderby).asc())
 
-        count = kbs.count()
-
+        # Apply pagination at query level
+        total = kbs.count()
         if page_number and items_per_page:
             kbs = kbs.paginate(page_number, items_per_page)
 
-        return list(kbs.dicts()), count
+        # Convert to list of dicts and enforce per-user read permission,
+        # so revoking dataset read permission hides team datasets from lists.
+        kb_dicts = list(kbs.dicts())
+        filtered_kbs = [
+            kb for kb in kb_dicts
+            if cls.accessible(kb["id"], user_id, required_permission="read")
+        ]
+
+        # When filtering is applied, total should reflect visible datasets
+        return filtered_kbs, len(filtered_kbs)
 
     @classmethod
     @DB.connection_context()

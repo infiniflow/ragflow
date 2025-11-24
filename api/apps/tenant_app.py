@@ -37,7 +37,10 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.utils.web_utils import send_invite_email
-from api.common.permission_utils import get_user_permissions, update_user_permissions
+from api.common.permission_utils import (
+    get_user_permissions as get_member_permissions,
+    update_user_permissions as update_member_permissions,
+)
 from common import settings
 from common.constants import RetCode, StatusEnum
 from common.misc_utils import get_uuid
@@ -565,14 +568,23 @@ async def update_team(tenant_id: str) -> Response:
                 code=RetCode.DATA_ERROR
             )
         
-        req_json = await request.json
+        try:
+            req_json = await request.json
+        except Exception:
+            # Handle malformed or missing JSON body explicitly
+            return get_json_result(
+                data=False,
+                message="Request body is required!",
+                code=RetCode.ARGUMENT_ERROR,
+            )
+
         if req_json is None:
             return get_json_result(
                 data=False,
                 message="Request body is required!",
                 code=RetCode.ARGUMENT_ERROR,
             )
-        
+
         req: Dict[str, Any] = req_json
         
         # Extract update fields (all optional)
@@ -1304,7 +1316,7 @@ def demote_admin(tenant_id: str, user_id: str) -> Response:
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: tenant_iderify they are actually an admin; otherwise return:
+        name: tenant_id
         required: true
         type: string
         description: Team ID
@@ -1510,7 +1522,7 @@ def get_user_permissions(tenant_id: str, user_id: str) -> Response:
                 code=RetCode.DATA_ERROR,
             )
         
-        permissions: Dict[str, Dict[str, bool]] = get_user_permissions(tenant_id, user_id)
+        permissions: Dict[str, Dict[str, bool]] = get_member_permissions(tenant_id, user_id)
         
         return get_json_result(
             data=permissions,
@@ -1687,7 +1699,7 @@ async def update_user_permissions(tenant_id: str, user_id: str) -> Response:
                 validated_permissions[resource_type][perm_name] = perm_value
         
         # Update permissions
-        success: bool = update_user_permissions(tenant_id, user_id, validated_permissions)
+        success: bool = update_member_permissions(tenant_id, user_id, validated_permissions)
         
         if not success:
             return get_json_result(
@@ -1697,7 +1709,7 @@ async def update_user_permissions(tenant_id: str, user_id: str) -> Response:
             )
         
         # Get updated permissions for response
-        updated_permissions: Dict[str, Dict[str, bool]] = get_user_permissions(tenant_id, user_id)
+        updated_permissions: Dict[str, Dict[str, bool]] = get_member_permissions(tenant_id, user_id)
         
         return get_json_result(
             data=updated_permissions,

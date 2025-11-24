@@ -32,10 +32,11 @@ from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters, \
     request_json
-from api.db import VALID_FILE_TYPES
+from api.db import VALID_FILE_TYPES, UserTenantRole
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
+from api.common.permission_utils import has_permission
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.utils.redis_conn import REDIS_CONN
@@ -53,6 +54,8 @@ async def create() -> Any:
     
     # Validate shared_tenant_id if provided
     shared_tenant_id: Optional[str] = req.get("shared_tenant_id")
+    user_tenant: Optional[Any] = None
+    
     if shared_tenant_id:
         if req.get("permission") != "team":
             return get_json_result(
@@ -61,13 +64,91 @@ async def create() -> Any:
                 code=RetCode.ARGUMENT_ERROR
             )
         # Verify user is a member of the shared tenant
-        user_tenant = UserTenantService.filter_by_tenant_and_user_id(shared_tenant_id, current_user.id)
-        if not user_tenant or user_tenant.status != StatusEnum.VALID.value:
+        try:
+            user_tenant = UserTenantService.filter_by_tenant_and_user_id(shared_tenant_id, current_user.id)
+            if not user_tenant or user_tenant.status != StatusEnum.VALID.value:
+                return get_json_result(
+                    data=False,
+                    message=f"You are not a member of the selected team",
+                    code=RetCode.PERMISSION_ERROR
+                )
+        except Exception as e:
+            logging.exception(e)
             return get_json_result(
                 data=False,
-                message=f"You are not a member of the selected team",
-                code=RetCode.PERMISSION_ERROR
+                message=f"Error verifying team membership: {str(e)}",
+                code=RetCode.EXCEPTION_ERROR
             )
+    
+    # Check create permission if sharing with team
+    if req.get("permission") == "team":
+        target_tenant_id: Optional[str] = shared_tenant_id
+        
+        # Auto-resolve team if shared_tenant_id not provided
+        if not target_tenant_id:
+            try:
+                user_tenant_relations = list(UserTenantService.query(
+                    user_id=current_user.id, 
+                    status=StatusEnum.VALID.value
+                ))
+                
+                if not user_tenant_relations:
+                    return get_json_result(
+                        data=False,
+                        message="You are not a member of any team. Please specify shared_tenant_id or join a team first.",
+                        code=RetCode.DATA_ERROR
+                    )
+                
+                # Prefer owner teams
+                owner_teams = [ut for ut in user_tenant_relations if ut.role == UserTenantRole.OWNER]
+                if owner_teams:
+                    target_tenant_id = owner_teams[0].tenant_id
+                else:
+                    target_tenant_id = user_tenant_relations[0].tenant_id
+                
+                req["shared_tenant_id"] = target_tenant_id
+            except Exception as e:
+                logging.exception(e)
+                return get_json_result(
+                    data=False,
+                    message=f"Error finding team: {str(e)}",
+                    code=RetCode.EXCEPTION_ERROR
+                )
+        
+        # Ensure user_tenant is set for permission check
+        if not user_tenant:
+            try:
+                user_tenant = UserTenantService.filter_by_tenant_and_user_id(target_tenant_id, current_user.id)
+                if not user_tenant or user_tenant.status != StatusEnum.VALID.value:
+                    return get_json_result(
+                        data=False,
+                        message=f"You are not a member of the selected team.",
+                        code=RetCode.PERMISSION_ERROR
+                    )
+            except Exception as e:
+                logging.exception(e)
+                return get_json_result(
+                    data=False,
+                    message=f"Error verifying team membership: {str(e)}",
+                    code=RetCode.EXCEPTION_ERROR
+                )
+        
+        # Owners and admins bypass permission check
+        if user_tenant.role not in [UserTenantRole.OWNER, UserTenantRole.ADMIN]:
+            try:
+                if not has_permission(target_tenant_id, current_user.id, "dataset", "create"):
+                    return get_json_result(
+                        data=False,
+                        message='You do not have create permission for datasets in this team.',
+                        code=RetCode.PERMISSION_ERROR
+                    )
+            except Exception as e:
+                logging.exception(e)
+                return get_json_result(
+                    data=False,
+                    message=f"Error checking permissions: {str(e)}",
+                    code=RetCode.EXCEPTION_ERROR
+                )
     
     e: bool
     res: Any
@@ -162,15 +243,16 @@ async def update():
 def detail():
     kb_id = request.args["kb_id"]
     try:
-        tenants = UserTenantService.query(user_id=current_user.id)
-        for tenant in tenants:
-            if KnowledgebaseService.query(
-                    tenant_id=tenant.tenant_id, id=kb_id):
-                break
-        else:
+        # Unified access control:
+        # - Owners always have access
+        # - Team members must have appropriate CRUD permissions
+        # - Non-existent datasets return the same permission-style error as before
+        if not KnowledgebaseService.accessible(kb_id, current_user.id, required_permission="read"):
             return get_json_result(
-                data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
+                data=False,
+                message='Only owner of knowledgebase authorized for this operation.',
+                code=RetCode.OPERATING_ERROR,
+            )
         kb = KnowledgebaseService.get_detail(kb_id)
         if not kb:
             return get_data_error_result(
@@ -236,15 +318,13 @@ async def rm():
             code=RetCode.PERMISSION_ERROR
         )
     try:
-        kbs = KnowledgebaseService.query(
-            created_by=current_user.id, id=req["kb_id"])
-        if not kbs:
-            return get_json_result(
-                data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
+        ok, kb = KnowledgebaseService.get_by_id(req["kb_id"])
+        if not ok or kb is None:
+            return get_data_error_result(
+                message="Can't find this knowledgebase!")
 
         for doc in DocumentService.query(kb_id=req["kb_id"]):
-            if not DocumentService.remove_document(doc, kbs[0].tenant_id):
+            if not DocumentService.remove_document(doc, kb.tenant_id):
                 return get_data_error_result(
                     message="Database error (Document removal)!")
             f2d = File2DocumentService.get_by_document_id(doc.id)
@@ -252,15 +332,14 @@ async def rm():
                 FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
             File2DocumentService.delete_by_document_id(doc.id)
         FileService.filter_delete(
-            [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
+            [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kb.name])
         if not KnowledgebaseService.delete_by_id(req["kb_id"]):
             return get_data_error_result(
                 message="Database error (Knowledgebase removal)!")
-        for kb in kbs:
-            settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
-            settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
-            if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
-                settings.STORAGE_IMPL.remove_bucket(kb.id)
+        settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
+        settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
+        if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
+            settings.STORAGE_IMPL.remove_bucket(kb.id)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)

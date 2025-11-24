@@ -21,6 +21,7 @@ from configs import HOST_ADDRESS, VERSION
 from requests.auth import AuthBase
 from requests_toolbelt import MultipartEncoder
 from utils.file_utils import create_txt_file
+from libs.auth import RAGFlowWebApiAuth
 
 # Import login_as_user and encrypt_password from root conftest
 import importlib.util
@@ -39,26 +40,137 @@ CHUNK_API_URL = f"/api/{VERSION}/datasets/{{dataset_id}}/documents/{{document_id
 CHAT_ASSISTANT_API_URL = f"/api/{VERSION}/chats"
 SESSION_WITH_CHAT_ASSISTANT_API_URL = f"/api/{VERSION}/chats/{{chat_id}}/sessions"
 SESSION_WITH_AGENT_API_URL = f"/api/{VERSION}/agents/{{agent_id}}/sessions"
+CANVAS_API_URL = f"/{VERSION}/canvas"
 
 
 # DATASET MANAGEMENT
 def create_dataset(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.post(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=headers, auth=auth, json=payload, data=data)
+    """
+    Create dataset.
+
+    - For HTTP API token auth (`RAGFlowHttpApiAuth`), use the RESTful datasets API.
+    - For web JWT auth (`RAGFlowWebApiAuth`), proxy to the KB web endpoint `/v1/kb/create`
+      and normalize its response shape to match the datasets API (`data.id`).
+    """
+    # Web (JWT) flow: go through KB web endpoint with permission-aware logic
+    if isinstance(auth, RAGFlowWebApiAuth):
+        url = f"{HOST_ADDRESS}/{VERSION}/kb/create"
+        res = requests.post(url=url, headers=headers, auth=auth, json=payload, data=data)
+        body = res.json()
+        # KB create returns {"kb_id": ...}; normalize to {"id": ..., "kb_id": ...}
+        if body.get("code") == 0 and isinstance(body.get("data"), dict) and "kb_id" in body["data"]:
+            kb_id = body["data"]["kb_id"]
+            body["data"] = {"id": kb_id, "kb_id": kb_id}
+        return body
+
+    # HTTP API (API key) flow: original datasets REST endpoint
+    res = requests.post(
+        url=f"{HOST_ADDRESS}{DATASETS_API_URL}",
+        headers=headers,
+        auth=auth,
+        json=payload,
+        data=data,
+    )
     return res.json()
 
 
 def list_datasets(auth, params=None, *, headers=HEADERS):
-    res = requests.get(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=headers, auth=auth, params=params)
+    """
+    List datasets.
+
+    - Web JWT auth: call `/v1/kb/list` and project KBs to a simple `[{"id": ...}, ...]` list.
+    - HTTP API token auth: use `/api/{version}/datasets` as before.
+    """
+    if isinstance(auth, RAGFlowWebApiAuth):
+        url = f"{HOST_ADDRESS}/{VERSION}/kb/list"
+        # `list_kbs` expects POST with optional body (owner_ids etc.) and query params for paging.
+        res = requests.post(url=url, headers=headers, auth=auth, params=params or {}, json={})
+        body = res.json()
+        if body.get("code") == 0:
+            data = body.get("data") or {}
+            kbs = data.get("kbs", [])
+            # Normalize to the datasets API shape: list of objects with "id"
+            body["data"] = [{"id": kb["id"], **kb} for kb in kbs]
+        return body
+
+    res = requests.get(
+        url=f"{HOST_ADDRESS}{DATASETS_API_URL}",
+        headers=headers,
+        auth=auth,
+        params=params,
+    )
     return res.json()
 
 
 def update_dataset(auth, dataset_id, payload=None, *, headers=HEADERS, data=None):
-    res = requests.put(url=f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}", headers=headers, auth=auth, json=payload, data=data)
+    """
+    Update dataset.
+
+    - Web JWT auth: call `/v1/kb/update` with `kb_id` and normalize response.
+    - HTTP API token auth: use `/api/{version}/datasets/{id}`.
+    """
+    if isinstance(auth, RAGFlowWebApiAuth):
+        url = f"{HOST_ADDRESS}/{VERSION}/kb/update"
+        # KB update expects "kb_id" instead of "id"
+        kb_payload = dict(payload or {})
+        kb_payload["kb_id"] = dataset_id
+        res = requests.post(url=url, headers=headers, auth=auth, json=kb_payload, data=data)
+        body = res.json()
+        if body.get("code") == 0 and isinstance(body.get("data"), dict):
+            kb = body["data"]
+            # Ensure an "id" field is present for tests
+            if "id" not in kb and "kb_id" in kb:
+                kb["id"] = kb["kb_id"]
+            body["data"] = kb
+        return body
+
+    res = requests.put(
+        url=f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}",
+        headers=headers,
+        auth=auth,
+        json=payload,
+        data=data,
+    )
     return res.json()
 
 
 def delete_datasets(auth, payload=None, *, headers=HEADERS, data=None):
-    res = requests.delete(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=headers, auth=auth, json=payload, data=data)
+    """
+    Delete datasets.
+
+    - Web JWT auth: call `/v1/kb/rm` with single `kb_id` when exactly one id is provided,
+      and treat other cases as unsupported for this test suite.
+    - HTTP API token auth: original RESTful batch delete.
+    """
+    if isinstance(auth, RAGFlowWebApiAuth):
+        ids = (payload or {}).get("ids")
+        # For the permission tests we only ever delete a single dataset by id.
+        if not ids or len(ids) != 1:
+            return {
+                "code": 101,
+                "message": "Only single-id delete is supported via web API helper",
+                "data": False,
+            }
+        kb_id = ids[0]
+        url = f"{HOST_ADDRESS}/{VERSION}/kb/rm"
+        res = requests.post(
+            url=url,
+            headers=headers,
+            auth=auth,
+            json={"kb_id": kb_id},
+            data=data,
+        )
+        body = res.json()
+        # KB rm returns data=True/False; keep that shape but keep code semantics.
+        return body
+
+    res = requests.delete(
+        url=f"{HOST_ADDRESS}{DATASETS_API_URL}",
+        headers=headers,
+        auth=auth,
+        json=payload,
+        data=data,
+    )
     return res.json()
 
 
@@ -592,6 +704,64 @@ def promote_admin(
     return res.json()
 
 
+def get_user_permissions(
+    auth: Union[AuthBase, str, None],
+    tenant_id: str,
+    user_id: str,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Get CRUD permissions for a team member.
+    
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        tenant_id: The team ID.
+        user_id: The user ID to get permissions for.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+        
+    Returns:
+        JSON response as a dictionary containing permissions.
+        
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{TEAM_API_URL}/{tenant_id}/users/{user_id}/permissions"
+    res: requests.Response = requests.get(
+        url=url, headers=headers, auth=auth
+    )
+    return res.json()
+
+
+def update_user_permissions(
+    auth: Union[AuthBase, str, None],
+    tenant_id: str,
+    user_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Update CRUD permissions for a team member.
+    
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        tenant_id: The team ID.
+        user_id: The user ID to update permissions for.
+        payload: JSON payload containing permissions to update.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+        
+    Returns:
+        JSON response as a dictionary containing updated permissions.
+        
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{TEAM_API_URL}/{tenant_id}/users/{user_id}/permissions"
+    res: requests.Response = requests.put(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
 def demote_admin(
     auth: Union[AuthBase, str, None],
     tenant_id: str,
@@ -616,6 +786,215 @@ def demote_admin(
     url: str = f"{HOST_ADDRESS}{TEAM_API_URL}/{tenant_id}/admin/{user_id}/demote"
     res: requests.Response = requests.post(
         url=url, headers=headers, auth=auth
+    )
+    return res.json()
+
+
+# CANVAS MANAGEMENT
+def create_canvas(
+    auth: Union[AuthBase, str, None],
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Create or update a canvas.
+    
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        payload: JSON payload containing canvas data (dsl, title, permission, etc.).
+        headers: Optional HTTP headers. Defaults to HEADERS.
+        
+    Returns:
+        JSON response as a dictionary containing the canvas data.
+        
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{CANVAS_API_URL}/set"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
+def get_canvas(
+    auth: Union[AuthBase, str, None],
+    canvas_id: str,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Get a canvas by ID.
+    
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        canvas_id: The canvas ID to retrieve.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+        
+    Returns:
+        JSON response as a dictionary containing the canvas data.
+        
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{CANVAS_API_URL}/get/{canvas_id}"
+    res: requests.Response = requests.get(
+        url=url, headers=headers, auth=auth
+    )
+    return res.json()
+
+
+def list_canvases(
+    auth: Union[AuthBase, str, None],
+    params: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """List canvases.
+    
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        params: Optional query parameters (page_number, page_size, keywords, etc.).
+        headers: Optional HTTP headers. Defaults to HEADERS.
+        
+    Returns:
+        JSON response as a dictionary containing canvas list and total count.
+        
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{CANVAS_API_URL}/list"
+    res: requests.Response = requests.get(
+        url=url, headers=headers, auth=auth, params=params
+    )
+    return res.json()
+
+
+def delete_canvas(
+    auth: Union[AuthBase, str, None],
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Delete one or more canvases.
+    
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        payload: JSON payload containing canvas_ids list.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+        
+    Returns:
+        JSON response as a dictionary containing deletion result.
+        
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{CANVAS_API_URL}/rm"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
+def update_canvas_setting(
+    auth: Union[AuthBase, str, None],
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Update canvas settings (title, permission, etc.).
+    
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        payload: JSON payload containing canvas settings (id, title, permission, etc.).
+        headers: Optional HTTP headers. Defaults to HEADERS.
+        
+    Returns:
+        JSON response as a dictionary containing updated canvas data.
+        
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{CANVAS_API_URL}/setting"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
+def reset_canvas(
+    auth: Union[AuthBase, str, None],
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Reset a canvas to a previous version.
+    
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        payload: JSON payload containing canvas id.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+        
+    Returns:
+        JSON response as a dictionary containing reset result.
+        
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{CANVAS_API_URL}/reset"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
+def run_canvas(
+    auth: Union[AuthBase, str, None],
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Run a canvas (completion).
+    
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        payload: JSON payload containing canvas id, query, files, inputs, etc.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+        
+    Returns:
+        JSON response as a dictionary containing run result.
+        
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{CANVAS_API_URL}/completion"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth, json=payload
+    )
+    return res.json()
+
+
+def debug_canvas(
+    auth: Union[AuthBase, str, None],
+    payload: Optional[Dict[str, Any]] = None,
+    *,
+    headers: Dict[str, str] = HEADERS,
+) -> Dict[str, Any]:
+    """Debug a canvas component.
+    
+    Args:
+        auth: Authentication object (AuthBase subclass), token string, or None.
+        payload: JSON payload containing canvas id, component_id, params.
+        headers: Optional HTTP headers. Defaults to HEADERS.
+        
+    Returns:
+        JSON response as a dictionary containing debug result.
+        
+    Raises:
+        requests.RequestException: If the HTTP request fails.
+    """
+    url: str = f"{HOST_ADDRESS}{CANVAS_API_URL}/debug"
+    res: requests.Response = requests.post(
+        url=url, headers=headers, auth=auth, json=payload
     )
     return res.json()
 
