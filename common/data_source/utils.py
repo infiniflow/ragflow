@@ -1135,21 +1135,3 @@ def parallel_yield(gens: list[Iterator[R]], max_workers: int = 10) -> Iterator[R
                     next_ind += 1
                 del future_to_index[future]
 
-def run_with_timeout(
-    timeout: float, func: Callable[..., R], *args: Any, **kwargs: Any
-) -> R:
-    """
-    Executes a function with a timeout. If the function doesn't complete within the specified
-    timeout, raises TimeoutError.
-    """
-    context = contextvars.copy_context()
-    task = TimeoutThread(timeout, context.run, func, *args, **kwargs)
-    task.start()
-    task.join(timeout)
-
-    if task.exception is not None:
-        raise task.exception
-    if task.is_alive():
-        task.end()
-
-    return task.result  # type: ignore
