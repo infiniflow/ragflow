@@ -125,8 +125,8 @@ async def upload():
 @validate_request("name")
 async def create():
     req = await request.json
-    pf_id = await request.json.get("parent_id")
-    input_file_type = await request.json.get("type")
+    pf_id = req.get("parent_id")
+    input_file_type = req.get("type")
     if not pf_id:
         root_folder = FileService.get_root_folder(current_user.id)
         pf_id = root_folder["id"]
