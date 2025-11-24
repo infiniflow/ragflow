@@ -194,7 +194,19 @@ class SyncLogsService(CommonService):
                          update_date=timestamp_to_date(current_timestamp())
                          )\
             .where(cls.model.id == id).execute()
-
+        
+    @classmethod
+    def increase_deleted_docs(cls, min_update, max_update, doc_num, err_msg="", error_count=0):
+        cls.model.update(
+                         docs_removed_from_index=cls.model.docs_removed_from_index + doc_num,
+                         total_docs_indexed=cls.model.total_docs_indexed - doc_num,
+                         poll_range_start=fn.COALESCE(fn.LEAST(cls.model.poll_range_start,min_update), min_update),
+                         poll_range_end=fn.COALESCE(fn.GREATEST(cls.model.poll_range_end, max_update), max_update),
+                         error_msg=cls.model.error_msg + err_msg,
+                         error_count=cls.model.error_count + error_count,
+                         update_time=current_timestamp(),
+                         update_date=timestamp_to_date(current_timestamp())
+                         )
     @classmethod
     def duplicate_and_parse(cls, kb, docs, tenant_id, src, auto_parse=True):
         from api.db.services.file_service import FileService

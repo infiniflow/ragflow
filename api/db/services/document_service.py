@@ -750,6 +750,22 @@ class DocumentService(CommonService):
         for row in rows:
             result[row.kb_id] = row.count
         return result
+    
+    @classmethod
+    @DB.connection_context()
+    def list_document_ids_by_src(cls, tenant_id, kb,  src):
+        fields = [cls.model.id]
+        docs = cls.model.select(*fields)\
+            .where(
+            (cls.model.kb_id == kb),
+            (cls.model.source_type == src)
+        )
+
+        res = []
+        for doc in docs:
+            res.append(doc.id)
+
+        return res
 
     @classmethod
     @DB.connection_context()
@@ -1028,3 +1044,4 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)
 
     return [d["id"] for d, _ in files]
+
