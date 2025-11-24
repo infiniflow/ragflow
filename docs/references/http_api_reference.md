@@ -2122,9 +2122,9 @@ curl --request POST \
 - `"top_k"`: (*Body parameter*), `integer`  
   The number of chunks engaged in vector cosine computation. Defaults to `1024`.
 - `"use_kg"`: (*Body parameter*), `boolean`  
-  The search includes text chunks related to the knowledge graph of the selected dataset to handle complex multi-hop queries. Defaults to `False`.
+  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph) for details.
 - `"toc_enhance"`: (*Body parameter*), `boolean`  
-  The search includes table of content enhancement in order to boost rank of relevant chunks. Files parsed with `TOC Enhance` enabled is prerequisite. Defaults to `False`.
+  Whether to search chunks with extracted table of content. Defaults to `False`. Before enabling this, ensure you have enabled `TOC_Enhance` and successfully extracted table of contents for the specified datasets. See [here](https://ragflow.io/docs/dev/enable_table_of_contents) for details.
 - `"rerank_id"`: (*Body parameter*), `integer`  
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`  
@@ -2140,8 +2140,8 @@ curl --request POST \
 - `"metadata_condition"`: (*Body parameter*), `object`  
   The metadata condition used for filtering chunks:  
   - `"logic"`: (*Body parameter*), `string`
-    - `"and"` Intersection of the result from each condition (default).
-    - `"or"` union of the result from each condition.
+    - `"and"`: Return only results that satisfy *every* condition (default).
+    - `"or"`: Return results that satisfy *any* condition.
   - `"conditions"`: (*Body parameter*), `array`  
     A list of metadata filter conditions.  
     - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
