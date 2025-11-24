@@ -88,18 +88,18 @@ export const useShowDeleteConfirm = () => {
     ({ title, content, onOk, onCancel }: IProps): Promise<number> => {
       return new Promise((resolve, reject) => {
         Modal.show({
-          title: title ?? t('common.deleteModalTitle'),
+          // title: title ?? t('common.deleteModalTitle'),
+          closable: false,
           visible: true,
           onVisibleChange: () => {
             Modal.hide();
           },
           footer: null,
-          closable: true,
           maskClosable: false,
           okText: t('common.yes'),
           cancelText: t('common.no'),
           style: {
-            width: '400px',
+            width: '450px',
           },
           okButtonClassName:
             'bg-state-error text-white hover:bg-state-error hover:text-white',
@@ -116,7 +116,14 @@ export const useShowDeleteConfirm = () => {
             onCancel?.();
             Modal.hide();
           },
-          children: content,
+          children: (
+            <div className="flex flex-col justify-start items-start mt-3">
+              <div className="text-lg font-medium">
+                {title ?? t('common.deleteModalTitle')}
+              </div>
+              <div className="text-base font-normal">{content}</div>
+            </div>
+          ),
         });
       });
     },
