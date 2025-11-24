@@ -105,7 +105,7 @@ class DropboxConnector(LoadConnector, PollConnector):
                         modified_time = modified_time.astimezone(timezone.utc)
 
                     time_as_seconds = modified_time.timestamp()
-                    if start is not None and time_as_seconds < start:
+                    if start is not None and time_as_seconds <= start:
                         continue
                     if end is not None and time_as_seconds > end:
                         continue
