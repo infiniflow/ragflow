@@ -36,6 +36,7 @@ const FormSchema = z.object({
   locale: z.string(),
   embedType: z.enum(['fullscreen', 'widget']),
   enableStreaming: z.boolean(),
+  theme: z.enum(['light', 'dark']),
 });
 
 type IProps = IModalProps<any> & {
@@ -61,6 +62,7 @@ function EmbedDialog({
       locale: '',
       embedType: 'fullscreen' as const,
       enableStreaming: false,
+      theme: 'light' as const,
     },
   });
 
@@ -74,7 +76,7 @@ function EmbedDialog({
   }, []);
 
   const generateIframeSrc = useCallback(() => {
-    const { visibleAvatar, locale, embedType, enableStreaming } = values;
+    const { visibleAvatar, locale, embedType, enableStreaming, theme } = values;
     const baseRoute =
       embedType === 'widget'
         ? Routes.ChatWidget
@@ -90,6 +92,9 @@ function EmbedDialog({
     }
     if (enableStreaming) {
       src += '&streaming=true';
+    }
+    if (theme && embedType === 'fullscreen') {
+      src += `&theme=${theme}`;
     }
     return src;
   }, [beta, from, token, values]);
@@ -181,6 +186,38 @@ function EmbedDialog({
                   </FormItem>
                 )}
               />
+              {values.embedType === 'fullscreen' && (
+                <FormField
+                  control={form.control}
+                  name="theme"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Theme</FormLabel>
+                      <FormControl>
+                        <RadioGroup
+                          onValueChange={field.onChange}
+                          value={field.value}
+                          className="flex flex-row space-x-4"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="light" id="light" />
+                            <Label htmlFor="light" className="text-sm">
+                              Light
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="dark" id="dark" />
+                            <Label htmlFor="dark" className="text-sm">
+                              Dark
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <FormField
                 control={form.control}
                 name="visibleAvatar"
