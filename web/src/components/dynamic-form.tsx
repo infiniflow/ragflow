@@ -356,6 +356,13 @@ const DynamicForm = {
             ...combinedErrors,
             ...fieldErrors,
           } as any;
+
+          console.log('combinedErrors', combinedErrors);
+          for (const key in combinedErrors) {
+            if (Array.isArray(combinedErrors[key])) {
+              combinedErrors[key] = combinedErrors[key][0];
+            }
+          }
           console.log('combinedErrors', combinedErrors);
           return {
             values: Object.keys(combinedErrors).length ? {} : data,
@@ -720,9 +727,7 @@ const DynamicForm = {
         type="button"
         disabled={submitLoading}
         onClick={() => {
-          console.log('form submit');
           (async () => {
-            console.log('form submit2');
             try {
               let beValid = await form.formControl.trigger();
               console.log('form valid', beValid, form, form.formControl);
