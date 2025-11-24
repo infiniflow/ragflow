@@ -50,6 +50,8 @@ class DocumentSource(str, Enum):
     GMAIL = "gmail"
     DISCORD = "discord"
     WEBDAV = "webdav"
+    MOODLE = "moodle"
+    S3_COMPATIBLE = "s3_compatible"
 
 
 class FileOrigin(str, Enum):
