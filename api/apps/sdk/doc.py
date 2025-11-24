@@ -1289,7 +1289,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
     req = await request_json()
-    if "content" in req:
+    if "content" in req and req["content"] is not None:
         content = req["content"]
     else:
         content = chunk.get("content_with_weight", "")
