@@ -2,31 +2,53 @@ import { JSONSchema } from '@/components/jsonjoy-builder';
 import { AgentStructuredOutputField } from '@/constants/agent';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useCallback } from 'react';
-import { UseFormReturn } from 'react-hook-form';
+import { initialAgentValues } from '../../constant';
+import useGraphStore from '../../store';
 
-export function useShowStructuredOutputDialog(form: UseFormReturn<any>) {
+export function useShowStructuredOutputDialog(nodeId?: string) {
   const {
     visible: structuredOutputDialogVisible,
     showModal: showStructuredOutputDialog,
     hideModal: hideStructuredOutputDialog,
   } = useSetModalState();
-
-  const initialStructuredOutput = form.getValues(AgentStructuredOutputField);
+  const { updateNodeForm } = useGraphStore((state) => state);
 
   const handleStructuredOutputDialogOk = useCallback(
     (values: JSONSchema) => {
       // Sync data to canvas
-      form.setValue(AgentStructuredOutputField, values);
+      if (nodeId) {
+        updateNodeForm(nodeId, values, ['outputs', AgentStructuredOutputField]);
+      }
       hideStructuredOutputDialog();
     },
-    [form, hideStructuredOutputDialog],
+    [hideStructuredOutputDialog, nodeId, updateNodeForm],
   );
 
   return {
-    initialStructuredOutput,
     structuredOutputDialogVisible,
     showStructuredOutputDialog,
     hideStructuredOutputDialog,
     handleStructuredOutputDialogOk,
+  };
+}
+
+export function useHandleShowStructuredOutput(nodeId?: string) {
+  const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
+
+  const handleShowStructuredOutput = useCallback(
+    (val: boolean) => {
+      if (nodeId) {
+        if (val) {
+          updateNodeForm(nodeId, {}, ['outputs', AgentStructuredOutputField]);
+        } else {
+          updateNodeForm(nodeId, initialAgentValues.outputs, ['outputs']);
+        }
+      }
+    },
+    [nodeId, updateNodeForm],
+  );
+
+  return {
+    handleShowStructuredOutput,
   };
 }

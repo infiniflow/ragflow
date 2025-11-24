@@ -67,7 +67,7 @@
 ## 🔥 最新情報
 
 - 2025-11-19 Gemini 3 Proをサポートしています
-- 2025-11-12 Confluence、AWS S3、Discord、Google Drive からのデータ同期をサポートします。
+- 2025-11-12 Confluence、S3、Notion、Discord、Google Drive からのデータ同期をサポートします。
 - 2025-10-23 ドキュメント解析方法として MinerU と Docling をサポートします。
 - 2025-10-15 オーケストレーションされたデータパイプラインのサポート。
 - 2025-08-08 OpenAI の最新 GPT-5 シリーズモデルをサポートします。
@@ -172,7 +172,8 @@
 ```bash
    $ cd ragflow/docker
 
-   # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases) 例: git checkout v0.22.1
+   # git checkout v0.22.1
+   # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases)
    # この手順は、コード内の entrypoint.sh ファイルが Docker イメージのバージョンと一致していることを確認します。
 
    # Use CPU for DeepDoc tasks:

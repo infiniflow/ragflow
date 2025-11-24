@@ -5,12 +5,12 @@ import {
 import {
   AgentGlobals,
   AgentGlobalsSysQueryWithBrace,
-  AgentStructuredOutputField,
   CodeTemplateStrMap,
   ComparisonOperator,
   JsonSchemaDataType,
   Operator,
   ProgrammingLanguage,
+  SwitchLogicOperator,
   SwitchOperatorOptions,
   initialLlmBaseValues,
 } from '@/constants/agent';
@@ -51,8 +51,6 @@ import {
 } from 'lucide-react';
 
 export const BeginId = 'begin';
-
-export const SwitchLogicOperatorOptions = ['and', 'or'];
 
 export const CommonOperatorList = Object.values(Operator).filter(
   (x) => x !== Operator.Note,
@@ -309,7 +307,7 @@ export const initialExeSqlValues = {
 export const initialSwitchValues = {
   conditions: [
     {
-      logical_operator: SwitchLogicOperatorOptions[0],
+      logical_operator: SwitchLogicOperator.And,
       items: [
         {
           operator: SwitchOperatorOptions[0].value,
@@ -465,7 +463,6 @@ export const initialAgentValues = {
   mcp: [],
   cite: true,
   showStructuredOutput: false,
-  [AgentStructuredOutputField]: {},
   outputs: {
     content: {
       type: 'string',
@@ -870,7 +867,7 @@ export enum VariableAssignerLogicalArrayOperator {
 }
 
 export enum ExportFileType {
-  PDF = 'pdf',
+  // PDF = 'pdf',
   HTML = 'html',
   Markdown = 'md',
   DOCX = 'docx',

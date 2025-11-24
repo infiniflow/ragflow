@@ -27,6 +27,7 @@ from common.constants import SVR_QUEUE_NAME, Storage
 import rag.utils
 import rag.utils.es_conn
 import rag.utils.infinity_conn
+import rag.utils.ob_conn
 import rag.utils.opensearch_conn
 from rag.utils.azure_sas_conn import RAGFlowAzureSasBlob
 from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
@@ -103,6 +104,7 @@ INFINITY = {}
 AZURE = {}
 S3 = {}
 MINIO = {}
+OB = {}
 OSS = {}
 OS = {}
 
@@ -137,7 +139,7 @@ def _get_or_create_secret_key():
     import logging
 
     new_key = secrets.token_hex(32)
-    logging.warning(f"SECURITY WARNING: Using auto-generated SECRET_KEY. Generated key: {new_key}")
+    logging.warning("SECURITY WARNING: Using auto-generated SECRET_KEY.")
     return new_key
 
 class StorageFactory:
@@ -227,7 +229,7 @@ def init_settings():
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, docStoreConn, ES, OS, INFINITY
+    global DOC_ENGINE, docStoreConn, ES, OB, OS, INFINITY
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch")
     # DOC_ENGINE = os.environ.get('DOC_ENGINE', "opensearch")
     lower_case_doc_engine = DOC_ENGINE.lower()
@@ -240,6 +242,9 @@ def init_settings():
     elif lower_case_doc_engine == "opensearch":
         OS = get_base_config("os", {})
         docStoreConn = rag.utils.opensearch_conn.OSConnection()
+    elif lower_case_doc_engine == "oceanbase":
+        OB = get_base_config("oceanbase", {})
+        docStoreConn = rag.utils.ob_conn.OBConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 

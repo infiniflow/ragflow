@@ -86,7 +86,7 @@
 ## 🔥 近期更新
 
 - 2025-11-19 支援 Gemini 3 Pro.
-- 2025-11-12 支援從 Confluence、AWS S3、Discord、Google Drive 進行資料同步。
+- 2025-11-12 支援從 Confluence、S3、Notion、Discord、Google Drive 進行資料同步。
 - 2025-10-23 支援 MinerU 和 Docling 作為文件解析方法。
 - 2025-10-15 支援可編排的資料管道。
 - 2025-08-08 支援 OpenAI 最新的 GPT-5 系列模型。
@@ -191,7 +191,8 @@
 ```bash
    $ cd ragflow/docker
    
-   # 可選：使用穩定版標籤（查看發佈：https://github.com/infiniflow/ragflow/releases），例：git checkout v0.22.1
+   # git checkout v0.22.1
+   # 可選：使用穩定版標籤（查看發佈：https://github.com/infiniflow/ragflow/releases）
    # 此步驟確保程式碼中的 entrypoint.sh 檔案與 Docker 映像版本一致。
 
    # Use CPU for DeepDoc tasks:

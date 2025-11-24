@@ -22,6 +22,7 @@ import { Switch } from '@/components/ui/switch';
 import { LlmModelType } from '@/constants/knowledge';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { get } from 'lodash';
 import { memo, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -45,7 +46,10 @@ import { AgentTools, Agents } from './agent-tools';
 import { StructuredOutputDialog } from './structured-output-dialog';
 import { StructuredOutputPanel } from './structured-output-panel';
 import { useBuildPromptExtraPromptOptions } from './use-build-prompt-options';
-import { useShowStructuredOutputDialog } from './use-show-structured-output-dialog';
+import {
+  useHandleShowStructuredOutput,
+  useShowStructuredOutputDialog,
+} from './use-show-structured-output-dialog';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
@@ -74,7 +78,6 @@ const FormSchema = z.object({
   ...LargeModelFilterFormSchema,
   cite: z.boolean().optional(),
   showStructuredOutput: z.boolean().optional(),
-  [AgentStructuredOutputField]: z.record(z.any()),
 });
 
 export type AgentFormSchemaType = z.infer<typeof FormSchema>;
@@ -122,12 +125,20 @@ function AgentForm({ node }: INextOperatorForm) {
   });
 
   const {
-    initialStructuredOutput,
     showStructuredOutputDialog,
     structuredOutputDialogVisible,
     hideStructuredOutputDialog,
     handleStructuredOutputDialogOk,
-  } = useShowStructuredOutputDialog(form);
+  } = useShowStructuredOutputDialog(node?.id);
+
+  const structuredOutput = get(
+    node,
+    `data.form.outputs.${AgentStructuredOutputField}`,
+  );
+
+  const { handleShowStructuredOutput } = useHandleShowStructuredOutput(
+    node?.id,
+  );
 
   useEffect(() => {
     if (exceptionMethod !== AgentExceptionMethod.Goto) {
@@ -284,9 +295,7 @@ function AgentForm({ node }: INextOperatorForm) {
               )}
             </section>
           </Collapse>
-          <RAGFlowFormItem name={AgentStructuredOutputField} className="hidden">
-            <Input></Input>
-          </RAGFlowFormItem>
+
           <Output list={outputList}>
             <RAGFlowFormItem name="showStructuredOutput">
               {(field) => (
@@ -297,7 +306,10 @@ function AgentForm({ node }: INextOperatorForm) {
                   <Switch
                     id="airplane-mode"
                     checked={field.value}
-                    onCheckedChange={field.onChange}
+                    onCheckedChange={(val) => {
+                      handleShowStructuredOutput(val);
+                      field.onChange(val);
+                    }}
                   />
                 </div>
               )}
@@ -316,7 +328,7 @@ function AgentForm({ node }: INextOperatorForm) {
               </div>
 
               <StructuredOutputPanel
-                value={initialStructuredOutput}
+                value={structuredOutput}
               ></StructuredOutputPanel>
             </section>
           )}
@@ -326,7 +338,7 @@ function AgentForm({ node }: INextOperatorForm) {
         <StructuredOutputDialog
           hideModal={hideStructuredOutputDialog}
           onOk={handleStructuredOutputDialogOk}
-          initialValues={initialStructuredOutput}
+          initialValues={structuredOutput}
         ></StructuredOutputDialog>
       )}
     </>

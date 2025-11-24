@@ -25,6 +25,7 @@ export default {
       portugueseBr: 'Portuguese (Brazil)',
       chinese: 'Simplified Chinese',
       traditionalChinese: 'Traditional Chinese',
+      russian: 'Russian',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -695,6 +696,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      seconds: 'seconds',
+      minutes: 'minutes',
       edit: 'Edit',
       cropTip:
         'Drag the selection area to choose the cropping position of the image, and scroll to zoom in/out',
@@ -733,9 +736,15 @@ Example: https://fsn1.your-objectstorage.com`,
       google_drivePrimaryAdminTip:
         'Email address that has access to the Drive content being synced.',
       google_driveMyDriveEmailsTip:
-        'Comma-separated emails whose “My Drive” contents should be indexed (include the primary admin).',
+        'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
+      moodleDescription:
+        'Connect to your Moodle LMS to sync course content, forums, and resources.',
+      moodleUrlTip:
+        'The base URL of your Moodle instance (e.g., https://moodle.university.edu). Do not include /webservice or /login.',
+      moodleTokenTip:
+        'Generate a web service token in Moodle: Go to Site administration → Server → Web services → Manage tokens. The user must be enrolled in the courses you want to sync.',
       jiraDescription:
         'Connect your Jira workspace to sync issues, comments, and attachments.',
       jiraBaseUrlTip:
@@ -818,8 +827,7 @@ Example: https://fsn1.your-objectstorage.com`,
       modelsToBeAdded: 'Models to be added',
       addTheModel: 'Add',
       apiKey: 'API-Key',
-      apiKeyMessage:
-        'Please enter the API key (for locally deployed model,ignore this).',
+      apiKeyMessage: 'Please enter the API key',
       apiKeyTip:
         'The API key can be obtained by registering the corresponding LLM supplier.',
       showMoreModels: 'View models',
@@ -1044,7 +1052,7 @@ Example: https://fsn1.your-objectstorage.com`,
       downloadFileType: 'Download file type',
       formatTypeError: 'Format or type error',
       variableNameMessage:
-        'Variable name can only contain letters and underscores',
+        'Variable name can only contain letters and underscores and numbers',
       variableDescription: 'Variable Description',
       defaultValue: 'Default Value',
       conversationVariable: 'Conversation variable',
@@ -1646,6 +1654,7 @@ The variable aggregation node (originally the variable assignment node) is a cru
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       query: 'Query variables',
+      queryRequired: 'Query is required',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
       addAgent: 'Add Agent',
@@ -1752,6 +1761,8 @@ The variable aggregation node (originally the variable assignment node) is a cru
 The Indexer will store the content in the corresponding data structures for the selected methods.`,
       // file: 'File',
       parserMethod: 'PDF parser',
+      tableResultType: 'Table Result Type',
+      markdownImageResponseType: 'Markdown Image Response Type',
       // systemPrompt: 'System Prompt',
       systemPromptPlaceholder:
         'Enter system prompt for image analysis, if empty the system default value will be used',
@@ -1855,7 +1866,7 @@ Important structured information may include: names, dates, locations, events, k
         desc: 'Descending',
       },
       variableAssignerLogicalOperatorOptions: {
-        overwrite: 'Overwrite',
+        overwrite: 'Overwritten By',
         clear: 'Clear',
         set: 'Set',
         '+=': 'Add',
@@ -1934,6 +1945,7 @@ Important structured information may include: names, dates, locations, events, k
       japanese: 'Japanese',
       korean: 'Korean',
       vietnamese: 'Vietnamese',
+      russian: 'Russian',
     },
     pagination: {
       total: 'Total {{total}}',
