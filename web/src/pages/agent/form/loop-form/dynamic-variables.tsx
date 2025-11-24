@@ -67,7 +67,7 @@ function RadioButton({ value, onChange }: RadioButtonProps) {
 
 const VariableTypeOptions = buildConversationVariableSelectOptions();
 
-const modeField = 'mode';
+const modeField = 'input_mode';
 
 const ConstantValueMap = {
   [TypesWithArray.Boolean]: 'yes',
@@ -85,8 +85,8 @@ export function DynamicVariables({
   label,
   tooltip,
   keyField = 'variable',
-  valueField = 'parameter',
-  operatorField = 'operator',
+  valueField = 'value',
+  operatorField = 'type',
 }: SelectKeysProps) {
   const form = useFormContext();
   const isDarkTheme = useIsDarkTheme();

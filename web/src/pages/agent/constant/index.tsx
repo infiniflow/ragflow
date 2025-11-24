@@ -624,7 +624,12 @@ export const initialVariableAssignerValues = {};
 
 export const initialVariableAggregatorValues = { outputs: {}, groups: [] };
 
-export const initialLoopValues = { outputs: {} };
+export const initialLoopValues = {
+  loop_variables: [],
+  loop_termination_condition: [],
+  maximum_loop_count: 10,
+  outputs: {},
+};
 
 export const CategorizeAnchorPointPositions = [
   { top: 1, right: 34 },
