@@ -902,3 +902,84 @@ export const ArrayFields = [
   TypesWithArray.ArrayString,
   TypesWithArray.ArrayObject,
 ];
+
+export enum InputMode {
+  Constant = 'constant',
+  Variable = 'variable',
+}
+
+export enum LoopTerminationComparisonOperator {
+  Contains = ComparisonOperator.Contains,
+  NotContains = ComparisonOperator.NotContains,
+  StartWith = ComparisonOperator.StartWith,
+  EndWith = ComparisonOperator.EndWith,
+  IsEmpty = 'is empty',
+  IsNotEmpty = 'is not empty',
+  Is = 'is',
+  IsNot = 'is not',
+}
+
+export const LoopTerminationStringComparisonOperator = [
+  LoopTerminationComparisonOperator.Contains,
+  LoopTerminationComparisonOperator.NotContains,
+  LoopTerminationComparisonOperator.StartWith,
+  LoopTerminationComparisonOperator.EndWith,
+  LoopTerminationComparisonOperator.Is,
+  LoopTerminationComparisonOperator.IsNot,
+  LoopTerminationComparisonOperator.IsEmpty,
+  LoopTerminationComparisonOperator.IsNotEmpty,
+];
+
+export const LoopTerminationBooleanComparisonOperator = [
+  LoopTerminationComparisonOperator.Is,
+  LoopTerminationComparisonOperator.IsNot,
+  LoopTerminationComparisonOperator.IsEmpty,
+  LoopTerminationComparisonOperator.IsNotEmpty,
+];
+// object or object array
+export const LoopTerminationObjectComparisonOperator = [
+  LoopTerminationComparisonOperator.IsEmpty,
+  LoopTerminationComparisonOperator.IsNotEmpty,
+];
+
+// string array or number array
+export const LoopTerminationStringArrayComparisonOperator = [
+  LoopTerminationComparisonOperator.Contains,
+  LoopTerminationComparisonOperator.NotContains,
+  LoopTerminationComparisonOperator.IsEmpty,
+  LoopTerminationComparisonOperator.IsNotEmpty,
+];
+
+export const LoopTerminationBooleanArrayComparisonOperator = [
+  LoopTerminationComparisonOperator.Is,
+  LoopTerminationComparisonOperator.IsNot,
+  LoopTerminationComparisonOperator.IsEmpty,
+  LoopTerminationComparisonOperator.IsNotEmpty,
+];
+
+export const LoopTerminationNumberComparisonOperator = [
+  ComparisonOperator.Equal,
+  ComparisonOperator.NotEqual,
+  ComparisonOperator.GreatThan,
+  ComparisonOperator.LessThan,
+  ComparisonOperator.GreatEqual,
+  ComparisonOperator.LessEqual,
+  LoopTerminationComparisonOperator.IsEmpty,
+  LoopTerminationComparisonOperator.IsNotEmpty,
+];
+
+export const LoopTerminationStringComparisonOperatorMap = {
+  [TypesWithArray.String]: LoopTerminationStringComparisonOperator,
+  [TypesWithArray.Number]: LoopTerminationNumberComparisonOperator,
+  [TypesWithArray.Boolean]: LoopTerminationBooleanComparisonOperator,
+  [TypesWithArray.Object]: LoopTerminationObjectComparisonOperator,
+  [TypesWithArray.ArrayString]: LoopTerminationStringArrayComparisonOperator,
+  [TypesWithArray.ArrayNumber]: LoopTerminationStringArrayComparisonOperator,
+  [TypesWithArray.ArrayBoolean]: LoopTerminationBooleanArrayComparisonOperator,
+  [TypesWithArray.ArrayObject]: LoopTerminationObjectComparisonOperator,
+};
+
+export enum RadioVariable {
+  Yes = 'yes',
+  No = 'no',
+}

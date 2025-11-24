@@ -8,25 +8,20 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { buildOptions } from '@/utils/form';
 import { Editor, loader } from '@monaco-editor/react';
 import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
 import { X } from 'lucide-react';
 import { ReactNode, useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
-import { TypesWithArray } from '../../constant';
-import { buildConversationVariableSelectOptions } from '../../utils';
+import { InputMode, TypesWithArray } from '../../constant';
+import {
+  InputModeOptions,
+  buildConversationVariableSelectOptions,
+} from '../../utils';
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
 import { QueryVariable } from '../components/query-variable';
 
 loader.config({ paths: { vs: '/vs' } });
-
-enum InputMode {
-  Constant = 'constant',
-  Variable = 'variable',
-}
-
-const InputModeOptions = buildOptions(InputMode);
 
 type SelectKeysProps = {
   name: string;
@@ -112,12 +107,6 @@ export function DynamicVariables({
     (mode: string, valueFieldAlias: string, operatorFieldAlias: string) => {
       const variableType = form.getValues(operatorFieldAlias);
       initializeValue(mode, variableType, valueFieldAlias);
-      // if (mode === InputMode.Variable) {
-      //   form.setValue(valueFieldAlias, '');
-      // } else {
-      //   const val = ConstantValueMap[variableType as TypesWithArray];
-      //   form.setValue(valueFieldAlias, val);
-      // }
     },
     [form, initializeValue],
   );
