@@ -67,11 +67,11 @@ const SourceDetailPage = () => {
           <div className="flex items-center  gap-1 w-full relative">
             <Input {...fieldProps} type={FormFieldType.Number} />
             <span className="absolute right-0 -translate-x-[58px] text-text-secondary italic ">
-              minutes
+              {t('setting.minutes')}
             </span>
             <button
               type="button"
-              className="text-text-secondary bg-bg-input rounded-sm text-xs h-full p-2 border border-border-button "
+              className="text-text-secondary bg-bg-input rounded-sm text-xs h-full p-2 border border-border-button hover:bg-border-button hover:text-text-primary"
               onClick={() => {
                 runSchedule();
               }}
@@ -112,7 +112,7 @@ const SourceDetailPage = () => {
           <div className="flex items-center  gap-1 w-full relative">
             <Input {...fieldProps} type={FormFieldType.Number} />
             <span className="absolute right-0 -translate-x-6 text-text-secondary italic ">
-              seconds
+              {t('setting.seconds')}
             </span>
           </div>
         ),
@@ -170,7 +170,7 @@ const SourceDetailPage = () => {
           </CardTitle>
         </CardHeader>
         <Separator className="border-border-button bg-border-button w-[calc(100%+2rem)] -translate-x-4 -translate-y-4" />
-        <CardContent className="p-2 flex flex-col gap-2 max-h-[calc(100vh-190px)] overflow-y-auto scrollbar-auto">
+        <CardContent className="p-2 flex flex-col gap-10 max-h-[calc(100vh-190px)] overflow-y-auto scrollbar-auto">
           <div className="max-w-[1200px]">
             <DynamicForm.Root
               ref={formRef}
@@ -181,8 +181,10 @@ const SourceDetailPage = () => {
               defaultValues={defaultValues}
             />
           </div>
-          <section className="flex flex-col gap-2 mt-6">
-            <div className="text-2xl text-text-primary">{t('setting.log')}</div>
+          <section className="flex flex-col gap-2">
+            <div className="text-2xl text-text-primary mb-2">
+              {t('setting.log')}
+            </div>
             <DataSourceLogsTable refresh_freq={detail?.refresh_freq || false} />
           </section>
         </CardContent>

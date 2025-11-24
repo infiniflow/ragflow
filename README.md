@@ -86,7 +86,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 ## 🔥 Latest Updates
 
 - 2025-11-19 Supports Gemini 3 Pro.
-- 2025-11-12 Supports data synchronization from Confluence, AWS S3, Discord, Google Drive.
+- 2025-11-12 Supports data synchronization from Confluence, S3, Notion, Discord, Google Drive.
 - 2025-10-23 Supports MinerU & Docling as document parsing methods.
 - 2025-10-15 Supports orchestrable ingestion pipeline.
 - 2025-08-08 Supports OpenAI's latest GPT-5 series models.

@@ -1,5 +1,4 @@
-import { ExclamationCircleFilled } from '@ant-design/icons';
-import { App } from 'antd';
+import { Modal } from '@/components/ui/modal/modal';
 import isEqual from 'lodash/isEqual';
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -84,20 +83,27 @@ interface IProps {
 }
 
 export const useShowDeleteConfirm = () => {
-  const { modal } = App.useApp();
   const { t } = useTranslation();
-
   const showDeleteConfirm = useCallback(
     ({ title, content, onOk, onCancel }: IProps): Promise<number> => {
       return new Promise((resolve, reject) => {
-        modal.confirm({
-          title: title ?? t('common.deleteModalTitle'),
-          icon: <ExclamationCircleFilled />,
-          content,
+        Modal.show({
+          // title: title ?? t('common.deleteModalTitle'),
+          closable: false,
+          visible: true,
+          onVisibleChange: () => {
+            Modal.hide();
+          },
+          footer: null,
+          maskClosable: false,
           okText: t('common.yes'),
-          okType: 'danger',
           cancelText: t('common.no'),
-          async onOk() {
+          style: {
+            width: '450px',
+          },
+          okButtonClassName:
+            'bg-state-error text-white hover:bg-state-error hover:text-white',
+          onOk: async () => {
             try {
               const ret = await onOk?.();
               resolve(ret);
@@ -106,13 +112,22 @@ export const useShowDeleteConfirm = () => {
               reject(error);
             }
           },
-          onCancel() {
+          onCancel: () => {
             onCancel?.();
+            Modal.hide();
           },
+          children: (
+            <div className="flex flex-col justify-start items-start mt-3">
+              <div className="text-lg font-medium">
+                {title ?? t('common.deleteModalTitle')}
+              </div>
+              <div className="text-base font-normal">{content}</div>
+            </div>
+          ),
         });
       });
     },
-    [t, modal],
+    [t],
   );
 
   return showDeleteConfirm;

@@ -68,6 +68,7 @@ export interface FormFieldConfig {
   dependencies?: string[];
   schema?: ZodSchema;
   shouldRender?: (formValues: any) => boolean;
+  labelClassName?: string;
 }
 
 // Component props interface
@@ -81,6 +82,7 @@ interface DynamicFormProps<T extends FieldValues> {
     fieldName: string,
     updatedField: Partial<FormFieldConfig>,
   ) => void;
+  labelClassName?: string;
 }
 
 // Form ref interface
@@ -295,6 +297,7 @@ const DynamicForm = {
         children,
         defaultValues: formDefaultValues = {} as DefaultValues<T>,
         onFieldUpdate,
+        labelClassName,
       }: DynamicFormProps<T>,
       ref: React.Ref<any>,
     ) => {
@@ -353,6 +356,13 @@ const DynamicForm = {
             ...combinedErrors,
             ...fieldErrors,
           } as any;
+
+          console.log('combinedErrors', combinedErrors);
+          for (const key in combinedErrors) {
+            if (Array.isArray(combinedErrors[key])) {
+              combinedErrors[key] = combinedErrors[key][0];
+            }
+          }
           console.log('combinedErrors', combinedErrors);
           return {
             values: Object.keys(combinedErrors).length ? {} : data,
@@ -456,6 +466,7 @@ const DynamicForm = {
               required={field.required}
               horizontal={field.horizontal}
               tooltip={field.tooltip}
+              labelClassName={labelClassName || field.labelClassName}
             >
               {(fieldProps) => {
                 const finalFieldProps = field.onChange
@@ -481,6 +492,7 @@ const DynamicForm = {
                 required={field.required}
                 horizontal={field.horizontal}
                 tooltip={field.tooltip}
+                labelClassName={labelClassName || field.labelClassName}
               >
                 {(fieldProps) => {
                   const finalFieldProps = field.onChange
@@ -511,6 +523,7 @@ const DynamicForm = {
                 required={field.required}
                 horizontal={field.horizontal}
                 tooltip={field.tooltip}
+                labelClassName={labelClassName || field.labelClassName}
               >
                 {(fieldProps) => {
                   const finalFieldProps = field.onChange
@@ -551,7 +564,10 @@ const DynamicForm = {
                     {field.label && !field.horizontal && (
                       <div className="space-y-1 leading-none">
                         <FormLabel
-                          className="font-normal"
+                          className={cn(
+                            'font-medium',
+                            labelClassName || field.labelClassName,
+                          )}
                           tooltip={field.tooltip}
                         >
                           {field.label}{' '}
@@ -564,7 +580,10 @@ const DynamicForm = {
                     {field.label && field.horizontal && (
                       <div className="space-y-1 leading-none w-1/4">
                         <FormLabel
-                          className="font-normal"
+                          className={cn(
+                            'font-medium',
+                            labelClassName || field.labelClassName,
+                          )}
                           tooltip={field.tooltip}
                         >
                           {field.label}{' '}
@@ -600,6 +619,7 @@ const DynamicForm = {
                 required={field.required}
                 horizontal={field.horizontal}
                 tooltip={field.tooltip}
+                labelClassName={labelClassName || field.labelClassName}
               >
                 {(fieldProps) => {
                   const finalFieldProps = field.onChange
@@ -629,6 +649,7 @@ const DynamicForm = {
                 required={field.required}
                 horizontal={field.horizontal}
                 tooltip={field.tooltip}
+                labelClassName={labelClassName || field.labelClassName}
               >
                 {(fieldProps) => {
                   const finalFieldProps = field.onChange
@@ -706,9 +727,7 @@ const DynamicForm = {
         type="button"
         disabled={submitLoading}
         onClick={() => {
-          console.log('form submit');
           (async () => {
-            console.log('form submit2');
             try {
               let beValid = await form.formControl.trigger();
               console.log('form valid', beValid, form, form.formControl);
@@ -748,7 +767,7 @@ const DynamicForm = {
       <button
         type="button"
         onClick={() => handleCancel()}
-        className="px-2 py-1 border border-input rounded-md hover:bg-muted"
+        className="px-2 py-1 border border-border-button rounded-md text-text-secondary hover:bg-bg-card hover:text-primary"
       >
         {cancelText ?? t('modal.cancelText')}
       </button>

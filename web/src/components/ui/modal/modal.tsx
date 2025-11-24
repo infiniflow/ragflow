@@ -27,7 +27,10 @@ export interface ModalProps {
   okText?: ReactNode | string;
   onOk?: () => void;
   onCancel?: () => void;
+  okButtonClassName?: string;
+  cancelButtonClassName?: string;
   disabled?: boolean;
+  style?: React.CSSProperties;
 }
 export interface ModalType extends FC<ModalProps> {
   show: typeof modalIns.show;
@@ -56,7 +59,10 @@ const Modal: ModalType = ({
   confirmLoading,
   cancelText,
   okText,
+  okButtonClassName,
+  cancelButtonClassName,
   disabled = false,
+  style,
 }) => {
   const sizeClasses = {
     small: 'max-w-md',
@@ -111,7 +117,10 @@ const Modal: ModalType = ({
           <button
             type="button"
             onClick={() => handleCancel()}
-            className="px-2 py-1 border border-border-button rounded-md hover:bg-bg-card hover:text-text-primary "
+            className={cn(
+              'px-2 py-1 border border-border-button rounded-md hover:bg-bg-card hover:text-text-primary ',
+              cancelButtonClassName,
+            )}
           >
             {cancelText ?? t('modal.cancelText')}
           </button>
@@ -122,6 +131,7 @@ const Modal: ModalType = ({
             className={cn(
               'px-2 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90',
               { 'cursor-not-allowed': disabled },
+              okButtonClassName,
             )}
           >
             {confirmLoading && (
@@ -153,23 +163,26 @@ const Modal: ModalType = ({
     handleOk,
     showfooter,
     footerClassName,
+    okButtonClassName,
+    cancelButtonClassName,
   ]);
   return (
     <DialogPrimitive.Root open={open} onOpenChange={handleChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay
-          className="fixed inset-0 z-50 bg-colors-background-neutral-weak/50 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-bg-card backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => maskClosable && onOpenChange?.(false)}
         >
           <DialogPrimitive.Content
             className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-bg-base rounded-lg shadow-lg border border-border-default transition-all focus-visible:!outline-none`}
+            style={style}
             onClick={(e) => e.stopPropagation()}
           >
             {/* title */}
             {(title || closable) && (
               <div
                 className={cn(
-                  'flex items-center px-6 py-4',
+                  'flex items-start px-6 py-4',
                   {
                     'justify-end': closable && !title,
                     'justify-between': closable && title,
@@ -187,7 +200,7 @@ const Modal: ModalType = ({
                   <DialogPrimitive.Close asChild>
                     <button
                       type="button"
-                      className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-muted focus-visible:outline-none"
+                      className="flex h-7 w-7 items-center justify-center text-text-secondary rounded-full hover:bg-bg-card focus-visible:outline-none"
                       onClick={handleCancel}
                     >
                       {closeIcon}
@@ -198,7 +211,7 @@ const Modal: ModalType = ({
             )}
 
             {/* content */}
-            <div className="py-2 px-6 overflow-y-auto scrollbar-auto max-h-[80vh] focus-visible:!outline-none">
+            <div className="py-2 px-6 overflow-y-auto scrollbar-auto max-h-[calc(100vh-280px)] focus-visible:!outline-none">
               {destroyOnClose && !open ? null : children}
             </div>
 
