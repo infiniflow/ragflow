@@ -24,7 +24,6 @@ export function ConversationDropdown({
   const { removeConversation } = useRemoveConversation();
 
   const handleDelete: MouseEventHandler<HTMLDivElement> = useCallback(() => {
-    // 如果是临时对话（is_new 为 true），则使用前端删除逻辑
     if (conversation.is_new && removeTemporaryConversation) {
       removeTemporaryConversation(conversation.id);
       removeConversation([]);
