@@ -17,11 +17,9 @@ import logging
 from threading import Thread
 from typing import Any, Dict, List, Optional, Set, Union
 
-from flask import Response, request, Blueprint
-from flask_login import current_user, login_required
-from quart import request
+from quart import request, Response
 
-from api.apps import smtp_mail_server
+from api.apps import smtp_mail_server, login_required, current_user
 from api.db import FileType, UserTenantRole
 from api.db.db_models import UserTenant
 from api.db.services.file_service import FileService
@@ -45,7 +43,7 @@ from common.constants import RetCode, StatusEnum
 from common.misc_utils import get_uuid
 from common.time_utils import delta_seconds
 
-manager = Blueprint("tenant", __name__)
+# manager = Blueprint("tenant", __name__)
 def is_team_admin_or_owner(tenant_id: str, user_id: str) -> bool:
     """
     Check if a user is an OWNER or ADMIN of a team.
@@ -198,7 +196,7 @@ def rm(tenant_id, user_id):
 @manager.route("/create", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name")
-def create_team() -> Response:
+async def create_team() -> Response:
     """
     Create a new team (tenant). Requires authentication - any registered user can create a team.
 
@@ -270,22 +268,15 @@ def create_team() -> Response:
         schema:
           type: object
     """
-    # Explicitly check authentication status
-    if not current_user.is_authenticated:
-        return get_json_result(
-            data=False,
-            message="Unauthorized",
-            code=RetCode.UNAUTHORIZED,
-        )
-    
-    if request.json is None:
+    req_json = await request.json
+    if req_json is None:
         return get_json_result(
             data=False,
             message="Request body is required!",
             code=RetCode.ARGUMENT_ERROR,
         )
 
-    req: Dict[str, Any] = request.json
+    req: Dict[str, Any] = req_json
     team_name: str = req.get("name", "").strip()
     user_id: Optional[str] = req.get("user_id")
     
@@ -487,7 +478,7 @@ def tenant_list():
 
 @manager.route("/<tenant_id>", methods=["PUT"])  # noqa: F821
 @login_required
-def update_team(tenant_id: str) -> Response:
+async def update_team(tenant_id: str) -> Response:
     """
     Update team details. Only OWNER or ADMIN can update team information.
     
@@ -574,14 +565,15 @@ def update_team(tenant_id: str) -> Response:
                 code=RetCode.DATA_ERROR
             )
         
-        if request.json is None:
+        req_json = await request.json
+        if req_json is None:
             return get_json_result(
                 data=False,
                 message="Request body is required!",
                 code=RetCode.ARGUMENT_ERROR,
             )
         
-        req: Dict[str, Any] = request.json
+        req: Dict[str, Any] = req_json
         
         # Extract update fields (all optional)
         update_data: Dict[str, Any] = {}
@@ -721,7 +713,7 @@ def update_team(tenant_id: str) -> Response:
 
 @manager.route("/update-request/<tenant_id>", methods=["PUT"])  # noqa: F821
 @login_required
-def update_request(tenant_id: str) -> Response:
+async def update_request(tenant_id: str) -> Response:
     """
     Accept or reject a team invitation. User must have INVITE role.
     Takes an 'accept' boolean in the request body to accept (true) or reject (false) the invitation.
@@ -781,7 +773,8 @@ def update_request(tenant_id: str) -> Response:
             )
         
         # Get accept boolean from request body
-        req: Dict[str, Any] = request.json if request.json is not None else {}
+        req_json = await request.json
+        req: Dict[str, Any] = req_json if req_json is not None else {}
         accept: Optional[bool] = req.get("accept")
         
         # Validate accept parameter
@@ -829,7 +822,7 @@ def update_request(tenant_id: str) -> Response:
 @manager.route('/<tenant_id>/users/add', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("users")
-def add_users(tenant_id: str) -> Response:
+async def add_users(tenant_id: str) -> Response:
     """
     Send invitations to one or more users to join a team. Only OWNER or ADMIN can send invitations.
     Users must accept the invitation before they are added to the team.
@@ -902,7 +895,8 @@ def add_users(tenant_id: str) -> Response:
             code=RetCode.PERMISSION_ERROR
         )
     
-    req: Dict[str, Any] = request.json if request.json is not None else {}
+    req_json = await request.json
+    req: Dict[str, Any] = req_json if req_json is not None else {}
     users_input: List[Union[str, Dict[str, Any]]] = req.get("users", [])
     
     if not isinstance(users_input, list) or len(users_input) == 0:
@@ -1059,7 +1053,7 @@ def add_users(tenant_id: str) -> Response:
 @manager.route('/<tenant_id>/user/remove', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("user_id")
-def remove_user(tenant_id: str) -> Response:
+async def remove_user(tenant_id: str) -> Response:
     """
     Remove a user from a team. Only OWNER or ADMIN can remove users.
     Owners cannot be removed.
@@ -1118,7 +1112,8 @@ def remove_user(tenant_id: str) -> Response:
             code=RetCode.PERMISSION_ERROR
         )
     
-    req: Dict[str, Any] = request.json if request.json is not None else {}
+    req_json = await request.json
+    req: Dict[str, Any] = req_json if req_json is not None else {}
     user_id: Optional[str] = req.get("user_id")
     
     if not user_id or not isinstance(user_id, str):
@@ -1309,7 +1304,7 @@ def demote_admin(tenant_id: str, user_id: str) -> Response:
       - ApiKeyAuth: []
     parameters:
       - in: path
-        name: tenant_id
+        name: tenant_iderify they are actually an admin; otherwise return:
         required: true
         type: string
         description: Team ID
@@ -1339,27 +1334,19 @@ def demote_admin(tenant_id: str, user_id: str) -> Response:
       404:
         description: User not found in team or not an admin.
     """
-    # Check if current user is team owner (only owners can demote admins)
-    if not is_team_owner(tenant_id, current_user.id):
-        return get_json_result(
-            data=False,
-            message="Only team owners can demote admins.",
-            code=RetCode.PERMISSION_ERROR,
-        )
-    
     try:
         # Check if target user exists in the team
         user_tenant: Optional[UserTenant] = UserTenantService.filter_by_tenant_and_user_id(
             tenant_id, user_id
         )
-        
+
         if not user_tenant:
             return get_json_result(
                 data=False,
                 message="User is not a member of this team.",
                 code=RetCode.DATA_ERROR,
             )
-        
+
         # Cannot demote the owner (owner role is permanent)
         if user_tenant.role == UserTenantRole.OWNER:
             return get_json_result(
@@ -1367,30 +1354,28 @@ def demote_admin(tenant_id: str, user_id: str) -> Response:
                 message="Cannot demote the team owner. Owner role is permanent.",
                 code=RetCode.DATA_ERROR,
             )
-        
-        # Check if user is actually an admin
-        if user_tenant.role != UserTenantRole.ADMIN:
-            # Get user info for response
-            user: Optional[Any] = UserService.filter_by_id(user_id)
-            user_email: str = user.email if user else "Unknown"
-            return get_json_result(
-                data=False,
-                message=f"User {user_email} is not an admin. Only admins can be demoted.",
-                code=RetCode.DATA_ERROR,
-            )
-        
-        # Check if demoting yourself would leave the team without any admins/owners
+
+        # Self-demotion: allow admins to demote themselves with last-admin protection,
+        # even if they are not the team owner.
         if user_id == current_user.id:
+            if user_tenant.role != UserTenantRole.ADMIN:
+                user: Optional[Any] = UserService.filter_by_id(user_id)
+                user_email: str = user.email if user else "Unknown"
+                return get_json_result(
+                    data=False,
+                    message=f"User {user_email} is not an admin. Only admins can be demoted.",
+                    code=RetCode.DATA_ERROR,
+                )
+
             # Get all admins and owners in the team
             all_admins_owners: List[UserTenant] = list(
-                UserTenantService.model.select()
-                .where(
-                    (UserTenant.tenant_id == tenant_id) &
-                    (UserTenant.status == StatusEnum.VALID.value) &
-                    (UserTenant.role.in_([UserTenantRole.OWNER, UserTenantRole.ADMIN]))
+                UserTenantService.model.select().where(
+                    (UserTenant.tenant_id == tenant_id)
+                    & (UserTenant.status == StatusEnum.VALID.value)
+                    & (UserTenant.role.in_([UserTenantRole.OWNER, UserTenantRole.ADMIN]))
                 )
             )
-            
+
             # If this is the only admin/owner, prevent demotion
             if len(all_admins_owners) <= 1:
                 return get_json_result(
@@ -1398,17 +1383,39 @@ def demote_admin(tenant_id: str, user_id: str) -> Response:
                     message="Cannot demote yourself. At least one owner or admin must remain in the team.",
                     code=RetCode.DATA_ERROR,
                 )
-        
-        # Demote admin to normal member
-        UserTenantService.filter_update(
-            [UserTenant.tenant_id == tenant_id, UserTenant.user_id == user_id],
-            {"role": UserTenantRole.NORMAL.value}
-        )
-        
+
+            # Safe to demote self
+            UserTenantService.filter_update(
+                [UserTenant.tenant_id == tenant_id, UserTenant.user_id == user_id],
+                {"role": UserTenantRole.NORMAL.value},
+            )
+        else:
+            # Demoting someone else: only team owners can demote admins
+            if not is_team_owner(tenant_id, current_user.id):
+                return get_json_result(
+                    data=False,
+                    message="Only team owners can demote admins.",
+                    code=RetCode.PERMISSION_ERROR,
+                )
+
+            if user_tenant.role != UserTenantRole.ADMIN:
+                user: Optional[Any] = UserService.filter_by_id(user_id)
+                user_email: str = user.email if user else "Unknown"
+                return get_json_result(
+                    data=False,
+                    message=f"User {user_email} is not an admin. Only admins can be demoted.",
+                    code=RetCode.DATA_ERROR,
+                )
+
+            UserTenantService.filter_update(
+                [UserTenant.tenant_id == tenant_id, UserTenant.user_id == user_id],
+                {"role": UserTenantRole.NORMAL.value},
+            )
+
         # Get user info for response
         user: Optional[Any] = UserService.filter_by_id(user_id)
         user_email: str = user.email if user else "Unknown"
-        
+
         return get_json_result(
             data=True,
             message=f"User {user_email} has been demoted to normal member successfully!",
@@ -1517,7 +1524,7 @@ def get_user_permissions(tenant_id: str, user_id: str) -> Response:
 @manager.route('/<tenant_id>/users/<user_id>/permissions', methods=['PUT'])  # noqa: F821
 @login_required
 @validate_request("permissions")
-def update_user_permissions(tenant_id: str, user_id: str) -> Response:
+async def update_user_permissions(tenant_id: str, user_id: str) -> Response:
     """
     Update CRUD permissions for a team member.
     
@@ -1602,14 +1609,15 @@ def update_user_permissions(tenant_id: str, user_id: str) -> Response:
             code=RetCode.PERMISSION_ERROR,
         )
     
-    if request.json is None:
+    req_json = await request.json
+    if req_json is None:
         return get_json_result(
             data=False,
             message="Request body is required!",
             code=RetCode.ARGUMENT_ERROR,
         )
     
-    req: Dict[str, Any] = request.json
+    req: Dict[str, Any] = req_json
     permissions: Optional[Dict[str, Any]] = req.get("permissions")
     
     if not permissions or not isinstance(permissions, dict):
