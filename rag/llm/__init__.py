@@ -72,6 +72,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.AI_302: "https://api.302.ai/v1",
     SupportedLiteLLMProvider.Anthropic: "https://api.anthropic.com/",
     SupportedLiteLLMProvider.JiekouAI: "https://api.jiekou.ai/openai",
+    SupportedLiteLLMProvider.BurnCloud: "https://ai.burncloud.com/v1",
 }
 
 
@@ -103,7 +104,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.GiteeAI: "openai/",
     SupportedLiteLLMProvider.AI_302: "openai/",
     SupportedLiteLLMProvider.JiekouAI: "openai/",
-    SupportedLiteLLMProvider.BurnCloud: "burncloud/",
+    SupportedLiteLLMProvider.BurnCloud: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
