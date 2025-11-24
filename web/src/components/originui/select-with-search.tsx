@@ -47,6 +47,7 @@ export type SelectWithSearchFlagProps = {
   allowClear?: boolean;
   disabled?: boolean;
   placeholder?: string;
+  emptyData?: string;
 };
 
 function findLabelWithoutOptions(
@@ -78,6 +79,7 @@ export const SelectWithSearch = forwardRef<
       allowClear = false,
       disabled = false,
       placeholder = t('common.selectPlaceholder'),
+      emptyData = t('common.noDataFound'),
     },
     ref,
   ) => {
@@ -183,8 +185,8 @@ export const SelectWithSearch = forwardRef<
                 className=" placeholder:text-text-disabled"
               />
             )}
-            <CommandList className="mt-2">
-              <CommandEmpty>{t('common.noDataFound')}</CommandEmpty>
+            <CommandList className="mt-2 outline-none">
+              <CommandEmpty>{emptyData}</CommandEmpty>
               {options.map((group, idx) => {
                 if (group.options) {
                   return (
@@ -196,6 +198,9 @@ export const SelectWithSearch = forwardRef<
                             value={option.value}
                             disabled={option.disabled}
                             onSelect={handleSelect}
+                            className={
+                              value === option.value ? 'bg-bg-card' : ''
+                            }
                           >
                             <span className="leading-none">{option.label}</span>
 
