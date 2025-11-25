@@ -482,17 +482,25 @@ class Parser(ProcessBase):
         self.set_output("output_format", conf["output_format"])
 
         markdown_parser = naive_markdown_parser()
-        sections, tables = markdown_parser(name, blob, separate_tables=False)
+        sections, tables, section_images = markdown_parser(
+            name,
+            blob,
+            separate_tables=False,
+            delimiter=conf.get("delimiter"),
+            return_section_images=True,
+        )
 
         if conf.get("output_format") == "json":
             json_results = []
 
-            for section_text, _ in sections:
+            for idx, (section_text, _) in enumerate(sections):
                 json_result = {
                     "text": section_text,
                 }
 
-                images = markdown_parser.get_pictures(section_text) if section_text else None
+                images = []
+                if section_images and len(section_images) > idx and section_images[idx] is not None:
+                    images.append(section_images[idx])
                 if images:
                     # If multiple images found, combine them using concat_img
                     combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
