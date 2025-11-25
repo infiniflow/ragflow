@@ -1,5 +1,6 @@
-import { useFetchExcel } from '@/pages/document-viewer/hooks';
+// import { useFetchExcel } from '@/pages/document-viewer/hooks';
 import classNames from 'classnames';
+import { useFetchExcel } from './hooks';
 
 interface ExcelCsvPreviewerProps {
   className?: string;
