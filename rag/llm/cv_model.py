@@ -200,8 +200,7 @@ class GptV4(Base):
         res = self.client.chat.completions.create(
             model=self.model_name,
             messages=self.prompt(b64),
-            extra_body=self.extra_body,
-            unused=None,
+            extra_body=self.extra_body
         )
         return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
