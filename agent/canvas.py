@@ -206,17 +206,28 @@ class Graph:
         for key in path.split('.'):
             if cur is None:
                 return None
+
             if isinstance(cur, str):
                 try:
                     cur = json.loads(cur)
                 except Exception:
                     return None
+
             if isinstance(cur, dict):
                 cur = cur.get(key)
-            else:
-                cur = getattr(cur, key, None)
+                continue
+
+            if isinstance(cur, (list, tuple)):
+                try:
+                    idx = int(key)
+                    cur = cur[idx]
+                except Exception:
+                    return None
+                continue
+
+            cur = getattr(cur, key, None)
         return cur
-    
+
     def set_variable_value(self, exp: str,value):
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
         if exp.find("@") < 0:
@@ -440,7 +451,7 @@ class Canvas(Graph):
 
                     if isinstance(cpn_obj.output("attachment"), tuple):
                         yield decorate("message", {"attachment": cpn_obj.output("attachment")})
-                        
+
                     yield decorate("message_end", {"reference": self.get_reference() if cite else None})
 
                     while partials:
@@ -647,4 +658,3 @@ class Canvas(Graph):
 
     def get_component_thoughts(self, cpn_id) -> str:
         return self.components.get(cpn_id)["obj"].thoughts()
-
