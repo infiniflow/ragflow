@@ -200,7 +200,7 @@ const Modal: ModalType = ({
                   <DialogPrimitive.Close asChild>
                     <button
                       type="button"
-                      className="flex h-7 w-7 items-center justify-center text-text-secondary rounded-full hover:bg-bg-card focus-visible:outline-none"
+                      className="flex h-7 w-7 items-center justify-center text-text-secondary rounded-full hover:text-text-primary focus-visible:outline-none"
                       onClick={handleCancel}
                     >
                       {closeIcon}

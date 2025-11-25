@@ -139,7 +139,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
   }) => {
     return (
       <div className="flex gap-3">
-        <label className="block text-sm font-medium text-text-secondary mb-1 w-1/4">
+        <label className="block text-sm font-normal text-text-secondary mb-1 w-1/4">
           {isRequired && <span className="text-red-500">*</span>}
           {label}
           {tooltip && (

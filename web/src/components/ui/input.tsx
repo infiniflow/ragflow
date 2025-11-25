@@ -64,7 +64,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             className,
           )}
           style={{
-            paddingLeft: !!prefix ? `${prefixWidth}px` : '',
+            paddingLeft: !!prefix && prefixWidth ? `${prefixWidth}px` : '',
             paddingRight: isPasswordInput
               ? '40px'
               : !!suffix
@@ -144,7 +144,9 @@ export interface ExpandedInputProps extends InputProps {}
 const ExpandedInput = Input;
 
 const SearchInput = (props: InputProps) => {
-  return <Input {...props} prefix={<Search className="ml-3 size-[1em]" />} />;
+  return (
+    <Input {...props} prefix={<Search className="ml-2 mr-1 size-[1em]" />} />
+  );
 };
 
 type Value = string | readonly string[] | number | undefined;

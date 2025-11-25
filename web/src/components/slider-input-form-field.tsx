@@ -82,7 +82,7 @@ export function SliderInputFormField({
             <FormControl>
               <NumberInput
                 className={cn(
-                  'h-6 w-10 p-0 text-center bg-bg-input border border-border-default text-text-secondary',
+                  'h-6 w-10 p-0 text-center bg-bg-input border border-border-button text-text-secondary',
                   '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
                   numberInputClassName,
                 )}

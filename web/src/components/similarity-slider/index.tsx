@@ -159,7 +159,7 @@ export function SimilaritySliderFormField({
               <FormControl>
                 <NumberInput
                   className={cn(
-                    'h-6 w-10 p-0 text-center bg-bg-input border-border-default border text-text-secondary',
+                    'h-6 w-10 p-0 text-center bg-bg-input border-border-button border text-text-secondary',
                     '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
                     numberInputClassName,
                   )}

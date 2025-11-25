@@ -1,14 +1,8 @@
 import { Collapse } from '@/components/collapse';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { DialogClose, DialogFooter } from '@/components/ui/dialog';
+import { Modal } from '@/components/ui/modal/modal';
 import { useGetMcpServer, useTestMcpServer } from '@/hooks/use-mcp-request';
 import { IModalProps } from '@/interfaces/common';
 import { IMCPTool, IMCPToolObject } from '@/interfaces/database/mcp';
@@ -114,50 +108,73 @@ export function EditMcpDialog({
   const disabled = !!!tools?.length || testLoading || fieldChanged;
 
   return (
-    <Dialog open onOpenChange={hideModal}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{id ? t('mcp.editMCP') : t('mcp.addMCP')}</DialogTitle>
-        </DialogHeader>
-        <EditMcpForm
-          onOk={handleOk}
-          form={form}
-          setFieldChanged={setFieldChanged}
-        ></EditMcpForm>
-        <Card className="bg-transparent">
-          <CardContent className="p-3">
-            <Collapse
-              title={
-                <div>
-                  {nextTools?.length || 0} {t('mcp.toolsAvailable')}
-                </div>
-              }
-              open={collapseOpen}
-              onOpenChange={setCollapseOpen}
-              rightContent={
-                <Button
-                  variant={'transparent'}
-                  form={FormId}
-                  type="submit"
-                  onClick={handleTest}
-                  className="border-none p-0 hover:bg-transparent"
-                >
-                  <RefreshCw
-                    className={cn('text-text-secondary', {
-                      'animate-spin': testLoading,
-                    })}
-                  />
-                </Button>
-              }
-            >
-              <div className="overflow-auto max-h-80 divide-y-[0.5px] divide-border-button bg-bg-card rounded-md px-2.5 scrollbar-auto">
-                {nextTools?.map((x) => (
-                  <McpToolCard key={x.name} data={x}></McpToolCard>
-                ))}
-              </div>
-            </Collapse>
-          </CardContent>
-        </Card>
+    // <Dialog open onOpenChange={hideModal}>
+    //   <DialogContent>
+    //     <DialogHeader>
+    //       <DialogTitle>{id ? t('mcp.editMCP') : t('mcp.addMCP')}</DialogTitle>
+    //     </DialogHeader>
+    //     <EditMcpForm
+    //       onOk={handleOk}
+    //       form={form}
+    //       setFieldChanged={setFieldChanged}
+    //     ></EditMcpForm>
+    //     <Card className="bg-transparent">
+    //       <CardContent className="p-3">
+    //         <Collapse
+    //           title={
+    //             <div>
+    //               {nextTools?.length || 0} {t('mcp.toolsAvailable')}
+    //             </div>
+    //           }
+    //           open={collapseOpen}
+    //           onOpenChange={setCollapseOpen}
+    //           rightContent={
+    //             <Button
+    //               variant={'transparent'}
+    //               form={FormId}
+    //               type="submit"
+    //               onClick={handleTest}
+    //               className="border-none p-0 hover:bg-transparent"
+    //             >
+    //               <RefreshCw
+    //                 className={cn('text-text-secondary', {
+    //                   'animate-spin': testLoading,
+    //                 })}
+    //               />
+    //             </Button>
+    //           }
+    //         >
+    //           <div className="overflow-auto max-h-80 divide-y-[0.5px] divide-border-button bg-bg-card rounded-md px-2.5 scrollbar-auto">
+    //             {nextTools?.map((x) => (
+    //               <McpToolCard key={x.name} data={x}></McpToolCard>
+    //             ))}
+    //           </div>
+    //         </Collapse>
+    //       </CardContent>
+    //     </Card>
+    //     <DialogFooter>
+    //       <DialogClose asChild>
+    //         <Button variant="outline">{t('common.cancel')}</Button>
+    //       </DialogClose>
+    //       <ButtonLoading
+    //         type="submit"
+    //         form={FormId}
+    //         loading={loading}
+    //         onClick={handleSave}
+    //         disabled={disabled}
+    //       >
+    //         {t('common.save')}
+    //       </ButtonLoading>
+    //     </DialogFooter>
+    //   </DialogContent>
+    // </Dialog>
+    <Modal
+      title={id ? t('mcp.editMCP') : t('mcp.addMCP')}
+      open={true}
+      onOpenChange={hideModal}
+      cancelText={t('common.cancel')}
+      okText={t('common.save')}
+      footer={
         <DialogFooter>
           <DialogClose asChild>
             <Button variant="outline">{t('common.cancel')}</Button>
@@ -172,7 +189,47 @@ export function EditMcpDialog({
             {t('common.save')}
           </ButtonLoading>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      }
+    >
+      <EditMcpForm
+        onOk={handleOk}
+        form={form}
+        setFieldChanged={setFieldChanged}
+      ></EditMcpForm>
+      <Card className="bg-transparent">
+        <CardContent className="p-3">
+          <Collapse
+            title={
+              <div>
+                {nextTools?.length || 0} {t('mcp.toolsAvailable')}
+              </div>
+            }
+            open={collapseOpen}
+            onOpenChange={setCollapseOpen}
+            rightContent={
+              <Button
+                variant={'transparent'}
+                form={FormId}
+                type="submit"
+                onClick={handleTest}
+                className="border-none p-0 text-text-secondary hover:bg-transparent hover:text-text-primary"
+              >
+                <RefreshCw
+                  className={cn({
+                    'animate-spin': testLoading,
+                  })}
+                />
+              </Button>
+            }
+          >
+            <div className="overflow-auto max-h-80 divide-y-[0.5px] divide-border-button bg-bg-card rounded-md px-2.5 scrollbar-auto">
+              {nextTools?.map((x) => (
+                <McpToolCard key={x.name} data={x}></McpToolCard>
+              ))}
+            </div>
+          </Collapse>
+        </CardContent>
+      </Card>
+    </Modal>
   );
 }
