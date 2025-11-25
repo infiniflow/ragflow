@@ -1399,6 +1399,8 @@ Example: https://fsn1.your-objectstorage.com`,
         endWith: 'Ends with',
         empty: 'Is empty',
         notEmpty: 'Not empty',
+        in: 'In',
+        notIn: 'Not in',
       },
       switchLogicOperatorOptions: {
         and: 'AND',
