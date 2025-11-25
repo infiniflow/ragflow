@@ -4,45 +4,24 @@ import { FormLayout } from '@/constants/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 import { initialLoopValues } from '../../constant';
-import { useFormValues } from '../../hooks/use-form-values';
-import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { DynamicVariables } from './dynamic-variables';
 import { LoopTerminationCondition } from './loop-termination-condition';
-
-const FormSchema = z.object({
-  loop_variables: z.array(
-    z.object({
-      variable: z.string().optional(),
-      type: z.string().optional(),
-      value: z.string().or(z.number()).or(z.boolean()).optional(),
-      input_mode: z.string(),
-    }),
-  ),
-  logical_operator: z.string(),
-  loop_termination_condition: z.array(
-    z.object({
-      variable: z.string().optional(),
-      operator: z.string().optional(),
-      value: z.string().or(z.number()).or(z.boolean()).optional(),
-      input_mode: z.string().optional(),
-    }),
-  ),
-  maximum_loop_count: z.number(),
-});
+import { FormSchema, LoopFormSchemaType } from './schema';
+import { useFormValues } from './use-values';
+import { useWatchFormChange } from './use-watch-form-change';
 
 function LoopForm({ node }: INextOperatorForm) {
   const defaultValues = useFormValues(initialLoopValues, node);
 
-  const form = useForm({
+  const form = useForm<LoopFormSchemaType>({
     defaultValues: defaultValues,
     resolver: zodResolver(FormSchema),
   });
 
-  useWatchFormChange(node?.id, form, true);
+  useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>
