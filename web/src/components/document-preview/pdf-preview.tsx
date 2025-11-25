@@ -10,13 +10,21 @@ import {
 
 import { useCatchDocumentError } from '@/components/pdf-previewer/hooks';
 import { Spin } from '@/components/ui/spin';
+// import FileError from '@/pages/document-viewer/file-error';
+import { Authorization } from '@/constants/authorization';
 import FileError from '@/pages/document-viewer/file-error';
+import { getAuthorization } from '@/utils/authorization-util';
 import styles from './index.less';
+type PdfLoaderProps = React.ComponentProps<typeof PdfLoader> & {
+  httpHeaders?: Record<string, string>;
+};
 
+const Loader = PdfLoader as React.ComponentType<PdfLoaderProps>;
 export interface IProps {
-  highlights: IHighlight[];
-  setWidthAndHeight: (width: number, height: number) => void;
+  highlights?: IHighlight[];
+  setWidthAndHeight?: (width: number, height: number) => void;
   url: string;
+  className?: string;
 }
 const HighlightPopup = ({
   comment,
@@ -30,7 +38,12 @@ const HighlightPopup = ({
   ) : null;
 
 // TODO: merge with DocumentPreviewer
-const PdfPreview = ({ highlights: state, setWidthAndHeight, url }: IProps) => {
+const PdfPreview = ({
+  highlights: state,
+  setWidthAndHeight,
+  url,
+  className,
+}: IProps) => {
   // const url = useGetDocumentUrl();
 
   const ref = useRef<(highlight: IHighlight) => void>(() => {});
@@ -39,17 +52,22 @@ const PdfPreview = ({ highlights: state, setWidthAndHeight, url }: IProps) => {
   const resetHash = () => {};
 
   useEffect(() => {
-    if (state.length > 0) {
+    if (state?.length && state?.length > 0) {
       ref?.current(state[0]);
     }
   }, [state]);
 
+  const httpHeaders = {
+    [Authorization]: getAuthorization(),
+  };
+
   return (
     <div
-      className={`${styles.documentContainer} rounded-[10px] overflow-hidden	`}
+      className={`${styles.documentContainer} rounded-[10px] overflow-hidden	${className}`}
     >
-      <PdfLoader
+      <Loader
         url={url}
+        httpHeaders={httpHeaders}
         beforeLoad={
           <div className="absolute inset-0 flex items-center justify-center">
             <Spin />
@@ -63,7 +81,7 @@ const PdfPreview = ({ highlights: state, setWidthAndHeight, url }: IProps) => {
             const viewport = page.getViewport({ scale: 1 });
             const width = viewport.width;
             const height = viewport.height;
-            setWidthAndHeight(width, height);
+            setWidthAndHeight?.(width, height);
           });
 
           return (
@@ -115,11 +133,11 @@ const PdfPreview = ({ highlights: state, setWidthAndHeight, url }: IProps) => {
                   </Popup>
                 );
               }}
-              highlights={state}
+              highlights={state || []}
             />
           );
         }}
-      </PdfLoader>
+      </Loader>
     </div>
   );
 };

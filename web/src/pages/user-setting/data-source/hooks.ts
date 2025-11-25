@@ -45,21 +45,23 @@ export const useListDataSource = () => {
 
   const updatedDataSourceTemplates = useMemo(() => {
     const categorizedData = categorizeDataBySource(list || []);
-    let sourcelist: Array<IDataSorceInfo & { list: Array<IDataSourceBase> }> =
+    let sourceList: Array<IDataSorceInfo & { list: Array<IDataSourceBase> }> =
       [];
     Object.keys(categorizedData).forEach((key: string) => {
       const k = key as DataSourceKey;
-      sourcelist.push({
-        id: k,
-        name: DataSourceInfo[k].name,
-        description: DataSourceInfo[k].description,
-        icon: DataSourceInfo[k].icon,
-        list: categorizedData[k] || [],
-      });
+      if (DataSourceInfo[k]) {
+        sourceList.push({
+          id: k,
+          name: DataSourceInfo[k].name,
+          description: DataSourceInfo[k].description,
+          icon: DataSourceInfo[k].icon,
+          list: categorizedData[k] || [],
+        });
+      }
     });
 
-    console.log('🚀 ~ useListDataSource ~ sourcelist:', sourcelist);
-    return sourcelist;
+    console.log('🚀 ~ useListDataSource ~ sourceList:', sourceList);
+    return sourceList;
   }, [list]);
 
   return { list, categorizedList: updatedDataSourceTemplates, isFetching };
