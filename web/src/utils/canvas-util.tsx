@@ -35,7 +35,7 @@ export function isAgentStructured(id?: string, label?: string) {
   );
 }
 
-export function buildOutputOptions(
+export function buildSecondaryOutputOptions(
   outputs: Record<string, any> = {},
   nodeId?: string,
   parentLabel?: string | ReactNode,
@@ -50,6 +50,23 @@ export function buildOutputOptions(
       ? JsonSchemaDataType.Object
       : outputs[x]?.type,
   }));
+}
+
+export function buildOutputOptions(
+  x: BaseNode,
+  Icon: ComponentType<{ name: string }>,
+) {
+  return {
+    label: x.data.name,
+    value: x.id,
+    title: x.data.name,
+    options: buildSecondaryOutputOptions(
+      x.data.form.outputs,
+      x.id,
+      x.data.name,
+      <Icon name={x.data.name} />,
+    ),
+  };
 }
 
 export function buildNodeOutputOptions({
@@ -75,17 +92,7 @@ export function buildNodeOutputOptions({
 
   return nodeWithOutputList
     .filter((x) => x.id !== nodeId)
-    .map((x) => ({
-      label: x.data.name,
-      value: x.id,
-      title: x.data.name,
-      options: buildOutputOptions(
-        x.data.form.outputs,
-        x.id,
-        x.data.name,
-        <Icon name={x.data.name} />,
-      ),
-    }));
+    .map((x) => buildOutputOptions(x, Icon));
 }
 
 export function getStructuredDatatype(value: Record<string, any> | unknown) {

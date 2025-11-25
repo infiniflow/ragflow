@@ -1,4 +1,4 @@
-import { buildOutputOptions } from '@/utils/canvas-util';
+import { buildSecondaryOutputOptions } from '@/utils/canvas-util';
 import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
 import { Operator } from '../../constant';
@@ -23,7 +23,7 @@ export function useBuildSubNodeOutputOptions(nodeId?: string) {
       label: x.data.name,
       value: x.id,
       title: x.data.name,
-      options: buildOutputOptions(x.data.form.outputs, x.id),
+      options: buildSecondaryOutputOptions(x.data.form.outputs, x.id),
     }));
   }, [nodeId, nodes]);
 

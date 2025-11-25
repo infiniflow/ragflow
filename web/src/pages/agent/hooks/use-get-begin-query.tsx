@@ -1,7 +1,11 @@
 import { AgentGlobals, AgentStructuredOutputField } from '@/constants/agent';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { buildNodeOutputOptions, isAgentStructured } from '@/utils/canvas-util';
+import {
+  buildNodeOutputOptions,
+  buildOutputOptions,
+  isAgentStructured,
+} from '@/utils/canvas-util';
 import { DefaultOptionType } from 'antd/es/select';
 import { t } from 'i18next';
 import { isEmpty, toLower } from 'lodash';
@@ -99,6 +103,28 @@ export function useBuildNodeOutputOptions(nodeId?: string) {
   }, [edges, nodeId, nodes]);
 }
 
+export function useBuildParentOutputOptions(parentId?: string) {
+  const { getNode, getOperatorTypeFromId } = useGraphStore((state) => state);
+  const parentNode = getNode(parentId);
+
+  const parentType = getOperatorTypeFromId(parentId);
+
+  if (
+    parentType &&
+    [Operator.Loop].includes(parentType as Operator) &&
+    parentNode
+  ) {
+    const options = buildOutputOptions(parentNode, ({ name }) => (
+      <OperatorIcon name={name as Operator}></OperatorIcon>
+    ));
+    if (options) {
+      return [options];
+    }
+  }
+
+  return [];
+}
+
 // exclude nodes with branches
 const ExcludedNodes = [
   Operator.Categorize,
@@ -176,7 +202,7 @@ export function useBuildConversationVariableOptions() {
 
 export const useBuildVariableOptions = (nodeId?: string, parentId?: string) => {
   const nodeOutputOptions = useBuildNodeOutputOptions(nodeId);
-  const parentNodeOutputOptions = useBuildNodeOutputOptions(parentId);
+  const parentNodeOutputOptions = useBuildParentOutputOptions(parentId);
   const beginOptions = useBuildBeginVariableOptions();
 
   const options = useMemo(() => {
