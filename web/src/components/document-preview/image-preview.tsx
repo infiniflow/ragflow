@@ -1,5 +1,7 @@
 import message from '@/components/ui/message';
 import { Spin } from '@/components/ui/spin';
+import { Authorization } from '@/constants/authorization';
+import { getAuthorization } from '@/utils/authorization-util';
 import request from '@/utils/request';
 import classNames from 'classnames';
 import { useEffect, useState } from 'react';
@@ -22,6 +24,7 @@ export const ImagePreviewer: React.FC<ImagePreviewerProps> = ({
     const res = await request(url, {
       method: 'GET',
       responseType: 'blob',
+      headers: { [Authorization]: getAuthorization() },
       onError: () => {
         message.error('Failed to load image');
         setIsLoading(false);
