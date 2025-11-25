@@ -28,6 +28,7 @@ import { useHandleFreedomChange } from './use-watch-change';
 interface LlmSettingFieldItemsProps {
   prefix?: string;
   options?: any[];
+  llmId?: string;
   showFields?: Array<
     | 'temperature'
     | 'top_p'
@@ -73,6 +74,7 @@ export function LlmSettingFieldItems({
     'frequency_penalty',
     'max_tokens',
   ],
+  llmId,
 }: LlmSettingFieldItemsProps) {
   const form = useFormContext();
   const { t } = useTranslate('chat');
@@ -131,7 +133,7 @@ export function LlmSettingFieldItems({
     <div className="space-y-5">
       <LLMFormField
         options={options}
-        name={getFieldWithPrefix('llm_id')}
+        name={llmId ?? getFieldWithPrefix('llm_id')}
       ></LLMFormField>
       <FormField
         control={form.control}
