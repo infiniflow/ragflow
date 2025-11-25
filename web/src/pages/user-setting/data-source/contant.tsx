@@ -122,6 +122,21 @@ export const DataSourceFormFields = {
       required: true,
     },
     {
+      label: 'Addressing Style',
+      name: 'config.credentials.addressing_style',
+      type: FormFieldType.Select,
+      options: [
+        { label: 'Virtual Hosted Style', value: 'virtual' },
+        { label: 'Path Style', value: 'path' },
+      ],
+      required: false,
+      placeholder: 'Virtual Hosted Style',
+      tooltip: t('setting.S3CompatibleAddressingStyleTip'),
+      shouldRender: (formValues: any) => {
+        return formValues?.config?.bucket_type === 's3_compatible';
+      },
+    },
+    {
       label: 'Endpoint URL',
       name: 'config.credentials.endpoint_url',
       type: FormFieldType.Text,
@@ -444,6 +459,7 @@ export const DataSourceFormDefaultValues = {
         aws_access_key_id: '',
         aws_secret_access_key: '',
         endpoint_url: '',
+        addressing_style: '',
       },
     },
   },
