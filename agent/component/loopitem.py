@@ -23,15 +23,15 @@ class LoopItemParam(ComponentParamBase):
     """
     def check(self):
         return True
-    
+
 class LoopItem(ComponentBase, ABC):
     component_name = "LoopItem"
 
     def __init__(self, canvas, id, param: ComponentParamBase):
         super().__init__(canvas, id, param)
         self._idx = 0
-        
-        
+
+
     def _invoke(self, **kwargs):
         if self.check_if_canceled("LoopItem processing"):
             return
@@ -67,15 +67,15 @@ class LoopItem(ComponentBase, ABC):
         elif isinstance(var, (int, float)):
             if operator == "=":
                 return var == value
-            elif operator == "!=":
+            elif operator == "≠":
                 return var != value
             elif operator == ">":
                 return var > value
             elif operator == "<":
                 return var < value
-            elif operator == ">=":
+            elif operator == "≥":
                 return var >= value
-            elif operator == "<=":
+            elif operator == "≤":
                 return var <= value
             elif operator == "is empty":
                 return var is None
@@ -125,13 +125,13 @@ class LoopItem(ComponentBase, ABC):
         for item in parent._param.loop_termination_condition:
             if not item.get("variable") or not item.get("operator"):
                 raise ValueError("Loop condition is incomplete.")
-            var = self.canvas.get_variable(item["variable"])
+            var = self._canvas.get_variable_value(item["variable"])
             operator = item["operator"]
-            input_mode = item.get("input_mode", "Constant")
-            
-            if input_mode == "Varibale":
-                value = self.canvas.get_variable(item.get("value", ""))
-            elif input_mode == "Constant":
+            input_mode = item.get("input_mode", "constant")
+
+            if input_mode == "variable":
+                value = self._canvas.get_variable_value(item.get("value", ""))
+            elif input_mode == "constant":
                 value = item.get("value", "")
             else:
                 raise ValueError("Invalid input mode.")
@@ -147,7 +147,7 @@ class LoopItem(ComponentBase, ABC):
         if should_end:
             self._idx = -1
             return True
-    
+
         return False
 
     def next(self):

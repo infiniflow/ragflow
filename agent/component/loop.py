@@ -57,9 +57,9 @@ class Loop(ComponentBase, ABC):
         for item in self._param.loop_variables:
             if any([not item.get("variable"), not item.get("input_mode"), not item.get("value"),not item.get("type")]):
                 assert "Loop Variable is not complete."
-            if item["input_mode"]=="Varibale":
+            if item["input_mode"]=="variable":
                 self.set_output(item["variable"],self._canvas.get_variable_value(item["value"]))
-            elif item["input_mode"]=="Constant":
+            elif item["input_mode"]=="constant":
                 self.set_output(item["variable"],item["value"])
             else:
                 if item["type"] == "number":

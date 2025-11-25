@@ -18,8 +18,15 @@ from agent.component.base import ComponentBase, ComponentParamBase
 
 
 class ExitLoopParam(ComponentParamBase, ABC):
-    pass
+    def check(self):
+        return True
 
 
 class ExitLoop(ComponentBase, ABC):
-    component_type = "ExitLoop"
+    component_name = "ExitLoop"
+
+    def _invoke(self, **kwargs):
+        pass
+
+    def thoughts(self) -> str:
+        return ""

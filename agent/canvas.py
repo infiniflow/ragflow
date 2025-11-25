@@ -525,7 +525,7 @@ class Canvas(Graph):
                 elif cpn_obj.component_name.lower() in ("iteration", "loop"):
                     _append_path(cpn_obj.get_start())
                 elif cpn_obj.component_name.lower() == "exitloop" and cpn_obj.get_parent().component_name.lower() == "loop":
-                    _extend_path(cpn_obj.get_parent()["downstream"])
+                    _extend_path(self.get_component(cpn["parent_id"])["downstream"])
                 elif not cpn["downstream"] and cpn_obj.get_parent():
                     _append_path(cpn_obj.get_parent().get_start())
                 else:
