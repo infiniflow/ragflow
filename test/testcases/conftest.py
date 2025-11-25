@@ -377,13 +377,49 @@ def add_models(auth: str):
 
 
 def get_tenant_info(auth: str) -> str:
-    url: str = HOST_ADDRESS + f"/{VERSION}/user/tenant_info"
+    """Fetch or lazily initialize the current tenant for the test user.
+
+    If the backend reports that no tenant exists yet (\"Tenant not found!\"), this
+    helper will create a default team/tenant for the authenticated user via the
+    public HTTP API and then re-query tenant info. This mirrors how other tests
+    prepare their own data and keeps changes confined to the test suite.
+    """
     authorization: Dict[str, str] = {"Authorization": auth}
-    response: requests.Response = requests.get(url=url, headers=authorization)
-    res: Dict[str, Any] = response.json()
-    if res.get("code") != 0:
-        raise Exception(res.get("message"))
-    return res["data"].get("tenant_id")
+    info_url: str = HOST_ADDRESS + f"/{VERSION}/user/tenant_info"
+
+    def _fetch() -> Dict[str, Any]:
+        response: requests.Response = requests.get(
+            url=info_url, headers=authorization
+        )
+        return response.json()
+
+    res: Dict[str, Any] = _fetch()
+    if res.get("code") == 0:
+        return res["data"].get("tenant_id")
+
+    message: str = str(res.get("message", ""))
+    if "tenant not found" in message.lower():
+        # Lazily create a default team for this test user
+        create_url: str = HOST_ADDRESS + f"/{VERSION}/tenant/create"
+        default_team_name: str = f"QA Default Team for {EMAIL}"
+        create_payload: Dict[str, Any] = {"name": default_team_name}
+        create_resp: requests.Response = requests.post(
+            url=create_url, headers=authorization, json=create_payload
+        )
+        create_body: Dict[str, Any] = create_resp.json()
+        if create_body.get("code") != 0:
+            raise Exception(
+                f"Failed to auto-create default tenant: {create_body.get('message')}"
+            )
+
+        # Re-fetch tenant info now that a tenant exists
+        res = _fetch()
+        if res.get("code") != 0:
+            raise Exception(res.get("message"))
+        return res["data"].get("tenant_id")
+
+    # Any other error bubbles up unchanged
+    raise Exception(message or "Unknown error retrieving tenant info")
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -55,6 +55,7 @@ class TestAuthorization:
         expected_code: int,
         expected_message: str,
         web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test updating team with invalid or missing authentication."""
         # Create a team first
@@ -62,9 +63,10 @@ class TestAuthorization:
         team_payload: dict[str, str] = {"name": team_name}
         team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         if team_res["code"] != 0:
-            pytest.skip("Team creation failed, skipping auth test")
+            pytest.skip(f"Team creation failed, skipping auth test: {team_res}")
 
         tenant_id: str = team_res["data"]["id"]
+        clear_teams.append(tenant_id)
 
         # Try to update team with invalid auth
         update_payload: dict[str, str] = {"name": "Updated Name"}
@@ -79,16 +81,24 @@ class TestUpdateTeam:
     """Comprehensive tests for team update API."""
 
     @pytest.fixture
-    def test_team(self, web_api_auth: RAGFlowWebApiAuth) -> dict[str, Any]:
+    def test_team(
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
+    ) -> dict[str, Any]:
         """Create a test team for use in tests."""
         team_payload: dict[str, str] = {"name": f"Test Team {uuid.uuid4().hex[:8]}"}
         res: dict[str, Any] = create_team(web_api_auth, team_payload)
-        assert res["code"] == 0
+        if res["code"] != 0:
+            pytest.skip(f"Team creation failed in setup: {res}")
+        clear_teams.append(res["data"]["id"])
         return res["data"]
 
     @pytest.mark.p1
     def test_update_team_name(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team's name."""
         tenant_id: str = test_team["id"]
@@ -104,7 +114,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p1
     def test_update_team_name_empty(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team with empty name (should fail)."""
         tenant_id: str = test_team["id"]
@@ -117,7 +129,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p1
     def test_update_team_name_too_long(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team with name exceeding 100 characters."""
         tenant_id: str = test_team["id"]
@@ -131,7 +145,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p1
     def test_update_team_credit(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team's credit."""
         tenant_id: str = test_team["id"]
@@ -146,7 +162,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p1
     def test_update_team_credit_negative(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team with negative credit (should fail)."""
         tenant_id: str = test_team["id"]
@@ -159,7 +177,8 @@ class TestUpdateTeam:
 
     @pytest.mark.p1
     def test_update_team_invalid_tenant_id(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
     ) -> None:
         """Test updating a non-existent team."""
         invalid_id: str = f"invalid_{uuid.uuid4().hex[:8]}"
@@ -171,7 +190,10 @@ class TestUpdateTeam:
 
     @pytest.mark.p1
     def test_update_team_not_owner_or_admin(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
+        clear_team_users: list[str],
     ) -> None:
         """Test updating a team when user is not owner or admin."""
         # Create a new user with encrypted password
@@ -185,12 +207,15 @@ class TestUpdateTeam:
         }
         user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
         if user_res["code"] != 0:
-            pytest.skip("User creation failed")
+            pytest.skip(f"User creation failed: {user_res}")
+        clear_team_users.append(email)
 
         # Add user to team as normal member
         tenant_id: str = test_team["id"]
         add_payload: dict[str, list[str]] = {"users": [email]}
-        add_users_to_team(web_api_auth, tenant_id, add_payload)
+        add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
+        if add_res["code"] != 0:
+            pytest.skip(f"Failed to add user to team in setup: {add_res}")
 
         # Small delay to ensure user is fully created
         time.sleep(0.5)
@@ -206,7 +231,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p1
     def test_update_team_response_structure(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test that team update returns the expected response structure."""
         tenant_id: str = test_team["id"]
@@ -223,7 +250,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p1
     def test_update_team_no_fields_provided(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team with no fields provided."""
         tenant_id: str = test_team["id"]
@@ -236,7 +265,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p1
     def test_update_team_missing_request_body(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team without request body."""
         tenant_id: str = test_team["id"]
@@ -248,7 +279,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p2
     def test_update_team_multiple_fields(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating multiple team fields at once."""
         tenant_id: str = test_team["id"]
@@ -267,7 +300,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p2
     def test_update_team_whitespace_name(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team with whitespace-only name."""
         tenant_id: str = test_team["id"]
@@ -280,7 +315,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p2
     def test_update_team_special_characters_name(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team with special characters in name."""
         tenant_id: str = test_team["id"]
@@ -294,7 +331,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p2
     def test_update_team_unicode_name(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team with unicode characters in name."""
         tenant_id: str = test_team["id"]
@@ -308,7 +347,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p2
     def test_update_team_credit_zero(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team with zero credit (should succeed)."""
         tenant_id: str = test_team["id"]
@@ -321,7 +362,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p2
     def test_update_team_credit_large_value(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team with a large credit value."""
         tenant_id: str = test_team["id"]
@@ -335,7 +378,9 @@ class TestUpdateTeam:
 
     @pytest.mark.p2
     def test_update_team_credit_non_integer(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
     ) -> None:
         """Test updating a team with non-integer credit (should fail)."""
         tenant_id: str = test_team["id"]

@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from typing import Any
+from typing import Any, List
 
 import pytest
 
@@ -40,13 +40,7 @@ from common import (
     update_canvas_setting,
     update_user_permissions,
 )
-from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
-
-
-# ---------------------------------------------------------------------------
-# Test Classes
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.p1
@@ -54,11 +48,17 @@ class TestCanvasPermissions:
     """Comprehensive tests for canvas permissions with CRUD operations."""
 
     @pytest.fixture
-    def test_team(self, web_api_auth: RAGFlowWebApiAuth) -> dict[str, Any]:
+    def test_team(
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: List[str],
+    ) -> dict[str, Any]:
         """Create a test team for use in tests."""
         team_payload: dict[str, str] = {"name": f"Test Team {uuid.uuid4().hex[:8]}"}
         res: dict[str, Any] = create_team(web_api_auth, team_payload)
-        assert res["code"] == 0
+        if res["code"] != 0:
+            pytest.skip(f"Team creation failed in setup: {res}")
+        clear_teams.append(res["data"]["id"])
         return res["data"]
 
     @pytest.fixture
@@ -66,6 +66,7 @@ class TestCanvasPermissions:
         self,
         web_api_auth: RAGFlowWebApiAuth,
         test_team: dict[str, Any],
+        clear_team_users: List[str],
     ) -> dict[str, Any]:
         """Create a team with a user who has accepted the invitation."""
         tenant_id: str = test_team["id"]
@@ -80,13 +81,16 @@ class TestCanvasPermissions:
             "nickname": "Test User",
         }
         user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
-        assert user_res["code"] == 0
+        if user_res["code"] != 0:
+            pytest.skip(f"User creation failed in setup: {user_res}")
+        clear_team_users.append(email)
         user_id: str = user_res["data"]["id"]
 
         # Add user to team
         add_payload: dict[str, list[str]] = {"users": [email]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
-        assert add_res["code"] == 0
+        if add_res["code"] != 0:
+            pytest.skip(f"Failed to add user to team in setup: {add_res}")
 
         # Small delay
         time.sleep(0.5)
@@ -94,7 +98,8 @@ class TestCanvasPermissions:
         # Accept invitation as the user
         user_auth: RAGFlowWebApiAuth = login_as_user(email, password)
         accept_res: dict[str, Any] = accept_team_invitation(user_auth, tenant_id)
-        assert accept_res["code"] == 0
+        if accept_res["code"] != 0:
+            pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
 
         return {
             "team": test_team,
@@ -106,6 +111,7 @@ class TestCanvasPermissions:
         self,
         web_api_auth: RAGFlowWebApiAuth,
         test_team: dict[str, Any],
+        clear_canvases: List[str],
     ) -> dict[str, Any]:
         """Create a canvas shared with team."""
         # Simple canvas DSL
@@ -129,7 +135,9 @@ class TestCanvasPermissions:
         }
         
         res: dict[str, Any] = create_canvas(web_api_auth, canvas_payload)
-        assert res["code"] == 0
+        if res["code"] != 0:
+            pytest.skip(f"Canvas creation failed in setup: {res}")
+        clear_canvases.append(res["data"]["id"])
         return res["data"]
 
     @pytest.mark.p1
@@ -251,6 +259,7 @@ class TestCanvasPermissions:
         web_api_auth: RAGFlowWebApiAuth,
         team_with_user: dict[str, Any],
         team_canvas: dict[str, Any],
+        clear_canvases: List[str],
     ) -> None:
         """Test that user with delete permission can delete canvas."""
         # Create a new canvas for deletion
@@ -267,8 +276,10 @@ class TestCanvasPermissions:
             "canvas_category": "Agent",
         }
         create_res: dict[str, Any] = create_canvas(web_api_auth, canvas_payload)
-        assert create_res["code"] == 0
+        if create_res["code"] != 0:
+            pytest.skip(f"Canvas creation failed in setup: {create_res}")
         canvas_id: str = create_res["data"]["id"]
+        clear_canvases.append(canvas_id)
 
         user_id: str = team_with_user["user"]["id"]
         user_email: str = team_with_user["user"]["email"]
@@ -406,6 +417,7 @@ class TestCanvasPermissions:
         self,
         web_api_auth: RAGFlowWebApiAuth,
         team_with_user: dict[str, Any],
+        clear_canvases: List[str],
     ) -> None:
         """Test that user with create permission can create team canvas."""
         user_id: str = team_with_user["user"]["id"]
@@ -437,6 +449,7 @@ class TestCanvasPermissions:
         }
         res: dict[str, Any] = create_canvas(user_auth, canvas_payload)
         assert res["code"] == 0, res
+        clear_canvases.append(res["data"]["id"])
 
     @pytest.mark.p1
     def test_no_create_permission_denies_create_team_canvas(

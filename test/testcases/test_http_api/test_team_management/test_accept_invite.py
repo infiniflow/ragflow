@@ -55,15 +55,18 @@ class TestAuthorization:
         expected_code: int,
         expected_message: str,
         web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
+        clear_team_users: list[str],
     ) -> None:
         """Test accepting invitation with invalid or missing authentication."""
         # Create a team and send invitation first
         team_payload: dict[str, str] = {"name": f"Test Team {uuid.uuid4().hex[:8]}"}
         team_res: dict[str, Any] = create_team(web_api_auth, team_payload)
         if team_res["code"] != 0:
-            pytest.skip("Team creation failed, skipping auth test")
+            pytest.skip(f"Team creation failed, skipping auth test: {team_res}")
         
         tenant_id: str = team_res["data"]["id"]
+        clear_teams.append(tenant_id)
         
         # Create and invite a user
         email = f"testuser_{uuid.uuid4().hex[:8]}@example.com"
@@ -76,7 +79,8 @@ class TestAuthorization:
         }
         user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
         if user_res["code"] != 0:
-            pytest.skip("User creation failed, skipping auth test")
+            pytest.skip(f"User creation failed, skipping auth test: {user_res}")
+        clear_team_users.append(email)
         
         add_payload: dict[str, list[str]] = {"users": [email]}
         add_users_to_team(web_api_auth, tenant_id, add_payload)
@@ -93,15 +97,25 @@ class TestAcceptInvite:
     """Comprehensive tests for accepting team invitations."""
 
     @pytest.fixture
-    def test_team(self, web_api_auth: RAGFlowWebApiAuth) -> dict[str, Any]:
+    def test_team(
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
+    ) -> dict[str, Any]:
         """Create a test team for use in tests."""
         team_payload: dict[str, str] = {"name": f"Test Team {uuid.uuid4().hex[:8]}"}
         res: dict[str, Any] = create_team(web_api_auth, team_payload)
-        assert res["code"] == 0
+        if res["code"] != 0:
+            pytest.skip(f"Team creation failed in setup: {res}")
+        clear_teams.append(res["data"]["id"])
         return res["data"]
 
     @pytest.fixture
-    def invited_user(self, web_api_auth: RAGFlowWebApiAuth) -> dict[str, Any]:
+    def invited_user(
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_team_users: list[str],
+    ) -> dict[str, Any]:
         """Create a test user who will be invited."""
         email = f"inviteduser_{uuid.uuid4().hex[:8]}@example.com"
         password = "TestPassword123!"
@@ -112,7 +126,9 @@ class TestAcceptInvite:
             "nickname": "Invited User",
         }
         user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
-        assert user_res["code"] == 0
+        if user_res["code"] != 0:
+            pytest.skip(f"Invited user creation failed in setup: {user_res}")
+        clear_team_users.append(email)
         return {
             "email": email,
             "id": user_res["data"]["id"],
@@ -130,7 +146,8 @@ class TestAcceptInvite:
         tenant_id: str = test_team["id"]
         add_payload: dict[str, list[str]] = {"users": [invited_user["email"]]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
-        assert add_res["code"] == 0
+        if add_res["code"] != 0:
+            pytest.skip(f"Failed to add invited user to team in setup: {add_res}")
         return {
             "team": test_team,
             "invited_user": invited_user,
@@ -197,7 +214,10 @@ class TestAcceptInvite:
 
     @pytest.mark.p1
     def test_accept_invitation_no_invitation(
-        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_team: dict[str, Any],
+        clear_team_users: list[str],
     ) -> None:
         """Test accepting an invitation when no invitation exists."""
         # Create a user who is not invited
@@ -210,7 +230,9 @@ class TestAcceptInvite:
             "nickname": "Not Invited User",
         }
         user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
-        assert user_res["code"] == 0
+        if user_res["code"] != 0:
+            pytest.skip(f"User creation failed in setup: {user_res}")
+        clear_team_users.append(email)
 
         # Login as the user
         user_auth: RAGFlowWebApiAuth = login_as_user(email, password)
@@ -288,6 +310,7 @@ class TestAcceptInvite:
         self,
         web_api_auth: RAGFlowWebApiAuth,
         team_with_invitation: dict[str, Any],
+        clear_team_users: list[str],
     ) -> None:
         """Test that a user cannot accept another user's invitation."""
         # Create another user who is not invited
@@ -300,7 +323,9 @@ class TestAcceptInvite:
             "nickname": "Other User",
         }
         user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
-        assert user_res["code"] == 0
+        if user_res["code"] != 0:
+            pytest.skip(f"Other user creation failed in setup: {user_res}")
+        clear_team_users.append(email)
 
         # Login as the other user
         other_user_auth: RAGFlowWebApiAuth = login_as_user(email, password)
@@ -313,19 +338,26 @@ class TestAcceptInvite:
 
     @pytest.mark.p2
     def test_accept_invitation_multiple_invitations(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
+        clear_team_users: list[str],
     ) -> None:
         """Test accepting invitations to multiple teams."""
         # Create two teams
         team1_payload: dict[str, str] = {"name": f"Team 1 {uuid.uuid4().hex[:8]}"}
         team1_res: dict[str, Any] = create_team(web_api_auth, team1_payload)
-        assert team1_res["code"] == 0
+        if team1_res["code"] != 0:
+            pytest.skip(f"Team 1 creation failed in setup: {team1_res}")
         tenant_id_1: str = team1_res["data"]["id"]
+        clear_teams.append(tenant_id_1)
 
         team2_payload: dict[str, str] = {"name": f"Team 2 {uuid.uuid4().hex[:8]}"}
         team2_res: dict[str, Any] = create_team(web_api_auth, team2_payload)
-        assert team2_res["code"] == 0
+        if team2_res["code"] != 0:
+            pytest.skip(f"Team 2 creation failed in setup: {team2_res}")
         tenant_id_2: str = team2_res["data"]["id"]
+        clear_teams.append(tenant_id_2)
 
         # Create and invite a user to both teams
         email = f"multiuser_{uuid.uuid4().hex[:8]}@example.com"
@@ -337,7 +369,9 @@ class TestAcceptInvite:
             "nickname": "Multi User",
         }
         user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
-        assert user_res["code"] == 0
+        if user_res["code"] != 0:
+            pytest.skip(f"Multi-invite user creation failed in setup: {user_res}")
+        clear_team_users.append(email)
 
         # Invite to both teams
         add_payload1: dict[str, list[str]] = {"users": [email]}

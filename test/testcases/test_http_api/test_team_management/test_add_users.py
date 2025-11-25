@@ -1,4 +1,5 @@
-#
+    #
+
 #  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,6 +55,7 @@ class TestAuthorization:
         expected_code: int,
         expected_message: str,
         web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test adding users with invalid or missing authentication."""
         # Create a team first
@@ -63,6 +65,7 @@ class TestAuthorization:
             pytest.skip("Team creation failed, skipping auth test")
         
         tenant_id: str = team_res["data"]["id"]
+        clear_teams.append(tenant_id)
 
         # Try to add users with invalid auth
         add_payload: dict[str, list[str]] = {"users": ["test@example.com"]}
@@ -77,15 +80,24 @@ class TestAddUsers:
     """Comprehensive tests for adding users to a team."""
 
     @pytest.fixture
-    def test_team(self, web_api_auth: RAGFlowWebApiAuth) -> dict[str, Any]:
+    def test_team(
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
+    ) -> dict[str, Any]:
         """Create a test team for use in tests."""
         team_payload: dict[str, str] = {"name": f"Test Team {uuid.uuid4().hex[:8]}"}
         res: dict[str, Any] = create_team(web_api_auth, team_payload)
         assert res["code"] == 0
+        clear_teams.append(res["data"]["id"])
         return res["data"]
 
     @pytest.fixture
-    def test_users(self, web_api_auth: RAGFlowWebApiAuth) -> list[dict[str, Any]]:
+    def test_users(
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_team_users: list[str],
+    ) -> list[dict[str, Any]]:
         """Create test users for use in tests."""
         users = []
         for i in range(5):
@@ -99,7 +111,14 @@ class TestAddUsers:
             }
             user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
             if user_res["code"] == 0:
-                users.append({"email": email, "id": user_res["data"]["id"], "password": password})
+                users.append(
+                    {
+                        "email": email,
+                        "id": user_res["data"]["id"],
+                        "password": password,
+                    }
+                )
+                clear_team_users.append(email)
         return users
 
     @pytest.mark.p1

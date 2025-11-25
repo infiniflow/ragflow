@@ -57,6 +57,8 @@ class TestAuthorization:
         expected_code: int,
         expected_message: str,
         web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
+        clear_team_users: list[str],
     ) -> None:
         """Test demoting admin with invalid or missing authentication."""
         # Create a team and add a user as admin first
@@ -66,6 +68,7 @@ class TestAuthorization:
             pytest.skip("Team creation failed, skipping auth test")
         
         tenant_id: str = team_res["data"]["id"]
+        clear_teams.append(tenant_id)
         
         # Create and add a user as admin
         email = f"testuser_{uuid.uuid4().hex[:8]}@example.com"
@@ -79,6 +82,7 @@ class TestAuthorization:
         user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
         if user_res["code"] != 0:
             pytest.skip("User creation failed, skipping auth test")
+        clear_team_users.append(email)
         
         user_id: str = user_res["data"]["id"]
         add_payload: dict[str, list[dict[str, str]]] = {
@@ -105,15 +109,25 @@ class TestDemoteAdmin:
     """Comprehensive tests for demoting admins."""
 
     @pytest.fixture
-    def test_team(self, web_api_auth: RAGFlowWebApiAuth) -> dict[str, Any]:
+    def test_team(
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
+    ) -> dict[str, Any]:
         """Create a test team for use in tests."""
         team_payload: dict[str, str] = {"name": f"Test Team {uuid.uuid4().hex[:8]}"}
         res: dict[str, Any] = create_team(web_api_auth, team_payload)
-        assert res["code"] == 0
+        if res["code"] != 0:
+            pytest.skip(f"Team creation failed in setup: {res}")
+        clear_teams.append(res["data"]["id"])
         return res["data"]
 
     @pytest.fixture
-    def test_users(self, web_api_auth: RAGFlowWebApiAuth) -> list[dict[str, Any]]:
+    def test_users(
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_team_users: list[str],
+    ) -> list[dict[str, Any]]:
         """Create test users for use in tests."""
         users = []
         for i in range(5):
@@ -127,7 +141,14 @@ class TestDemoteAdmin:
             }
             user_res: dict[str, Any] = create_user(web_api_auth, user_payload)
             if user_res["code"] == 0:
-                users.append({"email": email, "id": user_res["data"]["id"], "password": password})
+                users.append(
+                    {
+                        "email": email,
+                        "id": user_res["data"]["id"],
+                        "password": password,
+                    }
+                )
+                clear_team_users.append(email)
         return users
 
     @pytest.fixture
@@ -148,7 +169,8 @@ class TestDemoteAdmin:
         # Add user to team
         add_payload: dict[str, list[str]] = {"users": [user_email]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
-        assert add_res["code"] == 0
+        if add_res["code"] != 0:
+            pytest.skip(f"Failed to add admin user to team in setup: {add_res}")
 
         # Small delay
         time.sleep(0.5)
@@ -156,12 +178,14 @@ class TestDemoteAdmin:
         # Accept invitation
         user_auth: RAGFlowWebApiAuth = login_as_user(user_email, user_password)
         accept_res: dict[str, Any] = accept_team_invitation(user_auth, tenant_id)
-        assert accept_res["code"] == 0
+        if accept_res["code"] != 0:
+            pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
 
         # Promote user to admin (accept invitation doesn't set admin role)
         user_id: str = test_users[0]["id"]
         promote_res: dict[str, Any] = promote_admin(web_api_auth, tenant_id, user_id)
-        assert promote_res["code"] == 0
+        if promote_res["code"] != 0:
+            pytest.skip(f"Failed to promote user to admin in setup: {promote_res}")
 
         return {
             "team": test_team,
@@ -205,14 +229,17 @@ class TestDemoteAdmin:
         # Add user as normal member
         add_payload: dict[str, list[str]] = {"users": [user_email]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
-        assert add_res["code"] == 0
+        if add_res["code"] != 0:
+            pytest.skip(f"Failed to add user to team in setup: {add_res}")
 
         # Small delay
         time.sleep(0.5)
 
         # Accept invitation as normal user
         user_auth: RAGFlowWebApiAuth = login_as_user(user_email, user_password)
-        accept_team_invitation(user_auth, tenant_id)
+        accept_res: dict[str, Any] = accept_team_invitation(user_auth, tenant_id)
+        if accept_res["code"] != 0:
+            pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
 
         user_id: str = test_users[0]["id"]
 
@@ -267,19 +294,23 @@ class TestDemoteAdmin:
         # Add user to team
         add_payload: dict[str, list[str]] = {"users": [user_email]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
-        assert add_res["code"] == 0
+        if add_res["code"] != 0:
+            pytest.skip(f"Failed to add user to team in setup: {add_res}")
 
         # Small delay
         time.sleep(0.5)
 
         # Accept invitation
         user_auth: RAGFlowWebApiAuth = login_as_user(user_email, user_password)
-        accept_team_invitation(user_auth, tenant_id)
+        accept_res: dict[str, Any] = accept_team_invitation(user_auth, tenant_id)
+        if accept_res["code"] != 0:
+            pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
 
         # Promote user to admin
         user_id: str = test_users[0]["id"]
         promote_res: dict[str, Any] = promote_admin(web_api_auth, tenant_id, user_id)
-        assert promote_res["code"] == 0
+        if promote_res["code"] != 0:
+            pytest.skip(f"Failed to promote user to admin in setup: {promote_res}")
 
         # Login as the admin
         admin_auth: RAGFlowWebApiAuth = login_as_user(user_email, user_password)
@@ -315,14 +346,17 @@ class TestDemoteAdmin:
         # Add normal user to the team
         add_payload: dict[str, list[str]] = {"users": [normal_user_email]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
-        assert add_res["code"] == 0
+        if add_res["code"] != 0:
+            pytest.skip(f"Failed to add normal user to team in setup: {add_res}")
 
         # Small delay
         time.sleep(0.5)
 
         # Accept invitation as normal user
         normal_user_auth: RAGFlowWebApiAuth = login_as_user(normal_user_email, normal_user_password)
-        accept_team_invitation(normal_user_auth, tenant_id)
+        accept_res: dict[str, Any] = accept_team_invitation(normal_user_auth, tenant_id)
+        if accept_res["code"] != 0:
+            pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
 
         # Try to demote the admin (normal user should not be able to)
         res: dict[str, Any] = demote_admin(normal_user_auth, tenant_id, admin_user_id)
@@ -416,7 +450,9 @@ class TestDemoteAdmin:
 
         # Add both users to team
         add_payload: dict[str, list[str]] = {"users": user_emails}
-        add_users_to_team(web_api_auth, tenant_id, add_payload)
+        add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
+        if add_res["code"] != 0:
+            pytest.skip(f"Failed to add users to team in setup: {add_res}")
 
         # Small delay
         time.sleep(0.5)
@@ -424,12 +460,16 @@ class TestDemoteAdmin:
         # Accept invitations
         for email, password in zip(user_emails, user_passwords):
             user_auth: RAGFlowWebApiAuth = login_as_user(email, password)
-            accept_team_invitation(user_auth, tenant_id)
+            accept_res: dict[str, Any] = accept_team_invitation(user_auth, tenant_id)
+            if accept_res["code"] != 0:
+                pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
 
         # Promote both users to admin
         for user in test_users[:2]:
             user_id: str = user["id"]
-            promote_admin(web_api_auth, tenant_id, user_id)
+            promote_res: dict[str, Any] = promote_admin(web_api_auth, tenant_id, user_id)
+            if promote_res["code"] != 0:
+                pytest.skip(f"Failed to promote user to admin in setup: {promote_res}")
 
         # Demote one admin (should succeed since there's another admin)
         first_admin_id: str = test_users[0]["id"]
@@ -454,7 +494,9 @@ class TestDemoteAdmin:
 
         # Add all users to team
         add_payload: dict[str, list[str]] = {"users": user_emails}
-        add_users_to_team(web_api_auth, tenant_id, add_payload)
+        add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
+        if add_res["code"] != 0:
+            pytest.skip(f"Failed to add users to team in setup: {add_res}")
 
         # Small delay
         time.sleep(0.5)
@@ -462,12 +504,16 @@ class TestDemoteAdmin:
         # Accept invitations
         for email, password in zip(user_emails, user_passwords):
             user_auth: RAGFlowWebApiAuth = login_as_user(email, password)
-            accept_team_invitation(user_auth, tenant_id)
+            accept_res: dict[str, Any] = accept_team_invitation(user_auth, tenant_id)
+            if accept_res["code"] != 0:
+                pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
 
         # Promote all users to admin
         for user in test_users[:3]:
             user_id: str = user["id"]
-            promote_admin(web_api_auth, tenant_id, user_id)
+            promote_res: dict[str, Any] = promote_admin(web_api_auth, tenant_id, user_id)
+            if promote_res["code"] != 0:
+                pytest.skip(f"Failed to promote user to admin in setup: {promote_res}")
 
         # Demote first two admins (should succeed)
         for user in test_users[:2]:

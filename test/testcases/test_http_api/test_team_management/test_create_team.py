@@ -61,12 +61,15 @@ class TestAuthorization:
 
 
 @pytest.mark.p1
+@pytest.mark.usefixtures("clear_teams")
 class TestTeamCreate:
     """Comprehensive tests for team creation API."""
 
     @pytest.mark.p1
     def test_create_team_with_name_and_user_id(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test creating a team with name and user_id."""
         # Create team (user_id is optional, defaults to current authenticated user)
@@ -80,6 +83,7 @@ class TestTeamCreate:
         assert res["data"]["name"] == team_name
         assert "owner_id" in res["data"]
         assert "id" in res["data"]
+        clear_teams.append(res["data"]["id"])
         assert "deleted successfully" not in res["message"].lower()
         assert "created successfully" in res["message"].lower()
 
@@ -136,7 +140,9 @@ class TestTeamCreate:
 
     @pytest.mark.p1
     def test_create_team_missing_user_id(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test creating a team without user_id (should use current authenticated user)."""
         team_payload: dict[str, str] = {"name": "Test Team No User"}
@@ -146,10 +152,13 @@ class TestTeamCreate:
         assert "data" in res
         assert "owner_id" in res["data"]
         assert "created successfully" in res["message"].lower()
+        clear_teams.append(res["data"]["id"])
 
     @pytest.mark.p1
     def test_create_team_response_structure(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test that team creation returns the expected response structure."""
         # Create team
@@ -167,10 +176,13 @@ class TestTeamCreate:
         assert res["data"]["name"] == team_name
         assert "message" in res
         assert "created successfully" in res["message"].lower()
+        clear_teams.append(res["data"]["id"])
 
     @pytest.mark.p1
     def test_create_multiple_teams_same_user(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test creating multiple teams for the same user."""
         # Create first team
@@ -195,6 +207,7 @@ class TestTeamCreate:
         assert team_id_1 != team_id_2
         assert res1["data"]["name"] == team_name_1
         assert res2["data"]["name"] == team_name_2
+        clear_teams.extend([team_id_1, team_id_2])
 
     @pytest.mark.p2
     def test_create_team_with_whitespace_name(
@@ -214,7 +227,9 @@ class TestTeamCreate:
 
     @pytest.mark.p2
     def test_create_team_special_characters_in_name(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test creating a team with special characters in name."""
         # Create team with special characters
@@ -225,6 +240,8 @@ class TestTeamCreate:
         res: dict[str, Any] = create_team(web_api_auth, team_payload)
         # Should succeed if special chars are allowed
         assert res["code"] in (0, 101)
+        if res["code"] == 0:
+            clear_teams.append(res["data"]["id"])
 
     @pytest.mark.p2
     def test_create_team_empty_payload(
@@ -240,7 +257,9 @@ class TestTeamCreate:
 
     @pytest.mark.p3
     def test_create_team_unicode_name(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test creating a team with unicode characters in name."""
         # Create team with unicode name
@@ -251,10 +270,14 @@ class TestTeamCreate:
         res: dict[str, Any] = create_team(web_api_auth, team_payload)
         # Should succeed if unicode is supported
         assert res["code"] in (0, 101)
+        if res["code"] == 0:
+            clear_teams.append(res["data"]["id"])
 
     @pytest.mark.p2
     def test_team_creation_with_custom_models(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test creating team with custom model configurations."""
         team_name: str = f"Custom Models Team {uuid.uuid4().hex[:8]}"
@@ -273,10 +296,13 @@ class TestTeamCreate:
         assert res["code"] == 0, res
         assert res["data"]["name"] == team_name
         assert "id" in res["data"]
+        clear_teams.append(res["data"]["id"])
 
     @pytest.mark.p2
     def test_multiple_teams_same_name_allowed(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test that multiple teams can have the same name."""
         team_name: str = f"Duplicate Name {uuid.uuid4().hex[:8]}"
@@ -296,10 +322,13 @@ class TestTeamCreate:
         assert res1["data"]["name"] == res2["data"]["name"], (
             "Both teams should have the same name"
         )
+        clear_teams.extend([team_id_1, team_id_2])
 
     @pytest.mark.p2
     def test_team_creation_with_credit_limit(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test creating team with custom credit limit."""
         team_name: str = f"Credit Test Team {uuid.uuid4().hex[:8]}"
@@ -313,11 +342,14 @@ class TestTeamCreate:
         
         # Should succeed
         assert res["code"] == 0, res
+        clear_teams.append(res["data"]["id"])
         # Note: Credit may not be in response, but should be set internally
 
     @pytest.mark.p2
     def test_team_name_with_special_characters(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test team names with special characters."""
         special_names: list[str] = [
@@ -334,12 +366,15 @@ class TestTeamCreate:
                 assert res["data"]["name"] == name, (
                     f"Team name should be preserved: {name}"
                 )
+                clear_teams.append(res["data"]["id"])
             # If rejected, should have clear error
             # (Current implementation accepts special chars)
 
     @pytest.mark.p2
     def test_team_creation_default_owner(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test that team creator is set as owner by default."""
         team_name: str = f"Owner Test Team {uuid.uuid4().hex[:8]}"
@@ -347,12 +382,15 @@ class TestTeamCreate:
         
         assert res["code"] == 0, res
         assert "owner_id" in res["data"], "Owner ID should be in response"
+        clear_teams.append(res["data"]["id"])
         # Owner should be the authenticated user
         # (Cannot verify without knowing web_api_auth user ID)
 
     @pytest.mark.p2
     def test_concurrent_team_creation(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test concurrent team creation."""
         import concurrent.futures
@@ -382,6 +420,7 @@ class TestTeamCreate:
         assert len(team_ids) == len(set(team_ids)), (
             "All team IDs should be unique"
         )
+        clear_teams.extend(team_ids)
 
     @pytest.mark.p2
     def test_team_with_invalid_model_id(
@@ -437,7 +476,9 @@ class TestTeamCreate:
 
     @pytest.mark.p3
     def test_team_unicode_name(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test team creation with full unicode name."""
         unicode_names: list[str] = [
@@ -450,17 +491,20 @@ class TestTeamCreate:
         
         for name in unicode_names:
             res: dict[str, Any] = create_team(web_api_auth, {"name": name})
-            
+
             # Should handle unicode properly
             if res["code"] == 0:
                 # Verify unicode is preserved (may be normalized)
                 assert len(res["data"]["name"]) > 0, (
                     "Team name should not be empty after unicode"
                 )
+                clear_teams.append(res["data"]["id"])
 
     @pytest.mark.p3
     def test_team_creation_with_all_optional_params(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test team creation with all optional parameters."""
         team_name: str = f"Full Params Team {uuid.uuid4().hex[:8]}"
@@ -480,10 +524,13 @@ class TestTeamCreate:
         # Should succeed
         assert res["code"] == 0, res
         assert res["data"]["name"] == team_name
+        clear_teams.append(res["data"]["id"])
 
     @pytest.mark.p3
     def test_team_max_name_length(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test team with maximum allowed name length."""
         # API spec says max 100 characters
@@ -493,6 +540,7 @@ class TestTeamCreate:
         # Should accept 100 characters
         assert res["code"] == 0, "100-character name should be accepted"
         assert res["data"]["name"] == max_name
+        clear_teams.append(res["data"]["id"])
 
     @pytest.mark.p3
     def test_team_name_just_over_limit(
@@ -513,7 +561,9 @@ class TestTeamCreate:
 
     @pytest.mark.p3
     def test_team_creation_idempotency(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test that repeated team creation creates separate teams."""
         team_name: str = f"Idempotency Test {uuid.uuid4().hex[:8]}"
@@ -529,10 +579,13 @@ class TestTeamCreate:
         assert res1["data"]["id"] != res2["data"]["id"], (
             "Should create different teams, not be idempotent"
         )
+        clear_teams.extend([res1["data"]["id"], res2["data"]["id"]])
 
     @pytest.mark.p3
     def test_team_with_parser_ids(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_teams: list[str],
     ) -> None:
         """Test team creation with custom parser IDs."""
         team_name: str = f"Parser Test {uuid.uuid4().hex[:8]}"
@@ -545,4 +598,5 @@ class TestTeamCreate:
         
         # Should accept valid parser IDs
         assert res["code"] == 0, res
+        clear_teams.append(res["data"]["id"])
 
