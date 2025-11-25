@@ -90,7 +90,7 @@ class BlobStorageConnector(LoadConnector, PollConnector):
         elif self.bucket_type == BlobType.S3_COMPATIBLE:
             if not all(
                 credentials.get(key)
-                for key in ["endpoint_url", "aws_access_key_id", "aws_secret_access_key"]
+                for key in ["endpoint_url", "aws_access_key_id", "aws_secret_access_key", "addressing_style"]
             ):
                 raise ConnectorMissingCredentialError("S3 Compatible Storage")
 

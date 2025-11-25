@@ -715,6 +715,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
 Example: general/v2/`,
       S3CompatibleEndpointUrlTip: `Required for S3 compatible Storage Box. Specify the S3-compatible endpoint URL.
 Example: https://fsn1.your-objectstorage.com`,
+      S3CompatibleAddressingStyleTip: `Required for S3 compatible Storage Box. Specify the S3-compatible addressing style.
+Example: Virtual Hosted Style`,
       addDataSourceModalTital: 'Create your {{name}} connector',
       deleteSourceModalTitle: 'Delete data source',
       deleteSourceModalContent: `

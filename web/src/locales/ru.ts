@@ -715,6 +715,8 @@ export default {
 Пример: general/v2/`,
       S3CompatibleEndpointUrlTip: `Требуется для S3 совместимого Storage Box. Укажите URL конечной точки, совместимой с S3.
 Пример: https://fsn1.your-objectstorage.com`,
+      S3CompatibleAddressingStyleTip: `Требуется для S3 совместимого Storage Box. Укажите стиль адресации, совместимый с S3.
+Пример: Virtual Hosted Style`,
       addDataSourceModalTital: 'Создайте ваш коннектор {{name}}',
       deleteSourceModalTitle: 'Удалить источник данных',
       deleteSourceModalContent: `
