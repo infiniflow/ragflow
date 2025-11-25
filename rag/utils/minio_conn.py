@@ -17,7 +17,6 @@
 import logging
 import time
 from minio import Minio
-from minio.commonconfig import CopySource
 from minio.error import S3Error
 from io import BytesIO
 from common.decorator import singleton
