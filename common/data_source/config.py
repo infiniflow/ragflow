@@ -51,6 +51,7 @@ class DocumentSource(str, Enum):
     WEBDAV = "webdav"
     MOODLE = "moodle"
     S3_COMPATIBLE = "s3_compatible"
+    DROPBOX = "dropbox"
 
 
 class FileOrigin(str, Enum):

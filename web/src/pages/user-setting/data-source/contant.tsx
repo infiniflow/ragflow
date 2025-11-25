@@ -13,6 +13,7 @@ export enum DataSourceKey {
   //   GMAIL = 'gmail',
   JIRA = 'jira',
   WEBDAV = 'webdav',
+  DROPBOX = 'dropbox',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -58,6 +59,11 @@ export const DataSourceInfo = {
     name: 'WebDAV',
     description: t(`setting.${DataSourceKey.WEBDAV}Description`),
     icon: <SvgIcon name={'data-source/webdav'} width={38} />,
+  },
+  [DataSourceKey.DROPBOX]: {
+    name: 'Dropbox',
+    description: t(`setting.${DataSourceKey.DROPBOX}Description`),
+    icon: <SvgIcon name={'data-source/dropbox'} width={38} />,
   },
 };
 
@@ -120,6 +126,21 @@ export const DataSourceFormFields = {
         { label: 'S3 Compatible', value: 's3_compatible' },
       ],
       required: true,
+    },
+    {
+      label: 'Addressing Style',
+      name: 'config.credentials.addressing_style',
+      type: FormFieldType.Select,
+      options: [
+        { label: 'Virtual Hosted Style', value: 'virtual' },
+        { label: 'Path Style', value: 'path' },
+      ],
+      required: false,
+      placeholder: 'Virtual Hosted Style',
+      tooltip: t('setting.S3CompatibleAddressingStyleTip'),
+      shouldRender: (formValues: any) => {
+        return formValues?.config?.bucket_type === 's3_compatible';
+      },
     },
     {
       label: 'Endpoint URL',
@@ -443,6 +464,22 @@ export const DataSourceFormFields = {
       tooltip: t('setting.webdavRemotePathTip'),
     },
   ],
+  [DataSourceKey.DROPBOX]: [
+    {
+      label: 'Access Token',
+      name: 'config.credentials.dropbox_access_token',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.dropboxAccessTokenTip'),
+    },
+    {
+      label: 'Batch Size',
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: 'Defaults to 2',
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -457,6 +494,7 @@ export const DataSourceFormDefaultValues = {
         aws_access_key_id: '',
         aws_secret_access_key: '',
         endpoint_url: '',
+        addressing_style: 'virtual',
       },
     },
   },
@@ -552,6 +590,16 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         username: '',
         password: '',
+      },
+    },
+  },
+  [DataSourceKey.DROPBOX]: {
+    name: '',
+    source: DataSourceKey.DROPBOX,
+    config: {
+      batch_size: 2,
+      credentials: {
+        dropbox_access_token: '',
       },
     },
   },
