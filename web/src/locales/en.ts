@@ -1162,8 +1162,10 @@ Example: https://fsn1.your-objectstorage.com`,
       addField: 'Add option',
       addMessage: 'Add message',
       loop: 'Loop',
-      loopTip:
+      loopDescription:
         'Loop is the upper limit of the number of loops of the current component, when the number of loops exceeds the value of loop, it means that the component can not complete the current task, please re-optimize agent',
+      exitLoop: 'Exit loop',
+      exitLoopDescription: `Equivalent to "break". This node has no configuration items. When the loop body reaches this node, the loop terminates.`,
       yes: 'Yes',
       no: 'No',
       key: 'Key',

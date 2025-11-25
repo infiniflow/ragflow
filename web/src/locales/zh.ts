@@ -1099,9 +1099,11 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       addMessage: '新增消息',
-      loop: '循环上限',
-      loopTip:
+      loop: '循环',
+      loopDescription:
         'loop为当前组件循环次数上限，当循环次数超过loop的值时，说明组件不能完成当前任务，请重新优化agent',
+      exitLoop: '退出循环',
+      exitLoopDescription: `等同于 "break"。此节点没有配置项。当循环体到达此节点时，循环终止。`,
       yes: '是',
       no: '否',
       key: '键',
@@ -1496,7 +1498,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       contentTip: 'content: 邮件内容(可选)',
       jsonUploadTypeErrorMessage: '请上传json文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
-      iteration: '循环',
+      iteration: '迭代',
       iterationDescription: `该组件负责迭代生成新的内容，对列表对象执行多次步骤直至输出所有结果。`,
       delimiterTip: `该分隔符用于将输入文本分割成几个文本片段，每个文本片段的回显将作为每次迭代的输入项。`,
       delimiterOptions: {

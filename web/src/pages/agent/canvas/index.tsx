@@ -56,6 +56,7 @@ import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
 import { DataOperationsNode } from './node/data-operations-node';
 import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
+import { ExitLoopNode } from './node/exit-loop-node';
 import { ExtractorNode } from './node/extractor-node';
 import { FileNode } from './node/file-node';
 import { InvokeNode } from './node/invoke-node';
@@ -108,6 +109,7 @@ export const nodeTypes: NodeTypes = {
   variableAggregatorNode: VariableAggregatorNode,
   loopNode: LoopNode,
   loopStartNode: LoopStartNode,
+  exitLoopNode: ExitLoopNode,
 };
 
 const edgeTypes = {

@@ -29,7 +29,9 @@ export const useShowFormDrawer = () => {
       const operatorType = getOperatorTypeFromId(nodeId);
       if (
         (operatorType === Operator.Tool && !tool) ||
-        [Operator.LoopStart].includes(operatorType as Operator)
+        [Operator.LoopStart, Operator.ExitLoop].includes(
+          operatorType as Operator,
+        )
       ) {
         return;
       }

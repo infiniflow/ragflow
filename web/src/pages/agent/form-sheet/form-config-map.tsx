@@ -198,4 +198,7 @@ export const FormConfigMap = {
   [Operator.Loop]: {
     component: LoopForm,
   },
+  [Operator.ExitLoop]: {
+    component: () => <></>,
+  },
 };

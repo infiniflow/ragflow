@@ -193,6 +193,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.VariableAggregator]: initialVariableAggregatorValues,
       [Operator.Loop]: initialLoopValues,
       [Operator.LoopStart]: {},
+      [Operator.ExitLoop]: {},
     };
   }, [llmId]);
 

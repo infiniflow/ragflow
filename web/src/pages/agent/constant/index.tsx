@@ -715,6 +715,7 @@ export const RestrictedUpstreamMap = {
   [Operator.File]: [Operator.Begin],
   [Operator.Loop]: [Operator.Begin],
   [Operator.LoopStart]: [Operator.Begin],
+  [Operator.ExitLoop]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -769,6 +770,7 @@ export const NodeMap = {
   [Operator.VariableAggregator]: 'variableAggregatorNode',
   [Operator.Loop]: 'loopNode',
   [Operator.LoopStart]: 'loopStartNode',
+  [Operator.ExitLoop]: 'exitLoopNode',
 };
 
 export enum BeginQueryType {

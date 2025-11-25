@@ -120,6 +120,7 @@ export enum Operator {
   Extractor = 'Extractor',
   Loop = 'Loop',
   LoopStart = 'LoopItem',
+  ExitLoop = 'ExitLoop',
 }
 
 export enum ComparisonOperator {

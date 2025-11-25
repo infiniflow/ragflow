@@ -14,7 +14,12 @@ import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.s
 
 import { IconFontFill } from '@/components/icon-font';
 import { cn } from '@/lib/utils';
-import { FileCode, HousePlus, Infinity as InfinityIcon } from 'lucide-react';
+import {
+  FileCode,
+  HousePlus,
+  Infinity as InfinityIcon,
+  LogOut,
+} from 'lucide-react';
 import { Operator } from './constant';
 
 interface IProps {
@@ -61,6 +66,7 @@ export const SVGIconMap = {
 export const LucideIconMap = {
   [Operator.DataOperations]: FileCode,
   [Operator.Loop]: InfinityIcon,
+  [Operator.ExitLoop]: LogOut,
 };
 
 const Empty = () => {

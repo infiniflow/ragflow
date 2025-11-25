@@ -21,11 +21,23 @@ function OperatorAccordionTrigger({ children }: PropsWithChildren) {
 export function AccordionOperators({
   isCustomDropdown = false,
   mousePosition,
+  nodeId,
 }: {
   isCustomDropdown?: boolean;
   mousePosition?: { x: number; y: number };
+  nodeId?: string;
 }) {
   const { t } = useTranslation();
+  const { getOperatorTypeFromId, getParentIdById } = useGraphStore(
+    (state) => state,
+  );
+
+  const exitLoopList = useMemo(() => {
+    if (getOperatorTypeFromId(getParentIdById(nodeId)) === Operator.Loop) {
+      return [Operator.ExitLoop];
+    }
+    return [];
+  }, [getOperatorTypeFromId, getParentIdById, nodeId]);
 
   return (
     <Accordion
@@ -63,6 +75,7 @@ export function AccordionOperators({
               Operator.Switch,
               Operator.Iteration,
               Operator.Loop,
+              ...exitLoopList,
               Operator.Categorize,
             ]}
             isCustomDropdown={isCustomDropdown}
