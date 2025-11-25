@@ -72,9 +72,8 @@ class RAGFlowMarkdownParser:
 
         # Replace any TAGS e.g. <table ...> to <table>
         TAGS = ["table", "td", "tr", "th", "tbody", "thead", "div"]
-        table_with_attributes_pattern = re.compile(
-            rf"<(?:{'|'.join(TAGS)})[^>]*>", re.IGNORECASE
-        )
+        table_with_attributes_pattern = re.compile(rf"<(?:{'|'.join(TAGS)})[^>]*>", re.IGNORECASE)
+
         def replace_tag(m):
             tag_name = re.match(r"<(\w+)", m.group()).group(1)
             return "<{}>".format(tag_name)
@@ -128,23 +127,48 @@ class MarkdownElementExtractor:
         self.markdown_content = markdown_content
         self.lines = markdown_content.split("\n")
 
-    def get_delimiters(self,delimiters):
+    def get_delimiters(self, delimiters):
         toks = re.findall(r"`([^`]+)`", delimiters)
         toks = sorted(set(toks), key=lambda x: -len(x))
         return "|".join(re.escape(t) for t in toks if t)
-    
-    def extract_elements(self,delimiter=None):
+
+    def extract_elements(self, delimiter=None, include_meta=False):
         """Extract individual elements (headers, code blocks, lists, etc.)"""
         sections = []
 
         i = 0
-        dels=""
+        dels = ""
         if delimiter:
             dels = self.get_delimiters(delimiter)
         if len(dels) > 0:
             text = "\n".join(self.lines)
-            parts = re.split(dels, text)
-            sections = [p.strip() for p in parts if p and p.strip()]
+            if include_meta:
+                pattern = re.compile(dels)
+                last_end = 0
+                for m in pattern.finditer(text):
+                    part = text[last_end : m.start()]
+                    if part and part.strip():
+                        sections.append(
+                            {
+                                "content": part.strip(),
+                                "start_line": text.count("\n", 0, last_end),
+                                "end_line": text.count("\n", 0, m.start()),
+                            }
+                        )
+                    last_end = m.end()
+
+                part = text[last_end:]
+                if part and part.strip():
+                    sections.append(
+                        {
+                            "content": part.strip(),
+                            "start_line": text.count("\n", 0, last_end),
+                            "end_line": text.count("\n", 0, len(text)),
+                        }
+                    )
+            else:
+                parts = re.split(dels, text)
+                sections = [p.strip() for p in parts if p and p.strip()]
             return sections
         while i < len(self.lines):
             line = self.lines[i]
@@ -152,32 +176,35 @@ class MarkdownElementExtractor:
             if re.match(r"^#{1,6}\s+.*$", line):
                 # header
                 element = self._extract_header(i)
-                sections.append(element["content"])
+                sections.append(element if include_meta else element["content"])
                 i = element["end_line"] + 1
             elif line.strip().startswith("```"):
                 # code block
                 element = self._extract_code_block(i)
-                sections.append(element["content"])
+                sections.append(element if include_meta else element["content"])
                 i = element["end_line"] + 1
             elif re.match(r"^\s*[-*+]\s+.*$", line) or re.match(r"^\s*\d+\.\s+.*$", line):
                 # list block
                 element = self._extract_list_block(i)
-                sections.append(element["content"])
+                sections.append(element if include_meta else element["content"])
                 i = element["end_line"] + 1
             elif line.strip().startswith(">"):
                 # blockquote
                 element = self._extract_blockquote(i)
-                sections.append(element["content"])
+                sections.append(element if include_meta else element["content"])
                 i = element["end_line"] + 1
             elif line.strip():
                 # text block (paragraphs and inline elements until next block element)
                 element = self._extract_text_block(i)
-                sections.append(element["content"])
+                sections.append(element if include_meta else element["content"])
                 i = element["end_line"] + 1
             else:
                 i += 1
 
-        sections = [section for section in sections if section.strip()]
+        if include_meta:
+            sections = [section for section in sections if section["content"].strip()]
+        else:
+            sections = [section for section in sections if section.strip()]
         return sections
 
     def _extract_header(self, start_pos):
