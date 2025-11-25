@@ -35,7 +35,7 @@ You are a metadata filtering condition generator. Analyze the user's question an
         - Value has no match in metadata
 
 5. **Example A**:
-   - User query: "上市日期七月份的有哪些商品，不要蓝色的"
+   - User query: "上市日期七月份的有哪些新品，不要蓝色的，只看鞋子和帽子"
    - Metadata: { "color": {...}, "listing_date": {...} }
    - Output: 
    {
@@ -43,19 +43,21 @@ You are a metadata filtering condition generator. Analyze the user's question an
         "conditions": [
           {"key": "listing_date", "value": "2025-07-01", "op": "≥"},
           {"key": "listing_date", "value": "2025-08-01", "op": "<"},
-          {"key": "color", "value": "blue", "op": "≠"}
+          {"key": "color", "value": "blue", "op": "≠"},
+          {"key": "category", "value": "shoes, hat", "op": "in"}
         ]
    }
 
 6. **Example B**:
-   - User query: "Both blue and red are acceptable."
-   - Metadata: { "color": {...}, "listing_date": {...} }
+   - User query: "It must be from China or India. Otherwise, it must be blue or red."
+   - Metadata: { "color": {...}, "country": {...} }
+   - 
    - Output: 
    {
         "logic": "or",
         "conditions": [
-          {"key": "color", "value": "blue", "op": "="},
-          {"key": "color", "value": "red", "op": "="}
+          {"key": "color", "value": "blue, red", "op": "in"},
+          {"key": "country", "value": "china, india", "op": "in"},
         ]
    }
 
@@ -94,6 +96,8 @@ You are a metadata filtering condition generator. Analyze the user's question an
             "enum": [
               "contains",
               "not contains",
+              "in",
+              "not in",
               "start with",
               "end with",
               "empty",
