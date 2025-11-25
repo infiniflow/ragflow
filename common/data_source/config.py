@@ -50,6 +50,7 @@ class DocumentSource(str, Enum):
     DISCORD = "discord"
     MOODLE = "moodle"
     S3_COMPATIBLE = "s3_compatible"
+    DROPBOX = "dropbox"
 
 
 class FileOrigin(str, Enum):

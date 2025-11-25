@@ -722,6 +722,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '需要索引其 “我的云端硬盘” 的邮箱，多个邮箱用逗号分隔（建议包含管理员）。',
       google_driveSharedFoldersTip:
         '需要同步的 Google Drive 文件夹链接，多个链接用逗号分隔。',
+      dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
+      dropboxAccessTokenTip:
+        '请在 Dropbox App Console 生成 Access Token，并勾选 files.metadata.read、files.content.read、sharing.read 等必要权限。',
       jiraDescription: '接入 Jira 工作区，持续同步Issues、评论与附件。',
       jiraBaseUrlTip:
         'Jira 的 Base URL，例如：https://your-domain.atlassian.net。',

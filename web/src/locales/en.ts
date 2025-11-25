@@ -742,6 +742,10 @@ Example: https://fsn1.your-objectstorage.com`,
         'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
+      dropboxDescription:
+        'Connect your Dropbox to sync files and folders from a chosen account.',
+      dropboxAccessTokenTip:
+        'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
       moodleDescription:
         'Connect to your Moodle LMS to sync course content, forums, and resources.',
       moodleUrlTip:
