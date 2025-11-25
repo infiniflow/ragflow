@@ -459,7 +459,7 @@ export const DataSourceFormDefaultValues = {
         aws_access_key_id: '',
         aws_secret_access_key: '',
         endpoint_url: '',
-        addressing_style: '',
+        addressing_style: 'virtual',
       },
     },
   },
