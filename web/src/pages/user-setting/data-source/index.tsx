@@ -56,6 +56,12 @@ const dataSourceTemplates = [
     description: DataSourceInfo[DataSourceKey.JIRA].description,
     icon: DataSourceInfo[DataSourceKey.JIRA].icon,
   },
+  {
+    id: DataSourceKey.DROPBOX,
+    name: DataSourceInfo[DataSourceKey.DROPBOX].name,
+    description: DataSourceInfo[DataSourceKey.DROPBOX].description,
+    icon: DataSourceInfo[DataSourceKey.DROPBOX].icon,
+  },
 ];
 const DataSource = () => {
   const { t } = useTranslation();

@@ -37,7 +37,7 @@ from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.config_utils import show_configs
-from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector
+from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector, DropboxConnector
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
@@ -209,6 +209,27 @@ class Gmail(SyncBase):
 
     async def _generate(self, task: dict):
         pass
+
+
+class Dropbox(SyncBase):
+    SOURCE_NAME: str = FileSource.DROPBOX
+
+    async def _generate(self, task: dict):
+        self.connector = DropboxConnector(batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE))
+        self.connector.load_credentials(self.conf["credentials"])
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task["poll_range_start"]
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(), datetime.now(timezone.utc).timestamp()
+            )
+            begin_info = f"from {poll_start}"
+
+        logging.info(f"[Dropbox] Connect to Dropbox {begin_info}")
+        return document_generator
 
 
 class GoogleDrive(SyncBase):
@@ -454,7 +475,8 @@ func_factory = {
     FileSource.SHAREPOINT: SharePoint,
     FileSource.SLACK: Slack,
     FileSource.TEAMS: Teams,
-    FileSource.MOODLE: Moodle
+    FileSource.MOODLE: Moodle,
+    FileSource.DROPBOX: Dropbox,
 }
 
 

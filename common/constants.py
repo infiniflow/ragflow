@@ -119,6 +119,7 @@ class FileSource(StrEnum):
     SLACK = "slack"
     TEAMS = "teams"
     MOODLE = "moodle"
+    DROPBOX = "dropbox"
 
 
 class PipelineTaskType(StrEnum):
