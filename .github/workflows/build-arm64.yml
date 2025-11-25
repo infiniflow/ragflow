@@ -1,0 +1,47 @@
+name: Build ARM64 Ragflow Images
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-ragflow-arm64:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up QEMU for ARM64 emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # STEP 1 — Build ragflow_deps for ARM64 locally inside the runner
+      - name: Build ragflow_deps (ARM64)
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            -f Dockerfile.deps \
+            -t infiniflow/ragflow_deps:latest \
+            . --load
+
+      # STEP 2 — Build and push main Ragflow image for ARM64
+      - name: Build & Push Ragflow ARM64 image
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            -f Dockerfile \
+            -t eurodoc/medlibre-ragflow:arm64-latest \
+            -t eurodoc/medlibre-ragflow:v0.22.0-arm64 \
+            . --push
