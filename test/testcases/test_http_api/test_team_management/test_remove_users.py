@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from common import (
+    accept_team_invitation,
     add_users_to_team,
     create_team,
     create_user,
@@ -361,8 +362,6 @@ class TestRemoveUser:
         """Test that the last admin cannot remove themselves."""
         if not test_users:
             pytest.skip("No test users created")
-        
-        from common import accept_team_invitation
         
         tenant_id: str = test_team["id"]
         user_email: str = test_users[0]["email"]

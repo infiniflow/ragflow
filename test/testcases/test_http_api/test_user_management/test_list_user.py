@@ -15,7 +15,9 @@
 #
 from __future__ import annotations
 
+import importlib.util
 import uuid
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -25,8 +27,6 @@ from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
 
 # Import from conftest - load it directly to avoid import issues
-import importlib.util
-from pathlib import Path
 
 _conftest_path = Path(__file__).parent / "conftest.py"
 spec = importlib.util.spec_from_file_location("conftest", _conftest_path)

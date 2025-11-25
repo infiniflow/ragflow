@@ -19,7 +19,15 @@ from typing import Any, Dict, List, Optional, Set, Union
 
 from quart import request, Response
 
-from api.apps import smtp_mail_server, login_required, current_user
+from api.apps import (
+    current_user,
+    login_required,
+    smtp_mail_server,
+)
+from api.common.permission_utils import (
+    get_user_permissions as get_member_permissions,
+    update_user_permissions as update_member_permissions,
+)
 from api.db import FileType, UserTenantRole
 from api.db.db_models import UserTenant
 from api.db.services.file_service import FileService
@@ -37,10 +45,6 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.utils.web_utils import send_invite_email
-from api.common.permission_utils import (
-    get_user_permissions as get_member_permissions,
-    update_user_permissions as update_member_permissions,
-)
 from common import settings
 from common.constants import RetCode, StatusEnum
 from common.misc_utils import get_uuid

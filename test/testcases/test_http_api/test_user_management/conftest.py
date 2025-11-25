@@ -18,12 +18,12 @@
 from __future__ import annotations
 
 import base64
+import importlib.util
 import os
 import uuid
 from pathlib import Path
 from typing import Any
 
-import importlib.util
 import pytest
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from Cryptodome.PublicKey import RSA

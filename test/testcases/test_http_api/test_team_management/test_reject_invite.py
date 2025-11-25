@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from common import (
+    accept_team_invitation,
     add_users_to_team,
     create_team,
     create_user,
@@ -232,8 +233,6 @@ class TestRejectInvite:
         team_with_invitation: dict[str, Any],
     ) -> None:
         """Test rejecting an invitation that has already been accepted."""
-        from common import accept_team_invitation
-        
         tenant_id: str = team_with_invitation["team"]["id"]
         invited_user: dict[str, Any] = team_with_invitation["invited_user"]
 

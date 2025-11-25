@@ -15,29 +15,42 @@
 #
 import json
 import logging
-import string
 import os
 import re
 import secrets
+import string
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Match
+from typing import Any, Dict, List, Match, Optional
 
-from quart import redirect, request, session, make_response, Response
+from quart import (
+    make_response,
+    redirect,
+    request,
+    Response,
+    session,
+)
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from api.apps import (
+    current_user,
+    login_required,
+    login_user,
+    logout_user,
+    smtp_mail_server,
+)
 from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
 from api.db.db_models import TenantLLM, User
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import get_init_tenant_llm
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.db.services.user_service import TenantService, UserService, UserTenantService
-from common.time_utils import current_timestamp, datetime_format, get_format_time
-from common.misc_utils import download_img, get_uuid
-from common.constants import RetCode
-from common.connection_utils import construct_response
+from api.db.services.user_service import (
+    TenantService,
+    UserService,
+    UserTenantService,
+)
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
@@ -45,20 +58,23 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.utils.crypt import decrypt
-from rag.utils.redis_conn import REDIS_CONN
-from api.apps import smtp_mail_server, login_required, current_user, login_user, logout_user
 from api.utils.web_utils import (
-    send_email_html,
-    OTP_LENGTH,
-    OTP_TTL_SECONDS,
     ATTEMPT_LIMIT,
     ATTEMPT_LOCK_SECONDS,
+    OTP_LENGTH,
+    OTP_TTL_SECONDS,
     RESEND_COOLDOWN_SECONDS,
-    otp_keys,
-    hash_code,
     captcha_key,
+    hash_code,
+    otp_keys,
+    send_email_html,
 )
 from common import settings
+from common.connection_utils import construct_response
+from common.constants import RetCode
+from common.misc_utils import download_img, get_uuid
+from common.time_utils import current_timestamp, datetime_format, get_format_time
+from rag.utils.redis_conn import REDIS_CONN
 
 
 def sanitize_nickname(nickname: str) -> str:

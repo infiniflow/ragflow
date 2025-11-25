@@ -18,7 +18,11 @@ from __future__ import annotations
 import base64
 import os
 import uuid
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    Future,
+    ThreadPoolExecutor,
+    as_completed,
+)
 from typing import Any
 
 import pytest

@@ -17,37 +17,55 @@ import json
 import logging
 import re
 import sys
+import time
 from functools import partial
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+from peewee import MySQLDatabase, PostgresqlDatabase
+from quart import (
+    make_response,
+    request,
+    Response,
+)
 import trio
-from quart import request, Response, make_response
+
+from agent.canvas import Canvas
 from agent.component import LLM
+from api.apps import current_user, login_required
+from api.common.permission_utils import has_permission
 from api.db import CanvasCategory, FileType
-from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
+from api.db.db_models import APIToken, Task
+from api.db.services.canvas_service import (
+    API4ConversationService,
+    CanvasTemplateService,
+    UserCanvasService,
+)
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
-from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID, TaskService
-from api.db.services.user_service import TenantService
+from api.db.services.pipeline_operation_log_service import (
+    PipelineOperationLogService,
+)
+from api.db.services.task_service import (
+    CANVAS_DEBUG_DOC_ID,
+    TaskService,
+    queue_dataflow,
+)
+from api.db.services.user_service import TenantService, UserTenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
-from api.common.permission_utils import has_permission
-from common.constants import RetCode
-from common.misc_utils import get_uuid
-from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result, \
-    request_json
-from agent.canvas import Canvas
-from peewee import MySQLDatabase, PostgresqlDatabase
-from api.db.db_models import APIToken, Task
-import time
-
+from api.utils.api_utils import (
+    get_data_error_result,
+    get_json_result,
+    request_json,
+    server_error_response,
+    validate_request,
+)
 from api.utils.file_utils import filename_type, read_potential_broken_pdf
+from common import settings
+from common.constants import RetCode, StatusEnum
+from common.misc_utils import get_uuid
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
-from common import settings
-from api.apps import login_required, current_user
-from api.db.services.user_service import UserTenantService
-from common.constants import StatusEnum
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
 @login_required
