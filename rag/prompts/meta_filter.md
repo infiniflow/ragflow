@@ -49,14 +49,14 @@ You are a metadata filtering condition generator. Analyze the user's question an
    }
 
 6. **Example B**:
-   - User query: "It must be from China or India. Otherwise, it must be blue or red."
+   - User query: "It must be from China or India. Otherwise, it must not be blue or red."
    - Metadata: { "color": {...}, "country": {...} }
    - 
    - Output: 
    {
         "logic": "or",
         "conditions": [
-          {"key": "color", "value": "blue, red", "op": "in"},
+          {"key": "color", "value": "blue, red", "op": "not in"},
           {"key": "country", "value": "china, india", "op": "in"},
         ]
    }
