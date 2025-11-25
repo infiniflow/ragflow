@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from ..common import create_user
+from common import create_user
 from libs.auth import RAGFlowWebApiAuth
 
 
@@ -43,7 +43,9 @@ class TestUserSecurity:
         ],
     )
     def test_sql_injection_in_email(
-        self, web_api_auth: RAGFlowWebApiAuth, malicious_email: str
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        malicious_email: str,
     ) -> None:
         """Test SQL injection attempts in email field are properly handled."""
         payload: dict[str, str] = {
@@ -70,7 +72,10 @@ class TestUserSecurity:
         ],
     )
     def test_xss_in_nickname(
-        self, web_api_auth: RAGFlowWebApiAuth, xss_payload: str
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        xss_payload: str,
+        clear_users: list[str],
     ) -> None:
         """Test XSS attempts in nickname field are sanitized."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -92,10 +97,13 @@ class TestUserSecurity:
             assert "<iframe" not in nickname.lower(), (
                 "Iframe tags should be sanitized"
             )
+            clear_users.append(unique_email)
 
     @pytest.mark.p1
     def test_password_not_in_response(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Ensure plain password never appears in response."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -121,6 +129,7 @@ class TestUserSecurity:
             assert stored_password != password, (
                 "Stored password should not match plain password"
             )
+        clear_users.append(unique_email)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -134,7 +143,10 @@ class TestUserSecurity:
         ],
     )
     def test_weak_password_handling(
-        self, web_api_auth: RAGFlowWebApiAuth, weak_password: str
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        weak_password: str,
+        clear_users: list[str],
     ) -> None:
         """Test handling of weak passwords."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -149,10 +161,11 @@ class TestUserSecurity:
             assert res["code"] != 0, (
                 f"Empty password should be rejected: '{weak_password}'"
             )
+        clear_users.append(unique_email)
 
     @pytest.mark.p2
     def test_unauthorized_superuser_creation(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth, clear_users: list[str]
     ) -> None:
         """Test that regular users cannot escalate privileges."""
         # Note: This test assumes web_api_auth represents a regular user
@@ -172,10 +185,11 @@ class TestUserSecurity:
             # Log that this privilege escalation is currently possible
             # In a production system, this should be blocked
             pass
+        clear_users.append(unique_email)
 
     @pytest.mark.p2
     def test_password_hashing_is_secure(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth, clear_users: list[str]
     ) -> None:
         """Verify passwords are hashed using secure algorithm."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -202,6 +216,7 @@ class TestUserSecurity:
         )
         # Should contain salt (indicated by multiple $ separators in scrypt format)
         assert hashed.count("$") >= 2, "Should include salt in hash"
+        clear_users.append(unique_email)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -213,7 +228,10 @@ class TestUserSecurity:
         ],
     )
     def test_control_character_injection(
-        self, web_api_auth: RAGFlowWebApiAuth, injection_attempt: dict[str, str]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        injection_attempt: dict[str, str],
+        clear_users: list[str],
     ) -> None:
         """Test protection against control character injection."""
         # Complete the payload with required fields
@@ -239,10 +257,11 @@ class TestUserSecurity:
                 assert "\n" not in res["data"]["nickname"], (
                     "Line feeds should be removed"
                 )
+        clear_users.append(payload["email"])
 
     @pytest.mark.p3
     def test_session_token_security(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth, clear_users: list[str]
     ) -> None:
         """Test that access tokens are properly secured."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -264,10 +283,11 @@ class TestUserSecurity:
         assert not token.startswith("user_"), (
             "Token should not use predictable pattern"
         )
+        clear_users.append(unique_email)
 
     @pytest.mark.p3
     def test_email_case_sensitivity(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth, clear_users: list[str]
     ) -> None:
         """Test email uniqueness is case-insensitive."""
         base_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -293,10 +313,12 @@ class TestUserSecurity:
         # Note: Current implementation may allow this, but it should be fixed
         # assert res2["code"] != 0, "Uppercase email should be treated as duplicate"
         # assert "already registered" in res2["message"].lower()
+        clear_users.append(base_email.lower())
+        clear_users.append(base_email.upper())
 
     @pytest.mark.p3
     def test_concurrent_user_creation_same_email(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self, web_api_auth: RAGFlowWebApiAuth, clear_users: list[str]
     ) -> None:
         """Test race condition protection for duplicate emails."""
         import concurrent.futures
@@ -340,3 +362,4 @@ class TestUserSecurity:
             "already registered" in r.get("message", "").lower()
             for r in failed_responses
         ), "Failure should be due to duplicate email"
+        clear_users.append(email)

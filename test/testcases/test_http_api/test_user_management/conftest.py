@@ -20,14 +20,32 @@ from __future__ import annotations
 import base64
 import os
 import uuid
+from pathlib import Path
 from typing import Any
 
+import importlib.util
 import pytest
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from Cryptodome.PublicKey import RSA
 
 from common import get_user_info
 from libs.auth import RAGFlowWebApiAuth
+
+
+# ---------------------------------------------------------------------------
+# Import helpers from root test configuration
+# ---------------------------------------------------------------------------
+
+_root_conftest_path = (
+    Path(__file__).parent.parent.parent / "conftest.py"
+)
+_root_spec = importlib.util.spec_from_file_location(
+    "root_test_conftest", _root_conftest_path
+)
+_root_conftest_module = importlib.util.module_from_spec(_root_spec)
+assert _root_spec.loader is not None
+_root_spec.loader.exec_module(_root_conftest_module)
+delete_user_from_db = _root_conftest_module.delete_user_from_db
 
 
 # ---------------------------------------------------------------------------
@@ -81,17 +99,26 @@ def generate_unique_email(prefix: str = "test") -> str:
 
 
 @pytest.fixture(scope="function")
-def clear_users(request, http_api_auth):
-    """Fixture to clean up users created during tests."""
-    created_user_ids: list[str] = []
+def clear_users(request: pytest.FixtureRequest) -> list[str]:
+    """Fixture to clean up users created during tests.
+
+    Tests should append test user *emails* to the returned list. After each
+    test, we hard-delete those users directly from the database via the
+    shared `delete_user_from_db` helper in the root test ``conftest.py``.
+    """
+    created_user_emails: list[str] = []
 
     def cleanup() -> None:
-        # Clean up users if delete endpoint exists
-        # For now, we'll just track them
-        pass
+        for email in created_user_emails:
+            try:
+                delete_user_from_db(email)
+            except Exception as exc:  # pragma: no cover - best-effort cleanup
+                print(
+                    f"[clear_users] Failed to delete test user {email}: {exc}"
+                )
 
     request.addfinalizer(cleanup)
-    return created_user_ids
+    return created_user_emails
 
 
 @pytest.fixture(name="test_user")

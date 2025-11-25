@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 
-from ..common import create_user, list_users
+from common import create_user, list_users
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
 
@@ -81,7 +81,9 @@ class TestUserList:
 
     @pytest.mark.p1
     def test_list_single_user(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self, 
+        web_api_auth: RAGFlowWebApiAuth, 
+        clear_users: list[str]
     ) -> None:
         """Test listing a single user."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -90,10 +92,13 @@ class TestUserList:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(web_api_auth, create_payload)
+        create_res: dict[str, Any] = create_user(
+            web_api_auth, create_payload
+        )
         # Skip if creation fails (password encryption issue in test)
         if create_res["code"] != 0:
             pytest.skip("User creation failed, skipping list test")
+        clear_users.append(unique_email)
 
         list_res: dict[str, Any] = list_users(web_api_auth)
         assert list_res["code"] == 0, list_res
@@ -105,7 +110,9 @@ class TestUserList:
 
     @pytest.mark.p1
     def test_list_multiple_users(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test listing multiple users."""
         created_emails: list[str] = []
@@ -121,6 +128,7 @@ class TestUserList:
             )
             if create_res["code"] == 0:
                 created_emails.append(unique_email)
+                clear_users.append(unique_email)
 
         if not created_emails:
             pytest.skip("No users created, skipping list test")
@@ -136,7 +144,9 @@ class TestUserList:
 
     @pytest.mark.p1
     def test_list_users_with_email_filter(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test listing users filtered by email."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -145,9 +155,12 @@ class TestUserList:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(web_api_auth, create_payload)
+        create_res: dict[str, Any] = create_user(
+            web_api_auth, create_payload
+        )
         if create_res["code"] != 0:
             pytest.skip("User creation failed, skipping filter test")
+        clear_users.append(unique_email)
 
         # List with email filter
         params: dict[str, str] = {"email": unique_email}
@@ -200,6 +213,7 @@ class TestUserList:
         page: int,
         page_size: int,
         expected_valid: bool,
+        clear_users: list[str],
     ) -> None:
         """Test listing users with pagination."""
         # Create some users first
@@ -216,6 +230,7 @@ class TestUserList:
             )
             if create_res["code"] == 0:
                 created_count += 1
+                clear_users.append(unique_email)
 
         if created_count == 0:
             pytest.skip("No users created, skipping pagination test")
@@ -234,7 +249,9 @@ class TestUserList:
 
     @pytest.mark.p1
     def test_list_users_pagination_boundaries(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test pagination boundary conditions."""
         # Create 5 users with a unique email pattern for filtering
@@ -252,6 +269,7 @@ class TestUserList:
             )
             if create_res["code"] == 0:
                 created_emails.append(unique_email)
+                clear_users.append(unique_email)
 
         if len(created_emails) < 3:
             pytest.skip("Not enough users created, skipping boundary test")
@@ -328,7 +346,9 @@ class TestUserList:
 
     @pytest.mark.p2
     def test_list_users_combined_filters(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test listing users with combined filters."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -337,9 +357,12 @@ class TestUserList:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(web_api_auth, create_payload)
+        create_res: dict[str, Any] = create_user(
+            web_api_auth, create_payload
+        )
         if create_res["code"] != 0:
             pytest.skip("User creation failed, skipping combined filter test")
+        clear_users.append(unique_email)
 
         # Test with email filter and pagination
         params: dict[str, Any] = {
@@ -355,7 +378,9 @@ class TestUserList:
 
     @pytest.mark.p2
     def test_list_users_performance_with_many_users(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test listing performance with multiple users."""
         # Create several users
@@ -372,6 +397,7 @@ class TestUserList:
             )
             if create_res["code"] == 0:
                 created_count += 1
+                clear_users.append(unique_email)
 
         if created_count == 0:
             pytest.skip("No users created, skipping performance test")

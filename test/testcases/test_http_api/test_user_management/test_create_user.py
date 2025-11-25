@@ -49,7 +49,12 @@ class TestAuthorization:
             ),
         ],
     )
-    def test_invalid_auth(self, invalid_auth, expected_code, expected_message):
+    def test_invalid_auth(
+        self,
+        invalid_auth: RAGFlowWebApiAuth | None,
+        expected_code: int,
+        expected_message: str,
+    ) -> None:
         """Test user creation with invalid or missing authentication."""
         # Use unique email to avoid conflicts
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -132,7 +137,8 @@ class TestUserCreate:
     )
     def test_required_fields(
         self,
-        web_api_auth,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
         payload: dict[str, Any],
         expected_code: int,
         expected_message: str,
@@ -145,6 +151,7 @@ class TestUserCreate:
         res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
+            clear_users.append(payload["email"])
             assert res["data"]["nickname"] == payload["nickname"]
             assert res["data"]["email"] == payload["email"]
         else:
@@ -167,7 +174,8 @@ class TestUserCreate:
     )
     def test_email_validation(
         self,
-        web_api_auth,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
         email: str,
         expected_code: int,
         expected_message: str,
@@ -184,6 +192,7 @@ class TestUserCreate:
         res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
+            clear_users.append(email)
             assert res["data"]["email"] == email
         else:
             assert expected_message in res["message"]
@@ -201,7 +210,8 @@ class TestUserCreate:
     )
     def test_nickname(
         self,
-        web_api_auth,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
         nickname: str,
         expected_code: int,
         expected_message: str,
@@ -216,13 +226,16 @@ class TestUserCreate:
         res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == expected_code, res
         if expected_code == 0:
+            clear_users.append(unique_email)
             assert res["data"]["nickname"] == nickname
         else:
             assert expected_message in res["message"]
 
     @pytest.mark.p1
     def test_duplicate_email(
-        self, web_api_auth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test that creating a user with duplicate email fails."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -233,8 +246,10 @@ class TestUserCreate:
         }
         res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0
+        # Track the created user for cleanup
+        clear_users.append(unique_email)
 
-        # Try to create another user with the same email
+            # Try to create another user with the same email (should fail)
         payload2: dict[str, str] = {
             "nickname": "test_user_2",
             "email": unique_email,
@@ -255,7 +270,8 @@ class TestUserCreate:
     )
     def test_is_superuser(
         self,
-        web_api_auth,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
         is_superuser: bool | None,
         expected_value: bool,
     ) -> None:
@@ -271,11 +287,14 @@ class TestUserCreate:
 
         res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0
+        clear_users.append(unique_email)
         assert res["data"]["is_superuser"] == expected_value
 
     @pytest.mark.p2
     def test_password_hashing(
-        self, web_api_auth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test that password is properly hashed when stored."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -287,6 +306,7 @@ class TestUserCreate:
         }
         res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0
+        clear_users.append(unique_email)
         # Password should be hashed in the response (not plain text)
         assert "password" in res["data"], (
             f"Password field not found in response: {res['data'].keys()}"
@@ -299,7 +319,9 @@ class TestUserCreate:
 
     @pytest.mark.p2
     def test_plain_text_password_accepted(
-        self, web_api_auth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test that plain text password is accepted."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -311,23 +333,29 @@ class TestUserCreate:
         res: dict[str, Any] = create_user(web_api_auth, payload)
         # Should succeed with plain text password
         assert res["code"] == 0
+        clear_users.append(unique_email)
         assert res["data"]["email"] == unique_email
 
     @pytest.mark.p3
     def test_concurrent_create(
-        self, web_api_auth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test concurrent user creation with multiple threads."""
         count: int = 10
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures: list[Future[dict[str, Any]]] = []
             for i in range(count):
-                unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
+                unique_email: str = (
+                    f"test_{uuid.uuid4().hex[:8]}@example.com"
+                )
                 payload: dict[str, str] = {
                     "nickname": f"test_user_{i}",
                     "email": unique_email,
                     "password": "test123",
                 }
+                clear_users.append(unique_email)
                 futures.append(
                     executor.submit(create_user, web_api_auth, payload)
                 )
@@ -341,7 +369,9 @@ class TestUserCreate:
 
     @pytest.mark.p2
     def test_user_creation_response_structure(
-        self, web_api_auth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test that user creation returns the expected response structure."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -352,6 +382,7 @@ class TestUserCreate:
         }
         res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0
+        clear_users.append(unique_email)
         assert "data" in res
         assert "id" in res["data"]
         assert "email" in res["data"]

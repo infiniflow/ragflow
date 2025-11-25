@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from ..common import create_user, list_users
+from common import create_user, list_users
 from libs.auth import RAGFlowWebApiAuth
 
 
@@ -33,7 +33,9 @@ class TestUserEdgeCases:
 
     @pytest.mark.p2
     def test_extremely_long_nickname(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test nickname with extreme length."""
         long_nickname: str = "A" * 1000
@@ -51,6 +53,7 @@ class TestUserEdgeCases:
             assert len(res["data"]["nickname"]) <= 255, (
                 "Nickname should be truncated to max length"
             )
+            clear_users.append(unique_email)
         else:
             # If rejected, should have clear error message
             assert (
@@ -61,7 +64,9 @@ class TestUserEdgeCases:
 
     @pytest.mark.p2
     def test_unicode_in_all_fields(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test unicode characters in various fields."""
         # Use ASCII-safe email local part (unicode in display name)
@@ -80,10 +85,13 @@ class TestUserEdgeCases:
                 "Unicode nickname should be preserved"
             )
             assert res["data"]["email"] == unique_email
+            clear_users.append(unique_email)
 
     @pytest.mark.p2
     def test_emoji_in_nickname(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test emoji characters in nickname."""
         nickname_with_emoji: str = "Test User 😀🎉🔥"
@@ -101,6 +109,7 @@ class TestUserEdgeCases:
             assert "😀" in res["data"]["nickname"] or "?" in res["data"]["nickname"], (
                 "Emoji should be preserved or replaced with placeholder"
             )
+            clear_users.append(unique_email)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -114,7 +123,10 @@ class TestUserEdgeCases:
         ],
     )
     def test_special_characters_in_email(
-        self, web_api_auth: RAGFlowWebApiAuth, special_email: str
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        special_email: str,
+        clear_users: list[str],
     ) -> None:
         """Test various special characters in email."""
         payload: dict[str, str] = {
@@ -125,10 +137,13 @@ class TestUserEdgeCases:
         res: dict[str, Any] = create_user(web_api_auth, payload)
         assert res["code"] == 0, f"Failed for email: {special_email}, {res}"
         assert res["data"]["email"] == special_email
+        clear_users.append(special_email)
 
     @pytest.mark.p2
     def test_whitespace_handling_in_fields(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test whitespace handling in various fields."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -148,10 +163,13 @@ class TestUserEdgeCases:
             # Nickname whitespace handling is flexible
             nickname: str = res["data"]["nickname"]
             assert nickname.strip() != "", "Nickname should not be only whitespace"
+            clear_users.append(unique_email)
 
     @pytest.mark.p2
     def test_null_byte_in_input(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test null byte injection in input fields."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -168,6 +186,7 @@ class TestUserEdgeCases:
             assert "\x00" not in res["data"]["nickname"], (
                 "Null byte should be sanitized"
             )
+            clear_users.append(unique_email)
 
     @pytest.mark.p2
     def test_very_long_email(
@@ -247,7 +266,9 @@ class TestUserEdgeCases:
 
     @pytest.mark.p3
     def test_empty_string_vs_none_in_optional_fields(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test difference between empty string and None for optional fields."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -263,6 +284,7 @@ class TestUserEdgeCases:
         # Empty nickname should be accepted per current API behavior
         assert res_empty["code"] == 0, "Empty nickname should be accepted"
         assert res_empty["data"]["nickname"] == ""
+        clear_users.append(unique_email)
 
     @pytest.mark.p3
     def test_pagination_with_no_results(
@@ -281,12 +303,14 @@ class TestUserEdgeCases:
 
     @pytest.mark.p3
     def test_pagination_beyond_available_pages(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test requesting page beyond available data."""
         # Create one user
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
-        create_user(
+        create_res: dict[str, Any] = create_user(
             web_api_auth,
             {
                 "nickname": "test",
@@ -294,6 +318,8 @@ class TestUserEdgeCases:
                 "password": "test123",
             },
         )
+        if create_res["code"] == 0:
+            clear_users.append(unique_email)
         
         # Request page 100
         res: dict[str, Any] = list_users(
@@ -349,7 +375,9 @@ class TestUserEdgeCases:
 
     @pytest.mark.p3
     def test_special_characters_in_password(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test password with various special characters."""
         special_passwords: list[str] = [
@@ -368,15 +396,18 @@ class TestUserEdgeCases:
                 "password": password,
             }
             res: dict[str, Any] = create_user(web_api_auth, payload)
-            
+
             # Should accept special characters in password
             assert res["code"] == 0, (
                 f"Password with special chars should be accepted: {password}"
             )
+            clear_users.append(unique_email)
 
     @pytest.mark.p3
     def test_json_injection_in_fields(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test JSON injection attempts."""
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
@@ -392,10 +423,13 @@ class TestUserEdgeCases:
             assert res["data"]["nickname"] == '{"admin": true}', (
                 "Should store as literal string, not parse JSON"
             )
+            clear_users.append(unique_email)
 
     @pytest.mark.p3
     def test_path_traversal_in_nickname(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test path traversal attempts in nickname."""
         traversal_attempts: list[str] = [
@@ -412,7 +446,7 @@ class TestUserEdgeCases:
                 "password": "test123",
             }
             res: dict[str, Any] = create_user(web_api_auth, payload)
-            
+
             # Should either reject or sanitize path traversal attempts
             # At minimum, should not allow actual file system access
             if res["code"] == 0:
@@ -420,3 +454,4 @@ class TestUserEdgeCases:
                 stored_nickname: str = res["data"]["nickname"]
                 # Verify it's treated as literal string
                 assert isinstance(stored_nickname, str)
+                clear_users.append(unique_email)

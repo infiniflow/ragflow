@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 
-from ..common import create_user, delete_user
+from common import create_user, delete_user
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
 
@@ -41,6 +41,7 @@ encrypt_password = conftest_module.encrypt_password
 
 
 @pytest.mark.p1
+@pytest.mark.usefixtures("clear_users")
 class TestAuthorization:
     """Tests for authentication behavior during user deletion."""
 
@@ -58,6 +59,7 @@ class TestAuthorization:
         expected_code: int,
         expected_message: str,
         web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test user deletion with invalid or missing authentication."""
         # Create a test user first
@@ -67,9 +69,13 @@ class TestAuthorization:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(web_api_auth, create_payload)
+        create_res: dict[str, Any] = create_user(
+            web_api_auth, create_payload
+        )
         if create_res["code"] != 0:
             pytest.skip("User creation failed, skipping auth test")
+
+        clear_users.append(unique_email)
 
         user_id: str = create_res["data"]["id"]
 
@@ -84,6 +90,7 @@ class TestAuthorization:
     def test_user_can_only_delete_themselves(
         self,
         web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test that users can only delete their own account."""
         # Create another user
@@ -93,9 +100,12 @@ class TestAuthorization:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(web_api_auth, create_payload)
+        create_res: dict[str, Any] = create_user(
+            web_api_auth, create_payload
+        )
         assert create_res["code"] == 0, "Failed to create second user"
         other_user_id: str = create_res["data"]["id"]
+        clear_users.append(unique_email)
 
         # Try to delete another user's account (should fail)
         delete_payload: dict[str, Any] = {

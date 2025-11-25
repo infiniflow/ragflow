@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from ..common import create_user, update_user
+from common import create_user, update_user
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
 
@@ -41,6 +41,7 @@ encrypt_password = conftest_module.encrypt_password
 # ---------------------------------------------------------------------------
 
 @pytest.mark.p1
+@pytest.mark.usefixtures("clear_users")
 class TestAuthorization:
     """Tests for authentication behavior during user updates."""
 
@@ -73,6 +74,7 @@ class TestAuthorization:
         self,
         web_api_auth: RAGFlowWebApiAuth,
         test_user: dict[str, Any],
+        clear_users: list[str],
     ) -> None:
         """Test that users can only update their own account."""
         # Create another user
@@ -82,9 +84,12 @@ class TestAuthorization:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(web_api_auth, create_payload)
+        create_res: dict[str, Any] = create_user(
+            web_api_auth, create_payload
+        )
         assert create_res["code"] == 0, "Failed to create second user"
         other_user_id: str = create_res["data"]["id"]
+        clear_users.append(unique_email)
 
         # Try to update another user's account (should fail)
         payload: dict[str, Any] = {
@@ -105,7 +110,9 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_with_user_id(
-        self, web_api_auth: RAGFlowWebApiAuth, test_user: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_user: dict[str, Any],
     ) -> None:
         payload: dict[str, Any] = {
             "user_id": test_user["user_id"],
@@ -119,7 +126,9 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_with_email(
-        self, web_api_auth: RAGFlowWebApiAuth, test_user: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_user: dict[str, Any],
     ) -> None:
         payload: dict[str, Any] = {
             "email": test_user["email"],
@@ -196,7 +205,9 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_password(
-        self, web_api_auth: RAGFlowWebApiAuth, test_user: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_user: dict[str, Any],
     ) -> None:
         new_password: str = "new_password_456"
         payload: dict[str, str] = {
@@ -209,7 +220,9 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_password_invalid_encryption(
-        self, web_api_auth: RAGFlowWebApiAuth, test_user: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_user: dict[str, Any],
     ) -> None:
         payload: dict[str, str] = {
             "user_id": test_user["user_id"],
@@ -256,7 +269,10 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_email_duplicate(
-        self, web_api_auth: RAGFlowWebApiAuth, test_user: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_user: dict[str, Any],
+        clear_users: list[str],
     ) -> None:
         unique_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
         create_payload: dict[str, str] = {
@@ -264,8 +280,11 @@ class TestUserUpdate:
             "email": unique_email,
             "password": encrypt_password("test123"),
         }
-        create_res: dict[str, Any] = create_user(web_api_auth, create_payload)
+        create_res: dict[str, Any] = create_user(
+            web_api_auth, create_payload
+        )
         assert create_res["code"] == 0
+        clear_users.append(unique_email)
 
         update_payload: dict[str, str] = {
             "user_id": test_user["user_id"],
@@ -297,7 +316,9 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_multiple_fields(
-        self, web_api_auth: RAGFlowWebApiAuth, test_user: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_user: dict[str, Any],
     ) -> None:
         new_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
         payload: dict[str, Any] = {
@@ -314,7 +335,9 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_no_fields(
-        self, web_api_auth: RAGFlowWebApiAuth, test_user: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_user: dict[str, Any],
     ) -> None:
         payload: dict[str, str] = {"user_id": test_user["user_id"]}
         res: dict[str, Any] = update_user(web_api_auth, payload)
@@ -323,7 +346,9 @@ class TestUserUpdate:
 
     @pytest.mark.p1
     def test_update_email_using_email_field_when_user_id_provided(
-        self, web_api_auth: RAGFlowWebApiAuth, test_user: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_user: dict[str, Any],
     ) -> None:
         new_email: str = f"test_{uuid.uuid4().hex[:8]}@example.com"
         payload: dict[str, str] = {
@@ -336,7 +361,9 @@ class TestUserUpdate:
 
     @pytest.mark.p2
     def test_update_response_structure(
-        self, web_api_auth: RAGFlowWebApiAuth, test_user: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_user: dict[str, Any],
     ) -> None:
         payload: dict[str, Any] = {
             "user_id": test_user["user_id"],
@@ -350,7 +377,9 @@ class TestUserUpdate:
 
     @pytest.mark.p2
     def test_concurrent_updates(
-        self, web_api_auth: RAGFlowWebApiAuth, test_user: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_user: dict[str, Any],
     ) -> None:
         """Test concurrent updates to the same user (users can only update themselves)."""
         # Test concurrent updates to the authenticated user's own account
@@ -373,7 +402,9 @@ class TestUserUpdate:
 
     @pytest.mark.p3
     def test_update_same_user_multiple_times(
-        self, web_api_auth: RAGFlowWebApiAuth, test_user: dict[str, Any]
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        test_user: dict[str, Any],
     ) -> None:
         """Test repeated updates on the same user."""
         for nickname in (

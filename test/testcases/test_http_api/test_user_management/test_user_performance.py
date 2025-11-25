@@ -24,7 +24,7 @@ from typing import Any
 
 import pytest
 
-from ..common import create_user, list_users
+from common import create_user, list_users
 from libs.auth import RAGFlowWebApiAuth
 
 
@@ -35,7 +35,9 @@ class TestUserPerformance:
 
     @pytest.mark.p2
     def test_list_users_performance_small_dataset(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test list_users performance with small dataset."""
         # Create 20 users
@@ -52,6 +54,7 @@ class TestUserPerformance:
             )
             if res["code"] == 0:
                 created_users.append(res["data"]["id"])
+                clear_users.append(unique_email)
         
         # Test list performance without pagination
         start: float = time.time()
@@ -65,7 +68,9 @@ class TestUserPerformance:
 
     @pytest.mark.p2
     def test_list_users_pagination_performance(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test pagination performance with moderate dataset."""
         # Create 50 users
@@ -79,6 +84,7 @@ class TestUserPerformance:
                     "password": "test123",
                 },
             )
+            clear_users.append(unique_email)
         
         # Test pagination performance
         start: float = time.time()
@@ -95,13 +101,16 @@ class TestUserPerformance:
 
     @pytest.mark.p3
     def test_concurrent_user_creation(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test concurrent user creation without conflicts."""
         count: int = 20
         
         def create_test_user(index: int) -> dict[str, Any]:
             unique_email: str = f"concurrent_{index}_{uuid.uuid4().hex[:8]}@example.com"
+            clear_users.append(unique_email)
             return create_user(
                 web_api_auth,
                 {
@@ -136,7 +145,9 @@ class TestUserPerformance:
 
     @pytest.mark.p3
     def test_user_creation_response_time(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test individual user creation response time."""
         response_times: list[float] = []
@@ -156,6 +167,7 @@ class TestUserPerformance:
             
             assert res["code"] == 0, f"User creation failed: {res}"
             response_times.append(duration)
+            clear_users.append(unique_email)
         
         # Calculate statistics
         avg_time: float = sum(response_times) / len(response_times)
@@ -172,7 +184,9 @@ class TestUserPerformance:
 
     @pytest.mark.p3
     def test_sequential_vs_concurrent_creation_comparison(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Compare sequential vs concurrent user creation performance."""
         count: int = 10
@@ -189,11 +203,13 @@ class TestUserPerformance:
                     "password": "test123",
                 },
             )
+            clear_users.append(unique_email)
         sequential_duration: float = time.time() - sequential_start
         
         # Concurrent creation
         def create_concurrent_user(index: int) -> dict[str, Any]:
             unique_email: str = f"conc_{index}_{uuid.uuid4().hex[:8]}@example.com"
+            clear_users.append(unique_email)
             return create_user(
                 web_api_auth,
                 {
@@ -231,7 +247,9 @@ class TestUserPerformance:
 
     @pytest.mark.p3
     def test_pagination_consistency_under_load(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test pagination consistency during concurrent modifications."""
         # Create initial set of users
@@ -246,6 +264,7 @@ class TestUserPerformance:
                     "password": "test123",
                 },
             )
+            clear_users.append(unique_email)
         
         # Test pagination while users are being created
         def paginate_users() -> dict[str, Any]:
@@ -262,6 +281,7 @@ class TestUserPerformance:
                         "password": "test123",
                     },
                 )
+                clear_users.append(unique_email)
         
         with ThreadPoolExecutor(max_workers=3) as executor:
             # Start pagination requests
@@ -284,7 +304,9 @@ class TestUserPerformance:
 
     @pytest.mark.p3
     def test_memory_efficiency_large_list(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test memory efficiency when listing many users."""
         # Create 100 users
@@ -298,6 +320,7 @@ class TestUserPerformance:
                     "password": "test123",
                 },
             )
+            clear_users.append(unique_email)
         
         # List all users (without pagination)
         res: dict[str, Any] = list_users(web_api_auth)
@@ -311,7 +334,9 @@ class TestUserPerformance:
     @pytest.mark.p3
     @pytest.mark.skip(reason="Stress test - run manually")
     def test_sustained_load(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test system stability under sustained load (manual run)."""
         duration_seconds: int = 60  # Run for 1 minute
@@ -336,6 +361,7 @@ class TestUserPerformance:
                     },
                 )
                 request_count += 1
+                clear_users.append(unique_email)
                 if res["code"] != 0:
                     error_count += 1
             
@@ -362,7 +388,9 @@ class TestUserPerformance:
 
     @pytest.mark.p3
     def test_large_payload_handling(
-        self, web_api_auth: RAGFlowWebApiAuth
+        self,
+        web_api_auth: RAGFlowWebApiAuth,
+        clear_users: list[str],
     ) -> None:
         """Test handling of large request payloads."""
         # Create user with large nickname (but within limits)
@@ -390,3 +418,4 @@ class TestUserPerformance:
             assert len(res["data"]["nickname"]) <= 255, (
                 "Nickname should be capped at reasonable length"
             )
+            clear_users.append(unique_email)
