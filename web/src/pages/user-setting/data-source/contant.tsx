@@ -1,6 +1,7 @@
 import { FormFieldType } from '@/components/dynamic-form';
 import SvgIcon from '@/components/svg-icon';
 import { t } from 'i18next';
+import GmailTokenField from './component/gmail-token-field';
 import GoogleDriveTokenField from './component/google-drive-token-field';
 
 export enum DataSourceKey {
@@ -10,7 +11,7 @@ export enum DataSourceKey {
   DISCORD = 'discord',
   GOOGLE_DRIVE = 'google_drive',
   MOODLE = 'moodle',
-  //   GMAIL = 'gmail',
+  GMAIL = 'gmail',
   JIRA = 'jira',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
@@ -42,6 +43,11 @@ export const DataSourceInfo = {
     name: 'Google Drive',
     description: t(`setting.${DataSourceKey.GOOGLE_DRIVE}Description`),
     icon: <SvgIcon name={'data-source/google-drive'} width={38} />,
+  },
+  [DataSourceKey.GMAIL]: {
+    name: 'Gmail',
+    description: t(`setting.${DataSourceKey.GMAIL}Description`),
+    icon: <SvgIcon name={'data-source/gmail'} width={38} />,
   },
   [DataSourceKey.MOODLE]: {
     name: 'Moodle',
@@ -293,6 +299,38 @@ export const DataSourceFormFields = {
       defaultValue: 'uploaded',
     },
   ],
+  [DataSourceKey.GMAIL]: [
+    {
+      label: 'Primary Admin Email',
+      name: 'config.credentials.google_primary_admin',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'admin@example.com',
+      tooltip: t('setting.gmailPrimaryAdminTip'),
+    },
+    {
+      label: 'OAuth Token JSON',
+      name: 'config.credentials.google_tokens',
+      type: FormFieldType.Textarea,
+      required: true,
+      render: (fieldProps: any) => (
+        <GmailTokenField
+          value={fieldProps.value}
+          onChange={fieldProps.onChange}
+          placeholder='{ "token": "...", "refresh_token": "...", ... }'
+        />
+      ),
+      tooltip: t('setting.gmailTokenTip'),
+    },
+    {
+      label: '',
+      name: 'config.credentials.authentication_method',
+      type: FormFieldType.Text,
+      required: false,
+      hidden: true,
+      defaultValue: 'uploaded',
+    },
+  ],
   [DataSourceKey.MOODLE]: [
     {
       label: 'Moodle URL',
@@ -470,6 +508,17 @@ export const DataSourceFormDefaultValues = {
       shared_folder_urls: '',
       my_drive_emails: '',
       specific_user_emails: '',
+      credentials: {
+        google_primary_admin: '',
+        google_tokens: '',
+        authentication_method: 'uploaded',
+      },
+    },
+  },
+  [DataSourceKey.GMAIL]: {
+    name: '',
+    source: DataSourceKey.GMAIL,
+    config: {
       credentials: {
         google_primary_admin: '',
         google_tokens: '',

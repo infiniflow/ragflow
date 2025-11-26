@@ -33,6 +33,12 @@ const dataSourceTemplates = [
     icon: DataSourceInfo[DataSourceKey.GOOGLE_DRIVE].icon,
   },
   {
+    id: DataSourceKey.GMAIL,
+    name: DataSourceInfo[DataSourceKey.GMAIL].name,
+    description: DataSourceInfo[DataSourceKey.GMAIL].description,
+    icon: DataSourceInfo[DataSourceKey.GMAIL].icon,
+  },
+  {
     id: DataSourceKey.DISCORD,
     name: DataSourceInfo[DataSourceKey.DISCORD].name,
     description: DataSourceInfo[DataSourceKey.DISCORD].description,

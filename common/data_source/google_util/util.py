@@ -1,4 +1,6 @@
+import json
 import logging
+import os
 import socket
 from collections.abc import Callable, Iterator
 from enum import Enum
@@ -6,7 +8,9 @@ from typing import Any
 
 from googleapiclient.errors import HttpError  # type: ignore  # type: ignore
 
+from common.data_source.config import DocumentSource
 from common.data_source.google_drive.model import GoogleDriveFileType
+from common.data_source.google_util.oauth_flow import ensure_oauth_token_dict
 
 
 # See https://developers.google.com/drive/api/reference/rest/v3/files/list for more
@@ -117,6 +121,7 @@ def _execute_single_retrieval(
     """Execute a single retrieval from Google Drive API"""
     try:
         results = retrieval_function(**request_kwargs).execute()
+
     except HttpError as e:
         if e.resp.status >= 500:
             results = retrieval_function()
@@ -148,5 +153,39 @@ def _execute_single_retrieval(
             error,
         )
         results = retrieval_function()
-
     return results
+
+
+def get_credentials_from_env(email: str, oauth: bool = False, source="drive") -> dict:
+    try:
+        if oauth:
+            raw_credential_string = os.environ["GOOGLE_OAUTH_CREDENTIALS_JSON_STR"]
+        else:
+            raw_credential_string = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON_STR"]
+    except KeyError:
+        raise ValueError("Missing Google Drive credentials in environment variables")
+
+    try:
+        credential_dict = json.loads(raw_credential_string)
+    except json.JSONDecodeError:
+        raise ValueError("Invalid JSON in Google Drive credentials")
+
+    if oauth and source == "drive":
+        credential_dict = ensure_oauth_token_dict(credential_dict, DocumentSource.GOOGLE_DRIVE)
+    else:
+        credential_dict = ensure_oauth_token_dict(credential_dict, DocumentSource.GMAIL)
+
+    refried_credential_string = json.dumps(credential_dict)
+
+    DB_CREDENTIALS_DICT_TOKEN_KEY = "google_tokens"
+    DB_CREDENTIALS_DICT_SERVICE_ACCOUNT_KEY = "google_service_account_key"
+    DB_CREDENTIALS_PRIMARY_ADMIN_KEY = "google_primary_admin"
+    DB_CREDENTIALS_AUTHENTICATION_METHOD = "authentication_method"
+
+    cred_key = DB_CREDENTIALS_DICT_TOKEN_KEY if oauth else DB_CREDENTIALS_DICT_SERVICE_ACCOUNT_KEY
+
+    return {
+        cred_key: refried_credential_string,
+        DB_CREDENTIALS_PRIMARY_ADMIN_KEY: email,
+        DB_CREDENTIALS_AUTHENTICATION_METHOD: "uploaded",
+    }
