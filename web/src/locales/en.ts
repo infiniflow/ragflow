@@ -7,7 +7,8 @@ export default {
       selectPlaceholder: 'select value',
       selectAll: 'Select all',
       delete: 'Delete',
-      deleteModalTitle: 'Are you sure to delete this item?',
+      deleteModalTitle: 'Are you sure to delete it ?',
+      deleteThem: 'Are you sure to delete them ?',
       ok: 'Ok',
       cancel: 'Cancel',
       yes: 'Yes',
@@ -59,6 +60,7 @@ export default {
         urlPlaceholder: 'https://api.example.com/v1/mcp',
         tokenPlaceholder: 'e.g. eyJhbGciOiJIUzI1Ni...',
       },
+      selected: 'Selected',
     },
     login: {
       loginTitle: 'Sign in to Your Account',
@@ -92,7 +94,7 @@ export default {
       home: 'Home',
       setting: 'User settings',
       logout: 'Log out',
-      fileManager: 'File Management',
+      fileManager: 'File',
       flow: 'Agent',
       search: 'Search',
       welcome: 'Welcome to',
@@ -696,8 +698,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      deleteModel: 'Delete model',
       modelEmptyTip:
-        'No models available. Please add models from the panel on the right.',
+        'No models available. <br>Please add models from the panel on the right.',
       sourceEmptyTip: 'No data sources added yet. Select one below to connect.',
       seconds: 'seconds',
       minutes: 'minutes',
@@ -1914,6 +1917,7 @@ Important structured information may include: names, dates, locations, events, k
       editMCP: 'Edit MCP',
       toolsAvailable: 'tools available',
       mcpServers: 'MCP servers',
+      mcpServer: 'MCP server',
       customizeTheListOfMcpServers: 'Customize the list of MCP servers',
       cachedTools: 'cached tools',
       bulkManage: 'Bulk manage',
@@ -2011,6 +2015,18 @@ Important structured information may include: names, dates, locations, events, k
       processingFailedTip: 'Total failed processes',
       processing: 'Processing',
     },
+
+    deleteModal: {
+      delAgent: 'Delete agent',
+      delDataset: 'Delete dataset',
+      delSearch: 'Delete search',
+      delFile: 'Delete file',
+      delFiles: 'Delete files',
+      delFilesContent: 'Selected {{count}} files',
+      delChat: 'Delete chat',
+      delMember: 'Delete member',
+    },
+
     admin: {
       loginTitle: 'Admin Console',
       title: 'RAGFlow',

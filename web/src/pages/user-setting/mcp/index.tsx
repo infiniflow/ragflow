@@ -1,5 +1,8 @@
 import { CardContainer } from '@/components/card-container';
-import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import {
+  ConfirmDeleteDialog,
+  ConfirmDeleteDialogNode,
+} from '@/components/confirm-delete-dialog';
 import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -110,7 +113,18 @@ export default function McpServer() {
               <Upload className="size-3.5"></Upload>
               {t('mcp.export')}
             </Button>
-            <ConfirmDeleteDialog onOk={handleDelete}>
+            <ConfirmDeleteDialog
+              onOk={handleDelete}
+              title={t('common.delete') + ' ' + t('mcp.mcpServers')}
+              content={{
+                title: t('common.deleteThem'),
+                node: (
+                  <ConfirmDeleteDialogNode
+                    name={`${t('mcp.selected')} ${selectedList.length} ${t('mcp.mcpServers')}`}
+                  ></ConfirmDeleteDialogNode>
+                ),
+              }}
+            >
               <Button variant={'danger'}>
                 <Trash2 className="size-3.5 cursor-pointer" />
                 {t('common.delete')}
