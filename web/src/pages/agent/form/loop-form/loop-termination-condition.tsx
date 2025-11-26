@@ -6,17 +6,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { SwitchLogicOperator } from '@/constants/agent';
+import { filterChildNodeIds } from '@/utils/canvas-util';
 import { loader } from '@monaco-editor/react';
 import { toLower } from 'lodash';
 import { X } from 'lucide-react';
-import { ReactNode, useCallback } from 'react';
+import { ReactNode, useCallback, useMemo } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import {
+  AgentVariableType,
   InputMode,
   JsonSchemaDataType,
   LoopTerminationComparisonOperator,
 } from '../../constant';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
+import useGraphStore from '../../store';
 import { InputModeOptions } from '../../utils';
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
 import { QueryVariable } from '../components/query-variable';
@@ -61,9 +64,16 @@ export function LoopTerminationCondition({
   nodeId,
 }: LoopTerminationConditionProps) {
   const form = useFormContext<LoopFormSchemaType>();
-  const nodeIds = nodeId ? [nodeId] : [];
+  const nodes = useGraphStore((state) => state.nodes);
+
+  const nodeIds = useMemo(() => {
+    if (!nodeId) return [];
+    const childNodeIds = filterChildNodeIds(nodes, nodeId);
+    return [nodeId, ...childNodeIds];
+  }, [nodeId, nodes]);
+
   const { getType } = useGetVariableLabelOrTypeByValue({
-    otherOperatorIds: nodeIds,
+    nodeIds: nodeIds,
   });
 
   const {
@@ -258,7 +268,10 @@ export function LoopTerminationCondition({
                         keyFieldAlias,
                         modeFieldAlias,
                       )}
-                      otherOperatorIds={nodeIds}
+                      nodeIds={nodeIds}
+                      variablesExceptOperatorOutputs={[
+                        AgentVariableType.Conversation,
+                      ]}
                     ></QueryVariable>
 
                     <Separator className="w-2" />

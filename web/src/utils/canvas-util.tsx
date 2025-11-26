@@ -4,10 +4,11 @@ import {
   Operator,
 } from '@/constants/agent';
 import { BaseNode } from '@/interfaces/database/agent';
+import OperatorIcon from '@/pages/agent/operator-icon';
 
 import { Edge } from '@xyflow/react';
 import { get, isEmpty } from 'lodash';
-import { ComponentType, ReactNode } from 'react';
+import { ReactNode } from 'react';
 
 export function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
   return nodeIds.reduce<string[]>((pre, nodeId) => {
@@ -27,6 +28,10 @@ export function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
 
     return pre;
   }, []);
+}
+
+export function filterChildNodeIds(nodes: BaseNode[], nodeId: string) {
+  return nodes.filter((x) => x.parentId === nodeId).map((x) => x.id);
 }
 
 export function isAgentStructured(id?: string, label?: string) {
@@ -56,10 +61,7 @@ export function buildSecondaryOutputOptions(
   }));
 }
 
-export function buildOutputOptions(
-  x: BaseNode,
-  Icon: ComponentType<{ name: string }>,
-) {
+export function buildOutputOptions(x: BaseNode) {
   return {
     label: x.data.name,
     value: x.id,
@@ -68,32 +70,24 @@ export function buildOutputOptions(
       x.data.form.outputs,
       x.id,
       x.data.name,
-      <Icon name={x.data.name} />,
+      <OperatorIcon name={x.data.label as Operator} />,
     ),
   };
 }
 
-export function buildNodeOutputOptions({
+export function buildUpstreamNodeOutputOptions({
   nodes,
   edges,
   nodeId,
-  Icon,
-  otherOperatorIds,
 }: {
   nodes: BaseNode[];
   edges: Edge[];
   nodeId?: string;
-  Icon: ComponentType<{ name: string }>;
-  otherOperatorIds?: string[];
 }) {
   if (!nodeId) {
     return [];
   }
   const upstreamIds = filterAllUpstreamNodeIds(edges, [nodeId]);
-
-  if (Array.isArray(otherOperatorIds) && otherOperatorIds?.length > 0) {
-    upstreamIds.push(...otherOperatorIds);
-  }
 
   const nodeWithOutputList = nodes.filter(
     (x) =>
@@ -103,8 +97,22 @@ export function buildNodeOutputOptions({
   return (
     nodeWithOutputList
       // .filter((x) => x.id !== nodeId)
-      .map((x) => buildOutputOptions(x, Icon))
+      .map((x) => buildOutputOptions(x))
   );
+}
+
+export function buildChildOutputOptions({
+  nodes,
+  nodeId,
+}: {
+  nodes: BaseNode[];
+  nodeId?: string;
+}) {
+  const nodeWithOutputList = nodes.filter(
+    (x) => x.parentId === nodeId && !isEmpty(x.data?.form?.outputs),
+  );
+
+  return nodeWithOutputList.map((x) => buildOutputOptions(x));
 }
 
 export function getStructuredDatatype(value: Record<string, any> | unknown) {
@@ -118,3 +126,21 @@ export function getStructuredDatatype(value: Record<string, any> | unknown) {
 
   return { dataType, compositeDataType };
 }
+
+// #region Obtain node output options in a more flexible way
+
+export function buildNodeOutputOptions({
+  nodes, // all nodes
+  nodeIds, // Need to obtain the output node IDs
+}: {
+  nodes: BaseNode[];
+  nodeIds: string[];
+}) {
+  const nodeWithOutputList = nodes.filter(
+    (x) => nodeIds.some((y) => y === x.id) && !isEmpty(x.data?.form?.outputs),
+  );
+
+  return nodeWithOutputList.map((x) => buildOutputOptions(x));
+}
+
+// #endregion refactor
