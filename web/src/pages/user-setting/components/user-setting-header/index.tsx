@@ -10,7 +10,7 @@ export const UserSettingHeader = ({
 }) => {
   return (
     <>
-      <header className="flex flex-col gap-1 justify-between items-start p-0">
+      <header className="flex flex-col gap-1.5 justify-between items-start p-0">
         <div className="text-2xl font-medium text-text-primary">{name}</div>
         {description && (
           <div className="text-sm text-text-secondary ">{description}</div>

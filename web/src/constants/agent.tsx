@@ -133,6 +133,8 @@ export enum ComparisonOperator {
   EndWith = 'end with',
   Empty = 'empty',
   NotEmpty = 'not empty',
+  In = 'in',
+  NotIn = 'not in',
 }
 
 export const SwitchOperatorOptions = [
@@ -166,6 +168,16 @@ export const SwitchOperatorOptions = [
   {
     value: ComparisonOperator.NotEmpty,
     label: 'notEmpty',
+    icon: <CircleSlash2 className="size-4" />,
+  },
+  {
+    value: ComparisonOperator.In,
+    label: 'in',
+    icon: <CircleSlash2 className="size-4" />,
+  },
+  {
+    value: ComparisonOperator.NotIn,
+    label: 'notIn',
     icon: <CircleSlash2 className="size-4" />,
   },
 ];
