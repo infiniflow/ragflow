@@ -219,7 +219,11 @@ export const SelectWithSearch = forwardRef<
                       value={group.value}
                       disabled={group.disabled}
                       onSelect={handleSelect}
-                      className="min-h-10"
+                      className={
+                        value === group.value
+                          ? 'bg-bg-card min-h-10'
+                          : 'min-h-10'
+                      }
                     >
                       <span className="leading-none">{group.label}</span>
 

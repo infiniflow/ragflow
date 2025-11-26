@@ -715,6 +715,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
 Example: general/v2/`,
       S3CompatibleEndpointUrlTip: `Required for S3 compatible Storage Box. Specify the S3-compatible endpoint URL.
 Example: https://fsn1.your-objectstorage.com`,
+      S3CompatibleAddressingStyleTip: `Required for S3 compatible Storage Box. Specify the S3-compatible addressing style.
+Example: Virtual Hosted Style`,
       addDataSourceModalTital: 'Create your {{name}} connector',
       deleteSourceModalTitle: 'Delete data source',
       deleteSourceModalContent: `
@@ -742,6 +744,10 @@ Example: https://fsn1.your-objectstorage.com`,
         'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
+      dropboxDescription:
+        'Connect your Dropbox to sync files and folders from a chosen account.',
+      dropboxAccessTokenTip:
+        'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
       moodleDescription:
         'Connect to your Moodle LMS to sync course content, forums, and resources.',
       moodleUrlTip:
@@ -1395,6 +1401,8 @@ Example: https://fsn1.your-objectstorage.com`,
         endWith: 'Ends with',
         empty: 'Is empty',
         notEmpty: 'Not empty',
+        in: 'In',
+        notIn: 'Not in',
       },
       switchLogicOperatorOptions: {
         and: 'AND',
