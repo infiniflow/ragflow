@@ -31,7 +31,7 @@ export const AddedSourceCard = (props: IAddedSourceCardProps) => {
             key={item.id}
             className="flex flex-row items-center justify-between rounded-md bg-bg-card px-[10px] py-4"
           >
-            <div className="text-sm text-text-secondary ">{item.name}</div>
+            <div className="text-sm text-text-primary ">{item.name}</div>
             <div className="text-sm text-text-secondary  flex gap-2">
               <Button
                 variant={'ghost'}

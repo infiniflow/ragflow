@@ -1,4 +1,7 @@
-import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import {
+  ConfirmDeleteDialog,
+  ConfirmDeleteDialogNode,
+} from '@/components/confirm-delete-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,7 +48,18 @@ export function AgentDropdown({
           {t('common.rename')} <PenLine />
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <ConfirmDeleteDialog onOk={handleDelete}>
+        <ConfirmDeleteDialog
+          onOk={handleDelete}
+          title={t('deleteModal.delAgent')}
+          content={{
+            node: (
+              <ConfirmDeleteDialogNode
+                avatar={{ avatar: agent.avatar, name: agent.title }}
+                name={agent.title}
+              />
+            ),
+          }}
+        >
           <DropdownMenuItem
             className="text-state-error"
             onSelect={(e) => {

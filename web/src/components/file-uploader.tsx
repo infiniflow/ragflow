@@ -274,7 +274,7 @@ export function FileUploader(props: FileUploaderProps) {
             className={cn(
               'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border border-dashed border-border-default px-5 py-2.5 text-center transition hover:bg-border-button bg-bg-card',
               'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-              isDragActive && 'border-muted-foreground/50',
+              isDragActive && 'border-border-button',
               isDisabled && 'pointer-events-none opacity-60',
               className,
             )}
@@ -285,7 +285,7 @@ export function FileUploader(props: FileUploaderProps) {
               <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
                 <div className="rounded-full border border-dashed p-3">
                   <Upload
-                    className="size-7 text-text-secondary"
+                    className="size-7 text-text-secondary hover:text-text-primary"
                     aria-hidden="true"
                   />
                 </div>
@@ -297,7 +297,7 @@ export function FileUploader(props: FileUploaderProps) {
               <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
                 <div className="rounded-full border border-dashed p-3">
                   <Upload
-                    className="size-7 text-text-secondary"
+                    className="size-7 text-text-secondary hover:text-text-primary"
                     aria-hidden="true"
                   />
                 </div>

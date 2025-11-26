@@ -51,7 +51,7 @@ export const useHandleDeleteUser = () => {
     });
   };
 
-  return { handleDeleteTenantUser, loading };
+  return { handleDeleteTenantUser, deleteTenantUser, loading };
 };
 
 export const useHandleAgreeTenant = () => {

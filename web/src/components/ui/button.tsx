@@ -53,6 +53,11 @@ const buttonVariants = cva(
           bg-text-primary text-bg-base border-b-4 border-b-accent-primary
           hover:bg-text-primary/90 focus-visible:bg-text-primary/90
         `,
+        delete: `
+          text-text-secondary
+          hover:bg-state-error-5 hover:text-state-error
+          focus-visible:text-state-error focus-visible:bg-state-error-5
+        `,
       },
       size: {
         default: 'h-8 px-2.5 py-1.5 ',

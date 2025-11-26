@@ -76,6 +76,7 @@ export function useDynamicSVGImport(
 }
 
 interface IProps {
+  header?: string | ReactNode;
   title?: string;
   content?: ReactNode;
   onOk?: (...args: any[]) => any;
@@ -85,19 +86,19 @@ interface IProps {
 export const useShowDeleteConfirm = () => {
   const { t } = useTranslation();
   const showDeleteConfirm = useCallback(
-    ({ title, content, onOk, onCancel }: IProps): Promise<number> => {
+    ({ title, content, onOk, onCancel, header }: IProps): Promise<number> => {
       return new Promise((resolve, reject) => {
         Modal.show({
-          // title: title ?? t('common.deleteModalTitle'),
-          closable: false,
+          title: header,
+          closable: !!header,
           visible: true,
           onVisibleChange: () => {
-            Modal.hide();
+            Modal.destroy();
           },
           footer: null,
           maskClosable: false,
-          okText: t('common.yes'),
-          cancelText: t('common.no'),
+          okText: t('common.delete'),
+          cancelText: t('common.cancel'),
           style: {
             width: '450px',
           },
@@ -114,7 +115,7 @@ export const useShowDeleteConfirm = () => {
           },
           onCancel: () => {
             onCancel?.();
-            Modal.hide();
+            Modal.destroy();
           },
           children: (
             <div className="flex flex-col justify-start items-start mt-3">

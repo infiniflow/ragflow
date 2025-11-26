@@ -84,7 +84,7 @@ const DataSource = () => {
     >
       <Spotlight />
       <div className="relative">
-        <div className=" flex flex-col gap-4 max-h-[calc(100vh-230px)] overflow-y-auto overflow-x-hidden scrollbar-auto">
+        <div className=" flex flex-col gap-4 max-h-[calc(100vh-235px)] overflow-y-auto overflow-x-hidden scrollbar-auto">
           <div className="flex flex-col gap-3">
             {categorizedList?.length <= 0 && (
               <div className="text-text-secondary w-full flex justify-center items-center h-20">

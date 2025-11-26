@@ -54,7 +54,7 @@ export function McpCard({
               />
             ) : (
               <McpOperation
-                mcpId={data.id}
+                mcp={data}
                 showEditModal={showEditModal}
               ></McpOperation>
             )}

@@ -186,7 +186,9 @@ export const SelectWithSearch = forwardRef<
               />
             )}
             <CommandList className="mt-2 outline-none">
-              <CommandEmpty>{emptyData}</CommandEmpty>
+              <CommandEmpty>
+                <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
+              </CommandEmpty>
               {options.map((group, idx) => {
                 if (group.options) {
                   return (

@@ -457,5 +457,5 @@ export const useHandleDeleteFactory = (llmFactory: string) => {
     });
   };
 
-  return { handleDeleteFactory };
+  return { handleDeleteFactory, deleteFactory };
 };
