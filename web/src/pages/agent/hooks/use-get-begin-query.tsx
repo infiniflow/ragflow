@@ -211,11 +211,22 @@ export const useBuildVariableOptions = (
 ) => {
   const nodeOutputOptions = useBuildNodeOutputOptions(nodeId, otherOperatorIds);
   const parentNodeOutputOptions = useBuildParentOutputOptions(parentId);
+  const parentUpstreamNodeOutputOptions = useBuildNodeOutputOptions(parentId);
   const beginOptions = useBuildBeginVariableOptions();
 
   const options = useMemo(() => {
-    return [...beginOptions, ...nodeOutputOptions, ...parentNodeOutputOptions];
-  }, [beginOptions, nodeOutputOptions, parentNodeOutputOptions]);
+    return [
+      ...beginOptions,
+      ...nodeOutputOptions,
+      ...parentNodeOutputOptions,
+      ...parentUpstreamNodeOutputOptions,
+    ];
+  }, [
+    beginOptions,
+    nodeOutputOptions,
+    parentNodeOutputOptions,
+    parentUpstreamNodeOutputOptions,
+  ]);
 
   return options;
 };

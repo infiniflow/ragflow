@@ -33,7 +33,6 @@ import {
 loader.config({ paths: { vs: '/vs' } });
 
 type LoopTerminationConditionProps = {
-  name: string;
   label: ReactNode;
   tooltip?: string;
   keyField?: string;
@@ -50,8 +49,9 @@ const EmptyFields = [
 
 const LogicalOperatorFieldName = 'logical_operator';
 
+const name = 'loop_termination_condition';
+
 export function LoopTerminationCondition({
-  name = 'loop_termination_condition',
   label,
   tooltip,
   keyField = 'variable',
@@ -99,18 +99,6 @@ export function LoopTerminationCondition({
   const initializeValue = useCallback(
     (valueFieldAlias: ConditionValueType, keyFieldAlias: ConditionKeyType) => {
       const keyType = getVariableType(keyFieldAlias);
-      // let initialValue: string | boolean | number = '';
-
-      // if (keyType === JsonSchemaDataType.Number) {
-      //   initialValue = 0;
-      // } else if (keyType === JsonSchemaDataType.Boolean) {
-      //   initialValue = true;
-      // }
-
-      // form.setValue(valueFieldAlias, initialValue, {
-      //   shouldDirty: true,
-      //   shouldValidate: true,
-      // });
 
       initializeConditionValue(valueFieldAlias, keyType);
     },
@@ -125,15 +113,6 @@ export function LoopTerminationCondition({
       modeFieldAlias: ConditionModeType,
     ) => {
       return () => {
-        // const logicalOptions = buildLogicalOptions(
-        //   getVariableType(keyFieldAlias),
-        // );
-
-        // form.setValue(operatorFieldAlias, logicalOptions?.at(0)?.value, {
-        //   shouldDirty: true,
-        //   shouldValidate: true,
-        // });
-
         initializeConditionOperator(
           operatorFieldAlias,
           getVariableType(keyFieldAlias),

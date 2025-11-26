@@ -32,7 +32,6 @@ function LoopForm({ node }: INextOperatorForm) {
           nodeId={node?.id}
         ></DynamicVariables>
         <LoopTerminationCondition
-          name="loop_termination_condition"
           label="Termination Condition"
           nodeId={node?.id}
         ></LoopTerminationCondition>
