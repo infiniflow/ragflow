@@ -222,13 +222,12 @@ class SyncLogsService(CommonService):
                 metadata_map[filename] = d["metadata"]
 
         kb_table_num_map = {}
-        for (doc, _), file_obj in zip(doc_blob_pairs, files):
+        for doc, _ in doc_blob_pairs:
             doc_ids.append(doc["id"])
             
             # Set metadata if available for this document
-            if file_obj.filename in metadata_map:
-                from api.db.services.document_service import DocumentService
-                DocumentService.update_by_id(doc["id"], {"meta_fields": metadata_map[file_obj.filename]})
+            if doc["name"] in metadata_map:
+                DocumentService.update_by_id(doc["id"], {"meta_fields": metadata_map[doc["name"]]})
             
             if not auto_parse or auto_parse == "0":
                 continue
