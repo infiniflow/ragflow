@@ -1,5 +1,7 @@
 import message from '@/components/ui/message';
 import { Spin } from '@/components/ui/spin';
+import { Authorization } from '@/constants/authorization';
+import { getAuthorization } from '@/utils/authorization-util';
 import request from '@/utils/request';
 import classNames from 'classnames';
 import mammoth from 'mammoth';
@@ -22,6 +24,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
     const res = await request(url, {
       method: 'GET',
       responseType: 'blob',
+      headers: { [Authorization]: getAuthorization() },
       onError: () => {
         message.error('Document parsing failed');
         console.error('Error loading document:', url);

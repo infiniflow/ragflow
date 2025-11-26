@@ -4,9 +4,11 @@ import CSVFileViewer from './csv-preview';
 import { DocPreviewer } from './doc-preview';
 import { ExcelCsvPreviewer } from './excel-preview';
 import { ImagePreviewer } from './image-preview';
+import { Md } from './md';
 import PdfPreviewer, { IProps } from './pdf-preview';
 import { PptPreviewer } from './ppt-preview';
 import { TxtPreviewer } from './txt-preview';
+import { VideoPreviewer } from './video-preview';
 
 type PreviewProps = {
   fileType: string;
@@ -36,14 +38,33 @@ const Preview = ({
           <DocPreviewer className={className} url={url} />
         </section>
       )}
-      {['txt', 'md'].indexOf(fileType) > -1 && (
+      {['txt'].indexOf(fileType) > -1 && (
         <section>
           <TxtPreviewer className={className} url={url} />
         </section>
       )}
-      {['visual'].indexOf(fileType) > -1 && (
+      {['jpg', 'png', 'gif', 'jpeg', 'svg', 'bmp', 'ico', 'tif'].indexOf(
+        fileType,
+      ) > -1 && (
         <section>
           <ImagePreviewer className={className} url={url} />
+        </section>
+      )}
+      {[
+        'mp4',
+        'avi',
+        'mov',
+        'mkv',
+        'wmv',
+        'flv',
+        'mpeg',
+        'mpg',
+        'asf',
+        'rm',
+        'rmvb',
+      ].indexOf(fileType) > -1 && (
+        <section>
+          <VideoPreviewer className={className} url={url} />
         </section>
       )}
       {['pptx'].indexOf(fileType) > -1 && (
@@ -59,6 +80,11 @@ const Preview = ({
       {['csv'].indexOf(fileType) > -1 && (
         <section>
           <CSVFileViewer className={className} url={url} />
+        </section>
+      )}
+      {['md'].indexOf(fileType) > -1 && (
+        <section>
+          <Md className={className} url={url} />
         </section>
       )}
     </>
