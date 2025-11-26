@@ -1,15 +1,13 @@
+import { BoolSegmented } from '@/components/bool-segmented';
 import { KeyInput } from '@/components/key-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { useIsDarkTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Editor, loader } from '@monaco-editor/react';
-import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
 import { X } from 'lucide-react';
 import { ReactNode, useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
@@ -20,6 +18,7 @@ import {
 } from '../../utils';
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
 import { QueryVariable } from '../components/query-variable';
+import { useInitializeConditions } from './use-watch-form-change';
 
 loader.config({ paths: { vs: '/vs' } });
 
@@ -30,42 +29,15 @@ type SelectKeysProps = {
   keyField?: string;
   valueField?: string;
   operatorField?: string;
+  nodeId?: string;
 };
-
-type RadioGroupProps = React.ComponentProps<typeof RadioGroupPrimitive.Root>;
-
-type RadioButtonProps = Partial<
-  Omit<RadioGroupProps, 'onValueChange'> & {
-    onChange: RadioGroupProps['onValueChange'];
-  }
->;
-
-function RadioButton({ value, onChange }: RadioButtonProps) {
-  return (
-    <RadioGroup
-      defaultValue="yes"
-      className="flex"
-      value={value}
-      onValueChange={onChange}
-    >
-      <div className="flex items-center gap-3">
-        <RadioGroupItem value="yes" id="r1" />
-        <Label htmlFor="r1">Yes</Label>
-      </div>
-      <div className="flex items-center gap-3">
-        <RadioGroupItem value="no" id="r2" />
-        <Label htmlFor="r2">No</Label>
-      </div>
-    </RadioGroup>
-  );
-}
 
 const VariableTypeOptions = buildConversationVariableSelectOptions();
 
 const modeField = 'input_mode';
 
 const ConstantValueMap = {
-  [TypesWithArray.Boolean]: 'yes',
+  [TypesWithArray.Boolean]: true,
   [TypesWithArray.Number]: 0,
   [TypesWithArray.String]: '',
   [TypesWithArray.ArrayBoolean]: '[]',
@@ -82,6 +54,7 @@ export function DynamicVariables({
   keyField = 'variable',
   valueField = 'value',
   operatorField = 'type',
+  nodeId,
 }: SelectKeysProps) {
   const form = useFormContext();
   const isDarkTheme = useIsDarkTheme();
@@ -90,6 +63,9 @@ export function DynamicVariables({
     name: name,
     control: form.control,
   });
+
+  const { initializeVariableRelatedConditions } =
+    useInitializeConditions(nodeId);
 
   const initializeValue = useCallback(
     (mode: string, variableType: string, valueFieldAlias: string) => {
@@ -112,12 +88,22 @@ export function DynamicVariables({
   );
 
   const handleVariableTypeChange = useCallback(
-    (variableType: string, valueFieldAlias: string, modeFieldAlias: string) => {
+    (
+      variableType: string,
+      valueFieldAlias: string,
+      modeFieldAlias: string,
+      keyFieldAlias: string,
+    ) => {
       const mode = form.getValues(modeFieldAlias);
+
+      initializeVariableRelatedConditions(
+        form.getValues(keyFieldAlias),
+        variableType,
+      );
 
       initializeValue(mode, variableType, valueFieldAlias);
     },
-    [form, initializeValue],
+    [form, initializeValue, initializeVariableRelatedConditions],
   );
 
   const renderParameter = useCallback(
@@ -127,7 +113,7 @@ export function DynamicVariables({
 
       if (mode === InputMode.Constant) {
         if (logicalOperator === TypesWithArray.Boolean) {
-          return <RadioButton></RadioButton>;
+          return <BoolSegmented></BoolSegmented>;
         }
 
         if (logicalOperator === TypesWithArray.Number) {
@@ -200,6 +186,7 @@ export function DynamicVariables({
                             val,
                             valueFieldAlias,
                             modeFieldAlias,
+                            keyFieldAlias,
                           );
                           field.onChange(val);
                         }}

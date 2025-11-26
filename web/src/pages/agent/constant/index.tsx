@@ -980,8 +980,3 @@ export const LoopTerminationStringComparisonOperatorMap = {
   [TypesWithArray.ArrayBoolean]: LoopTerminationBooleanArrayComparisonOperator,
   [TypesWithArray.ArrayObject]: LoopTerminationObjectComparisonOperator,
 };
-
-export enum RadioVariable {
-  Yes = 'yes',
-  No = 'no',
-}

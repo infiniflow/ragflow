@@ -35,6 +35,10 @@ export function isAgentStructured(id?: string, label?: string) {
   );
 }
 
+export function buildVariableValue(value: string, nodeId?: string) {
+  return `${nodeId}@${value}`;
+}
+
 export function buildSecondaryOutputOptions(
   outputs: Record<string, any> = {},
   nodeId?: string,
@@ -43,7 +47,7 @@ export function buildSecondaryOutputOptions(
 ) {
   return Object.keys(outputs).map((x) => ({
     label: x,
-    value: `${nodeId}@${x}`,
+    value: buildVariableValue(x, nodeId),
     parentLabel,
     icon,
     type: isAgentStructured(nodeId, x)
@@ -74,25 +78,33 @@ export function buildNodeOutputOptions({
   edges,
   nodeId,
   Icon,
+  otherOperatorIds,
 }: {
   nodes: BaseNode[];
   edges: Edge[];
   nodeId?: string;
   Icon: ComponentType<{ name: string }>;
+  otherOperatorIds?: string[];
 }) {
   if (!nodeId) {
     return [];
   }
   const upstreamIds = filterAllUpstreamNodeIds(edges, [nodeId]);
 
+  if (Array.isArray(otherOperatorIds) && otherOperatorIds?.length > 0) {
+    upstreamIds.push(...otherOperatorIds);
+  }
+
   const nodeWithOutputList = nodes.filter(
     (x) =>
       upstreamIds.some((y) => y === x.id) && !isEmpty(x.data?.form?.outputs),
   );
 
-  return nodeWithOutputList
-    .filter((x) => x.id !== nodeId)
-    .map((x) => buildOutputOptions(x, Icon));
+  return (
+    nodeWithOutputList
+      // .filter((x) => x.id !== nodeId)
+      .map((x) => buildOutputOptions(x, Icon))
+  );
 }
 
 export function getStructuredDatatype(value: Record<string, any> | unknown) {

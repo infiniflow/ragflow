@@ -1,14 +1,12 @@
+import { BoolSegmented } from '@/components/bool-segmented';
 import { LogicalOperator } from '@/components/logical-operator';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { SwitchLogicOperator } from '@/constants/agent';
 import { loader } from '@monaco-editor/react';
-import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
 import { toLower } from 'lodash';
 import { X } from 'lucide-react';
 import { ReactNode, useCallback } from 'react';
@@ -17,17 +15,24 @@ import {
   InputMode,
   JsonSchemaDataType,
   LoopTerminationComparisonOperator,
-  RadioVariable,
 } from '../../constant';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
 import { InputModeOptions } from '../../utils';
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
 import { QueryVariable } from '../components/query-variable';
+import { LoopFormSchemaType } from './schema';
 import { useBuildLogicalOptions } from './use-build-logical-options';
+import {
+  ConditionKeyType,
+  ConditionModeType,
+  ConditionOperatorType,
+  ConditionValueType,
+  useInitializeConditions,
+} from './use-watch-form-change';
 
 loader.config({ paths: { vs: '/vs' } });
 
-type SelectKeysProps = {
+type LoopTerminationConditionProps = {
   name: string;
   label: ReactNode;
   tooltip?: string;
@@ -35,35 +40,8 @@ type SelectKeysProps = {
   valueField?: string;
   operatorField?: string;
   modeField?: string;
+  nodeId?: string;
 };
-
-type RadioGroupProps = React.ComponentProps<typeof RadioGroupPrimitive.Root>;
-
-type RadioButtonProps = Partial<
-  Omit<RadioGroupProps, 'onValueChange'> & {
-    onChange: RadioGroupProps['onValueChange'];
-  }
->;
-
-function RadioButton({ value, onChange }: RadioButtonProps) {
-  return (
-    <RadioGroup
-      defaultValue={RadioVariable.Yes}
-      className="flex"
-      value={value}
-      onValueChange={onChange}
-    >
-      <div className="flex items-center gap-3">
-        <RadioGroupItem value={RadioVariable.Yes} id="r1" />
-        <Label htmlFor="r1">Yes</Label>
-      </div>
-      <div className="flex items-center gap-3">
-        <RadioGroupItem value="no" id="r2" />
-        <Label htmlFor="r2">No</Label>
-      </div>
-    </RadioGroup>
-  );
-}
 
 const EmptyFields = [
   LoopTerminationComparisonOperator.IsEmpty,
@@ -73,16 +51,26 @@ const EmptyFields = [
 const LogicalOperatorFieldName = 'logical_operator';
 
 export function LoopTerminationCondition({
-  name,
+  name = 'loop_termination_condition',
   label,
   tooltip,
   keyField = 'variable',
   valueField = 'value',
   operatorField = 'operator',
   modeField = 'input_mode',
-}: SelectKeysProps) {
-  const form = useFormContext();
-  const { getType } = useGetVariableLabelOrTypeByValue();
+  nodeId,
+}: LoopTerminationConditionProps) {
+  const form = useFormContext<LoopFormSchemaType>();
+  const nodeIds = nodeId ? [nodeId] : [];
+  const { getType } = useGetVariableLabelOrTypeByValue({
+    otherOperatorIds: nodeIds,
+  });
+
+  const {
+    initializeConditionMode,
+    initializeConditionOperator,
+    initializeConditionValue,
+  } = useInitializeConditions(nodeId);
 
   const { fields, remove, append } = useFieldArray({
     name: name,
@@ -92,7 +80,7 @@ export function LoopTerminationCondition({
   const { buildLogicalOptions } = useBuildLogicalOptions();
 
   const getVariableType = useCallback(
-    (keyFieldName: string) => {
+    (keyFieldName: ConditionKeyType) => {
       const key = form.getValues(keyFieldName);
       return toLower(getType(key));
     },
@@ -100,54 +88,56 @@ export function LoopTerminationCondition({
   );
 
   const initializeMode = useCallback(
-    (modeFieldAlias: string, keyFieldAlias: string) => {
+    (modeFieldAlias: ConditionModeType, keyFieldAlias: ConditionKeyType) => {
       const keyType = getVariableType(keyFieldAlias);
 
-      if (keyType === JsonSchemaDataType.Number) {
-        form.setValue(modeFieldAlias, InputMode.Constant, {
-          shouldDirty: true,
-          shouldValidate: true,
-        });
-      }
+      initializeConditionMode(modeFieldAlias, keyType);
     },
-    [form, getVariableType],
+    [getVariableType, initializeConditionMode],
   );
 
   const initializeValue = useCallback(
-    (valueFieldAlias: string, keyFieldAlias: string) => {
+    (valueFieldAlias: ConditionValueType, keyFieldAlias: ConditionKeyType) => {
       const keyType = getVariableType(keyFieldAlias);
-      let initialValue: string | boolean | number = '';
+      // let initialValue: string | boolean | number = '';
 
-      if (keyType === JsonSchemaDataType.Number) {
-        initialValue = 0;
-      } else if (keyType === JsonSchemaDataType.Boolean) {
-        initialValue = RadioVariable.Yes;
-      }
+      // if (keyType === JsonSchemaDataType.Number) {
+      //   initialValue = 0;
+      // } else if (keyType === JsonSchemaDataType.Boolean) {
+      //   initialValue = true;
+      // }
 
-      form.setValue(valueFieldAlias, initialValue, {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
+      // form.setValue(valueFieldAlias, initialValue, {
+      //   shouldDirty: true,
+      //   shouldValidate: true,
+      // });
+
+      initializeConditionValue(valueFieldAlias, keyType);
     },
-    [form, getVariableType],
+    [getVariableType, initializeConditionValue],
   );
 
   const handleVariableChange = useCallback(
     (
-      operatorFieldAlias: string,
-      valueFieldAlias: string,
-      keyFieldAlias: string,
-      modeFieldAlias: string,
+      operatorFieldAlias: ConditionOperatorType,
+      valueFieldAlias: ConditionValueType,
+      keyFieldAlias: ConditionKeyType,
+      modeFieldAlias: ConditionModeType,
     ) => {
       return () => {
-        const logicalOptions = buildLogicalOptions(
+        // const logicalOptions = buildLogicalOptions(
+        //   getVariableType(keyFieldAlias),
+        // );
+
+        // form.setValue(operatorFieldAlias, logicalOptions?.at(0)?.value, {
+        //   shouldDirty: true,
+        //   shouldValidate: true,
+        // });
+
+        initializeConditionOperator(
+          operatorFieldAlias,
           getVariableType(keyFieldAlias),
         );
-
-        form.setValue(operatorFieldAlias, logicalOptions?.at(0)?.value, {
-          shouldDirty: true,
-          shouldValidate: true,
-        });
 
         initializeMode(modeFieldAlias, keyFieldAlias);
 
@@ -155,9 +145,8 @@ export function LoopTerminationCondition({
       };
     },
     [
-      buildLogicalOptions,
-      form,
       getVariableType,
+      initializeConditionOperator,
       initializeMode,
       initializeValue,
     ],
@@ -165,9 +154,9 @@ export function LoopTerminationCondition({
 
   const handleOperatorChange = useCallback(
     (
-      valueFieldAlias: string,
-      keyFieldAlias: string,
-      modeFieldAlias: string,
+      valueFieldAlias: ConditionValueType,
+      keyFieldAlias: ConditionKeyType,
+      modeFieldAlias: ConditionModeType,
     ) => {
       initializeMode(modeFieldAlias, keyFieldAlias);
       initializeValue(valueFieldAlias, keyFieldAlias);
@@ -176,7 +165,7 @@ export function LoopTerminationCondition({
   );
 
   const handleModeChange = useCallback(
-    (mode: string, valueFieldAlias: string) => {
+    (mode: string, valueFieldAlias: ConditionValueType) => {
       form.setValue(valueFieldAlias, mode === InputMode.Constant ? 0 : '', {
         shouldDirty: true,
       });
@@ -186,16 +175,16 @@ export function LoopTerminationCondition({
 
   const renderParameterPanel = useCallback(
     (
-      keyFieldName: string,
-      valueFieldAlias: string,
-      modeFieldAlias: string,
-      operatorFieldAlias: string,
+      keyFieldName: ConditionKeyType,
+      valueFieldAlias: ConditionValueType,
+      modeFieldAlias: ConditionModeType,
+      operatorFieldAlias: ConditionOperatorType,
     ) => {
       const type = getVariableType(keyFieldName);
       const mode = form.getValues(modeFieldAlias);
       const operator = form.getValues(operatorFieldAlias);
 
-      if (EmptyFields.includes(operator)) {
+      if (EmptyFields.includes(operator as LoopTerminationComparisonOperator)) {
         return null;
       }
 
@@ -235,7 +224,7 @@ export function LoopTerminationCondition({
       if (type === JsonSchemaDataType.Boolean) {
         return (
           <RAGFlowFormItem name={valueFieldAlias} className="w-full">
-            <RadioButton></RadioButton>
+            <BoolSegmented></BoolSegmented>
           </RAGFlowFormItem>
         );
       }
@@ -267,10 +256,14 @@ export function LoopTerminationCondition({
         )}
         <div className="space-y-5 flex-1 min-w-0">
           {fields.map((field, index) => {
-            const keyFieldAlias = `${name}.${index}.${keyField}`;
-            const valueFieldAlias = `${name}.${index}.${valueField}`;
-            const operatorFieldAlias = `${name}.${index}.${operatorField}`;
-            const modeFieldAlias = `${name}.${index}.${modeField}`;
+            const keyFieldAlias =
+              `${name}.${index}.${keyField}` as ConditionKeyType;
+            const valueFieldAlias =
+              `${name}.${index}.${valueField}` as ConditionValueType;
+            const operatorFieldAlias =
+              `${name}.${index}.${operatorField}` as ConditionOperatorType;
+            const modeFieldAlias =
+              `${name}.${index}.${modeField}` as ConditionModeType;
 
             return (
               <section key={field.id} className="flex gap-2">
@@ -286,6 +279,7 @@ export function LoopTerminationCondition({
                         keyFieldAlias,
                         modeFieldAlias,
                       )}
+                      otherOperatorIds={nodeIds}
                     ></QueryVariable>
 
                     <Separator className="w-2" />

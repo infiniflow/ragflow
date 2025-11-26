@@ -89,7 +89,10 @@ export const useGetBeginNodeDataQueryIsSafe = () => {
   return isBeginNodeDataQuerySafe;
 };
 
-export function useBuildNodeOutputOptions(nodeId?: string) {
+export function useBuildNodeOutputOptions(
+  nodeId?: string,
+  otherOperatorIds?: string[],
+) {
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
 
@@ -99,8 +102,9 @@ export function useBuildNodeOutputOptions(nodeId?: string) {
       edges,
       nodeId,
       Icon: ({ name }) => <OperatorIcon name={name as Operator}></OperatorIcon>,
+      otherOperatorIds,
     });
-  }, [edges, nodeId, nodes]);
+  }, [edges, nodeId, nodes, otherOperatorIds]);
 }
 
 export function useBuildParentOutputOptions(parentId?: string) {
@@ -200,8 +204,12 @@ export function useBuildConversationVariableOptions() {
   return options;
 }
 
-export const useBuildVariableOptions = (nodeId?: string, parentId?: string) => {
-  const nodeOutputOptions = useBuildNodeOutputOptions(nodeId);
+export const useBuildVariableOptions = (
+  nodeId?: string,
+  parentId?: string,
+  otherOperatorIds?: string[],
+) => {
+  const nodeOutputOptions = useBuildNodeOutputOptions(nodeId, otherOperatorIds);
   const parentNodeOutputOptions = useBuildParentOutputOptions(parentId);
   const beginOptions = useBuildBeginVariableOptions();
 
@@ -212,10 +220,20 @@ export const useBuildVariableOptions = (nodeId?: string, parentId?: string) => {
   return options;
 };
 
-export function useBuildQueryVariableOptions(n?: RAGFlowNodeType) {
+export function useBuildQueryVariableOptions({
+  n,
+  otherOperatorIds = [],
+}: {
+  n?: RAGFlowNodeType;
+  otherOperatorIds?: string[];
+} = {}) {
   const { data } = useFetchAgent();
   const node = useContext(AgentFormContext) || n;
-  const options = useBuildVariableOptions(node?.id, node?.parentId);
+  const options = useBuildVariableOptions(
+    node?.id,
+    node?.parentId,
+    otherOperatorIds,
+  );
 
   const conversationOptions = useBuildConversationVariableOptions();
 
@@ -248,8 +266,9 @@ export function useBuildQueryVariableOptions(n?: RAGFlowNodeType) {
 
 export function useFilterQueryVariableOptionsByTypes(
   types?: JsonSchemaDataType[],
+  otherOperatorIds: string[] = [],
 ) {
-  const nextOptions = useBuildQueryVariableOptions();
+  const nextOptions = useBuildQueryVariableOptions({ otherOperatorIds });
 
   const filteredOptions = useMemo(() => {
     return !isEmpty(types)
@@ -349,9 +368,18 @@ export function flatOptions(options: DefaultOptionType[]) {
   }, []);
 }
 
-export function useFlattenQueryVariableOptions(nodeId?: string) {
+export function useFlattenQueryVariableOptions({
+  nodeId,
+  otherOperatorIds = [],
+}: {
+  otherOperatorIds?: string[];
+  nodeId?: string;
+} = {}) {
   const { getNode } = useGraphStore((state) => state);
-  const nextOptions = useBuildQueryVariableOptions(getNode(nodeId));
+  const nextOptions = useBuildQueryVariableOptions({
+    n: getNode(nodeId),
+    otherOperatorIds,
+  });
 
   const flattenOptions = useMemo(() => {
     return flatOptions(nextOptions);
@@ -360,8 +388,17 @@ export function useFlattenQueryVariableOptions(nodeId?: string) {
   return flattenOptions;
 }
 
-export function useGetVariableLabelOrTypeByValue(nodeId?: string) {
-  const flattenOptions = useFlattenQueryVariableOptions(nodeId);
+export function useGetVariableLabelOrTypeByValue({
+  nodeId,
+  otherOperatorIds = [],
+}: {
+  nodeId?: string;
+  otherOperatorIds?: string[];
+} = {}) {
+  const flattenOptions = useFlattenQueryVariableOptions({
+    nodeId,
+    otherOperatorIds,
+  });
   const findAgentStructuredOutputTypeByValue =
     useFindAgentStructuredOutputTypeByValue();
   const findAgentStructuredOutputLabel =

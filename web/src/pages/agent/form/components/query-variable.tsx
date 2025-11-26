@@ -21,6 +21,7 @@ type QueryVariableProps = {
   onChange?: (value: string) => void;
   pureQuery?: boolean;
   value?: string;
+  otherOperatorIds?: string[]; // The output of the operator that needs to be included
 };
 
 export function QueryVariable({
@@ -32,11 +33,15 @@ export function QueryVariable({
   onChange,
   pureQuery = false,
   value,
+  otherOperatorIds = [],
 }: QueryVariableProps) {
   const { t } = useTranslation();
   const form = useFormContext();
 
-  const finalOptions = useFilterQueryVariableOptionsByTypes(types);
+  const finalOptions = useFilterQueryVariableOptionsByTypes(
+    types,
+    otherOperatorIds,
+  );
 
   const renderWidget = (
     value?: string,
