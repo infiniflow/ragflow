@@ -89,7 +89,8 @@ def get_data_error_result(code=RetCode.DATA_ERROR, message="Sorry! Data missing!
 
 
 def server_error_response(e):
-    logging.exception(e)
+    # Quart invokes this handler outside the original except block, so we must pass exc_info manually.
+    logging.error("Unhandled exception during request", exc_info=(type(e), e, e.__traceback__))
     try:
         msg = repr(e).lower()
         if getattr(e, "code", None) == 401 or ("unauthorized" in msg) or ("401" in msg):
