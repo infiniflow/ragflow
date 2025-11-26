@@ -151,6 +151,7 @@ dependencies = [
     "moodlepy>=0.23.0",
     "pypandoc>=1.16",
     "pyobvector==0.2.18",
+    "exceptiongroup>=1.3.0,<2.0.0"
 ]
 
 [dependency-groups]

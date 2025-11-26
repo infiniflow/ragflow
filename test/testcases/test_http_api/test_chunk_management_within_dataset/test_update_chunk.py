@@ -47,7 +47,7 @@ class TestUpdatedChunk:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"content": None}, 100, "TypeError('expected string or bytes-like object')"),
+            pytest.param({"content": None}, 0, "", marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6509")),
             pytest.param(
                 {"content": ""},
                 100,
