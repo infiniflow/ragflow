@@ -83,6 +83,8 @@ kg_retriever = None
 # user registration switch
 REGISTER_ENABLED = 1
 
+ENABLE_SYNC_DELETED_CHANGE = os.getenv('ENABLE_SYNC_DELETED_CHANGE', False)
+
 
 # sandbox-executor-manager
 SANDBOX_HOST = None

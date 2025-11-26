@@ -101,40 +101,41 @@ class SyncBase:
                         SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
                         doc_num += len(docs)
 
-                    task_copy = copy.deepcopy(task)
-                    task_copy.pop("poll_range_start", None)
-                    document_batch_generator = await self._generate(task)
-                    for document_batch in document_batch_generator:
-                        if not document_batch:
-                            continue
-                        docs = [
-                            {
-                                "id": doc.id,
-                                "connector_id": task["connector_id"],
-                                "source": self.SOURCE_NAME,
-                                "semantic_identifier": doc.semantic_identifier,
-                                "extension": doc.extension,
-                                "size_bytes": doc.size_bytes,
-                                "doc_updated_at": doc.doc_updated_at,
-                                "blob": doc.blob,
-                            }
-                            for doc in document_batch
-                        ]
+                    if settings.ENABLE_SYNC_DELETED_CHANGE:
+                        task_copy = copy.deepcopy(task)
+                        task_copy.pop("poll_range_start", None)
+                        document_batch_generator = await self._generate(task)
+                        for document_batch in document_batch_generator:
+                            if not document_batch:
+                                continue
+                            docs = [
+                                {
+                                    "id": doc.id,
+                                    "connector_id": task["connector_id"],
+                                    "source": self.SOURCE_NAME,
+                                    "semantic_identifier": doc.semantic_identifier,
+                                    "extension": doc.extension,
+                                    "size_bytes": doc.size_bytes,
+                                    "doc_updated_at": doc.doc_updated_at,
+                                    "blob": doc.blob,
+                                }
+                                for doc in document_batch
+                            ]
 
-                        for doc in docs:
-                            synced_doc_ids.add(doc["id"])
+                            for doc in docs:
+                                synced_doc_ids.add(doc["id"])
 
-                    # delete removed docs
-                    if not existing_doc_ids:
-                        to_delete_ids = []
-                        for doc_id in existing_doc_ids:
-                            if doc_id not in synced_doc_ids:
-                                to_delete_ids.append(doc_id)
-                        
-                        if to_delete_ids:
-                            FileService.delete_docs(to_delete_ids, task["tenant_id"])
-                            SyncLogsService.increase_deleted_docs(task["id"], len(to_delete_ids))
-                            logging.info(f"Deleted {len(to_delete_ids)} documents from knowledge base {task['kb_id']} for connector {task['connector_id']}")
+                        # delete removed docs
+                        if not existing_doc_ids:
+                            to_delete_ids = []
+                            for doc_id in existing_doc_ids:
+                                if doc_id not in synced_doc_ids:
+                                    to_delete_ids.append(doc_id)
+                            
+                            if to_delete_ids:
+                                FileService.delete_docs(to_delete_ids, task["tenant_id"])
+                                SyncLogsService.increase_deleted_docs(task["id"], len(to_delete_ids))
+                                logging.info(f"Deleted {len(to_delete_ids)} documents from knowledge base {task['kb_id']} for connector {task['connector_id']}")
 
                     prefix = "[Jira] " if self.SOURCE_NAME == FileSource.JIRA else ""
                     logging.info(f"{prefix}{doc_num} docs synchronized till {next_update}")
