@@ -15,8 +15,6 @@
 #
 from __future__ import annotations
 
-import base64
-import os
 import uuid
 from concurrent.futures import (
     Future,
@@ -26,12 +24,10 @@ from concurrent.futures import (
 from typing import Any
 
 import pytest
-from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
-from Cryptodome.PublicKey import RSA
 
 from common import create_user
 from configs import INVALID_API_TOKEN
-from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
+from libs.auth import RAGFlowWebApiAuth
 
 # ---------------------------------------------------------------------------
 # Test Classes

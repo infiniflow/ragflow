@@ -24,7 +24,7 @@ import pytest
 
 from common import create_user, delete_user
 from configs import INVALID_API_TOKEN
-from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
+from libs.auth import RAGFlowWebApiAuth
 
 # Import from conftest - load it directly to avoid import issues
 
