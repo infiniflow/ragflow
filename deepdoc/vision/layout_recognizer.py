@@ -17,7 +17,7 @@
 import logging
 import math
 import os
-import re
+# import re
 from collections import Counter
 from copy import deepcopy
 
@@ -62,8 +62,9 @@ class LayoutRecognizer(Recognizer):
 
     def __call__(self, image_list, ocr_res, scale_factor=3, thr=0.2, batch_size=16, drop=True):
         def __is_garbage(b):
-            patt = [r"^•+$", "^[0-9]{1,2} / ?[0-9]{1,2}$", r"^[0-9]{1,2} of [0-9]{1,2}$", "^http://[^ ]{12,}", "\\(cid *: *[0-9]+ *\\)"]
-            return any([re.search(p, b["text"]) for p in patt])
+            return False
+            # patt = [r"^•+$", "^[0-9]{1,2} / ?[0-9]{1,2}$", r"^[0-9]{1,2} of [0-9]{1,2}$", "^http://[^ ]{12,}", "\\(cid *: *[0-9]+ *\\)"]
+            # return any([re.search(p, b["text"]) for p in patt])
 
         if self.client:
             layouts = self.client.predict(image_list)
