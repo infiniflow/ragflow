@@ -5,7 +5,7 @@ import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { SwitchLogicOperator } from '@/constants/agent';
+import { ComparisonOperator, SwitchLogicOperator } from '@/constants/agent';
 import { loader } from '@monaco-editor/react';
 import { toLower } from 'lodash';
 import { X } from 'lucide-react';
@@ -15,7 +15,6 @@ import {
   AgentVariableType,
   InputMode,
   JsonSchemaDataType,
-  LoopTerminationComparisonOperator,
 } from '../../constant';
 import { useFilterChildNodeIds } from '../../hooks/use-filter-child-node-ids';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
@@ -46,10 +45,7 @@ type LoopTerminationConditionProps = {
   nodeId?: string;
 };
 
-const EmptyFields = [
-  LoopTerminationComparisonOperator.IsEmpty,
-  LoopTerminationComparisonOperator.IsNotEmpty,
-];
+const EmptyFields = [ComparisonOperator.Empty, ComparisonOperator.NotEmpty];
 
 const LogicalOperatorFieldName = 'logical_operator';
 
@@ -174,7 +170,7 @@ export function LoopTerminationCondition({
       const mode = form.getValues(modeFieldAlias);
       const operator = form.getValues(operatorFieldAlias);
 
-      if (EmptyFields.includes(operator as LoopTerminationComparisonOperator)) {
+      if (EmptyFields.includes(operator as ComparisonOperator)) {
         return null;
       }
 

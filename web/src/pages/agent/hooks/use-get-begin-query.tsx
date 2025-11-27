@@ -91,7 +91,7 @@ export const useGetBeginNodeDataQueryIsSafe = () => {
   return isBeginNodeDataQuerySafe;
 };
 
-export function useBuildNodeOutputOptions(nodeId?: string) {
+export function useBuildUpstreamNodeOutputOptions(nodeId?: string) {
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
 
@@ -224,9 +224,10 @@ export function useBuildConversationVariableOptions() {
 }
 
 export const useBuildVariableOptions = (nodeId?: string, parentId?: string) => {
-  const upstreamNodeOutputOptions = useBuildNodeOutputOptions(nodeId);
+  const upstreamNodeOutputOptions = useBuildUpstreamNodeOutputOptions(nodeId);
   const parentNodeOutputOptions = useBuildParentOutputOptions(parentId);
-  const parentUpstreamNodeOutputOptions = useBuildNodeOutputOptions(parentId);
+  const parentUpstreamNodeOutputOptions =
+    useBuildUpstreamNodeOutputOptions(parentId);
 
   const options = useMemo(() => {
     return [
@@ -250,7 +251,7 @@ export type BuildQueryVariableOptions = {
 
 export function useBuildQueryVariableOptions({
   n,
-  nodeIds,
+  nodeIds = [],
   variablesExceptOperatorOutputs, // Variables other than operator output variables
 }: {
   n?: RAGFlowNodeType;
@@ -278,7 +279,8 @@ export function useBuildQueryVariableOptions({
     ];
   }, [conversationOptions, globalWithBeginVariableOptions, options]);
 
-  if (nodeIds && !isEmpty(nodeIds)) {
+  // Which options are entirely under external control?
+  if (!isEmpty(nodeIds) || !isEmpty(variablesExceptOperatorOutputs)) {
     const nodeOutputOptions = buildNodeOutputOptions({ nodes, nodeIds });
 
     const variablesExceptOperatorOutputsOptions =

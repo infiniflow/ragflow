@@ -75,6 +75,20 @@ export function buildOutputOptions(x: BaseNode) {
   };
 }
 
+export function buildNodeOutputOptions({
+  nodes, // all nodes
+  nodeIds, // Need to obtain the output node IDs
+}: {
+  nodes: BaseNode[];
+  nodeIds: string[];
+}) {
+  const nodeWithOutputList = nodes.filter(
+    (x) => nodeIds.some((y) => y === x.id) && !isEmpty(x.data?.form?.outputs),
+  );
+
+  return nodeWithOutputList.map((x) => buildOutputOptions(x));
+}
+
 export function buildUpstreamNodeOutputOptions({
   nodes,
   edges,
@@ -89,16 +103,7 @@ export function buildUpstreamNodeOutputOptions({
   }
   const upstreamIds = filterAllUpstreamNodeIds(edges, [nodeId]);
 
-  const nodeWithOutputList = nodes.filter(
-    (x) =>
-      upstreamIds.some((y) => y === x.id) && !isEmpty(x.data?.form?.outputs),
-  );
-
-  return (
-    nodeWithOutputList
-      // .filter((x) => x.id !== nodeId)
-      .map((x) => buildOutputOptions(x))
-  );
+  return buildNodeOutputOptions({ nodes, nodeIds: upstreamIds });
 }
 
 export function buildChildOutputOptions({
@@ -126,21 +131,3 @@ export function getStructuredDatatype(value: Record<string, any> | unknown) {
 
   return { dataType, compositeDataType };
 }
-
-// #region Obtain node output options in a more flexible way
-
-export function buildNodeOutputOptions({
-  nodes, // all nodes
-  nodeIds, // Need to obtain the output node IDs
-}: {
-  nodes: BaseNode[];
-  nodeIds: string[];
-}) {
-  const nodeWithOutputList = nodes.filter(
-    (x) => nodeIds.some((y) => y === x.id) && !isEmpty(x.data?.form?.outputs),
-  );
-
-  return nodeWithOutputList.map((x) => buildOutputOptions(x));
-}
-
-// #endregion refactor

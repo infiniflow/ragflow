@@ -865,8 +865,6 @@ export enum LoopTerminationComparisonOperator {
   NotContains = ComparisonOperator.NotContains,
   StartWith = ComparisonOperator.StartWith,
   EndWith = ComparisonOperator.EndWith,
-  IsEmpty = 'is empty',
-  IsNotEmpty = 'is not empty',
   Is = 'is',
   IsNot = 'is not',
 }
@@ -878,35 +876,35 @@ export const LoopTerminationStringComparisonOperator = [
   LoopTerminationComparisonOperator.EndWith,
   LoopTerminationComparisonOperator.Is,
   LoopTerminationComparisonOperator.IsNot,
-  LoopTerminationComparisonOperator.IsEmpty,
-  LoopTerminationComparisonOperator.IsNotEmpty,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
 ];
 
 export const LoopTerminationBooleanComparisonOperator = [
   LoopTerminationComparisonOperator.Is,
   LoopTerminationComparisonOperator.IsNot,
-  LoopTerminationComparisonOperator.IsEmpty,
-  LoopTerminationComparisonOperator.IsNotEmpty,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
 ];
 // object or object array
 export const LoopTerminationObjectComparisonOperator = [
-  LoopTerminationComparisonOperator.IsEmpty,
-  LoopTerminationComparisonOperator.IsNotEmpty,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
 ];
 
 // string array or number array
 export const LoopTerminationStringArrayComparisonOperator = [
   LoopTerminationComparisonOperator.Contains,
   LoopTerminationComparisonOperator.NotContains,
-  LoopTerminationComparisonOperator.IsEmpty,
-  LoopTerminationComparisonOperator.IsNotEmpty,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
 ];
 
 export const LoopTerminationBooleanArrayComparisonOperator = [
   LoopTerminationComparisonOperator.Is,
   LoopTerminationComparisonOperator.IsNot,
-  LoopTerminationComparisonOperator.IsEmpty,
-  LoopTerminationComparisonOperator.IsNotEmpty,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
 ];
 
 export const LoopTerminationNumberComparisonOperator = [
@@ -916,8 +914,8 @@ export const LoopTerminationNumberComparisonOperator = [
   ComparisonOperator.LessThan,
   ComparisonOperator.GreatEqual,
   ComparisonOperator.LessEqual,
-  LoopTerminationComparisonOperator.IsEmpty,
-  LoopTerminationComparisonOperator.IsNotEmpty,
+  ComparisonOperator.Empty,
+  ComparisonOperator.NotEmpty,
 ];
 
 export const LoopTerminationStringComparisonOperatorMap = {
