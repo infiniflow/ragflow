@@ -749,7 +749,7 @@ class Knowledgebase(DataBaseModel):
 
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID", default=ParserType.NAIVE.value, index=True)
     pipeline_id = CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)
-    parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
+    parser_config = JSONField(null=False, default={"pages": [[1, 1000000]], "table_context_size": 0, "image_context_size": 0})
     pagerank = IntegerField(default=0, index=False)
 
     graphrag_task_id = CharField(max_length=32, null=True, help_text="Graph RAG task ID", index=True)
@@ -774,7 +774,7 @@ class Document(DataBaseModel):
     kb_id = CharField(max_length=256, null=False, index=True)
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID", index=True)
     pipeline_id = CharField(max_length=32, null=True, help_text="pipeline ID", index=True)
-    parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
+    parser_config = JSONField(null=False, default={"pages": [[1, 1000000]], "table_context_size": 0, "image_context_size": 0})
     source_type = CharField(max_length=128, null=False, default="local", help_text="where dose this document come from", index=True)
     type = CharField(max_length=32, null=False, help_text="file extension", index=True)
     created_by = CharField(max_length=32, null=False, help_text="who created it", index=True)
