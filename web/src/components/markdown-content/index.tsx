@@ -21,11 +21,12 @@ import { useTranslation } from 'react-i18next';
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
 import {
+  currentReg,
   preprocessLaTeX,
+  replaceTextByOldReg,
   replaceThinkToSection,
   showImage,
 } from '@/utils/chat';
-import { currentReg, replaceTextByOldReg } from '../utils';
 
 import classNames from 'classnames';
 import { omit } from 'lodash';

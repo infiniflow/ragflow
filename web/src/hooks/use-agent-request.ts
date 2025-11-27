@@ -14,7 +14,7 @@ import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
 import { IInputs } from '@/pages/agent/interface';
-import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
+import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
 import agentService, {
   fetchAgentLogsByCanvasId,
   fetchPipeLineList,
