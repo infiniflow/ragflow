@@ -313,6 +313,10 @@ def get_parser_config(chunk_method, parser_config):
         chunk_method = "naive"
 
     # Define default configurations for each chunking method
+    base_defaults = {
+        "table_context_size": 0,
+        "image_context_size": 0,
+    }
     key_mapping = {
         "naive": {
             "layout_recognize": "DeepDOC",
@@ -365,16 +369,19 @@ def get_parser_config(chunk_method, parser_config):
 
     default_config = key_mapping[chunk_method]
 
-    # If no parser_config provided, return default
+    # If no parser_config provided, return default merged with base defaults
     if not parser_config:
-        return default_config
+        if default_config is None:
+            return deep_merge(base_defaults, {})
+        return deep_merge(base_defaults, default_config)
 
     # If parser_config is provided, merge with defaults to ensure required fields exist
     if default_config is None:
-        return parser_config
+        return deep_merge(base_defaults, parser_config)
 
     # Ensure raptor and graphrag fields have default values if not provided
-    merged_config = deep_merge(default_config, parser_config)
+    merged_config = deep_merge(base_defaults, default_config)
+    merged_config = deep_merge(merged_config, parser_config)
 
     return merged_config
 
