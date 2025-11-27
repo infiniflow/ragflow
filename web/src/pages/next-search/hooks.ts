@@ -1,5 +1,6 @@
 import message from '@/components/ui/message';
 import { SharedFrom } from '@/constants/chat';
+import { useSetModalState } from '@/hooks/common-hooks';
 import { useSelectTestingResult } from '@/hooks/knowledge-hooks';
 import {
   useGetPaginationWithRouter,
@@ -16,18 +17,18 @@ import kbService from '@/services/knowledge-service';
 import searchService from '@/services/search-service';
 import api from '@/utils/api';
 import { useMutation } from '@tanstack/react-query';
-import { has, isEmpty, trim } from 'lodash';
+import { has, isEmpty, isEqual, trim } from 'lodash';
 import {
   ChangeEventHandler,
   Dispatch,
   SetStateAction,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 import { useSearchParams } from 'umi';
 import { ISearchAppDetailProps } from '../next-searches/hooks';
-import { useShowMindMapDrawer } from '../search/hooks';
 import { useClickDrawer } from './document-preview-modal/hooks';
 
 export interface ISearchingProps {
@@ -88,6 +89,41 @@ export const useSearchFetchMindMap = () => {
   });
 
   return { data, loading, fetchMindMap: mutateAsync };
+};
+
+export const useShowMindMapDrawer = (
+  kbIds: string[],
+  question: string,
+  searchId = '',
+) => {
+  const { visible, showModal, hideModal } = useSetModalState();
+  const ref = useRef<any>();
+
+  const {
+    fetchMindMap,
+    data: mindMap,
+    loading: mindMapLoading,
+  } = useSearchFetchMindMap();
+
+  const handleShowModal = useCallback(() => {
+    const searchParams = { question: trim(question), kb_ids: kbIds, searchId };
+    if (
+      !isEmpty(searchParams.question) &&
+      !isEqual(searchParams, ref.current)
+    ) {
+      ref.current = searchParams;
+      fetchMindMap(searchParams);
+    }
+    showModal();
+  }, [fetchMindMap, showModal, question, kbIds, searchId]);
+
+  return {
+    mindMap,
+    mindMapVisible: visible,
+    mindMapLoading,
+    showMindMapModal: handleShowModal,
+    hideMindMapModal: hideModal,
+  };
 };
 
 export const useTestChunkRetrieval = (
@@ -538,4 +574,29 @@ export const useCheckSettings = (data: ISearchAppDetailProps) => {
   return {
     openSetting: kb_ids && kb_ids.length > 0 && name ? false : true,
   };
+};
+
+export const usePendingMindMap = () => {
+  const [count, setCount] = useState<number>(0);
+  const ref = useRef<NodeJS.Timeout>();
+
+  const setCountInterval = useCallback(() => {
+    ref.current = setInterval(() => {
+      setCount((pre) => {
+        if (pre > 40) {
+          clearInterval(ref?.current);
+        }
+        return pre + 1;
+      });
+    }, 1000);
+  }, []);
+
+  useEffect(() => {
+    setCountInterval();
+    return () => {
+      clearInterval(ref?.current);
+    };
+  }, [setCountInterval]);
+
+  return Number(((count / 43) * 100).toFixed(0));
 };

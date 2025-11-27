@@ -1,5 +1,4 @@
 import { MessageType } from '@/constants/chat';
-import { useGetFileIcon } from '@/pages/chat/hooks';
 
 import { useSendAgentMessage } from './use-send-agent-message';
 
@@ -19,6 +18,7 @@ import { useParams } from 'umi';
 import DebugContent from '../debug-content';
 import { useAwaitCompentData } from '../hooks/use-chat-logic';
 import { useIsTaskMode } from '../hooks/use-get-begin-query';
+import { useGetFileIcon } from './use-get-file-icon';
 
 function AgentChatBox() {
   const { data: canvasInfo, refetch } = useFetchAgent();

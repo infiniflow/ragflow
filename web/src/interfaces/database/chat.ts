@@ -183,3 +183,12 @@ export interface IExternalChatInfo {
   title: string;
   prologue?: string;
 }
+
+export interface IMessage extends Message {
+  id: string;
+  reference?: IReference; // the latest news has reference
+}
+
+export interface IClientConversation extends IConversation {
+  message: IMessage[];
+}

@@ -70,11 +70,6 @@ const routes = [
     layout: false,
   },
   {
-    path: '/chat/share',
-    component: '@/pages/chat/share',
-    layout: false,
-  },
-  {
     path: Routes.ChatShare,
     component: `@/pages${Routes.ChatShare}`,
     layout: false,
@@ -89,64 +84,10 @@ const routes = [
     component: `@/pages${Routes.ChatWidget}`,
     layout: false,
   },
-  {
-    path: Routes.Home,
-    component: '@/layouts',
-    layout: false,
-    redirect: '/knowledge',
-  },
-  {
-    path: '/knowledge',
-    component: '@/pages/knowledge',
-  },
-  {
-    path: '/knowledge',
-    component: '@/pages/add-knowledge',
-    routes: [
-      {
-        path: 'dataset',
-        component: '@/pages/add-knowledge/components/knowledge-dataset',
-        routes: [
-          {
-            path: '',
-            component: '@/pages/add-knowledge/components/knowledge-file',
-          },
-          {
-            path: 'chunk',
-            component: '@/pages/add-knowledge/components/knowledge-chunk',
-          },
-        ],
-      },
-      {
-        path: 'configuration',
-        component: '@/pages/add-knowledge/components/knowledge-setting',
-      },
-      {
-        path: 'testing',
-        component: '@/pages/add-knowledge/components/knowledge-testing',
-      },
-      {
-        path: 'knowledgeGraph',
-        component: '@/pages/add-knowledge/components/knowledge-graph',
-      },
-    ],
-  },
 
-  {
-    path: '/chat',
-    component: '@/pages/chat',
-  },
-  {
-    path: '/file',
-    component: '@/pages/file-manager',
-  },
   {
     path: Routes.AgentList,
     component: `@/pages/${Routes.Agents}`,
-  },
-  {
-    path: '/search',
-    component: '@/pages/search',
   },
   {
     path: '/document/:id',

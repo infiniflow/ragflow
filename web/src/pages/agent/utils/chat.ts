@@ -1,6 +1,5 @@
 import { MessageType } from '@/constants/chat';
-import { IReference } from '@/interfaces/database/chat';
-import { IMessage } from '@/pages/chat/interface';
+import { IMessage, IReference } from '@/interfaces/database/chat';
 import { isEmpty } from 'lodash';
 
 export const buildAgentMessageItemReference = (

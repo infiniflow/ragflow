@@ -1,5 +1,6 @@
 import { ChatSearchParams } from '@/constants/chat';
 import {
+  IClientConversation,
   IConversation,
   IDialog,
   IStats,
@@ -10,8 +11,7 @@ import {
   IFeedbackRequestBody,
 } from '@/interfaces/request/chat';
 import i18n from '@/locales/config';
-import { IClientConversation } from '@/pages/chat/interface';
-import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
+import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
 import chatService from '@/services/chat-service';
 import {
   buildMessageListWithUuid,

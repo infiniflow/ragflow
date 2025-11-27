@@ -14,8 +14,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { FileMimeType, Platform } from '@/constants/common';
+import { TagRenameId } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
-import { TagRenameId } from '@/pages/add-knowledge/constant';
 import { useTranslation } from 'react-i18next';
 
 export function ImportMcpForm({ hideModal, onOk }: IModalProps<any>) {

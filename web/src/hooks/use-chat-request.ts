@@ -2,12 +2,12 @@ import { FileUploadProps } from '@/components/file-upload';
 import message from '@/components/ui/message';
 import { ChatSearchParams } from '@/constants/chat';
 import {
+  IClientConversation,
   IConversation,
   IDialog,
   IExternalChatInfo,
 } from '@/interfaces/database/chat';
 import { IAskRequestBody } from '@/interfaces/request/chat';
-import { IClientConversation } from '@/pages/next-chats/chat/interface';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
 import { isConversationIdExist } from '@/pages/next-chats/utils';
 import chatService from '@/services/next-chat-service';

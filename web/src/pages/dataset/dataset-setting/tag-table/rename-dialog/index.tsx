@@ -6,9 +6,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { LoadingButton } from '@/components/ui/loading-button';
+import { TagRenameId } from '@/constants/knowledge';
 import { useTagIsRenaming } from '@/hooks/knowledge-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { TagRenameId } from '@/pages/add-knowledge/constant';
 import { useTranslation } from 'react-i18next';
 import { RenameForm } from './rename-form';
 

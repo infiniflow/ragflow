@@ -1,6 +1,10 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
-import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
+import {
+  IMessage,
+  IReference,
+  IReferenceChunk,
+} from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import { memo, useCallback, useEffect, useMemo } from 'react';
 
@@ -10,9 +14,8 @@ import {
 } from '@/hooks/document-hooks';
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
-import { IMessage } from '@/pages/chat/interface';
-import MarkdownContent from '@/pages/chat/markdown-content';
 import { Avatar, Flex, Space } from 'antd';
+import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
 import { InnerUploadedMessageFiles } from '../next-message-item/uploaded-message-files';
 import { useTheme } from '../theme-provider';
