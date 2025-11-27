@@ -44,12 +44,22 @@ from common import settings
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 
+async def _coerce_request_data() -> dict:
+    """Fetch JSON body with sane defaults; fallback to form data."""
+    try:
+        payload = await request.get_json(force=True, silent=True)
+    except Exception:
+        payload = None
+    if payload is None:
+        try:
+            payload = (await request.form).to_dict()
+        except Exception:
+            payload = {}
+    return payload or {}
+
 
 async def request_json():
-    try:
-        return await request.json
-    except Exception:
-        return {}
+    return await _coerce_request_data()
 
 def serialize_for_json(obj):
     """
@@ -137,7 +147,7 @@ def validate_request(*args, **kwargs):
     def wrapper(func):
         @wraps(func)
         async def decorated_function(*_args, **_kwargs):
-            errs = process_args(await request.json or (await request.form).to_dict())
+            errs = process_args(await _coerce_request_data())
             if errs:
                 return get_json_result(code=RetCode.ARGUMENT_ERROR, message=errs)
             if inspect.iscoroutinefunction(func):
@@ -152,7 +162,7 @@ def validate_request(*args, **kwargs):
 def not_allowed_parameters(*params):
     def decorator(func):
         async def wrapper(*args, **kwargs):
-            input_arguments = await request.json or (await request.form).to_dict()
+            input_arguments = await _coerce_request_data()
             for param in params:
                 if param in input_arguments:
                     return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")

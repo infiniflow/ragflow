@@ -230,7 +230,7 @@ async def list_docs():
     create_time_from = int(request.args.get("create_time_from", 0))
     create_time_to = int(request.args.get("create_time_to", 0))
 
-    req = await request.get_json()
+    req = await request_json()
 
     run_status = req.get("run_status", [])
     if run_status:
@@ -271,7 +271,7 @@ async def list_docs():
 @manager.route("/filter", methods=["POST"])  # noqa: F821
 @login_required
 async def get_filter():
-    req = await request.get_json()
+    req = await request_json()
 
     kb_id = req.get("kb_id")
     if not kb_id:
@@ -341,7 +341,7 @@ def thumbnails():
 @login_required
 @validate_request("doc_ids", "status")
 async def change_status():
-    req = await request.get_json()
+    req = await request_json()
     doc_ids = req.get("doc_ids", [])
     status = str(req.get("status", ""))
 
@@ -624,7 +624,8 @@ async def upload_and_parse():
 @manager.route("/parse", methods=["POST"])  # noqa: F821
 @login_required
 async def parse():
-    url = await request.json.get("url") if await request.json else ""
+    req = await request_json()
+    url = req.get("url", "")
     if url:
         if not is_valid_url(url):
             return get_json_result(data=False, message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)

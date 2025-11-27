@@ -26,7 +26,7 @@ from google_auth_oauthlib.flow import Flow
 
 from api.db import InputType
 from api.db.services.connector_service import ConnectorService, SyncLogsService
-from api.utils.api_utils import get_data_error_result, get_json_result, validate_request
+from api.utils.api_utils import get_data_error_result, get_json_result, request_json, validate_request
 from common.constants import RetCode, TaskStatus
 from common.data_source.config import GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, DocumentSource
 from common.data_source.google_util.constant import GOOGLE_DRIVE_WEB_OAUTH_POPUP_TEMPLATE, GOOGLE_SCOPES
@@ -38,7 +38,7 @@ from api.apps import login_required, current_user
 @manager.route("/set", methods=["POST"])  # noqa: F821
 @login_required
 async def set_connector():
-    req = await request.json
+    req = await request_json()
     if req.get("id"):
         conn = {fld: req[fld] for fld in ["prune_freq", "refresh_freq", "config", "timeout_secs"] if fld in req}
         ConnectorService.update_by_id(req["id"], conn)
@@ -90,7 +90,7 @@ def list_logs(connector_id):
 @manager.route("/<connector_id>/resume", methods=["PUT"])  # noqa: F821
 @login_required
 async def resume(connector_id):
-    req = await request.json
+    req = await request_json()
     if req.get("resume"):
         ConnectorService.resume(connector_id, TaskStatus.SCHEDULE)
     else:
@@ -102,7 +102,7 @@ async def resume(connector_id):
 @login_required
 @validate_request("kb_id")
 async def rebuild(connector_id):
-    req = await request.json
+    req = await request_json()
     err = ConnectorService.rebuild(req["kb_id"], connector_id, current_user.id)
     if err:
         return get_json_result(data=False, message=err, code=RetCode.SERVER_ERROR)
@@ -179,7 +179,7 @@ async def start_google_drive_web_oauth():
             message="Google Drive OAuth redirect URI is not configured on the server.",
         )
 
-    req = await request.json or {}
+    req = await request_json()
     raw_credentials = req.get("credentials", "")
     try:
         credentials = _load_credentials(raw_credentials)
@@ -281,7 +281,7 @@ async def google_drive_web_oauth_callback():
 @login_required
 @validate_request("flow_id")
 async def poll_google_drive_web_result():
-    req = await request.json or {}
+    req = await request_json()
     flow_id = req.get("flow_id")
     cache_raw = REDIS_CONN.get(_web_result_cache_key(flow_id))
     if not cache_raw:
