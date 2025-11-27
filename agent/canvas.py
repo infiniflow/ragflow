@@ -281,6 +281,7 @@ class Canvas(Graph):
             "sys.conversation_turns": 0,
             "sys.files": []
         }
+        self.variables = {}
         super().__init__(dsl, tenant_id, task_id)
 
     def load(self):
@@ -295,6 +296,10 @@ class Canvas(Graph):
             "sys.conversation_turns": 0,
             "sys.files": []
         }
+        if "variables" in self.dsl:
+            self.variables = self.dsl["variables"]
+        else:
+            self.variables = {}
 
         self.retrieval = self.dsl["retrieval"]
         self.memory = self.dsl.get("memory", [])
@@ -311,8 +316,9 @@ class Canvas(Graph):
             self.history = []
             self.retrieval = []
             self.memory = []
+        print(self.variables)
         for k in self.globals.keys():
-            if k.startswith("sys.") or k.startswith("env."):
+            if k.startswith("sys."):
                 if isinstance(self.globals[k], str):
                     self.globals[k] = ""
                 elif isinstance(self.globals[k], int):
@@ -325,6 +331,29 @@ class Canvas(Graph):
                     self.globals[k] = {}
                 else:
                     self.globals[k] = None
+            if k.startswith("env."):
+                key = k[4:]
+                if key in self.variables:
+                    variable = self.variables[key]
+                    if variable["value"]:
+                        self.globals[k] = variable["value"]
+                    else:
+                        if variable["type"] == "string":
+                            self.globals[k] = ""
+                        elif variable["type"] == "number":
+                            self.globals[k] = 0
+                        elif variable["type"] == "boolean":
+                            self.globals[k] = False
+                        elif variable["type"] == "object":
+                            self.globals[k] = {}
+                        elif variable["type"].startswith("array"):
+                            self.globals[k] = []
+                        else:
+                            self.globals[k] = ""
+                else:
+                    self.globals[k] = ""
+        print(self.globals)
+                
 
     async def run(self, **kwargs):
         st = time.perf_counter()
@@ -473,7 +502,7 @@ class Canvas(Graph):
                     else:
                         self.error = cpn_obj.error()
 
-                if cpn_obj.component_name.lower() != "iteration":
+                if cpn_obj.component_name.lower() not in ("iteration","loop"):
                     if isinstance(cpn_obj.output("content"), partial):
                         if self.error:
                             cpn_obj.set_output("content", None)
@@ -498,14 +527,16 @@ class Canvas(Graph):
                     for cpn_id in cpn_ids:
                         _append_path(cpn_id)
 
-                if cpn_obj.component_name.lower() == "iterationitem" and cpn_obj.end():
+                if cpn_obj.component_name.lower() in ("iterationitem","loopitem") and cpn_obj.end():
                     iter = cpn_obj.get_parent()
                     yield _node_finished(iter)
                     _extend_path(self.get_component(cpn["parent_id"])["downstream"])
                 elif cpn_obj.component_name.lower() in ["categorize", "switch"]:
                     _extend_path(cpn_obj.output("_next"))
-                elif cpn_obj.component_name.lower() == "iteration":
+                elif cpn_obj.component_name.lower() in ("iteration", "loop"):
                     _append_path(cpn_obj.get_start())
+                elif cpn_obj.component_name.lower() == "exitloop" and cpn_obj.get_parent().component_name.lower() == "loop":
+                    _extend_path(self.get_component(cpn["parent_id"])["downstream"])
                 elif not cpn["downstream"] and cpn_obj.get_parent():
                     _append_path(cpn_obj.get_parent().get_start())
                 else:
