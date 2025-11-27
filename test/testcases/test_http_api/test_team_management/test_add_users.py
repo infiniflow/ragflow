@@ -1,5 +1,4 @@
-    #
-
+#
 #  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -140,7 +139,7 @@ class TestAddUsers:
         assert "added" in res["data"]
         assert len(res["data"]["added"]) == 1
         assert res["data"]["added"][0]["email"] == user_email
-        assert res["data"]["added"][0]["role"] == "invite"  # Users are added with invite role initially
+        assert res["data"]["added"][0]["role"] == "normal"  # Users are added directly with normal role
         assert "failed" in res["data"]
         assert len(res["data"]["failed"]) == 0
 
@@ -163,8 +162,7 @@ class TestAddUsers:
         assert res["code"] == 0, res
         assert len(res["data"]["added"]) == 1
         assert res["data"]["added"][0]["email"] == user_email
-        assert res["data"]["added"][0]["role"] == "invite"  # Users are added with invite role initially
-        assert res["data"]["added"][0]["intended_role"] == "admin"  # Intended role after acceptance
+        assert res["data"]["added"][0]["role"] == "admin"  # Users are added directly with the specified role
 
     @pytest.mark.p1
     def test_add_multiple_users(
@@ -207,12 +205,9 @@ class TestAddUsers:
 
         assert res["code"] == 0, res
         assert len(res["data"]["added"]) == 3
-        assert res["data"]["added"][0]["role"] == "invite"  # String format defaults to invite role initially
-        assert res["data"]["added"][0].get("intended_role") == "normal"  # Intended role after acceptance
-        assert res["data"]["added"][1]["role"] == "invite"  # Object format - still invite initially
-        assert res["data"]["added"][1]["intended_role"] == "admin"  # Intended role after acceptance
-        assert res["data"]["added"][2]["role"] == "invite"  # String format defaults to invite role initially
-        assert res["data"]["added"][2].get("intended_role") == "normal"  # Intended role after acceptance
+        assert res["data"]["added"][0]["role"] == "normal"  # String format defaults to normal role
+        assert res["data"]["added"][1]["role"] == "admin"  # Object format with admin role
+        assert res["data"]["added"][2]["role"] == "normal"  # String format defaults to normal role
 
     @pytest.mark.p1
     def test_add_user_unregistered_email(
@@ -248,11 +243,12 @@ class TestAddUsers:
 
         # Try to add same user again
         res2: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
-        assert res2["code"] == 0  # Returns success - invitation is resent
-        # API resends invitation instead of failing
-        assert len(res2["data"]["added"]) == 1
-        assert res2["data"]["added"][0]["email"] == user_email
-        assert res2["data"]["added"][0].get("status") == "invitation_resent" or "intended_role" in res2["data"]["added"][0]
+        # User is already a member, so it should be in failed list
+        # When all users fail, API returns DATA_ERROR (102)
+        assert res2["code"] == 102  # DATA_ERROR when all users fail
+        assert len(res2["data"]["failed"]) == 1
+        assert len(res2["data"]["added"]) == 0
+        assert "already" in res2["data"]["failed"][0]["error"].lower() or "member" in res2["data"]["failed"][0]["error"].lower()
 
     @pytest.mark.p1
     def test_add_users_partial_success(
@@ -318,7 +314,31 @@ class TestAddUsers:
         assert res["code"] == 102  # DATA_ERROR
         assert len(res["data"]["added"]) == 0
         assert len(res["data"]["failed"]) == 1
-        assert "invalid role" in res["data"]["failed"][0]["error"].lower() or "invalid" in res["data"]["failed"][0]["error"].lower()
+        error_msg = res["data"]["failed"][0]["error"].lower()
+        assert "invalid role" in error_msg or "invalid" in error_msg
+        # Verify error message mentions allowed roles (should include normal, admin, invite)
+        assert "normal" in error_msg or "admin" in error_msg or "invite" in error_msg
+
+    @pytest.mark.p1
+    def test_add_user_with_invite_role(
+        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any], test_users: list[dict[str, Any]]
+    ) -> None:
+        """Test adding a user with invite role."""
+        if not test_users:
+            pytest.skip("No test users created")
+        
+        tenant_id: str = test_team["id"]
+        user_email: str = test_users[0]["email"]
+
+        add_payload: dict[str, list[dict[str, str]]] = {
+            "users": [{"email": user_email, "role": "invite"}]
+        }
+        res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
+
+        assert res["code"] == 0, res
+        assert len(res["data"]["added"]) == 1
+        assert res["data"]["added"][0]["email"] == user_email
+        assert res["data"]["added"][0]["role"] == "invite"  # Users can be added with invite role
 
     @pytest.mark.p1
     def test_add_users_not_owner_or_admin(
@@ -340,9 +360,7 @@ class TestAddUsers:
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         assert add_res["code"] == 0
 
-        # Small delay to ensure user is fully added
-        time.sleep(0.5)
-
+        # Users are now added directly, no need to wait for invitation acceptance
         # Login as the normal user
         normal_user_auth: RAGFlowWebApiAuth = login_as_user(user_email, test_users[0]["password"])
 
@@ -381,4 +399,60 @@ class TestAddUsers:
         # Should fail - either validation error or user not found
         assert res["code"] != 0
         assert len(res["data"]["added"]) == 0
+
+    @pytest.mark.p1
+    def test_add_users_with_different_roles(
+        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any], test_users: list[dict[str, Any]]
+    ) -> None:
+        """Test adding users with different roles (normal, admin, and invite)."""
+        if len(test_users) < 3:
+            pytest.skip("Need at least 3 test users")
+        
+        tenant_id: str = test_team["id"]
+
+        add_payload: dict[str, list[Any]] = {
+            "users": [
+                {"email": test_users[0]["email"], "role": "normal"},
+                {"email": test_users[1]["email"], "role": "admin"},
+                {"email": test_users[2]["email"], "role": "invite"},
+            ]
+        }
+        res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
+
+        assert res["code"] == 0, res
+        assert len(res["data"]["added"]) == 3
+        assert len(res["data"]["failed"]) == 0
+        # Verify roles are set correctly
+        added_emails = {user["email"]: user["role"] for user in res["data"]["added"]}
+        assert added_emails[test_users[0]["email"]] == "normal"
+        assert added_emails[test_users[1]["email"]] == "admin"
+        assert added_emails[test_users[2]["email"]] == "invite"
+
+    @pytest.mark.p1
+    def test_add_users_role_case_insensitive(
+        self, web_api_auth: RAGFlowWebApiAuth, test_team: dict[str, Any], test_users: list[dict[str, Any]]
+    ) -> None:
+        """Test that role parameter is case-insensitive for all roles."""
+        if len(test_users) < 3:
+            pytest.skip("Need at least 3 test users")
+        
+        tenant_id: str = test_team["id"]
+
+        # Test with uppercase roles - all should be normalized to lowercase
+        add_payload: dict[str, list[dict[str, str]]] = {
+            "users": [
+                {"email": test_users[0]["email"], "role": "ADMIN"},
+                {"email": test_users[1]["email"], "role": "NORMAL"},
+                {"email": test_users[2]["email"], "role": "INVITE"},
+            ]
+        }
+        res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
+
+        assert res["code"] == 0, res
+        assert len(res["data"]["added"]) == 3
+        # Verify all roles are normalized to lowercase
+        added_emails = {user["email"]: user["role"] for user in res["data"]["added"]}
+        assert added_emails[test_users[0]["email"]] == "admin"
+        assert added_emails[test_users[1]["email"]] == "normal"
+        assert added_emails[test_users[2]["email"]] == "invite"
 

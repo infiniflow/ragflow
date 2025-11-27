@@ -22,7 +22,6 @@ from typing import Any
 import pytest
 
 from common import (
-    accept_team_invitation,
     add_users_to_team,
     create_team,
     create_user,
@@ -93,14 +92,7 @@ class TestAuthorization:
         if add_res.get("code", -1) != 0:
             pytest.skip(f"Failed to add user to team in setup: {add_res}")
 
-        # Small delay
-        time.sleep(0.5)
-
-        # Accept invitation as the user
-        user_auth: RAGFlowWebApiAuth = login_as_user(email, password)
-        accept_res: dict[str, Any] = accept_team_invitation(user_auth, tenant_id)
-        if accept_res.get("code", -1) != 0:
-            pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
+        # Users are now added directly, no invitation acceptance needed
 
         # Try to get permissions with invalid auth
         res: dict[str, Any] = get_user_permissions(invalid_auth, tenant_id, user_id)
@@ -157,14 +149,7 @@ class TestAuthorization:
         if add_res.get("code", -1) != 0:
             pytest.skip(f"Failed to add user to team in setup: {add_res}")
 
-        # Small delay
-        time.sleep(0.5)
-
-        # Accept invitation as the user
-        user_auth: RAGFlowWebApiAuth = login_as_user(email, password)
-        accept_res: dict[str, Any] = accept_team_invitation(user_auth, tenant_id)
-        if accept_res.get("code", -1) != 0:
-            pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
+        # Users are now added directly, no invitation acceptance needed
 
         # Try to update permissions with invalid auth
         update_payload: dict[str, Any] = {
@@ -207,7 +192,7 @@ class TestGetUserPermissions:
         test_team: dict[str, Any],
         clear_team_users: list[str],
     ) -> dict[str, Any]:
-        """Create a team with a user who has accepted the invitation."""
+        """Create a team with a user who has been added to the team."""
         tenant_id: str = test_team["id"]
         
         # Create user
@@ -225,19 +210,11 @@ class TestGetUserPermissions:
         clear_team_users.append(email)
         user_id: str = user_res["data"]["id"]
 
-        # Add user to team
+        # Add user to team (users are now added directly)
         add_payload: dict[str, list[str]] = {"users": [email]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         if add_res["code"] != 0:
             pytest.skip(f"Failed to add user to team in setup: {add_res}")
-
-        # Small delay
-        time.sleep(0.5)
-
-        # Accept invitation as the user
-        user_auth: RAGFlowWebApiAuth = login_as_user(email, password)
-        accept_res: dict[str, Any] = accept_team_invitation(user_auth, tenant_id)
-        if accept_res["code"] != 0:
             pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
 
         return {
@@ -364,7 +341,7 @@ class TestUpdateUserPermissions:
         test_team: dict[str, Any],
         clear_team_users: list[str],
     ) -> dict[str, Any]:
-        """Create a team with a user who has accepted the invitation."""
+        """Create a team with a user who has been added to the team."""
         tenant_id: str = test_team["id"]
         
         # Create user
@@ -382,19 +359,11 @@ class TestUpdateUserPermissions:
         clear_team_users.append(email)
         user_id: str = user_res["data"]["id"]
 
-        # Add user to team
+        # Add user to team (users are now added directly)
         add_payload: dict[str, list[str]] = {"users": [email]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         if add_res["code"] != 0:
             pytest.skip(f"Failed to add user to team in setup: {add_res}")
-
-        # Small delay
-        time.sleep(0.5)
-
-        # Accept invitation as the user
-        user_auth: RAGFlowWebApiAuth = login_as_user(email, password)
-        accept_res: dict[str, Any] = accept_team_invitation(user_auth, tenant_id)
-        if accept_res["code"] != 0:
             pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
 
         return {

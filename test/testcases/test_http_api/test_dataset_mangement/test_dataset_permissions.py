@@ -23,7 +23,6 @@ import pytest
 import requests
 
 from common import (
-    accept_team_invitation,
     add_users_to_team,
     create_dataset,
     create_team,
@@ -82,7 +81,7 @@ class TestDatasetPermissions:
         web_api_auth: RAGFlowWebApiAuth,
         test_team: dict[str, Any],
     ) -> dict[str, Any]:
-        """Create a team with a user who has accepted the invitation."""
+        """Create a team with a user who has been added to the team."""
         tenant_id: str = test_team["id"]
         
         # Create user
@@ -98,18 +97,10 @@ class TestDatasetPermissions:
         assert user_res["code"] == 0
         user_id: str = user_res["data"]["id"]
 
-        # Add user to team
+        # Add user to team (users are now added directly)
         add_payload: dict[str, list[str]] = {"users": [email]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         assert add_res["code"] == 0
-
-        # Small delay
-        time.sleep(0.5)
-
-        # Accept invitation as the user
-        user_auth: RAGFlowWebApiAuth = login_as_user(email, password)
-        accept_res: dict[str, Any] = accept_team_invitation(user_auth, tenant_id)
-        assert accept_res["code"] == 0
 
         return {
             "team": test_team,

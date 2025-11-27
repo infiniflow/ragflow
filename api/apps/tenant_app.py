@@ -840,8 +840,8 @@ async def update_request(tenant_id: str) -> Response:
 @validate_request("users")
 async def add_users(tenant_id: str) -> Response:
     """
-    Send invitations to one or more users to join a team. Only OWNER or ADMIN can send invitations.
-    Users must accept the invitation before they are added to the team.
+    Add one or more users directly to a team. Only OWNER or ADMIN can add users.
+    Users are added immediately without requiring invitation acceptance.
     Supports both single user and bulk operations.
     
     ---
@@ -877,8 +877,8 @@ async def add_users(tenant_id: str) -> Response:
                         description: User email
                       role:
                         type: string
-                        description: Role to assign (normal, admin). Defaults to normal.
-                        enum: [normal, admin]
+                        description: Role to assign (normal, admin, invite). Defaults to normal.
+                        enum: [normal, admin, invite]
     responses:
       200:
         description: Users added successfully
@@ -934,7 +934,28 @@ async def add_users(tenant_id: str) -> Response:
             role = UserTenantRole.NORMAL.value
         elif isinstance(user_input, dict):
             email = user_input.get("email")
-            role = user_input.get("role", UserTenantRole.NORMAL.value)
+            role_input = user_input.get("role")
+            # Normalize role to lowercase and validate
+            if role_input is not None:
+                if isinstance(role_input, str):
+                    role_input = role_input.lower().strip()
+                    if role_input in [UserTenantRole.NORMAL.value, UserTenantRole.ADMIN.value, UserTenantRole.INVITE.value]:
+                        role = role_input
+                    else:
+                        failed_users.append({
+                            "email": email or str(user_input),
+                            "error": f"Invalid role '{role_input}'. Allowed roles: {UserTenantRole.NORMAL.value}, {UserTenantRole.ADMIN.value}, {UserTenantRole.INVITE.value}"
+                        })
+                        continue
+                else:
+                    failed_users.append({
+                        "email": email or str(user_input),
+                        "error": f"Role must be a string. Allowed values: {UserTenantRole.NORMAL.value}, {UserTenantRole.ADMIN.value}, {UserTenantRole.INVITE.value}"
+                    })
+                    continue
+            # If role not provided, default to NORMAL
+            else:
+                role = UserTenantRole.NORMAL.value
         else:
             failed_users.append({
                 "email": str(user_input),
@@ -946,14 +967,6 @@ async def add_users(tenant_id: str) -> Response:
             failed_users.append({
                 "email": str(user_input),
                 "error": "Email is required."
-            })
-            continue
-        
-        # Validate role
-        if role not in [UserTenantRole.NORMAL.value, UserTenantRole.ADMIN.value]:
-            failed_users.append({
-                "email": email,
-                "error": f"Invalid role '{role}'. Allowed roles: {UserTenantRole.NORMAL.value}, {UserTenantRole.ADMIN.value}"
             })
             continue
         
@@ -985,20 +998,22 @@ async def add_users(tenant_id: str) -> Response:
                         "error": "User is the owner of the team and cannot be added again."
                     })
                     continue
-                # If user has INVITE role, resend invitation with new role (update the invitation)
+                # If user has INVITE role, convert it to the actual role (forcefully add them)
                 if existing_role == UserTenantRole.INVITE:
-                    # Update invitation - keep INVITE role, user needs to accept again
-                    # Note: The intended role will be applied when user accepts via /agree endpoint
-                    # For now, we'll store it by updating the invitation (user will need to accept)
+                    # Set default permissions: read-only access to datasets and canvases
+                    default_permissions: Dict[str, Any] = {
+                        "dataset": {"create": False, "read": True, "update": False, "delete": False},
+                        "canvas": {"create": False, "read": True, "update": False, "delete": False}
+                    }
+                    # Update from INVITE to the specified role
+                    UserTenantService.filter_update(
+                        [UserTenant.tenant_id == tenant_id, UserTenant.user_id == user_id_to_add],
+                        {"role": role, "status": StatusEnum.VALID.value, "permissions": default_permissions}
+                    )
                     usr: Dict[str, Any] = invite_users[0].to_dict()
                     usr = {k: v for k, v in usr.items() if k in ["id", "avatar", "email", "nickname"]}
-                    usr["role"] = "invite"  # Still pending acceptance
-                    usr["intended_role"] = role  # Store intended role for reference
-                    added_users.append({
-                        "email": email,
-                        "status": "invitation_resent",
-                        "intended_role": role
-                    })
+                    usr["role"] = role
+                    added_users.append(usr)
                     continue
             
             # Set default permissions: read-only access to datasets and canvases
@@ -1007,33 +1022,20 @@ async def add_users(tenant_id: str) -> Response:
                 "canvas": {"create": False, "read": True, "update": False, "delete": False}
             }
             
-            # Send invitation - create user with INVITE role (user must accept to join)
+            # Add user directly with the specified role (NORMAL, ADMIN, or INVITE)
             UserTenantService.save(
                 id=get_uuid(),
                 user_id=user_id_to_add,
                 tenant_id=tenant_id,
                 invited_by=current_user.id,
-                role=UserTenantRole.INVITE,  # Start with INVITE role
+                role=role,  # Directly assign the role (NORMAL, ADMIN, or INVITE)
                 status=StatusEnum.VALID.value,
                 permissions=default_permissions
             )
             
-            # Send invitation email if configured
-            if smtp_mail_server and settings.SMTP_CONF:
-                user_name: str = ""
-                _, user = UserService.get_by_id(current_user.id)
-                if user:
-                    user_name = user.nickname
-                Thread(
-                    target=send_invite_email,
-                    args=(email, settings.MAIL_FRONTEND_URL, tenant_id, user_name or current_user.email),
-                    daemon=True
-                ).start()
-            
             usr: Dict[str, Any] = invite_users[0].to_dict()
             usr = {k: v for k, v in usr.items() if k in ["id", "avatar", "email", "nickname"]}
-            usr["role"] = "invite"  # User is invited, not yet added
-            usr["intended_role"] = role  # Role they will get after acceptance
+            usr["role"] = role
             added_users.append(usr)
             
         except Exception as e:
@@ -1057,12 +1059,12 @@ async def add_users(tenant_id: str) -> Response:
     elif failed_users:
         return get_json_result(
             data=result,
-            message=f"Sent {len(added_users)} invitation(s). {len(failed_users)} user(s) failed."
+            message=f"Added {len(added_users)} user(s). {len(failed_users)} user(s) failed."
         )
     else:
         return get_json_result(
             data=result,
-            message=f"Successfully sent {len(added_users)} invitation(s). Users must accept to join the team."
+            message=f"Successfully added {len(added_users)} user(s) to the team."
         )
 
 
