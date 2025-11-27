@@ -1102,9 +1102,14 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       addMessage: '新增消息',
-      loop: '循环上限',
-      loopTip:
+      loop: '循环',
+      loopDescription:
         'loop为当前组件循环次数上限，当循环次数超过loop的值时，说明组件不能完成当前任务，请重新优化agent',
+      exitLoop: '退出循环',
+      exitLoopDescription: `等同于 "break"。此节点没有配置项。当循环体到达此节点时，循环终止。`,
+      loopVariables: '循环变量',
+      maximumLoopCount: '最大循环次数',
+      loopTerminationCondition: '循环终止条件',
       yes: '是',
       no: '否',
       key: '键',
@@ -1499,7 +1504,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       contentTip: 'content: 邮件内容(可选)',
       jsonUploadTypeErrorMessage: '请上传json文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
-      iteration: '循环',
+      iteration: '迭代',
       iterationDescription: `该组件负责迭代生成新的内容，对列表对象执行多次步骤直至输出所有结果。`,
       delimiterTip: `该分隔符用于将输入文本分割成几个文本片段，每个文本片段的回显将作为每次迭代的输入项。`,
       delimiterOptions: {
@@ -1545,8 +1550,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       variableAssignerDescription:
         '此组件对数据对象执行操作，包括提取、筛选和编辑数据中的键和值。',
       variableAggregator: '变量聚合',
-      variableAggregatorDescription: `将多路分支的变量聚合为一个变量，以实现下游节点统一配置。
-变量聚合节点（原变量赋值节点）是工作流程中的一个关键节点，它负责整合不同分支的输出结果，确保无论哪个分支被执行，其结果都能通过一个统一的变量来引用和访问。这在多分支的情况下非常有用，可将不同分支下相同作用的变量映射为一个输出变量，避免下游节点重复定义。`,
+      variableAggregatorDescription: `该过程将来自多个分支的变量聚合到一个变量中，以实现下游节点的统一配置。`,
       inputVariables: '输入变量',
       addVariable: '新增变量',
       runningHintText: '正在运行中...🕞',
