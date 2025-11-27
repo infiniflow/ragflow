@@ -8,6 +8,20 @@
             "rank": "999",
             "llm": [
                 {
+                    "llm_name": "gpt-5.1",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.1-chat-latest",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "gpt-5",
                     "tags": "LLM,CHAT,400k,IMAGE2TEXT",
                     "max_tokens": 400000,
@@ -3218,6 +3232,13 @@
             "status": "1",
             "rank": "990",
             "llm": [
+                {
+                    "llm_name": "claude-opus-4-5-20251101",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
                 {
                     "llm_name": "claude-opus-4-1-20250805",
                     "tags": "LLM,CHAT,IMAGE2TEXT,200k",
