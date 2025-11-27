@@ -4,7 +4,9 @@ import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
 import PdfDrawer from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { useTheme } from '@/components/theme-provider';
 import { MessageType } from '@/constants/chat';
+import { ThemeEnum } from '@/constants/common';
 import { useUploadCanvasFileWithProgress } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
 import i18n from '@/locales/config';
@@ -25,8 +27,10 @@ const ChatContainer = () => {
   const {
     sharedId: conversationId,
     locale,
+    theme,
     visibleAvatar,
   } = useGetSharedChatSearchParams();
+  const { setTheme } = useTheme();
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -88,6 +92,12 @@ const ChatContainer = () => {
       i18n.changeLanguage(locale);
     }
   }, [locale, visibleAvatar]);
+
+  React.useEffect(() => {
+    if (theme && (theme === ThemeEnum.Light || theme === ThemeEnum.Dark)) {
+      setTheme(theme as ThemeEnum);
+    }
+  }, [theme, setTheme]);
 
   React.useEffect(() => {
     if (!isTaskMode && inputsData.prologue) {
