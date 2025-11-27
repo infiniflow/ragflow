@@ -49,6 +49,7 @@ class RetCode(IntEnum, CustomEnum):
     RUNNING = 106
     PERMISSION_ERROR = 108
     AUTHENTICATION_ERROR = 109
+    BAD_REQUEST = 400
     UNAUTHORIZED = 401
     SERVER_ERROR = 500
     FORBIDDEN = 403
@@ -118,6 +119,7 @@ class FileSource(StrEnum):
     SHAREPOINT = "sharepoint"
     SLACK = "slack"
     TEAMS = "teams"
+    WEBDAV = "webdav"
     MOODLE = "moodle"
     DROPBOX = "dropbox"
 

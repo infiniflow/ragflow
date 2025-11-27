@@ -7,7 +7,8 @@ export default {
       selectPlaceholder: 'select value',
       selectAll: 'Select all',
       delete: 'Delete',
-      deleteModalTitle: 'Are you sure to delete this item?',
+      deleteModalTitle: 'Are you sure to delete it ?',
+      deleteThem: 'Are you sure to delete them ?',
       ok: 'Ok',
       cancel: 'Cancel',
       yes: 'Yes',
@@ -59,6 +60,7 @@ export default {
         urlPlaceholder: 'https://api.example.com/v1/mcp',
         tokenPlaceholder: 'e.g. eyJhbGciOiJIUzI1Ni...',
       },
+      selected: 'Selected',
     },
     login: {
       loginTitle: 'Sign in to Your Account',
@@ -92,7 +94,7 @@ export default {
       home: 'Home',
       setting: 'User settings',
       logout: 'Log out',
-      fileManager: 'File Management',
+      fileManager: 'File',
       flow: 'Agent',
       search: 'Search',
       welcome: 'Welcome to',
@@ -696,8 +698,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      deleteModel: 'Delete model',
       modelEmptyTip:
-        'No models available. Please add models from the panel on the right.',
+        'No models available. <br>Please add models from the panel on the right.',
       sourceEmptyTip: 'No data sources added yet. Select one below to connect.',
       seconds: 'seconds',
       minutes: 'minutes',
@@ -736,6 +739,9 @@ Example: Virtual Hosted Style`,
         'Sync pages and databases from Notion for knowledge retrieval.',
       google_driveDescription:
         'Connect your Google Drive via OAuth and sync specific folders or drives.',
+      webdavDescription: 'Connect to WebDAV servers to sync files.',
+      webdavRemotePathTip:
+        'Optional: Specify a folder path on the WebDAV server (e.g., /Documents). Leave empty to sync from root.',
       google_driveTokenTip:
         'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
       google_drivePrimaryAdminTip:
@@ -1915,6 +1921,7 @@ Important structured information may include: names, dates, locations, events, k
       editMCP: 'Edit MCP',
       toolsAvailable: 'tools available',
       mcpServers: 'MCP servers',
+      mcpServer: 'MCP server',
       customizeTheListOfMcpServers: 'Customize the list of MCP servers',
       cachedTools: 'cached tools',
       bulkManage: 'Bulk manage',
@@ -2012,6 +2019,18 @@ Important structured information may include: names, dates, locations, events, k
       processingFailedTip: 'Total failed processes',
       processing: 'Processing',
     },
+
+    deleteModal: {
+      delAgent: 'Delete agent',
+      delDataset: 'Delete dataset',
+      delSearch: 'Delete search',
+      delFile: 'Delete file',
+      delFiles: 'Delete files',
+      delFilesContent: 'Selected {{count}} files',
+      delChat: 'Delete chat',
+      delMember: 'Delete member',
+    },
+
     admin: {
       loginTitle: 'Admin Console',
       title: 'RAGFlow',

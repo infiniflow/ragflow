@@ -116,6 +116,7 @@ dependencies = [
     "google-genai>=1.41.0,<2.0.0",
     "volcengine==1.0.194",
     "voyageai==0.2.3",
+    "webdav4>=0.10.0,<0.11.0",
     "webdriver-manager==4.0.1",
     "werkzeug==3.0.6",
     "wikipedia==1.4.0",
