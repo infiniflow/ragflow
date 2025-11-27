@@ -1,8 +1,6 @@
 import logging
-import re
-import unicodedata
+import os
 from typing import Any
-
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from googleapiclient.errors import HttpError
@@ -11,7 +9,7 @@ from common.data_source.config import INDEX_BATCH_SIZE, SLIM_BATCH_SIZE, Documen
 from common.data_source.google_util.auth import get_google_creds
 from common.data_source.google_util.constant import DB_CREDENTIALS_PRIMARY_ADMIN_KEY, MISSING_SCOPES_ERROR_STR, SCOPE_INSTRUCTIONS, USER_FIELDS
 from common.data_source.google_util.resource import get_admin_service, get_gmail_service
-from common.data_source.google_util.util import _execute_single_retrieval, execute_paginated_retrieval
+from common.data_source.google_util.util import _execute_single_retrieval, execute_paginated_retrieval, sanitize_filename, clean_string
 from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch, SlimConnectorWithPermSync
 from common.data_source.models import BasicExpertInfo, Document, ExternalAccess, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SlimDocument, TextSection
 from common.data_source.utils import build_time_range_query, clean_email_and_extract_name, get_message_body, is_mail_service_disabled_error, gmail_time_str_to_utc
@@ -95,43 +93,11 @@ def thread_to_document(full_thread: dict[str, Any], email_used_to_fetch_thread: 
                     from_emails[email] = display_name if not from_emails.get(email) else None
                 else:
                     other_emails[email] = display_name if not other_emails.get(email) else None
+
         if not semantic_identifier:
             semantic_identifier = message_metadata.get("subject", "")
-
-            def clean_string(text: str | None) -> str | None:
-                """
-                Clean a string to make it safe for insertion into MySQL (utf8mb4).
-                - Normalize Unicode
-                - Remove control characters / zero-width characters
-                - Optionally remove high-plane emoji and symbols
-                """
-                if text is None:
-                    return None
-
-                # 0. Ensure the value is a string
-                text = str(text)
-
-                # 1. Normalize Unicode (NFC)
-                text = unicodedata.normalize("NFC", text)
-
-                # 2. Remove ASCII control characters (except tab, newline, carriage return)
-                text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
-
-                # 3. Remove zero-width characters / BOM
-                text = re.sub(r"[\u200b-\u200d\uFEFF]", "", text)
-
-                # 4. Remove high Unicode characters (emoji, special symbols)
-                text = re.sub(r"[\U00010000-\U0010FFFF]", "", text)
-
-                # 5. Final fallback: strip any invalid UTF-8 sequences
-                try:
-                    text.encode("utf-8")
-                except UnicodeEncodeError:
-                    text = text.encode("utf-8", errors="ignore").decode("utf-8")
-
-                return text
-
             semantic_identifier = clean_string(semantic_identifier)
+            semantic_identifier = sanitize_filename(semantic_identifier)
 
         if message_metadata.get("updated_at"):
             updated_at = message_metadata.get("updated_at")
@@ -167,7 +133,7 @@ def thread_to_document(full_thread: dict[str, Any], email_used_to_fetch_thread: 
         primary_owners=primary_owners,
         secondary_owners=secondary_owners,
         doc_updated_at=updated_at_datetime,
-        metadata={},
+        metadata=message_metadata,
         external_access=ExternalAccess(
             external_user_emails={email_used_to_fetch_thread},
             external_user_group_ids=set(),

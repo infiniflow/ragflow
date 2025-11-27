@@ -1,11 +1,12 @@
 import json
 import logging
 import os
+import re
 import socket
 from collections.abc import Callable, Iterator
 from enum import Enum
 from typing import Any
-
+import unicodedata
 from googleapiclient.errors import HttpError  # type: ignore  # type: ignore
 
 from common.data_source.config import DocumentSource
@@ -189,3 +190,74 @@ def get_credentials_from_env(email: str, oauth: bool = False, source="drive") ->
         DB_CREDENTIALS_PRIMARY_ADMIN_KEY: email,
         DB_CREDENTIALS_AUTHENTICATION_METHOD: "uploaded",
     }
+
+def sanitize_filename(name: str) -> str:
+    """
+    Soft sanitize for MinIO/S3:
+    - Replace only prohibited characters with a space.
+    - Preserve readability (no ugly underscores).
+    - Collapse multiple spaces.
+    """
+    if name is None:
+        return "file.txt"
+
+    name = str(name).strip()
+
+    # Characters that MUST NOT appear in S3/MinIO object keys
+    # Replace them with a space (not underscore)
+    forbidden = r'[\\\?\#\%\*\:\|\<\>"]'
+    name = re.sub(forbidden, " ", name)
+
+    # Replace slashes "/" (S3 interprets as folder) with space
+    name = name.replace("/", " ")
+
+    # Collapse multiple spaces into one
+    name = re.sub(r"\s+", " ", name)
+
+    # Trim both ends
+    name = name.strip()
+
+    # Enforce reasonable max length
+    if len(name) > 200:
+        base, ext = os.path.splitext(name)
+        name = base[:180].rstrip() + ext
+
+    # Ensure there is an extension (your original logic)
+    if not os.path.splitext(name)[1]:
+        name += ".txt"
+
+    return name
+
+
+def clean_string(text: str | None) -> str | None:
+    """
+    Clean a string to make it safe for insertion into MySQL (utf8mb4).
+    - Normalize Unicode
+    - Remove control characters / zero-width characters
+    - Optionally remove high-plane emoji and symbols
+    """
+    if text is None:
+        return None
+
+    # 0. Ensure the value is a string
+    text = str(text)
+
+    # 1. Normalize Unicode (NFC)
+    text = unicodedata.normalize("NFC", text)
+
+    # 2. Remove ASCII control characters (except tab, newline, carriage return)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+
+    # 3. Remove zero-width characters / BOM
+    text = re.sub(r"[\u200b-\u200d\uFEFF]", "", text)
+
+    # 4. Remove high Unicode characters (emoji, special symbols)
+    text = re.sub(r"[\U00010000-\U0010FFFF]", "", text)
+
+    # 5. Final fallback: strip any invalid UTF-8 sequences
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        text = text.encode("utf-8", errors="ignore").decode("utf-8")
+
+    return text
