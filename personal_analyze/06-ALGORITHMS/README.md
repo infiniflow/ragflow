@@ -2,36 +2,65 @@
 
 ## Tong Quan
 
-Module này chứa các thuật toán core của RAGFlow bao gồm scoring, similarity, chunking, và advanced RAG techniques.
+Module này chứa TẤT CẢ các thuật toán được sử dụng trong RAGFlow, bao gồm 50+ algorithms chia thành 12 categories.
 
-## Kien Truc Algorithms
+## Algorithm Categories
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    CORE ALGORITHMS                               │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         RAGFLOW ALGORITHM MAP                                │
+└─────────────────────────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────┐
-│  RETRIEVAL ALGORITHMS                                            │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │  BM25 Scoring   │  │ Vector Cosine   │  │ Hybrid Fusion   │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  1. CLUSTERING                    │  2. DIMENSIONALITY REDUCTION            │
+│  ├── K-Means                      │  ├── UMAP                               │
+│  ├── Gaussian Mixture Model (GMM) │  └── Node2Vec Embedding                 │
+│  └── Silhouette Score             │                                         │
+└───────────────────────────────────┴─────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────┐
-│  ADVANCED RAG                                                    │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │  RAPTOR         │  │  GraphRAG       │  │  Cross-Encoder  │ │
-│  │  (Hierarchical) │  │  (Knowledge G)  │  │  (Reranking)    │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  3. GRAPH ALGORITHMS              │  4. NLP/TEXT PROCESSING                 │
+│  ├── PageRank                     │  ├── Trie-based Tokenization            │
+│  ├── Leiden Community Detection   │  ├── Max-Forward/Backward Algorithm     │
+│  ├── Entity Extraction (LLM)      │  ├── DFS with Memoization               │
+│  ├── Relation Extraction (LLM)    │  ├── TF-IDF Term Weighting              │
+│  ├── Entity Resolution            │  ├── Named Entity Recognition (NER)     │
+│  └── Largest Connected Component  │  ├── Part-of-Speech Tagging (POS)       │
+│                                   │  ├── Synonym Detection (WordNet)        │
+│                                   │  └── Query Expansion                    │
+└───────────────────────────────────┴─────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────┐
-│  TEXT PROCESSING                                                 │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │  TF-IDF Weight  │  │  Tokenization   │  │  Query Expand   │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  5. SIMILARITY/DISTANCE           │  6. INFORMATION RETRIEVAL               │
+│  ├── Cosine Similarity            │  ├── BM25 Scoring                       │
+│  ├── Edit Distance (Levenshtein)  │  ├── Hybrid Score Fusion                │
+│  ├── IoU (Intersection over Union)│  ├── Cross-Encoder Reranking            │
+│  ├── Token Similarity             │  └── Weighted Sum Fusion                │
+│  └── Hybrid Similarity            │                                         │
+└───────────────────────────────────┴─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  7. CHUNKING/MERGING              │  8. MACHINE LEARNING MODELS             │
+│  ├── Naive Merge (Token-based)    │  ├── XGBoost (Text Concatenation)       │
+│  ├── Hierarchical Merge           │  ├── ONNX Models (Vision)               │
+│  ├── Tree-based Merge             │  └── Reranking Models                   │
+│  └── Binary Search Merge          │                                         │
+└───────────────────────────────────┴─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  9. VISION/IMAGE PROCESSING       │  10. ADVANCED RAG                       │
+│  ├── OCR (ONNX)                   │  ├── RAPTOR (Hierarchical Summarization)│
+│  ├── Layout Recognition (YOLOv10) │  ├── GraphRAG                           │
+│  ├── Table Structure Recognition  │  └── Community Reports                  │
+│  └── Non-Maximum Suppression (NMS)│                                         │
+└───────────────────────────────────┴─────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  11. OPTIMIZATION                 │  12. DATA STRUCTURES                    │
+│  ├── BIC (Bayesian Info Criterion)│  ├── Trie Tree                          │
+│  └── Silhouette Score             │  ├── Hierarchical Tree                  │
+│                                   │  └── NetworkX Graph                     │
+└───────────────────────────────────┴─────────────────────────────────────────┘
 ```
 
 ## Files Trong Module Nay
@@ -39,90 +68,122 @@ Module này chứa các thuật toán core của RAGFlow bao gồm scoring, simi
 | File | Mo Ta |
 |------|-------|
 | [bm25_scoring.md](./bm25_scoring.md) | BM25 ranking algorithm |
-| [vector_similarity.md](./vector_similarity.md) | Cosine similarity calculations |
-| [hybrid_score_fusion.md](./hybrid_score_fusion.md) | Score combination strategies |
-| [tfidf_weighting.md](./tfidf_weighting.md) | TF-IDF term weighting |
+| [hybrid_score_fusion.md](./hybrid_score_fusion.md) | Score combination |
 | [raptor_algorithm.md](./raptor_algorithm.md) | Hierarchical summarization |
-| [graphrag_implementation.md](./graphrag_implementation.md) | Knowledge graph RAG |
+| [clustering_algorithms.md](./clustering_algorithms.md) | KMeans, GMM, UMAP |
+| [graph_algorithms.md](./graph_algorithms.md) | PageRank, Leiden, Entity Resolution |
+| [nlp_algorithms.md](./nlp_algorithms.md) | Tokenization, TF-IDF, NER, POS |
+| [vision_algorithms.md](./vision_algorithms.md) | OCR, Layout, NMS |
+| [similarity_metrics.md](./similarity_metrics.md) | Cosine, Edit Distance, IoU |
 
-## Algorithm Formulas
+## Complete Algorithm Reference
 
-### BM25 Scoring
-```
-BM25(D, Q) = Σ IDF(qi) × (f(qi, D) × (k1 + 1)) / (f(qi, D) + k1 × (1 - b + b × |D|/avgdl))
+### 1. CLUSTERING ALGORITHMS
 
-where:
-    f(qi, D) = term frequency of qi in document D
-    |D| = document length
-    avgdl = average document length
-    k1 = 1.2 (term frequency saturation)
-    b = 0.75 (length normalization)
-```
+| Algorithm | File | Description |
+|-----------|------|-------------|
+| K-Means | `/deepdoc/parser/pdf_parser.py:36` | Column detection in PDF layout |
+| GMM | `/rag/raptor.py:22` | RAPTOR cluster selection |
+| Silhouette Score | `/deepdoc/parser/pdf_parser.py:37` | Cluster validation |
 
-### Cosine Similarity
-```
-cos(θ) = (A · B) / (||A|| × ||B||)
+### 2. DIMENSIONALITY REDUCTION
 
-where:
-    A, B = embedding vectors
-    A · B = dot product
-    ||A|| = L2 norm
-```
+| Algorithm | File | Description |
+|-----------|------|-------------|
+| UMAP | `/rag/raptor.py:21` | Pre-clustering dimension reduction |
+| Node2Vec | `/graphrag/general/entity_embedding.py:24` | Graph node embedding |
 
-### Hybrid Score Fusion
-```
-Hybrid_Score = α × BM25_Score + (1-α) × Vector_Score
+### 3. GRAPH ALGORITHMS
 
-Default: α = 0.05 (5% BM25, 95% Vector)
-```
+| Algorithm | File | Description |
+|-----------|------|-------------|
+| PageRank | `/graphrag/entity_resolution.py:150` | Entity importance scoring |
+| Leiden | `/graphrag/general/leiden.py:72` | Hierarchical community detection |
+| Entity Extraction | `/graphrag/general/extractor.py` | LLM-based entity extraction |
+| Relation Extraction | `/graphrag/general/extractor.py` | LLM-based relation extraction |
+| Entity Resolution | `/graphrag/entity_resolution.py` | Entity deduplication |
+| LCC | `/graphrag/general/leiden.py:67` | Largest connected component |
 
-### TF-IDF Weighting
-```
-IDF(term) = log10(10 + (N - df(term) + 0.5) / (df(term) + 0.5))
-Weight = (0.3 × IDF1 + 0.7 × IDF2) × NER × PoS
-```
+### 4. NLP/TEXT PROCESSING
 
-### Cross-Encoder Reranking
-```
-Final_Rank = α × Token_Sim + β × Vector_Sim + γ × Rank_Features
+| Algorithm | File | Description |
+|-----------|------|-------------|
+| Trie Tokenization | `/rag/nlp/rag_tokenizer.py:72` | Chinese word segmentation |
+| Max-Forward | `/rag/nlp/rag_tokenizer.py:250` | Forward tokenization |
+| Max-Backward | `/rag/nlp/rag_tokenizer.py:273` | Backward tokenization |
+| DFS + Memo | `/rag/nlp/rag_tokenizer.py:120` | Disambiguation |
+| TF-IDF | `/rag/nlp/term_weight.py:223` | Term weighting |
+| NER | `/rag/nlp/term_weight.py:84` | Named entity recognition |
+| POS Tagging | `/rag/nlp/term_weight.py:179` | Part-of-speech tagging |
+| Synonym | `/rag/nlp/synonym.py:71` | Synonym lookup |
+| Query Expansion | `/rag/nlp/query.py:85` | Query rewriting |
+| Porter Stemmer | `/rag/nlp/rag_tokenizer.py:27` | English stemming |
+| WordNet Lemmatizer | `/rag/nlp/rag_tokenizer.py:27` | Lemmatization |
 
-where:
-    α = 0.3 (token weight)
-    β = 0.7 (vector weight)
-    γ = variable (PageRank, tag boost)
-```
+### 5. SIMILARITY/DISTANCE METRICS
 
-## Algorithm Parameters
+| Algorithm | File | Formula |
+|-----------|------|---------|
+| Cosine Similarity | `/rag/nlp/query.py:221` | `cos(θ) = A·B / (‖A‖×‖B‖)` |
+| Edit Distance | `/graphrag/entity_resolution.py:28` | Levenshtein distance |
+| IoU | `/deepdoc/vision/operators.py:702` | `intersection / union` |
+| Token Similarity | `/rag/nlp/query.py:230` | Weighted token overlap |
+| Hybrid Similarity | `/rag/nlp/query.py:220` | `α×token + β×vector` |
 
-| Algorithm | Parameter | Default | Range |
-|-----------|-----------|---------|-------|
-| **BM25** | k1 | 1.2 | 0-2.0 |
-| | b | 0.75 | 0-1.0 |
-| **Hybrid** | vector_weight | 0.95 | 0-1.0 |
-| | text_weight | 0.05 | 0-1.0 |
-| **TF-IDF** | IDF1 weight | 0.3 | - |
-| | IDF2 weight | 0.7 | - |
-| **Chunking** | chunk_size | 512 | 128-2048 |
-| | overlap | 0-10% | 0-100% |
-| **RAPTOR** | max_clusters | 10-50 | - |
-| | GMM threshold | 0.1 | - |
-| **GraphRAG** | entity_topN | 6 | 1-100 |
-| | similarity_threshold | 0.3 | 0-1.0 |
+### 6. INFORMATION RETRIEVAL
 
-## Key Implementation Files
+| Algorithm | File | Formula |
+|-----------|------|---------|
+| BM25 | `/rag/nlp/search.py` | ES native BM25 |
+| Hybrid Fusion | `/rag/nlp/search.py:126` | `0.05×BM25 + 0.95×Vector` |
+| Reranking | `/rag/nlp/search.py:330` | Cross-encoder scoring |
+| Argsort Ranking | `/rag/nlp/search.py:429` | Score-based sorting |
 
-- `/rag/nlp/search.py` - Search algorithms
-- `/rag/nlp/term_weight.py` - TF-IDF implementation
-- `/rag/nlp/query.py` - Query processing
-- `/rag/raptor.py` - RAPTOR algorithm
-- `/graphrag/search.py` - GraphRAG search
-- `/rag/nlp/__init__.py` - Chunking algorithms
+### 7. CHUNKING/MERGING
 
-## Performance Metrics
+| Algorithm | File | Description |
+|-----------|------|-------------|
+| Naive Merge | `/rag/nlp/__init__.py:582` | Token-based chunking |
+| Naive Merge + Images | `/rag/nlp/__init__.py:645` | With image tracking |
+| Hierarchical Merge | `/rag/nlp/__init__.py:487` | Tree-based merging |
+| Binary Search | `/rag/nlp/__init__.py:512` | Efficient section lookup |
+| DFS Tree Traversal | `/rag/flow/hierarchical_merger/` | Document hierarchy |
 
-| Metric | Typical Value |
-|--------|---------------|
-| Vector Search Latency | < 100ms |
-| BM25 Search Latency | < 50ms |
-| Reranking Latency | 200-500ms |
-| Total Retrieval | < 1s |
+### 8. MACHINE LEARNING MODELS
+
+| Model | File | Purpose |
+|-------|------|---------|
+| XGBoost | `/deepdoc/parser/pdf_parser.py:88` | Text concatenation |
+| ONNX OCR | `/deepdoc/vision/ocr.py:32` | Text recognition |
+| ONNX Layout | `/deepdoc/vision/layout_recognizer.py` | Layout detection |
+| ONNX TSR | `/deepdoc/vision/table_structure_recognizer.py` | Table structure |
+| YOLOv10 | `/deepdoc/vision/layout_recognizer.py` | Object detection |
+
+### 9. VISION/IMAGE PROCESSING
+
+| Algorithm | File | Description |
+|-----------|------|-------------|
+| NMS | `/deepdoc/vision/operators.py:702` | Box filtering |
+| IoU Filtering | `/deepdoc/vision/recognizer.py:359` | Overlap detection |
+| Bounding Box Overlap | `/deepdoc/vision/layout_recognizer.py:94` | Spatial analysis |
+
+### 10. ADVANCED RAG
+
+| Algorithm | File | Description |
+|-----------|------|-------------|
+| RAPTOR | `/rag/raptor.py:37` | Hierarchical summarization |
+| GraphRAG | `/graphrag/` | Knowledge graph RAG |
+| Community Reports | `/graphrag/general/community_reports_extractor.py` | Graph summaries |
+
+### 11. OPTIMIZATION CRITERIA
+
+| Algorithm | File | Formula |
+|-----------|------|---------|
+| BIC | `/rag/raptor.py:92` | `k×log(n) - 2×log(L)` |
+| Silhouette | `/deepdoc/parser/pdf_parser.py:400` | `(b-a) / max(a,b)` |
+
+## Statistics
+
+- **Total Algorithms**: 50+
+- **Categories**: 12
+- **Key Libraries**: sklearn, UMAP, XGBoost, NetworkX, graspologic, ONNX
