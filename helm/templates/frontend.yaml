@@ -1,0 +1,198 @@
+{{- $component := "frontend" }}
+{{- $name := include "ragflow.componentFullname" (dict "root" . "component" $component) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  replicas: {{ .Values.ragflow.frontend.replicaCount }}
+  {{- with .Values.ragflow.frontend.deployment.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ragflow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+  template:
+    metadata:
+      labels:
+        {{- include "ragflow.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: {{ $component }}
+      {{- with .Values.ragflow.frontend.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- $globalPullSecrets := .Values.imagePullSecrets }}
+      {{- $basePullSecrets := .Values.ragflow.image.pullSecrets }}
+      {{- $frontendImage := default (dict) .Values.ragflow.frontend.image }}
+      {{- $componentPullSecrets := default list $frontendImage.pullSecrets }}
+      {{- if or (or $globalPullSecrets $basePullSecrets) $componentPullSecrets }}
+      imagePullSecrets:
+        {{- with $globalPullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $basePullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $componentPullSecrets }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: {{ $component }}
+          {{- $imageRepository := default .Values.ragflow.image.repository $frontendImage.repository }}
+          {{- $imageTag := default .Values.ragflow.image.tag $frontendImage.tag }}
+          image: {{ printf "%s:%s" $imageRepository $imageTag }}
+          {{- $pullPolicy := default .Values.ragflow.image.pullPolicy $frontendImage.pullPolicy }}
+          {{- with $pullPolicy }}
+          imagePullPolicy: {{ . }}
+          {{- end }}
+          command:
+            - /bin/bash
+            - -lc
+            - |
+              set -eo pipefail
+              rm -f /var/run/nginx.pid
+              mkdir -p /var/log/nginx
+              rm -f /var/log/nginx/access.log /var/log/nginx/error.log
+              ln -sf /proc/1/fd/1 /var/log/nginx/access.log
+              ln -sf /proc/1/fd/2 /var/log/nginx/error.log
+
+              calculate_workers() {
+                local quota="$1"
+                local period="$2"
+                if [[ "${quota}" == "max" ]]; then
+                  echo ""
+                  return
+                fi
+                if [[ "${quota}" -gt 0 && "${period}" -gt 0 ]]; then
+                  echo $(( (quota + period - 1) / period ))
+                else
+                  echo ""
+                fi
+              }
+
+              detect_worker_processes() {
+                local workers=""
+                if [[ -f /sys/fs/cgroup/cpu.max ]]; then
+                  read -r quota period < /sys/fs/cgroup/cpu.max || true
+                  workers=$(calculate_workers "${quota}" "${period}")
+                elif [[ -f /sys/fs/cgroup/cpu/cpu.cfs_quota_us ]]; then
+                  quota=$(cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us 2>/dev/null || echo "")
+                  period=$(cat /sys/fs/cgroup/cpu/cpu.cfs_period_us 2>/dev/null || echo "")
+                  workers=$(calculate_workers "${quota:-0}" "${period:-0}")
+                fi
+
+                if [[ -z "${workers}" ]]; then
+                  workers=$(nproc 2>/dev/null || echo "")
+                fi
+
+                if [[ -z "${workers}" || "${workers}" -le 0 ]]; then
+                  workers=1
+                fi
+
+                echo "${workers}"
+              }
+
+              workers="$(detect_worker_processes)"
+              export NGINX_WORKER_PROCESSES="${workers}"
+
+              tmp_nginx_dir="$(mktemp -d)"
+              if command -v envsubst >/dev/null 2>&1; then
+                envsubst '${NGINX_WORKER_PROCESSES}' </etc/nginx/nginx.conf > "${tmp_nginx_dir}/nginx.conf"
+              else
+                sed "s|\${NGINX_WORKER_PROCESSES}|${NGINX_WORKER_PROCESSES}|g" /etc/nginx/nginx.conf > "${tmp_nginx_dir}/nginx.conf"
+              fi
+
+              exec /usr/sbin/nginx -c "${tmp_nginx_dir}/nginx.conf" -g 'daemon off;'
+          ports:
+            - name: http
+              containerPort: 80
+          envFrom:
+            - secretRef:
+                name: {{ include "ragflow.fullname" . }}-env-config
+          {{- with .Values.ragflow.frontend.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- $probes := default (dict) .Values.ragflow.frontend.probes }}
+          {{- if $probes.liveness }}
+          livenessProbe:
+            {{- toYaml $probes.liveness | nindent 12 }}
+          {{- else }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          {{- end }}
+          {{- if $probes.readiness }}
+          readinessProbe:
+            {{- toYaml $probes.readiness | nindent 12 }}
+          {{- else }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+          {{- end }}
+          {{- if $probes.startup }}
+          startupProbe:
+            {{- toYaml $probes.startup | nindent 12 }}
+          {{- else }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 30
+          {{- end }}
+          volumeMounts:
+            - mountPath: /etc/nginx/conf.d/ragflow.conf
+              subPath: ragflow.conf
+              name: nginx-config
+            - mountPath: /etc/nginx/proxy.conf
+              subPath: proxy.conf
+              name: nginx-config
+            - mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              name: nginx-config
+          {{- with .Values.ragflow.frontend.deployment.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: nginx-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "ragflow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  type: {{ .Values.ragflow.frontend.service.type }}
+  selector:
+    {{- include "ragflow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+  ports:
+    - name: http
+      port: {{ .Values.ragflow.frontend.service.port }}
+      targetPort: http
