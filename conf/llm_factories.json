@@ -270,20 +270,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "glm-4.5",
-                    "tags": "LLM,CHAT,131K",
-                    "max_tokens": 131000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "deepseek-v3.1",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
                     "llm_name": "hunyuan-a13b-instruct",
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
@@ -322,6 +308,34 @@
                     "llm_name": "qwen3-vl-30b-a3b-instruct",
                     "tags": "LLM,CHAT,262k",
                     "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ocr",
+                    "tags": "LLM,8k",
+                    "max_tokens": 8000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-235b-a22b-instruct-2507",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-4.6",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "minimax-m2",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 200000,
                     "model_type": "chat",
                     "is_tools": true
                 }
