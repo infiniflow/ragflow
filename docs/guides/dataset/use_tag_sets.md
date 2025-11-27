@@ -56,9 +56,9 @@ Once a tag set is created, you can apply it to your dataset:
 1. Navigate to the **Configuration** page of your dataset.
 2. Select the tag set from the **Tag sets** dropdown and click **Save** to confirm.
 
-:::tip NOTE
-If the tag set is missing from the dropdown, check that it has been created or configured correctly.
-:::
+   :::tip NOTE
+   If the tag set is missing from the dropdown, check that it has been created or configured correctly.
+   :::
 
 3. Re-parse your documents to start the auto-tagging process.  
    _In an AI chat scenario using auto-tagged datasets, each query will be tagged using the corresponding tag set(s) and chunks with these tags will have a higher chance to be retrieved._
