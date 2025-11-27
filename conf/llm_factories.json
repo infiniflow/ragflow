@@ -3233,6 +3233,13 @@
             "rank": "990",
             "llm": [
                 {
+                    "llm_name": "claude-opus-4-5-20251101",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "claude-opus-4-1-20250805",
                     "tags": "LLM,CHAT,IMAGE2TEXT,200k",
                     "max_tokens": 204800,
