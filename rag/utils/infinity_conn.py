@@ -69,7 +69,7 @@ def convert_matching_field(field_weightstr: str) -> str:
     if field == "docnm_kwd" or field == "title_tks":
         field = "docnm@ft_docnm_rag_coarse"
     elif field == "title_sm_tks":
-        field = "docnm@ft_title_rag_fine"
+        field = "docnm@ft_docnm_rag_fine"
     elif field == "important_kwd":
         field = "important_keywords@ft_important_keywords_rag_coarse"
     elif field == "important_tks":
