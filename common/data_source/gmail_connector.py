@@ -1,6 +1,6 @@
-import json
 import logging
-import sys
+import re
+import unicodedata
 from typing import Any
 
 from google.oauth2.credentials import Credentials as OAuthCredentials
@@ -98,9 +98,44 @@ def thread_to_document(full_thread: dict[str, Any], email_used_to_fetch_thread: 
         if not semantic_identifier:
             semantic_identifier = message_metadata.get("subject", "")
 
+            def clean_string(text: str | None) -> str | None:
+                """
+                Clean a string to make it safe for insertion into MySQL (utf8mb4).
+                - Normalize Unicode
+                - Remove control characters / zero-width characters
+                - Optionally remove high-plane emoji and symbols
+                """
+                if text is None:
+                    return None
+
+                # 0. Ensure the value is a string
+                text = str(text)
+
+                # 1. Normalize Unicode (NFC)
+                text = unicodedata.normalize("NFC", text)
+
+                # 2. Remove ASCII control characters (except tab, newline, carriage return)
+                text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+
+                # 3. Remove zero-width characters / BOM
+                text = re.sub(r"[\u200b-\u200d\uFEFF]", "", text)
+
+                # 4. Remove high Unicode characters (emoji, special symbols)
+                text = re.sub(r"[\U00010000-\U0010FFFF]", "", text)
+
+                # 5. Final fallback: strip any invalid UTF-8 sequences
+                try:
+                    text.encode("utf-8")
+                except UnicodeEncodeError:
+                    text = text.encode("utf-8", errors="ignore").decode("utf-8")
+
+                return text
+
+            semantic_identifier = clean_string(semantic_identifier)
+
         if message_metadata.get("updated_at"):
             updated_at = message_metadata.get("updated_at")
-
+            
     updated_at_datetime = None
     if updated_at:
         updated_at_datetime = gmail_time_str_to_utc(updated_at)
@@ -118,7 +153,7 @@ def thread_to_document(full_thread: dict[str, Any], email_used_to_fetch_thread: 
     combined_sections = "\n\n".join(
         sec.text for sec in sections if hasattr(sec, "text")
     )
-    blob = combined_sections.encode("utf-8")
+    blob = combined_sections
     size_bytes = len(blob)
     extension = '.txt'
 
@@ -323,7 +358,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     try:
         email = os.environ.get("GMAIL_TEST_EMAIL", "newyorkupperbay@gmail.com")
-        creds = get_credentials_from_env(email, oauth=True)
+        creds = get_credentials_from_env(email, oauth=True, source="gmail")
         print("Credentials loaded successfully")
         print(f"{creds=}")
 
@@ -335,9 +370,10 @@ if __name__ == "__main__":
         print("Gmail is ready to use")
 
         for file in connector._fetch_threads(
-            int(time.time()) - 3 * 24 * 60 * 60,
+            int(time.time()) - 1 * 24 * 60 * 60,
             int(time.time()),
         ):
+            print("new batch","-"*80)
             for f in file:
                 print(f)
                 print("\n\n")

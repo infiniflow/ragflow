@@ -194,16 +194,16 @@ async def _render_web_oauth_popup(flow_id: str, success: bool, message: str, sou
 @login_required
 @validate_request("credentials")
 async def start_google_web_oauth():
-    source = request.args.get("type", "drive")
-    if source not in ("drive", "gmail"):
+    source = request.args.get("type", "google-drive")
+    if source not in ("google-drive", "gmail"):
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Invalid Google OAuth type.")
 
     if source == "gmail":
         redirect_uri = GMAIL_WEB_OAUTH_REDIRECT_URI
         scopes = GOOGLE_SCOPES[DocumentSource.GMAIL]
     else:
-        redirect_uri = GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI if source == "drive" else GMAIL_WEB_OAUTH_REDIRECT_URI
-        scopes = GOOGLE_SCOPES[DocumentSource.GOOGLE_DRIVE if source == "drive" else DocumentSource.GMAIL]
+        redirect_uri = GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI if source == "google-drive" else GMAIL_WEB_OAUTH_REDIRECT_URI
+        scopes = GOOGLE_SCOPES[DocumentSource.GOOGLE_DRIVE if source == "google-drive" else DocumentSource.GMAIL]
 
     if not redirect_uri:
         return get_json_result(
@@ -269,7 +269,7 @@ async def google_gmail_web_oauth_callback():
     state_id = request.args.get("state")
     error = request.args.get("error")
     source = "gmail"
-    if source not in ("drive", "gmail"):
+    if source != 'gmail':
         return await _render_web_oauth_popup("", False, "Invalid Google OAuth type.", source)
 
     error_description = request.args.get("error_description") or error
@@ -323,8 +323,8 @@ async def google_gmail_web_oauth_callback():
 async def google_drive_web_oauth_callback():
     state_id = request.args.get("state")
     error = request.args.get("error")
-    source = "drive"
-    if source not in ("drive", "gmail"):
+    source = "google-drive"
+    if source not in ("google-drive", "gmail"):
         return await _render_web_oauth_popup("", False, "Invalid Google OAuth type.", source)
 
     error_description = request.args.get("error_description") or error
@@ -376,7 +376,7 @@ async def google_drive_web_oauth_callback():
 async def poll_google_web_result():
     req = await request.json or {}
     source = request.args.get("type")
-    if source not in ("drive", "gmail"):
+    if source not in ("google-drive", "gmail"):
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Invalid Google OAuth type.")
     flow_id = req.get("flow_id")
     cache_raw = REDIS_CONN.get(_web_result_cache_key(flow_id, source))

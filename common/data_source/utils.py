@@ -733,7 +733,7 @@ def build_time_range_query(
     """Build time range query for Gmail API"""
     query = ""
     if time_range_start is not None and time_range_start != 0:
-        query += f"after:{int(time_range_start)}"
+        query += f"after:{int(time_range_start) + 1}"
     if time_range_end is not None and time_range_end != 0:
         query += f" before:{int(time_range_end)}"
     query = query.strip()
