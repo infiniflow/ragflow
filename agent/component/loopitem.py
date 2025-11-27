@@ -59,9 +59,9 @@ class LoopItem(ComponentBase, ABC):
                 return var == value
             elif operator == "is not":
                 return var != value
-            elif operator == "is empty":
+            elif operator == "empty":
                 return var == ""
-            elif operator == "is not empty":
+            elif operator == "not empty":
                 return var != ""
 
         elif isinstance(var, (int, float)):
@@ -77,9 +77,9 @@ class LoopItem(ComponentBase, ABC):
                 return var >= value
             elif operator == "≤":
                 return var <= value
-            elif operator == "is empty":
+            elif operator == "empty":
                 return var is None
-            elif operator == "is not empty":
+            elif operator == "not empty":
                 return var is not None
 
         elif isinstance(var, bool):
@@ -87,15 +87,15 @@ class LoopItem(ComponentBase, ABC):
                 return var is value
             elif operator == "is not":
                 return var is not value
-            elif operator == "is empty":
+            elif operator == "empty":
                 return var is None
-            elif operator == "is not empty":
+            elif operator == "not empty":
                 return var is not None
 
         elif isinstance(var, dict):
-            if operator == "is empty":
+            if operator == "empty":
                 return len(var) == 0
-            elif operator == "is not empty":
+            elif operator == "not empty":
                 return len(var) > 0
 
         elif isinstance(var, list):
@@ -109,9 +109,9 @@ class LoopItem(ComponentBase, ABC):
             elif operator == "is not":
                 return var != value
 
-            elif operator == "is empty":
+            elif operator == "empty":
                 return len(var) == 0
-            elif operator == "is not empty":
+            elif operator == "not empty":
                 return len(var) > 0
 
         raise Exception(f"Invalid operator: {operator}")
