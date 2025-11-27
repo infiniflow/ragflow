@@ -13,56 +13,6 @@ import { AddedSourceCard } from './component/added-source-card';
 import { DataSourceInfo, DataSourceKey } from './contant';
 import { useAddDataSource, useListDataSource } from './hooks';
 import { IDataSorceInfo } from './interface';
-const dataSourceTemplates = [
-  {
-    id: DataSourceKey.CONFLUENCE,
-    name: DataSourceInfo[DataSourceKey.CONFLUENCE].name,
-    description: DataSourceInfo[DataSourceKey.CONFLUENCE].description,
-    icon: DataSourceInfo[DataSourceKey.CONFLUENCE].icon,
-  },
-  {
-    id: DataSourceKey.S3,
-    name: DataSourceInfo[DataSourceKey.S3].name,
-    description: DataSourceInfo[DataSourceKey.S3].description,
-    icon: DataSourceInfo[DataSourceKey.S3].icon,
-  },
-  {
-    id: DataSourceKey.GOOGLE_DRIVE,
-    name: DataSourceInfo[DataSourceKey.GOOGLE_DRIVE].name,
-    description: DataSourceInfo[DataSourceKey.GOOGLE_DRIVE].description,
-    icon: DataSourceInfo[DataSourceKey.GOOGLE_DRIVE].icon,
-  },
-  {
-    id: DataSourceKey.GMAIL,
-    name: DataSourceInfo[DataSourceKey.GMAIL].name,
-    description: DataSourceInfo[DataSourceKey.GMAIL].description,
-    icon: DataSourceInfo[DataSourceKey.GMAIL].icon,
-  },
-  {
-    id: DataSourceKey.DISCORD,
-    name: DataSourceInfo[DataSourceKey.DISCORD].name,
-    description: DataSourceInfo[DataSourceKey.DISCORD].description,
-    icon: DataSourceInfo[DataSourceKey.DISCORD].icon,
-  },
-  {
-    id: DataSourceKey.NOTION,
-    name: DataSourceInfo[DataSourceKey.NOTION].name,
-    description: DataSourceInfo[DataSourceKey.NOTION].description,
-    icon: DataSourceInfo[DataSourceKey.NOTION].icon,
-  },
-  {
-    id: DataSourceKey.MOODLE,
-    name: DataSourceInfo[DataSourceKey.MOODLE].name,
-    description: DataSourceInfo[DataSourceKey.MOODLE].description,
-    icon: DataSourceInfo[DataSourceKey.MOODLE].icon,
-  },
-  {
-    id: DataSourceKey.JIRA,
-    name: DataSourceInfo[DataSourceKey.JIRA].name,
-    description: DataSourceInfo[DataSourceKey.JIRA].description,
-    icon: DataSourceInfo[DataSourceKey.JIRA].icon,
-  },
-];
 
 const dataSourceTemplates = Object.values(DataSourceKey).map((id) => {
   return {
