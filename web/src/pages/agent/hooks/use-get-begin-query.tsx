@@ -427,13 +427,14 @@ export function useFlattenQueryVariableOptions({
 export function useGetVariableLabelOrTypeByValue({
   nodeId,
   nodeIds = [],
+  variablesExceptOperatorOutputs,
 }: {
   nodeId?: string;
-  nodeIds?: string[];
-} = {}) {
+} & BuildQueryVariableOptions = {}) {
   const flattenOptions = useFlattenQueryVariableOptions({
     nodeId,
     nodeIds,
+    variablesExceptOperatorOutputs,
   });
   const findAgentStructuredOutputTypeByValue =
     useFindAgentStructuredOutputTypeByValue();

@@ -30,7 +30,7 @@ export function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
   }, []);
 }
 
-export function filterChildNodeIds(nodes: BaseNode[], nodeId: string) {
+export function filterChildNodeIds(nodes: BaseNode[], nodeId?: string) {
   return nodes.filter((x) => x.parentId === nodeId).map((x) => x.id);
 }
 

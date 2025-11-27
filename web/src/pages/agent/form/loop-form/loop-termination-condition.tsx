@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { SwitchLogicOperator } from '@/constants/agent';
-import { filterChildNodeIds } from '@/utils/canvas-util';
 import { loader } from '@monaco-editor/react';
 import { toLower } from 'lodash';
 import { X } from 'lucide-react';
@@ -18,8 +17,8 @@ import {
   JsonSchemaDataType,
   LoopTerminationComparisonOperator,
 } from '../../constant';
+import { useFilterChildNodeIds } from '../../hooks/use-filter-child-node-ids';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
-import useGraphStore from '../../store';
 import { InputModeOptions } from '../../utils';
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
 import { QueryVariable } from '../components/query-variable';
@@ -34,6 +33,8 @@ import {
 } from './use-watch-form-change';
 
 loader.config({ paths: { vs: '/vs' } });
+
+const VariablesExceptOperatorOutputs = [AgentVariableType.Conversation];
 
 type LoopTerminationConditionProps = {
   label: ReactNode;
@@ -64,16 +65,16 @@ export function LoopTerminationCondition({
   nodeId,
 }: LoopTerminationConditionProps) {
   const form = useFormContext<LoopFormSchemaType>();
-  const nodes = useGraphStore((state) => state.nodes);
+  const childNodeIds = useFilterChildNodeIds(nodeId);
 
   const nodeIds = useMemo(() => {
     if (!nodeId) return [];
-    const childNodeIds = filterChildNodeIds(nodes, nodeId);
     return [nodeId, ...childNodeIds];
-  }, [nodeId, nodes]);
+  }, [childNodeIds, nodeId]);
 
   const { getType } = useGetVariableLabelOrTypeByValue({
     nodeIds: nodeIds,
+    variablesExceptOperatorOutputs: VariablesExceptOperatorOutputs,
   });
 
   const {
@@ -269,9 +270,9 @@ export function LoopTerminationCondition({
                         modeFieldAlias,
                       )}
                       nodeIds={nodeIds}
-                      variablesExceptOperatorOutputs={[
-                        AgentVariableType.Conversation,
-                      ]}
+                      variablesExceptOperatorOutputs={
+                        VariablesExceptOperatorOutputs
+                      }
                     ></QueryVariable>
 
                     <Separator className="w-2" />
