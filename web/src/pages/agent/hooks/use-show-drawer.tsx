@@ -14,6 +14,7 @@ export const useShowFormDrawer = () => {
     setClickedNodeId,
     getNode,
     setClickedToolId,
+    getOperatorTypeFromId,
   } = useGraphStore((state) => state);
   const {
     visible: formDrawerVisible,
@@ -25,14 +26,20 @@ export const useShowFormDrawer = () => {
     (e: React.MouseEvent<Element>, nodeId: string) => {
       const tool = get(e.target, 'dataset.tool');
       // TODO: Operator type judgment should be used
-      if (nodeId.startsWith(Operator.Tool) && !tool) {
+      const operatorType = getOperatorTypeFromId(nodeId);
+      if (
+        (operatorType === Operator.Tool && !tool) ||
+        [Operator.LoopStart, Operator.ExitLoop].includes(
+          operatorType as Operator,
+        )
+      ) {
         return;
       }
       setClickedNodeId(nodeId);
       setClickedToolId(tool);
       showFormDrawer();
     },
-    [setClickedNodeId, setClickedToolId, showFormDrawer],
+    [getOperatorTypeFromId, setClickedNodeId, setClickedToolId, showFormDrawer],
   );
 
   return {

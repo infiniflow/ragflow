@@ -1,7 +1,7 @@
+import { BoolSegmented } from '@/components/bool-segmented';
 import JsonEditor from '@/components/json-edit';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Segmented } from '@/components/ui/segmented';
 import { t } from 'i18next';
 import { isEmpty } from 'lodash';
 import { Trash2, X } from 'lucide-react';
@@ -15,7 +15,7 @@ export const useObjectFields = () => {
     (field: FieldValues, className?: string) => {
       const fieldValue = field.value ? true : false;
       return (
-        <Segmented
+        <BoolSegmented
           options={
             [
               { value: true, label: 'True' },
@@ -27,7 +27,7 @@ export const useObjectFields = () => {
           onChange={field.onChange}
           className={className}
           itemClassName="justify-center flex-1"
-        ></Segmented>
+        ></BoolSegmented>
       );
     },
     [],

@@ -10,7 +10,6 @@ import {
   NodeMap,
   Operator,
   initialAgentValues,
-  initialAkShareValues,
   initialArXivValues,
   initialBeginValues,
   initialBingValues,
@@ -29,14 +28,12 @@ import {
   initialInvokeValues,
   initialIterationStartValues,
   initialIterationValues,
-  initialJin10Values,
-  initialKeywordExtractValues,
   initialListOperationsValues,
+  initialLoopValues,
   initialMessageValues,
   initialNoteValues,
   initialParserValues,
   initialPubMedValues,
-  initialQWeatherValues,
   initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
@@ -47,7 +44,6 @@ import {
   initialTavilyExtractValues,
   initialTavilyValues,
   initialTokenizerValues,
-  initialTuShareValues,
   initialUserFillUpValues,
   initialVariableAggregatorValues,
   initialVariableAssignerValues,
@@ -68,6 +64,63 @@ function isBottomSubAgent(type: string, position: Position) {
     type === Operator.Tool
   );
 }
+
+const GroupStartNodeMap = {
+  [Operator.Iteration]: {
+    id: `${Operator.IterationStart}:${humanId()}`,
+    type: 'iterationStartNode',
+    position: { x: 50, y: 100 },
+    data: {
+      label: Operator.IterationStart,
+      name: Operator.IterationStart,
+      form: initialIterationStartValues,
+    },
+    extent: 'parent' as 'parent',
+  },
+  [Operator.Loop]: {
+    id: `${Operator.LoopStart}:${humanId()}`,
+    type: 'loopStartNode',
+    position: { x: 50, y: 100 },
+    data: {
+      label: Operator.LoopStart,
+      name: Operator.LoopStart,
+      form: {},
+    },
+    extent: 'parent' as 'parent',
+  },
+};
+
+function useAddGroupNode() {
+  const { addEdge, addNode } = useGraphStore((state) => state);
+
+  const addGroupNode = useCallback(
+    (operatorType: string, newNode: Node<any>, nodeId?: string) => {
+      newNode.width = 500;
+      newNode.height = 250;
+
+      const startNode: Node<any> =
+        GroupStartNodeMap[operatorType as keyof typeof GroupStartNodeMap];
+
+      startNode.parentId = newNode.id;
+
+      addNode(newNode);
+      addNode(startNode);
+
+      if (nodeId) {
+        addEdge({
+          source: nodeId,
+          target: newNode.id,
+          sourceHandle: NodeHandleId.Start,
+          targetHandle: NodeHandleId.End,
+        });
+      }
+      return newNode.id;
+    },
+    [addEdge, addNode],
+  );
+
+  return { addGroupNode };
+}
 export const useInitializeOperatorParams = () => {
   const llmId = useFetchModelId();
 
@@ -82,10 +135,6 @@ export const useInitializeOperatorParams = () => {
         llm_id: llmId,
       },
       [Operator.Message]: initialMessageValues,
-      [Operator.KeywordExtract]: {
-        ...initialKeywordExtractValues,
-        llm_id: llmId,
-      },
       [Operator.DuckDuckGo]: initialDuckValues,
       [Operator.Wikipedia]: initialWikipediaValues,
       [Operator.PubMed]: initialPubMedValues,
@@ -95,14 +144,10 @@ export const useInitializeOperatorParams = () => {
       [Operator.GoogleScholar]: initialGoogleScholarValues,
       [Operator.SearXNG]: initialSearXNGValues,
       [Operator.GitHub]: initialGithubValues,
-      [Operator.QWeather]: initialQWeatherValues,
       [Operator.ExeSQL]: initialExeSqlValues,
       [Operator.Switch]: initialSwitchValues,
       [Operator.WenCai]: initialWenCaiValues,
-      [Operator.AkShare]: initialAkShareValues,
       [Operator.YahooFinance]: initialYahooFinanceValues,
-      [Operator.Jin10]: initialJin10Values,
-      [Operator.TuShare]: initialTuShareValues,
       [Operator.Note]: initialNoteValues,
       [Operator.Crawler]: initialCrawlerValues,
       [Operator.Invoke]: initialInvokeValues,
@@ -133,6 +178,9 @@ export const useInitializeOperatorParams = () => {
       [Operator.ListOperations]: initialListOperationsValues,
       [Operator.VariableAssigner]: initialVariableAssignerValues,
       [Operator.VariableAggregator]: initialVariableAggregatorValues,
+      [Operator.Loop]: initialLoopValues,
+      [Operator.LoopStart]: {},
+      [Operator.ExitLoop]: {},
     };
   }, [llmId]);
 
@@ -311,6 +359,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
   const { addChildEdge } = useAddChildEdge();
   const { addToolNode } = useAddToolNode();
   const { resizeIterationNode } = useResizeIterationNode();
+  const { addGroupNode } = useAddGroupNode();
   //   const [reactFlowInstance, setReactFlowInstance] =
   //     useState<ReactFlowInstance<any, any>>();
 
@@ -376,33 +425,8 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
           }
         }
 
-        if (type === Operator.Iteration) {
-          newNode.width = 500;
-          newNode.height = 250;
-          const iterationStartNode: Node<any> = {
-            id: `${Operator.IterationStart}:${humanId()}`,
-            type: 'iterationStartNode',
-            position: { x: 50, y: 100 },
-            // draggable: false,
-            data: {
-              label: Operator.IterationStart,
-              name: Operator.IterationStart,
-              form: initialIterationStartValues,
-            },
-            parentId: newNode.id,
-            extent: 'parent',
-          };
-          addNode(newNode);
-          addNode(iterationStartNode);
-          if (nodeId) {
-            addEdge({
-              source: nodeId,
-              target: newNode.id,
-              sourceHandle: NodeHandleId.Start,
-              targetHandle: NodeHandleId.End,
-            });
-          }
-          return newNode.id;
+        if ([Operator.Iteration, Operator.Loop].includes(type as Operator)) {
+          return addGroupNode(type, newNode, nodeId);
         } else if (
           type === Operator.Agent &&
           params.position === Position.Bottom
@@ -456,6 +480,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
     [
       addChildEdge,
       addEdge,
+      addGroupNode,
       addNode,
       addToolNode,
       calculateNewlyBackChildPosition,

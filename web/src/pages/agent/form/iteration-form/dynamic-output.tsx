@@ -2,7 +2,6 @@
 
 import { FormContainer } from '@/components/form-container';
 import { KeyInput } from '@/components/key-input';
-import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { BlockButton, Button } from '@/components/ui/button';
 import {
   FormControl,
@@ -11,13 +10,17 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
+import { Operator } from '@/constants/agent';
 import { RAGFlowNodeType } from '@/interfaces/database/flow';
 import { t } from 'i18next';
+import { isEmpty } from 'lodash';
 import { X } from 'lucide-react';
-import { ReactNode, useCallback, useMemo } from 'react';
+import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useBuildSubNodeOutputOptions } from './use-build-options';
+import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
+import useGraphStore from '../../store';
+import { QueryVariable } from '../components/query-variable';
 
 interface IProps {
   node?: RAGFlowNodeType;
@@ -26,28 +29,22 @@ interface IProps {
 export function DynamicOutputForm({ node }: IProps) {
   const { t } = useTranslation();
   const form = useFormContext();
-  const options = useBuildSubNodeOutputOptions(node?.id);
+  const { nodes } = useGraphStore((state) => state);
+
+  const childNodeIds = nodes
+    .filter(
+      (x) =>
+        x.parentId === node?.id &&
+        x.data.label !== Operator.IterationStart &&
+        !isEmpty(x.data?.form?.outputs),
+    )
+    .map((x) => x.id);
+
   const name = 'outputs';
 
-  const flatOptions = useMemo(() => {
-    return options.reduce<{ label: string; value: string; type: string }[]>(
-      (pre, cur) => {
-        pre.push(...cur.options);
-        return pre;
-      },
-      [],
-    );
-  }, [options]);
-
-  const findType = useCallback(
-    (val: string) => {
-      const type = flatOptions.find((x) => x.value === val)?.type;
-      if (type) {
-        return `Array<${type}>`;
-      }
-    },
-    [flatOptions],
-  );
+  const { getType } = useGetVariableLabelOrTypeByValue({
+    nodeIds: childNodeIds,
+  });
 
   const { fields, remove, append } = useFieldArray({
     name: name,
@@ -77,25 +74,15 @@ export function DynamicOutputForm({ node }: IProps) {
               )}
             />
             <Separator className="w-3 text-text-secondary" />
-            <FormField
-              control={form.control}
+            <QueryVariable
               name={`${name}.${index}.ref`}
-              render={({ field }) => (
-                <FormItem className="w-2/5">
-                  <FormControl>
-                    <SelectWithSearch
-                      options={options}
-                      {...field}
-                      onChange={(val) => {
-                        form.setValue(typeField, findType(val));
-                        field.onChange(val);
-                      }}
-                    ></SelectWithSearch>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              hideLabel
+              className="w-2/5"
+              onChange={(val) => {
+                form.setValue(typeField, `Array<${getType(val)}>`);
+              }}
+              nodeIds={childNodeIds}
+            ></QueryVariable>
             <FormField
               control={form.control}
               name={typeField}

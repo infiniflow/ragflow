@@ -73,6 +73,7 @@ export function InnerNextStepDropdown({
                 <AccordionOperators
                   isCustomDropdown={true}
                   mousePosition={position}
+                  nodeId={nodeId}
                 ></AccordionOperators>
               )}
             </OnNodeCreatedContext.Provider>
@@ -101,9 +102,11 @@ export function InnerNextStepDropdown({
         </DropdownMenuLabel>
         <HideModalContext.Provider value={hideModal}>
           {isPipeline ? (
-            <PipelineAccordionOperators></PipelineAccordionOperators>
+            <PipelineAccordionOperators
+              nodeId={nodeId}
+            ></PipelineAccordionOperators>
           ) : (
-            <AccordionOperators></AccordionOperators>
+            <AccordionOperators nodeId={nodeId}></AccordionOperators>
           )}
         </HideModalContext.Provider>
       </DropdownMenuContent>

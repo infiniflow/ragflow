@@ -17,15 +17,13 @@ import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { SwitchLogicOperator, SwitchOperatorOptions } from '@/constants/agent';
 import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-operator-options';
-import { useBuildSwitchLogicOperatorOptions } from '@/hooks/logic-hooks/use-build-options';
 import { useFetchKnowledgeMetadata } from '@/hooks/use-knowledge-request';
 import { PromptEditor } from '@/pages/agent/form/components/prompt-editor';
 import { Plus, X } from 'lucide-react';
 import { useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { RAGFlowFormItem } from '../ragflow-form';
-import { RAGFlowSelect } from '../ui/select';
+import { LogicalOperator } from '../logical-operator';
 
 export function MetadataFilterConditions({
   kbIds,
@@ -44,8 +42,6 @@ export function MetadataFilterConditions({
 
   const switchOperatorOptions = useBuildSwitchOperatorOptions();
 
-  const switchLogicOperatorOptions = useBuildSwitchLogicOperatorOptions();
-
   const { fields, remove, append } = useFieldArray({
     name,
     control: form.control,
@@ -53,14 +49,16 @@ export function MetadataFilterConditions({
 
   const add = useCallback(
     (key: string) => () => {
-      form.setValue(logic, SwitchLogicOperator.And);
+      if (fields.length === 1) {
+        form.setValue(logic, SwitchLogicOperator.And);
+      }
       append({
         key,
         value: '',
         op: SwitchOperatorOptions[0].value,
       });
     },
-    [append, form, logic],
+    [append, fields.length, form, logic],
   );
 
   return (
@@ -85,20 +83,7 @@ export function MetadataFilterConditions({
         </DropdownMenu>
       </div>
       <section className="flex">
-        {fields.length > 1 && (
-          <div className="relative min-w-14">
-            <RAGFlowFormItem
-              name={logic}
-              className="absolute top-1/2 -translate-y-1/2 right-1 left-0 z-10 bg-bg-base"
-            >
-              <RAGFlowSelect
-                options={switchLogicOperatorOptions}
-                triggerClassName="w-full text-xs px-1 py-0 h-6"
-              ></RAGFlowSelect>
-            </RAGFlowFormItem>
-            <div className="absolute border-l border-y w-5 right-0 top-4 bottom-4 rounded-l-lg"></div>
-          </div>
-        )}
+        {fields.length > 1 && <LogicalOperator name={logic}></LogicalOperator>}
         <div className="space-y-5 flex-1">
           {fields.map((field, index) => {
             const typeField = `${name}.${index}.key`;

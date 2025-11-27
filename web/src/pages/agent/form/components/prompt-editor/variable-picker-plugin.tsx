@@ -192,7 +192,7 @@ export default function VariablePickerMenuPlugin({
 
   const [queryString, setQueryString] = React.useState<string | null>('');
 
-  let options = useFilterQueryVariableOptionsByTypes(types);
+  let options = useFilterQueryVariableOptionsByTypes({ types });
 
   if (baseOptions) {
     options = baseOptions as typeof options;
