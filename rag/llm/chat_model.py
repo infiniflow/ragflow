@@ -132,6 +132,13 @@ class Base(ABC):
 
         gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
 
+        model_name_lower = (self.model_name or "").lower()
+        if "gpt-5.1" in model_name_lower:
+            gen_conf.pop("presence_penalty", None)
+            gen_conf.pop("frequency_penalty", None)
+            if "gpt-5.1-chat-latest" in model_name_lower:
+                gen_conf = {}
+
         return gen_conf
 
     def _chat(self, history, gen_conf, **kwargs):
