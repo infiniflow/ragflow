@@ -21,28 +21,33 @@ export const delSourceModal = <T extends IDataSourceBase>(
         ? t('setting.deleteSourceModalTitle')
         : t('dataflowParser.unlinkSourceModalTitle'),
     content: (
-      <div className="px-2 py-6">
-        <div className="flex items-center gap-1 p-2 border border-border-button rounded-md mb-3">
-          <div className="w-6 h-6 flex-shrink-0">
-            {data?.source ? DataSourceInfo[data?.source].icon : ''}
-          </div>
-          <div>{data?.name}</div>
-        </div>
+      <div className="px-2 space-y-6 pt-5 pb-3">
         {type === 'delete' ? (
           <div
-            className="text-sm text-text-secondary"
+            className="text-base text-text-primary"
             dangerouslySetInnerHTML={{
               __html: t('setting.deleteSourceModalContent'),
             }}
           ></div>
         ) : (
           <div
-            className="text-sm text-text-secondary"
+            className="text-base text-text-primary"
             dangerouslySetInnerHTML={{
               __html: t('dataflowParser.unlinkSourceModalContent'),
             }}
           />
         )}
+        <div className="flex items-center gap-1 p-2 border border-border-button rounded-md mb-3">
+          <div className="w-6 h-6 flex-shrink-0">
+            {data?.source ? DataSourceInfo[data?.source].icon : ''}
+          </div>
+          <div className="flex items-center gap-2 text-text-secondary text-xs">
+            {/* <div className="h-6 flex-shrink-0 text-text-primary text-base">
+              {data?.source ? DataSourceInfo[data?.source].name : ''}
+            </div> */}
+            {data?.name}
+          </div>
+        </div>
       </div>
     ),
     confirmText:
@@ -56,12 +61,13 @@ export const delSourceModal = <T extends IDataSourceBase>(
     ...otherProps,
     title: config.title,
     children: config.content,
+    titleClassName: 'border-b border-border-button',
     onVisibleChange: () => {
-      Modal.hide();
+      Modal.destroy();
     },
     footer: (
       <div className="flex justify-end gap-2">
-        <Button variant={'outline'} onClick={() => Modal.hide()}>
+        <Button variant={'outline'} onClick={() => Modal.destroy()}>
           {t('dataflowParser.changeStepModalCancelText')}
         </Button>
         <Button
@@ -69,7 +75,7 @@ export const delSourceModal = <T extends IDataSourceBase>(
           className="!bg-state-error text-text-base"
           onClick={() => {
             onOk?.(data);
-            Modal.hide();
+            Modal.destroy();
           }}
         >
           {config.confirmText}

@@ -186,7 +186,9 @@ export const SelectWithSearch = forwardRef<
               />
             )}
             <CommandList className="mt-2 outline-none">
-              <CommandEmpty>{emptyData}</CommandEmpty>
+              <CommandEmpty>
+                <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
+              </CommandEmpty>
               {options.map((group, idx) => {
                 if (group.options) {
                   return (
@@ -219,7 +221,11 @@ export const SelectWithSearch = forwardRef<
                       value={group.value}
                       disabled={group.disabled}
                       onSelect={handleSelect}
-                      className="min-h-10"
+                      className={
+                        value === group.value
+                          ? 'bg-bg-card min-h-10'
+                          : 'min-h-10'
+                      }
                     >
                       <span className="leading-none">{group.label}</span>
 

@@ -44,10 +44,55 @@ logger = logging.getLogger("ragflow.infinity_conn")
 
 
 def field_keyword(field_name: str):
-    # The "docnm_kwd" field is always a string, not list.
-    if field_name == "source_id" or (field_name.endswith("_kwd") and field_name != "docnm_kwd" and field_name != "knowledge_graph_kwd"):
+    # Treat "*_kwd" tag-like columns as keyword lists except knowledge_graph_kwd; source_id is also keyword-like.
+    if field_name == "source_id" or (field_name.endswith("_kwd") and field_name not in ["knowledge_graph_kwd", "docnm_kwd", "important_kwd", "question_kwd"]):
         return True
     return False
+
+def convert_select_fields(output_fields: list[str]) -> list[str]:
+    for i, field in enumerate(output_fields):
+        if field in ["docnm_kwd", "title_tks", "title_sm_tks"]:
+            output_fields[i] = "docnm"
+        elif field in ["important_kwd", "important_tks"]:
+            output_fields[i] = "important_keywords"
+        elif field in ["question_kwd", "question_tks"]:
+            output_fields[i] = "questions"
+        elif field in ["content_with_weight", "content_ltks", "content_sm_ltks"]:
+            output_fields[i] = "content"
+        elif field in ["authors_tks", "authors_sm_tks"]:
+            output_fields[i] = "authors"
+    return list(set(output_fields))
+
+def convert_matching_field(field_weightstr: str) -> str:
+    tokens = field_weightstr.split("^")
+    field = tokens[0]
+    if field == "docnm_kwd" or field == "title_tks":
+        field = "docnm@ft_docnm_rag_coarse"
+    elif field == "title_sm_tks":
+        field = "docnm@ft_docnm_rag_fine"
+    elif field == "important_kwd":
+        field = "important_keywords@ft_important_keywords_rag_coarse"
+    elif field == "important_tks":
+        field = "important_keywords@ft_important_keywords_rag_fine"
+    elif field == "question_kwd":
+        field = "questions@ft_questions_rag_coarse"
+    elif field == "question_tks":
+        field = "questions@ft_questions_rag_fine"
+    elif field == "content_with_weight" or field == "content_ltks":
+        field = "content@ft_content_rag_coarse"
+    elif field == "content_sm_ltks":
+        field = "content@ft_content_rag_fine"
+    elif field == "authors_tks":
+        field = "authors@ft_authors_rag_coarse"
+    elif field == "authors_sm_tks":
+        field = "authors@ft_authors_rag_fine"
+    tokens[0] = field
+    return "^".join(tokens)
+
+def list2str(lst: str|list, sep: str = " ") -> str:
+    if isinstance(lst, str):
+        return lst
+    return sep.join(lst)
 
 
 def equivalent_condition_to_str(condition: dict, table_instance=None) -> str | None:
@@ -77,13 +122,13 @@ def equivalent_condition_to_str(condition: dict, table_instance=None) -> str | N
                 for item in v:
                     if isinstance(item, str):
                         item = item.replace("'", "''")
-                    inCond.append(f"filter_fulltext('{k}', '{item}')")
+                    inCond.append(f"filter_fulltext('{convert_matching_field(k)}', '{item}')")
                 if inCond:
                     strInCond = " or ".join(inCond)
                     strInCond = f"({strInCond})"
                     cond.append(strInCond)
             else:
-                cond.append(f"filter_fulltext('{k}', '{v}')")
+                cond.append(f"filter_fulltext('{convert_matching_field(k)}', '{v}')")
         elif isinstance(v, list):
             inCond = list()
             for item in v:
@@ -181,11 +226,15 @@ class InfinityConnection(DocStoreConnection):
                 logger.info(f"INFINITY added following column to table {table_name}: {field_name} {field_info}")
                 if field_info["type"] != "varchar" or "analyzer" not in field_info:
                     continue
-                inf_table.create_index(
-                    f"text_idx_{field_name}",
-                    IndexInfo(field_name, IndexType.FullText, {"ANALYZER": field_info["analyzer"]}),
-                    ConflictType.Ignore,
-                )
+                analyzers = field_info["analyzer"]
+                if isinstance(analyzers, str):
+                    analyzers = [analyzers]
+                for analyzer in analyzers:
+                    inf_table.create_index(
+                        f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}",
+                        IndexInfo(field_name, IndexType.FullText, {"ANALYZER": analyzer}),
+                        ConflictType.Ignore,
+                    )
 
     """
     Database operations
@@ -245,11 +294,15 @@ class InfinityConnection(DocStoreConnection):
         for field_name, field_info in schema.items():
             if field_info["type"] != "varchar" or "analyzer" not in field_info:
                 continue
-            inf_table.create_index(
-                f"text_idx_{field_name}",
-                IndexInfo(field_name, IndexType.FullText, {"ANALYZER": field_info["analyzer"]}),
-                ConflictType.Ignore,
-            )
+            analyzers = field_info["analyzer"]
+            if isinstance(analyzers, str):
+                analyzers = [analyzers]
+            for analyzer in analyzers:
+                inf_table.create_index(
+                    f"ft_{re.sub(r'[^a-zA-Z0-9]', '_', field_name)}_{re.sub(r'[^a-zA-Z0-9]', '_', analyzer)}",
+                    IndexInfo(field_name, IndexType.FullText, {"ANALYZER": analyzer}),
+                    ConflictType.Ignore,
+                )
         self.connPool.release_conn(inf_conn)
         logger.info(f"INFINITY created table {table_name}, vector size {vectorSize}")
 
@@ -302,6 +355,7 @@ class InfinityConnection(DocStoreConnection):
         df_list = list()
         table_list = list()
         output = selectFields.copy()
+        output = convert_select_fields(output)
         for essential_field in ["id"] + aggFields:
             if essential_field not in output:
                 output.append(essential_field)
@@ -352,6 +406,7 @@ class InfinityConnection(DocStoreConnection):
             if isinstance(matchExpr, MatchTextExpr):
                 if filter_cond and "filter" not in matchExpr.extra_options:
                     matchExpr.extra_options.update({"filter": filter_cond})
+                matchExpr.fields = [convert_matching_field(field) for field in matchExpr.fields]
                 fields = ",".join(matchExpr.fields)
                 filter_fulltext = f"filter_fulltext('{fields}', '{matchExpr.matching_text}')"
                 if filter_cond:
@@ -470,7 +525,10 @@ class InfinityConnection(DocStoreConnection):
             df_list.append(kb_res)
         self.connPool.release_conn(inf_conn)
         res = concat_dataframes(df_list, ["id"])
-        res_fields = self.get_fields(res, res.columns.tolist())
+        fields = set(res.columns.tolist())
+        for field in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "question_kwd", "question_tks","content_with_weight", "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks"]:
+            fields.add(field)
+        res_fields = self.get_fields(res, list(fields))
         return res_fields.get(chunkId, None)
 
     def insert(self, documents: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
@@ -508,8 +566,39 @@ class InfinityConnection(DocStoreConnection):
         for d in docs:
             assert "_id" not in d
             assert "id" in d
-            for k, v in d.items():
-                if field_keyword(k):
+            for k, v in list(d.items()):
+                if k == "docnm_kwd":
+                    d["docnm"] = v
+                elif k == "title_kwd":
+                    if not d.get("docnm_kwd"):
+                        d["docnm"] = list2str(v)
+                elif k == "title_sm_tks":
+                    if not d.get("docnm_kwd"):
+                        d["docnm"] = list2str(v)
+                elif k == "important_kwd":
+                    d["important_keywords"] = list2str(v)
+                elif k == "important_tks":
+                    if not d.get("important_kwd"):
+                        d["important_keywords"] = v
+                elif k == "content_with_weight":
+                    d["content"] = v
+                elif k == "content_ltks":
+                    if not d.get("content_with_weight"):
+                        d["content"] = v
+                elif k == "content_sm_ltks":
+                    if not d.get("content_with_weight"):
+                        d["content"] = v
+                elif k == "authors_tks":
+                    d["authors"] = v
+                elif k == "authors_sm_tks":
+                    if not d.get("authors_tks"):
+                        d["authors"] = v
+                elif k == "question_kwd":
+                    d["questions"] = list2str(v, "\n")
+                elif k == "question_tks":
+                    if not d.get("question_kwd"):
+                        d["questions"] = list2str(v)
+                elif field_keyword(k):
                     if isinstance(v, list):
                         d[k] = "###".join(v)
                     else:
@@ -528,6 +617,9 @@ class InfinityConnection(DocStoreConnection):
                     d[k] = "_".join(f"{num:08x}" for num in v)
                 else:
                     d[k] = v
+            for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "content_with_weight", "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks", "question_kwd", "question_tks"]:
+                if k in d:
+                    del d[k]
 
             for n, vs in embedding_clmns:
                 if n in d:
@@ -562,7 +654,38 @@ class InfinityConnection(DocStoreConnection):
         filter = equivalent_condition_to_str(condition, table_instance)
         removeValue = {}
         for k, v in list(newValue.items()):
-            if field_keyword(k):
+            if k == "docnm_kwd":
+                newValue["docnm"] = list2str(v)
+            elif k == "title_kwd":
+                if not newValue.get("docnm_kwd"):
+                    newValue["docnm"] = list2str(v)
+            elif k == "title_sm_tks":
+                if not newValue.get("docnm_kwd"):
+                    newValue["docnm"] = v
+            elif k == "important_kwd":
+                newValue["important_keywords"] = list2str(v)
+            elif k == "important_tks":
+                if not newValue.get("important_kwd"):
+                    newValue["important_keywords"] = v
+            elif k == "content_with_weight":
+                newValue["content"] = v
+            elif k == "content_ltks":
+                if not newValue.get("content_with_weight"):
+                    newValue["content"] = v
+            elif k == "content_sm_ltks":
+                if not newValue.get("content_with_weight"):
+                    newValue["content"] = v
+            elif k == "authors_tks":
+                newValue["authors"] = v
+            elif k == "authors_sm_tks":
+                if not newValue.get("authors_tks"):
+                    newValue["authors"] = v
+            elif k == "question_kwd":
+                newValue["questions"] = "\n".join(v)
+            elif k == "question_tks":
+                if not newValue.get("question_kwd"):
+                    newValue["questions"] = list2str(v)
+            elif field_keyword(k):
                 if isinstance(v, list):
                     newValue[k] = "###".join(v)
                 else:
@@ -593,6 +716,9 @@ class InfinityConnection(DocStoreConnection):
                     del newValue[k]
             else:
                 newValue[k] = v
+        for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "content_with_weight", "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks", "question_kwd", "question_tks"]:
+            if k in newValue:
+                del newValue[k]
 
         remove_opt = {}  # "[k,new_value]": [id_to_update, ...]
         if removeValue:
@@ -656,22 +782,45 @@ class InfinityConnection(DocStoreConnection):
             return {}
         fieldsAll = fields.copy()
         fieldsAll.append("id")
+        fieldsAll = set(fieldsAll)
+        if "docnm" in res.columns:
+            for field in ["docnm_kwd", "title_tks", "title_sm_tks"]:
+                if field in fieldsAll:
+                    res[field] = res["docnm"]
+        if "important_keywords" in res.columns:
+            if "important_kwd" in fieldsAll:
+                res["important_kwd"] = res["important_keywords"].apply(lambda v: v.split())
+            if "important_tks" in fieldsAll:
+                res["important_tks"] = res["important_keywords"]
+        if "questions" in res.columns:
+            if "question_kwd" in fieldsAll:
+                res["question_kwd"] = res["questions"].apply(lambda v: v.splitlines())
+            if "question_tks" in fieldsAll:
+                res["question_tks"] = res["questions"]
+        if "content" in res.columns:
+            for field in ["content_with_weight", "content_ltks", "content_sm_ltks"]:
+                if field in fieldsAll:
+                    res[field] = res["content"]
+        if "authors" in res.columns:
+            for field in ["authors_tks", "authors_sm_tks"]:
+                if field in fieldsAll:
+                    res[field] = res["authors"]
+
         column_map = {col.lower(): col for col in res.columns}
-        matched_columns = {column_map[col.lower()]: col for col in set(fieldsAll) if col.lower() in column_map}
-        none_columns = [col for col in set(fieldsAll) if col.lower() not in column_map]
+        matched_columns = {column_map[col.lower()]: col for col in fieldsAll if col.lower() in column_map}
+        none_columns = [col for col in fieldsAll if col.lower() not in column_map]
 
         res2 = res[matched_columns.keys()]
         res2 = res2.rename(columns=matched_columns)
         res2.drop_duplicates(subset=["id"], inplace=True)
 
-        for column in res2.columns:
+        for column in list(res2.columns):
             k = column.lower()
             if field_keyword(k):
                 res2[column] = res2[column].apply(lambda v: [kwd for kwd in v.split("###") if kwd])
             elif re.search(r"_feas$", k):
                 res2[column] = res2[column].apply(lambda v: json.loads(v) if v else {})
             elif k == "position_int":
-
                 def to_position_int(v):
                     if v:
                         arr = [int(hex_val, 16) for hex_val in v.split("_")]
@@ -685,6 +834,9 @@ class InfinityConnection(DocStoreConnection):
                 res2[column] = res2[column].apply(lambda v: [int(hex_val, 16) for hex_val in v.split("_")] if v else [])
             else:
                 pass
+        for column in ["docnm", "important_keywords", "questions", "content", "authors"]:
+            if column in res2:
+                del res2[column]
         for column in none_columns:
             res2[column] = None
 

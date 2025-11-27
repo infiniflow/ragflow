@@ -7,7 +7,8 @@ export default {
       selectPlaceholder: 'select value',
       selectAll: 'Select all',
       delete: 'Delete',
-      deleteModalTitle: 'Are you sure to delete this item?',
+      deleteModalTitle: 'Are you sure to delete it ?',
+      deleteThem: 'Are you sure to delete them ?',
       ok: 'Ok',
       cancel: 'Cancel',
       yes: 'Yes',
@@ -59,6 +60,7 @@ export default {
         urlPlaceholder: 'https://api.example.com/v1/mcp',
         tokenPlaceholder: 'e.g. eyJhbGciOiJIUzI1Ni...',
       },
+      selected: 'Selected',
     },
     login: {
       loginTitle: 'Sign in to Your Account',
@@ -92,7 +94,7 @@ export default {
       home: 'Home',
       setting: 'User settings',
       logout: 'Log out',
-      fileManager: 'File Management',
+      fileManager: 'File',
       flow: 'Agent',
       search: 'Search',
       welcome: 'Welcome to',
@@ -696,8 +698,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: ` During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach is derived from mimicking the behavioral logic of how humans search for knowledge in books.`,
     },
     setting: {
+      deleteModel: 'Delete model',
       modelEmptyTip:
-        'No models available. Please add models from the panel on the right.',
+        'No models available. <br>Please add models from the panel on the right.',
       sourceEmptyTip: 'No data sources added yet. Select one below to connect.',
       seconds: 'seconds',
       minutes: 'minutes',
@@ -715,6 +718,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
 Example: general/v2/`,
       S3CompatibleEndpointUrlTip: `Required for S3 compatible Storage Box. Specify the S3-compatible endpoint URL.
 Example: https://fsn1.your-objectstorage.com`,
+      S3CompatibleAddressingStyleTip: `Required for S3 compatible Storage Box. Specify the S3-compatible addressing style.
+Example: Virtual Hosted Style`,
       addDataSourceModalTital: 'Create your {{name}} connector',
       deleteSourceModalTitle: 'Delete data source',
       deleteSourceModalContent: `
@@ -734,6 +739,9 @@ Example: https://fsn1.your-objectstorage.com`,
         'Sync pages and databases from Notion for knowledge retrieval.',
       google_driveDescription:
         'Connect your Google Drive via OAuth and sync specific folders or drives.',
+      webdavDescription: 'Connect to WebDAV servers to sync files.',
+      webdavRemotePathTip:
+        'Optional: Specify a folder path on the WebDAV server (e.g., /Documents). Leave empty to sync from root.',
       google_driveTokenTip:
         'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
       google_drivePrimaryAdminTip:
@@ -742,6 +750,10 @@ Example: https://fsn1.your-objectstorage.com`,
         'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
+      dropboxDescription:
+        'Connect your Dropbox to sync files and folders from a chosen account.',
+      dropboxAccessTokenTip:
+        'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
       moodleDescription:
         'Connect to your Moodle LMS to sync course content, forums, and resources.',
       moodleUrlTip:
@@ -1158,8 +1170,13 @@ Example: https://fsn1.your-objectstorage.com`,
       addField: 'Add option',
       addMessage: 'Add message',
       loop: 'Loop',
-      loopTip:
+      loopDescription:
         'Loop is the upper limit of the number of loops of the current component, when the number of loops exceeds the value of loop, it means that the component can not complete the current task, please re-optimize agent',
+      exitLoop: 'Exit loop',
+      exitLoopDescription: `Equivalent to "break". This node has no configuration items. When the loop body reaches this node, the loop terminates.`,
+      loopVariables: 'Loop Variables',
+      maximumLoopCount: 'Maximum loop count',
+      loopTerminationCondition: 'Loop termination condition',
       yes: 'Yes',
       no: 'No',
       key: 'Key',
@@ -1395,6 +1412,8 @@ Example: https://fsn1.your-objectstorage.com`,
         endWith: 'Ends with',
         empty: 'Is empty',
         notEmpty: 'Not empty',
+        in: 'In',
+        notIn: 'Not in',
       },
       switchLogicOperatorOptions: {
         and: 'AND',
@@ -1641,9 +1660,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       variableAssignerDescription:
         'This component performs operations on Data objects, including extracting, filtering, and editing keys and values in the Data.',
       variableAggregator: 'Variable aggregator',
-      variableAggregatorDescription: `This process aggregates variables from multiple branches into a single variable to achieve unified configuration for downstream nodes.
-
-The variable aggregation node (originally the variable assignment node) is a crucial node in the workflow. It is responsible for integrating the output results of different branches, ensuring that regardless of which branch is executed, its result can be referenced and accessed through a unified variable. This is extremely useful in multi-branch scenarios, as it maps variables with the same function across different branches to a single output variable, avoiding redundant definitions in downstream nodes.`,
+      variableAggregatorDescription: `
+This process aggregates variables from multiple branches into a single variable to achieve unified configuration for downstream nodes.`,
       inputVariables: 'Input variables',
       runningHintText: 'is running...🕞',
       openingSwitch: 'Opening switch',
@@ -1872,10 +1890,10 @@ Important structured information may include: names, dates, locations, events, k
         overwrite: 'Overwritten By',
         clear: 'Clear',
         set: 'Set',
-        '+=': 'Add',
-        '-=': 'Subtract',
-        '*=': 'Multiply',
-        '/=': 'Divide',
+        add: 'Add',
+        subtract: 'Subtract',
+        multiply: 'Multiply',
+        divide: 'Divide',
         append: 'Append',
         extend: 'Extend',
         removeFirst: 'Remove first',
@@ -1906,6 +1924,7 @@ Important structured information may include: names, dates, locations, events, k
       editMCP: 'Edit MCP',
       toolsAvailable: 'tools available',
       mcpServers: 'MCP servers',
+      mcpServer: 'MCP server',
       customizeTheListOfMcpServers: 'Customize the list of MCP servers',
       cachedTools: 'cached tools',
       bulkManage: 'Bulk manage',
@@ -2003,6 +2022,18 @@ Important structured information may include: names, dates, locations, events, k
       processingFailedTip: 'Total failed processes',
       processing: 'Processing',
     },
+
+    deleteModal: {
+      delAgent: 'Delete agent',
+      delDataset: 'Delete dataset',
+      delSearch: 'Delete search',
+      delFile: 'Delete file',
+      delFiles: 'Delete files',
+      delFilesContent: 'Selected {{count}} files',
+      delChat: 'Delete chat',
+      delMember: 'Delete member',
+    },
+
     admin: {
       loginTitle: 'Admin Console',
       title: 'RAGFlow',
