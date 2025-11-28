@@ -594,31 +594,24 @@ class CreateDatasetReq(Base):
                 )
         return self
 
-    @field_validator("chunk_method", mode="before")
+    @field_validator("chunk_method", mode="wrap")
     @classmethod
-    def validate_chunk_method(cls, v: Any) -> Any:
-        """Unify chunk_method error messages to match testcases.
-
-        Rules:
-        - Accept omission (validator won't run when field not provided)
-        - If value is None (explicitly provided) → raise unified enum error (tests expect same message)
-        - If value is empty string "" → raise unified enum error
-        - If value is not a string → raise unified enum error
-        - If value is a string but not in allowed set → raise unified enum error
-        - Otherwise pass through
-        """
+    def validate_chunk_method(cls, v: Any, handler) -> Any:
+        """Wrap validation to unify error messages, including type errors (e.g. list)."""
         allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"}
         error_msg = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'"
+        # Omitted field: handler won't be invoked (wrap still gets value); None treated as explicit invalid
         if v is None:
-            # Explicit None provided
             raise PydanticCustomError("literal_error", error_msg)
-        if not isinstance(v, str):
+        try:
+            # Run inner validation (type checking)
+            result = handler(v)
+        except Exception:
             raise PydanticCustomError("literal_error", error_msg)
-        if v == "":
+        # After handler, enforce enumeration
+        if not isinstance(result, str) or result == "" or result not in allowed:
             raise PydanticCustomError("literal_error", error_msg)
-        if v not in allowed:
-            raise PydanticCustomError("literal_error", error_msg)
-        return v
+        return result
 
 
 class UpdateDatasetReq(CreateDatasetReq):
