@@ -419,7 +419,15 @@ Creates a dataset.
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
-  - `"parser_config"`: `object`
+  - "parser_config": `object`
+  - "parse_type": `int`
+  - "pipeline_id": `string`
+
+Note: Choose exactly one ingestion mode when creating a dataset.
+- Chunking method: provide `"chunk_method"` (optionally with `"parser_config"`).
+- Ingestion pipeline: provide both `"parse_type"` and `"pipeline_id"` and do not provide `"chunk_method"`.
+
+These options are mutually exclusive. If all three of `chunk_method`, `parse_type`, and `pipeline_id` are omitted, the system defaults to `chunk_method = "naive"`.
 
 ##### Request example
 
@@ -432,6 +440,26 @@ curl --request POST \
       "name": "test_1"
       }'
 ```
+
+##### Request example (ingestion pipeline)
+
+Use this form when specifying an ingestion pipeline (do not include `chunk_method`).
+
+```bash
+curl --request POST \
+  --url http://{address}/api/v1/datasets \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer <YOUR_API_KEY>' \
+  --data '{
+   "name": "test-sdk",
+   "parse_type": <NUMBER_OF_FORMATS_IN_PARSE>,
+   "pipeline_id": "<PIPELINE_ID_32_HEX>"
+  }'
+```
+
+Notes:
+- `parse_type` is an integer. Replace `<NUMBER_OF_FORMATS_IN_PARSE>` with your pipeline's parse-type value.
+- `pipeline_id` must be a 32-character lowercase hexadecimal string.
 
 ##### Request parameters
 
@@ -473,6 +501,7 @@ curl --request POST \
   - `"qa"`: Q&A
   - `"table"`: Table
   - `"tag"`: Tag
+  - Mutually exclusive with `parse_type` and `pipeline_id`. If you set `chunk_method`, do not include `parse_type` or `pipeline_id`.
 
 - `"parser_config"`: (*Body parameter*), `object`  
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:  
@@ -508,6 +537,15 @@ curl --request POST \
     - `"raptor"`: `object` RAPTOR-specific settings.
       - Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
+
+- "parse_type": (*Body parameter*), `int`  
+  The ingestion pipeline parse type identifier. Required if and only if you are using an ingestion pipeline (together with `"pipeline_id"`). Must not be provided when `"chunk_method"` is set.
+
+- "pipeline_id": (*Body parameter*), `string`  
+  The ingestion pipeline ID. Required if and only if you are using an ingestion pipeline (together with `"parse_type"`).  
+  - Must not be provided when `"chunk_method"` is set.
+
+Note: If none of `chunk_method`, `parse_type`, and `pipeline_id` are provided, the system will default to `chunk_method = "naive"`.
 
 #### Response
 
