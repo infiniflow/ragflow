@@ -733,7 +733,7 @@ def build_time_range_query(
     """Build time range query for Gmail API"""
     query = ""
     if time_range_start is not None and time_range_start != 0:
-        query += f"after:{int(time_range_start)}"
+        query += f"after:{int(time_range_start) + 1}"
     if time_range_end is not None and time_range_end != 0:
         query += f" before:{int(time_range_end)}"
     query = query.strip()
@@ -776,6 +776,15 @@ def time_str_to_utc(time_str: str):
     from datetime import datetime
 
     return datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+
+
+def gmail_time_str_to_utc(time_str: str):
+    """Convert Gmail RFC 2822 time string to UTC."""
+    from email.utils import parsedate_to_datetime
+    from datetime import timezone
+
+    dt = parsedate_to_datetime(time_str)
+    return dt.astimezone(timezone.utc)
 
 
 # Notion Utilities

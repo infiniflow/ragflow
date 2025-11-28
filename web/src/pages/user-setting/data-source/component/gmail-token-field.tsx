@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 import { FileUploader } from '@/components/file-uploader';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,15 +13,15 @@ import {
 import message from '@/components/ui/message';
 import { FileMimeType } from '@/constants/common';
 import {
-  pollGoogleDriveWebAuthResult,
-  startGoogleDriveWebAuth,
+  pollGmailWebAuthResult,
+  startGmailWebAuth,
 } from '@/services/data-source-service';
 import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-type GoogleDriveTokenFieldProps = {
+export type GmailTokenFieldProps = {
   value?: string;
   onChange: (value: any) => void;
+  placeholder?: string;
 };
 
 const credentialHasRefreshToken = (content: string) => {
@@ -47,10 +49,11 @@ const describeCredentials = (content?: string) => {
   }
 };
 
-const GoogleDriveTokenField = ({
+const GmailTokenField = ({
   value,
   onChange,
-}: GoogleDriveTokenFieldProps) => {
+  placeholder,
+}: GmailTokenFieldProps) => {
   const [files, setFiles] = useState<File[]>([]);
   const [pendingCredentials, setPendingCredentials] = useState<string>('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -111,13 +114,13 @@ const GoogleDriveTokenField = ({
   const fetchWebResult = useCallback(
     async (flowId: string) => {
       try {
-        const { data } = await pollGoogleDriveWebAuthResult({
+        const { data } = await pollGmailWebAuthResult({
           flow_id: flowId,
         });
         if (data.code === 0 && data.data?.credentials) {
           onChange(data.data.credentials);
           setPendingCredentials('');
-          message.success('Google Drive credentials verified.');
+          message.success('Gmail credentials verified.');
           resetDialog(false);
           return;
         }
@@ -146,7 +149,7 @@ const GoogleDriveTokenField = ({
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       const payload = event.data;
-      if (!payload || payload.type !== 'ragflow-google-drive-oauth') {
+      if (!payload || payload.type !== 'ragflow-gmail-oauth') {
         return;
       }
       if (!payload.flowId) {
@@ -198,7 +201,7 @@ const GoogleDriveTokenField = ({
           if (credentialHasRefreshToken(text)) {
             onChange(text);
             setPendingCredentials('');
-            message.success('OAuth credentials uploaded.');
+            message.success('Gmail OAuth credentials uploaded.');
             return;
           }
           setPendingCredentials(text);
@@ -223,14 +226,14 @@ const GoogleDriveTokenField = ({
     setWebAuthLoading(true);
     clearWebState();
     try {
-      const { data } = await startGoogleDriveWebAuth({
+      const { data } = await startGmailWebAuth({
         credentials: pendingCredentials,
       });
       if (data.code === 0 && data.data?.authorization_url) {
         const flowId = data.data.flow_id;
         const popup = window.open(
           data.data.authorization_url,
-          'ragflow-google-drive-oauth',
+          'ragflow-gmail-oauth',
           'width=600,height=720',
         );
         if (!popup) {
@@ -306,7 +309,7 @@ const GoogleDriveTokenField = ({
         onValueChange={handleValueChange}
         accept={{ '*.json': [FileMimeType.Json] }}
         maxFileCount={1}
-        description="Upload your Google OAuth JSON file."
+        description={'Upload your Gmail OAuth JSON file.'}
       />
 
       <Dialog
@@ -323,12 +326,13 @@ const GoogleDriveTokenField = ({
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>Complete Google verification</DialogTitle>
+            <DialogTitle>Complete Gmail verification</DialogTitle>
             <DialogDescription>
               The uploaded client credentials do not contain a refresh token.
               Run the verification flow once to mint reusable tokens.
             </DialogDescription>
           </DialogHeader>
+
           <div className="space-y-4">
             <div className="rounded-md border border-dashed border-muted-foreground/40 bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
               <div className="text-sm font-semibold text-foreground">
@@ -372,6 +376,7 @@ const GoogleDriveTokenField = ({
               </div>
             </div>
           </div>
+
           <DialogFooter className="pt-2">
             <Button variant="ghost" onClick={handleCancel}>
               Cancel
@@ -383,4 +388,4 @@ const GoogleDriveTokenField = ({
   );
 };
 
-export default GoogleDriveTokenField;
+export default GmailTokenField;

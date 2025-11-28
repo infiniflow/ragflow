@@ -1,6 +1,6 @@
 import logging
+import os
 from typing import Any
-
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from googleapiclient.errors import HttpError
@@ -9,10 +9,10 @@ from common.data_source.config import INDEX_BATCH_SIZE, SLIM_BATCH_SIZE, Documen
 from common.data_source.google_util.auth import get_google_creds
 from common.data_source.google_util.constant import DB_CREDENTIALS_PRIMARY_ADMIN_KEY, MISSING_SCOPES_ERROR_STR, SCOPE_INSTRUCTIONS, USER_FIELDS
 from common.data_source.google_util.resource import get_admin_service, get_gmail_service
-from common.data_source.google_util.util import _execute_single_retrieval, execute_paginated_retrieval
+from common.data_source.google_util.util import _execute_single_retrieval, execute_paginated_retrieval, sanitize_filename, clean_string
 from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch, SlimConnectorWithPermSync
 from common.data_source.models import BasicExpertInfo, Document, ExternalAccess, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SlimDocument, TextSection
-from common.data_source.utils import build_time_range_query, clean_email_and_extract_name, get_message_body, is_mail_service_disabled_error, time_str_to_utc
+from common.data_source.utils import build_time_range_query, clean_email_and_extract_name, get_message_body, is_mail_service_disabled_error, gmail_time_str_to_utc
 
 # Constants for Gmail API fields
 THREAD_LIST_FIELDS = "nextPageToken, threads(id)"
@@ -67,7 +67,6 @@ def message_to_section(message: dict[str, Any]) -> tuple[TextSection, dict[str, 
             message_data += f"{name}: {value}\n"
 
     message_body_text: str = get_message_body(payload)
-
     return TextSection(link=link, text=message_body_text + message_data), metadata
 
 
@@ -97,13 +96,15 @@ def thread_to_document(full_thread: dict[str, Any], email_used_to_fetch_thread: 
 
         if not semantic_identifier:
             semantic_identifier = message_metadata.get("subject", "")
+            semantic_identifier = clean_string(semantic_identifier)
+            semantic_identifier = sanitize_filename(semantic_identifier)
 
         if message_metadata.get("updated_at"):
             updated_at = message_metadata.get("updated_at")
-
+            
     updated_at_datetime = None
     if updated_at:
-        updated_at_datetime = time_str_to_utc(updated_at)
+        updated_at_datetime = gmail_time_str_to_utc(updated_at)
 
     thread_id = full_thread.get("id")
     if not thread_id:
@@ -115,15 +116,24 @@ def thread_to_document(full_thread: dict[str, Any], email_used_to_fetch_thread: 
     if not semantic_identifier:
         semantic_identifier = "(no subject)"
 
+    combined_sections = "\n\n".join(
+        sec.text for sec in sections if hasattr(sec, "text")
+    )
+    blob = combined_sections
+    size_bytes = len(blob)
+    extension = '.txt'
+
     return Document(
         id=thread_id,
         semantic_identifier=semantic_identifier,
-        sections=sections,
+        blob=blob,
+        size_bytes=size_bytes,
+        extension=extension,
         source=DocumentSource.GMAIL,
         primary_owners=primary_owners,
         secondary_owners=secondary_owners,
         doc_updated_at=updated_at_datetime,
-        metadata={},
+        metadata=message_metadata,
         external_access=ExternalAccess(
             external_user_emails={email_used_to_fetch_thread},
             external_user_group_ids=set(),
@@ -214,15 +224,13 @@ class GmailConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                     q=query,
                     continue_on_404_or_403=True,
                 ):
-                    full_threads = _execute_single_retrieval(
+                    full_thread = _execute_single_retrieval(
                         retrieval_function=gmail_service.users().threads().get,
-                        list_key=None,
                         userId=user_email,
                         fields=THREAD_FIELDS,
                         id=thread["id"],
                         continue_on_404_or_403=True,
                     )
-                    full_thread = list(full_threads)[0]
                     doc = thread_to_document(full_thread, user_email)
                     if doc is None:
                         continue
@@ -310,4 +318,30 @@ class GmailConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
 
 if __name__ == "__main__":
-    pass
+    import time
+    import os
+    from common.data_source.google_util.util import get_credentials_from_env
+    logging.basicConfig(level=logging.INFO)
+    try:
+        email = os.environ.get("GMAIL_TEST_EMAIL", "newyorkupperbay@gmail.com")
+        creds = get_credentials_from_env(email, oauth=True, source="gmail")
+        print("Credentials loaded successfully")
+        print(f"{creds=}")
+
+        connector = GmailConnector(batch_size=2)
+        print("GmailConnector initialized")
+        connector.load_credentials(creds)
+        print("Credentials loaded into connector")
+
+        print("Gmail is ready to use")
+
+        for file in connector._fetch_threads(
+            int(time.time()) - 1 * 24 * 60 * 60,
+            int(time.time()),
+        ):
+            print("new batch","-"*80)
+            for f in file:
+                print(f)
+                print("\n\n")
+    except Exception as e:
+        logging.exception(f"Error loading credentials: {e}")

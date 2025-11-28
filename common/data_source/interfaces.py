@@ -30,7 +30,6 @@ class LoadConnector(ABC):
         """Load documents from state"""
         pass
 
-    @abstractmethod
     def validate_connector_settings(self) -> None:
         """Validate connector settings"""
         pass
