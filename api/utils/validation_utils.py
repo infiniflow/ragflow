@@ -363,14 +363,8 @@ class CreateDatasetReq(Base):
     description: Annotated[str | None, Field(default=None, max_length=65535)]
     embedding_model: Annotated[str | None, Field(default=None, max_length=255, serialization_alias="embd_id")]
     permission: Annotated[Literal["me", "team"], Field(default="me", min_length=1, max_length=16)]
-    # Allow empty parser_id: when the user does not specify a parser, leave it blank and downstream logic can choose based on parse_type or a default strategy
-    chunk_method: Annotated[
-        Literal[None, "", "naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
-        Field(default=None, serialization_alias="parser_id"),
-    ]
-    # Optional parse_type (e.g. distinguish pipeline/custom parsing flows); None means this mode is not used
+    chunk_method: Annotated[str | None, Field(default=None, serialization_alias="parser_id")]
     parse_type: Annotated[int | None, Field(default=None, ge=0, le=64)]
-    # Processing pipeline ID; optional; must be a 32-character hexadecimal string (UUID hex without hyphens)
     pipeline_id: Annotated[str | None, Field(default=None, min_length=32, max_length=32, serialization_alias="pipeline_id")]
     parser_config: Annotated[ParserConfig | None, Field(default=None)]
 
@@ -556,19 +550,44 @@ class CreateDatasetReq(Base):
     def validate_parser_dependency(self) -> "CreateDatasetReq":
         """
         Mixed conditional validation:
-        - If chunk_method (parser_id) is empty string → require parse_type and pipeline_id (both not None)
-        - If chunk_method is non-empty → parse_type and pipeline_id must be None (disallow mixed usage)
+        - Reject parser_id == "" (empty string)
+        - If parser_id is an unknown value → raise enum-style error
+        - If parser_id is explicitly None (field present) → raise type error
+        - If parser_id is omitted (field not set):
+            * If both parse_type and pipeline_id are omitted → default chunk_method = "naive"
+            * If both parse_type and pipeline_id are provided → allow ingestion pipeline mode
+        - If parser_id is provided (valid enum) → parse_type and pipeline_id must be None (disallow mixed usage)
 
         Raises:
             PydanticCustomError with code 'dependency_error' on violation.
         """
-        # Fallback: all three absent → default naive
-        if self.chunk_method in (None, "") and self.parse_type is None and self.pipeline_id is None:
-            object.__setattr__(self, "chunk_method", "naive")
-            return self
+        allowed_methods = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"}
 
-        # parser_id empty/None: require BOTH parse_type & pipeline_id present (no partial allowed)
-        if self.chunk_method in (None, ""):
+        # Reject empty string
+        if self.chunk_method == "":
+            raise PydanticCustomError(
+                "literal_error",
+                "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'",
+            )
+
+        # Unknown value
+        if isinstance(self.chunk_method, str) and self.chunk_method not in allowed_methods:
+            raise PydanticCustomError(
+                "literal_error",
+                "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'",
+            )
+
+        # Explicit None (field provided as None) → type error
+        if self.chunk_method is None and "chunk_method" in self.model_fields_set:
+            raise PydanticCustomError("type_error", "not instance of")
+
+        # Omitted chunk_method (not in fields) logic
+        if self.chunk_method is None and "chunk_method" not in self.model_fields_set:
+            # All three absent → default naive
+            if self.parse_type is None and self.pipeline_id is None:
+                object.__setattr__(self, "chunk_method", "naive")
+                return self
+            # parser_id omitted: require BOTH parse_type & pipeline_id present (no partial allowed)
             if self.parse_type is None or self.pipeline_id is None:
                 missing = []
                 if self.parse_type is None:
@@ -577,13 +596,14 @@ class CreateDatasetReq(Base):
                     missing.append("pipeline_id")
                 raise PydanticCustomError(
                     "dependency_error",
-                    "parser_id empty/None → required fields missing: {fields}",
+                    "parser_id omitted → required fields missing: {fields}",
                     {"fields": ", ".join(missing)},
                 )
+            # Both provided → allow pipeline mode
             return self
 
-        # parser_id provided (non-empty): MUST NOT have parse_type or pipeline_id
-        if self.chunk_method not in (None, ""):
+        # parser_id provided (valid): MUST NOT have parse_type or pipeline_id
+        if isinstance(self.chunk_method, str):
             if self.parse_type is not None or self.pipeline_id is not None:
                 invalid = []
                 if self.parse_type is not None:
