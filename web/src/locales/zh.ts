@@ -3,7 +3,7 @@ export default {
     common: {
       confirm: '确定',
       back: '返回',
-      noResults: '无结果。',
+      noResults: '未查到结果',
       selectPlaceholder: '请选择',
       selectAll: '全选',
       delete: '删除',
@@ -1878,6 +1878,27 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       downloadFailedTip: '下载失败总数',
       processingSuccessTip: '处理成功的文件总数',
       processingFailedTip: '处理失败的文件总数',
+      noData: '暂无日志',
+    },
+
+    deleteModal: {
+      delAgent: '删除智能体',
+      delDataset: '删除知识库',
+      delSearch: '删除搜索',
+      delFile: '删除文件',
+      delFiles: '删除文件',
+      delFilesContent: '已选择 {{count}} 个文件',
+      delChat: '删除聊天',
+      delMember: '删除成员',
+    },
+
+    empty: {
+      noMCP: '暂无 MCP 服务器可用',
+      agentTitle: '尚未创建智能体',
+      datasetTitle: '尚未创建数据集',
+      chatTitle: '尚未创建聊天应用',
+      searchTitle: '尚未创建搜索应用',
+      addNow: '立即添加',
     },
 
     deleteModal: {

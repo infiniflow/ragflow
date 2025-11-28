@@ -54,7 +54,7 @@ export const useFetchTenantInfo = (
 ): ResponseGetType<ITenantInfo> => {
   const { t } = useTranslation();
   const { data, isFetching: loading } = useQuery({
-    queryKey: ['tenantInfo'],
+    queryKey: ['tenantInfo', showEmptyModelWarn],
     initialData: {},
     gcTime: 0,
     queryFn: async () => {
@@ -99,7 +99,6 @@ export const useSelectParserList = (): Array<{
   label: string;
 }> => {
   const { data: tenantInfo } = useFetchTenantInfo(true);
-
   const parserList = useMemo(() => {
     const parserArray: Array<string> = tenantInfo?.parser_ids?.split(',') ?? [];
     return parserArray.map((x) => {

@@ -14,6 +14,8 @@ import {
 import * as React from 'react';
 
 import { ChunkMethodDialog } from '@/components/chunk-method-dialog';
+import { EmptyType } from '@/components/empty/constant';
+import Empty from '@/components/empty/empty';
 import { RenameDialog } from '@/components/rename-dialog';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import {
@@ -164,7 +166,7 @@ export function DatasetTable({
           ) : (
             <TableRow>
               <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
+                <Empty type={EmptyType.Data} />
               </TableCell>
             </TableRow>
           )}

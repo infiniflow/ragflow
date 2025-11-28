@@ -3,11 +3,18 @@ import { MoreButton } from '@/components/more-button';
 import { RenameDialog } from '@/components/rename-dialog';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentListByPage } from '@/hooks/use-agent-request';
+import { useEffect } from 'react';
 import { AgentDropdown } from '../agents/agent-dropdown';
 import { useRenameAgent } from '../agents/use-rename-agent';
 
-export function Agents() {
-  const { data } = useFetchAgentListByPage();
+export function Agents({
+  setListLength,
+  setLoading,
+}: {
+  setListLength: (length: number) => void;
+  setLoading?: (loading: boolean) => void;
+}) {
+  const { data, loading } = useFetchAgentListByPage();
   const { navigateToAgent } = useNavigatePage();
   const {
     agentRenameLoading,
@@ -17,6 +24,11 @@ export function Agents() {
     hideAgentRenameModal,
     showAgentRenameModal,
   } = useRenameAgent();
+
+  useEffect(() => {
+    setListLength(data?.length || 0);
+    setLoading?.(loading || false);
+  }, [data, setListLength, loading, setLoading]);
 
   return (
     <>

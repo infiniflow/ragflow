@@ -1,4 +1,6 @@
 import { CardSineLineContainer } from '@/components/card-singleline-container';
+import { EmptyCardType } from '@/components/empty/constant';
+import { EmptyAppCard } from '@/components/empty/empty';
 import { HomeIcon } from '@/components/svg-icon';
 import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { Routes } from '@/routes';
@@ -16,14 +18,29 @@ const IconMap = {
   [Routes.Agents]: 'agents',
 };
 
+const EmptyTypeMap = {
+  [Routes.Chats]: EmptyCardType.Chat,
+  [Routes.Searches]: EmptyCardType.Search,
+  [Routes.Agents]: EmptyCardType.Agent,
+};
+
 export function Applications() {
   const [val, setVal] = useState(Routes.Chats);
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [listLength, setListLength] = useState(0);
+  const [loading, setLoading] = useState(false);
 
-  const handleNavigate = useCallback(() => {
-    navigate(val);
-  }, [navigate, val]);
+  const handleNavigate = useCallback(
+    ({ isCreate }: { isCreate?: boolean }) => {
+      if (isCreate) {
+        navigate(val + '?isCreate=true');
+      } else {
+        navigate(val);
+      }
+    },
+    [navigate, val],
+  );
 
   const options = useMemo(
     () => [
@@ -36,16 +53,14 @@ export function Applications() {
 
   const handleChange = (path: SegmentedValue) => {
     setVal(path as Routes);
+    setListLength(0);
+    setLoading(true);
   };
 
   return (
     <section className="mt-12">
       <div className="flex justify-between items-center mb-5">
         <h2 className="text-2xl font-semibold flex gap-2.5">
-          {/* <IconFont
-            name={IconMap[val as keyof typeof IconMap]}
-            className="size-8"
-          ></IconFont> */}
           <HomeIcon
             name={`${IconMap[val as keyof typeof IconMap]}`}
             width={'32'}
@@ -63,11 +78,36 @@ export function Applications() {
       </div>
       {/* <div className="flex flex-wrap gap-4"> */}
       <CardSineLineContainer>
-        {val === Routes.Agents && <Agents></Agents>}
-        {val === Routes.Chats && <ChatList></ChatList>}
-        {val === Routes.Searches && <SearchList></SearchList>}
-        {<SeeAllAppCard click={handleNavigate}></SeeAllAppCard>}
+        {val === Routes.Agents && (
+          <Agents
+            setListLength={(length: number) => setListLength(length)}
+            setLoading={(loading: boolean) => setLoading(loading)}
+          ></Agents>
+        )}
+        {val === Routes.Chats && (
+          <ChatList
+            setListLength={(length: number) => setListLength(length)}
+            setLoading={(loading: boolean) => setLoading(loading)}
+          ></ChatList>
+        )}
+        {val === Routes.Searches && (
+          <SearchList
+            setListLength={(length: number) => setListLength(length)}
+            setLoading={(loading: boolean) => setLoading(loading)}
+          ></SearchList>
+        )}
+        {listLength > 0 && (
+          <SeeAllAppCard
+            click={() => handleNavigate({ isCreate: false })}
+          ></SeeAllAppCard>
+        )}
       </CardSineLineContainer>
+      {listLength <= 0 && !loading && (
+        <EmptyAppCard
+          type={EmptyTypeMap[val as keyof typeof EmptyTypeMap]}
+          onClick={() => handleNavigate({ isCreate: true })}
+        />
+      )}
       {/* </div> */}
     </section>
   );
