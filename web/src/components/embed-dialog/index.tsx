@@ -22,6 +22,7 @@ import { SharedFrom } from '@/constants/chat';
 import {
   LanguageAbbreviation,
   LanguageAbbreviationMap,
+  ThemeEnum,
 } from '@/constants/common';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
@@ -36,7 +37,7 @@ const FormSchema = z.object({
   locale: z.string(),
   embedType: z.enum(['fullscreen', 'widget']),
   enableStreaming: z.boolean(),
-  theme: z.enum(['light', 'dark']),
+  theme: z.enum([ThemeEnum.Light, ThemeEnum.Dark]),
 });
 
 type IProps = IModalProps<any> & {
@@ -62,7 +63,7 @@ function EmbedDialog({
       locale: '',
       embedType: 'fullscreen' as const,
       enableStreaming: false,
-      theme: 'light' as const,
+      theme: ThemeEnum.Light,
     },
   });
 
@@ -200,13 +201,16 @@ function EmbedDialog({
                           className="flex flex-row space-x-4"
                         >
                           <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="light" id="light" />
+                            <RadioGroupItem
+                              value={ThemeEnum.Light}
+                              id="light"
+                            />
                             <Label htmlFor="light" className="text-sm">
                               Light
                             </Label>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="dark" id="dark" />
+                            <RadioGroupItem value={ThemeEnum.Dark} id="dark" />
                             <Label htmlFor="dark" className="text-sm">
                               Dark
                             </Label>
