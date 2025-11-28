@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from collections import Counter
+import string
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -25,6 +26,7 @@ from pydantic import (
     StringConstraints,
     ValidationError,
     field_validator,
+    model_validator,
 )
 from pydantic_core import PydanticCustomError
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
@@ -361,10 +363,15 @@ class CreateDatasetReq(Base):
     description: Annotated[str | None, Field(default=None, max_length=65535)]
     embedding_model: Annotated[str | None, Field(default=None, max_length=255, serialization_alias="embd_id")]
     permission: Annotated[Literal["me", "team"], Field(default="me", min_length=1, max_length=16)]
+    # Allow empty parser_id: when the user does not specify a parser, leave it blank and downstream logic can choose based on parse_type or a default strategy
     chunk_method: Annotated[
-        Literal["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
-        Field(default="naive", min_length=1, max_length=32, serialization_alias="parser_id"),
+        Literal[None, "", "naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+        Field(default=None, serialization_alias="parser_id"),
     ]
+    # Optional parse_type (e.g. distinguish pipeline/custom parsing flows); None means this mode is not used
+    parse_type: Annotated[int | None, Field(default=None, ge=0, le=64)]
+    # Processing pipeline ID; optional; must be a 32-character hexadecimal string (UUID hex without hyphens)
+    pipeline_id: Annotated[str | None, Field(default=None, min_length=32, max_length=32, serialization_alias="pipeline_id")]
     parser_config: Annotated[ParserConfig | None, Field(default=None)]
 
     @field_validator("avatar", mode="after")
@@ -524,6 +531,71 @@ class CreateDatasetReq(Base):
         if (json_str := v.model_dump_json()) and len(json_str) > 65535:
             raise PydanticCustomError("string_too_long", "Parser config exceeds size limit (max 65,535 characters). Current size: {actual}", {"actual": len(json_str)})
         return v
+
+    @field_validator("pipeline_id", mode="after")
+    @classmethod
+    def validate_pipeline_id(cls, v: str | None) -> str | None:
+        """Validate pipeline_id as 32-char lowercase hex string if provided.
+
+        Rules:
+        - None or empty string: treat as None (not set)
+        - Must be exactly length 32
+        - Must contain only hex digits (0-9a-fA-F); normalized to lowercase
+        """
+        if v is None:
+            return None
+        if v == "":
+            return None
+        if len(v) != 32:
+            raise PydanticCustomError("format_invalid", "pipeline_id must be 32 hex characters")
+        if any(ch not in string.hexdigits for ch in v):
+            raise PydanticCustomError("format_invalid", "pipeline_id must be hexadecimal")
+        return v.lower()
+
+    @model_validator(mode="after")
+    def validate_parser_dependency(self) -> "CreateDatasetReq":
+        """
+        Mixed conditional validation:
+        - If chunk_method (parser_id) is empty string → require parse_type and pipeline_id (both not None)
+        - If chunk_method is non-empty → parse_type and pipeline_id must be None (disallow mixed usage)
+
+        Raises:
+            PydanticCustomError with code 'dependency_error' on violation.
+        """
+        # Fallback: all three absent → default naive
+        if self.chunk_method in (None, "") and self.parse_type is None and self.pipeline_id is None:
+            object.__setattr__(self, "chunk_method", "naive")
+            return self
+
+        # parser_id empty/None: require BOTH parse_type & pipeline_id present (no partial allowed)
+        if self.chunk_method in (None, ""):
+            if self.parse_type is None or self.pipeline_id is None:
+                missing = []
+                if self.parse_type is None:
+                    missing.append("parse_type")
+                if self.pipeline_id is None:
+                    missing.append("pipeline_id")
+                raise PydanticCustomError(
+                    "dependency_error",
+                    "parser_id empty/None → required fields missing: {fields}",
+                    {"fields": ", ".join(missing)},
+                )
+            return self
+
+        # parser_id provided (non-empty): MUST NOT have parse_type or pipeline_id
+        if self.chunk_method not in (None, ""):
+            if self.parse_type is not None or self.pipeline_id is not None:
+                invalid = []
+                if self.parse_type is not None:
+                    invalid.append("parse_type")
+                if self.pipeline_id is not None:
+                    invalid.append("pipeline_id")
+                raise PydanticCustomError(
+                    "dependency_error",
+                    "parser_id provided → disallowed fields present: {fields}",
+                    {"fields": ", ".join(invalid)},
+                )
+        return self
 
 
 class UpdateDatasetReq(CreateDatasetReq):
