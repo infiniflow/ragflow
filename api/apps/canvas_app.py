@@ -40,6 +40,11 @@ from api.db.services.canvas_service import (
     CanvasTemplateService,
     UserCanvasService,
 )
+from functools import partial
+from quart import request, Response, make_response
+from agent.component import LLM
+from api.db import CanvasCategory
+from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import (
@@ -63,6 +68,15 @@ from api.utils.file_utils import filename_type, read_potential_broken_pdf
 from common import settings
 from common.constants import RetCode, StatusEnum
 from common.misc_utils import get_uuid
+from common.constants import RetCode
+from common.misc_utils import get_uuid
+from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result, \
+    request_json
+from agent.canvas import Canvas
+from peewee import MySQLDatabase, PostgresqlDatabase
+from api.db.db_models import APIToken, Task
+import time
+
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
@@ -319,71 +333,10 @@ async def upload(canvas_id):
         return get_data_error_result(message="canvas not found.")
 
     user_id = cvs["user_id"]
-    def structured(filename, filetype, blob, content_type):
-        nonlocal user_id
-        if filetype == FileType.PDF.value:
-            blob = read_potential_broken_pdf(blob)
-
-        location = get_uuid()
-        FileService.put_blob(user_id, location, blob)
-
-        return {
-            "id": location,
-            "name": filename,
-            "size": sys.getsizeof(blob),
-            "extension": filename.split(".")[-1].lower(),
-            "mime_type": content_type,
-            "created_by": user_id,
-            "created_at": time.time(),
-            "preview_url": None
-        }
-
-    if request.args.get("url"):
-        from crawl4ai import (
-            AsyncWebCrawler,
-            BrowserConfig,
-            CrawlerRunConfig,
-            DefaultMarkdownGenerator,
-            PruningContentFilter,
-            CrawlResult
-        )
-        try:
-            url = request.args.get("url")
-            filename = re.sub(r"\?.*", "", url.split("/")[-1])
-            async def adownload():
-                browser_config = BrowserConfig(
-                    headless=True,
-                    verbose=False,
-                )
-                async with AsyncWebCrawler(config=browser_config) as crawler:
-                    crawler_config = CrawlerRunConfig(
-                        markdown_generator=DefaultMarkdownGenerator(
-                            content_filter=PruningContentFilter()
-                        ),
-                        pdf=True,
-                        screenshot=False
-                    )
-                    result: CrawlResult = await crawler.arun(
-                        url=url,
-                        config=crawler_config
-                    )
-                    return result
-            page = trio.run(adownload())
-            if page.pdf:
-                if filename.split(".")[-1].lower() != "pdf":
-                    filename += ".pdf"
-                return get_json_result(data=structured(filename, "pdf", page.pdf, page.response_headers["content-type"]))
-
-            return get_json_result(data=structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"], user_id))
-
-        except Exception as e:
-            return  server_error_response(e)
-
     files = await request.files
-    file = files['file']
+    file = files['file'] if files and files.get("file") else None
     try:
-        DocumentService.check_doc_health(user_id, file.filename)
-        return get_json_result(data=structured(file.filename, filename_type(file.filename), file.read(), file.content_type))
+        return get_json_result(data=FileService.upload_info(user_id, file, request.args.get("url")))
     except Exception as e:
         return  server_error_response(e)
 

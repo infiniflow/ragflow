@@ -3,7 +3,7 @@ export default {
     common: {
       confirm: 'Confirm',
       back: 'Back',
-      noResults: 'No results.',
+      noResults: 'No results found',
       selectPlaceholder: 'select value',
       selectAll: 'Select all',
       delete: 'Delete',
@@ -51,7 +51,7 @@ export default {
       remove: 'Remove',
       search: 'Search',
       noDataFound: 'No data found.',
-      noData: 'No data',
+      noData: 'No data available',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
       mcp: {
         namePlaceholder: 'My MCP Server',
@@ -739,6 +739,7 @@ Example: Virtual Hosted Style`,
         'Sync pages and databases from Notion for knowledge retrieval.',
       google_driveDescription:
         'Connect your Google Drive via OAuth and sync specific folders or drives.',
+      gmailDescription: 'Connect your Gmail via OAuth to sync emails.',
       webdavDescription: 'Connect to WebDAV servers to sync files.',
       webdavRemotePathTip:
         'Optional: Specify a folder path on the WebDAV server (e.g., /Documents). Leave empty to sync from root.',
@@ -750,6 +751,10 @@ Example: Virtual Hosted Style`,
         'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
+      gmailPrimaryAdminTip:
+        'Primary admin email with Gmail / Workspace access, used to enumerate domain users and as the default sync account.',
+      gmailTokenTip:
+        'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
       dropboxAccessTokenTip:
@@ -2021,6 +2026,7 @@ Important structured information may include: names, dates, locations, events, k
       processingSuccessTip: 'Total successfully processed files',
       processingFailedTip: 'Total failed processes',
       processing: 'Processing',
+      noData: 'No log yet',
     },
 
     deleteModal: {
@@ -2032,6 +2038,15 @@ Important structured information may include: names, dates, locations, events, k
       delFilesContent: 'Selected {{count}} files',
       delChat: 'Delete chat',
       delMember: 'Delete member',
+    },
+
+    empty: {
+      noMCP: 'No MCP servers available',
+      agentTitle: 'No agent app created yet',
+      datasetTitle: 'No dataset created yet',
+      chatTitle: 'No chat app created yet',
+      searchTitle: 'No search app created yet',
+      addNow: 'Add Now',
     },
 
     admin: {

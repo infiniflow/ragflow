@@ -58,7 +58,7 @@ export const useSelectLlmOptions = () => {
 function buildLlmOptionsWithIcon(x: IThirdOAIModel) {
   return {
     label: (
-      <div className="flex items-center justify-center gap-6">
+      <div className="flex items-center justify-center gap-2">
         <LlmIcon
           name={getLLMIconName(x.fid, x.llm_name)}
           width={24}

@@ -1,6 +1,6 @@
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/message-item';
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType } from '@/constants/chat';
 import {
@@ -101,12 +101,12 @@ export function SingleChatBox({ controller, stopOutputMessage }: IProps) {
         removeFile={removeFile}
       />
       {visible && (
-        <PdfDrawer
+        <PdfSheet
           visible={visible}
           hideModal={hideModal}
           documentId={documentId}
           chunk={selectedChunk}
-        ></PdfDrawer>
+        ></PdfSheet>
       )}
     </section>
   );
