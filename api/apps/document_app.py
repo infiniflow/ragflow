@@ -705,3 +705,12 @@ async def set_meta():
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+
+@manager.route("/upload_info", methods=["POST"])  # noqa: F821
+async def upload_info():
+    files = await request.files
+    file = files['file'] if files and files.get("file") else None
+    try:
+        return get_json_result(data=FileService.upload_info(current_user.id, file, request.args.get("url")))
+    except Exception as e:
+        return  server_error_response(e)
