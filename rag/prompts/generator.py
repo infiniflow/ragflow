@@ -430,9 +430,13 @@ def rank_memories(chat_mdl, goal:str, sub_goal:str, tool_call_summaries: list[st
 
 
 def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> dict:
+    meta_data_structure = {}
+    for key, values in meta_data.items():
+        meta_data_structure[key] = list(values.keys()) if isinstance(values, dict) else values
+
     sys_prompt = PROMPT_JINJA_ENV.from_string(META_FILTER).render(
         current_date=datetime.datetime.today().strftime('%Y-%m-%d'),
-        metadata_keys=json.dumps(meta_data),
+        metadata_keys=json.dumps(meta_data_structure),
         user_question=query
     )
     user_prompt = "Generate filters:"
