@@ -3,7 +3,7 @@ export default {
     common: {
       confirm: 'Confirm',
       back: 'Back',
-      noResults: 'No results.',
+      noResults: 'No results found',
       selectPlaceholder: 'select value',
       selectAll: 'Select all',
       delete: 'Delete',
@@ -51,7 +51,7 @@ export default {
       remove: 'Remove',
       search: 'Search',
       noDataFound: 'No data found.',
-      noData: 'No data',
+      noData: 'No data available',
       promptPlaceholder: `Please input or use / to quickly insert variables.`,
       mcp: {
         namePlaceholder: 'My MCP Server',
@@ -2017,6 +2017,7 @@ Important structured information may include: names, dates, locations, events, k
       processingSuccessTip: 'Total successfully processed files',
       processingFailedTip: 'Total failed processes',
       processing: 'Processing',
+      noData: 'No log yet',
     },
 
     deleteModal: {
@@ -2028,6 +2029,15 @@ Important structured information may include: names, dates, locations, events, k
       delFilesContent: 'Selected {{count}} files',
       delChat: 'Delete chat',
       delMember: 'Delete member',
+    },
+
+    empty: {
+      noMCP: 'No MCP servers available',
+      agentTitle: 'No agent app created yet',
+      datasetTitle: 'No dataset created yet',
+      chatTitle: 'No chat app created yet',
+      searchTitle: 'No search app created yet',
+      addNow: 'Add Now',
     },
 
     admin: {
