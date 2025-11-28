@@ -127,12 +127,14 @@ function AgentChatBox() {
           />
         )}
       </section>
-      <PdfSheet
-        visible={visible}
-        hideModal={hideModal}
-        documentId={documentId}
-        chunk={selectedChunk}
-      ></PdfSheet>
+      {visible && (
+        <PdfSheet
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        ></PdfSheet>
+      )}
     </>
   );
 }
