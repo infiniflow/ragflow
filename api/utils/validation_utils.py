@@ -550,9 +550,6 @@ class CreateDatasetReq(Base):
     def validate_parser_dependency(self) -> "CreateDatasetReq":
         """
         Mixed conditional validation:
-        - Reject parser_id == "" (empty string)
-        - If parser_id is an unknown value → raise enum-style error
-        - If parser_id is explicitly None (field present) → raise type error
         - If parser_id is omitted (field not set):
             * If both parse_type and pipeline_id are omitted → default chunk_method = "naive"
             * If both parse_type and pipeline_id are provided → allow ingestion pipeline mode
@@ -561,26 +558,6 @@ class CreateDatasetReq(Base):
         Raises:
             PydanticCustomError with code 'dependency_error' on violation.
         """
-        allowed_methods = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"}
-
-        # Reject empty string
-        if self.chunk_method == "":
-            raise PydanticCustomError(
-                "literal_error",
-                "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'",
-            )
-
-        # Unknown value
-        if isinstance(self.chunk_method, str) and self.chunk_method not in allowed_methods:
-            raise PydanticCustomError(
-                "literal_error",
-                "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'",
-            )
-
-        # Explicit None (field provided as None) → type error
-        if self.chunk_method is None and "chunk_method" in self.model_fields_set:
-            raise PydanticCustomError("type_error", "not instance of")
-
         # Omitted chunk_method (not in fields) logic
         if self.chunk_method is None and "chunk_method" not in self.model_fields_set:
             # All three absent → default naive
@@ -616,6 +593,32 @@ class CreateDatasetReq(Base):
                     {"fields": ", ".join(invalid)},
                 )
         return self
+
+    @field_validator("chunk_method", mode="before")
+    @classmethod
+    def validate_chunk_method(cls, v: Any) -> Any:
+        """Unify chunk_method error messages to match testcases.
+
+        Rules:
+        - Accept omission (validator won't run when field not provided)
+        - If value is None (explicitly provided) → raise unified enum error (tests expect same message)
+        - If value is empty string "" → raise unified enum error
+        - If value is not a string → raise unified enum error
+        - If value is a string but not in allowed set → raise unified enum error
+        - Otherwise pass through
+        """
+        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"}
+        error_msg = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'"
+        if v is None:
+            # Explicit None provided
+            raise PydanticCustomError("literal_error", error_msg)
+        if not isinstance(v, str):
+            raise PydanticCustomError("literal_error", error_msg)
+        if v == "":
+            raise PydanticCustomError("literal_error", error_msg)
+        if v not in allowed:
+            raise PydanticCustomError("literal_error", error_msg)
+        return v
 
 
 class UpdateDatasetReq(CreateDatasetReq):
