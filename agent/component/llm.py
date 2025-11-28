@@ -205,6 +205,55 @@ class LLM(ComponentBase):
             for txt in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs):
                 yield delta(txt)
 
+    async def _stream_output_async(self, prompt, msg):
+        _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
+        answer = ""
+        last_idx = 0
+        endswith_think = False
+
+        def delta(txt):
+            nonlocal answer, last_idx, endswith_think
+            delta_ans = txt[last_idx:]
+            answer = txt
+
+            if delta_ans.find("<think>") == 0:
+                last_idx += len("<think>")
+                return "<think>"
+            elif delta_ans.find("<think>") > 0:
+                delta_ans = txt[last_idx:last_idx + delta_ans.find("<think>")]
+                last_idx += delta_ans.find("<think>")
+                return delta_ans
+            elif delta_ans.endswith("</think>"):
+                endswith_think = True
+            elif endswith_think:
+                endswith_think = False
+                return "</think>"
+
+            last_idx = len(answer)
+            if answer.endswith("</think>"):
+                last_idx -= len("</think>")
+            return re.sub(r"(<think>|</think>)", "", delta_ans)
+
+        stream_kwargs = {"images": self.imgs} if self.imgs else {}
+        async for ans in self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs):
+            if self.check_if_canceled("LLM streaming"):
+                return
+
+            if isinstance(ans, int):
+                continue
+
+            if ans.find("**ERROR**") >= 0:
+                if self.get_exception_default_value():
+                    self.set_output("content", self.get_exception_default_value())
+                    yield self.get_exception_default_value()
+                else:
+                    self.set_output("_ERROR", ans)
+                return
+
+            yield delta(ans)
+
+        self.set_output("content", answer)
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("LLM processing"):
@@ -250,7 +299,7 @@ class LLM(ComponentBase):
         downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
         ex = self.exception_handler()
         if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not (ex and ex["goto"]):
-            self.set_output("content", partial(self._stream_output, prompt, msg))
+            self.set_output("content", partial(self._stream_output_async, prompt, msg))
             return
 
         for _ in range(self._param.max_retries+1):
