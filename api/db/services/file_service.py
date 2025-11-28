@@ -595,7 +595,7 @@ class FileService(CommonService):
         return errors
 
     @staticmethod
-    def upload_info(user_id, file, url: str=None):
+    def upload_info(user_id, file, url: str|None=None):
         def structured(filename, filetype, blob, content_type):
             nonlocal user_id
             if filetype == FileType.PDF.value:
