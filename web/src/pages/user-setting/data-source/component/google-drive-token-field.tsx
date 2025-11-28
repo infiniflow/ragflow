@@ -1,5 +1,3 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-
 import { FileUploader } from '@/components/file-uploader';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,6 +15,7 @@ import {
   startGoogleDriveWebAuth,
 } from '@/services/data-source-service';
 import { Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type GoogleDriveTokenFieldProps = {
   value?: string;
@@ -313,12 +312,16 @@ const GoogleDriveTokenField = ({
       <Dialog
         open={dialogOpen}
         onOpenChange={(open) => {
-          if (!open) {
+          if (!open && dialogOpen) {
             handleCancel();
           }
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Complete Google verification</DialogTitle>
             <DialogDescription>
@@ -326,7 +329,6 @@ const GoogleDriveTokenField = ({
               Run the verification flow once to mint reusable tokens.
             </DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4">
             <div className="rounded-md border border-dashed border-muted-foreground/40 bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
               <div className="text-sm font-semibold text-foreground">
@@ -370,7 +372,6 @@ const GoogleDriveTokenField = ({
               </div>
             </div>
           </div>
-
           <DialogFooter className="pt-2">
             <Button variant="ghost" onClick={handleCancel}>
               Cancel

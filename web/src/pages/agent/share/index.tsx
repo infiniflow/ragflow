@@ -2,7 +2,7 @@ import { EmbedContainer } from '@/components/embed-container';
 import { FileUploadProps } from '@/components/file-upload';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType } from '@/constants/chat';
 import { useUploadCanvasFileWithProgress } from '@/hooks/use-agent-request';
@@ -11,12 +11,12 @@ import i18n from '@/locales/config';
 import DebugContent from '@/pages/agent/debug-content';
 import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
 import { useAwaitCompentData } from '@/pages/agent/hooks/use-chat-logic';
-import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { isEmpty } from 'lodash';
 import React, { forwardRef, useCallback } from 'react';
 import {
   useGetSharedChatSearchParams,
+  useSendButtonDisabled,
   useSendNextSharedMessage,
 } from '../hooks/use-send-shared-message';
 import { ParameterDialog } from './parameter-dialog';
@@ -204,12 +204,12 @@ const ChatContainer = () => {
         </div>
       </EmbedContainer>
       {visible && (
-        <PdfDrawer
+        <PdfSheet
           visible={visible}
           hideModal={hideModal}
           documentId={documentId}
           chunk={selectedChunk}
-        ></PdfDrawer>
+        ></PdfSheet>
       )}
       {parameterDialogVisible && (
         <ParameterDialog

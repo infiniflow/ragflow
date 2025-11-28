@@ -1,16 +1,16 @@
 import { EmbedContainer } from '@/components/embed-container';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/message-item';
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
 import { useFetchFlowSSE } from '@/hooks/flow-hooks';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import i18n from '@/locales/config';
-import { useSendButtonDisabled } from '@/pages/chat/hooks';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import React, { forwardRef, useMemo } from 'react';
+import { useSendButtonDisabled } from '../hooks/use-button-disabled';
 import {
   useGetSharedChatSearchParams,
   useSendSharedMessage,
@@ -123,12 +123,12 @@ const ChatContainer = () => {
         </div>
       </EmbedContainer>
       {visible && (
-        <PdfDrawer
+        <PdfSheet
           visible={visible}
           hideModal={hideModal}
           documentId={documentId}
           chunk={selectedChunk}
-        ></PdfDrawer>
+        ></PdfSheet>
       )}
     </>
   );

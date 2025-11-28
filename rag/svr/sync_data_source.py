@@ -41,6 +41,7 @@ from common.data_source import BlobStorageConnector, NotionConnector, DiscordCon
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
+from common.data_source.gmail_connector import GmailConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.data_source.utils import load_all_docs_from_checkpoint_connector
 from common.log_utils import init_root_logger
@@ -75,8 +76,9 @@ class SyncBase:
                         min_update = min([doc.doc_updated_at for doc in document_batch])
                         max_update = max([doc.doc_updated_at for doc in document_batch])
                         next_update = max([next_update, max_update])
-                        docs = [
-                            {
+                        docs = []
+                        for doc in document_batch:
+                            doc_dict = {
                                 "id": doc.id,
                                 "connector_id": task["connector_id"],
                                 "source": self.SOURCE_NAME,
@@ -86,8 +88,10 @@ class SyncBase:
                                 "doc_updated_at": doc.doc_updated_at,
                                 "blob": doc.blob,
                             }
-                            for doc in document_batch
-                        ]
+                            # Add metadata if present
+                            if doc.metadata:
+                                doc_dict["metadata"] = doc.metadata
+                            docs.append(doc_dict)
 
                         try:
                             e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
@@ -227,7 +231,64 @@ class Gmail(SyncBase):
     SOURCE_NAME: str = FileSource.GMAIL
 
     async def _generate(self, task: dict):
-        pass
+        # Gmail sync reuses the generic LoadConnector/PollConnector interface
+        # implemented by common.data_source.gmail_connector.GmailConnector.
+        #
+        # Config expectations (self.conf):
+        #   credentials: Gmail / Workspace OAuth JSON (with primary admin email)
+        #   batch_size:  optional, defaults to INDEX_BATCH_SIZE
+        batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+
+        self.connector = GmailConnector(batch_size=batch_size)
+
+        credentials = self.conf.get("credentials")
+        if not credentials:
+            raise ValueError("Gmail connector is missing credentials.")
+
+        new_credentials = self.connector.load_credentials(credentials)
+        if new_credentials:
+            # Persist rotated / refreshed credentials back to connector config
+            try:
+                updated_conf = copy.deepcopy(self.conf)
+                updated_conf["credentials"] = new_credentials
+                ConnectorService.update_by_id(task["connector_id"], {"config": updated_conf})
+                self.conf = updated_conf
+                logging.info(
+                    "Persisted refreshed Gmail credentials for connector %s",
+                    task["connector_id"],
+                )
+            except Exception:
+                logging.exception(
+                    "Failed to persist refreshed Gmail credentials for connector %s",
+                    task["connector_id"],
+                )
+
+        # Decide between full reindex and incremental polling by time range.
+        if task["reindex"] == "1" or not task.get("poll_range_start"):
+            start_time = None
+            end_time = None
+            begin_info = "totally"
+            document_generator = self.connector.load_from_state()
+        else:
+            poll_start = task["poll_range_start"]
+            # Defensive: if poll_start is somehow None, fall back to full load
+            if poll_start is None:
+                start_time = None
+                end_time = None
+                begin_info = "totally"
+                document_generator = self.connector.load_from_state()
+            else:
+                start_time = poll_start.timestamp()
+                end_time = datetime.now(timezone.utc).timestamp()
+                begin_info = f"from {poll_start}"
+                document_generator = self.connector.poll_source(start_time, end_time)
+
+        try:
+            admin_email = self.connector.primary_admin_email
+        except RuntimeError:
+            admin_email = "unknown"
+        logging.info(f"Connect to Gmail as {admin_email} {begin_info}")
+        return document_generator
 
 
 class Dropbox(SyncBase):
