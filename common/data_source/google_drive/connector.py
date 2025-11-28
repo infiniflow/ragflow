@@ -1,7 +1,6 @@
 """Google Drive connector"""
 
 import copy
-import json
 import logging
 import os
 import sys
@@ -32,7 +31,6 @@ from common.data_source.google_drive.file_retrieval import (
 from common.data_source.google_drive.model import DriveRetrievalStage, GoogleDriveCheckpoint, GoogleDriveFileType, RetrievedDriveFile, StageCompletion
 from common.data_source.google_util.auth import get_google_creds
 from common.data_source.google_util.constant import DB_CREDENTIALS_PRIMARY_ADMIN_KEY, MISSING_SCOPES_ERROR_STR, USER_FIELDS
-from common.data_source.google_util.oauth_flow import ensure_oauth_token_dict
 from common.data_source.google_util.resource import GoogleDriveService, get_admin_service, get_drive_service
 from common.data_source.google_util.util import GoogleFields, execute_paginated_retrieval, get_file_owners
 from common.data_source.google_util.util_threadpool_concurrency import ThreadSafeDict
@@ -1138,39 +1136,6 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
         return GoogleDriveCheckpoint.model_validate_json(checkpoint_json)
 
 
-def get_credentials_from_env(email: str, oauth: bool = False) -> dict:
-    try:
-        if oauth:
-            raw_credential_string = os.environ["GOOGLE_DRIVE_OAUTH_CREDENTIALS_JSON_STR"]
-        else:
-            raw_credential_string = os.environ["GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON_STR"]
-    except KeyError:
-        raise ValueError("Missing Google Drive credentials in environment variables")
-
-    try:
-        credential_dict = json.loads(raw_credential_string)
-    except json.JSONDecodeError:
-        raise ValueError("Invalid JSON in Google Drive credentials")
-
-    if oauth:
-        credential_dict = ensure_oauth_token_dict(credential_dict, DocumentSource.GOOGLE_DRIVE)
-
-    refried_credential_string = json.dumps(credential_dict)
-
-    DB_CREDENTIALS_DICT_TOKEN_KEY = "google_tokens"
-    DB_CREDENTIALS_DICT_SERVICE_ACCOUNT_KEY = "google_service_account_key"
-    DB_CREDENTIALS_PRIMARY_ADMIN_KEY = "google_primary_admin"
-    DB_CREDENTIALS_AUTHENTICATION_METHOD = "authentication_method"
-
-    cred_key = DB_CREDENTIALS_DICT_TOKEN_KEY if oauth else DB_CREDENTIALS_DICT_SERVICE_ACCOUNT_KEY
-
-    return {
-        cred_key: refried_credential_string,
-        DB_CREDENTIALS_PRIMARY_ADMIN_KEY: email,
-        DB_CREDENTIALS_AUTHENTICATION_METHOD: "uploaded",
-    }
-
-
 class CheckpointOutputWrapper:
     """
     Wraps a CheckpointOutput generator to give things back in a more digestible format.
@@ -1236,7 +1201,7 @@ def yield_all_docs_from_checkpoint_connector(
 
 if __name__ == "__main__":
     import time
-
+    from common.data_source.google_util.util import get_credentials_from_env
     logging.basicConfig(level=logging.DEBUG)
 
     try:
@@ -1245,7 +1210,7 @@ if __name__ == "__main__":
         creds = get_credentials_from_env(email, oauth=True)
         print("Credentials loaded successfully")
         print(f"{creds=}")
-
+        sys.exit(0)
         connector = GoogleDriveConnector(
             include_shared_drives=False,
             shared_drive_urls=None,

@@ -3,11 +3,12 @@ export default {
     common: {
       confirm: '确定',
       back: '返回',
-      noResults: '无结果。',
+      noResults: '未查到结果',
       selectPlaceholder: '请选择',
       selectAll: '全选',
       delete: '删除',
       deleteModalTitle: '确定删除吗?',
+      deleteThem: '确定要删除吗？',
       ok: '确认',
       cancel: '取消',
       yes: '是',
@@ -51,6 +52,7 @@ export default {
       noDataFound: '没有找到数据。',
       noData: '暂无数据',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
+      selected: '已选择',
     },
     login: {
       loginTitle: '登录账户',
@@ -685,7 +687,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的‘启用目录抽取’），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关chunk，对这些chunk在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
     },
     setting: {
-      modelEmptyTip: '暂无可用模型，请先在右侧面板添加模型。',
+      deleteModel: '删除模型',
+      modelEmptyTip: '暂无可用模型,<br>请先在右侧面板添加模型。',
       sourceEmptyTip: '暂未添加任何数据源，请从下方选择一个进行连接。',
       seconds: '秒',
       minutes: '分',
@@ -715,6 +718,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       notionDescription: ' 同步 Notion 页面与数据库，用于知识检索。',
       google_driveDescription:
         '通过 OAuth 连接 Google Drive，并同步指定的文件夹或云端硬盘。',
+      gmailDescription: '通过 OAuth 连接 Gmail，用于同步邮件。',
       google_driveTokenTip:
         '请上传由 OAuth helper 或 Google Cloud Console 导出的 OAuth token JSON。也支持上传 “installed” 或 “web” 类型的 client_secret JSON。若为首次同步，将自动弹出浏览器完成 OAuth 授权流程；如果该 JSON 已包含 refresh token，将会被自动复用。',
       google_drivePrimaryAdminTip: '拥有相应 Drive 访问权限的管理员邮箱。',
@@ -722,6 +726,10 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '需要索引其 “我的云端硬盘” 的邮箱，多个邮箱用逗号分隔（建议包含管理员）。',
       google_driveSharedFoldersTip:
         '需要同步的 Google Drive 文件夹链接，多个链接用逗号分隔。',
+      gmailPrimaryAdminTip:
+        '拥有 Gmail / Workspace 访问权限的主要管理员邮箱，用于列出域内用户并作为默认同步账号。',
+      gmailTokenTip:
+        '请上传由 Google Console 生成的 OAuth JSON。如果仅包含 client credentials，请通过浏览器授权一次以获取长期有效的刷新 Token。',
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
       dropboxAccessTokenTip:
         '请在 Dropbox App Console 生成 Access Token，并勾选 files.metadata.read、files.content.read、sharing.read 等必要权限。',
@@ -1099,9 +1107,14 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       messageMsg: '请输入消息或删除此字段。',
       addField: '新增字段',
       addMessage: '新增消息',
-      loop: '循环上限',
-      loopTip:
+      loop: '循环',
+      loopDescription:
         'loop为当前组件循环次数上限，当循环次数超过loop的值时，说明组件不能完成当前任务，请重新优化agent',
+      exitLoop: '退出循环',
+      exitLoopDescription: `等同于 "break"。此节点没有配置项。当循环体到达此节点时，循环终止。`,
+      loopVariables: '循环变量',
+      maximumLoopCount: '最大循环次数',
+      loopTerminationCondition: '循环终止条件',
       yes: '是',
       no: '否',
       key: '键',
@@ -1496,7 +1509,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       contentTip: 'content: 邮件内容(可选)',
       jsonUploadTypeErrorMessage: '请上传json文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
-      iteration: '循环',
+      iteration: '迭代',
       iterationDescription: `该组件负责迭代生成新的内容，对列表对象执行多次步骤直至输出所有结果。`,
       delimiterTip: `该分隔符用于将输入文本分割成几个文本片段，每个文本片段的回显将作为每次迭代的输入项。`,
       delimiterOptions: {
@@ -1542,8 +1555,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       variableAssignerDescription:
         '此组件对数据对象执行操作，包括提取、筛选和编辑数据中的键和值。',
       variableAggregator: '变量聚合',
-      variableAggregatorDescription: `将多路分支的变量聚合为一个变量，以实现下游节点统一配置。
-变量聚合节点（原变量赋值节点）是工作流程中的一个关键节点，它负责整合不同分支的输出结果，确保无论哪个分支被执行，其结果都能通过一个统一的变量来引用和访问。这在多分支的情况下非常有用，可将不同分支下相同作用的变量映射为一个输出变量，避免下游节点重复定义。`,
+      variableAggregatorDescription: `该过程将来自多个分支的变量聚合到一个变量中，以实现下游节点的统一配置。`,
       inputVariables: '输入变量',
       addVariable: '新增变量',
       runningHintText: '正在运行中...🕞',
@@ -1770,6 +1782,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       editMCP: '编辑 MCP',
       toolsAvailable: '可用的工具',
       mcpServers: 'MCP 服务器',
+      mcpServer: 'MCP 服务器',
       customizeTheListOfMcpServers: '自定义 MCP 服务器列表',
       cachedTools: '缓存工具',
       selected: '已选择',
@@ -1865,6 +1878,38 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       downloadFailedTip: '下载失败总数',
       processingSuccessTip: '处理成功的文件总数',
       processingFailedTip: '处理失败的文件总数',
+      noData: '暂无日志',
+    },
+
+    deleteModal: {
+      delAgent: '删除智能体',
+      delDataset: '删除知识库',
+      delSearch: '删除搜索',
+      delFile: '删除文件',
+      delFiles: '删除文件',
+      delFilesContent: '已选择 {{count}} 个文件',
+      delChat: '删除聊天',
+      delMember: '删除成员',
+    },
+
+    empty: {
+      noMCP: '暂无 MCP 服务器可用',
+      agentTitle: '尚未创建智能体',
+      datasetTitle: '尚未创建数据集',
+      chatTitle: '尚未创建聊天应用',
+      searchTitle: '尚未创建搜索应用',
+      addNow: '立即添加',
+    },
+
+    deleteModal: {
+      delAgent: '删除智能体',
+      delDataset: '删除知识库',
+      delSearch: '删除搜索',
+      delFile: '删除文件',
+      delFiles: '删除文件',
+      delFilesContent: '已选择 {{count}} 个文件',
+      delChat: '删除聊天',
+      delMember: '删除成员',
     },
   },
 };

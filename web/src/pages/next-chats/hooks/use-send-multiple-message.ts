@@ -5,13 +5,12 @@ import {
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
 import { useGetChatSearchParams } from '@/hooks/use-chat-request';
-import { IAnswer, Message } from '@/interfaces/database/chat';
+import { IAnswer, IMessage, Message } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { buildMessageUuid } from '@/utils/chat';
 import { trim } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
 import { v4 as uuid } from 'uuid';
-import { IMessage } from '../chat/interface';
 import { useBuildFormRefs } from './use-build-form-refs';
 import { useUploadFile } from './use-upload-file';
 

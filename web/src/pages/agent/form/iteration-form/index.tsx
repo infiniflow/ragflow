@@ -9,7 +9,6 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { DynamicOutput } from './dynamic-output';
-import { DynamicVariables } from './dynamic-variables';
 import { OutputArray } from './interface';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-form-change';
@@ -53,7 +52,6 @@ function IterationForm({ node }: INextOperatorForm) {
           name="items_ref"
           types={ArrayFields as any[]}
         ></QueryVariable>
-        <DynamicVariables name="variables" label="Variables"></DynamicVariables>
         <DynamicOutput node={node}></DynamicOutput>
         <Output list={outputList}></Output>
       </FormWrapper>
