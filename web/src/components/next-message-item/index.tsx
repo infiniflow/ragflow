@@ -1,6 +1,10 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
-import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
+import {
+  IMessage,
+  IReferenceChunk,
+  IReferenceObject,
+} from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import {
   PropsWithChildren,
@@ -17,7 +21,6 @@ import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
 import { cn } from '@/lib/utils';
 import { AgentChatContext } from '@/pages/agent/context';
 import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workflow-timeline';
-import { IMessage } from '@/pages/chat/interface';
 import { downloadFile } from '@/services/file-manager-service';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import { isEmpty } from 'lodash';

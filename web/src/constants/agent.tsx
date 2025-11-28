@@ -75,7 +75,6 @@ export enum Operator {
   Message = 'Message',
   Relevant = 'Relevant',
   RewriteQuestion = 'RewriteQuestion',
-  KeywordExtract = 'KeywordExtract',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
   PubMed = 'PubMed',
@@ -84,14 +83,10 @@ export enum Operator {
   Bing = 'Bing',
   GoogleScholar = 'GoogleScholar',
   GitHub = 'GitHub',
-  QWeather = 'QWeather',
   ExeSQL = 'ExeSQL',
   Switch = 'Switch',
   WenCai = 'WenCai',
-  AkShare = 'AkShare',
   YahooFinance = 'YahooFinance',
-  Jin10 = 'Jin10',
-  TuShare = 'TuShare',
   Note = 'Note',
   Crawler = 'Crawler',
   Invoke = 'Invoke',
@@ -118,6 +113,9 @@ export enum Operator {
   Splitter = 'Splitter',
   HierarchicalMerger = 'HierarchicalMerger',
   Extractor = 'Extractor',
+  Loop = 'Loop',
+  LoopStart = 'LoopItem',
+  ExitLoop = 'ExitLoop',
 }
 
 export enum ComparisonOperator {

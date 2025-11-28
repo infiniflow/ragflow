@@ -20,7 +20,9 @@ import { useTranslation } from 'react-i18next';
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
 import {
+  currentReg,
   preprocessLaTeX,
+  replaceTextByOldReg,
   replaceThinkToSection,
   showImage,
 } from '@/utils/chat';
@@ -31,7 +33,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { currentReg, replaceTextByOldReg } from '@/pages/next-chats/utils';
 import classNames from 'classnames';
 import { omit } from 'lodash';
 import { pipe } from 'lodash/fp';

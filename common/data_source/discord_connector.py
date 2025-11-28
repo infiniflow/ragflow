@@ -65,6 +65,7 @@ def _convert_message_to_document(
         blob=message.content.encode("utf-8"),
         extension=".txt",
         size_bytes=len(message.content.encode("utf-8")),
+        metadata=metadata if metadata else None,
     )
 
 
