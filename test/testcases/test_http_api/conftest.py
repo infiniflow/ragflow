@@ -27,7 +27,7 @@ from common import (
     list_documents,
     parse_documents,
 )
-from libs.auth import RAGFlowHttpApiAuth
+from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
 from utils import wait_for
 from utils.file_utils import (
     create_docx_file,
@@ -82,31 +82,37 @@ def ragflow_tmp_dir(request, tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def HttpApiAuth(token):
+def http_api_auth(token):
     return RAGFlowHttpApiAuth(token)
 
 
+@pytest.fixture(scope="session")
+def web_api_auth(auth):
+    """Fixture for endpoints that use @login_required (JWT token, not API token)."""
+    return RAGFlowWebApiAuth(auth)
+
+
 @pytest.fixture(scope="function")
-def clear_datasets(request, HttpApiAuth):
+def clear_datasets(request, http_api_auth):
     def cleanup():
-        delete_datasets(HttpApiAuth, {"ids": None})
+        delete_datasets(http_api_auth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
 
 @pytest.fixture(scope="function")
-def clear_chat_assistants(request, HttpApiAuth):
+def clear_chat_assistants(request, http_api_auth):
     def cleanup():
-        delete_chat_assistants(HttpApiAuth)
+        delete_chat_assistants(http_api_auth)
 
     request.addfinalizer(cleanup)
 
 
 @pytest.fixture(scope="function")
-def clear_session_with_chat_assistants(request, HttpApiAuth, add_chat_assistants):
+def clear_session_with_chat_assistants(request, http_api_auth, add_chat_assistants):
     def cleanup():
         for chat_assistant_id in chat_assistant_ids:
-            delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
+            delete_session_with_chat_assistants(http_api_auth, chat_assistant_id)
 
     request.addfinalizer(cleanup)
 
@@ -114,51 +120,51 @@ def clear_session_with_chat_assistants(request, HttpApiAuth, add_chat_assistants
 
 
 @pytest.fixture(scope="class")
-def add_dataset(request, HttpApiAuth):
+def add_dataset(request, http_api_auth):
     def cleanup():
-        delete_datasets(HttpApiAuth, {"ids": None})
+        delete_datasets(http_api_auth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
-    dataset_ids = batch_create_datasets(HttpApiAuth, 1)
+    dataset_ids = batch_create_datasets(http_api_auth, 1)
     return dataset_ids[0]
 
 
 @pytest.fixture(scope="function")
-def add_dataset_func(request, HttpApiAuth):
+def add_dataset_func(request, http_api_auth):
     def cleanup():
-        delete_datasets(HttpApiAuth, {"ids": None})
+        delete_datasets(http_api_auth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
-    return batch_create_datasets(HttpApiAuth, 1)[0]
+    return batch_create_datasets(http_api_auth, 1)[0]
 
 
 @pytest.fixture(scope="class")
-def add_document(HttpApiAuth, add_dataset, ragflow_tmp_dir):
+def add_document(http_api_auth, add_dataset, ragflow_tmp_dir):
     dataset_id = add_dataset
-    document_ids = bulk_upload_documents(HttpApiAuth, dataset_id, 1, ragflow_tmp_dir)
+    document_ids = bulk_upload_documents(http_api_auth, dataset_id, 1, ragflow_tmp_dir)
     return dataset_id, document_ids[0]
 
 
 @pytest.fixture(scope="class")
-def add_chunks(HttpApiAuth, add_document):
+def add_chunks(http_api_auth, add_document):
     dataset_id, document_id = add_document
-    parse_documents(HttpApiAuth, dataset_id, {"document_ids": [document_id]})
-    condition(HttpApiAuth, dataset_id)
-    chunk_ids = batch_add_chunks(HttpApiAuth, dataset_id, document_id, 4)
+    parse_documents(http_api_auth, dataset_id, {"document_ids": [document_id]})
+    condition(http_api_auth, dataset_id)
+    chunk_ids = batch_add_chunks(http_api_auth, dataset_id, document_id, 4)
     sleep(1)  # issues/6487
     return dataset_id, document_id, chunk_ids
 
 
 @pytest.fixture(scope="class")
-def add_chat_assistants(request, HttpApiAuth, add_document):
+def add_chat_assistants(request, http_api_auth, add_document):
     def cleanup():
-        delete_chat_assistants(HttpApiAuth)
+        delete_chat_assistants(http_api_auth)
 
     request.addfinalizer(cleanup)
 
     dataset_id, document_id = add_document
-    parse_documents(HttpApiAuth, dataset_id, {"document_ids": [document_id]})
-    condition(HttpApiAuth, dataset_id)
-    return dataset_id, document_id, batch_create_chat_assistants(HttpApiAuth, 5)
+    parse_documents(http_api_auth, dataset_id, {"document_ids": [document_id]})
+    condition(http_api_auth, dataset_id)
+    return dataset_id, document_id, batch_create_chat_assistants(http_api_auth, 5)

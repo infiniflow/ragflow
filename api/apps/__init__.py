@@ -103,11 +103,18 @@ T = TypeVar("T")
 P = ParamSpec("P")
 
 def _load_user():
-    jwt = Serializer(secret_key=settings.SECRET_KEY)
-    authorization = request.headers.get("Authorization")
+    try:
+        jwt = Serializer(secret_key=settings.SECRET_KEY)
+        authorization = request.headers.get("Authorization")
+    except RuntimeError as e:
+        # Working outside of request context - no user authenticated
+        if "request context" in str(e).lower():
+            return None
+        # Re-raise other RuntimeErrors
+        raise
     g.user = None
     if not authorization:
-        return
+        return None
 
     try:
         access_token = str(jwt.loads(authorization))

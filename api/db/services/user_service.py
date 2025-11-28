@@ -317,3 +317,5 @@ class UserTenantService(CommonService):
             return user_tenant
         except peewee.DoesNotExist:
             return None
+
+

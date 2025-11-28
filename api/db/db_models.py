@@ -649,6 +649,7 @@ class UserTenant(DataBaseModel):
     role = CharField(max_length=32, null=False, help_text="UserTenantRole", index=True)
     invited_by = CharField(max_length=32, null=False, index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    permissions = JSONField(null=True, help_text="CRUD permissions for datasets and canvases", default={"dataset": {"create": False, "read": True, "update": False, "delete": False}, "canvas": {"create": False, "read": True, "update": False, "delete": False}})
 
     class Meta:
         db_table = "user_tenant"
@@ -740,6 +741,7 @@ class Knowledgebase(DataBaseModel):
     description = TextField(null=True, help_text="KB description")
     embd_id = CharField(max_length=128, null=False, help_text="default embedding model ID", index=True)
     permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
+    shared_tenant_id = CharField(max_length=32, null=True, help_text="Specific tenant ID to share with when permission is 'team'", index=True)
     created_by = CharField(max_length=32, null=False, index=True)
     doc_num = IntegerField(default=0, index=True)
     token_num = IntegerField(default=0, index=True)
@@ -923,6 +925,7 @@ class UserCanvas(DataBaseModel):
     title = CharField(max_length=255, null=True, help_text="Canvas title")
 
     permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
+    shared_tenant_id = CharField(max_length=32, null=True, help_text="Specific tenant ID to share with when permission is 'team'", index=True)
     description = TextField(null=True, help_text="Canvas description")
     canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
     canvas_category = CharField(max_length=32, null=False, default="agent_canvas", help_text="Canvas category: agent_canvas|dataflow_canvas", index=True)
@@ -1199,6 +1202,19 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("knowledgebase", "shared_tenant_id", CharField(max_length=32, null=True, help_text="Specific tenant ID to share with when permission is 'team'", index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("user_canvas", "shared_tenant_id", CharField(max_length=32, null=True, help_text="Specific tenant ID to share with when permission is 'team'", index=True)))
+    except Exception:
+        pass
+    try:
+        default_permissions = {"dataset": {"create": False, "read": True, "update": False, "delete": False}, "canvas": {"create": False, "read": True, "update": False, "delete": False}}
+        migrate(migrator.add_column("user_tenant", "permissions", JSONField(null=True, help_text="CRUD permissions for datasets and canvases", default=default_permissions)))
     except Exception:
         pass
     try:
