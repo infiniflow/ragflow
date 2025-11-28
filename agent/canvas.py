@@ -471,7 +471,7 @@ class Canvas(Graph):
                             try:
                                 for item in gen:
                                     loop.call_soon_threadsafe(q.put_nowait, item)
-                            except Exception as e:
+                            except Exception:
                                 logging.exception("Error in generator producer")
                             finally:
                                 loop.call_soon_threadsafe(q.put_nowait, None)
