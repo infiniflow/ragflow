@@ -75,14 +75,6 @@ const ForceGraph = ({ data, show }: IProps) => {
       ],
       layout: {
         type: 'combo-combined',
-        // type: 'radial',
-        nodeSize: 12,
-        unitRadius: 90,
-        linkDistance: 1200,
-        // preventOverlap: true,
-        maxPreventOverlapIteration: 1010,
-        strictRadial: false,
-
         preventOverlap: true,
         comboPadding: 1,
         spacing: 100,
