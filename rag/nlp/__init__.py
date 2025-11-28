@@ -266,7 +266,7 @@ def is_chinese(text):
 
 def tokenize(d, txt, eng):
     d["content_with_weight"] = txt
-    t = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", t)
+    t = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt)
     d["content_ltks"] = rag_tokenizer.tokenize(t)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
 
