@@ -1,8 +1,9 @@
 import { IModalProps } from '@/interfaces/common';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
-import { Drawer } from 'antd';
+import { cn } from '@/lib/utils';
 import DocumentPreviewer from '../pdf-previewer';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../ui/sheet';
 
 interface IProps extends IModalProps<any> {
   documentId: string;
@@ -11,7 +12,7 @@ interface IProps extends IModalProps<any> {
   height?: string | number;
 }
 
-export const PdfDrawer = ({
+export const PdfSheet = ({
   visible = false,
   hideModal,
   documentId,
@@ -20,20 +21,25 @@ export const PdfDrawer = ({
   height,
 }: IProps) => {
   return (
-    <Drawer
-      title="Document Previewer"
-      onClose={hideModal}
-      open={visible}
-      width={width}
-      height={height}
-    >
-      <DocumentPreviewer
-        documentId={documentId}
-        chunk={chunk}
-        visible={visible}
-      ></DocumentPreviewer>
-    </Drawer>
+    <Sheet open onOpenChange={hideModal}>
+      <SheetContent
+        className={cn(`max-w-full`)}
+        style={{
+          width: width,
+          height: height ? height : undefined,
+        }}
+      >
+        <SheetHeader>
+          <SheetTitle>Document Previewer</SheetTitle>
+        </SheetHeader>
+        <DocumentPreviewer
+          documentId={documentId}
+          chunk={chunk}
+          visible={visible}
+        ></DocumentPreviewer>
+      </SheetContent>
+    </Sheet>
   );
 };
 
-export default PdfDrawer;
+export default PdfSheet;

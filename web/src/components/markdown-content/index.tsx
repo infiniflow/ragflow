@@ -2,8 +2,6 @@ import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
-import { InfoCircleOutlined } from '@ant-design/icons';
-import { Button, Flex, Popover } from 'antd';
 import DOMPurify from 'dompurify';
 import { useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
@@ -27,10 +25,16 @@ import {
   replaceThinkToSection,
   showImage,
 } from '@/utils/chat';
-
 import classNames from 'classnames';
 import { omit } from 'lodash';
 import { pipe } from 'lodash/fp';
+import { CircleAlert } from 'lucide-react';
+import { Button } from '../ui/button';
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from '../ui/hover-card';
 import styles from './index.less';
 
 const getChunkIndex = (match: string) => Number(match);
@@ -145,20 +149,20 @@ const MarkdownContent = ({
       return (
         <div key={chunkItem?.id} className="flex gap-2">
           {imageId && (
-            <Popover
-              placement="left"
-              content={
+            <HoverCard>
+              <HoverCardTrigger>
+                <Image
+                  id={imageId}
+                  className={styles.referenceChunkImage}
+                ></Image>
+              </HoverCardTrigger>
+              <HoverCardContent>
                 <Image
                   id={imageId}
                   className={styles.referenceImagePreview}
                 ></Image>
-              }
-            >
-              <Image
-                id={imageId}
-                className={styles.referenceChunkImage}
-              ></Image>
-            </Popover>
+              </HoverCardContent>
+            </HoverCard>
           )}
           <div className={'space-y-2 max-w-[40vw]'}>
             <div
@@ -168,7 +172,7 @@ const MarkdownContent = ({
               className={classNames(styles.chunkContentText)}
             ></div>
             {documentId && (
-              <Flex gap={'small'}>
+              <section className="flex gap-1">
                 {fileThumbnail ? (
                   <img
                     src={fileThumbnail}
@@ -182,8 +186,8 @@ const MarkdownContent = ({
                   ></SvgIcon>
                 )}
                 <Button
-                  type="link"
-                  className={classNames(styles.documentLink, 'text-wrap')}
+                  variant="link"
+                  className={'text-wrap p-0'}
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
@@ -193,7 +197,7 @@ const MarkdownContent = ({
                 >
                   {document?.doc_name}
                 </Button>
-              </Flex>
+              </section>
             )}
           </div>
         </div>
@@ -228,9 +232,14 @@ const MarkdownContent = ({
             }
           ></Image>
         ) : (
-          <Popover content={getPopoverContent(chunkIndex)} key={i}>
-            <InfoCircleOutlined className={styles.referenceIcon} />
-          </Popover>
+          <HoverCard key={i}>
+            <HoverCardTrigger>
+              <CircleAlert className="size-4 inline-block" />
+            </HoverCardTrigger>
+            <HoverCardContent className="max-w-3xl">
+              {getPopoverContent(chunkIndex)}
+            </HoverCardContent>
+          </HoverCard>
         );
       });
 
