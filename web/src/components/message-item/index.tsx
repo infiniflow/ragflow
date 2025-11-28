@@ -14,10 +14,10 @@ import {
 } from '@/hooks/document-hooks';
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
-import { Avatar, Flex, Space } from 'antd';
 import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
 import { InnerUploadedMessageFiles } from '../next-message-item/uploaded-message-files';
+import { RAGFlowAvatar } from '../ragflow-avatar';
 import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.less';
@@ -98,40 +98,43 @@ const MessageItem = ({
         >
           {visibleAvatar &&
             (item.role === MessageType.User ? (
-              <Avatar size={40} src={avatar ?? '/logo.svg'} />
+              <RAGFlowAvatar
+                className="size-10"
+                avatar={avatar ?? '/logo.svg'}
+                isPerson
+              />
             ) : avatarDialog ? (
-              <Avatar size={40} src={avatarDialog} />
+              <RAGFlowAvatar
+                className="size-10"
+                avatar={avatarDialog}
+                isPerson
+              />
             ) : (
               <AssistantIcon />
             ))}
 
-          <Flex vertical gap={8} flex={1}>
-            <Space>
-              {isAssistant ? (
-                index !== 0 && (
-                  <AssistantGroupButton
-                    messageId={item.id}
-                    content={item.content}
-                    prompt={item.prompt}
-                    showLikeButton={showLikeButton}
-                    audioBinary={item.audio_binary}
-                    showLoudspeaker={showLoudspeaker}
-                  ></AssistantGroupButton>
-                )
-              ) : (
-                <UserGroupButton
-                  content={item.content}
+          <section className="flex gap-2 flex-1 flex-col">
+            {isAssistant ? (
+              index !== 0 && (
+                <AssistantGroupButton
                   messageId={item.id}
-                  removeMessageById={removeMessageById}
-                  regenerateMessage={
-                    regenerateMessage && handleRegenerateMessage
-                  }
-                  sendLoading={sendLoading}
-                ></UserGroupButton>
-              )}
+                  content={item.content}
+                  prompt={item.prompt}
+                  showLikeButton={showLikeButton}
+                  audioBinary={item.audio_binary}
+                  showLoudspeaker={showLoudspeaker}
+                ></AssistantGroupButton>
+              )
+            ) : (
+              <UserGroupButton
+                content={item.content}
+                messageId={item.id}
+                removeMessageById={removeMessageById}
+                regenerateMessage={regenerateMessage && handleRegenerateMessage}
+                sendLoading={sendLoading}
+              ></UserGroupButton>
+            )}
 
-              {/* <b>{isAssistant ? '' : nickname}</b> */}
-            </Space>
             <div
               className={cn(
                 isAssistant
@@ -159,7 +162,7 @@ const MessageItem = ({
                 files={documentList}
               ></InnerUploadedMessageFiles>
             )}
-          </Flex>
+          </section>
         </div>
       </section>
     </div>

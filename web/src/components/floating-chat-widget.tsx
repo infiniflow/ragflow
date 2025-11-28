@@ -1,4 +1,4 @@
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType } from '@/constants/chat';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
@@ -494,7 +494,7 @@ const FloatingChatWidget = () => {
             </div>
           </div>
         </div>
-        <PdfDrawer
+        <PdfSheet
           visible={visible}
           hideModal={hideModal}
           documentId={documentId}
@@ -695,7 +695,7 @@ const FloatingChatWidget = () => {
           </div>
         )}
       </div>
-      <PdfDrawer
+      <PdfSheet
         visible={visible}
         hideModal={hideModal}
         documentId={documentId}
