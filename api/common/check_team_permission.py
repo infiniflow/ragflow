@@ -18,7 +18,7 @@ from typing import Dict, Any, Optional, List, Literal
 
 from api.db import TenantPermission
 from api.db.db_models import File, Knowledgebase
-from api.db.services.user_service import TenantService, UserTenantService
+from api.db.services.user_service import UserTenantService
 from api.common.permission_utils import has_permission
 from common.constants import StatusEnum
 

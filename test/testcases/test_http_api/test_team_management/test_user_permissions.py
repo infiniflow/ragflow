@@ -15,7 +15,6 @@
 #
 from __future__ import annotations
 
-import time
 import uuid
 from typing import Any
 
@@ -215,7 +214,6 @@ class TestGetUserPermissions:
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         if add_res["code"] != 0:
             pytest.skip(f"Failed to add user to team in setup: {add_res}")
-            pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
 
         return {
             "team": test_team,
@@ -364,7 +362,6 @@ class TestUpdateUserPermissions:
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         if add_res["code"] != 0:
             pytest.skip(f"Failed to add user to team in setup: {add_res}")
-            pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
 
         return {
             "team": test_team,

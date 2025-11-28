@@ -86,7 +86,7 @@ class TestAuthorization:
         
         user_id: str = user_res["data"]["id"]
         add_payload: dict[str, list[dict[str, str]]] = {
-            "users": [{"email": email, "role": "admin"}]
+            "users": [{"email": email, "role": "invite"}]
         }
         add_users_to_team(web_api_auth, tenant_id, add_payload)
 
@@ -167,7 +167,7 @@ class TestDemoteAdmin:
         user_password: str = test_users[0]["password"]
 
         # Add user to team
-        add_payload: dict[str, list[str]] = {"users": [user_email]}
+        add_payload: dict[str, list[dict[str, str]]] = {"users": [{"email": user_email, "role": "invite"}]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         if add_res["code"] != 0:
             pytest.skip(f"Failed to add admin user to team in setup: {add_res}")
@@ -227,7 +227,7 @@ class TestDemoteAdmin:
         user_password: str = test_users[0]["password"]
 
         # Add user as normal member
-        add_payload: dict[str, list[str]] = {"users": [user_email]}
+        add_payload: dict[str, list[dict[str, str]]] = {"users": [{"email": user_email, "role": "invite"}]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         if add_res["code"] != 0:
             pytest.skip(f"Failed to add user to team in setup: {add_res}")
@@ -292,7 +292,7 @@ class TestDemoteAdmin:
         user_password: str = test_users[0]["password"]
 
         # Add user to team
-        add_payload: dict[str, list[str]] = {"users": [user_email]}
+        add_payload: dict[str, list[dict[str, str]]] = {"users": [{"email": user_email, "role": "invite"}]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         if add_res["code"] != 0:
             pytest.skip(f"Failed to add user to team in setup: {add_res}")
@@ -344,7 +344,7 @@ class TestDemoteAdmin:
         admin_user_id: str = team_with_admin["admin_user"]["id"]
 
         # Add normal user to the team
-        add_payload: dict[str, list[str]] = {"users": [normal_user_email]}
+        add_payload: dict[str, list[dict[str, str]]] = {"users": [{"email": normal_user_email, "role": "invite"}]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         if add_res["code"] != 0:
             pytest.skip(f"Failed to add normal user to team in setup: {add_res}")
@@ -449,7 +449,7 @@ class TestDemoteAdmin:
         user_passwords: list[str] = [user["password"] for user in test_users[:2]]
 
         # Add both users to team
-        add_payload: dict[str, list[str]] = {"users": user_emails}
+        add_payload: dict[str, list[dict[str, str]]] = {"users": [{"email": email, "role": "invite"} for email in user_emails]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         if add_res["code"] != 0:
             pytest.skip(f"Failed to add users to team in setup: {add_res}")
@@ -493,7 +493,7 @@ class TestDemoteAdmin:
         user_passwords: list[str] = [user["password"] for user in test_users[:3]]
 
         # Add all users to team
-        add_payload: dict[str, list[str]] = {"users": user_emails}
+        add_payload: dict[str, list[dict[str, str]]] = {"users": [{"email": email, "role": "invite"} for email in user_emails]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         if add_res["code"] != 0:
             pytest.skip(f"Failed to add users to team in setup: {add_res}")

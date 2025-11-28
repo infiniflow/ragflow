@@ -15,7 +15,6 @@
 #
 from __future__ import annotations
 
-import time
 import uuid
 from typing import Any
 
@@ -35,7 +34,7 @@ from common import (
     update_dataset,
     update_user_permissions,
 )
-from configs import HOST_ADDRESS, INVALID_API_TOKEN, VERSION
+from configs import HOST_ADDRESS, VERSION
 from libs.auth import RAGFlowWebApiAuth
 
 

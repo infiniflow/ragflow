@@ -24,7 +24,7 @@ import requests
 from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from Cryptodome.PublicKey import RSA
 
-from configs import EMAIL, HOST_ADDRESS, PASSWORD, VERSION, ZHIPU_AI_API_KEY
+from configs import EMAIL, HOST_ADDRESS, VERSION, ZHIPU_AI_API_KEY
 from libs.auth import RAGFlowWebApiAuth
 
 MARKER_EXPRESSIONS = {
@@ -104,10 +104,10 @@ def register() -> Optional[str]:
         # Registration endpoint logs user in and returns auth token
         auth_token: str = res.headers.get("Authorization", "")
         if auth_token:
-            print(f"Received auth token from registration")
+            print("Received auth token from registration")
             return auth_token
         else:
-            print(f"Warning: No auth token in registration response")
+            print("Warning: No auth token in registration response")
             return None
     return None
 
@@ -209,13 +209,13 @@ except Exception as e:
             print(f"User {email} not found in database")
             return False
         else:
-            print(f"Failed to delete user from database")
+            print("Failed to delete user from database")
             if output:
                 print(f"Output: {output}")
             return False
             
     except subprocess.TimeoutExpired:
-        print(f"Timeout while trying to delete user from database")
+        print("Timeout while trying to delete user from database")
         return False
     except Exception as e:
         print(f"Failed to delete user from database: {e}")
@@ -310,7 +310,7 @@ def auth():
                         return auth_token
                     else:
                         # Try login if register didn't return auth token
-                        print(f"Registration completed, now attempting login...")
+                        print("Registration completed, now attempting login...")
                         auth: str = login()
                         print(f"Successfully recreated user {EMAIL} with correct password")
                         return auth

@@ -28,7 +28,6 @@ from api.utils.api_utils import get_data_openai
 import tiktoken
 from peewee import fn
 from api.db.services.user_service import UserTenantService
-from api.db import TenantPermission
 from common.constants import StatusEnum
 from api.common.permission_utils import has_permission
 

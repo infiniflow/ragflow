@@ -892,7 +892,7 @@ async def create_user() -> Response:
     if len(email_address) > 254:
         return get_json_result(
             data=False,
-            message=f"Invalid email address: email is too long (max 254 characters)!",
+            message="Invalid email address: email is too long (max 254 characters)!",
             code=RetCode.OPERATING_ERROR,
         )
     
@@ -909,7 +909,7 @@ async def create_user() -> Response:
     if len(local_part) > 64:
         return get_json_result(
             data=False,
-            message=f"Invalid email address: local part is too long (max 64 characters)!",
+            message="Invalid email address: local part is too long (max 64 characters)!",
             code=RetCode.OPERATING_ERROR,
         )
 
@@ -1344,8 +1344,6 @@ def list_users() -> Response:
             user.to_dict() for user in users_list
         ]
 
-        # Apply pagination if requested
-        total: int = len(users_data)
         if page is not None and page_size is not None:
             if page < 1:
                 return get_json_result(

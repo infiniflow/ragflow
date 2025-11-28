@@ -16,14 +16,12 @@
 from __future__ import annotations
 
 import json
-import time
 import uuid
 from typing import Any, List
 
 import pytest
 
 from common import (
-    accept_team_invitation,
     add_users_to_team,
     create_canvas,
     create_team,
@@ -33,7 +31,6 @@ from common import (
     encrypt_password,
     get_canvas,
     get_user_permissions,
-    list_canvases,
     login_as_user,
     reset_canvas,
     run_canvas,
@@ -68,7 +65,7 @@ class TestCanvasPermissions:
         test_team: dict[str, Any],
         clear_team_users: List[str],
     ) -> dict[str, Any]:
-        """Create a team with a user who has accepted the invitation."""
+        """Create a team with a user who has been added to the team."""
         tenant_id: str = test_team["id"]
         
         # Create user
@@ -86,20 +83,11 @@ class TestCanvasPermissions:
         clear_team_users.append(email)
         user_id: str = user_res["data"]["id"]
 
-        # Add user to team
+        # Add user to team (users are now added directly, no invitation needed)
         add_payload: dict[str, list[str]] = {"users": [email]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         if add_res["code"] != 0:
             pytest.skip(f"Failed to add user to team in setup: {add_res}")
-
-        # Small delay
-        time.sleep(0.5)
-
-        # Accept invitation as the user
-        user_auth: RAGFlowWebApiAuth = login_as_user(email, password)
-        accept_res: dict[str, Any] = accept_team_invitation(user_auth, tenant_id)
-        if accept_res["code"] != 0:
-            pytest.skip(f"Failed to accept team invitation in setup: {accept_res}")
 
         return {
             "team": test_team,
@@ -151,7 +139,6 @@ class TestCanvasPermissions:
         canvas_id: str = team_canvas["id"]
         user_email: str = team_with_user["user"]["email"]
         user_password: str = team_with_user["user"]["password"]
-        tenant_id: str = team_with_user["team"]["id"]
 
         # User should have read permission by default
         user_auth: RAGFlowWebApiAuth = login_as_user(user_email, user_password)

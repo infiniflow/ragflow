@@ -29,7 +29,7 @@ from typing import Any
 import pytest
 
 from common import create_user, list_users
-from libs.auth import RAGFlowWebApiAuth
+from libs.auth import RAGFlowWebApiAuth 
 
 
 @pytest.mark.performance
@@ -225,12 +225,7 @@ class TestUserPerformance:
         
         concurrent_start: float = time.time()
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures: list[Future[dict[str, Any]]] = [
-                executor.submit(create_concurrent_user, i) for i in range(count)
-            ]
-            concurrent_results: list[dict[str, Any]] = [
-                f.result() for f in as_completed(futures)
-            ]
+            [executor.submit(create_concurrent_user, i) for i in range(count)]
         concurrent_duration: float = time.time() - concurrent_start
         
         # Concurrent should be faster (or at least not significantly slower)
@@ -379,7 +374,7 @@ class TestUserPerformance:
         actual_rps: float = request_count / total_duration
         error_rate: float = error_count / request_count if request_count > 0 else 0
         
-        print(f"\nSustained Load Test Results:")
+        print("\nSustained Load Test Results:")
         print(f"Duration: {total_duration:.2f}s")
         print(f"Total Requests: {request_count}")
         print(f"Actual RPS: {actual_rps:.2f}")

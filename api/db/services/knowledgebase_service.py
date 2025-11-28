@@ -202,7 +202,6 @@ class KnowledgebaseService(CommonService):
             kbs = kbs.order_by(cls.model.getter_by(orderby).asc())
 
         # Apply pagination at query level
-        total = kbs.count()
         if page_number and items_per_page:
             kbs = kbs.paginate(page_number, items_per_page)
 

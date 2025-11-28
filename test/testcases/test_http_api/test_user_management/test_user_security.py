@@ -307,7 +307,7 @@ class TestUserSecurity:
             "email": base_email.upper(),
             "password": "test123",
         }
-        res2: dict[str, Any] = create_user(web_api_auth, payload2)
+        create_user(web_api_auth, payload2)
         
         # Should reject duplicate email regardless of case
         # Note: Current implementation may allow this, but it should be fixed

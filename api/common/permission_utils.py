@@ -14,10 +14,9 @@
 #  limitations under the License.
 #
 
-from typing import Dict, Any, Optional, Literal
+from typing import Dict, Literal
 
 from api.db.services.user_service import UserTenantService
-from api.db.db_models import UserTenant
 from api.db import UserTenantRole
 from common.constants import StatusEnum
 

@@ -114,7 +114,7 @@ async def save() -> Any:
         if not user_tenant or user_tenant.status != StatusEnum.VALID.value:
             return get_json_result(
                 data=False,
-                message=f"You are not a member of the selected team",
+                message="You are not a member of the selected team",
                 code=RetCode.PERMISSION_ERROR
             )
     

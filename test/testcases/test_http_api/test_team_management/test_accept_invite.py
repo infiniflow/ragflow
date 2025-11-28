@@ -15,7 +15,6 @@
 #
 from __future__ import annotations
 
-import time
 import uuid
 from typing import Any
 
@@ -82,7 +81,7 @@ class TestAuthorization:
             pytest.skip(f"User creation failed, skipping auth test: {user_res}")
         clear_team_users.append(email)
         
-        add_payload: dict[str, list[str]] = {"users": [email]}
+        add_payload: dict[str, list[dict[str, str]]] = {"users": [{"email": email, "role": "invite"}]}
         add_users_to_team(web_api_auth, tenant_id, add_payload)
 
         # Try to accept invitation with invalid auth
@@ -144,7 +143,7 @@ class TestAcceptInvite:
     ) -> dict[str, Any]:
         """Create a team and send invitation to a user."""
         tenant_id: str = test_team["id"]
-        add_payload: dict[str, list[str]] = {"users": [invited_user["email"]]}
+        add_payload: dict[str, list[dict[str, str]]] = {"users": [{"email": invited_user["email"], "role": "invite"}]}
         add_res: dict[str, Any] = add_users_to_team(web_api_auth, tenant_id, add_payload)
         if add_res["code"] != 0:
             pytest.skip(f"Failed to add invited user to team in setup: {add_res}")
@@ -374,9 +373,9 @@ class TestAcceptInvite:
         clear_team_users.append(email)
 
         # Invite to both teams
-        add_payload1: dict[str, list[str]] = {"users": [email]}
+        add_payload1: dict[str, list[dict[str, str]]] = {"users": [{"email": email, "role": "invite"}]}
         add_users_to_team(web_api_auth, tenant_id_1, add_payload1)
-        add_payload2: dict[str, list[str]] = {"users": [email]}
+        add_payload2: dict[str, list[dict[str, str]]] = {"users": [{"email": email, "role": "invite"}]}
         add_users_to_team(web_api_auth, tenant_id_2, add_payload2)
 
         # Login as the user

@@ -810,7 +810,27 @@ async def update_request(tenant_id: str) -> Response:
         
         if accept:
             # Accept invitation - update role from INVITE to the specified role
+            role_input: Optional[str] = req.get("role")
             role: str = UserTenantRole.NORMAL.value
+            
+            # Validate and set role if provided
+            if role_input is not None:
+                if isinstance(role_input, str):
+                    role_input = role_input.lower().strip()
+                    if role_input in [UserTenantRole.NORMAL.value, UserTenantRole.ADMIN.value]:
+                        role = role_input
+                    else:
+                        return get_json_result(
+                            data=False,
+                            message=f"Invalid role '{role_input}'. Allowed roles: {UserTenantRole.NORMAL.value}, {UserTenantRole.ADMIN.value}",
+                            code=RetCode.ARGUMENT_ERROR
+                        )
+                else:
+                    return get_json_result(
+                        data=False,
+                        message=f"Role must be a string. Allowed values: {UserTenantRole.NORMAL.value}, {UserTenantRole.ADMIN.value}",
+                        code=RetCode.ARGUMENT_ERROR
+                    )
             
             # Set default permissions: read-only access to datasets and canvases
             default_permissions: Dict[str, Any] = {
