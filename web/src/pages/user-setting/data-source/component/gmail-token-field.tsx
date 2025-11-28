@@ -315,12 +315,16 @@ const GmailTokenField = ({
       <Dialog
         open={dialogOpen}
         onOpenChange={(open) => {
-          if (!open) {
+          if (!open && dialogOpen) {
             handleCancel();
           }
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Complete Gmail verification</DialogTitle>
             <DialogDescription>
