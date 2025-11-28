@@ -439,7 +439,8 @@ export default {
 <p>在标签列中，标签之间使用英文逗号分隔。</p>
 <i>不符合上述规则的文本行将被忽略。</i>
 `,
-      useRaptor: '使用召回增强 RAPTOR 策略',
+      useRaptor: '召回增强RAPTOR生成信息',
+      raptorStrategy: '召回增强RAPTOR生成策略',
       useRaptorTip:
         'RAPTOR 常应用于复杂的多跳问答任务。如需打开，请跳转至知识库的文件页面，点击生成 > RAPTOR 开启。详见: https://ragflow.io/docs/dev/enable_raptor。',
       prompt: '提示词',
@@ -485,7 +486,13 @@ export default {
       `,
       tags: '标签',
       addTag: '增加标签',
-      useGraphRag: '提取知识图谱',
+      useGraphRag: '知识图谱生成信息',
+      graphRagStrategy: '知识图谱生成策略',
+      strategyManual: '手动',
+      strategyUpdateAfter: '更新后',
+      strategyTimed: '定时',
+      cronExpression: '定时生成 cron 表达式',
+      cronPlaceholder: '请输入 cron 表达式',
       useGraphRagTip:
         '基于知识库内所有切好的文本块构建知识图谱，用以提升多跳和复杂问题回答的正确率。请注意：构建知识图谱将消耗大量 token 和时间。详见 https://ragflow.io/docs/dev/construct_knowledge_graph。',
       graphRagMethod: '方法',

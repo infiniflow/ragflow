@@ -182,6 +182,13 @@ export default {
       documentMetaTips: `<p>Dữ liệu meta ở định dạng Json (không thể tìm kiếm). Nó sẽ được thêm vào prompt cho LLM nếu bất kỳ đoạn nào của tài liệu này được đưa vào prompt.</p> <p>Ví dụ:</p> <b>Dữ liệu meta là:</b><br> <code> { "Author": "Alex Dowson", "Date": "2024-11-12" } </code><br><b>Prompt sẽ là:</b><br> <p>Tài liệu: the_name_of_document</p> <p>Tác giả: Alex Dowson</p> <p>Ngày: 2024-11-12</p> <p>Các đoạn liên quan như sau:</p> <ul> <li> Đây là nội dung của đoạn...</li> <li> Đây là nội dung của đoạn...</li> </ul>`,
     },
     knowledgeConfiguration: {
+      useGraphRag: 'Tạo đồ thị tri thức',
+      graphRagStrategy: 'Chiến lược tạo GraphRAG',
+      strategyManual: 'Thủ công',
+      strategyUpdateAfter: 'Sau khi cập nhật',
+      strategyTimed: 'Định kỳ',
+      cronExpression: 'Biểu thức cron',
+      cronPlaceholder: 'Nhập biểu thức cron',
       titleDescription:
         'Cập nhật cấu hình cơ sở kiến thức của bạn tại đây, đặc biệt là phương thức phân khối.',
       name: 'Tên cơ sở kiến thức',
@@ -295,6 +302,7 @@ export default {
       <p>Các khối sau đó được đưa vào LLM để trích xuất các thực thể và mối quan hệ cho biểu đồ tri thức và sơ đồ tư duy.</p>
       <p>Đảm bảo bạn đã đặt <b>Loại thực thể</b>.</p>`,
       useRaptor: 'Sử dụng RAPTOR để cải thiện truy xuất',
+      raptorStrategy: 'Chiến lược tạo RAPTOR',
       useRaptorTip:
         'Kích hoạt RAPTOR cho các tác vụ hỏi đáp đa bước. Xem chi tiết tại https://ragflow.io/docs/dev/enable_raptor.',
       prompt: 'Nhắc nhở',

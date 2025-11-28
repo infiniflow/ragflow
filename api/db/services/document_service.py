@@ -627,9 +627,9 @@ class DocumentService(CommonService):
     def begin2parse(cls, doc_id, keep_progress=False):
         info = {
             "progress_msg": "Task is queued...",
-            "process_begin_at": get_format_time(),
         }
         if not keep_progress:
+            info["process_begin_at"] = get_format_time()
             info["progress"] = random.random() * 1 / 100.
             info["run"] = TaskStatus.RUNNING.value
             # keep the doc in DONE state when keep_progress=True for GraphRAG, RAPTOR and Mindmap tasks
@@ -720,10 +720,12 @@ class DocumentService(CommonService):
                 freeze_progress = special_task_running and doc_progress >= 1 and not finished
                 msg = "\n".join(sorted(msg))
                 info = {
-                    "process_duration": datetime.timestamp(
-                        datetime.now()) -
-                                       d["process_begin_at"].timestamp(),
-                    "run": status}
+                    "run": status
+                }
+                if not freeze_progress and 0 < doc_progress < 1:
+                    info["process_duration"] = (
+                        datetime.timestamp(datetime.now()) - d["process_begin_at"].timestamp()
+                    )
                 if prg != 0 and not freeze_progress:
                     info["progress"] = prg
                 if msg:

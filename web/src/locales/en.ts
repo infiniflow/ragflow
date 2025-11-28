@@ -302,8 +302,17 @@ export default {
         <br/>
         Do you want to continue?
       `,
+      useGraphRag: 'Knowledge Graph Generation',
+      useRaptor: 'RAPTOR Generation',
+      raptorStrategy: 'RAPTOR Generation Strategy',
       extractRaptor: 'Extract Raptor',
       extractKnowledgeGraph: 'Extract Knowledge Graph',
+      graphRagStrategy: 'GraphRAG Generation Strategy',
+      strategyManual: 'Manual',
+      strategyUpdateAfter: 'Update after',
+      strategyTimed: 'Timed',
+      cronExpression: 'Cron expression',
+      cronPlaceholder: 'Please input cron expression',
       filterPlaceholder: 'please input filter',
       fileFilterTip: '',
       fileFilter: 'File Filter',

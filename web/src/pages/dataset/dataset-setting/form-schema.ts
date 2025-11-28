@@ -1,5 +1,15 @@
 import { t } from 'i18next';
 import { z } from 'zod';
+import cron from 'cron-validate';
+
+const isValidCron = (s?: string) => {
+  if (!s) return false;
+  const result = cron(s, {
+    preset: 'default',
+    override: { useSeconds: false, useYears: false },
+  });
+  return result.isValid();
+};
 
 export const formSchema = z
   .object({
@@ -38,6 +48,8 @@ export const formSchema = z
             max_cluster: z.number().optional(),
             random_seed: z.number().optional(),
             scope: z.string().optional(),
+            strategy: z.string().optional(),
+            cron: z.string().optional(),
           })
           .refine(
             (data) => {
@@ -50,6 +62,18 @@ export const formSchema = z
               message: 'Prompt is required',
               path: ['prompt'],
             },
+          )
+          .refine(
+            (data) => {
+              if (data.strategy === 'timed') {
+                return isValidCron(data.cron || '');
+              }
+              return true;
+            },
+            {
+              message: 'Invalid cron expression',
+              path: ['cron'],
+            },
           ),
         graphrag: z
           .object({
@@ -58,6 +82,8 @@ export const formSchema = z
             method: z.string().optional(),
             resolution: z.boolean().optional(),
             community: z.boolean().optional(),
+            strategy: z.string().optional(),
+            cron: z.string().optional(),
           })
           .refine(
             (data) => {
@@ -72,6 +98,18 @@ export const formSchema = z
             {
               message: 'Please enter Entity types',
               path: ['entity_types'],
+            },
+          )
+          .refine(
+            (data) => {
+              if (data.strategy === 'timed') {
+                return isValidCron(data.cron || '');
+              }
+              return true;
+            },
+            {
+              message: 'Invalid cron expression',
+              path: ['cron'],
             },
           ),
       })

@@ -163,6 +163,13 @@ export default {
       html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel 97-2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dev/enable_excel2html.`,
     },
     knowledgeConfiguration: {
+      useGraphRag: 'Generasi grafik pengetahuan',
+      graphRagStrategy: 'Strategi generasi GraphRAG',
+      strategyManual: 'Manual',
+      strategyUpdateAfter: 'Setelah pembaruan',
+      strategyTimed: 'Terjadwal',
+      cronExpression: 'Ekspresi cron',
+      cronPlaceholder: 'Masukkan ekspresi cron',
       titleDescription:
         'Perbarui detail basis pengetahuan Anda terutama metode parsing di sini.',
       name: 'Nama basis pengetahuan',
@@ -290,6 +297,7 @@ export default {
 
     Perhatikan jenis entitas yang perlu Anda tentukan.</p>`,
       useRaptor: 'Gunakan RAPTOR untuk meningkatkan pengambilan',
+      
       useRaptorTip:
         'Aktifkan RAPTOR untuk tugas tanya jawab multi-langkah. Lihat https://ragflow.io/docs/dev/enable_raptor untuk informasi lebih lanjut.',
       prompt: 'Prompt',
