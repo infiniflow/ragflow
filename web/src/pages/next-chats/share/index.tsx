@@ -3,6 +3,7 @@ import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
 import { useFetchFlowSSE } from '@/hooks/flow-hooks';
@@ -22,8 +23,10 @@ const ChatContainer = () => {
     sharedId: conversationId,
     from,
     locale,
+    theme,
     visibleAvatar,
   } = useGetSharedChatSearchParams();
+  useSyncThemeFromParams(theme);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -52,6 +55,7 @@ const ChatContainer = () => {
       i18n.changeLanguage(locale);
     }
   }, [locale, visibleAvatar]);
+
   const { data: avatarData } = useFetchAvatar();
 
   if (!conversationId) {

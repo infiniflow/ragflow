@@ -33,6 +33,7 @@ export const useGetSharedChatSearchParams = () => {
     from: searchParams.get('from') as SharedFrom,
     sharedId: searchParams.get('shared_id'),
     locale: searchParams.get('locale'),
+    theme: searchParams.get('theme'),
     data: data,
     visibleAvatar: searchParams.get('visible_avatar')
       ? searchParams.get('visible_avatar') !== '1'
