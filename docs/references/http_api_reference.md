@@ -543,7 +543,6 @@ Notes:
 
 - "pipeline_id": (*Body parameter*), `string`  
   The ingestion pipeline ID. Required if and only if you are using an ingestion pipeline (together with `"parse_type"`).  
-  - Must be a 32-character lowercase hexadecimal string (e.g., `"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`).  
   - Must not be provided when `"chunk_method"` is set.
 
 Note: If none of `chunk_method`, `parse_type`, and `pipeline_id` are provided, the system will default to `chunk_method = "naive"`.
