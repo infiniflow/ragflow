@@ -424,6 +424,7 @@ class Dealer:
 
         sim_np = np.array(sim, dtype=np.float64)
         if sim_np.size == 0:
+            ranks["doc_aggs"] = []
             return ranks
 
         sorted_idx = np.argsort(sim_np * -1)
@@ -433,6 +434,7 @@ class Dealer:
         ranks["total"] = int(filtered_count)
 
         if filtered_count == 0:
+            ranks["doc_aggs"] = []
             return ranks
 
         max_pages = max(RERANK_LIMIT // max(page_size, 1), 1)
