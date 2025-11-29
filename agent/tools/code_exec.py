@@ -69,7 +69,7 @@ class CodeExecParam(ToolParamBase):
         self.meta: ToolMeta = {
             "name": "execute_code",
             "description": """
-This tool has a sandbox that can execute code written in 'Python'/'Javascript'. It recieves a piece of code and return a Json string.
+This tool has a sandbox that can execute code written in 'Python'/'Javascript'. It receives a piece of code and return a Json string.
 Here's a code example for Python(`main` function MUST be included):
 def main() -> dict:
     \"\"\"
