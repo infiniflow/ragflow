@@ -1,7 +1,7 @@
 import { EmbedContainer } from '@/components/embed-container';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/message-item';
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
@@ -123,12 +123,12 @@ const ChatContainer = () => {
         </div>
       </EmbedContainer>
       {visible && (
-        <PdfDrawer
+        <PdfSheet
           visible={visible}
           hideModal={hideModal}
           documentId={documentId}
           chunk={selectedChunk}
-        ></PdfDrawer>
+        ></PdfSheet>
       )}
     </>
   );

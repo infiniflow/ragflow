@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import base64
 import json
 import logging
 import re
@@ -27,6 +26,7 @@ from typing import Any, Union, Tuple
 
 from agent.component import component_class
 from agent.component.base import ComponentBase
+from api.db.services.file_service import FileService
 from api.db.services.task_service import has_canceled
 from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
@@ -374,7 +374,7 @@ class Canvas(Graph):
         for k in kwargs.keys():
             if k in ["query", "user_id", "files"] and kwargs[k]:
                 if k == "files":
-                    self.globals[f"sys.{k}"] = await self.get_files(kwargs[k])
+                    self.globals[f"sys.{k}"] = FileService.get_files(kwargs[k])
                 else:
                     self.globals[f"sys.{k}"] = kwargs[k]
         if not self.globals["sys.conversation_turns"] :
@@ -642,24 +642,6 @@ class Canvas(Graph):
 
     def get_component_input_elements(self, cpnnm):
         return self.components[cpnnm]["obj"].get_input_elements()
-
-    async def get_files(self, files: Union[None, list[dict]]) -> list[str]:
-        from api.db.services.file_service import FileService
-        if not files:
-            return  []
-        def image_to_base64(file):
-            return "data:{};base64,{}".format(file["mime_type"],
-                                        base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
-        
-        loop = asyncio.get_running_loop()
-        tasks = []
-        for file in files:
-            if file["mime_type"].find("image") >=0:
-                tasks.append(loop.run_in_executor(None, image_to_base64, file))
-                continue
-            tasks.append(loop.run_in_executor(None, partial(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"])))
-        
-        return await asyncio.gather(*tasks)
 
     def tool_use_callback(self, agent_id: str, func_name: str, params: dict, result: Any, elapsed_time=None):
         agent_ids = agent_id.split("-->")
