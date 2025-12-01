@@ -314,35 +314,3 @@ To enable IPEX-LLM accelerated Ollama in RAGFlow, you must also complete the con
 3. [Update System Model Settings](#6-update-system-model-settings)
 4. [Update Chat Configuration](#7-update-chat-configuration)
 
-## Deploy a local model using jina 
-
-To deploy a local model, e.g., **gpt2**, using jina:
-
-### 1. Check firewall settings
-
-Ensure that your host machine's firewall allows inbound connections on port 12345.
-
-```bash
-sudo ufw allow 12345/tcp
-```
-
-### 2. Install jina package
-
-```bash
-pip install jina
-```
-
-### 3. Deploy a local model
-
-Step 1: Navigate to the **rag/svr** directory.
-
-```bash
-cd rag/svr
-```
-
-Step 2: Run **jina_server.py**, specifying either the model's name or its local directory: 
-
-```bash
-python jina_server.py  --model_name gpt2
-```
-> The script only supports models downloaded from Hugging Face.
