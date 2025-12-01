@@ -645,7 +645,7 @@ class Dealer:
         if not chunks:
             return []
         idx_nms = [index_name(tid) for tid in tenant_ids]
-        mom_chunks = defaultdict([])
+        mom_chunks = defaultdict(list)
         i = 0
         while i < len(chunks):
             ck = chunks[i]
