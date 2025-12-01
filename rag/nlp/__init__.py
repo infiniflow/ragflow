@@ -19,7 +19,6 @@ import random
 from collections import Counter
 
 from common.token_utils import num_tokens_from_string
-from . import rag_tokenizer
 import re
 import copy
 import roman_numbers as r
@@ -28,6 +27,8 @@ from cn2an import cn2an
 from PIL import Image
 
 import chardet
+
+__all__ = ['rag_tokenizer']
 
 all_codecs = [
     'utf-8', 'gb2312', 'gbk', 'utf_16', 'ascii', 'big5', 'big5hkscs',
