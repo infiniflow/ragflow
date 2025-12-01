@@ -4,6 +4,7 @@ import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { MessageType } from '@/constants/chat';
 import { useUploadCanvasFileWithProgress } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
@@ -25,8 +26,10 @@ const ChatContainer = () => {
   const {
     sharedId: conversationId,
     locale,
+    theme,
     visibleAvatar,
   } = useGetSharedChatSearchParams();
+  useSyncThemeFromParams(theme);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
