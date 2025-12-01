@@ -71,3 +71,13 @@ export function useSwitchToDarkThemeOnMount() {
     setTheme(ThemeEnum.Dark);
   }, [setTheme]);
 }
+
+export function useSyncThemeFromParams(theme: string | null) {
+  const { setTheme } = useTheme();
+
+  useEffect(() => {
+    if (theme && (theme === ThemeEnum.Light || theme === ThemeEnum.Dark)) {
+      setTheme(theme as ThemeEnum);
+    }
+  }, [theme, setTheme]);
+}
