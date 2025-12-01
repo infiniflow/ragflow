@@ -1,6 +1,5 @@
 import { Operator } from '../constant';
 import AgentForm from '../form/agent-form';
-import AkShareForm from '../form/akshare-form';
 import ArXivForm from '../form/arxiv-form';
 import BeginForm from '../form/begin-form';
 import BingForm from '../form/bing-form';
@@ -19,13 +18,11 @@ import HierarchicalMergerForm from '../form/hierarchical-merger-form';
 import InvokeForm from '../form/invoke-form';
 import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
-import Jin10Form from '../form/jin10-form';
-import KeywordExtractForm from '../form/keyword-extract-form';
 import ListOperationsForm from '../form/list-operations-form';
+import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
 import ParserForm from '../form/parser-form';
 import PubMedForm from '../form/pubmed-form';
-import QWeatherForm from '../form/qweather-form';
 import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
@@ -37,7 +34,6 @@ import TavilyExtractForm from '../form/tavily-extract-form';
 import TavilyForm from '../form/tavily-form';
 import TokenizerForm from '../form/tokenizer-form';
 import ToolForm from '../form/tool-form';
-import TuShareForm from '../form/tushare-form';
 import UserFillUpForm from '../form/user-fill-up-form';
 import VariableAggregatorForm from '../form/variable-aggregator-form';
 import VariableAssignerForm from '../form/variable-assigner-form';
@@ -76,9 +72,6 @@ export const FormConfigMap = {
   [Operator.DuckDuckGo]: {
     component: DuckDuckGoForm,
   },
-  [Operator.KeywordExtract]: {
-    component: KeywordExtractForm,
-  },
   [Operator.Wikipedia]: {
     component: WikipediaForm,
   },
@@ -100,9 +93,6 @@ export const FormConfigMap = {
   [Operator.GitHub]: {
     component: GithubForm,
   },
-  [Operator.QWeather]: {
-    component: QWeatherForm,
-  },
   [Operator.ExeSQL]: {
     component: ExeSQLForm,
   },
@@ -112,17 +102,8 @@ export const FormConfigMap = {
   [Operator.WenCai]: {
     component: WenCaiForm,
   },
-  [Operator.AkShare]: {
-    component: AkShareForm,
-  },
   [Operator.YahooFinance]: {
     component: YahooFinanceForm,
-  },
-  [Operator.Jin10]: {
-    component: Jin10Form,
-  },
-  [Operator.TuShare]: {
-    component: TuShareForm,
   },
   [Operator.Crawler]: {
     component: CrawlerForm,
@@ -191,8 +172,13 @@ export const FormConfigMap = {
   [Operator.VariableAssigner]: {
     component: VariableAssignerForm,
   },
-
   [Operator.VariableAggregator]: {
     component: VariableAggregatorForm,
+  },
+  [Operator.Loop]: {
+    component: LoopForm,
+  },
+  [Operator.ExitLoop]: {
+    component: () => <></>,
   },
 };

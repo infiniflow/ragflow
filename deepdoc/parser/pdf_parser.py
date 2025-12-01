@@ -402,7 +402,6 @@ class RAGFlowPdfParser:
                         continue
                 else:
                     score = 0
-                print(f"{k=},{score=}",flush=True)
                 if score > best_score:
                     best_score = score
                     best_k = k

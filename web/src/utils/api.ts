@@ -42,8 +42,10 @@ export default {
   dataSourceRebuild: (id: string) => `${api_host}/connector/${id}/rebuild`,
   dataSourceLogs: (id: string) => `${api_host}/connector/${id}/logs`,
   dataSourceDetail: (id: string) => `${api_host}/connector/${id}`,
-  googleDriveWebAuthStart: `${api_host}/connector/google-drive/oauth/web/start`,
-  googleDriveWebAuthResult: `${api_host}/connector/google-drive/oauth/web/result`,
+  googleWebAuthStart: (type: 'google-drive' | 'gmail') =>
+    `${api_host}/connector/google/oauth/web/start?type=${type}`,
+  googleWebAuthResult: (type: 'google-drive' | 'gmail') =>
+    `${api_host}/connector/google/oauth/web/result?type=${type}`,
 
   // plugin
   llm_tools: `${api_host}/plugin/llm_tools`,

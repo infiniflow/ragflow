@@ -10,13 +10,12 @@ import {
   useFetchConversation,
   useGetChatSearchParams,
 } from '@/hooks/use-chat-request';
-import { Message } from '@/interfaces/database/chat';
+import { IMessage, Message } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { trim } from 'lodash';
 import { useCallback, useEffect } from 'react';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
-import { IMessage } from '../chat/interface';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
 import { useSetChatRouteParams } from './use-set-chat-route';
 import { useSetConversation } from './use-set-conversation';

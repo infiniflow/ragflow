@@ -14,9 +14,16 @@ export const useNavigatePage = () => {
   const [searchParams] = useSearchParams();
   const { id } = useParams();
 
-  const navigateToDatasetList = useCallback(() => {
-    navigate(Routes.Datasets);
-  }, [navigate]);
+  const navigateToDatasetList = useCallback(
+    ({ isCreate = false }: { isCreate?: boolean }) => {
+      if (isCreate) {
+        navigate(Routes.Datasets + '?isCreate=true');
+      } else {
+        navigate(Routes.Datasets);
+      }
+    },
+    [navigate],
+  );
 
   const navigateToDataset = useCallback(
     (id: string) => () => {

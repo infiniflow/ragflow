@@ -47,6 +47,7 @@ const AddDataSourceModal = ({
       }
       open={visible || false}
       onOpenChange={(open) => !open && hideModal?.()}
+      maskClosable={false}
       // onOk={() => handleOk()}
       okText={t('common.confirm')}
       cancelText={t('common.cancel')}

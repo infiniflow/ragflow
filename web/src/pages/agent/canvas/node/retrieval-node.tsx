@@ -23,7 +23,7 @@ function InnerRetrievalNode({
   const knowledgeBaseIds: string[] = get(data, 'form.kb_ids', []);
   const { list: knowledgeList } = useFetchKnowledgeList(true);
 
-  const { getLabel } = useGetVariableLabelOrTypeByValue(id);
+  const { getLabel } = useGetVariableLabelOrTypeByValue({ nodeId: id });
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>

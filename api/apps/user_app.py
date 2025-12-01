@@ -123,8 +123,8 @@ async def login():
         response_data = user.to_json()
         user.access_token = get_uuid()
         login_user(user)
-        user.update_time = (current_timestamp(),)
-        user.update_date = (datetime_format(datetime.now()),)
+        user.update_time = current_timestamp()
+        user.update_date = datetime_format(datetime.now())
         user.save()
         msg = "Welcome back!"
 
@@ -1007,8 +1007,8 @@ async def forget():
     # Auto login (reuse login flow)
     user.access_token = get_uuid()
     login_user(user)
-    user.update_time = (current_timestamp(),)
-    user.update_date = (datetime_format(datetime.now()),)
+    user.update_time = current_timestamp()
+    user.update_date = datetime_format(datetime.now())
     user.save()
     msg = "Password reset successful. Logged in."
     return await construct_response(data=user.to_json(), auth=user.get_id(), message=msg)
