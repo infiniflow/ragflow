@@ -30,8 +30,7 @@ from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
-from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters, \
-    request_json
+from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters, request_json
 from api.db import VALID_FILE_TYPES, UserTenantRole
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
@@ -175,7 +174,7 @@ async def create() -> Any:
 @validate_request("kb_id", "name", "description", "parser_id")
 @not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
 async def update():
-    req = await request_json()
+    req = await get_request_json()
     if not isinstance(req["name"], str):
         return get_data_error_result(message="Dataset name must be string.")
     if req["name"].strip() == "":
@@ -282,7 +281,7 @@ async def list_kbs():
     else:
         desc = True
 
-    req = await request_json()
+    req = await get_request_json()
     owner_ids = req.get("owner_ids", [])
     try:
         if not owner_ids:
@@ -384,7 +383,7 @@ def list_tags_from_kbs():
 @manager.route('/<kb_id>/rm_tags', methods=['POST'])  # noqa: F821
 @login_required
 async def rm_tags(kb_id):
-    req = await request_json()
+    req = await get_request_json()
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
@@ -404,7 +403,7 @@ async def rm_tags(kb_id):
 @manager.route('/<kb_id>/rename_tag', methods=['POST'])  # noqa: F821
 @login_required
 async def rename_tags(kb_id):
-    req = await request_json()
+    req = await get_request_json()
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
@@ -526,7 +525,7 @@ async def list_pipeline_logs():
     if create_date_to > create_date_from:
         return get_data_error_result(message="Create data filter is abnormal.")
 
-    req = await request_json()
+    req = await get_request_json()
 
     operation_status = req.get("operation_status", [])
     if operation_status:
@@ -568,7 +567,7 @@ async def list_pipeline_dataset_logs():
     if create_date_to > create_date_from:
         return get_data_error_result(message="Create data filter is abnormal.")
 
-    req = await request_json()
+    req = await get_request_json()
 
     operation_status = req.get("operation_status", [])
     if operation_status:
@@ -590,7 +589,7 @@ async def delete_pipeline_logs():
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
 
-    req = await request_json()
+    req = await get_request_json()
     log_ids = req.get("log_ids", [])
 
     PipelineOperationLogService.delete_by_ids(log_ids)
@@ -615,7 +614,7 @@ def pipeline_log_detail():
 @manager.route("/run_graphrag", methods=["POST"])  # noqa: F821
 @login_required
 async def run_graphrag():
-    req = await request_json()
+    req = await get_request_json()
 
     kb_id = req.get("kb_id", "")
     if not kb_id:
@@ -684,7 +683,7 @@ def trace_graphrag():
 @manager.route("/run_raptor", methods=["POST"])  # noqa: F821
 @login_required
 async def run_raptor():
-    req = await request_json()
+    req = await get_request_json()
 
     kb_id = req.get("kb_id", "")
     if not kb_id:
@@ -753,7 +752,7 @@ def trace_raptor():
 @manager.route("/run_mindmap", methods=["POST"])  # noqa: F821
 @login_required
 async def run_mindmap():
-    req = await request_json()
+    req = await get_request_json()
 
     kb_id = req.get("kb_id", "")
     if not kb_id:
@@ -955,11 +954,11 @@ async def check_embedding():
                 "question_kwd": full_doc.get("question_kwd") or []
             })
         return out
-    
+
     def _clean(s: str) -> str:
         s = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", s or "")
         return s if s else "None"
-    req = await request_json()
+    req = await get_request_json()
     kb_id = req.get("kb_id", "")
     embd_id = req.get("embd_id", "")
     n = int(req.get("check_num", 5))
