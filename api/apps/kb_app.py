@@ -30,7 +30,7 @@ from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
-from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters, request_json
+from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters, get_request_json
 from api.db import VALID_FILE_TYPES, UserTenantRole
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
@@ -49,7 +49,7 @@ from api.apps import login_required, current_user
 @login_required
 @validate_request("name")
 async def create() -> Any:
-    req: Dict[str, Any] = await request_json()
+    req: Dict[str, Any] = await get_request_json()
     
     # Validate shared_tenant_id if provided
     shared_tenant_id: Optional[str] = req.get("shared_tenant_id")
@@ -308,7 +308,7 @@ async def list_kbs():
 @login_required
 @validate_request("kb_id")
 async def rm():
-    req = await request_json()
+    req = await get_request_json()
     # Check if user has delete permission
     if not KnowledgebaseService.accessible4deletion(req["kb_id"], current_user.id):
         return get_json_result(

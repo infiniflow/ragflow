@@ -52,19 +52,13 @@ from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
-    request_json,
+    get_request_json,
     server_error_response,
     validate_request,
 )
 from common import settings
 from common.constants import RetCode, StatusEnum
 from common.misc_utils import get_uuid
-from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result, \
-    get_request_json
-from agent.canvas import Canvas
-from peewee import MySQLDatabase, PostgresqlDatabase
-from api.db.db_models import APIToken, Task
-import time
 
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
@@ -97,7 +91,7 @@ async def rm():
 @validate_request("dsl", "title")
 @login_required
 async def save() -> Any:
-    req: Dict[str, Any] = await request_json()
+    req: Dict[str, Any] = await get_request_json()
     if not isinstance(req["dsl"], str):
         req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
     req["dsl"] = json.loads(req["dsl"])
@@ -292,7 +286,7 @@ def cancel(task_id):
 @validate_request("id")
 @login_required
 async def reset():
-    req = await request_json()
+    req = await get_request_json()
     # Check update permission (to reset the canvas)
     if not UserCanvasService.accessible(req["id"], current_user.id, required_permission="update"):
         return get_json_result(
@@ -354,7 +348,7 @@ def input_form():
 @validate_request("id", "component_id", "params")
 @login_required
 async def debug():
-    req = await request_json()
+    req = await get_request_json()
     # Check read permission (to debug the canvas)
     if not UserCanvasService.accessible(req["id"], current_user.id, required_permission="read"):
         return get_json_result(

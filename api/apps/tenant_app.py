@@ -31,15 +31,12 @@ from api.common.permission_utils import (
     get_user_permissions as get_member_permissions,
     update_user_permissions as update_member_permissions,
 )
-from api.db import FileType, UserTenantRole
-from api.db.db_models import UserTenant
+from api.db import FileType
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import get_init_tenant_llm
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import (
     TenantService,
-    UserService,
-    UserTenantService,
 )
 from api.utils.api_utils import (
     get_data_error_result,
@@ -52,10 +49,7 @@ from common import settings
 from common.constants import RetCode, StatusEnum
 from common.misc_utils import get_uuid
 from common.time_utils import delta_seconds
-from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
-from api.utils.web_utils import send_invite_email
-from common import settings
-from api.apps import smtp_mail_server, login_required, current_user
+from api.utils.api_utils import get_request_json
 
 # manager = Blueprint("tenant", __name__)
 def is_team_admin_or_owner(tenant_id: str, user_id: str) -> bool:
