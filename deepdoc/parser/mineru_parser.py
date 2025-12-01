@@ -190,7 +190,7 @@ class MinerUParser(RAGFlowPdfParser):
             self._run_mineru_executable(input_path, output_dir, method, backend, lang, server_url, callback)
 
     def _run_mineru_api(self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None, callback: Optional[Callable] = None):
-        OUTPUT_ZIP_PATH = os.path.join(str(output_dir), "output.zip")
+        output_zip_path = os.path.join(str(output_dir), "output.zip")
 
         pdf_file_path = str(input_path)
 
@@ -230,16 +230,16 @@ class MinerUParser(RAGFlowPdfParser):
 
             response.raise_for_status()
             if response.headers.get("Content-Type") == "application/zip":
-                self.logger.info(f"[MinerU] zip file returned, saving to {OUTPUT_ZIP_PATH}...")
+                self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
 
                 if callback:
-                    callback(0.30, f"[MinerU] zip file returned, saving to {OUTPUT_ZIP_PATH}...")
+                    callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
 
-                with open(OUTPUT_ZIP_PATH, "wb") as f:
+                with open(output_zip_path, "wb") as f:
                     f.write(response.content)
 
                 self.logger.info(f"[MinerU] Unzip to {output_path}...")
-                self._extract_zip_no_root(OUTPUT_ZIP_PATH, output_path, pdf_file_name + "/")
+                self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
 
                 if callback:
                     callback(0.40, f"[MinerU] Unzip to {output_path}...")
@@ -459,13 +459,36 @@ class MinerUParser(RAGFlowPdfParser):
         return poss
 
     def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto", backend: str = "pipeline") -> list[dict[str, Any]]:
-        subdir = output_dir / file_stem / method
-        if backend.startswith("vlm-"):
-            subdir = output_dir / file_stem / "vlm"
-        json_file = subdir / f"{file_stem}_content_list.json"
+        candidates = []
+        seen = set()
 
-        if not json_file.exists():
-            raise FileNotFoundError(f"[MinerU] Missing output file: {json_file}")
+        def add_candidate_path(p: Path):
+            if p not in seen:
+                seen.add(p)
+                candidates.append(p)
+
+        if backend.startswith("vlm-"):
+            add_candidate_path(output_dir / file_stem / "vlm")
+            if method:
+                add_candidate_path(output_dir / file_stem / method)
+            add_candidate_path(output_dir / file_stem / "auto")
+        else:
+            if method:
+                add_candidate_path(output_dir / file_stem / method)
+            add_candidate_path(output_dir / file_stem / "vlm")
+            add_candidate_path(output_dir / file_stem / "auto")
+
+        json_file = None
+        subdir = None
+        for sub in candidates:
+            jf = sub / f"{file_stem}_content_list.json"
+            if jf.exists():
+                subdir = sub
+                json_file = jf
+                break
+
+        if not json_file:
+            raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(c / (file_stem + '_content_list.json')) for c in candidates)}")
 
         with open(json_file, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -520,7 +543,7 @@ class MinerUParser(RAGFlowPdfParser):
         method: str = "auto",
         server_url: Optional[str] = None,
         delete_output: bool = True,
-        parse_method: str = "raw"
+        parse_method: str = "raw",
     ) -> tuple:
         import shutil
 
@@ -570,7 +593,7 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
-                
+
             return self._transfer_to_sections(outputs, parse_method), self._transfer_to_tables(outputs)
         finally:
             if temp_pdf and temp_pdf.exists():
