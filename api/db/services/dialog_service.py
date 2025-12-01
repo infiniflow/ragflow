@@ -708,7 +708,7 @@ Please write the SQL, only SQL, without any other explanations or text.
         """.format(index_name(tenant_id), "\n".join([f"{k}: {v}" for k, v in field_map.items()]), question, e)
         try:
             tbl, sql = get_table()
-        except:
+        except Exception:
             return
 
     if len(tbl["rows"]) == 0:
