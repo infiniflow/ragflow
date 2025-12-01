@@ -655,7 +655,7 @@ class FileService(CommonService):
         return structured(file.filename, filename_type(file.filename), file.read(), file.content_type)
 
     @staticmethod
-    def get_files(self, files: Union[None, list[dict]]) -> list[str]:
+    def get_files(files: Union[None, list[dict]]) -> list[str]:
         if not files:
             return  []
         def image_to_base64(file):
