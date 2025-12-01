@@ -22,8 +22,7 @@ from api.db.services.user_service import TenantService
 from common.constants import RetCode, VALID_MCP_SERVER_TYPES
 
 from common.misc_utils import get_uuid
-from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request, \
-    get_mcp_tools
+from api.utils.api_utils import get_data_error_result, get_json_result, get_mcp_tools, get_request_json, server_error_response, validate_request
 from api.utils.web_utils import get_float, safe_json_parse
 from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_toolcall_sessions
 
@@ -40,7 +39,7 @@ async def list_mcp() -> Response:
     else:
         desc = True
 
-    req = await request.get_json()
+    req = await get_request_json()
     mcp_ids = req.get("mcp_ids", [])
     try:
         servers = MCPServerService.get_servers(current_user.id, mcp_ids, 0, 0, orderby, desc, keywords) or []
@@ -73,7 +72,7 @@ def detail() -> Response:
 @login_required
 @validate_request("name", "url", "server_type")
 async def create() -> Response:
-    req = await request.get_json()
+    req = await get_request_json()
 
     server_type = req.get("server_type", "")
     if server_type not in VALID_MCP_SERVER_TYPES:
@@ -128,7 +127,7 @@ async def create() -> Response:
 @login_required
 @validate_request("mcp_id")
 async def update() -> Response:
-    req = await request.get_json()
+    req = await get_request_json()
 
     mcp_id = req.get("mcp_id", "")
     e, mcp_server = MCPServerService.get_by_id(mcp_id)
@@ -184,7 +183,7 @@ async def update() -> Response:
 @login_required
 @validate_request("mcp_ids")
 async def rm() -> Response:
-    req = await request.get_json()
+    req = await get_request_json()
     mcp_ids = req.get("mcp_ids", [])
 
     try:
@@ -202,7 +201,7 @@ async def rm() -> Response:
 @login_required
 @validate_request("mcpServers")
 async def import_multiple() -> Response:
-    req = await request.get_json()
+    req = await get_request_json()
     servers = req.get("mcpServers", {})
     if not servers:
         return get_data_error_result(message="No MCP servers provided.")
@@ -269,7 +268,7 @@ async def import_multiple() -> Response:
 @login_required
 @validate_request("mcp_ids")
 async def export_multiple() -> Response:
-    req = await request.get_json()
+    req = await get_request_json()
     mcp_ids = req.get("mcp_ids", [])
 
     if not mcp_ids:
@@ -301,7 +300,7 @@ async def export_multiple() -> Response:
 @login_required
 @validate_request("mcp_ids")
 async def list_tools() -> Response:
-    req = await request.get_json()
+    req = await get_request_json()
     mcp_ids = req.get("mcp_ids", [])
     if not mcp_ids:
         return get_data_error_result(message="No MCP server IDs provided.")
@@ -348,7 +347,7 @@ async def list_tools() -> Response:
 @login_required
 @validate_request("mcp_id", "tool_name", "arguments")
 async def test_tool() -> Response:
-    req = await request.get_json()
+    req = await get_request_json()
     mcp_id = req.get("mcp_id", "")
     if not mcp_id:
         return get_data_error_result(message="No MCP server ID provided.")
@@ -381,7 +380,7 @@ async def test_tool() -> Response:
 @login_required
 @validate_request("mcp_id", "tools")
 async def cache_tool() -> Response:
-    req = await request.get_json()
+    req = await get_request_json()
     mcp_id = req.get("mcp_id", "")
     if not mcp_id:
         return get_data_error_result(message="No MCP server ID provided.")
@@ -404,7 +403,7 @@ async def cache_tool() -> Response:
 @manager.route("/test_mcp", methods=["POST"])  # noqa: F821
 @validate_request("url", "server_type")
 async def test_mcp() -> Response:
-    req = await request.get_json()
+    req = await get_request_json()
 
     url = req.get("url", "")
     if not url:

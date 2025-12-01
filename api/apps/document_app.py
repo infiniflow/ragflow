@@ -36,7 +36,7 @@ from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
     server_error_response,
-    validate_request, request_json,
+    validate_request, get_request_json,
 )
 from api.utils.file_utils import filename_type, thumbnail
 from common.file_utils import get_project_base_directory
@@ -153,7 +153,7 @@ async def web_crawl():
 @login_required
 @validate_request("name", "kb_id")
 async def create():
-    req = await request_json()
+    req = await get_request_json()
     kb_id = req["kb_id"]
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -230,7 +230,7 @@ async def list_docs():
     create_time_from = int(request.args.get("create_time_from", 0))
     create_time_to = int(request.args.get("create_time_to", 0))
 
-    req = await request.get_json()
+    req = await get_request_json()
 
     run_status = req.get("run_status", [])
     if run_status:
@@ -271,7 +271,7 @@ async def list_docs():
 @manager.route("/filter", methods=["POST"])  # noqa: F821
 @login_required
 async def get_filter():
-    req = await request.get_json()
+    req = await get_request_json()
 
     kb_id = req.get("kb_id")
     if not kb_id:
@@ -309,7 +309,7 @@ async def get_filter():
 @manager.route("/infos", methods=["POST"])  # noqa: F821
 @login_required
 async def doc_infos():
-    req = await request_json()
+    req = await get_request_json()
     doc_ids = req["doc_ids"]
     for doc_id in doc_ids:
         if not DocumentService.accessible(doc_id, current_user.id):
@@ -341,7 +341,7 @@ def thumbnails():
 @login_required
 @validate_request("doc_ids", "status")
 async def change_status():
-    req = await request.get_json()
+    req = await get_request_json()
     doc_ids = req.get("doc_ids", [])
     status = str(req.get("status", ""))
 
@@ -381,7 +381,7 @@ async def change_status():
 @login_required
 @validate_request("doc_id")
 async def rm():
-    req = await request_json()
+    req = await get_request_json()
     doc_ids = req["doc_id"]
     if isinstance(doc_ids, str):
         doc_ids = [doc_ids]
@@ -402,7 +402,7 @@ async def rm():
 @login_required
 @validate_request("doc_ids", "run")
 async def run():
-    req = await request_json()
+    req = await get_request_json()
     for doc_id in req["doc_ids"]:
         if not DocumentService.accessible(doc_id, current_user.id):
             return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
@@ -449,7 +449,7 @@ async def run():
 @login_required
 @validate_request("doc_id", "name")
 async def rename():
-    req = await request_json()
+    req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
@@ -539,7 +539,7 @@ async def download_attachment(attachment_id):
 @validate_request("doc_id")
 async def change_parser():
 
-    req = await request_json()
+    req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
@@ -624,7 +624,8 @@ async def upload_and_parse():
 @manager.route("/parse", methods=["POST"])  # noqa: F821
 @login_required
 async def parse():
-    url = await request.json.get("url") if await request.json else ""
+    req = await get_request_json()
+    url = req.get("url", "")
     if url:
         if not is_valid_url(url):
             return get_json_result(data=False, message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
@@ -679,7 +680,7 @@ async def parse():
 @login_required
 @validate_request("doc_id", "meta")
 async def set_meta():
-    req = await request_json()
+    req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:

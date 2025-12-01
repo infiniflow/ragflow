@@ -29,7 +29,7 @@ from common.constants import RetCode, FileSource
 from api.db import FileType
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
-from api.utils.api_utils import get_json_result
+from api.utils.api_utils import get_json_result, get_request_json
 from api.utils.file_utils import filename_type
 from api.utils.web_utils import CONTENT_TYPE_MAP
 from common import settings
@@ -124,7 +124,7 @@ async def upload():
 @login_required
 @validate_request("name")
 async def create():
-    req = await request.json
+    req = await get_request_json()
     pf_id = req.get("parent_id")
     input_file_type = req.get("type")
     if not pf_id:
@@ -239,7 +239,7 @@ def get_all_parent_folders():
 @login_required
 @validate_request("file_ids")
 async def rm():
-    req = await request.json
+    req = await get_request_json()
     file_ids = req["file_ids"]
 
     def _delete_single_file(file):
@@ -300,7 +300,7 @@ async def rm():
 @login_required
 @validate_request("file_id", "name")
 async def rename():
-    req = await request.json
+    req = await get_request_json()
     try:
         e, file = FileService.get_by_id(req["file_id"])
         if not e:
@@ -369,7 +369,7 @@ async def get(file_id):
 @login_required
 @validate_request("src_file_ids", "dest_file_id")
 async def move():
-    req = await request.json
+    req = await get_request_json()
     try:
         file_ids = req["src_file_ids"]
         dest_parent_id = req["dest_file_id"]

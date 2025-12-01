@@ -25,7 +25,6 @@ import logging
 import os
 import signal
 import sys
-import time
 import traceback
 import threading
 import uuid
@@ -69,7 +68,7 @@ def signal_handler(sig, frame):
     logging.info("Received interrupt signal, shutting down...")
     shutdown_all_mcp_sessions()
     stop_event.set()
-    time.sleep(1)
+    stop_event.wait(1)
     sys.exit(0)
 
 if __name__ == '__main__':
@@ -163,5 +162,5 @@ if __name__ == '__main__':
     except Exception:
         traceback.print_exc()
         stop_event.set()
-        time.sleep(1)
+        stop_event.wait(1)
         os.kill(os.getpid(), signal.SIGKILL)

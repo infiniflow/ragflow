@@ -23,12 +23,11 @@ from pathlib import Path
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils.api_utils import server_error_response, token_required
+from api.utils.api_utils import get_json_result, get_request_json, server_error_response, token_required
 from common.misc_utils import get_uuid
 from api.db import FileType
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
-from api.utils.api_utils import get_json_result
 from api.utils.file_utils import filename_type
 from common import settings
 from common.constants import RetCode
@@ -193,9 +192,9 @@ async def create(tenant_id):
                 type:
                   type: string
     """
-    req = await request.json
-    pf_id = await request.json.get("parent_id")
-    input_file_type = await request.json.get("type")
+    req = await get_request_json()
+    pf_id = req.get("parent_id")
+    input_file_type = req.get("type")
     if not pf_id:
         root_folder = FileService.get_root_folder(tenant_id)
         pf_id = root_folder["id"]
@@ -229,7 +228,7 @@ async def create(tenant_id):
 
 @manager.route('/file/list', methods=['GET'])  # noqa: F821
 @token_required
-def list_files(tenant_id):
+async def list_files(tenant_id):
     """
     List files under a specific folder.
     ---
@@ -321,7 +320,7 @@ def list_files(tenant_id):
 
 @manager.route('/file/root_folder', methods=['GET'])  # noqa: F821
 @token_required
-def get_root_folder(tenant_id):
+async def get_root_folder(tenant_id):
     """
     Get user's root folder.
     ---
@@ -357,7 +356,7 @@ def get_root_folder(tenant_id):
 
 @manager.route('/file/parent_folder', methods=['GET'])  # noqa: F821
 @token_required
-def get_parent_folder():
+async def get_parent_folder():
     """
     Get parent folder info of a file.
     ---
@@ -402,7 +401,7 @@ def get_parent_folder():
 
 @manager.route('/file/all_parent_folder', methods=['GET'])  # noqa: F821
 @token_required
-def get_all_parent_folders(tenant_id):
+async def get_all_parent_folders(tenant_id):
     """
     Get all parent folders of a file.
     ---
@@ -481,7 +480,7 @@ async def rm(tenant_id):
               type: boolean
               example: true
     """
-    req = await request.json
+    req = await get_request_json()
     file_ids = req["file_ids"]
     try:
         for file_id in file_ids:
@@ -556,7 +555,7 @@ async def rename(tenant_id):
               type: boolean
               example: true
     """
-    req = await request.json
+    req = await get_request_json()
     try:
         e, file = FileService.get_by_id(req["file_id"])
         if not e:
@@ -667,7 +666,7 @@ async def move(tenant_id):
               type: boolean
               example: true
     """
-    req = await request.json
+    req = await get_request_json()
     try:
         file_ids = req["src_file_ids"]
         parent_id = req["dest_file_id"]
@@ -694,7 +693,7 @@ async def move(tenant_id):
 @manager.route('/file/convert', methods=['POST'])  # noqa: F821
 @token_required
 async def convert(tenant_id):
-    req = await request.json
+    req = await get_request_json()
     kb_ids = req["kb_ids"]
     file_ids = req["file_ids"]
     file2documents = []

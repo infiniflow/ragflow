@@ -15,20 +15,19 @@
 #
 
 
-from quart import request
 from api.apps import current_user, login_required
 from langfuse import Langfuse
 
 from api.db.db_models import DB
 from api.db.services.langfuse_service import TenantLangfuseService
-from api.utils.api_utils import get_error_data_result, get_json_result, server_error_response, validate_request
+from api.utils.api_utils import get_error_data_result, get_json_result, get_request_json, server_error_response, validate_request
 
 
 @manager.route("/api_key", methods=["POST", "PUT"])  # noqa: F821
 @login_required
 @validate_request("secret_key", "public_key", "host")
 async def set_api_key():
-    req = await request.get_json()
+    req = await get_request_json()
     secret_key = req.get("secret_key", "")
     public_key = req.get("public_key", "")
     host = req.get("host", "")
