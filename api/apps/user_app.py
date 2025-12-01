@@ -39,7 +39,7 @@ from common.connection_utils import construct_response
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
-    request_json,
+    get_request_json,
     server_error_response,
     validate_request,
 )
@@ -92,7 +92,7 @@ async def login():
         schema:
           type: object
     """
-    json_body = await request_json()
+    json_body = await get_request_json()
     if not json_body:
         return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="Unauthorized!")
 
@@ -536,7 +536,7 @@ async def setting_user():
           type: object
     """
     update_dict = {}
-    request_data = await request_json()
+    request_data = await get_request_json()
     if request_data.get("password"):
         new_password = request_data.get("new_password")
         if not check_password_hash(current_user.password, decrypt(request_data["password"])):
@@ -703,7 +703,7 @@ async def user_add():
             code=RetCode.OPERATING_ERROR,
         )
 
-    req = await request_json()
+    req = await get_request_json()
     email_address = req["email"]
 
     # Validate the email address
@@ -836,7 +836,7 @@ async def set_tenant_info():
         schema:
           type: object
     """
-    req = await request_json()
+    req = await get_request_json()
     try:
         tid = req.pop("tenant_id")
         TenantService.update_by_id(tid, req)
@@ -880,7 +880,7 @@ async def forget_send_otp():
     - Verify the image captcha stored at captcha:{email} (case-insensitive).
     - On success, generate an email OTP (A–Z with length = OTP_LENGTH), store hash + salt (and timestamp) in Redis with TTL, reset attempts and cooldown, and send the OTP via email.
     """
-    req = await request_json()
+    req = await get_request_json()
     email = req.get("email") or ""
     captcha = (req.get("captcha") or "").strip()
 
@@ -946,7 +946,7 @@ async def forget():
     POST: Verify email + OTP and reset password, then log the user in.
     Request JSON: { email, otp, new_password, confirm_new_password }
     """
-    req = await request_json()
+    req = await get_request_json()
     email = req.get("email") or ""
     otp = (req.get("otp") or "").strip()
     new_pwd = req.get("new_password")

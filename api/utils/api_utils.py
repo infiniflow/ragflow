@@ -58,7 +58,7 @@ async def _coerce_request_data() -> dict:
     return payload or {}
 
 
-async def request_json():
+async def get_request_json():
     return await _coerce_request_data()
 
 def serialize_for_json(obj):

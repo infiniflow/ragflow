@@ -23,7 +23,7 @@ from pathlib import Path
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils.api_utils import get_json_result, request_json, server_error_response, token_required
+from api.utils.api_utils import get_json_result, get_request_json, server_error_response, token_required
 from common.misc_utils import get_uuid
 from api.db import FileType
 from api.db.services import duplicate_name
@@ -192,7 +192,7 @@ async def create(tenant_id):
                 type:
                   type: string
     """
-    req = await request_json()
+    req = await get_request_json()
     pf_id = req.get("parent_id")
     input_file_type = req.get("type")
     if not pf_id:
@@ -480,7 +480,7 @@ async def rm(tenant_id):
               type: boolean
               example: true
     """
-    req = await request_json()
+    req = await get_request_json()
     file_ids = req["file_ids"]
     try:
         for file_id in file_ids:
@@ -555,7 +555,7 @@ async def rename(tenant_id):
               type: boolean
               example: true
     """
-    req = await request_json()
+    req = await get_request_json()
     try:
         e, file = FileService.get_by_id(req["file_id"])
         if not e:
@@ -666,7 +666,7 @@ async def move(tenant_id):
               type: boolean
               example: true
     """
-    req = await request_json()
+    req = await get_request_json()
     try:
         file_ids = req["src_file_ids"]
         parent_id = req["dest_file_id"]
@@ -693,7 +693,7 @@ async def move(tenant_id):
 @manager.route('/file/convert', methods=['POST'])  # noqa: F821
 @token_required
 async def convert(tenant_id):
-    req = await request_json()
+    req = await get_request_json()
     kb_ids = req["kb_ids"]
     file_ids = req["file_ids"]
     file2documents = []

@@ -21,7 +21,7 @@ from api.db.services.file_service import FileService
 
 from api.apps import login_required, current_user
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils.api_utils import get_data_error_result, get_json_result, request_json, server_error_response, validate_request
+from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.misc_utils import get_uuid
 from common.constants import RetCode
 from api.db import FileType
@@ -32,7 +32,7 @@ from api.db.services.document_service import DocumentService
 @login_required
 @validate_request("file_ids", "kb_ids")
 async def convert():
-    req = await request_json()
+    req = await get_request_json()
     kb_ids = req["kb_ids"]
     file_ids = req["file_ids"]
     file2documents = []
@@ -102,7 +102,7 @@ async def convert():
 @login_required
 @validate_request("file_ids")
 async def rm():
-    req = await request_json()
+    req = await get_request_json()
     file_ids = req["file_ids"]
     if not file_ids:
         return get_json_result(

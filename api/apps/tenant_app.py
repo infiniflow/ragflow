@@ -21,7 +21,7 @@ from api.db.services.user_service import UserTenantService, UserService
 from common.constants import RetCode, StatusEnum
 from common.misc_utils import get_uuid
 from common.time_utils import delta_seconds
-from api.utils.api_utils import get_data_error_result, get_json_result, request_json, server_error_response, validate_request
+from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from api.utils.web_utils import send_invite_email
 from common import settings
 from api.apps import smtp_mail_server, login_required, current_user
@@ -55,7 +55,7 @@ async def create(tenant_id):
             message='No authorization.',
             code=RetCode.AUTHENTICATION_ERROR)
 
-    req = await request_json()
+    req = await get_request_json()
     invite_user_email = req["email"]
     invite_users = UserService.query(email=invite_user_email)
     if not invite_users:
