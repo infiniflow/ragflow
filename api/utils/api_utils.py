@@ -22,6 +22,7 @@ import os
 import time
 from copy import deepcopy
 from functools import wraps
+from typing import Any
 
 import requests
 import trio
@@ -44,9 +45,10 @@ from common import settings
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 
+
 async def _coerce_request_data() -> dict:
     """Fetch JSON body with sane defaults; fallback to form data."""
-    payload = None
+    payload: Any = None
     last_error: Exception | None = None
 
     try:
@@ -61,13 +63,20 @@ async def _coerce_request_data() -> dict:
             payload = form.to_dict()
         except Exception as e:
             last_error = e
+            payload = None
 
     if payload is None:
         if last_error is not None:
             raise last_error
         raise ValueError("No JSON body or form data found in request.")
 
-    return payload or {}
+    if isinstance(payload, dict):
+        return payload or {}
+
+    if isinstance(payload, str):
+        raise AttributeError("'str' object has no attribute 'get'")
+
+    raise TypeError(f"Unsupported request payload type: {type(payload)!r}")
 
 async def get_request_json():
     return await _coerce_request_data()
