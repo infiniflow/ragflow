@@ -194,7 +194,7 @@ releases! 🌟
   
    # git checkout v0.22.1
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
-   # This steps ensures the **entrypoint.sh** file in the code matches the Docker image version.
+   # This step ensures the **entrypoint.sh** file in the code matches the Docker image version.
    
    # Use CPU for DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
