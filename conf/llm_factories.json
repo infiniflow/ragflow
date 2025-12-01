@@ -1232,39 +1232,14 @@
         {
             "name": "MiniMax",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING",
+            "tags": "LLM",
             "status": "1",
             "rank": "810",
             "llm": [
                 {
-                    "llm_name": "abab6.5-chat",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "abab6.5s-chat",
-                    "tags": "LLM,CHAT,245k",
-                    "max_tokens": 245760,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "abab6.5t-chat",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "abab6.5g-chat",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "abab5.5s-chat",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
+                    "llm_name": "MiniMax-M2",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 200000,
                     "model_type": "chat"
                 }
             ]
