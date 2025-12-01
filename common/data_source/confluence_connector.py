@@ -1562,6 +1562,7 @@ class ConfluenceConnector(
                 size_bytes=len(page_content.encode("utf-8")),  # Calculate size in bytes
                 doc_updated_at=datetime_from_string(page["version"]["when"]),
                 primary_owners=primary_owners if primary_owners else None,
+                metadata=metadata if metadata else None,
             )
         except Exception as e:
             logging.error(f"Error converting page {page.get('id', 'unknown')}: {e}")

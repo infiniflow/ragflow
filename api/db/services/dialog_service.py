@@ -25,6 +25,7 @@ import trio
 from langfuse import Langfuse
 from peewee import fn
 from agentic_reasoning import DeepResearcher
+from api.db.services.file_service import FileService
 from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
@@ -304,6 +305,8 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
             for conds in [
                 (operator == "contains", str(value).lower() in str(input).lower()),
                 (operator == "not contains", str(value).lower() not in str(input).lower()),
+                (operator == "in", str(input).lower() in str(value).lower()),
+                (operator == "not in", str(input).lower() not in str(value).lower()),
                 (operator == "start with", str(input).lower().startswith(str(value).lower())),
                 (operator == "end with", str(input).lower().endswith(str(value).lower())),
                 (operator == "empty", not input),
@@ -378,8 +381,11 @@ def chat(dialog, messages, stream=True, **kwargs):
     retriever = settings.retriever
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else []
+    attachments_= ""
     if "doc_ids" in messages[-1]:
         attachments = messages[-1]["doc_ids"]
+    if "files" in messages[-1]:
+        attachments_ = "\n\n".join(FileService.get_files(messages[-1]["files"]))
 
     prompt_config = dialog.prompt_config
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
@@ -449,7 +455,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                 ),
             )
 
-            for think in reasoner.thinking(kbinfos, " ".join(questions)):
+            for think in reasoner.thinking(kbinfos, attachments_ + " ".join(questions)):
                 if isinstance(think, str):
                     thought = think
                     knowledges = [t for t in think.split("\n") if t]
@@ -501,7 +507,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
 
-    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
+    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)+attachments_}]
     prompt4citation = ""
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()

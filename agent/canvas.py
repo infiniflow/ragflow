@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import base64
 import json
 import logging
 import re
@@ -25,6 +24,7 @@ from typing import Any, Union, Tuple
 
 from agent.component import component_class
 from agent.component.base import ComponentBase
+from api.db.services.file_service import FileService
 from api.db.services.task_service import has_canceled
 from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
@@ -206,17 +206,28 @@ class Graph:
         for key in path.split('.'):
             if cur is None:
                 return None
+
             if isinstance(cur, str):
                 try:
                     cur = json.loads(cur)
                 except Exception:
                     return None
+
             if isinstance(cur, dict):
                 cur = cur.get(key)
-            else:
-                cur = getattr(cur, key, None)
+                continue
+
+            if isinstance(cur, (list, tuple)):
+                try:
+                    idx = int(key)
+                    cur = cur[idx]
+                except Exception:
+                    return None
+                continue
+
+            cur = getattr(cur, key, None)
         return cur
-    
+
     def set_variable_value(self, exp: str,value):
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
         if exp.find("@") < 0:
@@ -270,6 +281,7 @@ class Canvas(Graph):
             "sys.conversation_turns": 0,
             "sys.files": []
         }
+        self.variables = {}
         super().__init__(dsl, tenant_id, task_id)
 
     def load(self):
@@ -284,6 +296,10 @@ class Canvas(Graph):
             "sys.conversation_turns": 0,
             "sys.files": []
         }
+        if "variables" in self.dsl:
+            self.variables = self.dsl["variables"]
+        else:
+            self.variables = {}
 
         self.retrieval = self.dsl["retrieval"]
         self.memory = self.dsl.get("memory", [])
@@ -300,8 +316,9 @@ class Canvas(Graph):
             self.history = []
             self.retrieval = []
             self.memory = []
+        print(self.variables)
         for k in self.globals.keys():
-            if k.startswith("sys.") or k.startswith("env."):
+            if k.startswith("sys."):
                 if isinstance(self.globals[k], str):
                     self.globals[k] = ""
                 elif isinstance(self.globals[k], int):
@@ -314,6 +331,29 @@ class Canvas(Graph):
                     self.globals[k] = {}
                 else:
                     self.globals[k] = None
+            if k.startswith("env."):
+                key = k[4:]
+                if key in self.variables:
+                    variable = self.variables[key]
+                    if variable["value"]:
+                        self.globals[k] = variable["value"]
+                    else:
+                        if variable["type"] == "string":
+                            self.globals[k] = ""
+                        elif variable["type"] == "number":
+                            self.globals[k] = 0
+                        elif variable["type"] == "boolean":
+                            self.globals[k] = False
+                        elif variable["type"] == "object":
+                            self.globals[k] = {}
+                        elif variable["type"].startswith("array"):
+                            self.globals[k] = []
+                        else:
+                            self.globals[k] = ""
+                else:
+                    self.globals[k] = ""
+        print(self.globals)
+                
 
     async def run(self, **kwargs):
         st = time.perf_counter()
@@ -332,7 +372,7 @@ class Canvas(Graph):
         for k in kwargs.keys():
             if k in ["query", "user_id", "files"] and kwargs[k]:
                 if k == "files":
-                    self.globals[f"sys.{k}"] = self.get_files(kwargs[k])
+                    self.globals[f"sys.{k}"] = FileService.get_files(kwargs[k])
                 else:
                     self.globals[f"sys.{k}"] = kwargs[k]
         if not self.globals["sys.conversation_turns"] :
@@ -440,7 +480,7 @@ class Canvas(Graph):
 
                     if isinstance(cpn_obj.output("attachment"), tuple):
                         yield decorate("message", {"attachment": cpn_obj.output("attachment")})
-                        
+
                     yield decorate("message_end", {"reference": self.get_reference() if cite else None})
 
                     while partials:
@@ -462,7 +502,7 @@ class Canvas(Graph):
                     else:
                         self.error = cpn_obj.error()
 
-                if cpn_obj.component_name.lower() != "iteration":
+                if cpn_obj.component_name.lower() not in ("iteration","loop"):
                     if isinstance(cpn_obj.output("content"), partial):
                         if self.error:
                             cpn_obj.set_output("content", None)
@@ -487,14 +527,16 @@ class Canvas(Graph):
                     for cpn_id in cpn_ids:
                         _append_path(cpn_id)
 
-                if cpn_obj.component_name.lower() == "iterationitem" and cpn_obj.end():
+                if cpn_obj.component_name.lower() in ("iterationitem","loopitem") and cpn_obj.end():
                     iter = cpn_obj.get_parent()
                     yield _node_finished(iter)
                     _extend_path(self.get_component(cpn["parent_id"])["downstream"])
                 elif cpn_obj.component_name.lower() in ["categorize", "switch"]:
                     _extend_path(cpn_obj.output("_next"))
-                elif cpn_obj.component_name.lower() == "iteration":
+                elif cpn_obj.component_name.lower() in ("iteration", "loop"):
                     _append_path(cpn_obj.get_start())
+                elif cpn_obj.component_name.lower() == "exitloop" and cpn_obj.get_parent().component_name.lower() == "loop":
+                    _extend_path(self.get_component(cpn["parent_id"])["downstream"])
                 elif not cpn["downstream"] and cpn_obj.get_parent():
                     _append_path(cpn_obj.get_parent().get_start())
                 else:
@@ -579,22 +621,6 @@ class Canvas(Graph):
     def get_component_input_elements(self, cpnnm):
         return self.components[cpnnm]["obj"].get_input_elements()
 
-    def get_files(self, files: Union[None, list[dict]]) -> list[str]:
-        from api.db.services.file_service import FileService
-        if not files:
-            return  []
-        def image_to_base64(file):
-            return "data:{};base64,{}".format(file["mime_type"],
-                                        base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
-        exe = ThreadPoolExecutor(max_workers=5)
-        threads = []
-        for file in files:
-            if file["mime_type"].find("image") >=0:
-                threads.append(exe.submit(image_to_base64, file))
-                continue
-            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"]))
-        return [th.result() for th in threads]
-
     def tool_use_callback(self, agent_id: str, func_name: str, params: dict, result: Any, elapsed_time=None):
         agent_ids = agent_id.split("-->")
         agent_name = self.get_component_name(agent_ids[0])
@@ -647,4 +673,3 @@ class Canvas(Graph):
 
     def get_component_thoughts(self, cpn_id) -> str:
         return self.components.get(cpn_id)["obj"].thoughts()
-

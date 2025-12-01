@@ -13,50 +13,16 @@ import { AddedSourceCard } from './component/added-source-card';
 import { DataSourceInfo, DataSourceKey } from './contant';
 import { useAddDataSource, useListDataSource } from './hooks';
 import { IDataSorceInfo } from './interface';
-const dataSourceTemplates = [
-  {
-    id: DataSourceKey.CONFLUENCE,
-    name: DataSourceInfo[DataSourceKey.CONFLUENCE].name,
-    description: DataSourceInfo[DataSourceKey.CONFLUENCE].description,
-    icon: DataSourceInfo[DataSourceKey.CONFLUENCE].icon,
-  },
-  {
-    id: DataSourceKey.S3,
-    name: DataSourceInfo[DataSourceKey.S3].name,
-    description: DataSourceInfo[DataSourceKey.S3].description,
-    icon: DataSourceInfo[DataSourceKey.S3].icon,
-  },
-  {
-    id: DataSourceKey.GOOGLE_DRIVE,
-    name: DataSourceInfo[DataSourceKey.GOOGLE_DRIVE].name,
-    description: DataSourceInfo[DataSourceKey.GOOGLE_DRIVE].description,
-    icon: DataSourceInfo[DataSourceKey.GOOGLE_DRIVE].icon,
-  },
-  {
-    id: DataSourceKey.DISCORD,
-    name: DataSourceInfo[DataSourceKey.DISCORD].name,
-    description: DataSourceInfo[DataSourceKey.DISCORD].description,
-    icon: DataSourceInfo[DataSourceKey.DISCORD].icon,
-  },
-  {
-    id: DataSourceKey.NOTION,
-    name: DataSourceInfo[DataSourceKey.NOTION].name,
-    description: DataSourceInfo[DataSourceKey.NOTION].description,
-    icon: DataSourceInfo[DataSourceKey.NOTION].icon,
-  },
-  {
-    id: DataSourceKey.MOODLE,
-    name: DataSourceInfo[DataSourceKey.MOODLE].name,
-    description: DataSourceInfo[DataSourceKey.MOODLE].description,
-    icon: DataSourceInfo[DataSourceKey.MOODLE].icon,
-  },
-  {
-    id: DataSourceKey.JIRA,
-    name: DataSourceInfo[DataSourceKey.JIRA].name,
-    description: DataSourceInfo[DataSourceKey.JIRA].description,
-    icon: DataSourceInfo[DataSourceKey.JIRA].icon,
-  },
-];
+
+const dataSourceTemplates = Object.values(DataSourceKey).map((id) => {
+  return {
+    id,
+    name: DataSourceInfo[id].name,
+    description: DataSourceInfo[id].description,
+    icon: DataSourceInfo[id].icon,
+  };
+});
+
 const DataSource = () => {
   const { t } = useTranslation();
 
@@ -118,8 +84,13 @@ const DataSource = () => {
     >
       <Spotlight />
       <div className="relative">
-        <div className=" flex flex-col gap-4 max-h-[calc(100vh-230px)] overflow-y-auto overflow-x-hidden scrollbar-auto">
+        <div className=" flex flex-col gap-4 max-h-[calc(100vh-235px)] overflow-y-auto overflow-x-hidden scrollbar-auto">
           <div className="flex flex-col gap-3">
+            {categorizedList?.length <= 0 && (
+              <div className="text-text-secondary w-full flex justify-center items-center h-20">
+                {t('setting.sourceEmptyTip')}
+              </div>
+            )}
             {categorizedList.map((item, index) => (
               <AddedSourceCard key={index} {...item} />
             ))}
@@ -127,9 +98,9 @@ const DataSource = () => {
           <section className="bg-transparent border-none mt-8">
             <header className="flex flex-row items-center justify-between space-y-0 p-0 pb-4">
               {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
-              <CardTitle className="text-2xl font-semibold">
+              <CardTitle className="text-2xl font-semibold ">
                 {t('setting.availableSources')}
-                <div className="text-sm text-text-secondary font-normal">
+                <div className="text-sm text-text-secondary font-normal mt-1.5">
                   {t('setting.availableSourcesDescription')}
                 </div>
               </CardTitle>

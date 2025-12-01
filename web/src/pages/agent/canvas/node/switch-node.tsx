@@ -27,7 +27,7 @@ const ConditionBlock = ({
   nodeId,
 }: { condition: ISwitchCondition } & { nodeId: string }) => {
   const items = condition?.items ?? [];
-  const { getLabel } = useGetVariableLabelOrTypeByValue(nodeId);
+  const { getLabel } = useGetVariableLabelOrTypeByValue({ nodeId });
 
   const renderOperatorIcon = useCallback((operator?: string) => {
     const item = SwitchOperatorOptions.find((x) => x.value === operator);

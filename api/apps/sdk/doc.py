@@ -1289,7 +1289,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
     req = await request_json()
-    if "content" in req:
+    if "content" in req and req["content"] is not None:
         content = req["content"]
     else:
         content = chunk.get("content_with_weight", "")
@@ -1446,6 +1446,9 @@ async def retrieval_test(tenant_id):
         metadata_condition = req.get("metadata_condition", {}) or {}
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+        # If metadata_condition has conditions but no docs match, return empty result
+        if not doc_ids and metadata_condition.get("conditions"):
+            return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
         if metadata_condition and not doc_ids:
             doc_ids = ["-999"]
     similarity_threshold = float(req.get("similarity_threshold", 0.2))

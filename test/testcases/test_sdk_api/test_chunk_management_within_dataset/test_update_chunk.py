@@ -25,7 +25,7 @@ class TestUpdatedChunk:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"content": None}, "TypeError('expected string or bytes-like object')"),
+            ({"content": None}, ""),
             pytest.param(
                 {"content": ""},
                 """APIRequestFailedError(\'Error code: 400, with error text {"error":{"code":"1213","message":"未正常接收到prompt参数。"}}\')""",

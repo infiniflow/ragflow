@@ -31,7 +31,7 @@ jobs:
     name: ragflow_tests
     # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
     # https://github.com/orgs/community/discussions/26261
-    if: ${{ github.event_name != 'pull_request_target' || contains(github.event.pull_request.labels.*.name, 'ci') }}
+    if: ${{ github.event_name != 'pull_request_target' || (contains(github.event.pull_request.labels.*.name, 'ci') && github.event.pull_request.mergeable != false) }}
     runs-on: [ "self-hosted", "ragflow-test" ]
     steps:
       # https://github.com/hmarr/debug-action
@@ -193,7 +193,7 @@ jobs:
           echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
-          uv sync --python 3.10 --only-group test --no-default-groups --frozen && uv pip install sdk/python
+          uv sync --python 3.10 --only-group test --no-default-groups --frozen && uv pip install sdk/python --group test
 
       - name: Run sdk tests against Elasticsearch
         run: |
