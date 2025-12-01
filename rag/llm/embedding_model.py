@@ -349,36 +349,6 @@ class YoudaoEmbed(Base):
         return np.array(embds[0]), num_tokens_from_string(text)
 
 
-class JinaEmbed(Base):
-    _FACTORY_NAME = "Jina"
-
-    def __init__(self, key, model_name="jina-embeddings-v3", base_url="https://api.jina.ai/v1/embeddings"):
-        self.base_url = "https://api.jina.ai/v1/embeddings"
-        self.headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}
-        self.model_name = model_name
-
-    # Jina v2/v3/v4 never reaches here
-    def encode(self, texts: list):
-        texts = [truncate(t, 8196) for t in texts]
-        batch_size = 16
-        ress = []
-        token_count = 0
-        for i in range(0, len(texts), batch_size):
-            data = {"model": self.model_name, "input": texts[i : i + batch_size]}
-            response = requests.post(self.base_url, headers=self.headers, json=data)
-            try:
-                res = response.json()
-                ress.extend([d["embedding"] for d in res["data"]])
-                token_count += self.total_token_count(res)
-            except Exception as _e:
-                log_exception(_e, response)
-        return np.array(ress), token_count
-
-    def encode_queries(self, text):
-        embds, cnt = self.encode([text])
-        return np.array(embds[0]), cnt
-
-
 class JinaMultiVecEmbed(Base):
     _FACTORY_NAME = "Jina"
 
