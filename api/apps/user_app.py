@@ -1260,25 +1260,28 @@ def list_users() -> Response:
           type: object
           properties:
             data:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                    description: User ID.
-                  email:
-                    type: string
-                    description: User email.
-                  nickname:
-                    type: string
-                    description: User nickname.
-                  is_superuser:
-                    type: boolean
-                    description: Whether the user is a superuser.
-            total:
-              type: integer
-              description: Total number of users.
+              type: object
+              properties:
+                users:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        description: User ID.
+                      email:
+                        type: string
+                        description: User email.
+                      nickname:
+                        type: string
+                        description: User nickname.
+                      is_superuser:
+                        type: boolean
+                        description: Whether the user is a superuser.
+                total:
+                  type: integer
+                  description: Total number of users.
       401:
         description: Unauthorized - authentication required.
         schema:
@@ -1327,28 +1330,7 @@ def list_users() -> Response:
 
             email_filter = request.args.get("email")
 
-        # Query users
-        if email_filter:
-            # Validate email format if provided (allow + in local part)
-            email_match: Optional[Match[str]] = re.match(
-                r"^[\w\._\+-]+@([\w_-]+\.)+[\w-]{2,}$", email_filter
-            )
-            if not email_match:
-                return get_json_result(
-                    data=False,
-                    message=f"Invalid email address: {email_filter}!",
-                    code=RetCode.OPERATING_ERROR,
-                )
-            users_query = UserService.query(email=email_filter)
-            users_list: List[User] = list(users_query)
-        else:
-            users_list: List[User] = UserService.get_all_users()
-
-        # Convert users to dictionaries
-        users_data: List[Dict[str, Any]] = [
-            user.to_dict() for user in users_list
-        ]
-
+        # Validate pagination parameters if provided
         if page is not None and page_size is not None:
             if page < 1:
                 return get_json_result(
@@ -1363,12 +1345,37 @@ def list_users() -> Response:
                     code=RetCode.ARGUMENT_ERROR,
                 )
 
-            start_idx: int = (page - 1) * page_size
-            end_idx: int = start_idx + page_size
-            users_data = users_data[start_idx:end_idx]
+        # Build query
+        if email_filter:
+            # Validate email format if provided (allow + in local part)
+            email_match: Optional[Match[str]] = re.match(
+                r"^[\w\._\+-]+@([\w_-]+\.)+[\w-]{2,}$", email_filter
+            )
+            if not email_match:
+                return get_json_result(
+                    data=False,
+                    message=f"Invalid email address: {email_filter}!",
+                    code=RetCode.OPERATING_ERROR,
+                )
+            users_query = UserService.model.select().where(UserService.model.email == email_filter)
+        else:
+            users_query = UserService.model.select()
+
+        # Get total count before pagination
+        total: int = users_query.count()
+
+        # Apply pagination at database level
+        if page is not None and page_size is not None:
+            users_query = users_query.paginate(page, page_size)
+
+        # Convert to list and dictionaries
+        users_list: List[User] = list(users_query)
+        users_data: List[Dict[str, Any]] = [
+            user.to_dict() for user in users_list
+        ]
 
         return get_json_result(
-            data=users_data,
+            data={"users": users_data, "total": total},
             message=f"Retrieved {len(users_data)} user(s) successfully!",
         )
     except Exception as e:

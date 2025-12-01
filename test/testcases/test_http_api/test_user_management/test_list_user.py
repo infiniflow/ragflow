@@ -102,10 +102,13 @@ class TestUserList:
 
         list_res: dict[str, Any] = list_users(web_api_auth)
         assert list_res["code"] == 0, list_res
-        assert isinstance(list_res["data"], list)
-        assert len(list_res["data"]) >= 1
+        assert isinstance(list_res["data"], dict)
+        assert "users" in list_res["data"]
+        assert "total" in list_res["data"]
+        assert isinstance(list_res["data"]["users"], list)
+        assert len(list_res["data"]["users"]) >= 1
         # Verify the created user is in the list
-        user_emails: list[str] = [u["email"] for u in list_res["data"]]
+        user_emails: list[str] = [u["email"] for u in list_res["data"]["users"]]
         assert unique_email in user_emails
 
     @pytest.mark.p1
@@ -135,10 +138,13 @@ class TestUserList:
 
         list_res: dict[str, Any] = list_users(web_api_auth)
         assert list_res["code"] == 0, list_res
-        assert isinstance(list_res["data"], list)
-        assert len(list_res["data"]) >= len(created_emails)
+        assert isinstance(list_res["data"], dict)
+        assert "users" in list_res["data"]
+        assert "total" in list_res["data"]
+        assert isinstance(list_res["data"]["users"], list)
+        assert len(list_res["data"]["users"]) >= len(created_emails)
         # Verify all created users are in the list
-        user_emails: list[str] = [u["email"] for u in list_res["data"]]
+        user_emails: list[str] = [u["email"] for u in list_res["data"]["users"]]
         for email in created_emails:
             assert email in user_emails
 
@@ -166,10 +172,13 @@ class TestUserList:
         params: dict[str, str] = {"email": unique_email}
         list_res: dict[str, Any] = list_users(web_api_auth, params=params)
         assert list_res["code"] == 0, list_res
-        assert isinstance(list_res["data"], list)
-        assert len(list_res["data"]) >= 1
+        assert isinstance(list_res["data"], dict)
+        assert "users" in list_res["data"]
+        assert "total" in list_res["data"]
+        assert isinstance(list_res["data"]["users"], list)
+        assert len(list_res["data"]["users"]) >= 1
         # Verify all returned users have the filtered email
-        for user in list_res["data"]:
+        for user in list_res["data"]["users"]:
             assert user["email"] == unique_email
 
     @pytest.mark.p1
@@ -191,8 +200,12 @@ class TestUserList:
         params: dict[str, str] = {"email": nonexistent_email}
         list_res: dict[str, Any] = list_users(web_api_auth, params=params)
         assert list_res["code"] == 0, list_res
-        assert isinstance(list_res["data"], list)
-        assert len(list_res["data"]) == 0
+        assert isinstance(list_res["data"], dict)
+        assert "users" in list_res["data"]
+        assert "total" in list_res["data"]
+        assert isinstance(list_res["data"]["users"], list)
+        assert len(list_res["data"]["users"]) == 0
+        assert list_res["data"]["total"] == 0
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -240,9 +253,12 @@ class TestUserList:
 
         if expected_valid:
             assert list_res["code"] == 0, list_res
-            assert isinstance(list_res["data"], list)
+            assert isinstance(list_res["data"], dict)
+            assert "users" in list_res["data"]
+            assert "total" in list_res["data"]
+            assert isinstance(list_res["data"]["users"], list)
             # Verify pagination limits
-            assert len(list_res["data"]) <= page_size
+            assert len(list_res["data"]["users"]) <= page_size
         else:
             assert list_res["code"] != 0
             assert "must be greater than 0" in list_res["message"]
@@ -276,19 +292,21 @@ class TestUserList:
 
         # Get total count of all users to calculate pagination boundaries
         list_res_all: dict[str, Any] = list_users(web_api_auth)
-        total_users: int = len(list_res_all["data"])
+        total_users: int = list_res_all["data"]["total"]
 
         # Test first page
         params: dict[str, int] = {"page": 1, "page_size": 2}
         list_res: dict[str, Any] = list_users(web_api_auth, params=params)
         assert list_res["code"] == 0, list_res
-        assert len(list_res["data"]) == 2
+        assert len(list_res["data"]["users"]) == 2
+        assert list_res["data"]["total"] == total_users
 
         # Test that pagination returns consistent page sizes
         params = {"page": 2, "page_size": 2}
         list_res = list_users(web_api_auth, params=params)
         assert list_res["code"] == 0, list_res
-        assert len(list_res["data"]) == 2
+        assert len(list_res["data"]["users"]) == 2
+        assert list_res["data"]["total"] == total_users
 
         # Test last page (might have fewer items)
         # Calculate expected last page: ceil(total_users / page_size)
@@ -298,14 +316,16 @@ class TestUserList:
             params = {"page": last_page, "page_size": page_size}
             list_res = list_users(web_api_auth, params=params)
             assert list_res["code"] == 0, list_res
-            assert len(list_res["data"]) <= page_size
+            assert len(list_res["data"]["users"]) <= page_size
+            assert list_res["data"]["total"] == total_users
 
         # Test page beyond available data
         # Use a page number that's definitely beyond available data
         params = {"page": total_users + 10, "page_size": 2}
         list_res = list_users(web_api_auth, params=params)
         assert list_res["code"] == 0, list_res
-        assert len(list_res["data"]) == 0
+        assert len(list_res["data"]["users"]) == 0
+        assert list_res["data"]["total"] == total_users
 
     @pytest.mark.p1
     def test_list_users_response_structure(
@@ -315,10 +335,14 @@ class TestUserList:
         res: dict[str, Any] = list_users(web_api_auth)
         assert res["code"] == 0
         assert "data" in res
-        assert isinstance(res["data"], list)
+        assert isinstance(res["data"], dict)
+        assert "users" in res["data"]
+        assert "total" in res["data"]
+        assert isinstance(res["data"]["users"], list)
+        assert isinstance(res["data"]["total"], int)
 
-        if len(res["data"]) > 0:
-            user: dict[str, Any] = res["data"][0]
+        if len(res["data"]["users"]) > 0:
+            user: dict[str, Any] = res["data"]["users"][0]
             # Verify user structure
             assert "id" in user
             assert "email" in user
@@ -372,9 +396,12 @@ class TestUserList:
         }
         list_res: dict[str, Any] = list_users(web_api_auth, params=params)
         assert list_res["code"] == 0, list_res
-        assert isinstance(list_res["data"], list)
+        assert isinstance(list_res["data"], dict)
+        assert "users" in list_res["data"]
+        assert "total" in list_res["data"]
         # Should return at least the created user
-        assert len(list_res["data"]) >= 1
+        assert len(list_res["data"]["users"]) >= 1
+        assert list_res["data"]["total"] >= 1
 
     @pytest.mark.p2
     def test_list_users_performance_with_many_users(
@@ -405,7 +432,10 @@ class TestUserList:
         # List all users
         list_res: dict[str, Any] = list_users(web_api_auth)
         assert list_res["code"] == 0, list_res
-        assert isinstance(list_res["data"], list)
+        assert isinstance(list_res["data"], dict)
+        assert "users" in list_res["data"]
+        assert "total" in list_res["data"]
         # Should return at least the created users
-        assert len(list_res["data"]) >= created_count
+        assert len(list_res["data"]["users"]) >= created_count
+        assert list_res["data"]["total"] >= created_count
 
