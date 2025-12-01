@@ -11,6 +11,7 @@ import { IAskRequestBody } from '@/interfaces/request/chat';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
 import { isConversationIdExist } from '@/pages/next-chats/utils';
 import chatService from '@/services/next-chat-service';
+import api from '@/utils/api';
 import { buildMessageListWithUuid, getConversationId } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
@@ -427,6 +428,7 @@ export function useUploadAndParseFile() {
 
         const { data } = await chatService.uploadAndParse(
           {
+            url: api.upload_and_parse(conversationId || id),
             signal: controller.current.signal,
             data: formData,
             onUploadProgress: ({ progress }) => {

@@ -1,13 +1,13 @@
+import { UploadResponseDataType } from '@/interfaces/database/chat';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { getExtension } from '@/utils/document-util';
 import { formatBytes } from '@/utils/file-util';
 import { memo } from 'react';
 import FileIcon from '../file-icon';
-import NewDocumentLink from '../new-document-link';
 import SvgIcon from '../svg-icon';
 
 interface IProps {
-  files?: File[] | IDocumentInfo[];
+  files?: File[] | IDocumentInfo[] | UploadResponseDataType[];
 }
 
 type NameWidgetType = {
@@ -15,16 +15,16 @@ type NameWidgetType = {
   size: number;
   id?: string;
 };
-function NameWidget({ name, size, id }: NameWidgetType) {
+function NameWidget({ name, size }: NameWidgetType) {
   return (
     <div className="text-xs max-w-20">
-      {id ? (
+      {/* {id ? (
         <NewDocumentLink documentId={id} documentName={name} prefix="document">
           {name}
         </NewDocumentLink>
       ) : (
-        <div className="truncate">{name}</div>
-      )}
+      )} */}
+      <div className="truncate">{name}</div>
       <p className="text-text-secondary pt-1">{formatBytes(size)}</p>
     </div>
   );

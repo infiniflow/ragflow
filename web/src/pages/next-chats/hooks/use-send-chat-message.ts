@@ -86,7 +86,7 @@ export const useSendMessage = (controller: AbortController) => {
   const { conversationId, isNew } = useGetChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
-  const { handleUploadFile, fileIds, clearFileIds, isUploading, removeFile } =
+  const { handleUploadFile, isUploading, removeFile, files, clearFiles } =
     useUploadFile();
 
   const { send, answer, done } = useSendMessageWithSse(
@@ -208,7 +208,7 @@ export const useSendMessage = (controller: AbortController) => {
 
     addNewestQuestion({
       content: value,
-      doc_ids: fileIds,
+      files: files,
       id,
       role: MessageType.User,
     });
@@ -218,16 +218,16 @@ export const useSendMessage = (controller: AbortController) => {
         id,
         content: value.trim(),
         role: MessageType.User,
-        doc_ids: fileIds,
+        files: files,
       });
     }
-    clearFileIds();
+    clearFiles();
   }, [
     value,
     addNewestQuestion,
-    fileIds,
+    files,
     done,
-    clearFileIds,
+    clearFiles,
     setValue,
     handleSendMessage,
   ]);

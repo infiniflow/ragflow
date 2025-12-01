@@ -107,7 +107,7 @@ export default {
   document_upload: `${api_host}/document/upload`,
   web_crawl: `${api_host}/document/web_crawl`,
   document_infos: `${api_host}/document/infos`,
-  upload_and_parse: `${api_host}/document/upload_and_parse`,
+  upload_and_parse: (id: string) => `${api_host}/document/upload_info`,
   parse: `${api_host}/document/parse`,
   setMeta: `${api_host}/document/set_meta`,
   get_dataset_filter: `${api_host}/document/filter`,
