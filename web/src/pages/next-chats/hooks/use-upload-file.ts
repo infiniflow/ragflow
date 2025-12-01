@@ -4,8 +4,10 @@ import { useCallback, useState } from 'react';
 
 export function useUploadFile() {
   const { uploadAndParseFile, loading, cancel } = useUploadAndParseFile();
-  const [fileIds, setFileIds] = useState<string[]>([]);
-  const [fileMap, setFileMap] = useState<Map<File, string>>(new Map());
+  const [currentFiles, setCurrentFiles] = useState<Record<string, any>[]>([]);
+  const [fileMap, setFileMap] = useState<Map<File, Record<string, any>>>(
+    new Map(),
+  );
 
   type FileUploadParameters = Parameters<
     NonNullable<FileUploadProps['onUpload']>
@@ -20,10 +22,11 @@ export function useUploadFile() {
       if (Array.isArray(files) && files.length) {
         const file = files[0];
         const ret = await uploadAndParseFile({ file, options, conversationId });
-        if (ret?.code === 0 && Array.isArray(ret?.data)) {
-          setFileIds((list) => [...list, ...ret.data]);
+        if (ret?.code === 0) {
+          const data = ret.data;
+          setCurrentFiles((list) => [...list, data]);
           setFileMap((map) => {
-            map.set(files[0], ret.data[0]);
+            map.set(files[0], data);
             return map;
           });
         }
@@ -32,8 +35,8 @@ export function useUploadFile() {
     [uploadAndParseFile],
   );
 
-  const clearFileIds = useCallback(() => {
-    setFileIds([]);
+  const clearFiles = useCallback(() => {
+    setCurrentFiles([]);
     setFileMap(new Map());
   }, []);
 
@@ -45,7 +48,7 @@ export function useUploadFile() {
       }
       const id = fileMap.get(file);
       if (id) {
-        setFileIds((list) => list.filter((item) => item !== id));
+        setCurrentFiles((list) => list.filter((item) => item !== id));
       }
     },
     [cancel, fileMap, loading],
@@ -53,9 +56,9 @@ export function useUploadFile() {
 
   return {
     handleUploadFile,
-    clearFileIds,
-    fileIds,
+    files: currentFiles,
     isUploading: loading,
     removeFile,
+    clearFiles: clearFiles,
   };
 }

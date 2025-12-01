@@ -6,7 +6,6 @@ import {
   IDocumentMetaRequestBody,
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
-import chatService from '@/services/chat-service';
 import kbService, { listDocument } from '@/services/knowledge-service';
 import api, { api_host } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/document-util';
@@ -426,39 +425,6 @@ export const useDeleteDocument = () => {
   });
 
   return { data, loading, deleteDocument: mutateAsync };
-};
-
-export const useUploadAndParseDocument = (uploadMethod: string) => {
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: ['uploadAndParseDocument'],
-    mutationFn: async ({
-      conversationId,
-      fileList,
-    }: {
-      conversationId: string;
-      fileList: UploadFile[];
-    }) => {
-      try {
-        const formData = new FormData();
-        formData.append('conversation_id', conversationId);
-        fileList.forEach((file: UploadFile) => {
-          formData.append('file', file as any);
-        });
-        if (uploadMethod === 'upload_and_parse') {
-          const data = await kbService.upload_and_parse(formData);
-          return data?.data;
-        }
-        const data = await chatService.uploadAndParseExternal(formData);
-        return data?.data;
-      } catch (error) {}
-    },
-  });
-
-  return { data, loading, uploadAndParseDocument: mutateAsync };
 };
 
 export const useParseDocument = () => {
