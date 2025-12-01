@@ -23,6 +23,7 @@ from PIL import Image
 from PyPDF2 import PdfReader as pdf2_read
 
 from deepdoc.parser import PdfParser, PptParser, PlainParser
+from rag.app.naive import by_plaintext, PARSERS
 from rag.nlp import rag_tokenizer
 from rag.nlp import tokenize, is_english
 
@@ -45,9 +46,11 @@ class Ppt(PptParser):
                         buffered.seek(0)
                         imgs.append(Image.open(buffered).copy())
                 except RuntimeError as e:
-                    raise RuntimeError(f'ppt parse error at page {i+1}, original error: {str(e)}') from e
+                    raise RuntimeError(
+                        f'ppt parse error at page {i + 1}, original error: {str(e)}') from e
         assert len(imgs) == len(
-            txts), "Slides text and image do not match: {} vs. {}".format(len(imgs), len(txts))
+            txts), "Slides text and image do not match: {} vs. {}".format(
+            len(imgs), len(txts))
         callback(0.9, "Image extraction finished")
         self.is_english = is_english(txts)
         return [(txts[i], imgs[i]) for i in range(len(txts))]
@@ -58,7 +61,7 @@ class Pdf(PdfParser):
         super().__init__()
 
     def __call__(self, filename, binary=None, from_page=0,
-                 to_page=100000, zoomin=3, callback=None):
+                 to_page=100000, zoomin=3, callback=None, **kwargs):
         # 1. OCR
         callback(msg="OCR started")
         self.__images__(filename if not binary else binary, zoomin, from_page,
@@ -75,13 +78,13 @@ class Pdf(PdfParser):
         # 4. Text Merge
         self._text_merge()
 
-        # 5. Extract Tables
+        # 5. Extract Tables (Force HTML)
         tbls = self._extract_table_figure(True, zoomin, True, True)
 
         # 6. Re-assemble Page Content
         page_items = defaultdict(list)
 
-        # 7. Add text
+        # (A) Add text
         for b in self.boxes:
             if not (from_page < b["page_number"] <= to_page + from_page):
                 continue
@@ -92,18 +95,21 @@ class Pdf(PdfParser):
                 "type": "text"
             })
 
-        # 8. Add table and figure
+        # (B) Add table and figure
         for (img, content), positions in tbls:
             if not positions:
                 continue
+
+            # Handle content type (list vs str)
             if isinstance(content, list):
                 final_text = "\n".join(content)
             elif isinstance(content, str):
                 final_text = content
             else:
                 final_text = str(content)
+
             try:
-                # deal positions: [ (pn, left, right, top, bottom), ... ]
+                # Parse positions
                 pn_index = positions[0][0]
                 if isinstance(pn_index, list):
                     pn_index = pn_index[0]
@@ -121,21 +127,25 @@ class Pdf(PdfParser):
             page_items[current_page_num].append({
                 "top": top,
                 "x0": left,
-                "text": final_text,  # 确保这里一定是字符串
+                "text": final_text,
                 "type": "table_or_figure"
             })
 
-        # 9. Generate result
+        # 7. Generate result
         res = []
         for i in range(len(self.page_images)):
             current_pn = from_page + i + 1
             items = page_items.get(current_pn, [])
+            # Sort by vertical position
             items.sort(key=lambda x: (x["top"], x["x0"]))
             full_page_text = "\n\n".join([item["text"] for item in items])
+            if not full_page_text.strip():
+                full_page_text = f"[No text or data found in Page {current_pn}]"
             page_img = self.page_images[i]
             res.append((full_page_text, page_img))
 
         callback(0.9, "Parsing finished")
+
         return res, []
 
 
@@ -162,14 +172,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     eng = lang.lower() == "english"
     doc = {
         "docnm_kwd": filename,
-        "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
+        "title_tks": rag_tokenizer.tokenize(
+            re.sub(r"\.[a-zA-Z]+$", "", filename))
     }
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     res = []
     if re.search(r"\.pptx?$", filename, re.IGNORECASE):
         ppt_parser = Ppt()
         for pn, (txt, img) in enumerate(ppt_parser(
-                filename if not binary else binary, from_page, 1000000, callback)):
+                filename if not binary else binary, from_page, 1000000,
+                callback)):
             d = copy.deepcopy(doc)
             pn += from_page
             d["image"] = img
@@ -181,18 +193,32 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             res.append(d)
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        parser = Pdf()
+        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
 
+        if isinstance(layout_recognizer, bool):
+            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
+
+        name = layout_recognizer.strip().lower()
+        parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
 
-        sections, _ = parser(
+        sections, _, _ = parser(
             filename=filename,
             binary=binary,
             from_page=from_page,
             to_page=to_page,
-            zoomin=3,
-            callback=callback
+            lang=lang,
+            callback=callback,
+            pdf_cls=Pdf,
+            layout_recognizer=layout_recognizer,
+            **kwargs
         )
+
+        if not sections:
+            return []
+
+        if name in ["tcadp", "docling", "mineru"]:
+            parser_config["chunk_token_num"] = 0
 
         callback(0.8, "Finish parsing.")
 
@@ -218,4 +244,5 @@ if __name__ == "__main__":
 
     def dummy(a, b):
         pass
+
     chunk(sys.argv[1], callback=dummy)
