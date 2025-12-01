@@ -18,10 +18,10 @@ import argparse
 import base64
 from cmd import Cmd
 
-from Cryptodome.PublicKey import RSA  # type: ignore
-from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5  # type: ignore
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from typing import Dict, List, Any
-from lark import Lark, Transformer, Tree  # type: ignore
+from lark import Lark, Transformer, Tree
 import requests
 import getpass
 

@@ -25,8 +25,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5  # type: ignore
-from Cryptodome.PublicKey import RSA  # type: ignore
+from Crypto.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
+from Crypto.PublicKey import RSA
 
 from common import get_user_info
 from libs.auth import RAGFlowWebApiAuth
