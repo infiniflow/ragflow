@@ -86,6 +86,9 @@ class RedisDB:
                 "db": int(self.config.get("db", 1)),
                 "decode_responses": True,
             }
+            username = self.config.get("username")
+            if username:
+                conn_params["username"] = username
             password = self.config.get("password")
             if password:
                 conn_params["password"] = password
