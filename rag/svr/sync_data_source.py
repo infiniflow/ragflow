@@ -35,6 +35,8 @@ import trio
 
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.document_service import DocumentService
+from api.db.services.file_service import FileService
 from common import settings
 from common.config_utils import show_configs
 from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector, DropboxConnector, WebDAVConnector
@@ -62,6 +64,13 @@ class SyncBase:
         SyncLogsService.start(task["id"], task["connector_id"])
         try:
             async with task_limiter:
+                synced_doc_ids = set() #synced document ids for this sync task
+                source_type = f"{self.SOURCE_NAME}/{task['connector_id']}"
+                existing_doc_ids = []
+                with trio.fail_after(task["timeout_secs"]):
+                    # get current synced docs from last sync
+                    existing_doc_ids = DocumentService.list_documents_by_source(task["tenant_id"], task["kb_id"], source_type)
+                         
                 with trio.fail_after(task["timeout_secs"]):
                     document_batch_generator = await self._generate(task)
                     doc_num = 0
@@ -111,6 +120,42 @@ class SyncBase:
                             
                             failed_docs += len(docs)
                             continue
+
+                    if settings.ENABLE_SYNC_DELETED_CHANGE:
+                        task_copy = copy.deepcopy(task)
+                        task_copy.pop("poll_range_start", None)
+                        document_batch_generator = await self._generate(task)
+                        for document_batch in document_batch_generator:
+                            if not document_batch:
+                                continue
+                            docs = [
+                                {
+                                    "id": doc.id,
+                                    "connector_id": task["connector_id"],
+                                    "source": self.SOURCE_NAME,
+                                    "semantic_identifier": doc.semantic_identifier,
+                                    "extension": doc.extension,
+                                    "size_bytes": doc.size_bytes,
+                                    "doc_updated_at": doc.doc_updated_at,
+                                    "blob": doc.blob,
+                                }
+                                for doc in document_batch
+                            ]
+
+                            for doc in docs:
+                                synced_doc_ids.add(doc["id"])
+
+                        # delete removed docs
+                        if not existing_doc_ids:
+                            to_delete_ids = []
+                            for doc_id in existing_doc_ids:
+                                if doc_id not in synced_doc_ids:
+                                    to_delete_ids.append(doc_id)
+                            
+                            if to_delete_ids:
+                                FileService.delete_docs(to_delete_ids, task["tenant_id"])
+                                SyncLogsService.increase_deleted_docs(task["id"], len(to_delete_ids))
+                                logging.info(f"Deleted {len(to_delete_ids)} documents from knowledge base {task['kb_id']} for connector {task['connector_id']}")
 
                     prefix = "[Jira] " if self.SOURCE_NAME == FileSource.JIRA else ""
                     if failed_docs > 0:
