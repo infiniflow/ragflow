@@ -1114,6 +1114,19 @@ wheels = [
 ]
 
 [[package]]
+name = "crypto"
+version = "1.4.1"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "naked" },
+    { name = "shellescape" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/12/0d/34dce1487b3158a0ccd0e5982cba0259c798c24c0de4cc25ec265b37cd98/crypto-1.4.1.tar.gz", hash = "sha256:8f2ee9756a0265c18845ac097ae447c75cfbde158abe1361b7491619f866a9bd", size = 13278, upload-time = "2015-05-14T00:41:44.952Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/fc/bb/0b812dc02e6357606228edfbf5808f5ca0a675a84273578c3a199e841cd8/crypto-1.4.1-py2.py3-none-any.whl", hash = "sha256:985120aa86f71545388199f96a2a0e00f7ccfe5ecd14c56355eb399e1a63d164", size = 18019, upload-time = "2015-05-14T00:41:50.011Z" },
+]
+
+[[package]]
 name = "cryptography"
 version = "45.0.5"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -3604,6 +3617,19 @@ wheels = [
 ]
 
 [[package]]
+name = "naked"
+version = "0.1.32"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "requests" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/47/a5/7a4f84bb6a7b0d6ba84fda48119e29afd339a1bc4f9589dab1fe064d6eb6/Naked-0.1.32.tar.gz", hash = "sha256:f81015107e3aefdc801d7144fbae214bdf3cb179c0020a1dc6d5acb3659d5d5c", size = 552681, upload-time = "2022-11-06T14:20:20.577Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/83/7b/e55081f0cdd50bf443c0a6bbddb6bf012527c53125ae94aba6583d49461e/Naked-0.1.32-py2.py3-none-any.whl", hash = "sha256:ea3d7eeada6b89bd8464ba0cfaa631867aaa68a3e2d5d6a6800cbe74f8941e5f", size = 587731, upload-time = "2022-11-06T14:20:18.346Z" },
+]
+
+[[package]]
 name = "nest-asyncio"
 version = "1.6.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -5359,6 +5385,7 @@ dependencies = [
     { name = "cn2an" },
     { name = "cohere" },
     { name = "crawl4ai" },
+    { name = "crypto" },
     { name = "dashscope" },
     { name = "datrie" },
     { name = "debugpy" },
@@ -5522,6 +5549,7 @@ requires-dist = [
     { name = "cn2an", specifier = "==0.5.22" },
     { name = "cohere", specifier = "==5.6.2" },
     { name = "crawl4ai", specifier = ">=0.3.8" },
+    { name = "crypto", specifier = ">=1.4.1" },
     { name = "dashscope", specifier = "==1.20.11" },
     { name = "datrie", specifier = ">=0.8.3,<0.9.0" },
     { name = "debugpy", specifier = ">=1.8.13" },
@@ -6257,6 +6285,15 @@ wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f0/32/b7687654b6e747ceae8f9fa4cc7489a8ebf275c64caf811f949d87e89f5d/shapely-2.0.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:21f64e647a025b61b19585d2247137b3a38a35314ea68c66aaf507a1c03ef6fe", size = 2524570, upload-time = "2024-07-13T10:52:23.25Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f9/9c/5b68b3cd484065c7d33d83168d2ecfebfeeaa6d88bc9cfd830de2df490ac/shapely-2.0.5-cp312-cp312-win32.whl", hash = "sha256:3ac7dc1350700c139c956b03d9c3df49a5b34aaf91d024d1510a09717ea39199", size = 1295383, upload-time = "2024-07-13T10:52:25.72Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d4/c3/e98e3eb9f06def32b8e2454ab718cafb99149f023dff023e257125132d6e/shapely-2.0.5-cp312-cp312-win_amd64.whl", hash = "sha256:30e8737983c9d954cd17feb49eb169f02f1da49e24e5171122cf2c2b62d65c95", size = 1442365, upload-time = "2024-07-13T10:52:27.433Z" },
+]
+
+[[package]]
+name = "shellescape"
+version = "3.8.1"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/19/40/13b9e84bf04774365830cbed1bd95a989d5324a99d207bcb1619a6c517f2/shellescape-3.8.1.tar.gz", hash = "sha256:40b310b30479be771bf3ab28bd8d40753778488bd46ea0969ba0b35038c3ec26", size = 5246, upload-time = "2020-01-25T21:28:23.228Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d0/f4/0081137fceff5779cd4205c1e96657e41cc2d2d56c940dc8eeb6111780f7/shellescape-3.8.1-py2.py3-none-any.whl", hash = "sha256:f17127e390fa3f9aaa80c69c16ea73615fd9b5318fd8309c1dca6168ae7d85bf", size = 3081, upload-time = "2020-01-25T21:28:21.772Z" },
 ]
 
 [[package]]
