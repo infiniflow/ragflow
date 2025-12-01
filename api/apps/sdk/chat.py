@@ -21,13 +21,13 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
-from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required, request_json
+from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required, get_request_json
 
 
 @manager.route("/chats", methods=["POST"])  # noqa: F821
 @token_required
 async def create(tenant_id):
-    req = await request_json()
+    req = await get_request_json()
     ids = [i for i in req.get("dataset_ids", []) if i]
     for kb_id in ids:
         kbs = KnowledgebaseService.accessible(kb_id=kb_id, user_id=tenant_id)
@@ -146,7 +146,7 @@ async def create(tenant_id):
 async def update(tenant_id, chat_id):
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
         return get_error_data_result(message="You do not own the chat")
-    req = await request_json()
+    req = await get_request_json()
     ids = req.get("dataset_ids", [])
     if "show_quotation" in req:
         req["do_refer"] = req.pop("show_quotation")
@@ -229,7 +229,7 @@ async def update(tenant_id, chat_id):
 async def delete_chats(tenant_id):
     errors = []
     success_count = 0
-    req = await request_json()
+    req = await get_request_json()
     if not req:
         ids = None
     else:
