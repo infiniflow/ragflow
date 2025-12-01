@@ -96,7 +96,7 @@ export interface Message {
   id?: string;
   audio_binary?: string;
   data?: any;
-  files?: File[];
+  files?: (File | UploadResponseDataType)[];
   chatBoxId?: string;
   attachment?: IAttachment;
 }
@@ -191,4 +191,15 @@ export interface IMessage extends Message {
 
 export interface IClientConversation extends IConversation {
   message: IMessage[];
+}
+
+export interface UploadResponseDataType {
+  created_at: number;
+  created_by: string;
+  extension: string;
+  id: string;
+  mime_type: string;
+  name: string;
+  preview_url: null;
+  size: number;
 }
