@@ -734,7 +734,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
         mom_ck["available_int"] = 0
         flds = list(mom_ck.keys())
         for fld in flds:
-            if fld not in ["id", "content_with_weight", "doc_id", "kb_id", "available_int"]:
+            if fld not in ["id", "content_with_weight", "doc_id", "kb_id", "available_int", "position_int"]:
                 del mom_ck[fld]
         mothers.append(mom_ck)
 
