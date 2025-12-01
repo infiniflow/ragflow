@@ -706,6 +706,7 @@ async def set_meta():
     except Exception as e:
         return server_error_response(e)
 
+
 @manager.route("/upload_info", methods=["POST"])  # noqa: F821
 async def upload_info():
     files = await request.files

@@ -575,9 +575,9 @@ class ESConnection(DocStoreConnection):
                 time.sleep(3)
                 self._connect()
                 continue
-            except Exception:
-                logger.exception("ESConnection.sql got exception")
-                break
+            except Exception as e:
+                logger.exception(f"ESConnection.sql got exception. SQL:\n{sql}")
+                raise Exception(f"SQL error: {e}\n\nSQL: {sql}")
         logger.error(f"ESConnection.sql timeout for {ATTEMPT_TIME} times!")
         return None
 
