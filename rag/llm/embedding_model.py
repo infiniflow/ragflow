@@ -363,7 +363,7 @@ class JinaEmbed(Base):
         ress = []
         token_count = 0
         for i in range(0, len(texts), batch_size):
-            data = {"model": self.model_name, "input": texts[i : i + batch_size], "encoding_type": "float"}
+            data = {"model": self.model_name, "input": texts[i : i + batch_size]}
             response = requests.post(self.base_url, headers=self.headers, json=data)
             try:
                 res = response.json()
