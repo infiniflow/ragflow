@@ -78,6 +78,7 @@ dependencies = [
     "protobuf==5.27.2",
     "psycopg2-binary==2.9.9",
     "pyclipper==1.3.0.post5",
+    "pycryptodomex==3.20.0",
     "pymysql>=1.1.1,<2.0.0",
     "pypdf==6.4.0",
     "python-dotenv==1.0.1",
@@ -168,7 +169,6 @@ test = [
     "requests>=2.32.2",
     "requests-toolbelt>=1.0.0",
     "pycryptodomex==3.20.0",
-
 ]
 
 [[tool.uv.index]]
