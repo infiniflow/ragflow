@@ -4,19 +4,16 @@ import {
   IMessage,
   IReference,
   IReferenceChunk,
+  UploadResponseDataType,
 } from '@/interfaces/database/chat';
 import classNames from 'classnames';
-import { memo, useCallback, useEffect, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 
-import {
-  useFetchDocumentInfosByIds,
-  useFetchDocumentThumbnailsByIds,
-} from '@/hooks/document-hooks';
 import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
 import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
-import { InnerUploadedMessageFiles } from '../next-message-item/uploaded-message-files';
+import { UploadedMessageFiles } from '../next-message-item/uploaded-message-files';
 import { RAGFlowAvatar } from '../ragflow-avatar';
 import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
@@ -55,9 +52,10 @@ const MessageItem = ({
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
-  const { data: documentList, setDocumentIds } = useFetchDocumentInfosByIds();
-  const { data: documentThumbnails, setDocumentIds: setIds } =
-    useFetchDocumentThumbnailsByIds();
+
+  const uploadedFiles = useMemo(() => {
+    return item?.files ?? [];
+  }, [item?.files]);
 
   const referenceDocumentList = useMemo(() => {
     return reference?.doc_aggs ?? [];
@@ -66,17 +64,6 @@ const MessageItem = ({
   const handleRegenerateMessage = useCallback(() => {
     regenerateMessage?.(item);
   }, [regenerateMessage, item]);
-
-  useEffect(() => {
-    const ids = item?.doc_ids ?? [];
-    if (ids.length) {
-      setDocumentIds(ids);
-      const documentIds = ids.filter((x) => !(x in documentThumbnails));
-      if (documentIds.length) {
-        setIds(documentIds);
-      }
-    }
-  }, [item.doc_ids, setDocumentIds, setIds, documentThumbnails]);
 
   return (
     <div
@@ -157,11 +144,13 @@ const MessageItem = ({
                 list={referenceDocumentList}
               ></ReferenceDocumentList>
             )}
-            {isUser && documentList.length > 0 && (
-              <InnerUploadedMessageFiles
-                files={documentList}
-              ></InnerUploadedMessageFiles>
-            )}
+            {isUser &&
+              Array.isArray(uploadedFiles) &&
+              uploadedFiles.length > 0 && (
+                <UploadedMessageFiles
+                  files={uploadedFiles as UploadResponseDataType[]}
+                ></UploadedMessageFiles>
+              )}
           </section>
         </div>
       </section>

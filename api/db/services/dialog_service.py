@@ -179,6 +179,9 @@ class DialogService(CommonService):
         return res
 
 def chat_solo(dialog, messages, stream=True):
+    attachments = ""
+    if "files" in messages[-1]:
+        attachments = "\n\n".join(FileService.get_files(messages[-1]["files"]))
     if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
@@ -189,6 +192,8 @@ def chat_solo(dialog, messages, stream=True):
     if prompt_config.get("tts"):
         tts_mdl = LLMBundle(dialog.tenant_id, LLMType.TTS)
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
+    if attachments and msg:
+        msg[-1]["content"] += attachments
     if stream:
         last_ans = ""
         delta_ans = ""
