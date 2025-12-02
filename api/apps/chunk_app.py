@@ -27,7 +27,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request, \
-    request_json
+    get_request_json
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
@@ -42,7 +42,7 @@ from api.apps import login_required, current_user
 @login_required
 @validate_request("doc_id")
 async def list_chunk():
-    req = await request_json()
+    req = await get_request_json()
     doc_id = req["doc_id"]
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
@@ -123,7 +123,7 @@ def get():
 @login_required
 @validate_request("doc_id", "chunk_id", "content_with_weight")
 async def set():
-    req = await request_json()
+    req = await get_request_json()
     d = {
         "id": req["chunk_id"],
         "content_with_weight": req["content_with_weight"]}
@@ -180,7 +180,7 @@ async def set():
 @login_required
 @validate_request("chunk_ids", "available_int", "doc_id")
 async def switch():
-    req = await request_json()
+    req = await get_request_json()
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
@@ -200,7 +200,7 @@ async def switch():
 @login_required
 @validate_request("chunk_ids", "doc_id")
 async def rm():
-    req = await request_json()
+    req = await get_request_json()
     try:
         e, doc = DocumentService.get_by_id(req["doc_id"])
         if not e:
@@ -224,7 +224,7 @@ async def rm():
 @login_required
 @validate_request("doc_id", "content_with_weight")
 async def create():
-    req = await request_json()
+    req = await get_request_json()
     chunck_id = xxhash.xxh64((req["content_with_weight"] + req["doc_id"]).encode("utf-8")).hexdigest()
     d = {"id": chunck_id, "content_ltks": rag_tokenizer.tokenize(req["content_with_weight"]),
          "content_with_weight": req["content_with_weight"]}
@@ -282,7 +282,7 @@ async def create():
 @login_required
 @validate_request("kb_id", "question")
 async def retrieval_test():
-    req = await request_json()
+    req = await get_request_json()
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
     question = req["question"]

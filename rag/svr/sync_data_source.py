@@ -112,7 +112,7 @@ class SyncBase:
                             failed_docs += len(docs)
                             continue
 
-                    prefix = "[Jira] " if self.SOURCE_NAME == FileSource.JIRA else ""
+                    prefix = self._get_source_prefix()
                     if failed_docs > 0:
                         logging.info(f"{prefix}{doc_num} docs synchronized till {next_update} ({failed_docs} skipped)")
                     else:
@@ -128,6 +128,9 @@ class SyncBase:
 
     async def _generate(self, task: dict):
         raise NotImplementedError
+    
+    def _get_source_prefix(self):
+        return ""
 
 
 class S3(SyncBase):
@@ -401,6 +404,9 @@ class GoogleDrive(SyncBase):
 
 class Jira(SyncBase):
     SOURCE_NAME: str = FileSource.JIRA
+
+    def _get_source_prefix(self):
+        return "[Jira]"
 
     async def _generate(self, task: dict):
         connector_kwargs = {

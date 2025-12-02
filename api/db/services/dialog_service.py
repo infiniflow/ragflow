@@ -179,6 +179,9 @@ class DialogService(CommonService):
         return res
 
 def chat_solo(dialog, messages, stream=True):
+    attachments = ""
+    if "files" in messages[-1]:
+        attachments = "\n\n".join(FileService.get_files(messages[-1]["files"]))
     if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
@@ -189,6 +192,8 @@ def chat_solo(dialog, messages, stream=True):
     if prompt_config.get("tts"):
         tts_mdl = LLMBundle(dialog.tenant_id, LLMType.TTS)
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
+    if attachments and msg:
+        msg[-1]["content"] += attachments
     if stream:
         last_ans = ""
         delta_ans = ""
@@ -482,6 +487,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                     cks = retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
                     if cks:
                         kbinfos["chunks"] = cks
+                kbinfos["chunks"] = retriever.retrieval_by_children(kbinfos["chunks"], tenant_ids)
             if prompt_config.get("tavily_api_key"):
                 tav = Tavily(prompt_config["tavily_api_key"])
                 tav_res = tav.retrieve_chunks(" ".join(questions))
@@ -676,7 +682,11 @@ Please write the SQL, only SQL, without any other explanations or text.
         if kb_ids:
             kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
             if "where" not in sql.lower():
-                sql += f" WHERE {kb_filter}"
+                o = sql.lower().split("order by")
+                if len(o) > 1:
+                    sql = o[0] + f" WHERE {kb_filter}  order by " + o[1]
+                else:
+                    sql += f" WHERE {kb_filter}"
             else:
                 sql += f" AND {kb_filter}"
 
@@ -684,10 +694,9 @@ Please write the SQL, only SQL, without any other explanations or text.
         tried_times += 1
         return settings.retriever.sql_retrieval(sql, format="json"), sql
 
-    tbl, sql = get_table()
-    if tbl is None:
-        return None
-    if tbl.get("error") and tried_times <= 2:
+    try:
+        tbl, sql = get_table()
+    except Exception as e:
         user_prompt = """
         Table name: {};
         Table of database fields are as follows:
@@ -701,16 +710,14 @@ Please write the SQL, only SQL, without any other explanations or text.
         The SQL error you provided last time is as follows:
         {}
 
-        Error issued by database as follows:
-        {}
-
         Please correct the error and write SQL again, only SQL, without any other explanations or text.
-        """.format(index_name(tenant_id), "\n".join([f"{k}: {v}" for k, v in field_map.items()]), question, sql, tbl["error"])
-        tbl, sql = get_table()
-        logging.debug("TRY it again: {}".format(sql))
+        """.format(index_name(tenant_id), "\n".join([f"{k}: {v}" for k, v in field_map.items()]), question, e)
+        try:
+            tbl, sql = get_table()
+        except Exception:
+            return
 
-    logging.debug("GET table: {}".format(tbl))
-    if tbl.get("error") or len(tbl["rows"]) == 0:
+    if len(tbl["rows"]) == 0:
         return None
 
     docid_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"] == "doc_id"])

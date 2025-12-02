@@ -51,6 +51,7 @@ class SupportedLiteLLMProvider(StrEnum):
     AI_302 = "302.AI"
     JiekouAI = "Jiekou.AI"
     BurnCloud = "BurnCloud"
+    ZHIPU_AI = "ZHIPU-AI"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -73,6 +74,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Anthropic: "https://api.anthropic.com/",
     SupportedLiteLLMProvider.JiekouAI: "https://api.jiekou.ai/openai",
     SupportedLiteLLMProvider.BurnCloud: "https://ai.burncloud.com/v1",
+    SupportedLiteLLMProvider.ZHIPU_AI: "https://open.bigmodel.cn/api/paas/v4",
 }
 
 
@@ -105,6 +107,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.AI_302: "openai/",
     SupportedLiteLLMProvider.JiekouAI: "openai/",
     SupportedLiteLLMProvider.BurnCloud: "openai/",
+    SupportedLiteLLMProvider.ZHIPU_AI: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
