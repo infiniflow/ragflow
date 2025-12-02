@@ -21,8 +21,8 @@ from typing import Any, Dict, Optional
 
 import pytest
 import requests
-from Crypto.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
-from Crypto.PublicKey import RSA
+from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
+from Cryptodome.PublicKey import RSA
 
 from configs import EMAIL, HOST_ADDRESS, VERSION, ZHIPU_AI_API_KEY
 from libs.auth import RAGFlowWebApiAuth

@@ -18,8 +18,8 @@ import argparse
 import base64
 from cmd import Cmd
 
-from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
+from Cryptodome.PublicKey import RSA
+from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
 from typing import Dict, List, Any
 from lark import Lark, Transformer, Tree
 import requests
