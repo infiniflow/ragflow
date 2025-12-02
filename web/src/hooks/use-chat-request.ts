@@ -7,7 +7,11 @@ import {
   IDialog,
   IExternalChatInfo,
 } from '@/interfaces/database/chat';
-import { IAskRequestBody } from '@/interfaces/request/chat';
+import {
+  IAskRequestBody,
+  IFeedbackRequestBody,
+} from '@/interfaces/request/chat';
+import i18n from '@/locales/config';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
 import { isConversationIdExist } from '@/pages/next-chats/utils';
 import chatService from '@/services/next-chat-service';
@@ -39,6 +43,9 @@ export const enum ChatApiAction {
   FetchRelatedQuestions = 'fetchRelatedQuestions',
   UploadAndParse = 'upload_and_parse',
   FetchExternalChatInfo = 'fetchExternalChatInfo',
+  Feedback = 'feedback',
+  CreateSharedConversation = 'createSharedConversation',
+  FetchConversationSse = 'fetchConversationSSE',
 }
 
 export const useGetChatSearchParams = () => {
@@ -397,6 +404,30 @@ export const useDeleteMessage = () => {
   return { data, loading, deleteMessage: mutateAsync };
 };
 
+export const useFeedback = () => {
+  const { conversationId } = useGetChatSearchParams();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [ChatApiAction.Feedback],
+    mutationFn: async (params: IFeedbackRequestBody) => {
+      const { data } = await chatService.thumbup({
+        ...params,
+        conversationId,
+      });
+      if (data.code === 0) {
+        message.success(i18n.t(`message.operated`));
+      }
+      return data.code;
+    },
+  });
+
+  return { data, loading, feedback: mutateAsync };
+};
+
 type UploadParameters = Parameters<NonNullable<FileUploadProps['onUpload']>>;
 
 type X = {
@@ -532,3 +563,47 @@ export const useFetchRelatedQuestions = () => {
   return { data, loading, fetchRelatedQuestions: mutateAsync };
 };
 //#endregion
+
+export const useCreateNextSharedConversation = () => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [ChatApiAction.CreateSharedConversation],
+    mutationFn: async (userId?: string) => {
+      const { data } = await chatService.createExternalConversation({ userId });
+
+      return data;
+    },
+  });
+
+  return { data, loading, createSharedConversation: mutateAsync };
+};
+
+export const useFetchNextConversationSSE = () => {
+  const { isNew } = useGetChatSearchParams();
+  const { sharedId } = useGetSharedChatSearchParams();
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery<IClientConversation>({
+    queryKey: [ChatApiAction.FetchConversationSse, sharedId],
+    initialData: {} as IClientConversation,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      if (isNew !== 'true' && isConversationIdExist(sharedId || '')) {
+        if (!sharedId) return {};
+        const { data } = await chatService.getConversationSSE(sharedId);
+        const conversation = data?.data ?? {};
+        const messageList = buildMessageListWithUuid(conversation?.message);
+        return { ...conversation, message: messageList };
+      }
+      return { message: [] };
+    },
+  });
+
+  return { data, loading, refetch };
+};

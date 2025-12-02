@@ -5,9 +5,11 @@ import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { MessageType, SharedFrom } from '@/constants/chat';
-import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
 import { useFetchFlowSSE } from '@/hooks/flow-hooks';
-import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
+import {
+  useFetchExternalChatInfo,
+  useFetchNextConversationSSE,
+} from '@/hooks/use-chat-request';
 import i18n from '@/locales/config';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import React, { forwardRef, useMemo } from 'react';

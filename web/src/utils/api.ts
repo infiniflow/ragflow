@@ -119,7 +119,8 @@ export default {
   listDialog: `${api_host}/dialog/list`,
   setConversation: `${api_host}/conversation/set`,
   getConversation: `${api_host}/conversation/get`,
-  getConversationSSE: `${api_host}/conversation/getsse`,
+  getConversationSSE: (dialogId: string) =>
+    `${api_host}/conversation/getsse/${dialogId}`,
   listConversation: `${api_host}/conversation/list`,
   removeConversation: `${api_host}/conversation/rm`,
   completeConversation: `${api_host}/conversation/completion`,
