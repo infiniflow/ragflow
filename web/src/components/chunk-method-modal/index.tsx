@@ -21,7 +21,7 @@ import { useFetchParserListOnMount, useShowAutoKeywords } from './hooks';
 
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useFetchKnowledgeBaseConfiguration } from '@/hooks/knowledge-hooks';
+import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { IParserConfig } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import { get } from 'lodash';

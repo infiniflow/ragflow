@@ -497,20 +497,6 @@ MinerU PDF document parsing is available starting from v0.22.0. RAGFlow supports
 
 1. Prepare MinerU
 
-   - **If you deploy RAGFlow from source**, install MinerU into an isolated virtual environment (recommended path: `$HOME/uv_tools`):
-
-   ```bash
-   mkdir -p "$HOME/uv_tools"
-   cd "$HOME/uv_tools"
-   uv venv .venv
-   source .venv/bin/activate
-   uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
-   # or
-   # uv pip install -U "mineru[all]" -i https://mirrors.aliyun.com/pypi/simple
-   ```
-
-   - **If you deploy RAGFlow with Docker**, you usually only need to turn on MinerU support in `docker/.env`:
-
    ```bash
    # docker/.env
    ...
@@ -518,18 +504,15 @@ MinerU PDF document parsing is available starting from v0.22.0. RAGFlow supports
    ...
    ```
 
-   Enabling `USE_MINERU=true` will internally perform the same setup as the manual configuration (including setting the MinerU executable path and related environment variables). You only need the manual installation above if you are running from source or want full control over the MinerU installation.
+   Enabling `USE_MINERU=true` will internally perform the same setup as the manual configuration (including setting the MinerU executable path and related environment variables). 
+
 
 2. Start RAGFlow with MinerU enabled:
 
-   - **Source deployment** – in the RAGFlow repo, export the key MinerU-related variables and start the backend service:
+   - **Source deployment** – in the RAGFlow repo, continue to start the backend service:
 
    ```bash
-   # in RAGFlow repo
-   export MINERU_EXECUTABLE="$HOME/uv_tools/.venv/bin/mineru"
-   export MINERU_DELETE_OUTPUT=0   # keep output directory
-   export MINERU_BACKEND=pipeline  # or another backend you prefer
-
+   ...
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh

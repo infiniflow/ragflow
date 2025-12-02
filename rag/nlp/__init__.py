@@ -19,7 +19,6 @@ import random
 from collections import Counter
 
 from common.token_utils import num_tokens_from_string
-from . import rag_tokenizer
 import re
 import copy
 import roman_numbers as r
@@ -28,6 +27,8 @@ from cn2an import cn2an
 from PIL import Image
 
 import chardet
+
+__all__ = ['rag_tokenizer']
 
 all_codecs = [
     'utf-8', 'gb2312', 'gbk', 'utf_16', 'ascii', 'big5', 'big5hkscs',
@@ -264,14 +265,15 @@ def is_chinese(text):
     return False
 
 
-def tokenize(d, t, eng):
-    d["content_with_weight"] = t
-    t = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", t)
+def tokenize(d, txt, eng):
+    from . import rag_tokenizer
+    d["content_with_weight"] = txt
+    t = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt)
     d["content_ltks"] = rag_tokenizer.tokenize(t)
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
 
 
-def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
+def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=None):
     res = []
     # wrap up as es documents
     for ii, ck in enumerate(chunks):
@@ -288,12 +290,21 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None):
                 pass
         else:
             add_positions(d, [[ii]*5])
+
+        if child_delimiters_pattern:
+            d["mom_with_weight"] = ck
+            for txt in re.split(r"(%s)" % child_delimiters_pattern, ck, flags=re.DOTALL):
+                dd = copy.deepcopy(d)
+                tokenize(dd, txt, eng)
+                res.append(dd)
+            continue
+
         tokenize(d, ck, eng)
         res.append(d)
     return res
 
 
-def tokenize_chunks_with_images(chunks, doc, eng, images):
+def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_pattern=None):
     res = []
     # wrap up as es documents
     for ii, (ck, image) in enumerate(zip(chunks, images)):
@@ -303,6 +314,13 @@ def tokenize_chunks_with_images(chunks, doc, eng, images):
         d = copy.deepcopy(doc)
         d["image"] = image
         add_positions(d, [[ii]*5])
+        if child_delimiters_pattern:
+            d["mom_with_weight"] = ck
+            for txt in re.split(r"(%s)" % child_delimiters_pattern, ck, flags=re.DOTALL):
+                dd = copy.deepcopy(d)
+                tokenize(dd, txt, eng)
+                res.append(dd)
+            continue
         tokenize(d, ck, eng)
         res.append(d)
     return res
@@ -346,6 +364,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
     Best-effort ordering: if positional info exists on any chunk, use it to
     order chunks before collecting context; otherwise keep original order.
     """
+    from . import rag_tokenizer
     if not chunks or (table_context_size <= 0 and image_context_size <= 0):
         return chunks
 

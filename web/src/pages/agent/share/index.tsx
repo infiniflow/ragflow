@@ -2,8 +2,9 @@ import { EmbedContainer } from '@/components/embed-container';
 import { FileUploadProps } from '@/components/file-upload';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { MessageType } from '@/constants/chat';
 import { useUploadCanvasFileWithProgress } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
@@ -25,8 +26,10 @@ const ChatContainer = () => {
   const {
     sharedId: conversationId,
     locale,
+    theme,
     visibleAvatar,
   } = useGetSharedChatSearchParams();
+  useSyncThemeFromParams(theme);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -204,12 +207,12 @@ const ChatContainer = () => {
         </div>
       </EmbedContainer>
       {visible && (
-        <PdfDrawer
+        <PdfSheet
           visible={visible}
           hideModal={hideModal}
           documentId={documentId}
           chunk={selectedChunk}
-        ></PdfDrawer>
+        ></PdfSheet>
       )}
       {parameterDialogVisible && (
         <ParameterDialog

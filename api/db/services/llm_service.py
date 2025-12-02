@@ -13,9 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import inspect
 import logging
 import re
+import threading
 from common.token_utils import num_tokens_from_string
 from functools import partial
 from typing import Generator
@@ -183,6 +185,66 @@ class LLMBundle(LLM4Tenant):
 
         return txt
 
+    def stream_transcription(self, audio):
+        mdl = self.mdl
+        supports_stream = hasattr(mdl, "stream_transcription") and callable(getattr(mdl, "stream_transcription"))
+        if supports_stream:
+            if self.langfuse:
+                generation = self.langfuse.start_generation(
+                    trace_context=self.trace_context,
+                    name="stream_transcription",
+                    metadata={"model": self.llm_name}
+                )
+            final_text = ""
+            used_tokens = 0
+
+            try:
+                for evt in mdl.stream_transcription(audio):
+                    if evt.get("event") == "final":
+                        final_text = evt.get("text", "")
+
+                    yield evt
+
+            except Exception as e:
+                err = {"event": "error", "text": str(e)}
+                yield err
+                final_text = final_text or ""
+            finally:
+                if final_text:
+                    used_tokens = num_tokens_from_string(final_text)
+                    TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens)
+
+                if self.langfuse:
+                    generation.update(
+                        output={"output": final_text},
+                        usage_details={"total_tokens": used_tokens}
+                    )
+                    generation.end()
+
+            return
+
+        if self.langfuse:
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="stream_transcription", metadata={"model": self.llm_name})
+        full_text, used_tokens = mdl.transcription(audio)
+        if not TenantLLMService.increase_usage(
+            self.tenant_id, self.llm_type, used_tokens
+        ):
+            logging.error(
+                f"LLMBundle.stream_transcription can't update token usage for {self.tenant_id}/SEQUENCE2TXT used_tokens: {used_tokens}"
+            )
+        if self.langfuse:
+            generation.update(
+                output={"output": full_text},
+                usage_details={"total_tokens": used_tokens}
+            )
+            generation.end()
+
+        yield {
+            "event": "final",
+            "text": full_text,
+            "streaming": False
+        }
+
     def tts(self, text: str) -> Generator[bytes, None, None]:
         if self.langfuse:
             generation = self.langfuse.start_generation(trace_context=self.trace_context, name="tts", input={"text": text})
@@ -242,7 +304,7 @@ class LLMBundle(LLM4Tenant):
         if not self.verbose_tool_use:
             txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
 
-        if isinstance(txt, int) and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, self.llm_name):
+        if used_tokens and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, self.llm_name):
             logging.error("LLMBundle.chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, used_tokens))
 
         if self.langfuse:
@@ -279,5 +341,80 @@ class LLMBundle(LLM4Tenant):
             yield ans
 
         if total_tokens > 0:
-            if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, txt, self.llm_name):
-                logging.error("LLMBundle.chat_streamly can't update token usage for {}/CHAT llm_name: {}, content: {}".format(self.tenant_id, self.llm_name, txt))
+            if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, total_tokens, self.llm_name):
+                logging.error("LLMBundle.chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, total_tokens))
+
+    def _bridge_sync_stream(self, gen):
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def worker():
+            try:
+                for item in gen:
+                    loop.call_soon_threadsafe(queue.put_nowait, item)
+            except Exception as e:  # pragma: no cover
+                loop.call_soon_threadsafe(queue.put_nowait, e)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, StopAsyncIteration)
+
+        threading.Thread(target=worker, daemon=True).start()
+        return queue
+
+    async def async_chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
+        chat_partial = partial(self.mdl.chat, system, history, gen_conf, **kwargs)
+        if self.is_tools and self.mdl.is_tools and hasattr(self.mdl, "chat_with_tools"):
+            chat_partial = partial(self.mdl.chat_with_tools, system, history, gen_conf, **kwargs)
+
+        use_kwargs = self._clean_param(chat_partial, **kwargs)
+
+        if hasattr(self.mdl, "async_chat_with_tools") and self.is_tools and self.mdl.is_tools:
+            txt, used_tokens = await self.mdl.async_chat_with_tools(system, history, gen_conf, **use_kwargs)
+        elif hasattr(self.mdl, "async_chat"):
+            txt, used_tokens = await self.mdl.async_chat(system, history, gen_conf, **use_kwargs)
+        else:
+            txt, used_tokens = await asyncio.to_thread(chat_partial, **use_kwargs)
+
+        txt = self._remove_reasoning_content(txt)
+        if not self.verbose_tool_use:
+            txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
+
+        if used_tokens and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, self.llm_name):
+            logging.error("LLMBundle.async_chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, used_tokens))
+
+        return txt
+
+    async def async_chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
+        total_tokens = 0
+        if self.is_tools and self.mdl.is_tools:
+            stream_fn = getattr(self.mdl, "async_chat_streamly_with_tools", None)
+        else:
+            stream_fn = getattr(self.mdl, "async_chat_streamly", None)
+
+        if stream_fn:
+            chat_partial = partial(stream_fn, system, history, gen_conf)
+            use_kwargs = self._clean_param(chat_partial, **kwargs)
+            async for txt in chat_partial(**use_kwargs):
+                if isinstance(txt, int):
+                    total_tokens = txt
+                    break
+                yield txt
+            if total_tokens and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, total_tokens, self.llm_name):
+                logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, total_tokens))
+            return
+
+        chat_partial = partial(self.mdl.chat_streamly_with_tools if (self.is_tools and self.mdl.is_tools) else self.mdl.chat_streamly, system, history, gen_conf)
+        use_kwargs = self._clean_param(chat_partial, **kwargs)
+        queue = self._bridge_sync_stream(chat_partial(**use_kwargs))
+        while True:
+            item = await queue.get()
+            if item is StopAsyncIteration:
+                break
+            if isinstance(item, Exception):
+                raise item
+            if isinstance(item, int):
+                total_tokens = item
+                break
+            yield item
+
+        if total_tokens and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, total_tokens, self.llm_name):
+            logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, total_tokens))

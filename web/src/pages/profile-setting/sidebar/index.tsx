@@ -1,8 +1,8 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import ThemeToggle from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
-import { useLogout } from '@/hooks/login-hooks';
 import { useSecondPathName } from '@/hooks/route-hook';
+import { useLogout } from '@/hooks/use-login-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';

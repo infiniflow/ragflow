@@ -68,6 +68,7 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
+from common.misc_utils import install_mineru
 
 BATCH_SIZE = 64
 
@@ -126,9 +127,6 @@ def signal_handler(sig, frame):
     stop_event.set()
     time.sleep(1)
     sys.exit(0)
-
-
-
 
 
 def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing..."):
@@ -720,6 +718,34 @@ async def delete_image(kb_id, chunk_id):
 
 
 async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback):
+    mothers = []
+    mother_ids = set([])
+    for ck in chunks:
+        mom = ck.get("mom") or ck.get("mom_with_weight") or ""
+        if not mom:
+            continue
+        id = xxhash.xxh64(mom.encode("utf-8")).hexdigest()
+        if id in mother_ids:
+            continue
+        mother_ids.add(id)
+        ck["mom_id"] = id
+        mom_ck = copy.deepcopy(ck)
+        mom_ck["id"] = id
+        mom_ck["content_with_weight"] = mom
+        mom_ck["available_int"] = 0
+        flds = list(mom_ck.keys())
+        for fld in flds:
+            if fld not in ["id", "content_with_weight", "doc_id", "kb_id", "available_int", "position_int"]:
+                del mom_ck[fld]
+        mothers.append(mom_ck)
+
+    for b in range(0, len(mothers), settings.DOC_BULK_SIZE):
+        await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(mothers[b:b + settings.DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
+        task_canceled = has_canceled(task_id)
+        if task_canceled:
+            progress_callback(-1, msg="Task has been canceled.")
+            return False
+
     for b in range(0, len(chunks), settings.DOC_BULK_SIZE):
         doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + settings.DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
         task_canceled = has_canceled(task_id)
@@ -1075,6 +1101,7 @@ async def main():
     show_configs()
     settings.init_settings()
     settings.check_and_install_torch()
+    install_mineru()
     logging.info(f'settings.EMBEDDING_CFG: {settings.EMBEDDING_CFG}')
     settings.print_rag_settings()
     if sys.platform != "win32":
