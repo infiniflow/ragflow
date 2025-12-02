@@ -51,6 +51,7 @@ export interface IAttachment {
 }
 export interface IMessageData {
   content: string;
+  audio_binary: string;
   outputs: any;
   start_to_think?: boolean;
   end_to_think?: boolean;

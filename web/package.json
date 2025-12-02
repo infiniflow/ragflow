@@ -89,6 +89,7 @@
     "pptx-preview": "^1.0.5",
     "rc-tween-one": "^3.0.6",
     "react": "^18.2.0",
+    "react-audio-voice-recorder": "^2.2.0",
     "react-copy-to-clipboard": "^5.1.0",
     "react-day-picker": "^9.8.0",
     "react-dom": "^18.2.0",

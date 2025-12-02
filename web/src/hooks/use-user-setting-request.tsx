@@ -72,7 +72,7 @@ export const useFetchTenantInfo = (
 ): ResponseGetType<ITenantInfo> => {
   const { t } = useTranslation();
   const { data, isFetching: loading } = useQuery({
-    queryKey: [UserSettingApiAction.TenantInfo],
+    queryKey: [UserSettingApiAction.TenantInfo, showEmptyModelWarn],
     initialData: {},
     gcTime: 0,
     queryFn: async () => {

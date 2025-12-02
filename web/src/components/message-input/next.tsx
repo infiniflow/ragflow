@@ -18,7 +18,9 @@ import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import { CircleStop, Paperclip, Send, Upload, X } from 'lucide-react';
 import * as React from 'react';
+import { useEffect } from 'react';
 import { toast } from 'sonner';
+import { AudioButton } from '../ui/audio-button';
 
 interface IProps {
   disabled: boolean;
@@ -52,6 +54,22 @@ export function NextMessageInput({
   removeFile,
 }: IProps) {
   const [files, setFiles] = React.useState<File[]>([]);
+  const [audioInputValue, setAudioInputValue] = React.useState<string | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (audioInputValue !== null) {
+      onInputChange({
+        target: { value: audioInputValue },
+      } as React.ChangeEvent<HTMLTextAreaElement>);
+
+      setTimeout(() => {
+        onPressEnter();
+        setAudioInputValue(null);
+      }, 0);
+    }
+  }, [audioInputValue, onInputChange, onPressEnter]);
 
   const onFileReject = React.useCallback((file: File, message: string) => {
     toast(message, {
@@ -171,15 +189,24 @@ export function NextMessageInput({
               <CircleStop />
             </Button>
           ) : (
-            <Button
-              className="size-5 rounded-sm"
-              disabled={
-                sendDisabled || isUploading || sendLoading || !value.trim()
-              }
-            >
-              <Send />
-              <span className="sr-only">Send message</span>
-            </Button>
+            <div className="flex items-center gap-3">
+              {/* <div className="bg-bg-input rounded-md hover:bg-bg-card p-1"> */}
+              <AudioButton
+                onOk={(value) => {
+                  setAudioInputValue(value);
+                }}
+              />
+              {/* </div> */}
+              <Button
+                className="size-5 rounded-sm"
+                disabled={
+                  sendDisabled || isUploading || sendLoading || !value.trim()
+                }
+              >
+                <Send />
+                <span className="sr-only">Send message</span>
+              </Button>
+            </div>
           )}
         </div>
       </form>
