@@ -222,8 +222,8 @@ def install_mineru() -> None:
             ["uv", "venv", str(venv_dir)],
             cwd=str(tools_dir),
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            # stdout=subprocess.DEVNULL,
+            # stderr=subprocess.PIPE,
         )
     else:
         logging.info("Virtual environment exists at %s. Reusing it.", venv_dir)
@@ -237,8 +237,8 @@ def install_mineru() -> None:
                 "--extra-index-url", "https://pypi.org/simple",
             ],
             cwd=str(tools_dir),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
+            # stdout=subprocess.DEVNULL,
+            # stderr=subprocess.PIPE,
             env=env,
         )
 
