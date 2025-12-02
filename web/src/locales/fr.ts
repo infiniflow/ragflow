@@ -526,6 +526,10 @@ export default {
         'Pour les utilisateurs chinois, pas besoin de remplir ou utiliser https://dashscope.aliyuncs.com/compatible-mode/v1. Pour les utilisateurs internationaux, utilisez https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       tongyiBaseUrlPlaceholder:
         "(Utilisateurs internationaux uniquement, veuillez consulter l'astuce)",
+      minimaxBaseUrlTip:
+        'Utilisateurs internationaux uniquement : utilisez https://api.minimax.io/v1.',
+      minimaxBaseUrlPlaceholder:
+        '(Utilisateurs internationaux uniquement, renseignez https://api.minimax.io/v1)',
       modify: 'Modifier',
       systemModelSettings: 'Définir les modèles par défaut',
       chatModel: 'Modèle de chat',

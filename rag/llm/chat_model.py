@@ -28,7 +28,6 @@ from urllib.parse import urljoin
 import json_repair
 import litellm
 import openai
-import requests
 from openai import AsyncOpenAI, OpenAI
 from openai.lib.azure import AzureOpenAI
 from strenum import StrEnum
@@ -1015,86 +1014,6 @@ class VolcEngineChat(Base):
         super().__init__(ark_api_key, model_name, base_url, **kwargs)
 
 
-class MiniMaxChat(Base):
-    _FACTORY_NAME = "MiniMax"
-
-    def __init__(self, key, model_name, base_url="https://api.minimax.chat/v1/text/chatcompletion_v2", **kwargs):
-        super().__init__(key, model_name, base_url=base_url, **kwargs)
-
-        if not base_url:
-            base_url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
-        self.base_url = base_url
-        self.model_name = model_name
-        self.api_key = key
-
-    def _clean_conf(self, gen_conf):
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature", "top_p", "max_tokens"]:
-                del gen_conf[k]
-        return gen_conf
-
-    def _chat(self, history, gen_conf):
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = json.dumps({"model": self.model_name, "messages": history, **gen_conf})
-        response = requests.request("POST", url=self.base_url, headers=headers, data=payload)
-        response = response.json()
-        ans = response["choices"][0]["message"]["content"].strip()
-        if response["choices"][0]["finish_reason"] == "length":
-            if is_chinese(ans):
-                ans += LENGTH_NOTIFICATION_CN
-            else:
-                ans += LENGTH_NOTIFICATION_EN
-        return ans, total_token_count_from_response(response)
-
-    def chat_streamly(self, system, history, gen_conf):
-        if system and history and history[0].get("role") != "system":
-            history.insert(0, {"role": "system", "content": system})
-        for k in list(gen_conf.keys()):
-            if k not in ["temperature", "top_p", "max_tokens"]:
-                del gen_conf[k]
-        ans = ""
-        total_tokens = 0
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            }
-            payload = json.dumps(
-                {
-                    "model": self.model_name,
-                    "messages": history,
-                    "stream": True,
-                    **gen_conf,
-                }
-            )
-            response = requests.request(
-                "POST",
-                url=self.base_url,
-                headers=headers,
-                data=payload,
-            )
-            for resp in response.text.split("\n\n")[:-1]:
-                resp = json.loads(resp[6:])
-                text = ""
-                if "choices" in resp and "delta" in resp["choices"][0]:
-                    text = resp["choices"][0]["delta"]["content"]
-                ans = text
-                tol = total_token_count_from_response(resp)
-                if not tol:
-                    total_tokens += num_tokens_from_string(text)
-                else:
-                    total_tokens = tol
-                yield ans
-
-        except Exception as e:
-            yield ans + "\n**ERROR**: " + str(e)
-
-        yield total_tokens
-
-
 class MistralChat(Base):
     _FACTORY_NAME = "Mistral"
 
@@ -1642,6 +1561,7 @@ class LiteLLMBase(ABC):
         "302.AI",
         "Jiekou.AI",
         "ZHIPU-AI",
+        "MiniMax",
     ]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):

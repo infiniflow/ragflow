@@ -557,6 +557,10 @@ export default {
       tongyiBaseUrlTip:
         '中国ユーザーの場合、記入不要または https://dashscope.aliyuncs.com/compatible-mode/v1 を使用してください。国際ユーザーは https://dashscope-intl.aliyuncs.com/compatible-mode/v1 を使用してください',
       tongyiBaseUrlPlaceholder: '（国際ユーザーのみ、ヒントをご覧ください）',
+      minimaxBaseUrlTip:
+        '国際ユーザーのみ：https://api.minimax.io/v1 を使用してください。',
+      minimaxBaseUrlPlaceholder:
+        '（国際ユーザーのみ、https://api.minimax.io/v1 を入力してください）',
       modify: '変更',
       systemModelSettings: 'デフォルトモデルを設定する',
       chatModel: 'チャットモデル',

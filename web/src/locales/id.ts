@@ -516,6 +516,10 @@ export default {
         'Untuk pengguna Tiongkok, tidak perlu diisi atau gunakan https://dashscope.aliyuncs.com/compatible-mode/v1. Untuk pengguna internasional, gunakan https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       tongyiBaseUrlPlaceholder:
         '(Hanya untuk pengguna internasional, silakan lihat tip)',
+      minimaxBaseUrlTip:
+        'Hanya untuk pengguna internasional: gunakan https://api.minimax.io/v1.',
+      minimaxBaseUrlPlaceholder:
+        '(Hanya untuk pengguna internasional, isi https://api.minimax.io/v1)',
       modify: 'Ubah',
       systemModelSettings: 'Tetapkan model default',
       chatModel: 'Model Obrolan',

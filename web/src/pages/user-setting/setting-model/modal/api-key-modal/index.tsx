@@ -34,6 +34,7 @@ const modelsWithBaseUrl = [
   LLMFactory.OpenAI,
   LLMFactory.AzureOpenAI,
   LLMFactory.TongYiQianWen,
+  LLMFactory.MiniMax,
 ];
 
 const ApiKeyModal = ({
@@ -109,7 +110,16 @@ const ApiKeyModal = ({
               name="base_url"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-sm font-medium text-text-primary">
+                  <FormLabel
+                    className="text-sm font-medium text-text-primary"
+                    tooltip={
+                      llmFactory === LLMFactory.MiniMax
+                        ? t('minimaxBaseUrlTip')
+                        : llmFactory === LLMFactory.TongYiQianWen
+                          ? t('tongyiBaseUrlTip')
+                          : t('baseUrlTip')
+                    }
+                  >
                     {t('baseUrl')}
                   </FormLabel>
                   <FormControl>
@@ -118,7 +128,9 @@ const ApiKeyModal = ({
                       placeholder={
                         llmFactory === LLMFactory.TongYiQianWen
                           ? t('tongyiBaseUrlPlaceholder')
-                          : 'https://api.openai.com/v1'
+                          : llmFactory === LLMFactory.MiniMax
+                            ? t('minimaxBaseUrlPlaceholder')
+                            : 'https://api.openai.com/v1'
                       }
                       onKeyDown={handleKeyDown}
                       className="w-full"
