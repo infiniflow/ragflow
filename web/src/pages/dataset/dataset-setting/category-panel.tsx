@@ -1,6 +1,6 @@
 import SvgIcon from '@/components/svg-icon';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useSelectParserList } from '@/hooks/user-setting-hooks';
+import { useSelectParserList } from '@/hooks/use-user-setting-request';
 import { Col, Divider, Empty, Row, Typography } from 'antd';
 import DOMPurify from 'dompurify';
 import camelCase from 'lodash/camelCase';

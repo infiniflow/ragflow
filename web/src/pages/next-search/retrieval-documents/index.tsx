@@ -19,7 +19,7 @@ import {
   useAllTestingResult,
   useChunkIsTesting,
   useSelectTestingResult,
-} from '@/hooks/knowledge-hooks';
+} from '@/hooks/use-knowledge-request';
 import { cn } from '@/lib/utils';
 import { CheckIcon, ChevronDown, Files, XIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';

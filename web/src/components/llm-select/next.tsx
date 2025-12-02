@@ -1,5 +1,5 @@
 import { LlmModelType } from '@/constants/knowledge';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
+import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { forwardRef, memo, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';

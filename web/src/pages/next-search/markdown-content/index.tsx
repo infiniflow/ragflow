@@ -14,7 +14,6 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { visitParents } from 'unist-util-visit-parents';
 
-import { useFetchDocumentThumbnailsByIds } from '@/hooks/document-hooks';
 import { useTranslation } from 'react-i18next';
 
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
@@ -33,6 +32,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import classNames from 'classnames';
 import { omit } from 'lodash';
 import { pipe } from 'lodash/fp';

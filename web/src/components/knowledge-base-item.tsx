@@ -1,6 +1,6 @@
 import { DocumentParserType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
 import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
 import { UserOutlined } from '@ant-design/icons';
 import { Avatar as AntAvatar, Form, Select, Space } from 'antd';

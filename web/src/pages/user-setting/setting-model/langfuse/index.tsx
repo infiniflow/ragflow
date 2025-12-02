@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { useFetchLangfuseConfig } from '@/hooks/user-setting-hooks';
+import { useFetchLangfuseConfig } from '@/hooks/use-user-setting-request';
 import { Eye, Settings2 } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';

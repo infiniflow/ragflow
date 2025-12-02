@@ -5,8 +5,8 @@ import {
   useLoginChannels,
   useLoginWithChannel,
   useRegister,
-} from '@/hooks/login-hooks';
-import { useSystemConfig } from '@/hooks/system-hooks';
+} from '@/hooks/use-login-request';
+import { useSystemConfig } from '@/hooks/use-system-request';
 import { rsaPsw } from '@/utils';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';

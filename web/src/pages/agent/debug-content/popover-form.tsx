@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent } from '@/components/ui/popover';
-import { useParseDocument } from '@/hooks/document-hooks';
+import { useParseDocument } from '@/hooks/use-document-request';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { PropsWithChildren } from 'react';
@@ -37,7 +37,7 @@ export const PopoverForm = ({
     defaultValues: values,
     resolver: zodResolver(FormSchema),
   });
-  const { parseDocument, loading } = useParseDocument();
+  const { parseDocument } = useParseDocument();
   const { t } = useTranslation();
 
   // useResetFormOnCloseModal({

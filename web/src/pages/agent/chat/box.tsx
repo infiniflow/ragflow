@@ -11,7 +11,7 @@ import {
   useFetchAgent,
   useUploadCanvasFileWithProgress,
 } from '@/hooks/use-agent-request';
-import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { memo, useCallback } from 'react';
 import { useParams } from 'umi';

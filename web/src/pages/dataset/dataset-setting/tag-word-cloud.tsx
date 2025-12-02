@@ -1,4 +1,4 @@
-import { useFetchTagList } from '@/hooks/knowledge-hooks';
+import { useFetchTagList } from '@/hooks/use-knowledge-request';
 import { Chart } from '@antv/g2';
 import { sumBy } from 'lodash';
 import { useCallback, useEffect, useMemo, useRef } from 'react';

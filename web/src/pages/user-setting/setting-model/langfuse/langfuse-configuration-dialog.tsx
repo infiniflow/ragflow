@@ -9,7 +9,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { LoadingButton } from '@/components/ui/loading-button';
-import { useDeleteLangfuseConfig } from '@/hooks/user-setting-hooks';
+import { useDeleteLangfuseConfig } from '@/hooks/use-user-setting-request';
 import { IModalProps } from '@/interfaces/common';
 import { ExternalLink, Trash2 } from 'lucide-react';
 import { useCallback } from 'react';

@@ -4,7 +4,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import {
   ISystemModelSettingSavingParams,
   useComposeLlmOptionsByModelTypes,
-} from '@/hooks/llm-hooks';
+} from '@/hooks/use-llm-request';
 import { Form, Modal, Select } from 'antd';
 import { useEffect } from 'react';
 import { useFetchSystemModelSettingOnMount } from '../../hooks';

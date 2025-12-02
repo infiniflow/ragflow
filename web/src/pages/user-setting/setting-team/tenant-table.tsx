@@ -8,7 +8,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useFetchUserInfo, useListTenant } from '@/hooks/user-setting-hooks';
+import {
+  useFetchUserInfo,
+  useListTenant,
+} from '@/hooks/use-user-setting-request';
 import { formatDate } from '@/utils/date';
 import { ArrowDown, ArrowUp, ArrowUpDown, LogOut } from 'lucide-react';
 import { useMemo, useState } from 'react';

@@ -1,6 +1,6 @@
 import Spotlight from '@/components/spotlight';
 import { LLMFactory } from '@/constants/llm';
-import { LlmItem, useFetchMyLlmListDetailed } from '@/hooks/llm-hooks';
+import { LlmItem, useFetchMyLlmListDetailed } from '@/hooks/use-llm-request';
 import { useCallback, useMemo } from 'react';
 import { isLocalLlmFactory } from '../utils';
 import SystemSetting from './components/system-setting';

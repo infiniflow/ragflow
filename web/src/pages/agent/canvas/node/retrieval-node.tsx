@@ -1,6 +1,6 @@
 import { NodeCollapsible } from '@/components/collapse';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
 import { IRetrievalNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';

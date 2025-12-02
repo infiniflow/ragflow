@@ -1,9 +1,9 @@
 import { LlmModelType } from '@/constants/knowledge';
 import { useSetModalState } from '@/hooks/common-hooks';
 
-import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import { useSelectParserList } from '@/hooks/user-setting-hooks';
+import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
+import { useSelectParserList } from '@/hooks/use-user-setting-request';
 import kbService from '@/services/knowledge-service';
 import { useIsFetching } from '@tanstack/react-query';
 import { pick } from 'lodash';

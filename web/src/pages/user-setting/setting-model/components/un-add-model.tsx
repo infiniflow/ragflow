@@ -3,7 +3,7 @@ import { LlmIcon } from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useSelectLlmList } from '@/hooks/llm-hooks';
+import { useSelectLlmList } from '@/hooks/use-llm-request';
 import { Plus } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
 

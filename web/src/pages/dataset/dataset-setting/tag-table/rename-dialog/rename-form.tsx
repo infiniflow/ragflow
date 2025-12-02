@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { TagRenameId } from '@/constants/knowledge';
-import { useRenameTag } from '@/hooks/knowledge-hooks';
+import { useRenameTag } from '@/hooks/use-knowledge-request';
 import { IModalProps } from '@/interfaces/common';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';

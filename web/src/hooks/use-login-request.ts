@@ -6,9 +6,6 @@ import userService, {
 } from '@/services/user-service';
 import authorizationUtil, { redirectToLogin } from '@/utils/authorization-util';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Form } from 'antd';
-import { FormInstance } from 'antd/lib';
-import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export interface ILoginRequestBody {
@@ -133,20 +130,4 @@ export const useLogout = () => {
   });
 
   return { data, loading, logout: mutateAsync };
-};
-
-export const useHandleSubmittable = (form: FormInstance) => {
-  const [submittable, setSubmittable] = useState<boolean>(false);
-
-  // Watch all values
-  const values = Form.useWatch([], form);
-
-  useEffect(() => {
-    form
-      .validateFields({ validateOnly: true })
-      .then(() => setSubmittable(true))
-      .catch(() => setSubmittable(false));
-  }, [form, values]);
-
-  return { submittable };
 };

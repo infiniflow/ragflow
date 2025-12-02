@@ -1,9 +1,10 @@
 import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
+
 import {
   useFetchDocumentThumbnailsByIds,
   useGetDocumentUrl,
-} from '@/hooks/document-hooks';
+} from '@/hooks/use-document-request';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import {
   currentReg,

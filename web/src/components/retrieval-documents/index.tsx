@@ -5,7 +5,7 @@ import SelectFiles from './select-files';
 import {
   useAllTestingResult,
   useSelectTestingResult,
-} from '@/hooks/knowledge-hooks';
+} from '@/hooks/use-knowledge-request';
 import { useTranslation } from 'react-i18next';
 import styles from './index.less';
 

@@ -20,7 +20,7 @@ import {
   useGetChatSearchParams,
   useSetDialog,
 } from '@/hooks/use-chat-request';
-import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';

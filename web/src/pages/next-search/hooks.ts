@@ -1,13 +1,15 @@
 import message from '@/components/ui/message';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useSelectTestingResult } from '@/hooks/knowledge-hooks';
 import {
   useGetPaginationWithRouter,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
 import { useSetPaginationParams } from '@/hooks/route-hook';
-import { useKnowledgeBaseId } from '@/hooks/use-knowledge-request';
+import {
+  useKnowledgeBaseId,
+  useSelectTestingResult,
+} from '@/hooks/use-knowledge-request';
 import { ResponsePostType } from '@/interfaces/database/base';
 import { IAnswer } from '@/interfaces/database/chat';
 import { ITestingResult } from '@/interfaces/database/knowledge';

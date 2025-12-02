@@ -1,10 +1,13 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
+import { ResponsePostType } from '@/interfaces/database/base';
 import {
   IKnowledge,
   IKnowledgeGraph,
   IKnowledgeResult,
   INextTestingResult,
+  IRenameTag,
+  ITestingResult,
 } from '@/interfaces/database/knowledge';
 import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
@@ -12,8 +15,17 @@ import kbService, {
   deleteKnowledgeGraph,
   getKnowledgeGraph,
   listDataset,
+  listTag,
+  removeTag,
+  renameTag,
 } from '@/services/knowledge-service';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useIsMutating,
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'umi';
@@ -21,6 +33,7 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { useSetPaginationParams } from './route-hook';
 
 export const enum KnowledgeApiAction {
   TestRetrieval = 'testRetrieval',
@@ -354,3 +367,252 @@ export const useFetchKnowledgeList = (
 
   return { list: data, loading };
 };
+
+export const useSelectKnowledgeOptions = () => {
+  const { list } = useFetchKnowledgeList();
+
+  const options = list?.map((item) => ({
+    label: item.name,
+    value: item.id,
+  }));
+
+  return options;
+};
+
+//#region tags
+export const useRenameTag = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['renameTag'],
+    mutationFn: async (params: IRenameTag) => {
+      const { data } = await renameTag(knowledgeBaseId, params);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.modified`));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchTagList'],
+        });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, renameTag: mutateAsync };
+};
+
+export const useTagIsRenaming = () => {
+  return useIsMutating({ mutationKey: ['renameTag'] }) > 0;
+};
+
+export const useFetchTagListByKnowledgeIds = () => {
+  const [knowledgeIds, setKnowledgeIds] = useState<string[]>([]);
+
+  const { data, isFetching: loading } = useQuery<Array<[string, number]>>({
+    queryKey: ['fetchTagListByKnowledgeIds'],
+    enabled: knowledgeIds.length > 0,
+    initialData: [],
+    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
+    queryFn: async () => {
+      const { data } = await kbService.listTagByKnowledgeIds({
+        kb_ids: knowledgeIds.join(','),
+      });
+      const list = data?.data || [];
+      return list;
+    },
+  });
+
+  return { list: data, loading, setKnowledgeIds };
+};
+
+export const useFetchTagList = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<Array<[string, number]>>({
+    queryKey: ['fetchTagList'],
+    initialData: [],
+    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
+    queryFn: async () => {
+      const { data } = await listTag(knowledgeBaseId);
+      const list = data?.data || [];
+      return list;
+    },
+  });
+
+  return { list: data, loading };
+};
+
+export const useDeleteTag = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteTag'],
+    mutationFn: async (tags: string[]) => {
+      const { data } = await removeTag(knowledgeBaseId, tags);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.deleted`));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchTagList'],
+        });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, deleteTag: mutateAsync };
+};
+
+// #endregion
+
+//#region Retrieval testing
+
+export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
+  testChunk: (...params: any[]) => void;
+} => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const { page, size: pageSize } = useSetPaginationParams();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['testChunk'], // This method is invalid
+    gcTime: 0,
+    mutationFn: async (values: any) => {
+      const { data } = await kbService.retrieval_test({
+        ...values,
+        kb_id: values.kb_id ?? knowledgeBaseId,
+        page,
+        size: pageSize,
+      });
+      if (data.code === 0) {
+        const res = data.data;
+        return {
+          ...res,
+          documents: res.doc_aggs,
+        };
+      }
+      return (
+        data?.data ?? {
+          chunks: [],
+          documents: [],
+          total: 0,
+        }
+      );
+    },
+  });
+
+  return {
+    data: data ?? { chunks: [], documents: [], total: 0 },
+    loading,
+    testChunk: mutateAsync,
+  };
+};
+
+export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
+  testChunkAll: (...params: any[]) => void;
+} => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const { page, size: pageSize } = useSetPaginationParams();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['testChunkAll'], // This method is invalid
+    gcTime: 0,
+    mutationFn: async (values: any) => {
+      const { data } = await kbService.retrieval_test({
+        ...values,
+        kb_id: values.kb_id ?? knowledgeBaseId,
+        doc_ids: [],
+        page,
+        size: pageSize,
+      });
+      if (data.code === 0) {
+        const res = data.data;
+        return {
+          ...res,
+          documents: res.doc_aggs,
+        };
+      }
+      return (
+        data?.data ?? {
+          chunks: [],
+          documents: [],
+          total: 0,
+        }
+      );
+    },
+  });
+
+  return {
+    data: data ?? { chunks: [], documents: [], total: 0 },
+    loading,
+    testChunkAll: mutateAsync,
+  };
+};
+
+export const useChunkIsTesting = () => {
+  return useIsMutating({ mutationKey: ['testChunk'] }) > 0;
+};
+
+export const useSelectTestingResult = (): ITestingResult => {
+  const data = useMutationState({
+    filters: { mutationKey: ['testChunk'] },
+    select: (mutation) => {
+      return mutation.state.data;
+    },
+  });
+  return (data.at(-1) ?? {
+    chunks: [],
+    documents: [],
+    total: 0,
+  }) as ITestingResult;
+};
+
+export const useSelectIsTestingSuccess = () => {
+  const status = useMutationState({
+    filters: { mutationKey: ['testChunk'] },
+    select: (mutation) => {
+      return mutation.state.status;
+    },
+  });
+  return status.at(-1) === 'success';
+};
+
+export const useAllTestingSuccess = () => {
+  const status = useMutationState({
+    filters: { mutationKey: ['testChunkAll'] },
+    select: (mutation) => {
+      return mutation.state.status;
+    },
+  });
+  return status.at(-1) === 'success';
+};
+
+export const useAllTestingResult = (): ITestingResult => {
+  const data = useMutationState({
+    filters: { mutationKey: ['testChunkAll'] },
+    select: (mutation) => {
+      return mutation.state.data;
+    },
+  });
+  return (data.at(-1) ?? {
+    chunks: [],
+    documents: [],
+    total: 0,
+  }) as ITestingResult;
+};
+//#endregion

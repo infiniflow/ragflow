@@ -1,5 +1,5 @@
 import { LlmModelType } from '@/constants/knowledge';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
+import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { useTranslation } from 'react-i18next';
 import { SelectWithSearch } from '../originui/select-with-search';
 import { RAGFlowFormItem } from '../ragflow-form';

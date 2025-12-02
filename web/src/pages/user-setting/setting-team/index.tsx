@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   useFetchUserInfo,
   useListTenantUser,
-} from '@/hooks/user-setting-hooks';
+} from '@/hooks/use-user-setting-request';
 import { useTranslation } from 'react-i18next';
 
 import Spotlight from '@/components/spotlight';

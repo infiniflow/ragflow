@@ -9,7 +9,7 @@ import {
   useFetchManualSystemTokenList,
   useFetchSystemTokenList,
   useRemoveSystemToken,
-} from '@/hooks/user-setting-hooks';
+} from '@/hooks/use-user-setting-request';
 import { IStats } from '@/interfaces/database/chat';
 import { useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';

@@ -1,6 +1,6 @@
 import { DocumentParserType } from '@/constants/knowledge';
 import { useHandleChunkMethodSelectChange } from '@/hooks/logic-hooks';
-import { useSelectParserList } from '@/hooks/user-setting-hooks';
+import { useSelectParserList } from '@/hooks/use-user-setting-request';
 import { FormInstance } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 

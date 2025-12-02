@@ -12,7 +12,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import {
   ISystemModelSettingSavingParams,
   useComposeLlmOptionsByModelTypes,
-} from '@/hooks/llm-hooks';
+} from '@/hooks/use-llm-request';
 import { CircleQuestionMark } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFetchSystemModelSettingOnMount } from '../hooks';

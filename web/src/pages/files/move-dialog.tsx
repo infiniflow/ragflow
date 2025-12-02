@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useFetchPureFileList } from '@/hooks/file-manager-hooks';
+import { useFetchPureFileList } from '@/hooks/use-file-request';
 import { IModalProps } from '@/interfaces/common';
 import { IFile } from '@/interfaces/database/file-manager';
 import { isEmpty } from 'lodash';

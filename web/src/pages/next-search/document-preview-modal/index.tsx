@@ -4,7 +4,7 @@ import { Modal } from '@/components/ui/modal/modal';
 import {
   useGetChunkHighlights,
   useGetDocumentUrl,
-} from '@/hooks/document-hooks';
+} from '@/hooks/use-document-request';
 import { IModalProps } from '@/interfaces/common';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
