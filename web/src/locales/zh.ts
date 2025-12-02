@@ -990,6 +990,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      autoPlay: '自动播放',
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',
       formatTypeError: '格式或类型错误',

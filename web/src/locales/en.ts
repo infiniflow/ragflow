@@ -1068,6 +1068,7 @@ Example: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      autoPlay: 'Auto play audio',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',
       formatTypeError: 'Format or type error',
