@@ -714,19 +714,13 @@
                     "model_type": "rerank"
                 },
                 {
-                    "llm_name": "qwen-audio-asr",
+                    "llm_name": "qwen3-asr-flash",
                     "tags": "SPEECH2TEXT,8k",
                     "max_tokens": 8000,
                     "model_type": "speech2text"
                 },
                 {
-                    "llm_name": "qwen-audio-asr-latest",
-                    "tags": "SPEECH2TEXT,8k",
-                    "max_tokens": 8000,
-                    "model_type": "speech2text"
-                },
-                {
-                    "llm_name": "qwen-audio-asr-1204",
+                    "llm_name": "qwen3-asr-flash-2025-09-08",
                     "tags": "SPEECH2TEXT,8k",
                     "max_tokens": 8000,
                     "model_type": "speech2text"

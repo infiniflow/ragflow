@@ -19,6 +19,7 @@ import json
 import os
 import re
 from abc import ABC
+import tempfile
 
 import requests
 from openai import OpenAI
@@ -68,32 +69,80 @@ class QWenSeq2txt(Base):
         self.model_name = model_name
 
     def transcription(self, audio_path):
-        if "paraformer" in self.model_name or "sensevoice" in self.model_name:
-            return f"**ERROR**: model {self.model_name} is not suppported yet.", 0
+        import dashscope
 
-        from dashscope import MultiModalConversation
+        if audio_path.startswith("http"):
+            audio_input = audio_path
+        else:
+            audio_input = f"file://{audio_path}"
 
-        audio_path = f"file://{audio_path}"
         messages = [
             {
+                "role": "system",
+                "content": [{"text": ""}]
+            },
+            {
                 "role": "user",
-                "content": [{"audio": audio_path}],
+                "content": [{"audio": audio_input}]
             }
         ]
 
-        response = None
-        full_content = ""
-        try:
-            response = MultiModalConversation.call(model="qwen-audio-asr", messages=messages, result_format="message", stream=True)
-            for response in response:
-                try:
-                    full_content += response["output"]["choices"][0]["message"].content[0]["text"]
-                except Exception:
-                    pass
-            return full_content, num_tokens_from_string(full_content)
-        except Exception as e:
-            return "**ERROR**: " + str(e), 0
+        resp = dashscope.MultiModalConversation.call(
+            model=self.model_name,
+            messages=messages,
+            result_format="message",
+            asr_options={
+                "enable_lid": True,
+                "enable_itn": False
+            }
+        )
 
+        try:
+            text = resp["output"]["choices"][0]["message"].content[0]["text"]
+        except Exception as e:
+            text = "**ERROR**: " + str(e)
+        return text, num_tokens_from_string(text)
+
+    def stream_transcription(self, audio_path):
+        import dashscope
+
+        if audio_path.startswith("http"):
+            audio_input = audio_path
+        else:
+            audio_input = f"file://{audio_path}"
+
+        messages = [
+            {
+                "role": "system",
+                "content": [{"text": ""}]
+            },
+            {
+                "role": "user",
+                "content": [{"audio": audio_input}]
+            }
+        ]
+
+        stream = dashscope.MultiModalConversation.call(
+            model=self.model_name,
+            messages=messages,
+            result_format="message",
+            stream=True,
+            asr_options={
+                "enable_lid": True,
+                "enable_itn": False
+            }
+        )
+
+        full = ""
+        for chunk in stream:
+            try:
+                piece = chunk["output"]["choices"][0]["message"].content[0]["text"]
+                full = piece
+                yield {"event": "delta", "text": piece}
+            except Exception as e:
+                yield {"event": "error", "text": str(e)}
+
+        yield {"event": "final", "text": full}
 
 class AzureSeq2txt(Base):
     _FACTORY_NAME = "Azure-OpenAI"
@@ -268,6 +317,27 @@ class ZhipuSeq2txt(Base):
         self.gen_conf = kwargs.get("gen_conf", {})
         self.stream = kwargs.get("stream", False)
 
+    def _convert_to_wav(self, input_path):
+        ext = os.path.splitext(input_path)[1].lower()
+        if ext in [".wav", ".mp3"]:
+            return input_path
+        fd, out_path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        try:
+            import ffmpeg
+            import imageio_ffmpeg as ffmpeg_exe
+            ffmpeg_path = ffmpeg_exe.get_ffmpeg_exe()
+            (
+                ffmpeg
+                .input(input_path)
+                .output(out_path, ar=16000, ac=1)
+                .overwrite_output()
+                .run(cmd=ffmpeg_path,quiet=True)
+            )
+            return out_path
+        except Exception as e:
+            raise RuntimeError(f"audio convert failed: {e}")
+
     def transcription(self, audio_path):
         payload = {
             "model": self.model_name,
@@ -276,7 +346,9 @@ class ZhipuSeq2txt(Base):
         }
 
         headers = {"Authorization": f"Bearer {self.api_key}"}
-        with open(audio_path, "rb") as audio_file:
+        converted = self._convert_to_wav(audio_path)
+
+        with open(converted, "rb") as audio_file:
             files = {"file": audio_file}
 
             try:
