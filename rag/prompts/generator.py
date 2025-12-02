@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
 import datetime
 import json
 import logging
@@ -361,10 +360,6 @@ def analyze_task(chat_mdl, prompt, task_name, tools_description: list[dict], use
     return kwd
 
 
-async def analyze_task_async(chat_mdl, prompt, task_name, tools_description: list[dict], user_defined_prompts: dict={}):
-    return await asyncio.to_thread(analyze_task, chat_mdl, prompt, task_name, tools_description, user_defined_prompts)
-
-
 def next_step(chat_mdl, history:list, tools_description: list[dict], task_desc, user_defined_prompts: dict={}):
     if not tools_description:
         return ""
@@ -381,10 +376,6 @@ def next_step(chat_mdl, history:list, tools_description: list[dict], task_desc, 
     tk_cnt = num_tokens_from_string(json_str)
     json_str = re.sub(r"^.*</think>", "", json_str, flags=re.DOTALL)
     return json_str, tk_cnt
-
-
-async def next_step_async(chat_mdl, history:list, tools_description: list[dict], task_desc, user_defined_prompts: dict={}):
-    return await asyncio.to_thread(next_step, chat_mdl, history, tools_description, task_desc, user_defined_prompts)
 
 
 def reflect(chat_mdl, history: list[dict], tool_call_res: list[Tuple], user_defined_prompts: dict={}):
@@ -436,14 +427,6 @@ def rank_memories(chat_mdl, goal:str, sub_goal:str, tool_call_summaries: list[st
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
     ans = chat_mdl.chat(msg[0]["content"], msg[1:], stop="<|stop|>")
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-
-
-async def reflect_async(chat_mdl, history: list[dict], tool_call_res: list[Tuple], user_defined_prompts: dict={}):
-    return await asyncio.to_thread(reflect, chat_mdl, history, tool_call_res, user_defined_prompts)
-
-
-async def rank_memories_async(chat_mdl, goal:str, sub_goal:str, tool_call_summaries: list[str], user_defined_prompts: dict={}):
-    return await asyncio.to_thread(rank_memories, chat_mdl, goal, sub_goal, tool_call_summaries, user_defined_prompts)
 
 
 def gen_meta_filter(chat_mdl, meta_data:dict, query: str) -> dict:
