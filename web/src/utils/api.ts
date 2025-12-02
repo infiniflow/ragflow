@@ -50,6 +50,8 @@ export default {
   // plugin
   llm_tools: `${api_host}/plugin/llm_tools`,
 
+  sequence2txt: `${api_host}/conversation/sequence2txt`,
+
   // knowledge base
 
   check_embedding: `${api_host}/kb/check_embedding`,
