@@ -291,8 +291,8 @@ async def sequence2txt():
         text = asr_mdl.transcription(temp_audio_path)
         try:
             os.remove(temp_audio_path)
-        except:
-            pass
+        except Exception as e:
+            logging.error(f"Failed to remove temp audio file: {str(e)}")
         return get_json_result(data={"text": text})
     async def event_stream():
         try:
@@ -304,8 +304,8 @@ async def sequence2txt():
         finally:
             try:
                 os.remove(temp_audio_path)
-            except:
-                pass
+            except Exception as e:
+                logging.error(f"Failed to remove temp audio file: {str(e)}")
 
     return Response(event_stream(), content_type="text/event-stream")
 

@@ -99,8 +99,8 @@ class QWenSeq2txt(Base):
 
         try:
             text = resp["output"]["choices"][0]["message"].content[0]["text"]
-        except:
-            text = ""
+        except Exception as e:
+            text = "**ERROR**: " + str(e)
         return text, num_tokens_from_string(text)
 
     def stream_transcription(self, audio_path):
@@ -139,8 +139,8 @@ class QWenSeq2txt(Base):
                 piece = chunk["output"]["choices"][0]["message"].content[0]["text"]
                 full = piece
                 yield {"event": "delta", "text": piece}
-            except:
-                pass
+            except Exception as e:
+                yield {"event": "error", "text": str(e)}
 
         yield {"event": "final", "text": full}
 
