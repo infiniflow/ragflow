@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import IndentedTree from './indented-tree';
 
-import { useFetchKnowledgeGraph } from '@/hooks/knowledge-hooks';
+import { useFetchKnowledgeGraph } from '@/hooks/use-knowledge-request';
 import { IModalProps } from '@/interfaces/common';
 import { Modal } from 'antd';
 

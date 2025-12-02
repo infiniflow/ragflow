@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/form';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { FormLayout } from '@/constants/form';
-import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
 import { Form, Select, Space } from 'antd';
 import DOMPurify from 'dompurify';
 import { useFormContext, useWatch } from 'react-hook-form';

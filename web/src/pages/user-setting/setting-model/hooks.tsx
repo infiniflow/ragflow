@@ -9,8 +9,8 @@ import {
   useSaveApiKey,
   useSaveTenantInfo,
   useSelectLlmOptionsByModelType,
-} from '@/hooks/llm-hooks';
-import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
+} from '@/hooks/use-llm-request';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { getRealModelName } from '@/utils/llm-util';
 import { useQueryClient } from '@tanstack/react-query';

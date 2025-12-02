@@ -5,7 +5,7 @@ import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { MessageType, SharedFrom } from '@/constants/chat';
-import { useFetchFlowSSE } from '@/hooks/flow-hooks';
+import { useFetchFlowSSE } from '@/hooks/use-agent-request';
 import {
   useFetchExternalChatInfo,
   useFetchNextConversationSSE,

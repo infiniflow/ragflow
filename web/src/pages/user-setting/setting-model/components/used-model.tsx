@@ -1,4 +1,4 @@
-import { LlmItem, useSelectLlmList } from '@/hooks/llm-hooks';
+import { LlmItem, useSelectLlmList } from '@/hooks/use-llm-request';
 import { t } from 'i18next';
 import { ModelProviderCard } from './modal-card';
 

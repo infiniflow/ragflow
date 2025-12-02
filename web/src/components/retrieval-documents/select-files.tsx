@@ -3,7 +3,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import {
   useAllTestingResult,
   useSelectTestingResult,
-} from '@/hooks/knowledge-hooks';
+} from '@/hooks/use-knowledge-request';
 import { ITestingDocument } from '@/interfaces/database/knowledge';
 import { EyeOutlined } from '@ant-design/icons';
 import { Button, Table, TableProps, Tooltip } from 'antd';

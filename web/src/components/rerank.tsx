@@ -1,6 +1,6 @@
 import { LlmModelType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
+import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
 import { Select as AntSelect, Form, message, Slider } from 'antd';
 import { useCallback } from 'react';
 import { useFormContext } from 'react-hook-form';
