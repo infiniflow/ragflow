@@ -10,11 +10,14 @@ WORKDIR /ragflow
 # Copy models downloaded via download_deps.py
 RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
-    cp /huggingface.co/InfiniFlow/huqie/huqie.txt.trie /ragflow/rag/res/ && \
     tar --exclude='.*' -cf - \
         /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
         /huggingface.co/InfiniFlow/deepdoc \
-        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc 
+        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
+
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/rag,target=/rag \
+    mkdir -p /usr/share/infinity/resource/rag/ && \
+    cp /rag/huqie.txt /usr/share/infinity/resource/rag/
 
 # https://github.com/chrismattmann/tika-python
 # This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.

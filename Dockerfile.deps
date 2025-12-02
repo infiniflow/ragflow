@@ -8,3 +8,5 @@ COPY chromedriver-linux64-121-0-6167-85 chrome-linux64-121-0-6167-85 cl100k_base
 COPY nltk_data /nltk_data
 
 COPY huggingface.co /huggingface.co
+
+COPY resource/rag/ /rag
