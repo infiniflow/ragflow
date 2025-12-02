@@ -1,7 +1,7 @@
 import { getExtension } from '@/utils/document-util';
 import SvgIcon from '../svg-icon';
 
-import { useFetchDocumentThumbnailsByIds } from '@/hooks/document-hooks';
+import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useEffect } from 'react';
 import styles from './index.less';
 
