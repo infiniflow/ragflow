@@ -16,7 +16,7 @@
 
 import pytest
 import json
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+from unittest.mock import Mock, patch, AsyncMock
 from common.misc_utils import get_uuid
 
 

@@ -15,7 +15,7 @@
 #
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from common.misc_utils import get_uuid
 from common.constants import StatusEnum
 
