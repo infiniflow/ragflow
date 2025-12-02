@@ -19,7 +19,6 @@ import random
 from collections import Counter
 
 from common.token_utils import num_tokens_from_string
-from . import rag_tokenizer
 import re
 import copy
 import roman_numbers as r
@@ -28,6 +27,8 @@ from cn2an import cn2an
 from PIL import Image
 
 import chardet
+
+__all__ = ['rag_tokenizer']
 
 all_codecs = [
     'utf-8', 'gb2312', 'gbk', 'utf_16', 'ascii', 'big5', 'big5hkscs',
@@ -265,6 +266,7 @@ def is_chinese(text):
 
 
 def tokenize(d, txt, eng):
+    from . import rag_tokenizer
     d["content_with_weight"] = txt
     t = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt)
     d["content_ltks"] = rag_tokenizer.tokenize(t)
@@ -362,6 +364,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
     Best-effort ordering: if positional info exists on any chunk, use it to
     order chunks before collecting context; otherwise keep original order.
     """
+    from . import rag_tokenizer
     if not chunks or (table_context_size <= 0 and image_context_size <= 0):
         return chunks
 
