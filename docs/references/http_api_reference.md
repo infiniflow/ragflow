@@ -435,7 +435,7 @@ curl --request POST \
       }'
 ```
 
-##### A request example using ingestion pipeline
+##### A request example specifying ingestion pipeline
 
 :::caution WARNING
 You must *not* include `"chunk_method"` or `"parser_config"` when specifying an ingestion pipeline.
