@@ -14,11 +14,11 @@
 #  limitations under the License.
 #
 
-from infinity import rag_tokenizer
+import infinity.rag_tokenizer
 from common import settings
 
 
-class RagTokenizer(rag_tokenizer.RagTokenizer):
+class RagTokenizer(infinity.rag_tokenizer.RagTokenizer):
 
     def tokenize(self, line: str) -> str:
         if settings.DOC_ENGINE_INFINITY:
