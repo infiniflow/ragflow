@@ -208,6 +208,15 @@ export default {
       plainText: 'Einfach',
     },
     knowledgeConfiguration: {
+      useGraphRag: 'Wissensgraph‑Generierung',
+      useRaptor: 'RAPTOR zur Verbesserung des Abrufs verwenden',
+      raptorStrategy: 'RAPTOR‑Generierungsstrategie',
+      graphRagStrategy: 'GraphRAG‑Generierungsstrategie',
+      strategyManual: 'Manuell',
+      strategyUpdateAfter: 'Nach Aktualisierung',
+      strategyTimed: 'Zeitgesteuert',
+      cronExpression: 'Cron‑Ausdruck',
+      cronPlaceholder: 'Bitte Cron‑Ausdruck eingeben',
       titleDescription:
         'Aktualisieren Sie hier Ihre Wissensdatenbank-Konfiguration, insbesondere die Chunk-Methode.',
       name: 'Name der Wissensdatenbank',
@@ -334,6 +343,7 @@ export default {
       <i>Textzeilen, die nicht den obigen Regeln entsprechen, werden ignoriert.</i>
   `,
       useRaptor: 'RAPTOR zur Verbesserung des Abrufs verwenden',
+      
       useRaptorTip:
         'RAPTOR für Multi-Hop-Frage-Antwort-Aufgaben aktivieren. Details unter https://ragflow.io/docs/dev/enable_raptor.',
       prompt: 'Prompt',

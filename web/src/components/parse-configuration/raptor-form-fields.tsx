@@ -67,6 +67,10 @@ const RaptorFormFields = ({
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
   const useRaptor = useWatch({ name: UseRaptorField });
+  const strategy = useWatch({
+    control: form.control,
+    name: 'parser_config.raptor.strategy',
+  });
 
   const handleGenerate = useCallback(() => {
     form.setValue(RandomSeedField, random(10000));
@@ -74,6 +78,60 @@ const RaptorFormFields = ({
 
   return (
     <>
+      <FormField
+        control={form.control}
+        name={'parser_config.raptor.strategy'}
+        render={({ field }) => {
+          return (
+            <FormItem className=" items-center space-y-0 ">
+              <div className="flex items-start">
+                <FormLabel className="text-sm  whitespace-nowrap w-1/4">
+                  {t('raptorStrategy')}
+                </FormLabel>
+                <div className="w-3/4">
+                  <FormControl>
+                    <Radio.Group {...field}>
+                      <div className={'flex gap-4 w-full text-text-secondary '}>
+                        <Radio value="manual">{t('strategyManual')}</Radio>
+                        <Radio value="update_after">{t('strategyUpdateAfter')}</Radio>
+                        <Radio value="timed">{t('strategyTimed')}</Radio>
+                      </div>
+                    </Radio.Group>
+                  </FormControl>
+                </div>
+              </div>
+              <div className="flex pt-1">
+                <div className="w-1/4"></div>
+                <FormMessage />
+              </div>
+            </FormItem>
+          );
+        }}
+      />
+      {strategy === 'timed' && (
+        <FormField
+          control={form.control}
+          name={'parser_config.raptor.cron'}
+          render={({ field }) => (
+            <FormItem className=" items-center space-y-0 ">
+              <div className="flex items-center">
+                <FormLabel className="text-sm  whitespace-nowrap w-1/4">
+                  {t('cronExpression')}
+                </FormLabel>
+                <div className="w-3/4">
+                  <FormControl>
+                    <ExpandedInput {...field} className="w-full" placeholder={t('cronPlaceholder')} />
+                  </FormControl>
+                </div>
+              </div>
+              <div className="flex pt-1">
+                <div className="w-1/4"></div>
+                <FormMessage />
+              </div>
+            </FormItem>
+          )}
+        />
+      )}
       <FormField
         control={form.control}
         name={UseRaptorField}
