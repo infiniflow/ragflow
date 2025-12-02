@@ -52,10 +52,6 @@ class LLMToolPluginCallSession(ToolCallSession):
         assert name in self.tools_map, f"LLM tool {name} does not exist"
         st = timer()
         tool_obj = self.tools_map[name]
-        print("#########################################", flush=True)
-        tool_desc = getattr(tool_obj, "_id", None) or getattr(tool_obj, "component_name", None) or tool_obj.__class__.__name__
-        logging.info(f"[ToolCall] start name={name}, tool={tool_desc}, async={hasattr(tool_obj, 'invoke_async')}")
-        print("#########################################", flush=True)
         if isinstance(tool_obj, MCPToolCallSession):
             resp = tool_obj.tool_call(name, arguments, 60)
         else:
@@ -63,9 +59,6 @@ class LLMToolPluginCallSession(ToolCallSession):
                 resp = asyncio.run(tool_obj.invoke_async(**arguments))
             else:
                 resp = asyncio.run(asyncio.to_thread(tool_obj.invoke, **arguments))
-        print("#########################################", flush=True)
-        logging.info(f"[ToolCall] done name={name}, tool={tool_desc}, elapsed={timer()-st:.3f}s")
-        print("#########################################", flush=True)
 
         self.callback(name, arguments, resp, elapsed_time=timer()-st)
         return resp
