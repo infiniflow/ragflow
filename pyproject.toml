@@ -171,9 +171,6 @@ test = [
 ]
 
 [[tool.uv.index]]
-url = "https://mirrors.aliyun.com/pypi/simple"
-
-[[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 [tool.setuptools]
