@@ -14,7 +14,6 @@
 #  limitations under the License
 #
 import logging
-import asyncio
 import os
 import pathlib
 import re
@@ -62,10 +61,9 @@ async def upload():
         e, pf_folder = FileService.get_by_id(pf_id)
         if not e:
             return get_data_error_result( message="Can't find this folder!")
-
-        async def _handle_single_file(file_obj):
+        for file_obj in file_objs:
             MAX_FILE_NUM_PER_USER: int = int(os.environ.get('MAX_FILE_NUM_PER_USER', 0))
-            if 0 < MAX_FILE_NUM_PER_USER <= await asyncio.to_thread(DocumentService.get_doc_count, current_user.id):
+            if 0 < MAX_FILE_NUM_PER_USER <= DocumentService.get_doc_count(current_user.id):
                 return get_data_error_result( message="Exceed the maximum file number of a free user!")
 
             # split file name path
@@ -77,36 +75,35 @@ async def upload():
             file_len = len(file_obj_names)
 
             # get folder
-            file_id_list = await asyncio.to_thread(FileService.get_id_list_by_id, pf_id, file_obj_names, 1, [pf_id])
+            file_id_list = FileService.get_id_list_by_id(pf_id, file_obj_names, 1, [pf_id])
             len_id_list = len(file_id_list)
 
             # create folder
             if file_len != len_id_list:
-                e, file = await asyncio.to_thread(FileService.get_by_id, file_id_list[len_id_list - 1])
+                e, file = FileService.get_by_id(file_id_list[len_id_list - 1])
                 if not e:
                     return get_data_error_result(message="Folder not found!")
-                last_folder = await asyncio.to_thread(FileService.create_folder, file, file_id_list[len_id_list - 1], file_obj_names,
+                last_folder = FileService.create_folder(file, file_id_list[len_id_list - 1], file_obj_names,
                                                         len_id_list)
             else:
-                e, file = await asyncio.to_thread(FileService.get_by_id, file_id_list[len_id_list - 2])
+                e, file = FileService.get_by_id(file_id_list[len_id_list - 2])
                 if not e:
                     return get_data_error_result(message="Folder not found!")
-                last_folder = await asyncio.to_thread(FileService.create_folder, file, file_id_list[len_id_list - 2], file_obj_names,
+                last_folder = FileService.create_folder(file, file_id_list[len_id_list - 2], file_obj_names,
                                                         len_id_list)
 
             # file type
             filetype = filename_type(file_obj_names[file_len - 1])
             location = file_obj_names[file_len - 1]
-            while await asyncio.to_thread(settings.STORAGE_IMPL.obj_exist, last_folder.id, location):
+            while settings.STORAGE_IMPL.obj_exist(last_folder.id, location):
                 location += "_"
-            blob = await asyncio.to_thread(file_obj.read)
-            filename = await asyncio.to_thread(
-                duplicate_name,
+            blob = file_obj.read()
+            filename = duplicate_name(
                 FileService.query,
                 name=file_obj_names[file_len - 1],
                 parent_id=last_folder.id)
-            await asyncio.to_thread(settings.STORAGE_IMPL.put, last_folder.id, location, blob)
-            file_data = {
+            settings.STORAGE_IMPL.put(last_folder.id, location, blob)
+            file = {
                 "id": get_uuid(),
                 "parent_id": last_folder.id,
                 "tenant_id": current_user.id,
@@ -116,13 +113,8 @@ async def upload():
                 "location": location,
                 "size": len(blob),
             }
-            inserted = await asyncio.to_thread(FileService.insert, file_data)
-            return inserted.to_json()
-
-        for file_obj in file_objs:
-            res = await _handle_single_file(file_obj)
-            file_res.append(res)
-
+            file = FileService.insert(file)
+            file_res.append(file.to_json())
         return get_json_result(data=file_res)
     except Exception as e:
         return server_error_response(e)
@@ -250,58 +242,55 @@ async def rm():
     req = await get_request_json()
     file_ids = req["file_ids"]
 
+    def _delete_single_file(file):
+        try:
+            if file.location:
+                settings.STORAGE_IMPL.rm(file.parent_id, file.location)
+        except Exception as e:
+            logging.exception(f"Fail to remove object: {file.parent_id}/{file.location}, error: {e}")
+
+        informs = File2DocumentService.get_by_file_id(file.id)
+        for inform in informs:
+            doc_id = inform.document_id
+            e, doc = DocumentService.get_by_id(doc_id)
+            if e and doc:
+                tenant_id = DocumentService.get_tenant_id(doc_id)
+                if tenant_id:
+                    DocumentService.remove_document(doc, tenant_id)
+            File2DocumentService.delete_by_file_id(file.id)
+
+        FileService.delete(file)
+
+    def _delete_folder_recursive(folder, tenant_id):
+        sub_files = FileService.list_all_files_by_parent_id(folder.id)
+        for sub_file in sub_files:
+            if sub_file.type == FileType.FOLDER.value:
+                _delete_folder_recursive(sub_file, tenant_id)
+            else:
+                _delete_single_file(sub_file)
+
+        FileService.delete(folder)
+
     try:
-        def _delete_single_file(file):
-            try:
-                if file.location:
-                    settings.STORAGE_IMPL.rm(file.parent_id, file.location)
-            except Exception as e:
-                logging.exception(f"Fail to remove object: {file.parent_id}/{file.location}, error: {e}")
+        for file_id in file_ids:
+            e, file = FileService.get_by_id(file_id)
+            if not e or not file:
+                return get_data_error_result(message="File or Folder not found!")
+            if not file.tenant_id:
+                return get_data_error_result(message="Tenant not found!")
+            if not check_file_team_permission(file, current_user.id):
+                return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
-            informs = File2DocumentService.get_by_file_id(file.id)
-            for inform in informs:
-                doc_id = inform.document_id
-                e, doc = DocumentService.get_by_id(doc_id)
-                if e and doc:
-                    tenant_id = DocumentService.get_tenant_id(doc_id)
-                    if tenant_id:
-                        DocumentService.remove_document(doc, tenant_id)
-                File2DocumentService.delete_by_file_id(file.id)
+            if file.source_type == FileSource.KNOWLEDGEBASE:
+                continue
 
-            FileService.delete(file)
+            if file.type == FileType.FOLDER.value:
+                _delete_folder_recursive(file, current_user.id)
+                continue
 
-        def _delete_folder_recursive(folder, tenant_id):
-            sub_files = FileService.list_all_files_by_parent_id(folder.id)
-            for sub_file in sub_files:
-                if sub_file.type == FileType.FOLDER.value:
-                    _delete_folder_recursive(sub_file, tenant_id)
-                else:
-                    _delete_single_file(sub_file)
+            _delete_single_file(file)
 
-            FileService.delete(folder)
-
-        def _rm_sync():
-            for file_id in file_ids:
-                e, file = FileService.get_by_id(file_id)
-                if not e or not file:
-                    return get_data_error_result(message="File or Folder not found!")
-                if not file.tenant_id:
-                    return get_data_error_result(message="Tenant not found!")
-                if not check_file_team_permission(file, current_user.id):
-                    return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
-
-                if file.source_type == FileSource.KNOWLEDGEBASE:
-                    continue
-
-                if file.type == FileType.FOLDER.value:
-                    _delete_folder_recursive(file, current_user.id)
-                    continue
-
-                _delete_single_file(file)
-
-            return get_json_result(data=True)
-
-        return await asyncio.to_thread(_rm_sync)
+        return get_json_result(data=True)
 
     except Exception as e:
         return server_error_response(e)
@@ -357,10 +346,10 @@ async def get(file_id):
         if not check_file_team_permission(file, current_user.id):
             return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
 
-        blob = await asyncio.to_thread(settings.STORAGE_IMPL.get, file.parent_id, file.location)
+        blob = settings.STORAGE_IMPL.get(file.parent_id, file.location)
         if not blob:
             b, n = File2DocumentService.get_storage_address(file_id=file_id)
-            blob = await asyncio.to_thread(settings.STORAGE_IMPL.get, b, n)
+            blob = settings.STORAGE_IMPL.get(b, n)
 
         response = await make_response(blob)
         ext = re.search(r"\.([^.]+)$", file.name.lower())
@@ -455,12 +444,10 @@ async def move():
                 },
             )
 
-        def _move_sync():
-            for file in files:
-                _move_entry_recursive(file, dest_folder)
-            return get_json_result(data=True)
+        for file in files:
+            _move_entry_recursive(file, dest_folder)
 
-        return await asyncio.to_thread(_move_sync)
+        return get_json_result(data=True)
 
     except Exception as e:
         return server_error_response(e)

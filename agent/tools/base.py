@@ -17,7 +17,6 @@ import logging
 import re
 import time
 from copy import deepcopy
-import asyncio
 from functools import partial
 from typing import TypedDict, List, Any
 from agent.component.base import ComponentParamBase, ComponentBase
@@ -51,14 +50,10 @@ class LLMToolPluginCallSession(ToolCallSession):
     def tool_call(self, name: str, arguments: dict[str, Any]) -> Any:
         assert name in self.tools_map, f"LLM tool {name} does not exist"
         st = timer()
-        tool_obj = self.tools_map[name]
-        if isinstance(tool_obj, MCPToolCallSession):
-            resp = tool_obj.tool_call(name, arguments, 60)
+        if isinstance(self.tools_map[name], MCPToolCallSession):
+            resp = self.tools_map[name].tool_call(name, arguments, 60)
         else:
-            if hasattr(tool_obj, "invoke_async") and asyncio.iscoroutinefunction(tool_obj.invoke_async):
-                resp = asyncio.run(tool_obj.invoke_async(**arguments))
-            else:
-                resp = asyncio.run(asyncio.to_thread(tool_obj.invoke, **arguments))
+            resp = self.tools_map[name].invoke(**arguments)
 
         self.callback(name, arguments, resp, elapsed_time=timer()-st)
         return resp
@@ -135,30 +130,6 @@ class ToolBase(ComponentBase):
         self.set_output("_created_time", time.perf_counter())
         try:
             res = self._invoke(**kwargs)
-        except Exception as e:
-            self._param.outputs["_ERROR"] = {"value": str(e)}
-            logging.exception(e)
-            res = str(e)
-        self._param.debug_inputs = []
-
-        self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
-        return res
-
-    async def invoke_async(self, **kwargs):
-        """
-        Async wrapper for tool invocation.
-        If `_invoke` is a coroutine, await it directly; otherwise run in a thread to avoid blocking.
-        Mirrors the exception handling of `invoke`.
-        """
-        if self.check_if_canceled("Tool processing"):
-            return
-
-        self.set_output("_created_time", time.perf_counter())
-        try:
-            if asyncio.iscoroutinefunction(self._invoke):
-                res = await self._invoke(**kwargs)
-            else:
-                res = await asyncio.to_thread(self._invoke, **kwargs)
         except Exception as e:
             self._param.outputs["_ERROR"] = {"value": str(e)}
             logging.exception(e)
