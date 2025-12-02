@@ -13,7 +13,8 @@ function usage() {
     echo "  --disable-datasync              Disables synchronization of datasource workers."
     echo "  --enable-mcpserver              Enables the MCP server."
     echo "  --enable-adminserver            Enables the Admin server."
-    echo "  --init-superuser                Initializes the superuser."
+    echo "  --use-uvicorn                   Use Uvicorn instead of Quart built-in server."
+    echo "  --uvicorn-workers=<num>         Number of Uvicorn workers (default: 2)."
     echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
     echo "  --consumer-no-end=<num>         End range for consumers (if using range-based)."
     echo "  --workers=<num>                 Number of task executors to run (if range is not used)."
@@ -25,7 +26,7 @@ function usage() {
     echo "  $0 --disable-webserver --workers=2 --host-id=myhost123"
     echo "  $0 --enable-mcpserver"
     echo "  $0 --enable-adminserver"
-    echo "  $0 --init-superuser"
+    echo "  $0 --use-uvicorn --uvicorn-workers=4"
     exit 1
 }
 
@@ -34,7 +35,8 @@ ENABLE_TASKEXECUTOR=1  # Default to enable task executor
 ENABLE_DATASYNC=1
 ENABLE_MCP_SERVER=0
 ENABLE_ADMIN_SERVER=0 # Default close admin server
-INIT_SUPERUSER_ARGS="" # Default to not initialize superuser
+USE_UVICORN=0 # Default to use Quart built-in server
+UVICORN_WORKERS=2 # Default number of Uvicorn workers
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
@@ -86,8 +88,12 @@ for arg in "$@"; do
       ENABLE_ADMIN_SERVER=1
       shift
       ;;
-    --init-superuser)
-      INIT_SUPERUSER_ARGS="--init-superuser"
+    --use-uvicorn)
+      USE_UVICORN=1
+      shift
+      ;;
+    --uvicorn-workers=*)
+      UVICORN_WORKERS="${arg#*=}"
       shift
       ;;
     --mcp-host=*)
@@ -245,12 +251,36 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx
 
-    echo "Starting ragflow_server..."
-    while true; do
-        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
-        wait;
-        sleep 1;
-    done &
+    if [[ "${USE_UVICORN}" -eq 1 ]]; then
+        echo "Starting ragflow_server with Uvicorn (workers: ${UVICORN_WORKERS})..."
+        
+        # Check if uvloop is available for better performance
+        UVLOOP_FLAG=""
+        if python3 -c "import uvloop" 2>/dev/null; then
+            UVLOOP_FLAG="--loop uvloop"
+            echo "uvloop detected, using high-performance event loop"
+        else
+            echo "uvloop not found, using default asyncio loop"
+        fi
+        
+        while true; do
+            uvicorn api.ragflow_asgi:asgi_app \
+                --host "${RAGFLOW_HOST:-0.0.0.0}" \
+                --port "${RAGFLOW_HOST_PORT:-9380}" \
+                --workers "${UVICORN_WORKERS}" \
+                ${UVLOOP_FLAG} \
+                --log-level info &
+            wait;
+            sleep 1;
+        done &
+    else
+        echo "Starting ragflow_server with Quart built-in server..."
+        while true; do
+            "$PY" api/ragflow_server.py &
+            wait;
+            sleep 1;
+        done &
+    fi
 fi
 
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
