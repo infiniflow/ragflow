@@ -1765,12 +1765,17 @@ class LiteLLMBase(ABC):
 
             yield ans, tol
 
-    async def async_chat(self, history, gen_conf, **kwargs):
-        logging.info("[HISTORY]" + json.dumps(history, ensure_ascii=False, indent=2))
+    async def async_chat(self, system, history, gen_conf, **kwargs):
+        hist = list(history) if history else []
+        if system:
+            if not hist or hist[0].get("role") != "system":
+                hist.insert(0, {"role": "system", "content": system})
+
+        logging.info("[HISTORY]" + json.dumps(hist, ensure_ascii=False, indent=2))
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
 
-        completion_args = self._construct_completion_args(history=history, stream=False, tools=False, **gen_conf)
+        completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **gen_conf)
 
         for attempt in range(self.max_retries + 1):
             try:
