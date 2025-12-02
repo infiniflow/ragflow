@@ -415,18 +415,13 @@ class Canvas(Graph):
 
             loop = asyncio.get_running_loop()
             tasks = []
-            def _run_async_in_thread(coro_func, **call_kwargs):
-                return asyncio.run(coro_func(**call_kwargs))
-
             i = f
             while i < t:
                 cpn = self.get_component_obj(self.path[i])
                 task_fn = None
-                call_kwargs = None
 
                 if cpn.component_name.lower() in ["begin", "userfillup"]:
-                    call_kwargs = {"inputs": kwargs.get("inputs", {})}
-                    task_fn = cpn.invoke
+                    task_fn = partial(cpn.invoke, inputs=kwargs.get("inputs", {}))
                     i += 1
                 else:
                     for _, ele in cpn.get_input_elements().items():
@@ -435,18 +430,13 @@ class Canvas(Graph):
                             t -= 1
                             break
                     else:
-                        call_kwargs = cpn.get_input()
-                        task_fn = cpn.invoke
+                        task_fn = partial(cpn.invoke, **cpn.get_input())
                         i += 1
 
                 if task_fn is None:
                     continue
 
-                invoke_async = getattr(cpn, "invoke_async", None)
-                if invoke_async and asyncio.iscoroutinefunction(invoke_async):
-                    tasks.append(loop.run_in_executor(self._thread_pool, partial(_run_async_in_thread, invoke_async, **(call_kwargs or {}))))
-                else:
-                    tasks.append(loop.run_in_executor(self._thread_pool, partial(task_fn, **(call_kwargs or {}))))
+                tasks.append(loop.run_in_executor(self._thread_pool, task_fn))
 
             if tasks:
                 await asyncio.gather(*tasks)

@@ -17,7 +17,6 @@ import json
 import logging
 import random
 import re
-import asyncio
 
 from quart import request
 import numpy as np
@@ -117,22 +116,12 @@ async def update():
 
         if kb.pagerank != req.get("pagerank", 0):
             if req.get("pagerank", 0) > 0:
-                await asyncio.to_thread(
-                    settings.docStoreConn.update,
-                    {"kb_id": kb.id},
-                    {PAGERANK_FLD: req["pagerank"]},
-                    search.index_name(kb.tenant_id),
-                    kb.id,
-                )
+                settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
+                                         search.index_name(kb.tenant_id), kb.id)
             else:
                 # Elasticsearch requires PAGERANK_FLD be non-zero!
-                await asyncio.to_thread(
-                    settings.docStoreConn.update,
-                    {"exists": PAGERANK_FLD},
-                    {"remove": PAGERANK_FLD},
-                    search.index_name(kb.tenant_id),
-                    kb.id,
-                )
+                settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
+                                         search.index_name(kb.tenant_id), kb.id)
 
         e, kb = KnowledgebaseService.get_by_id(kb.id)
         if not e:
@@ -235,28 +224,25 @@ async def rm():
                 data=False, message='Only owner of knowledgebase authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
 
-        def _rm_sync():
-            for doc in DocumentService.query(kb_id=req["kb_id"]):
-                if not DocumentService.remove_document(doc, kbs[0].tenant_id):
-                    return get_data_error_result(
-                        message="Database error (Document removal)!")
-                f2d = File2DocumentService.get_by_document_id(doc.id)
-                if f2d:
-                    FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
-                File2DocumentService.delete_by_document_id(doc.id)
-            FileService.filter_delete(
-                [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
-            if not KnowledgebaseService.delete_by_id(req["kb_id"]):
+        for doc in DocumentService.query(kb_id=req["kb_id"]):
+            if not DocumentService.remove_document(doc, kbs[0].tenant_id):
                 return get_data_error_result(
-                    message="Database error (Knowledgebase removal)!")
-            for kb in kbs:
-                settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
-                settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
-                if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
-                    settings.STORAGE_IMPL.remove_bucket(kb.id)
-            return get_json_result(data=True)
-
-        return await asyncio.to_thread(_rm_sync)
+                    message="Database error (Document removal)!")
+            f2d = File2DocumentService.get_by_document_id(doc.id)
+            if f2d:
+                FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+            File2DocumentService.delete_by_document_id(doc.id)
+        FileService.filter_delete(
+            [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
+        if not KnowledgebaseService.delete_by_id(req["kb_id"]):
+            return get_data_error_result(
+                message="Database error (Knowledgebase removal)!")
+        for kb in kbs:
+            settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
+            settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
+            if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
+                settings.STORAGE_IMPL.remove_bucket(kb.id)
+        return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
 
@@ -936,3 +922,5 @@ async def check_embedding():
     if summary["avg_cos_sim"] > 0.9:
         return get_json_result(data={"summary": summary, "results": results})
     return get_json_result(code=RetCode.NOT_EFFECTIVE, message="Embedding model switch failed: the average similarity between old and new vectors is below 0.9, indicating incompatible vector spaces.", data={"summary": summary, "results": results})
+
+
