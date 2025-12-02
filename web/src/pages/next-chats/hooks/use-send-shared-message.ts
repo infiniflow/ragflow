@@ -1,10 +1,10 @@
 import { MessageType, SharedFrom } from '@/constants/chat';
-import { useCreateNextSharedConversation } from '@/hooks/chat-hooks';
 import {
   useHandleMessageInputChange,
   useSelectDerivedMessages,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
+import { useCreateNextSharedConversation } from '@/hooks/use-chat-request';
 import { Message } from '@/interfaces/database/chat';
 import { message } from 'antd';
 import { get } from 'lodash';
