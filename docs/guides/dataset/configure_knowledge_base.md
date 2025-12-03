@@ -142,6 +142,6 @@ As of RAGFlow v0.22.1, the search feature is still in a rudimentary form, suppor
 You are allowed to delete a dataset. Hover your mouse over the three dot of the intended dataset card and the **Delete** option appears. Once you delete a dataset, the associated folder under **root/.knowledge** directory is AUTOMATICALLY REMOVED. The consequence is:
 
 - The files uploaded directly to the dataset are gone;  
-- The file references, which you created from within **File**, are gone, but the associated files still exist in **File**. 
+- The file references, which you created from within RAGFlow's File system, are gone, but the associated files still exist. 
 
 ![delete dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/delete_datasets.jpg)
