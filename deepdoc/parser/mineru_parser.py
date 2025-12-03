@@ -63,6 +63,7 @@ class MinerUParser(RAGFlowPdfParser):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def _extract_zip_no_root(self, zip_path, extract_to, root_dir):
+        self.logger.info(f"[MinerU] Extract zip: zip_path={zip_path}, extract_to={extract_to}, root_hint={root_dir}")
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             if not root_dir:
                 files = zip_ref.namelist()
@@ -72,7 +73,7 @@ class MinerUParser(RAGFlowPdfParser):
                     root_dir = None
 
             if not root_dir or not root_dir.endswith("/"):
-                self.logger.info(f"[MinerU] No root directory found, extracting all...fff{root_dir}")
+                self.logger.info(f"[MinerU] No root directory found, extracting all (root_hint={root_dir})")
                 zip_ref.extractall(extract_to)
                 return
 
@@ -108,7 +109,7 @@ class MinerUParser(RAGFlowPdfParser):
         valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine"]
         if backend not in valid_backends:
             reason = "[MinerU] Invalid backend '{backend}'. Valid backends are: {valid_backends}"
-            logging.warning(reason)
+            self.logger.warning(reason)
             return False, reason
 
         subprocess_kwargs = {
@@ -128,40 +129,40 @@ class MinerUParser(RAGFlowPdfParser):
         if backend == "vlm-http-client" and server_url:
             try:
                 server_accessible = self._is_http_endpoint_valid(server_url + "/openapi.json")
-                logging.info(f"[MinerU] vlm-http-client server check: {server_accessible}")
+                self.logger.info(f"[MinerU] vlm-http-client server check: {server_accessible}")
                 if server_accessible:
                     self.using_api = False  # We are using http client, not API
                     return True, reason
                 else:
                     reason = f"[MinerU] vlm-http-client server not accessible: {server_url}"
-                    logging.warning(f"[MinerU] vlm-http-client server not accessible: {server_url}")
+                    self.logger.warning(f"[MinerU] vlm-http-client server not accessible: {server_url}")
                     return False, reason
             except Exception as e:
-                logging.warning(f"[MinerU] vlm-http-client server check failed: {e}")
+                self.logger.warning(f"[MinerU] vlm-http-client server check failed: {e}")
                 try:
                     response = requests.get(server_url, timeout=5)
-                    logging.info(f"[MinerU] vlm-http-client server connection check: success with status {response.status_code}")
+                    self.logger.info(f"[MinerU] vlm-http-client server connection check: success with status {response.status_code}")
                     self.using_api = False
                     return True, reason
                 except Exception as e:
                     reason = f"[MinerU] vlm-http-client server connection check failed: {server_url}: {e}"
-                    logging.warning(f"[MinerU] vlm-http-client server connection check failed: {server_url}: {e}")
+                    self.logger.warning(f"[MinerU] vlm-http-client server connection check failed: {server_url}: {e}")
                     return False, reason
 
         try:
             result = subprocess.run([str(self.mineru_path), "--version"], **subprocess_kwargs)
             version_info = result.stdout.strip()
             if version_info:
-                logging.info(f"[MinerU] Detected version: {version_info}")
+                self.logger.info(f"[MinerU] Detected version: {version_info}")
             else:
-                logging.info("[MinerU] Detected MinerU, but version info is empty.")
+                self.logger.info("[MinerU] Detected MinerU, but version info is empty.")
             return True, reason
         except subprocess.CalledProcessError as e:
-            logging.warning(f"[MinerU] Execution failed (exit code {e.returncode}).")
+            self.logger.warning(f"[MinerU] Execution failed (exit code {e.returncode}).")
         except FileNotFoundError:
-            logging.warning("[MinerU] MinerU not found. Please install it via: pip install -U 'mineru[core]'")
+            self.logger.warning("[MinerU] MinerU not found. Please install it via: pip install -U 'mineru[core]'")
         except Exception as e:
-            logging.error(f"[MinerU] Unexpected error during installation check: {e}")
+            self.logger.error(f"[MinerU] Unexpected error during installation check: {e}")
 
         # If executable check fails, try API check
         try:
@@ -171,14 +172,14 @@ class MinerUParser(RAGFlowPdfParser):
                 if not openapi_exists:
                     reason = "[MinerU] Failed to detect vaild MinerU API server"
                     return openapi_exists, reason
-                logging.info(f"[MinerU] Detected {self.mineru_api}/openapi.json: {openapi_exists}")
+                self.logger.info(f"[MinerU] Detected {self.mineru_api}/openapi.json: {openapi_exists}")
                 self.using_api = openapi_exists
                 return openapi_exists, reason
             else:
-                logging.info("[MinerU] api not exists.")
+                self.logger.info("[MinerU] api not exists.")
         except Exception as e:
             reason = f"[MinerU] Unexpected error during api check: {e}"
-            logging.error(f"[MinerU] Unexpected error during api check: {e}")
+            self.logger.error(f"[MinerU] Unexpected error during api check: {e}")
         return False, reason
 
     def _run_mineru(
@@ -314,7 +315,7 @@ class MinerUParser(RAGFlowPdfParser):
         except Exception as e:
             self.page_images = None
             self.total_page = 0
-            logging.exception(e)
+            self.logger.exception(e)
 
     def _line_tag(self, bx):
         pn = [bx["page_idx"] + 1]
@@ -480,15 +481,49 @@ class MinerUParser(RAGFlowPdfParser):
 
         json_file = None
         subdir = None
+        attempted = []
+
+        # mirror MinerU's sanitize_filename to align ZIP naming
+        def _sanitize_filename(name: str) -> str:
+            sanitized = re.sub(r"[/\\\.]{2,}|[/\\]", "", name)
+            sanitized = re.sub(r"[^\w.-]", "_", sanitized, flags=re.UNICODE)
+            if sanitized.startswith("."):
+                sanitized = "_" + sanitized[1:]
+            return sanitized or "unnamed"
+
+        safe_stem = _sanitize_filename(file_stem)
+        allowed_names = {f"{file_stem}_content_list.json", f"{safe_stem}_content_list.json"}
+        self.logger.info(f"[MinerU] Expected output files: {', '.join(sorted(allowed_names))}")
+        self.logger.info(f"[MinerU] Searching output candidates: {', '.join(str(c) for c in candidates)}")
+
         for sub in candidates:
             jf = sub / f"{file_stem}_content_list.json"
+            self.logger.info(f"[MinerU] Trying original path: {jf}")
+            attempted.append(jf)
             if jf.exists():
                 subdir = sub
                 json_file = jf
                 break
 
+            # MinerU API sanitizes non-ASCII filenames inside the ZIP root and file names.
+            alt = sub / f"{safe_stem}_content_list.json"
+            self.logger.info(f"[MinerU] Trying sanitized filename: {alt}")
+            attempted.append(alt)
+            if alt.exists():
+                subdir = sub
+                json_file = alt
+                break
+
+            nested_alt = sub / safe_stem / f"{safe_stem}_content_list.json"
+            self.logger.info(f"[MinerU] Trying sanitized nested path: {nested_alt}")
+            attempted.append(nested_alt)
+            if nested_alt.exists():
+                subdir = nested_alt.parent
+                json_file = nested_alt
+                break
+
         if not json_file:
-            raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(c / (file_stem + '_content_list.json')) for c in candidates)}")
+            raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
 
         with open(json_file, "r", encoding="utf-8") as f:
             data = json.load(f)
