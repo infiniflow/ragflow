@@ -701,6 +701,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '检查这是否是 Confluence Cloud 实例，如果是 Confluence 服务/数据中心，则取消选中。',
       confluenceWikiBaseUrlTip:
         'Confluence Wiki 的基础 URL（例如 https://your-domain.atlassian.net/wiki）',
+      confluenceSpaceKeyTip:
+        '可选：指定空间键以限制同步到特定空间。留空则同步所有可访问的空间。多个空间请用逗号分隔（例如：DEV,DOCS,HR）',
       s3PrefixTip: `指定 S3 存储桶内的文件夹路径，用于读取文件。
 示例：general/v2/`,
       addDataSourceModalTital: '创建你的 {{name}} 链接',
@@ -1902,17 +1904,6 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       chatTitle: '尚未创建聊天应用',
       searchTitle: '尚未创建搜索应用',
       addNow: '立即添加',
-    },
-
-    deleteModal: {
-      delAgent: '删除智能体',
-      delDataset: '删除知识库',
-      delSearch: '删除搜索',
-      delFile: '删除文件',
-      delFiles: '删除文件',
-      delFilesContent: '已选择 {{count}} 个文件',
-      delChat: '删除聊天',
-      delMember: '删除成员',
     },
   },
 };
