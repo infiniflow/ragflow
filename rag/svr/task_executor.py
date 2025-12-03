@@ -944,7 +944,7 @@ async def do_handle_task(task):
         logging.info(progress_message)
         progress_callback(msg=progress_message)
         if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
-            toc_thread = executor.submit(build_TOC,task, chunks, progress_callback)
+            toc_thread = executor.submit(build_TOC, task, chunks, progress_callback)
 
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()

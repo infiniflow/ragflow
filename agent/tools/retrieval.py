@@ -198,6 +198,7 @@ class Retrieval(ToolBase, ABC):
                     return
                 if cks:
                     kbinfos["chunks"] = cks
+            kbinfos["chunks"] = settings.retriever.retrieval_by_children(kbinfos["chunks"], [kb.tenant_id for kb in kbs])
             if self._param.use_kg:
                 ck = settings.kg_retriever.retrieval(query,
                                                        [kb.tenant_id for kb in kbs],
