@@ -215,7 +215,6 @@ class LLM(ComponentBase):
                 yield delta(txt)
 
     async def _generate_streamly_async(self, msg: list[dict], **kwargs) -> AsyncGenerator[str, None]:
-        # Prefer async chat_streamly if available
         async def delta_wrapper(txt_iter):
             ans = ""
             last_idx = 0
@@ -256,7 +255,7 @@ class LLM(ComponentBase):
                 yield t
             return
 
-        # Fallback: run sync stream in thread, bridge results
+        # fallback
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
 
