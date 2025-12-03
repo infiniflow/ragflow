@@ -62,6 +62,28 @@ class MinerUParser(RAGFlowPdfParser):
         self.outlines = []
         self.logger = logging.getLogger(self.__class__.__name__)
 
+    @staticmethod
+    def _sanitize_output_name(name: str) -> str:
+        """Approximate MinerU API sanitize logic while keeping CJK characters."""
+        cleaned = re.sub(r"[^\w.\-\u4e00-\u9fff]", "_", name.strip())
+        cleaned = re.sub(r"_+", "_", cleaned).strip("_")
+        return cleaned or name
+
+    @staticmethod
+    def _detect_zip_root_dir(zip_path: Path) -> Optional[str]:
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                for entry in zip_ref.namelist():
+                    if not entry:
+                        continue
+                    entry = entry.rstrip("/")
+                    if not entry:
+                        continue
+                    return entry.split("/", 1)[0]
+        except Exception:
+            return None
+        return None
+
     def _extract_zip_no_root(self, zip_path, extract_to, root_dir):
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             if not root_dir:
@@ -72,7 +94,7 @@ class MinerUParser(RAGFlowPdfParser):
                     root_dir = None
 
             if not root_dir or not root_dir.endswith("/"):
-                self.logger.info(f"[MinerU] No root directory found, extracting all...fff{root_dir}")
+                self.logger.info(f"[MinerU] No root directory found, extracting all...")
                 zip_ref.extractall(extract_to)
                 return
 
@@ -182,15 +204,21 @@ class MinerUParser(RAGFlowPdfParser):
         return False, reason
 
     def _run_mineru(
-        self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None, server_url: Optional[str] = None, callback: Optional[Callable] = None
-    ):
+        self,
+        input_path: Path,
+        output_dir: Path,
+        method: str = "auto",
+        backend: str = "pipeline",
+        lang: Optional[str] = None,
+        server_url: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
         if self.using_api:
-            self._run_mineru_api(input_path, output_dir, method, backend, lang, callback)
-        else:
-            self._run_mineru_executable(input_path, output_dir, method, backend, lang, server_url, callback)
+            return self._run_mineru_api(input_path, output_dir, method, backend, lang, callback)
+        return self._run_mineru_executable(input_path, output_dir, method, backend, lang, server_url, callback)
 
-    def _run_mineru_api(self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None, callback: Optional[Callable] = None):
-        output_zip_path = os.path.join(str(output_dir), "output.zip")
+    def _run_mineru_api(self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None, callback: Optional[Callable] = None) -> str:
+        output_zip_path = Path(output_dir) / "output.zip"
 
         pdf_file_path = str(input_path)
 
@@ -198,8 +226,8 @@ class MinerUParser(RAGFlowPdfParser):
             raise RuntimeError(f"[MinerU] PDF file not exists: {pdf_file_path}")
 
         pdf_file_name = Path(pdf_file_path).stem.strip()
-        output_path = os.path.join(str(output_dir), pdf_file_name, method)
-        os.makedirs(output_path, exist_ok=True)
+        sanitized_file_name = self._sanitize_output_name(pdf_file_name)
+        chosen_root = sanitized_file_name or pdf_file_name
 
         files = {"files": (pdf_file_name + ".pdf", open(pdf_file_path, "rb"), "application/pdf")}
 
@@ -238,8 +266,14 @@ class MinerUParser(RAGFlowPdfParser):
                 with open(output_zip_path, "wb") as f:
                     f.write(response.content)
 
-                self.logger.info(f"[MinerU] Unzip to {output_path}...")
-                self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
+                zip_root = self._detect_zip_root_dir(output_zip_path)
+                chosen_root = zip_root or sanitized_file_name or pdf_file_name
+                root_dir_prefix = (zip_root + "/") if zip_root and not zip_root.endswith("/") else (zip_root if zip_root else f"{chosen_root}/")
+                output_path = Path(output_dir) / chosen_root
+                output_path.mkdir(parents=True, exist_ok=True)
+
+                self.logger.info(f"[MinerU] Unzip to {output_path} (root {root_dir_prefix})...")
+                self._extract_zip_no_root(output_zip_path, output_path, root_dir_prefix)
 
                 if callback:
                     callback(0.40, f"[MinerU] Unzip to {output_path}...")
@@ -248,10 +282,11 @@ class MinerUParser(RAGFlowPdfParser):
         except Exception as e:
             raise RuntimeError(f"[MinerU] api failed with exception {e}")
         self.logger.info("[MinerU] Api completed successfully.")
+        return chosen_root
 
     def _run_mineru_executable(
         self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None, server_url: Optional[str] = None, callback: Optional[Callable] = None
-    ):
+    ) -> str:
         cmd = [str(self.mineru_path), "-p", str(input_path), "-o", str(output_dir), "-m", method]
         if backend:
             cmd.extend(["-b", backend])
@@ -303,6 +338,7 @@ class MinerUParser(RAGFlowPdfParser):
         if return_code != 0:
             raise RuntimeError(f"[MinerU] Process failed with exit code {return_code}")
         self.logger.info("[MinerU] Command completed successfully.")
+        return input_path.stem
 
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
         self.page_from = page_from
@@ -458,37 +494,81 @@ class MinerUParser(RAGFlowPdfParser):
             poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
         return poss
 
-    def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto", backend: str = "pipeline") -> list[dict[str, Any]]:
-        candidates = []
-        seen = set()
+    def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto", backend: str = "pipeline", actual_root: Optional[str] = None) -> list[dict[str, Any]]:
+        candidates: list[Path] = []
+        seen: set[Path] = set()
+        attempted: list[Path] = []
 
         def add_candidate_path(p: Path):
             if p not in seen:
                 seen.add(p)
                 candidates.append(p)
 
-        if backend.startswith("vlm-"):
-            add_candidate_path(output_dir / file_stem / "vlm")
-            if method:
-                add_candidate_path(output_dir / file_stem / method)
-            add_candidate_path(output_dir / file_stem / "auto")
-        else:
-            if method:
-                add_candidate_path(output_dir / file_stem / method)
-            add_candidate_path(output_dir / file_stem / "vlm")
-            add_candidate_path(output_dir / file_stem / "auto")
+        candidate_roots: list[str] = []
+
+        def add_candidate_root(name: Optional[str]):
+            if not name:
+                return
+            root_name = Path(str(name)).name
+            if root_name not in candidate_roots:
+                candidate_roots.append(root_name)
+
+        add_candidate_root(file_stem)
+        sanitized_stem = self._sanitize_output_name(file_stem)
+        add_candidate_root(sanitized_stem)
+        add_candidate_root(actual_root)
+
+        if not candidate_roots:
+            candidate_roots.append(file_stem)
+
+        for root in candidate_roots:
+            base = output_dir / root
+            if backend.startswith("vlm-"):
+                add_candidate_path(base / "vlm")
+                if method:
+                    add_candidate_path(base / method)
+                add_candidate_path(base / "auto")
+            else:
+                if method:
+                    add_candidate_path(base / method)
+                add_candidate_path(base / "vlm")
+                add_candidate_path(base / "auto")
+            add_candidate_path(base)
+
+        candidate_file_stems: list[str] = []
+
+        def add_file_stem(name: Optional[str]):
+            if not name:
+                return
+            stem_name = Path(str(name)).stem
+            if stem_name not in candidate_file_stems:
+                candidate_file_stems.append(stem_name)
+
+        add_file_stem(file_stem)
+        add_file_stem(sanitized_stem)
+        add_file_stem(actual_root)
 
         json_file = None
         subdir = None
         for sub in candidates:
-            jf = sub / f"{file_stem}_content_list.json"
-            if jf.exists():
-                subdir = sub
-                json_file = jf
+            for stem in candidate_file_stems:
+                jf = sub / f"{stem}_content_list.json"
+                attempted.append(jf)
+                if jf.exists():
+                    subdir = sub
+                    json_file = jf
+                    break
+            if json_file:
                 break
 
         if not json_file:
-            raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(c / (file_stem + '_content_list.json')) for c in candidates)}")
+            fallback_matches = sorted(output_dir.glob("**/*_content_list.json"))
+            if fallback_matches:
+                json_file = fallback_matches[0]
+                subdir = json_file.parent
+                self.logger.info(f"[MinerU] Fallback located content list at {json_file}")
+            else:
+                raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
 
         with open(json_file, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -588,8 +668,8 @@ class MinerUParser(RAGFlowPdfParser):
         self.__images__(pdf, zoomin=1)
 
         try:
-            self._run_mineru(pdf, out_dir, method=method, backend=backend, lang=lang, server_url=server_url, callback=callback)
-            outputs = self._read_output(out_dir, pdf.stem, method=method, backend=backend)
+            output_root = self._run_mineru(pdf, out_dir, method=method, backend=backend, lang=lang, server_url=server_url, callback=callback)
+            outputs = self._read_output(out_dir, pdf.stem, method=method, backend=backend, actual_root=output_root)
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
