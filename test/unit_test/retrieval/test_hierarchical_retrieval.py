@@ -237,6 +237,7 @@ class TestHierarchicalRetrieval:
         
         chunks = retrieval._tier3_chunk_refinement(
             "test query",
+            ["kb1"],
             [{"id": "doc1"}],
             top_k=10
         )
@@ -391,35 +392,34 @@ class TestChunkRefiner:
         
         chunks = refiner.refine(
             query="test query",
+            kb_ids=["kb1"],
             doc_ids=["doc1", "doc2"],
-            top_k=10,
-            use_parent_child=False
+            top_k=10
         )
         
         assert isinstance(chunks, list)
     
-    def test_refine_with_parent_child(self):
-        """Test refinement with parent-child chunking"""
+    def test_refine_with_filters(self):
+        """Test refinement with document filters"""
         refiner = ChunkRefiner()
         
         chunks = refiner.refine(
             query="test query",
+            kb_ids=["kb1"],
             doc_ids=["doc1"],
-            top_k=5,
-            use_parent_child=True
+            top_k=5
         )
         
         assert isinstance(chunks, list)
     
-    def test_refine_empty_doc_ids(self):
-        """Test refinement with empty doc IDs"""
+    def test_refine_empty_kb_ids(self):
+        """Test refinement with empty KB IDs"""
         refiner = ChunkRefiner()
         
         chunks = refiner.refine(
             query="test query",
-            doc_ids=[],
-            top_k=10,
-            use_parent_child=False
+            kb_ids=[],
+            top_k=10
         )
         
         assert chunks == []
@@ -464,7 +464,7 @@ class TestIntegrationScenarios:
             enable_metadata_similarity=True,
             enable_parent_child_chunking=True,
             use_summary_mapping=True,
-            enable_hybrid_search=True
+            rerank=True
         )
         
         retrieval = HierarchicalRetrieval(config)
