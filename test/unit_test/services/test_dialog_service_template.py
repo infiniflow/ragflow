@@ -67,7 +67,6 @@ with patch('api.db.db_models.DB', mock_db):
         repair_bad_citation_formats,
         convert_conditions
     )
-    from api.db.db_models import Dialog
     from common.constants import StatusEnum
 
 

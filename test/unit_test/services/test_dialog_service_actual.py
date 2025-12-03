@@ -26,7 +26,6 @@ This tests the real business logic that exists in the codebase:
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 import sys
-import os
 
 # Mock external dependencies before importing
 sys.modules['nltk'] = MagicMock()
@@ -56,7 +55,6 @@ mock_db.connection_context.return_value.__exit__ = Mock(return_value=None)
 
 with patch('api.db.db_models.DB', mock_db):
     from api.db.services.dialog_service import DialogService, meta_filter, repair_bad_citation_formats, convert_conditions
-    from api.db.db_models import Dialog
     from common.constants import StatusEnum
 
 
@@ -123,7 +121,7 @@ class TestDialogServiceActual:
         setup_mocks.select.return_value = mock_query
         
         # Call the actual method
-        result = DialogService.get_list(tenant_id, page_number, items_per_page, orderby, desc, dialog_id, name)
+        DialogService.get_list(tenant_id, page_number, items_per_page, orderby, desc, dialog_id, name)
         
         # Verify query building logic
         setup_mocks.select.assert_called_once()
