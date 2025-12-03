@@ -21,7 +21,7 @@ Provides UI schema and validation for database connector configuration.
 This integrates with RAGFlow's data source configuration UI.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
 
 

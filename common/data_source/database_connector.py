@@ -49,8 +49,6 @@ from queue import Queue, Empty
 from contextlib import contextmanager
 import base64
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
 from collections import defaultdict, deque
 
 from common.data_source.interfaces import LoadConnector, PollConnector, CredentialsConnector
