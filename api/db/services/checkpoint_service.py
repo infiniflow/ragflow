@@ -23,7 +23,7 @@ from datetime import datetime
 from typing import Optional, Dict, List, Any
 from api.db.db_models import TaskCheckpoint
 from api.db.services.common_service import CommonService
-from api.utils import get_uuid
+from common.misc_utils import get_uuid
 
 
 class CheckpointService(CommonService):
