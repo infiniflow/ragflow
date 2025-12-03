@@ -711,6 +711,8 @@ export default {
         'Отметьте, если это экземпляр Confluence Cloud, снимите для Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
         'Базовый URL вашего экземпляра Confluence (например, https://your-domain.atlassian.net/wiki)',
+      confluenceSpaceKeyTip:
+        'Необязательно: Укажите ключ пространства для синхронизации только определенного пространства. Оставьте пустым для синхронизации всех доступных пространств. Для нескольких пространств разделите запятыми (например, DEV,DOCS,HR)',
       s3PrefixTip: `Укажите путь к папке в вашем S3 бакете для получения файлов. 
 Пример: general/v2/`,
       S3CompatibleEndpointUrlTip: `Требуется для S3 совместимого Storage Box. Укажите URL конечной точки, совместимой с S3.
