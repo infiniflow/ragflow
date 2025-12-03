@@ -16,6 +16,7 @@
 import asyncio
 import base64
 import inspect
+import binascii
 import json
 import logging
 import re
@@ -28,7 +29,9 @@ from typing import Any, Union, Tuple
 from agent.component import component_class
 from agent.component.base import ComponentBase
 from api.db.services.file_service import FileService
+from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
+from common.constants import LLMType
 from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
 from rag.prompts.generator import chunks_format
@@ -356,8 +359,6 @@ class Canvas(Graph):
                             self.globals[k] = ""
                 else:
                     self.globals[k] = ""
-        print(self.globals)
-                
 
     async def run(self, **kwargs):
         st = time.perf_counter()
@@ -415,13 +416,19 @@ class Canvas(Graph):
 
             loop = asyncio.get_running_loop()
             tasks = []
+
+            def _run_async_in_thread(coro_func, **call_kwargs):
+                return asyncio.run(coro_func(**call_kwargs))
+
             i = f
             while i < t:
                 cpn = self.get_component_obj(self.path[i])
                 task_fn = None
+                call_kwargs = None
 
                 if cpn.component_name.lower() in ["begin", "userfillup"]:
-                    task_fn = partial(cpn.invoke, inputs=kwargs.get("inputs", {}))
+                    call_kwargs = {"inputs": kwargs.get("inputs", {})}
+                    task_fn = cpn.invoke
                     i += 1
                 else:
                     for _, ele in cpn.get_input_elements().items():
@@ -430,13 +437,18 @@ class Canvas(Graph):
                             t -= 1
                             break
                     else:
-                        task_fn = partial(cpn.invoke, **cpn.get_input())
+                        call_kwargs = cpn.get_input()
+                        task_fn = cpn.invoke
                         i += 1
 
                 if task_fn is None:
                     continue
 
-                tasks.append(loop.run_in_executor(self._thread_pool, task_fn))
+                invoke_async = getattr(cpn, "invoke_async", None)
+                if invoke_async and asyncio.iscoroutinefunction(invoke_async):
+                    tasks.append(loop.run_in_executor(self._thread_pool, partial(_run_async_in_thread, invoke_async, **(call_kwargs or {}))))
+                else:
+                    tasks.append(loop.run_in_executor(self._thread_pool, partial(task_fn, **(call_kwargs or {}))))
 
             if tasks:
                 await asyncio.gather(*tasks)
@@ -456,6 +468,7 @@ class Canvas(Graph):
         self.error = ""
         idx = len(self.path) - 1
         partials = []
+        tts_mdl = None
         while idx < len(self.path):
             to = len(self.path)
             for i in range(idx, to):
@@ -473,31 +486,51 @@ class Canvas(Graph):
                 cpn = self.get_component(self.path[i])
                 cpn_obj = self.get_component_obj(self.path[i])
                 if cpn_obj.component_name.lower() == "message":
+                    if cpn_obj.get_param("auto_play"):
+                        tts_mdl = LLMBundle(self._tenant_id, LLMType.TTS)
                     if isinstance(cpn_obj.output("content"), partial):
                         _m = ""
+                        buff_m = ""
                         stream = cpn_obj.output("content")()
+                        async def _process_stream(m):
+                            nonlocal buff_m, _m, tts_mdl
+                            if not m:
+                                return
+                            if m == "<think>":
+                                return decorate("message", {"content": "", "start_to_think": True})
+
+                            elif m == "</think>":
+                                return decorate("message", {"content": "", "end_to_think": True})
+
+                            buff_m += m
+                            _m += m
+
+                            if len(buff_m) > 16:
+                                ev = decorate(
+                                    "message",
+                                    {
+                                        "content": m,
+                                        "audio_binary": self.tts(tts_mdl, buff_m)
+                                    }
+                                )
+                                buff_m = ""
+                                return ev
+
+                            return decorate("message", {"content": m})
+
                         if inspect.isasyncgen(stream):
                             async for m in stream:
-                                if not m:
-                                    continue
-                                if m == "<think>":
-                                    yield decorate("message", {"content": "", "start_to_think": True})
-                                elif m == "</think>":
-                                    yield decorate("message", {"content": "", "end_to_think": True})
-                                else:
-                                    yield decorate("message", {"content": m})
-                                    _m += m
+                                ev= await _process_stream(m)
+                                if ev:
+                                    yield ev
                         else:
                             for m in stream:
-                                if not m:
-                                    continue
-                                if m == "<think>":
-                                    yield decorate("message", {"content": "", "start_to_think": True})
-                                elif m == "</think>":
-                                    yield decorate("message", {"content": "", "end_to_think": True})
-                                else:
-                                    yield decorate("message", {"content": m})
-                                    _m += m
+                                ev= await _process_stream(m)
+                                if ev:
+                                    yield ev
+                        if buff_m:
+                            yield decorate("message", {"content": "", "audio_binary": self.tts(tts_mdl, buff_m)})
+                            buff_m = ""
                         cpn_obj.set_output("content", _m)
                         cite = re.search(r"\[ID:[ 0-9]+\]", _m)
                     else:
@@ -617,6 +650,50 @@ class Canvas(Graph):
         if self.get_component(arr[0]) is None:
             return False
         return True
+
+
+    def tts(self,tts_mdl, text):
+        def clean_tts_text(text: str) -> str:
+            if not text:
+                return ""
+
+            text = text.encode("utf-8", "ignore").decode("utf-8", "ignore")
+
+            text = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
+
+            emoji_pattern = re.compile(
+                "[\U0001F600-\U0001F64F"
+                "\U0001F300-\U0001F5FF"
+                "\U0001F680-\U0001F6FF"
+                "\U0001F1E0-\U0001F1FF"
+                "\U00002700-\U000027BF"
+                "\U0001F900-\U0001F9FF"
+                "\U0001FA70-\U0001FAFF"
+                "\U0001FAD0-\U0001FAFF]+",
+                flags=re.UNICODE
+            )
+            text = emoji_pattern.sub("", text)
+
+            text = re.sub(r"\s+", " ", text).strip()
+
+            MAX_LEN = 500
+            if len(text) > MAX_LEN:
+                text = text[:MAX_LEN]
+
+            return text
+        if not tts_mdl or not text:
+            return None
+        text = clean_tts_text(text)
+        if not text:
+            return None
+        bin = b""
+        try:
+            for chunk in tts_mdl.tts(text):
+                bin += chunk
+        except Exception as e:
+            logging.error(f"TTS failed: {e}, text={text!r}")
+            return None
+        return binascii.hexlify(bin).decode("utf-8")
 
     def get_history(self, window_size):
         convs = []

@@ -1,4 +1,4 @@
-import { useLogout } from '@/hooks/login-hooks';
+import { useLogout } from '@/hooks/use-login-request';
 import { Routes } from '@/routes';
 import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'umi';

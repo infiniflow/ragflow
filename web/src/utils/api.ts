@@ -50,6 +50,8 @@ export default {
   // plugin
   llm_tools: `${api_host}/plugin/llm_tools`,
 
+  sequence2txt: `${api_host}/conversation/sequence2txt`,
+
   // knowledge base
 
   check_embedding: `${api_host}/kb/check_embedding`,
@@ -107,7 +109,7 @@ export default {
   document_upload: `${api_host}/document/upload`,
   web_crawl: `${api_host}/document/web_crawl`,
   document_infos: `${api_host}/document/infos`,
-  upload_and_parse: (id: string) => `${api_host}/document/upload_info`,
+  upload_and_parse: `${api_host}/document/upload_info`,
   parse: `${api_host}/document/parse`,
   setMeta: `${api_host}/document/set_meta`,
   get_dataset_filter: `${api_host}/document/filter`,
@@ -170,7 +172,7 @@ export default {
   listTemplates: `${api_host}/canvas/templates`,
   listCanvas: `${api_host}/canvas/list`,
   getCanvas: `${api_host}/canvas/get`,
-  getCanvasSSE: `${api_host}/canvas/getsse`,
+  getCanvasSSE: (canvasId: string) => `${api_host}/canvas/getsse/${canvasId}`,
   removeCanvas: `${api_host}/canvas/rm`,
   setCanvas: `${api_host}/canvas/set`,
   settingCanvas: `${api_host}/canvas/setting`,

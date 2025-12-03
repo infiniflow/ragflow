@@ -332,6 +332,7 @@ class RaptorConfig(Base):
     max_cluster: Annotated[int, Field(default=64, ge=1, le=1024)]
     random_seed: Annotated[int, Field(default=0, ge=0)]
     use_checkpoints: Annotated[bool, Field(default=True, description="Enable checkpoint/resume for fault tolerance")]
+    auto_disable_for_structured_data: Annotated[bool, Field(default=True)]
 
 
 class GraphragConfig(Base):

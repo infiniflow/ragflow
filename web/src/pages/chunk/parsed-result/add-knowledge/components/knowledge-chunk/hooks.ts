@@ -1,10 +1,10 @@
+import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import {
   useCreateChunk,
   useDeleteChunk,
   useSelectChunkList,
-} from '@/hooks/chunk-hooks';
-import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
-import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
+} from '@/hooks/use-chunk-request';
 import { IChunk } from '@/interfaces/database/knowledge';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useCallback, useMemo, useState } from 'react';
