@@ -82,7 +82,7 @@ Some embedding models are optimized for specific languages, so performance may b
 
 ### Upload file
 
-- RAGFlow's **File** allows you to link a file to multiple datasets, in which case each target dataset holds a reference to the file.
+- RAGFlow's File system allows you to link a file to multiple datasets, in which case each target dataset holds a reference to the file.
 - In **Knowledge Base**, you are also given the option of uploading a single file or a folder of files (bulk upload) from your local machine to a dataset, in which case the dataset holds file copies. 
 
 While uploading files directly to a dataset seems more convenient, we *highly* recommend uploading files to **File** and then linking them to the target datasets. This way, you can avoid permanently deleting files uploaded to the dataset. 
