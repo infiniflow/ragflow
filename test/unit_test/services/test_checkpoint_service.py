@@ -26,8 +26,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock
-from datetime import datetime
+from unittest.mock import Mock
 
 
 class TestCheckpointCreation:
@@ -320,7 +319,7 @@ class TestIntegrationScenarios:
         mock_checkpoint.total_documents = 3
         mock_checkpoint_service.create_checkpoint.return_value = mock_checkpoint
         
-        checkpoint = mock_checkpoint_service.create_checkpoint(
+        mock_checkpoint_service.create_checkpoint(
             task_id="task_123",
             task_type="raptor",
             doc_ids=["doc1", "doc2", "doc3"],
@@ -345,7 +344,7 @@ class TestIntegrationScenarios:
         mock_checkpoint.id = "checkpoint_123"
         mock_checkpoint_service.create_checkpoint.return_value = mock_checkpoint
         
-        checkpoint = mock_checkpoint_service.create_checkpoint(
+        mock_checkpoint_service.create_checkpoint(
             task_id="task_123",
             task_type="raptor",
             doc_ids=["doc1", "doc2", "doc3"],
@@ -386,7 +385,7 @@ class TestIntegrationScenarios:
         mock_checkpoint.id = "checkpoint_123"
         mock_checkpoint_service.create_checkpoint.return_value = mock_checkpoint
         
-        checkpoint = mock_checkpoint_service.create_checkpoint(
+        mock_checkpoint_service.create_checkpoint(
             task_id="task_123",
             task_type="raptor",
             doc_ids=["doc1", "doc2", "doc3", "doc4", "doc5"],
