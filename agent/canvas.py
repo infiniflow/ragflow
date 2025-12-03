@@ -93,9 +93,6 @@ class Graph:
         cpn_nms = set([])
         for k, cpn in self.components.items():
             cpn_nms.add(cpn["obj"]["component_name"])
-
-        for k, cpn in self.components.items():
-            cpn_nms.add(cpn["obj"]["component_name"])
             param = component_class(cpn["obj"]["component_name"] + "Param")()
             param.update(cpn["obj"]["params"])
             try:
