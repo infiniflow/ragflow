@@ -869,6 +869,13 @@ class Dialog(DataBaseModel):
 
     kb_ids = JSONField(null=False, default=[])
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    
+    # Hierarchical Retrieval Configuration
+    hierarchical_retrieval_config = JSONField(
+        null=True,
+        default=None,
+        help_text="Configuration for three-tier hierarchical retrieval architecture"
+    )
 
     class Meta:
         db_table = "dialog"
@@ -1393,6 +1400,12 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("evaluation_datasets", "status", IntegerField(null=False, default=1)))
+    except Exception:
+        pass
+    
+    # Hierarchical Retrieval Configuration
+    try:
+        migrate(migrator.add_column("dialog", "hierarchical_retrieval_config", JSONField(null=True, default=None, help_text="Configuration for three-tier hierarchical retrieval architecture")))
     except Exception:
         pass
     
