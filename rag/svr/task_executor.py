@@ -27,6 +27,7 @@ import json_repair
 from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+from api.db.services.checkpoint_service import CheckpointService
 from common.connection_utils import timeout
 from rag.utils.base64_image import image2id
 from common.log_utils import init_root_logger
@@ -639,6 +640,121 @@ async def run_dataflow(task: dict):
     PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
 
 
+async def run_raptor_with_checkpoint(task, row, kb_parser_config, chat_mdl, embd_mdl, vector_size, callback=None, doc_ids=[]):
+    """
+    Checkpoint-aware RAPTOR execution that processes documents individually.
+    
+    This wrapper enables:
+    - Per-document checkpointing
+    - Pause/resume capability
+    - Failure isolation
+    - Automatic retry
+    """
+    task_id = task["id"]
+    raptor_config = kb_parser_config.get("raptor", {})
+    
+    # Create or load checkpoint
+    checkpoint = CheckpointService.get_by_task_id(task_id)
+    if not checkpoint:
+        checkpoint = CheckpointService.create_checkpoint(
+            task_id=task_id,
+            task_type="raptor",
+            doc_ids=doc_ids,
+            config=raptor_config
+        )
+        logging.info(f"Created new checkpoint for RAPTOR task {task_id}")
+    else:
+        logging.info(f"Resuming RAPTOR task {task_id} from checkpoint {checkpoint.id}")
+    
+    # Get pending documents (skip already completed ones)
+    pending_docs = CheckpointService.get_pending_documents(checkpoint.id)
+    total_docs = len(doc_ids)
+    
+    if not pending_docs:
+        logging.info(f"All documents already processed for task {task_id}")
+        callback(prog=1.0, msg="All documents completed")
+        return
+    
+    logging.info(f"Processing {len(pending_docs)}/{total_docs} pending documents")
+    
+    # Process each document individually
+    all_results = []
+    total_tokens = 0
+    
+    for idx, doc_id in enumerate(pending_docs):
+        # Check for pause/cancel
+        if CheckpointService.is_paused(checkpoint.id):
+            logging.info(f"Task {task_id} paused at document {doc_id}")
+            callback(prog=0.0, msg="Task paused")
+            return
+        
+        if CheckpointService.is_cancelled(checkpoint.id):
+            logging.info(f"Task {task_id} cancelled at document {doc_id}")
+            callback(prog=0.0, msg="Task cancelled")
+            return
+        
+        try:
+            # Process single document
+            logging.info(f"Processing document {doc_id} ({idx+1}/{len(pending_docs)})")
+            
+            # Call original RAPTOR function for single document
+            results, token_count = await run_raptor_for_kb(
+                row, kb_parser_config, chat_mdl, embd_mdl, vector_size,
+                callback=None,  # Don't use callback for individual docs
+                doc_ids=[doc_id]
+            )
+            
+            # Save results
+            all_results.extend(results)
+            total_tokens += token_count
+            
+            # Save checkpoint
+            CheckpointService.save_document_completion(
+                checkpoint.id,
+                doc_id,
+                token_count=token_count,
+                chunks=len(results)
+            )
+            
+            # Update progress
+            completed = total_docs - len(pending_docs) + idx + 1
+            progress = completed / total_docs
+            callback(prog=progress, msg=f"Completed {completed}/{total_docs} documents")
+            
+            logging.info(f"Document {doc_id} completed: {len(results)} chunks, {token_count} tokens")
+            
+        except Exception as e:
+            error_msg = str(e)
+            logging.error(f"Failed to process document {doc_id}: {error_msg}")
+            
+            # Save failure
+            CheckpointService.save_document_failure(
+                checkpoint.id,
+                doc_id,
+                error=error_msg
+            )
+            
+            # Check if we should retry
+            if CheckpointService.should_retry(checkpoint.id, doc_id, max_retries=3):
+                logging.info(f"Document {doc_id} will be retried later")
+            else:
+                logging.warning(f"Document {doc_id} exceeded max retries, skipping")
+            
+            # Continue with other documents (fault tolerance)
+            continue
+    
+    # Final status
+    failed_docs = CheckpointService.get_failed_documents(checkpoint.id)
+    if failed_docs:
+        logging.warning(f"Task {task_id} completed with {len(failed_docs)} failed documents")
+        callback(prog=1.0, msg=f"Completed with {len(failed_docs)} failures")
+    else:
+        logging.info(f"Task {task_id} completed successfully")
+        callback(prog=1.0, msg="All documents completed successfully")
+    
+    return all_results, total_tokens
+
+
 @timeout(3600)
 async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_size, callback=None, doc_ids=[]):
     fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
@@ -854,17 +970,35 @@ async def do_handle_task(task):
 
         # bind LLM for raptor
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
-        # run RAPTOR
+        
+        # Check if checkpointing is enabled (default: True for RAPTOR)
+        use_checkpoints = kb_parser_config.get("raptor", {}).get("use_checkpoints", True)
+        
+        # run RAPTOR with or without checkpoints
         async with kg_limiter:
-            chunks, token_count = await run_raptor_for_kb(
-                row=task,
-                kb_parser_config=kb_parser_config,
-                chat_mdl=chat_model,
-                embd_mdl=embedding_model,
-                vector_size=vector_size,
-                callback=progress_callback,
-                doc_ids=task.get("doc_ids", []),
-            )
+            if use_checkpoints:
+                # Use checkpoint-aware version for fault tolerance
+                chunks, token_count = await run_raptor_with_checkpoint(
+                    task=task,
+                    row=task,
+                    kb_parser_config=kb_parser_config,
+                    chat_mdl=chat_model,
+                    embd_mdl=embedding_model,
+                    vector_size=vector_size,
+                    callback=progress_callback,
+                    doc_ids=task.get("doc_ids", []),
+                )
+            else:
+                # Use original version (legacy mode)
+                chunks, token_count = await run_raptor_for_kb(
+                    row=task,
+                    kb_parser_config=kb_parser_config,
+                    chat_mdl=chat_model,
+                    embd_mdl=embedding_model,
+                    vector_size=vector_size,
+                    callback=progress_callback,
+                    doc_ids=task.get("doc_ids", []),
+                )
         if fake_doc_ids := task.get("doc_ids", []):
             task_doc_id = fake_doc_ids[0] # use the first document ID to represent this task for logging purposes
     # Either using graphrag or Standard chunking methods

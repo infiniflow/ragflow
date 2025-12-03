@@ -837,6 +837,58 @@ class Task(DataBaseModel):
     retry_count = IntegerField(default=0)
     digest = TextField(null=True, help_text="task digest", default="")
     chunk_ids = LongTextField(null=True, help_text="chunk ids", default="")
+    
+    # Checkpoint/Resume support
+    checkpoint_id = CharField(max_length=32, null=True, index=True, help_text="Associated checkpoint ID")
+    can_pause = BooleanField(default=False, help_text="Whether task supports pause/resume")
+    is_paused = BooleanField(default=False, index=True, help_text="Whether task is currently paused")
+
+
+class TaskCheckpoint(DataBaseModel):
+    """Checkpoint data for long-running tasks (RAPTOR, GraphRAG)"""
+    id = CharField(max_length=32, primary_key=True)
+    task_id = CharField(max_length=32, null=False, index=True, help_text="Associated task ID")
+    task_type = CharField(max_length=32, null=False, help_text="Task type: raptor, graphrag")
+    
+    # Overall task state
+    status = CharField(max_length=16, null=False, default="pending", index=True, 
+                      help_text="Status: pending, running, paused, completed, failed, cancelled")
+    
+    # Document tracking
+    total_documents = IntegerField(default=0, help_text="Total number of documents to process")
+    completed_documents = IntegerField(default=0, help_text="Number of completed documents")
+    failed_documents = IntegerField(default=0, help_text="Number of failed documents")
+    pending_documents = IntegerField(default=0, help_text="Number of pending documents")
+    
+    # Progress tracking
+    overall_progress = FloatField(default=0.0, help_text="Overall progress (0.0 to 1.0)")
+    token_count = IntegerField(default=0, help_text="Total tokens consumed")
+    
+    # Checkpoint data (JSON)
+    checkpoint_data = JSONField(null=False, default={}, help_text="Detailed checkpoint state")
+    # Structure: {
+    #   "doc_states": {
+    #     "doc_id_1": {"status": "completed", "token_count": 1500, "chunks": 45, "completed_at": "..."},
+    #     "doc_id_2": {"status": "failed", "error": "API timeout", "retry_count": 3, "last_attempt": "..."},
+    #     "doc_id_3": {"status": "pending"},
+    #   },
+    #   "config": {...},
+    #   "metadata": {...}
+    # }
+    
+    # Timestamps
+    started_at = DateTimeField(null=True, help_text="When task started")
+    paused_at = DateTimeField(null=True, help_text="When task was paused")
+    resumed_at = DateTimeField(null=True, help_text="When task was resumed")
+    completed_at = DateTimeField(null=True, help_text="When task completed")
+    last_checkpoint_at = DateTimeField(null=True, index=True, help_text="Last checkpoint save time")
+    
+    # Error tracking
+    error_message = TextField(null=True, help_text="Error message if failed")
+    retry_count = IntegerField(default=0, help_text="Number of retries attempted")
+    
+    class Meta:
+        db_table = "task_checkpoint"
 
 
 class Dialog(DataBaseModel):
@@ -1293,4 +1345,19 @@ def migrate_db():
         migrate(migrator.add_column("llm_factories", "rank", IntegerField(default=0, index=False)))
     except Exception:
         pass
+    
+    # Checkpoint/Resume support migrations
+    try:
+        migrate(migrator.add_column("task", "checkpoint_id", CharField(max_length=32, null=True, index=True, help_text="Associated checkpoint ID")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("task", "can_pause", BooleanField(default=False, help_text="Whether task supports pause/resume")))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("task", "is_paused", BooleanField(default=False, index=True, help_text="Whether task is currently paused")))
+    except Exception:
+        pass
+    
     logging.disable(logging.NOTSET)
