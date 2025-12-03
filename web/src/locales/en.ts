@@ -714,6 +714,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
         'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
+      confluenceSpaceKeyTip:
+        'Optional: Specify a space key to limit syncing to a specific space. Leave empty to sync all accessible spaces. For multiple spaces, separate with commas (e.g., DEV,DOCS,HR)',
       s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from. 
 Example: general/v2/`,
       S3CompatibleEndpointUrlTip: `Required for S3 compatible Storage Box. Specify the S3-compatible endpoint URL.

@@ -230,6 +230,13 @@ export const DataSourceFormFields = {
       required: false,
       tooltip: t('setting.confluenceIsCloudTip'),
     },
+    {
+      label: 'Space Key',
+      name: 'config.space',
+      type: FormFieldType.Text,
+      required: false,
+      tooltip: t('setting.confluenceSpaceKeyTip'),
+    },
   ],
   [DataSourceKey.GOOGLE_DRIVE]: [
     {
@@ -563,6 +570,7 @@ export const DataSourceFormDefaultValues = {
     config: {
       wiki_base: '',
       is_cloud: true,
+      space: '',
       credentials: {
         confluence_username: '',
         confluence_access_token: '',
