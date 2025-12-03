@@ -13,31 +13,31 @@ import { PropsWithChildren } from 'react';
 
 const settings = [
   {
-    title: 'GPT Model',
+    title: 'GPT model',
     description:
       'The default chat LLM all the newly created knowledgebase will use.',
     model: 'DeepseekChat',
   },
   {
-    title: 'Embedding Model',
+    title: 'Embedding model',
     description:
       'The default embedding model all the newly created knowledgebase will use.',
     model: 'DeepseekChat',
   },
   {
-    title: 'Image Model',
+    title: 'Image model',
     description:
       'The default multi-capable model all the newly created knowledgebase will use. It can generate a picture or video.',
     model: 'DeepseekChat',
   },
   {
-    title: 'Speech2TXT Model',
+    title: 'Speech2TXT model',
     description:
       'The default ASR model all the newly created knowledgebase will use. Use this model to translate voices to text something text.',
     model: 'DeepseekChat',
   },
   {
-    title: 'TTS Model',
+    title: 'TTS model',
     description:
       'The default text to speech model all the newly created knowledgebase will use.',
     model: 'DeepseekChat',
