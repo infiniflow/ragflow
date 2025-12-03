@@ -569,12 +569,6 @@ export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
     }, {});
   }
 
-  // Delete the downstream nodes corresponding to the yes and no fields of the Relevant operator
-  if (nodeData?.label === Operator.Relevant) {
-    form.yes = undefined;
-    form.no = undefined;
-  }
-
   return {
     ...(nodeData ?? { label: '' }),
     form,

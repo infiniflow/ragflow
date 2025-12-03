@@ -1,6 +1,6 @@
-import { useDeleteMessage, useFeedback } from '@/hooks/chat-hooks';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById, useSpeechWithSse } from '@/hooks/logic-hooks';
+import { useDeleteMessage, useFeedback } from '@/hooks/use-chat-request';
 import { IFeedbackRequestBody } from '@/interfaces/request/chat';
 import { hexStringToUint8Array } from '@/utils/common-util';
 import { SpeechPlayer } from 'openai-speech-stream-player';

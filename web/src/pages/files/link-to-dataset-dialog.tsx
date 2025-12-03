@@ -15,7 +15,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { MultiSelect } from '@/components/ui/multi-select';
-import { useSelectKnowledgeOptions } from '@/hooks/knowledge-hooks';
+import { useSelectKnowledgeOptions } from '@/hooks/use-knowledge-request';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link2 } from 'lucide-react';

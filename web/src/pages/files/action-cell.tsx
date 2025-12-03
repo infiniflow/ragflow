@@ -5,7 +5,7 @@ import {
 import { FileIcon } from '@/components/icon-font';
 import NewDocumentLink from '@/components/new-document-link';
 import { Button } from '@/components/ui/button';
-import { useDownloadFile } from '@/hooks/file-manager-hooks';
+import { useDownloadFile } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
 import { cn } from '@/lib/utils';
 import {

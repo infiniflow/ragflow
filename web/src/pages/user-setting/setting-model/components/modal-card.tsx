@@ -7,7 +7,7 @@ import { LlmIcon } from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
-import { LlmItem } from '@/hooks/llm-hooks';
+import { LlmItem } from '@/hooks/use-llm-request';
 import { getRealModelName } from '@/utils/llm-util';
 import { EditOutlined, SettingOutlined } from '@ant-design/icons';
 import { ChevronsDown, ChevronsUp, Trash2 } from 'lucide-react';
