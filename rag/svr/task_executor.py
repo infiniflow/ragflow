@@ -27,7 +27,6 @@ import json_repair
 from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.services.checkpoint_service import CheckpointService
 from common.connection_utils import timeout
 from rag.utils.base64_image import image2id
 from common.log_utils import init_root_logger
@@ -650,6 +649,9 @@ async def run_raptor_with_checkpoint(task, row, kb_parser_config, chat_mdl, embd
     - Failure isolation
     - Automatic retry
     """
+    # Lazy import to avoid initialization issues
+    from api.db.services.checkpoint_service import CheckpointService
+    
     task_id = task["id"]
     raptor_config = kb_parser_config.get("raptor", {})
     
