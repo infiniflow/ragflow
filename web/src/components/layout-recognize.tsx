@@ -1,6 +1,6 @@
 import { LlmModelType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
+import { useSelectLlmOptionsByModelType } from '@/hooks/use-llm-request';
 import { Form, Select } from 'antd';
 import { camelCase } from 'lodash';
 import { useMemo } from 'react';

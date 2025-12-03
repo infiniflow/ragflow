@@ -14,7 +14,7 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
   useFetchTenantInfo,
   useFetchUserInfo,
-} from '@/hooks/user-setting-hooks';
+} from '@/hooks/use-user-setting-request';
 import { Send, Settings } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';

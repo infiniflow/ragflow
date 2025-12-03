@@ -1,5 +1,5 @@
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
-import { useFetchManualSystemTokenList } from '@/hooks/user-setting-hooks';
+import { useFetchManualSystemTokenList } from '@/hooks/use-user-setting-request';
 import { useCallback } from 'react';
 import message from '../ui/message';
 

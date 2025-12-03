@@ -813,6 +813,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tongyiBaseUrlTip:
         '对于中国用户，不需要填写或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。对于国际用户，使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1。',
       tongyiBaseUrlPlaceholder: '(仅国际用户需要)',
+      minimaxBaseUrlTip: '仅国际用户：使用 https://api.minimax.io/v1。',
+      minimaxBaseUrlPlaceholder: '(仅国际用户填写 https://api.minimax.io/v1)',
       modify: '修改',
       systemModelSettings: '设置默认模型',
       chatModel: 'LLM',
@@ -990,6 +992,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      autoPlay: '自动播放',
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',
       formatTypeError: '格式或类型错误',

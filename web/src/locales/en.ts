@@ -858,6 +858,10 @@ Example: Virtual Hosted Style`,
       tongyiBaseUrlTip:
         'For Chinese users, no need to fill in or use https://dashscope.aliyuncs.com/compatible-mode/v1. For international users, use https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       tongyiBaseUrlPlaceholder: '(International users only, please see tip)',
+      minimaxBaseUrlTip:
+        'International users only: use https://api.minimax.io/v1',
+      minimaxBaseUrlPlaceholder:
+        '(International users only, fill in https://api.minimax.io/v1)',
       modify: 'Modify',
       systemModelSettings: 'Set default models',
       chatModel: 'LLM',
@@ -1068,6 +1072,7 @@ Example: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Please upload at least one file',
     },
     flow: {
+      autoPlay: 'Auto play audio',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',
       formatTypeError: 'Format or type error',
