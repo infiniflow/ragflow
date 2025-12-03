@@ -23,7 +23,6 @@ unlike the unit tests which use mocks.
 
 import pytest
 from api.db.services.checkpoint_service import CheckpointService
-from api.db.db_models import TaskCheckpoint
 
 
 class TestCheckpointServiceIntegration:
