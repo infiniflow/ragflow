@@ -268,41 +268,41 @@ const routes = [
     layout: false,
     component: `@/pages${Routes.Chunk}`,
   },
-  {
-    path: Routes.ProfileSetting,
-    layout: false,
-    component: `@/pages${Routes.ProfileSetting}`,
-    routes: [
-      {
-        path: Routes.ProfileSetting,
-        redirect: `${Routes.ProfileProfile}`,
-      },
-      {
-        path: `${Routes.ProfileProfile}`,
-        component: `@/pages${Routes.ProfileProfile}`,
-      },
-      {
-        path: `${Routes.ProfileTeam}`,
-        component: `@/pages${Routes.ProfileTeam}`,
-      },
-      {
-        path: `${Routes.ProfilePlan}`,
-        component: `@/pages${Routes.ProfilePlan}`,
-      },
-      {
-        path: `${Routes.ProfileModel}`,
-        component: `@/pages${Routes.ProfileModel}`,
-      },
-      {
-        path: `${Routes.ProfilePrompt}`,
-        component: `@/pages${Routes.ProfilePrompt}`,
-      },
-      {
-        path: Routes.ProfileMcp,
-        component: `@/pages${Routes.ProfileMcp}`,
-      },
-    ],
-  },
+  // {
+  //   path: Routes.ProfileSetting,
+  //   layout: false,
+  //   component: `@/pages${Routes.ProfileSetting}`,
+  //   routes: [
+  //     {
+  //       path: Routes.ProfileSetting,
+  //       redirect: `${Routes.ProfileProfile}`,
+  //     },
+  //     {
+  //       path: `${Routes.ProfileProfile}`,
+  //       component: `@/pages${Routes.ProfileProfile}`,
+  //     },
+  //     {
+  //       path: `${Routes.ProfileTeam}`,
+  //       component: `@/pages${Routes.ProfileTeam}`,
+  //     },
+  //     {
+  //       path: `${Routes.ProfilePlan}`,
+  //       component: `@/pages${Routes.ProfilePlan}`,
+  //     },
+  //     {
+  //       path: `${Routes.ProfileModel}`,
+  //       component: `@/pages${Routes.ProfileModel}`,
+  //     },
+  //     {
+  //       path: `${Routes.ProfilePrompt}`,
+  //       component: `@/pages${Routes.ProfilePrompt}`,
+  //     },
+  //     {
+  //       path: Routes.ProfileMcp,
+  //       component: `@/pages${Routes.ProfileMcp}`,
+  //     },
+  //   ],
+  // },
   {
     path: '/user-setting',
     component: '@/pages/user-setting',
