@@ -169,6 +169,7 @@ test = [
     "requests>=2.32.2",
     "requests-toolbelt>=1.0.0",
     "pycryptodomex==3.20.0",
+    "strenum==0.4.15",
 ]
 
 [[tool.uv.index]]
