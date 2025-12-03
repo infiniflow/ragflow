@@ -26,7 +26,6 @@ Provides functionality for evaluating RAG system performance including:
 """
 
 import logging
-import json
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from timeit import default_timer as timer
@@ -34,7 +33,6 @@ from timeit import default_timer as timer
 from api.db.db_models import EvaluationDataset, EvaluationCase, EvaluationRun, EvaluationResult
 from api.db.services.common_service import CommonService
 from api.db.services.dialog_service import DialogService, chat
-from api.db.services.llm_service import LLMBundle
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
 from common.constants import StatusEnum

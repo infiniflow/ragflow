@@ -26,8 +26,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from common.misc_utils import get_uuid
+from unittest.mock import patch
 
 
 class TestEvaluationDatasetManagement:

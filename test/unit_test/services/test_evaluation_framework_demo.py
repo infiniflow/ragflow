@@ -20,7 +20,7 @@ This test doesn't require RAGFlow dependencies.
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 
 class TestEvaluationFrameworkDemo:

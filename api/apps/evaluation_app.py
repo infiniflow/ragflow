@@ -431,7 +431,7 @@ async def compare_runs():
 async def export_results(run_id):
     """Export evaluation results as JSON/CSV"""
     try:
-        format_type = request.args.get("format", "json")
+        # format_type = request.args.get("format", "json")  # TODO: Use for CSV export
         
         result = EvaluationService.get_run_results(run_id)
         
@@ -465,7 +465,7 @@ async def evaluate_single():
     }
     """
     try:
-        req = await get_request_json()
+        # req = await get_request_json()  # TODO: Use for single evaluation implementation
         
         # TODO: Implement single evaluation
         # This would execute the RAG pipeline and return metrics immediately
