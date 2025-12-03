@@ -34,7 +34,6 @@ import {
   initialNoteValues,
   initialParserValues,
   initialPubMedValues,
-  initialRelevantValues,
   initialRetrievalValues,
   initialRewriteQuestionValues,
   initialSearXNGValues,
@@ -129,7 +128,6 @@ export const useInitializeOperatorParams = () => {
       [Operator.Begin]: initialBeginValues,
       [Operator.Retrieval]: initialRetrievalValues,
       [Operator.Categorize]: { ...initialCategorizeValues, llm_id: llmId },
-      [Operator.Relevant]: { ...initialRelevantValues, llm_id: llmId },
       [Operator.RewriteQuestion]: {
         ...initialRewriteQuestionValues,
         llm_id: llmId,
