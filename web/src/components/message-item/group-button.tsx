@@ -13,7 +13,7 @@ import {
 import { Radio, Tooltip } from 'antd';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import FeedbackModal from './feedback-modal';
+import FeedbackDialog from '../feedback-dialog';
 import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
 import PromptModal from './prompt-modal';
 
@@ -79,12 +79,12 @@ export const AssistantGroupButton = ({
         )}
       </Radio.Group>
       {visible && (
-        <FeedbackModal
+        <FeedbackDialog
           visible={visible}
           hideModal={hideModal}
           onOk={onFeedbackOk}
           loading={loading}
-        ></FeedbackModal>
+        ></FeedbackDialog>
       )}
       {promptVisible && (
         <PromptModal

@@ -17,8 +17,8 @@ import { Radio, Tooltip } from 'antd';
 import { Download, NotebookText } from 'lucide-react';
 import { useCallback, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
+import FeedbackDialog from '../feedback-dialog';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
-import FeedbackModal from './feedback-modal';
 import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
 import PromptModal from './prompt-modal';
 
@@ -129,12 +129,12 @@ export const AssistantGroupButton = ({
         )}
       </ToggleGroup>
       {visible && (
-        <FeedbackModal
+        <FeedbackDialog
           visible={visible}
           hideModal={hideModal}
           onOk={onFeedbackOk}
           loading={loading}
-        ></FeedbackModal>
+        ></FeedbackDialog>
       )}
       {promptVisible && (
         <PromptModal

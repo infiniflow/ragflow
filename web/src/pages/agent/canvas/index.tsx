@@ -59,7 +59,6 @@ import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
 import { ExitLoopNode } from './node/exit-loop-node';
 import { ExtractorNode } from './node/extractor-node';
 import { FileNode } from './node/file-node';
-import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
 import { ListOperationsNode } from './node/list-operations-node';
@@ -68,7 +67,6 @@ import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
 import ParserNode from './node/parser-node';
 import { PlaceholderNode } from './node/placeholder-node';
-import { RelevantNode } from './node/relevant-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
 import { SplitterNode } from './node/splitter-node';
@@ -84,14 +82,12 @@ export const nodeTypes: NodeTypes = {
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
   placeholderNode: PlaceholderNode,
-  relevantNode: RelevantNode,
   noteNode: NoteNode,
   switchNode: SwitchNode,
   retrievalNode: RetrievalNode,
   messageNode: MessageNode,
   rewriteNode: RewriteNode,
   keywordNode: KeywordNode,
-  invokeNode: InvokeNode,
   templateNode: TemplateNode,
   // emailNode: EmailNode,
   group: IterationNode,
