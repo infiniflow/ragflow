@@ -33,7 +33,6 @@ Usage:
 
 import argparse
 import json
-import sys
 import threading
 import websocket
 

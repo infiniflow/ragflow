@@ -80,14 +80,13 @@ Connection Lifecycle:
 
 import logging
 import json
-import os
-from quart import websocket, request as quart_request
+from quart import websocket
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 from api.db.db_models import APIToken
 from api.db.services.user_service import UserService
 from api.db.services.dialog_service import DialogService
-from api.db.services.conversation_service import ConversationService, completion
+from api.db.services.conversation_service import completion
 from common.constants import StatusEnum
 from common import settings
 
@@ -398,7 +397,7 @@ async def websocket_chat():
         
         try:
             await send_error(error_message)
-        except:
+        except Exception:
             # Failed to send error (connection may be closed)
             pass
         
@@ -634,7 +633,7 @@ async def websocket_agent():
         
         try:
             await send_error(error_message)
-        except:
+        except Exception:
             pass
         
         await websocket.close(1011, "Internal server error")
