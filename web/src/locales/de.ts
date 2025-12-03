@@ -856,7 +856,6 @@ export default {
       generate: 'Generieren',
       answer: 'Interagieren',
       categorize: 'Kategorisieren',
-      relevant: 'Relevant',
       rewriteQuestion: 'Umschreiben',
       rewrite: 'Umschreiben',
       begin: 'Beginn',

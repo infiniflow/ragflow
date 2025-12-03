@@ -73,7 +73,6 @@ export enum Operator {
   Retrieval = 'Retrieval',
   Categorize = 'Categorize',
   Message = 'Message',
-  Relevant = 'Relevant',
   RewriteQuestion = 'RewriteQuestion',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',

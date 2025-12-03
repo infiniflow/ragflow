@@ -23,7 +23,6 @@ import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
 import ParserForm from '../form/parser-form';
 import PubMedForm from '../form/pubmed-form';
-import RelevantForm from '../form/relevant-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
 import SearXNGForm from '../form/searxng-form';
@@ -53,9 +52,6 @@ export const FormConfigMap = {
   },
   [Operator.Message]: {
     component: MessageForm,
-  },
-  [Operator.Relevant]: {
-    component: RelevantForm,
   },
   [Operator.RewriteQuestion]: {
     component: RewriteQuestionForm,

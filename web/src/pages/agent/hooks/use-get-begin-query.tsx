@@ -125,12 +125,7 @@ export function useBuildParentOutputOptions(parentId?: string) {
 }
 
 // exclude nodes with branches
-const ExcludedNodes = [
-  Operator.Categorize,
-  Operator.Relevant,
-  Operator.Begin,
-  Operator.Note,
-];
+const ExcludedNodes = [Operator.Categorize, Operator.Begin, Operator.Note];
 
 const StringList = [
   BeginQueryType.Line,

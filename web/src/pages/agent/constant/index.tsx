@@ -613,7 +613,7 @@ export const CategorizeAnchorPointPositions = [
 // key is the source of the edge, value is the target of the edge
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
-  [Operator.Begin]: [Operator.Relevant],
+  [Operator.Begin]: [Operator.Begin],
   [Operator.Categorize]: [Operator.Begin, Operator.Categorize],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
   [Operator.Message]: [
@@ -623,12 +623,10 @@ export const RestrictedUpstreamMap = {
     Operator.RewriteQuestion,
     Operator.Categorize,
   ],
-  [Operator.Relevant]: [Operator.Begin],
   [Operator.RewriteQuestion]: [
     Operator.Begin,
     Operator.Message,
     Operator.RewriteQuestion,
-    Operator.Relevant,
   ],
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
@@ -678,7 +676,6 @@ export const NodeMap = {
   [Operator.Categorize]: 'categorizeNode',
   [Operator.Retrieval]: 'retrievalNode',
   [Operator.Message]: 'messageNode',
-  [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',

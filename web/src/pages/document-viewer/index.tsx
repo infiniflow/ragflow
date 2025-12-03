@@ -1,6 +1,5 @@
 import { Images } from '@/constants/common';
 import { api_host } from '@/utils/api';
-// import { Flex } from 'antd';
 import { useParams, useSearchParams } from 'umi';
 // import Docx from './docx';
 // import Excel from './excel';
