@@ -385,6 +385,7 @@ class LLMBundle(LLM4Tenant):
 
     async def async_chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
         total_tokens = 0
+        ans = ""
         if self.is_tools and self.mdl.is_tools:
             stream_fn = getattr(self.mdl, "async_chat_streamly_with_tools", None)
         else:
@@ -397,7 +398,15 @@ class LLMBundle(LLM4Tenant):
                 if isinstance(txt, int):
                     total_tokens = txt
                     break
-                yield txt
+
+                if txt.endswith("</think>"):
+                    ans = ans[: -len("</think>")]
+
+                if not self.verbose_tool_use:
+                    txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
+
+                ans += txt
+                yield ans
             if total_tokens and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, total_tokens, self.llm_name):
                 logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, total_tokens))
             return
