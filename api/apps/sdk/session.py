@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import json
 import re
 import time
@@ -787,7 +788,7 @@ Reason:
  - At the same time, related terms can also help search engines better understand user needs and return more accurate search results.
 
 """
-    ans = chat_mdl.chat(
+    ans = await chat_mdl.async_chat(
         prompt,
         [
             {
@@ -963,28 +964,30 @@ async def retrieval_test_embedded():
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
     langs = req.get("cross_languages", [])
-    tenant_ids = []
-
     tenant_id = objs[0].tenant_id
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
 
-    if req.get("search_id", ""):
-        search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
-        meta_data_filter = search_config.get("meta_data_filter", {})
-        metas = DocumentService.get_meta_by_kbs(kb_ids)
-        if meta_data_filter.get("method") == "auto":
-            chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
-            filters: dict = gen_meta_filter(chat_mdl, metas, question)
-            doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
-            if not doc_ids:
-                doc_ids = None
-        elif meta_data_filter.get("method") == "manual":
-            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
-            if meta_data_filter["manual"] and not doc_ids:
-                doc_ids = ["-999"]
+    def _retrieval_sync():
+        local_doc_ids = list(doc_ids) if doc_ids else []
+        tenant_ids = []
+        _question = question
 
-    try:
+        if req.get("search_id", ""):
+            search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
+            meta_data_filter = search_config.get("meta_data_filter", {})
+            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            if meta_data_filter.get("method") == "auto":
+                chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
+                filters: dict = gen_meta_filter(chat_mdl, metas, _question)
+                local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
+                if not local_doc_ids:
+                    local_doc_ids = None
+            elif meta_data_filter.get("method") == "manual":
+                local_doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
+                if meta_data_filter["manual"] and not local_doc_ids:
+                    local_doc_ids = ["-999"]
+
         tenants = UserTenantService.query(user_id=tenant_id)
         for kb_id in kb_ids:
             for tenant in tenants:
@@ -1000,7 +1003,7 @@ async def retrieval_test_embedded():
             return get_error_data_result(message="Knowledgebase not found!")
 
         if langs:
-            question = cross_languages(kb.tenant_id, None, question, langs)
+            _question = cross_languages(kb.tenant_id, None, _question, langs)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
@@ -1010,15 +1013,15 @@ async def retrieval_test_embedded():
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
-            question += keyword_extraction(chat_mdl, question)
+            _question += keyword_extraction(chat_mdl, _question)
 
-        labels = label_question(question, [kb])
+        labels = label_question(_question, [kb])
         ranks = settings.retriever.retrieval(
-            question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold, vector_similarity_weight, top,
-            doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
+            _question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold, vector_similarity_weight, top,
+            local_doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
         )
         if use_kg:
-            ck = settings.kg_retriever.retrieval(question, tenant_ids, kb_ids, embd_mdl,
+            ck = settings.kg_retriever.retrieval(_question, tenant_ids, kb_ids, embd_mdl,
                                                  LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
@@ -1028,6 +1031,9 @@ async def retrieval_test_embedded():
         ranks["labels"] = labels
 
         return get_json_result(data=ranks)
+
+    try:
+        return await asyncio.to_thread(_retrieval_sync)
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message="No chunk found! Check the chunk status please!",
@@ -1064,7 +1070,7 @@ async def related_questions_embedded():
 
     gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
     prompt = load_prompt("related_question")
-    ans = chat_mdl.chat(
+    ans = await chat_mdl.async_chat(
         prompt,
         [
             {
