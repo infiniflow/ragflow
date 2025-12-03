@@ -481,14 +481,40 @@ class Canvas(Graph):
                         _m = ""
                         buff_m = ""
                         stream = cpn_obj.output("content")()
+                        async def _process_stream(m):
+                            nonlocal buff_m, _m, tts_mdl
+                            if not m:
+                                return
+                            if m == "<think>":
+                                return decorate("message", {"content": "", "start_to_think": True})
+
+                            elif m == "</think>":
+                                return decorate("message", {"content": "", "end_to_think": True})
+
+                            buff_m += m
+                            _m += m
+
+                            if len(buff_m) > 16:
+                                ev = decorate(
+                                    "message",
+                                    {
+                                        "content": m,
+                                        "audio_binary": self.tts(tts_mdl, buff_m)
+                                    }
+                                )
+                                buff_m = ""
+                                return ev
+
+                            return decorate("message", {"content": m})
+
                         if inspect.isasyncgen(stream):
                             async for m in stream:
-                                buff_m, _m, ev = await self._process_stream(m, buff_m, _m, decorate, tts_mdl)
+                                ev= await _process_stream(m)
                                 if ev:
                                     yield ev
                         else:
                             for m in stream:
-                                buff_m, _m, ev = await self._process_stream(m, buff_m, _m, decorate, tts_mdl)
+                                ev= await _process_stream(m)
                                 if ev:
                                     yield ev
                         if buff_m:
@@ -614,31 +640,6 @@ class Canvas(Graph):
             return False
         return True
 
-    async def _process_stream(self, m, buff_m, _m, decorate, tts_mdl):
-        if not m:
-            return buff_m, _m, None
-        if m == "<think>":
-            return buff_m, _m, decorate("message", {"content": "", "start_to_think": True})
-
-        if m == "</think>":
-            return buff_m, _m, decorate("message", {"content": "", "end_to_think": True})
-
-        buff_m += m
-        _m += m
-
-        if len(buff_m) > 16:
-            ev = decorate(
-                "message",
-                {
-                    "content": m,
-                    "audio_binary": self.tts(tts_mdl, buff_m)
-                }
-            )
-            buff_m = ""
-            return buff_m, _m, ev
-
-        ev = decorate("message", {"content": m})
-        return buff_m, _m, ev
 
     def tts(self,tts_mdl, text):
         def clean_tts_text(text: str) -> str:
