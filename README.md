@@ -85,6 +85,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2025-12-03 Adds WebSocket API for streaming responses, enabling real-time communication for WeChat Mini Programs and other WebSocket clients.
 - 2025-11-19 Supports Gemini 3 Pro.
 - 2025-11-12 Supports data synchronization from Confluence, S3, Notion, Discord, Google Drive.
 - 2025-10-23 Supports MinerU & Docling as document parsing methods.
@@ -132,6 +133,7 @@ releases! 🌟
 - Configurable LLMs as well as embedding models.
 - Multiple recall paired with fused re-ranking.
 - Intuitive APIs for seamless integration with business.
+- WebSocket support for real-time streaming responses (ideal for WeChat Mini Programs and mobile apps).
 
 ## 🔎 System Architecture
 
