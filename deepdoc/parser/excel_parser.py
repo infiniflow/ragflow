@@ -15,6 +15,8 @@ import logging
 import re
 import sys
 from io import BytesIO
+from typing import List, Dict, Any
+import base64
 
 import pandas as pd
 from openpyxl import Workbook, load_workbook
@@ -167,6 +169,103 @@ class RAGFlowExcelParser:
             df = pd.read_csv(file_like_object)
         df = df.replace(r"^\s*$", "", regex=True)
         return df.to_markdown(index=False)
+
+    def extract_images(self, fnm) -> List[Dict[str, Any]]:
+        """
+        Extract all embedded images from Excel file.
+        
+        Args:
+            fnm: File path or bytes
+            
+        Returns:
+            List of dictionaries containing image information:
+            {
+                'image_data': base64 encoded image data,
+                'format': image format (png, jpeg, etc.),
+                'sheet': sheet name,
+                'anchor': cell anchor position (e.g., 'A1'),
+                'description': alt text/description if available,
+                'size': (width, height) in pixels
+            }
+        """
+        file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
+        wb = RAGFlowExcelParser._load_excel_to_workbook(file_like_object)
+        
+        images = []
+        image_index = 0
+        
+        for sheetname in wb.sheetnames:
+            ws = wb[sheetname]
+            
+            # openpyxl stores images in worksheet._images
+            if hasattr(ws, '_images') and ws._images:
+                for img in ws._images:
+                    try:
+                        # Get image data
+                        img_data = img._data() if hasattr(img, '_data') else img.ref
+                        
+                        # Encode image to base64
+                        if isinstance(img_data, bytes):
+                            img_base64 = base64.b64encode(img_data).decode('utf-8')
+                        else:
+                            img_base64 = img_data
+                        
+                        # Get image format
+                        img_format = getattr(img, 'format', 'png').lower()
+                        if img_format == 'emf':
+                            img_format = 'png'  # Convert EMF to common format indicator
+                        
+                        # Get anchor position
+                        anchor = 'Unknown'
+                        if hasattr(img, 'anchor') and img.anchor:
+                            if hasattr(img.anchor, '_from'):
+                                # Anchor is a cell reference
+                                anchor_cell = img.anchor._from
+                                if hasattr(anchor_cell, 'col') and hasattr(anchor_cell, 'row'):
+                                    # Convert column number to letter
+                                    col_letter = self._number_to_column_letter(anchor_cell.col)
+                                    anchor = f"{col_letter}{anchor_cell.row + 1}"
+                            elif hasattr(img.anchor, 'col') and hasattr(img.anchor, 'row'):
+                                col_letter = self._number_to_column_letter(img.anchor.col)
+                                anchor = f"{col_letter}{img.anchor.row + 1}"
+                        
+                        # Get description/alt text
+                        description = getattr(img, 'name', '') or getattr(img, 'description', '') or f'Image_{image_index}'
+                        
+                        # Get size
+                        width = getattr(img, 'width', 0)
+                        height = getattr(img, 'height', 0)
+                        
+                        images.append({
+                            'image_data': img_base64,
+                            'format': img_format,
+                            'sheet': sheetname,
+                            'anchor': anchor,
+                            'description': description,
+                            'size': (width, height),
+                            'index': image_index
+                        })
+                        
+                        image_index += 1
+                        logging.info(f"Extracted image from sheet '{sheetname}' at {anchor}")
+                        
+                    except Exception as e:
+                        logging.warning(f"Failed to extract image from sheet '{sheetname}': {e}")
+                        continue
+        
+        logging.info(f"Extracted {len(images)} images from Excel file")
+        return images
+    
+    @staticmethod
+    def _number_to_column_letter(n):
+        """Convert column number to Excel column letter (0 -> A, 1 -> B, etc.)"""
+        result = ""
+        while n >= 0:
+            result = chr(n % 26 + 65) + result
+            n = n // 26 - 1
+            if n < 0:
+                break
+        return result
 
     def __call__(self, fnm):
         file_like_object = BytesIO(fnm) if not isinstance(fnm, str) else fnm
