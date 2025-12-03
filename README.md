@@ -85,6 +85,7 @@ Try our demo at [https://demo.ragflow.io](https://demo.ragflow.io).
 
 ## 🔥 Latest Updates
 
+- 2025-12-03 Adds Query Decomposition Retrieval component with automatic query decomposition, concurrent retrieval, and LLM-based intelligent reranking.
 - 2025-11-19 Supports Gemini 3 Pro.
 - 2025-11-12 Supports data synchronization from Confluence, S3, Notion, Discord, Google Drive.
 - 2025-10-23 Supports MinerU & Docling as document parsing methods.
