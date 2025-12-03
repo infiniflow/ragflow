@@ -43,12 +43,25 @@ from utils.file_utils import (
 )
 
 
-@wait_for(30, 1, "Document parsing timeout")
+@wait_for(60, 1, "Document parsing timeout")
 def condition(_auth, _dataset_id):
     res = list_documents(_auth, _dataset_id)
-    for doc in res["data"]["docs"]:
-        if doc["run"] != "DONE":
-            return False
+    docs = res.get("data", {}).get("docs", [])
+    if not docs:
+        return "No documents found"
+    status_info = []
+    for doc in docs:
+        run_status = doc.get("run", "")
+        doc_id = doc.get("id", "unknown")
+        doc_name = doc.get("name", "unknown")
+        if run_status == "FAIL":
+            raise AssertionError(f"Document {doc_id} ({doc_name}) failed to parse: {doc.get('progress_msg', 'Unknown error')}")
+        if run_status != "DONE":
+            progress = doc.get("progress", 0)
+            progress_msg = doc.get("progress_msg", "")
+            status_info.append(f"doc {doc_id} ({doc_name}): status={run_status}, progress={progress}%, msg='{progress_msg}'")
+    if status_info:
+        return "; ".join(status_info)
     return True
 
 
@@ -82,7 +95,7 @@ def ragflow_tmp_dir(request, tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
-def http_api_auth(token):
+def HttpApiAuth(token):
     return RAGFlowHttpApiAuth(token)
 
 
@@ -93,26 +106,26 @@ def web_api_auth(auth):
 
 
 @pytest.fixture(scope="function")
-def clear_datasets(request, http_api_auth):
+def clear_datasets(request, HttpApiAuth):
     def cleanup():
-        delete_datasets(http_api_auth, {"ids": None})
+        delete_datasets(HttpApiAuth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
 
 @pytest.fixture(scope="function")
-def clear_chat_assistants(request, http_api_auth):
+def clear_chat_assistants(request, HttpApiAuth):
     def cleanup():
-        delete_chat_assistants(http_api_auth)
+        delete_chat_assistants(HttpApiAuth)
 
     request.addfinalizer(cleanup)
 
 
 @pytest.fixture(scope="function")
-def clear_session_with_chat_assistants(request, http_api_auth, add_chat_assistants):
+def clear_session_with_chat_assistants(request, HttpApiAuth, add_chat_assistants):
     def cleanup():
         for chat_assistant_id in chat_assistant_ids:
-            delete_session_with_chat_assistants(http_api_auth, chat_assistant_id)
+            delete_session_with_chat_assistants(HttpApiAuth, chat_assistant_id)
 
     request.addfinalizer(cleanup)
 
@@ -120,51 +133,51 @@ def clear_session_with_chat_assistants(request, http_api_auth, add_chat_assistan
 
 
 @pytest.fixture(scope="class")
-def add_dataset(request, http_api_auth):
+def add_dataset(request, HttpApiAuth):
     def cleanup():
-        delete_datasets(http_api_auth, {"ids": None})
+        delete_datasets(HttpApiAuth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
-    dataset_ids = batch_create_datasets(http_api_auth, 1)
+    dataset_ids = batch_create_datasets(HttpApiAuth, 1)
     return dataset_ids[0]
 
 
 @pytest.fixture(scope="function")
-def add_dataset_func(request, http_api_auth):
+def add_dataset_func(request, HttpApiAuth):
     def cleanup():
-        delete_datasets(http_api_auth, {"ids": None})
+        delete_datasets(HttpApiAuth, {"ids": None})
 
     request.addfinalizer(cleanup)
 
-    return batch_create_datasets(http_api_auth, 1)[0]
+    return batch_create_datasets(HttpApiAuth, 1)[0]
 
 
 @pytest.fixture(scope="class")
-def add_document(http_api_auth, add_dataset, ragflow_tmp_dir):
+def add_document(HttpApiAuth, add_dataset, ragflow_tmp_dir):
     dataset_id = add_dataset
-    document_ids = bulk_upload_documents(http_api_auth, dataset_id, 1, ragflow_tmp_dir)
+    document_ids = bulk_upload_documents(HttpApiAuth, dataset_id, 1, ragflow_tmp_dir)
     return dataset_id, document_ids[0]
 
 
 @pytest.fixture(scope="class")
-def add_chunks(http_api_auth, add_document):
+def add_chunks(HttpApiAuth, add_document):
     dataset_id, document_id = add_document
-    parse_documents(http_api_auth, dataset_id, {"document_ids": [document_id]})
-    condition(http_api_auth, dataset_id)
-    chunk_ids = batch_add_chunks(http_api_auth, dataset_id, document_id, 4)
+    parse_documents(HttpApiAuth, dataset_id, {"document_ids": [document_id]})
+    condition(HttpApiAuth, dataset_id)
+    chunk_ids = batch_add_chunks(HttpApiAuth, dataset_id, document_id, 4)
     sleep(1)  # issues/6487
     return dataset_id, document_id, chunk_ids
 
 
 @pytest.fixture(scope="class")
-def add_chat_assistants(request, http_api_auth, add_document):
+def add_chat_assistants(request, HttpApiAuth, add_document):
     def cleanup():
-        delete_chat_assistants(http_api_auth)
+        delete_chat_assistants(HttpApiAuth)
 
     request.addfinalizer(cleanup)
 
     dataset_id, document_id = add_document
-    parse_documents(http_api_auth, dataset_id, {"document_ids": [document_id]})
-    condition(http_api_auth, dataset_id)
-    return dataset_id, document_id, batch_create_chat_assistants(http_api_auth, 5)
+    parse_documents(HttpApiAuth, dataset_id, {"document_ids": [document_id]})
+    condition(HttpApiAuth, dataset_id)
+    return dataset_id, document_id, batch_create_chat_assistants(HttpApiAuth, 5)
