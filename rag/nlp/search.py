@@ -527,7 +527,7 @@ class Dealer:
 
         res = []
         bs = 128
-        for page_num, p in enumerate(range(offset, max_count, bs)):
+        for p in range(offset, max_count, bs):
             es_res = self.dataStore.search(fields, [], condition, [], orderBy, page_num * bs, bs, index_name(tenant_id),
                                            kb_ids)
             dict_chunks = self.dataStore.get_fields(es_res, fields)
