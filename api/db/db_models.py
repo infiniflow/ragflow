@@ -1421,6 +1421,9 @@ def migrate_db():
         pass
     try:
         migrate(migrator.add_column("task", "is_paused", BooleanField(default=False, index=True, help_text="Whether task is currently paused")))
+    except Exception:
+        pass
+    
     # RAG Evaluation tables
     try:
         migrate(migrator.add_column("evaluation_datasets", "id", CharField(max_length=32, primary_key=True)))
