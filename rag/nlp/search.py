@@ -527,15 +527,16 @@ class Dealer:
 
         res = []
         bs = 128
-        for p in range(offset, max_count, bs):
-            es_res = self.dataStore.search(fields, [], condition, [], orderBy, p, bs, index_name(tenant_id),
+        for page_num, p in enumerate(range(offset, max_count, bs)):
+            es_res = self.dataStore.search(fields, [], condition, [], orderBy, page_num * bs, bs, index_name(tenant_id),
                                            kb_ids)
             dict_chunks = self.dataStore.get_fields(es_res, fields)
             for id, doc in dict_chunks.items():
                 doc["id"] = id
             if dict_chunks:
                 res.extend(dict_chunks.values())
-            if len(dict_chunks.values()) < bs:
+            # FIX: Solo terminar si no hay chunks, no si hay menos de bs
+            if len(dict_chunks.values()) == 0:
                 break
         return res
 
