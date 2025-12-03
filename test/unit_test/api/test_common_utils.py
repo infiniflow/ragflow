@@ -42,79 +42,38 @@ class TestStringToBytes:
         assert result == input_bytes
         assert result is input_bytes  # Should be the same object
 
-    def test_empty_string(self):
-        """Test conversion of empty string"""
-        result = string_to_bytes("")
-        
-        assert isinstance(result, bytes)
-        assert result == b""
-        assert len(result) == 0
-
-    def test_unicode_characters(self):
-        """Test conversion of Unicode characters"""
-        input_string = "Hello 世界 🌍"
-        result = string_to_bytes(input_string)
-        
-        assert isinstance(result, bytes)
-        # Verify it can be decoded back
-        assert result.decode("utf-8") == input_string
-
-    def test_special_characters(self):
-        """Test conversion of special characters"""
-        input_string = "Hello, world! @#$%^&*()"
-        result = string_to_bytes(input_string)
-        
-        assert isinstance(result, bytes)
-        assert result.decode("utf-8") == input_string
-
     @pytest.mark.parametrize("input_val,expected", [
         ("test", b"test"),
         ("", b""),
         ("123", b"123"),
         ("Hello World", b"Hello World"),
+        ("Hello 世界 🌍", "Hello 世界 🌍".encode("utf-8")),
+        ("Hello, world! @#$%^&*()", b"Hello, world! @#$%^&*()"),
+        ("Newline\nTab\tQuote\"", b"Newline\nTab\tQuote\""),
     ])
     def test_various_string_inputs(self, input_val, expected):
-        """Test various string inputs"""
+        """Test conversion of various string inputs including unicode and special characters"""
         result = string_to_bytes(input_val)
+        assert isinstance(result, bytes)
         assert result == expected
 
 
 class TestBytesToString:
     """Test cases for bytes_to_string function"""
 
-    def test_bytes_input_returns_string(self):
-        """Test that bytes input is converted to string"""
-        input_bytes = b"hello world"
-        result = bytes_to_string(input_bytes)
-        
-        assert isinstance(result, str)
-        assert result == "hello world"
-
-    def test_empty_bytes(self):
-        """Test conversion of empty bytes"""
-        result = bytes_to_string(b"")
-        
-        assert isinstance(result, str)
-        assert result == ""
-        assert len(result) == 0
-
-    def test_unicode_bytes(self):
-        """Test conversion of Unicode bytes"""
-        input_bytes = "Hello 世界 🌍".encode("utf-8")
-        result = bytes_to_string(input_bytes)
-        
-        assert isinstance(result, str)
-        assert result == "Hello 世界 🌍"
-
     @pytest.mark.parametrize("input_bytes,expected", [
+        (b"hello world", "hello world"),
         (b"test", "test"),
         (b"", ""),
         (b"123", "123"),
         (b"Hello World", "Hello World"),
+        ("Hello 世界 🌍".encode("utf-8"), "Hello 世界 🌍"),
+        (b"Special: @#$%^&*()", "Special: @#$%^&*()"),
     ])
     def test_various_bytes_inputs(self, input_bytes, expected):
-        """Test various bytes inputs"""
+        """Test conversion of various bytes inputs including unicode"""
         result = bytes_to_string(input_bytes)
+        assert isinstance(result, str)
         assert result == expected
 
     def test_invalid_utf8_raises_error(self):
@@ -129,35 +88,32 @@ class TestBytesToString:
 class TestRoundtripConversion:
     """Test roundtrip conversions between string and bytes"""
 
-    def test_string_to_bytes_to_string(self):
-        """Test converting string to bytes and back"""
-        original = "Hello, World! 世界"
-        
-        as_bytes = string_to_bytes(original)
-        back_to_string = bytes_to_string(as_bytes)
-        
-        assert back_to_string == original
-
-    def test_bytes_to_string_to_bytes(self):
-        """Test converting bytes to string and back"""
-        original = b"Hello, World!"
-        
-        as_string = bytes_to_string(original)
-        back_to_bytes = string_to_bytes(as_string)
-        
-        assert back_to_bytes == original
-
     @pytest.mark.parametrize("test_string", [
         "Simple text",
+        "Hello, World! 世界",
         "Unicode: 你好世界 🌍",
         "Special: !@#$%^&*()",
         "Multiline\nWith\tTabs",
         "",
     ])
-    def test_roundtrip_various_strings(self, test_string):
-        """Test roundtrip conversion for various strings"""
-        result = bytes_to_string(string_to_bytes(test_string))
-        assert result == test_string
+    def test_string_to_bytes_to_string(self, test_string):
+        """Test converting string to bytes and back for various inputs"""
+        as_bytes = string_to_bytes(test_string)
+        back_to_string = bytes_to_string(as_bytes)
+        assert back_to_string == test_string
+
+    @pytest.mark.parametrize("test_bytes", [
+        b"Simple text",
+        b"Hello, World!",
+        "Unicode: 你好世界 🌍".encode("utf-8"),
+        b"Special: !@#$%^&*()",
+        b"",
+    ])
+    def test_bytes_to_string_to_bytes(self, test_bytes):
+        """Test converting bytes to string and back for various inputs"""
+        as_string = bytes_to_string(test_bytes)
+        back_to_bytes = string_to_bytes(as_string)
+        assert back_to_bytes == test_bytes
 
 
 if __name__ == "__main__":

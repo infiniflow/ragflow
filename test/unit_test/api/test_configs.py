@@ -34,29 +34,30 @@ from api.utils.configs import (
 class TestSerializeB64:
     """Test cases for serialize_b64 function"""
 
-    def test_serialize_dict(self):
-        """Test serialization of a dictionary"""
-        test_dict = {"key": "value", "number": 42}
-        result = serialize_b64(test_dict)
+    @pytest.mark.parametrize("test_data", [
+        {"key": "value", "number": 42},
+        [1, 2, 3, "test", {"nested": "dict"}],
+        "Hello, World!",
+        12345,
+        {
+            "list": [1, 2, 3],
+            "dict": {"nested": {"deep": "value"}},
+            "tuple": (1, 2, 3),
+            "string": "test",
+            "number": 42.5
+        },
+        None,
+        {},
+        [],
+    ])
+    def test_serialize_returns_bytes(self, test_data):
+        """Test serialization of various data types returns bytes"""
+        result = serialize_b64(test_data, to_str=False)
         
         assert isinstance(result, bytes)
         # Should be valid base64
         decoded = base64.b64decode(result)
         assert isinstance(decoded, bytes)
-
-    def test_serialize_list(self):
-        """Test serialization of a list"""
-        test_list = [1, 2, 3, "test", {"nested": "dict"}]
-        result = serialize_b64(test_list)
-        
-        assert isinstance(result, bytes)
-
-    def test_serialize_with_to_str_false(self):
-        """Test serialization with to_str=False returns bytes"""
-        test_data = {"test": "data"}
-        result = serialize_b64(test_data, to_str=False)
-        
-        assert isinstance(result, bytes)
 
     def test_serialize_with_to_str_true(self):
         """Test serialization with to_str=True returns string"""
@@ -67,68 +68,15 @@ class TestSerializeB64:
         # Should be valid base64 string
         base64.b64decode(result)  # Should not raise
 
-    def test_serialize_string(self):
-        """Test serialization of a string"""
-        test_string = "Hello, World!"
-        result = serialize_b64(test_string)
-        
-        assert isinstance(result, bytes)
-
-    def test_serialize_number(self):
-        """Test serialization of numbers"""
-        test_int = 12345
-        result = serialize_b64(test_int)
-        
-        assert isinstance(result, bytes)
-
-    def test_serialize_complex_nested_structure(self):
-        """Test serialization of complex nested structures"""
-        test_data = {
-            "list": [1, 2, 3],
-            "dict": {"nested": {"deep": "value"}},
-            "tuple": (1, 2, 3),
-            "string": "test",
-            "number": 42.5
-        }
-        result = serialize_b64(test_data)
-        
-        assert isinstance(result, bytes)
-
-    def test_serialize_none(self):
-        """Test serialization of None"""
-        result = serialize_b64(None)
-        
-        assert isinstance(result, bytes)
-
-    def test_serialize_empty_dict(self):
-        """Test serialization of empty dictionary"""
-        result = serialize_b64({})
-        
-        assert isinstance(result, bytes)
-
-    def test_serialize_empty_list(self):
-        """Test serialization of empty list"""
-        result = serialize_b64([])
-        
-        assert isinstance(result, bytes)
-
 
 class TestDeserializeB64:
     """Test cases for deserialize_b64 function"""
 
-    def test_deserialize_string_input(self):
-        """Test deserialization with string input"""
+    @pytest.mark.parametrize("to_str", [True, False])
+    def test_deserialize_string_and_bytes_input(self, to_str):
+        """Test deserialization with both string and bytes input"""
         test_data = {"key": "value"}
-        serialized = serialize_b64(test_data, to_str=True)
-        
-        result = deserialize_b64(serialized)
-        
-        assert result == test_data
-
-    def test_deserialize_bytes_input(self):
-        """Test deserialization with bytes input"""
-        test_data = {"key": "value"}
-        serialized = serialize_b64(test_data, to_str=False)
+        serialized = serialize_b64(test_data, to_str=to_str)
         
         result = deserialize_b64(serialized)
         
@@ -160,22 +108,14 @@ class TestDeserializeB64:
         
         assert result == test_data
 
-    def test_roundtrip_serialization(self):
-        """Test complete roundtrip serialization and deserialization"""
-        test_data = {
+    @pytest.mark.parametrize("test_data", [
+        {"key": "value"},
+        {
             "string": "test",
             "number": 123,
             "list": [1, 2, 3],
             "nested": {"key": "value"}
-        }
-        
-        serialized = serialize_b64(test_data, to_str=True)
-        deserialized = deserialize_b64(serialized)
-        
-        assert deserialized == test_data
-
-    @pytest.mark.parametrize("test_data", [
-        {"key": "value"},
+        },
         [1, 2, 3, 4, 5],
         "simple string",
         42,
@@ -184,7 +124,7 @@ class TestDeserializeB64:
         {"nested": {"deep": {"structure": "value"}}},
     ])
     def test_roundtrip_various_data_types(self, test_data):
-        """Test roundtrip for various data types"""
+        """Test roundtrip serialization and deserialization for various data types"""
         serialized = serialize_b64(test_data)
         deserialized = deserialize_b64(serialized)
         
@@ -194,14 +134,19 @@ class TestDeserializeB64:
 class TestRestrictedUnpickler:
     """Test cases for RestrictedUnpickler class"""
 
-    def test_allows_safe_modules(self):
-        """Test that safe modules are allowed"""
-        # Create a simple object that would be in a safe module context
-        test_data = {"test": "data"}
+    @pytest.mark.parametrize("test_data", [
+        {"test": "data"},
+        [1, 2, 3, "test", {"key": "value"}],
+        {"nested": {"deep": "structure"}},
+        [1, 2, 3],
+        "simple string",
+    ])
+    def test_restricted_loads_with_safe_data(self, test_data):
+        """Test restricted_loads with various safe data types"""
         pickled = pickle.dumps(test_data)
         
-        # This should work without raising
         result = restricted_loads(pickled)
+        
         assert result == test_data
 
     @patch('api.utils.configs.get_base_config')
@@ -231,48 +176,42 @@ class TestRestrictedUnpickler:
         assert 'numpy' in safe_module
         assert 'rag_flow' in safe_module
 
-    def test_restricted_loads_with_safe_data(self):
-        """Test restricted_loads with safe data"""
-        test_data = [1, 2, 3, "test", {"key": "value"}]
-        pickled = pickle.dumps(test_data)
-        
-        result = restricted_loads(pickled)
-        
-        assert result == test_data
-
 
 class TestIntegrationScenarios:
     """Integration tests for serialization/deserialization workflows"""
 
-    def test_serialize_deserialize_workflow(self):
-        """Test complete workflow of serialize and deserialize"""
-        original_data = {
+    @pytest.mark.parametrize("to_str,original_data", [
+        (True, {
             "user": "test_user",
             "settings": {
                 "theme": "dark",
                 "notifications": True
             },
             "items": [1, 2, 3, 4, 5]
-        }
+        }),
+        (False, {"test": "data", "number": 42}),
+        (True, {}),
+        (True, {
+            f"key_{i}": {
+                "value": i,
+                "list": list(range(10)),
+                "nested": {"deep": f"value_{i}"}
+            }
+            for i in range(100)
+        }),
+    ])
+    def test_serialize_deserialize_workflow(self, to_str, original_data):
+        """Test complete workflow of serialize and deserialize with various data"""
+        # Serialize
+        serialized = serialize_b64(original_data, to_str=to_str)
         
-        # Serialize to string
-        serialized_str = serialize_b64(original_data, to_str=True)
-        assert isinstance(serialized_str, str)
+        if to_str:
+            assert isinstance(serialized, str)
+        else:
+            assert isinstance(serialized, bytes)
         
         # Deserialize back
-        deserialized = deserialize_b64(serialized_str)
-        assert deserialized == original_data
-
-    def test_serialize_deserialize_with_bytes(self):
-        """Test workflow using bytes format"""
-        original_data = {"test": "data", "number": 42}
-        
-        # Serialize to bytes
-        serialized_bytes = serialize_b64(original_data, to_str=False)
-        assert isinstance(serialized_bytes, bytes)
-        
-        # Deserialize back
-        deserialized = deserialize_b64(serialized_bytes)
+        deserialized = deserialize_b64(serialized)
         assert deserialized == original_data
 
     @patch('api.utils.configs.get_base_config')
@@ -286,31 +225,6 @@ class TestIntegrationScenarios:
         result = deserialize_b64(serialized)
         
         assert result == test_data
-
-    def test_empty_data_workflow(self):
-        """Test workflow with empty data"""
-        empty_dict = {}
-        
-        serialized = serialize_b64(empty_dict, to_str=True)
-        deserialized = deserialize_b64(serialized)
-        
-        assert deserialized == empty_dict
-
-    def test_large_data_workflow(self):
-        """Test workflow with larger data structures"""
-        large_data = {
-            f"key_{i}": {
-                "value": i,
-                "list": list(range(10)),
-                "nested": {"deep": f"value_{i}"}
-            }
-            for i in range(100)
-        }
-        
-        serialized = serialize_b64(large_data, to_str=True)
-        deserialized = deserialize_b64(serialized)
-        
-        assert deserialized == large_data
 
 
 if __name__ == "__main__":
