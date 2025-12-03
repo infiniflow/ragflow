@@ -369,7 +369,7 @@ class TestEvaluationExecution:
             },
             "results": [
                 {"case_id": "case_1", "metrics": {"precision": 0.9}},
-                {"case_id": "case_2", "metrics": {"precision": 0.8"}}
+                {"case_id": "case_2", "metrics": {"precision": 0.8}}
             ]
         }
         mock_evaluation_service.get_run_results.return_value = expected_results
