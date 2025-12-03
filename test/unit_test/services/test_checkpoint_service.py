@@ -17,6 +17,12 @@
 """
 Unit tests for Checkpoint Service
 
+These are UNIT tests that use mocks to test the interface and logic flow
+without requiring a database connection. This makes them fast and isolated.
+
+For INTEGRATION tests that test the actual CheckpointService implementation
+with a real database, see: test/integration_test/services/test_checkpoint_service_integration.py
+
 Tests cover:
 - Checkpoint creation and retrieval
 - Document state management
