@@ -155,7 +155,10 @@ class ToolBase(ComponentBase):
 
         self.set_output("_created_time", time.perf_counter())
         try:
-            if asyncio.iscoroutinefunction(self._invoke):
+            fn_async = getattr(self, "_invoke_async", None)
+            if fn_async and asyncio.iscoroutinefunction(fn_async):
+                res = await fn_async(**kwargs)
+            elif asyncio.iscoroutinefunction(self._invoke):
                 res = await self._invoke(**kwargs)
             else:
                 res = await asyncio.to_thread(self._invoke, **kwargs)

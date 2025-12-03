@@ -357,7 +357,7 @@ class Canvas(Graph):
                 else:
                     self.globals[k] = ""
         print(self.globals)
-                
+
 
     async def run(self, **kwargs):
         st = time.perf_counter()
@@ -415,6 +415,7 @@ class Canvas(Graph):
 
             loop = asyncio.get_running_loop()
             tasks = []
+
             def _run_async_in_thread(coro_func, **call_kwargs):
                 return asyncio.run(coro_func(**call_kwargs))
 

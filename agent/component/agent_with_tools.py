@@ -240,7 +240,7 @@ class Agent(LLM, ToolBase):
             self.set_output("use_tools", use_tools)
         return ans
 
-    async def invoke_async(self, **kwargs):
+    async def _invoke_async(self, **kwargs):
         """
         Async entry: reuse existing logic but offload heavy sync parts via async wrappers to reduce blocking.
         """
