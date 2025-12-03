@@ -718,6 +718,227 @@ async def set_meta():
         return server_error_response(e)
 
 
+@manager.route("/batch_set_meta", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("doc_ids", "meta")
+async def batch_set_meta():
+    """
+    Batch update metadata for multiple documents.
+    
+    Request body:
+    {
+        "doc_ids": ["doc_id_1", "doc_id_2", ...],
+        "meta": {"key1": "value1", "key2": 123}
+    }
+    """
+    req = await get_request_json()
+    doc_ids = req.get("doc_ids", [])
+    
+    if not isinstance(doc_ids, list) or not doc_ids:
+        return get_json_result(
+            data=False, 
+            message="doc_ids must be a non-empty list", 
+            code=RetCode.ARGUMENT_ERROR
+        )
+    
+    # Parse and validate metadata
+    try:
+        meta = json.loads(req["meta"]) if isinstance(req["meta"], str) else req["meta"]
+        if not isinstance(meta, dict):
+            return get_json_result(
+                data=False, 
+                message="Only dictionary type supported.", 
+                code=RetCode.ARGUMENT_ERROR
+            )
+        for k, v in meta.items():
+            if not isinstance(v, (str, int, float)):
+                return get_json_result(
+                    data=False, 
+                    message=f"The type is not supported: {v}", 
+                    code=RetCode.ARGUMENT_ERROR
+                )
+    except Exception as e:
+        return get_json_result(
+            data=False, 
+            message=f"Json syntax error: {e}", 
+            code=RetCode.ARGUMENT_ERROR
+        )
+    
+    # Process each document
+    results = {}
+    success_count = 0
+    
+    for doc_id in doc_ids:
+        try:
+            # Check authorization
+            if not DocumentService.accessible(doc_id, current_user.id):
+                results[doc_id] = {"success": False, "error": "No authorization"}
+                continue
+            
+            # Check if document exists
+            e, doc = DocumentService.get_by_id(doc_id)
+            if not e:
+                results[doc_id] = {"success": False, "error": "Document not found"}
+                continue
+            
+            # Update metadata
+            if DocumentService.update_by_id(doc_id, {"meta_fields": meta}):
+                results[doc_id] = {"success": True}
+                success_count += 1
+            else:
+                results[doc_id] = {"success": False, "error": "Database error"}
+        
+        except Exception as e:
+            results[doc_id] = {"success": False, "error": str(e)}
+    
+    return get_json_result(
+        data={
+            "results": results,
+            "total": len(doc_ids),
+            "success": success_count,
+            "failed": len(doc_ids) - success_count
+        }
+    )
+
+
+@manager.route("/get_meta", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("doc_id")
+async def get_meta():
+    """Get metadata for a single document."""
+    req = await get_request_json()
+    
+    if not DocumentService.accessible(req["doc_id"], current_user.id):
+        return get_json_result(
+            data=False, 
+            message="No authorization.", 
+            code=RetCode.AUTHENTICATION_ERROR
+        )
+    
+    try:
+        e, doc = DocumentService.get_by_id(req["doc_id"])
+        if not e:
+            return get_data_error_result(message="Document not found!")
+        
+        return get_json_result(data={
+            "doc_id": doc.id,
+            "doc_name": doc.name,
+            "meta": doc.meta_fields or {}
+        })
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/batch_get_meta", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("doc_ids")
+async def batch_get_meta():
+    """
+    Batch retrieve metadata for multiple documents.
+    
+    Request body:
+    {
+        "doc_ids": ["doc_id_1", "doc_id_2", ...]
+    }
+    """
+    req = await get_request_json()
+    doc_ids = req.get("doc_ids", [])
+    
+    if not isinstance(doc_ids, list) or not doc_ids:
+        return get_json_result(
+            data=False, 
+            message="doc_ids must be a non-empty list", 
+            code=RetCode.ARGUMENT_ERROR
+        )
+    
+    results = {}
+    
+    for doc_id in doc_ids:
+        try:
+            if not DocumentService.accessible(doc_id, current_user.id):
+                results[doc_id] = {"error": "No authorization"}
+                continue
+            
+            e, doc = DocumentService.get_by_id(doc_id)
+            if not e:
+                results[doc_id] = {"error": "Document not found"}
+                continue
+            
+            results[doc_id] = {
+                "doc_name": doc.name,
+                "meta": doc.meta_fields or {},
+                "kb_id": doc.kb_id
+            }
+        
+        except Exception as e:
+            results[doc_id] = {"error": str(e)}
+    
+    return get_json_result(data=results)
+
+
+@manager.route("/list_metadata_fields", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("kb_id")
+async def list_metadata_fields():
+    """
+    List all unique metadata field names and their value types across documents in a KB.
+    
+    Request body:
+    {
+        "kb_id": "kb_id_123"
+    }
+    """
+    req = await get_request_json()
+    kb_id = req.get("kb_id")
+    
+    try:
+        # Check KB access
+        e, kb = KnowledgebaseService.get_by_id(kb_id)
+        if not e:
+            return get_data_error_result(message="Knowledgebase not found!")
+        
+        if not check_kb_team_permission(kb, current_user.id):
+            return get_json_result(
+                data=False, 
+                message="No authorization.", 
+                code=RetCode.AUTHENTICATION_ERROR
+            )
+        
+        # Get all documents in KB
+        docs = DocumentService.query(kb_id=kb_id)
+        
+        # Collect all metadata fields and their types
+        metadata_fields = {}
+        
+        for doc in docs:
+            if not doc.meta_fields:
+                continue
+            
+            for key, value in doc.meta_fields.items():
+                value_type = type(value).__name__
+                
+                if key not in metadata_fields:
+                    metadata_fields[key] = {
+                        "type": value_type,
+                        "example": value,
+                        "count": 1
+                    }
+                else:
+                    metadata_fields[key]["count"] += 1
+                    # Track if types vary
+                    if metadata_fields[key]["type"] != value_type:
+                        metadata_fields[key]["type"] = "mixed"
+        
+        return get_json_result(data={
+            "kb_id": kb_id,
+            "total_documents": len(docs),
+            "metadata_fields": metadata_fields
+        })
+    
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/upload_info", methods=["POST"])  # noqa: F821
 async def upload_info():
     files = await request.files
