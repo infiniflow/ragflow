@@ -71,7 +71,6 @@ import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
 import { SplitterNode } from './node/splitter-node';
 import { SwitchNode } from './node/switch-node';
-import { TemplateNode } from './node/template-node';
 import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
 import { VariableAggregatorNode } from './node/variable-aggregator-node';
@@ -88,7 +87,6 @@ export const nodeTypes: NodeTypes = {
   messageNode: MessageNode,
   rewriteNode: RewriteNode,
   keywordNode: KeywordNode,
-  templateNode: TemplateNode,
   // emailNode: EmailNode,
   group: IterationNode,
   iterationStartNode: IterationStartNode,
