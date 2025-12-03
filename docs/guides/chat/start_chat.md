@@ -83,13 +83,13 @@ You start an AI conversation by creating an assistant.
 
 1. Click the light bulb icon above the answer to view the expanded system prompt:
 
-![prompt_display](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/prompt_display.jpg)
+   ![prompt_display](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/prompt_display.jpg)
 
    *The light bulb icon is available only for the current dialogue.*
 
 2. Scroll down the expanded prompt to view the time consumed for each task:
 
-![time_elapsed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/time_elapsed.jpg)
+   ![time_elapsed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/time_elapsed.jpg)
 :::
 
 ## Update settings of an existing chat assistant

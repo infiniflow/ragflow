@@ -3,8 +3,8 @@ import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import ThemeToggle from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { Domain } from '@/constants/common';
-import { useLogout } from '@/hooks/login-hooks';
 import { useSecondPathName } from '@/hooks/route-hook';
+import { useLogout } from '@/hooks/use-login-request';
 import {
   useFetchSystemVersion,
   useFetchUserInfo,

@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
+import inspect
 import json
 import os
 import random
@@ -39,6 +41,7 @@ class MessageParam(ComponentParamBase):
         self.content = []
         self.stream = True
         self.output_format = None  # default output format
+        self.auto_play = False
         self.outputs = {
             "content": {
                 "type": "str"
@@ -66,8 +69,12 @@ class Message(ComponentBase):
                 v = ""
             ans = ""
             if isinstance(v, partial):
-                for t in v():
-                    ans += t
+                iter_obj = v()
+                if inspect.isasyncgen(iter_obj):
+                    ans = asyncio.run(self._consume_async_gen(iter_obj))
+                else:
+                    for t in iter_obj:
+                        ans += t
             elif isinstance(v, list) and delimiter:
                 ans = delimiter.join([str(vv) for vv in v])
             elif not isinstance(v, str):
@@ -89,7 +96,13 @@ class Message(ComponentBase):
             _kwargs[_n] = v
         return script, _kwargs
 
-    def _stream(self, rand_cnt:str):
+    async def _consume_async_gen(self, agen):
+        buf = ""
+        async for t in agen:
+            buf += t
+        return buf
+
+    async def _stream(self, rand_cnt:str):
         s = 0
         all_content = ""
         cache = {}
@@ -111,15 +124,27 @@ class Message(ComponentBase):
                 v = ""
             if isinstance(v, partial):
                 cnt = ""
-                for t in v():
-                    if self.check_if_canceled("Message streaming"):
-                        return
+                iter_obj = v()
+                if inspect.isasyncgen(iter_obj):
+                    async for t in iter_obj:
+                        if self.check_if_canceled("Message streaming"):
+                            return
 
-                    all_content += t
-                    cnt += t
-                    yield t
+                        all_content += t
+                        cnt += t
+                        yield t
+                else:
+                    for t in iter_obj:
+                        if self.check_if_canceled("Message streaming"):
+                            return
+
+                        all_content += t
+                        cnt += t
+                        yield t
                 self.set_input_value(exp, cnt)
                 continue
+            elif inspect.isawaitable(v):
+                v = await v
             elif not isinstance(v, str):
                 try:
                     v = json.dumps(v, ensure_ascii=False)
@@ -181,7 +206,7 @@ class Message(ComponentBase):
 
         import pypandoc
         doc_id = get_uuid()
-        
+
         if self._param.output_format.lower() not in {"markdown", "html", "pdf", "docx"}:
             self._param.output_format = "markdown"
 
@@ -231,8 +256,8 @@ class Message(ComponentBase):
 
             settings.STORAGE_IMPL.put(self._canvas._tenant_id, doc_id, binary_content)
             self.set_output("attachment", {
-                "doc_id":doc_id, 
-                "format":self._param.output_format, 
+                "doc_id":doc_id,
+                "format":self._param.output_format,
                 "file_name":f"{doc_id[:8]}.{self._param.output_format}"})
 
             logging.info(f"Converted content uploaded as {doc_id} (format={self._param.output_format})")

@@ -420,8 +420,10 @@ Creates a dataset.
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
   - `"parser_config"`: `object`
+  - `"parse_type"`: `int`
+  - `"pipeline_id"`: `string`
 
-##### Request example
+##### A basic request example
 
 ```bash
 curl --request POST \
@@ -431,6 +433,24 @@ curl --request POST \
      --data '{
       "name": "test_1"
       }'
+```
+
+##### A request example specifying ingestion pipeline
+
+:::caution WARNING
+You must *not* include `"chunk_method"` or `"parser_config"` when specifying an ingestion pipeline.
+:::
+
+```bash
+curl --request POST \
+  --url http://{address}/api/v1/datasets \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer <YOUR_API_KEY>' \
+  --data '{
+   "name": "test-sdk",
+   "parse_type": <NUMBER_OF_PARSERS_IN_YOUR_PARSER_COMPONENT>,
+   "pipeline_id": "<PIPELINE_ID_32_HEX>"
+  }'
 ```
 
 ##### Request parameters
@@ -460,7 +480,8 @@ curl --request POST \
   - `"team"`: All team members can manage the dataset.
 
 - `"chunk_method"`: (*Body parameter*), `enum<string>`  
-  The chunking method of the dataset to create. Available options:  
+  The default chunk method of the dataset to create. Mutually exclusive with `"parse_type"` and `"pipeline_id"`. If you set `"chunk_method"`, do not include `"parse_type"` or `"pipeline_id"`.  
+  Available options:  
   - `"naive"`: General (default)
   - `"book"`: Book
   - `"email"`: Email
@@ -508,6 +529,26 @@ curl --request POST \
     - `"raptor"`: `object` RAPTOR-specific settings.
       - Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
+
+- `"parse_type"`: (*Body parameter*), `int`  
+  The ingestion pipeline parse type identifier, i.e., the number of parsers in your **Parser** component.  
+  - Required (along with `"pipeline_id"`) if specifying an ingestion pipeline.
+  - Must not be included when `"chunk_method"` is specified.
+
+- `"pipeline_id"`: (*Body parameter*), `string`  
+  The ingestion pipeline ID. Can be found in the corresponding URL in the RAGFlow UI.
+  - Required (along with `"parse_type"`) if specifying an ingestion pipeline.
+  - Must be a 32-character lowercase hexadecimal string, e.g., `"d0bebe30ae2211f0970942010a8e0005"`.
+  - Must not be included when `"chunk_method"` is specified.
+
+:::caution WARNING
+You can choose either of the following ingestion options when creating a dataset, but *not* both:
+
+- Use a built-in chunk method -- specify `"chunk_method"` (optionally with `"parser_config"`).
+- Use an ingestion pipeline -- specify both `"parse_type"` and `"pipeline_id"`.
+
+If none of `"chunk_method"`, `"parse_type"`, or `"pipeline_id"` are provided, the system defaults to `chunk_method = "naive"`.
+:::
 
 #### Response
 

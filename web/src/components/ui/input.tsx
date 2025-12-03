@@ -9,10 +9,23 @@ export interface InputProps
   value?: string | number | readonly string[] | undefined;
   prefix?: React.ReactNode;
   suffix?: React.ReactNode;
+  rootClassName?: string;
 }
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, value, onChange, prefix, suffix, ...props }, ref) => {
+  (
+    {
+      className,
+      rootClassName,
+      type,
+      value,
+      onChange,
+      prefix,
+      suffix,
+      ...props
+    },
+    ref,
+  ) => {
     const isControlled = value !== undefined;
     const { defaultValue, ...restProps } = props;
     const inputValue = isControlled ? value : defaultValue;
@@ -89,7 +102,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
 
     if (prefix || suffix || isPasswordInput) {
       return (
-        <div className="relative">
+        <div className={cn('relative', rootClassName)}>
           {prefix && (
             <span
               ref={prefixRef}

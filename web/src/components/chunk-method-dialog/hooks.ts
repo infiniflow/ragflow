@@ -1,4 +1,4 @@
-import { useSelectParserList } from '@/hooks/user-setting-hooks';
+import { useSelectParserList } from '@/hooks/use-user-setting-request';
 import { useCallback, useMemo } from 'react';
 
 const ParserListMap = new Map([

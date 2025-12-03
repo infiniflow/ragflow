@@ -2,9 +2,13 @@ import { Authorization } from '@/constants/authorization';
 import { MessageType } from '@/constants/chat';
 import { LanguageTranslationMap } from '@/constants/common';
 import { ResponseType } from '@/interfaces/database/base';
-import { IAnswer, Message } from '@/interfaces/database/chat';
+import {
+  IAnswer,
+  IClientConversation,
+  IMessage,
+  Message,
+} from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
-import { IClientConversation, IMessage } from '@/pages/chat/interface';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { buildMessageUuid } from '@/utils/chat';
@@ -25,7 +29,7 @@ import { useTranslation } from 'react-i18next';
 import { v4 as uuid } from 'uuid';
 import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
-import { useFetchTenantInfo, useSaveSetting } from './user-setting-hooks';
+import { useFetchTenantInfo, useSaveSetting } from './use-user-setting-request';
 
 export function usePrevious<T>(value: T) {
   const ref = useRef<T>();

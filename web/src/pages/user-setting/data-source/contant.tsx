@@ -1,6 +1,7 @@
 import { FormFieldType } from '@/components/dynamic-form';
 import SvgIcon from '@/components/svg-icon';
 import { t } from 'i18next';
+import GmailTokenField from './component/gmail-token-field';
 import GoogleDriveTokenField from './component/google-drive-token-field';
 
 export enum DataSourceKey {
@@ -10,8 +11,9 @@ export enum DataSourceKey {
   DISCORD = 'discord',
   GOOGLE_DRIVE = 'google_drive',
   MOODLE = 'moodle',
-  //   GMAIL = 'gmail',
+  GMAIL = 'gmail',
   JIRA = 'jira',
+  WEBDAV = 'webdav',
   DROPBOX = 'dropbox',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
@@ -44,6 +46,11 @@ export const DataSourceInfo = {
     description: t(`setting.${DataSourceKey.GOOGLE_DRIVE}Description`),
     icon: <SvgIcon name={'data-source/google-drive'} width={38} />,
   },
+  [DataSourceKey.GMAIL]: {
+    name: 'Gmail',
+    description: t(`setting.${DataSourceKey.GMAIL}Description`),
+    icon: <SvgIcon name={'data-source/gmail'} width={38} />,
+  },
   [DataSourceKey.MOODLE]: {
     name: 'Moodle',
     description: t(`setting.${DataSourceKey.MOODLE}Description`),
@@ -53,6 +60,11 @@ export const DataSourceInfo = {
     name: 'Jira',
     description: t(`setting.${DataSourceKey.JIRA}Description`),
     icon: <SvgIcon name={'data-source/jira'} width={38} />,
+  },
+  [DataSourceKey.WEBDAV]: {
+    name: 'WebDAV',
+    description: t(`setting.${DataSourceKey.WEBDAV}Description`),
+    icon: <SvgIcon name={'data-source/webdav'} width={38} />,
   },
   [DataSourceKey.DROPBOX]: {
     name: 'Dropbox',
@@ -314,6 +326,38 @@ export const DataSourceFormFields = {
       defaultValue: 'uploaded',
     },
   ],
+  [DataSourceKey.GMAIL]: [
+    {
+      label: 'Primary Admin Email',
+      name: 'config.credentials.google_primary_admin',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'admin@example.com',
+      tooltip: t('setting.gmailPrimaryAdminTip'),
+    },
+    {
+      label: 'OAuth Token JSON',
+      name: 'config.credentials.google_tokens',
+      type: FormFieldType.Textarea,
+      required: true,
+      render: (fieldProps: any) => (
+        <GmailTokenField
+          value={fieldProps.value}
+          onChange={fieldProps.onChange}
+          placeholder='{ "token": "...", "refresh_token": "...", ... }'
+        />
+      ),
+      tooltip: t('setting.gmailTokenTip'),
+    },
+    {
+      label: '',
+      name: 'config.credentials.authentication_method',
+      type: FormFieldType.Text,
+      required: false,
+      hidden: true,
+      defaultValue: 'uploaded',
+    },
+  ],
   [DataSourceKey.MOODLE]: [
     {
       label: 'Moodle URL',
@@ -429,6 +473,35 @@ export const DataSourceFormFields = {
       tooltip: t('setting.jiraPasswordTip'),
     },
   ],
+  [DataSourceKey.WEBDAV]: [
+    {
+      label: 'WebDAV Server URL',
+      name: 'config.base_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://webdav.example.com',
+    },
+    {
+      label: 'Username',
+      name: 'config.credentials.username',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.password',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Remote Path',
+      name: 'config.remote_path',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '/',
+      tooltip: t('setting.webdavRemotePathTip'),
+    },
+  ],
   [DataSourceKey.DROPBOX]: [
     {
       label: 'Access Token',
@@ -515,6 +588,17 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  [DataSourceKey.GMAIL]: {
+    name: '',
+    source: DataSourceKey.GMAIL,
+    config: {
+      credentials: {
+        google_primary_admin: '',
+        google_tokens: '',
+        authentication_method: 'uploaded',
+      },
+    },
+  },
   [DataSourceKey.MOODLE]: {
     name: '',
     source: DataSourceKey.MOODLE,
@@ -543,6 +627,18 @@ export const DataSourceFormDefaultValues = {
         jira_user_email: '',
         jira_api_token: '',
         jira_password: '',
+      },
+    },
+  },
+  [DataSourceKey.WEBDAV]: {
+    name: '',
+    source: DataSourceKey.WEBDAV,
+    config: {
+      base_url: '',
+      remote_path: '/',
+      credentials: {
+        username: '',
+        password: '',
       },
     },
   },

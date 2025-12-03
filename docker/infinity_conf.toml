@@ -1,5 +1,5 @@
 [general]
-version                  = "0.6.6"
+version                  = "0.6.8"
 time_zone                = "utc-8"
 
 [network]
@@ -54,4 +54,3 @@ memindex_memory_quota    = "1GB"
 wal_dir                       = "/var/infinity/wal"
 
 [resource]
-resource_dir                  = "/var/infinity/resource"

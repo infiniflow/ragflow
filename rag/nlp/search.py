@@ -17,8 +17,7 @@ import json
 import logging
 import re
 import math
-import os
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
 from rag.prompts.generator import relevant_chunks_with_toc
@@ -28,6 +27,7 @@ from rag.utils.doc_store_conn import DocStoreConnection, MatchDenseExpr, FusionE
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
+from common import settings
 
 
 def index_name(uid): return f"ragflow_{uid}"
@@ -120,7 +120,8 @@ class Dealer:
             else:
                 matchDense = self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
-                src.append(f"q_{len(q_vec)}_vec")
+                if not settings.DOC_ENGINE_INFINITY:
+                    src.append(f"q_{len(q_vec)}_vec")
 
                 fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
                 matchExprs = [matchText, matchDense, fusionExpr]
@@ -405,8 +406,13 @@ class Dealer:
                 rank_feature=rank_feature,
             )
         else:
-            lower_case_doc_engine = os.getenv("DOC_ENGINE", "elasticsearch")
-            if lower_case_doc_engine in ["elasticsearch", "opensearch"]:
+            if settings.DOC_ENGINE_INFINITY:
+                # Don't need rerank here since Infinity normalizes each way score before fusion.
+                sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
+                sim = [s if s is not None else 0.0 for s in sim]
+                tsim = sim
+                vsim = sim
+            else:
                 # ElasticSearch doesn't normalize each way score before fusion.
                 sim, tsim, vsim = self.rerank(
                     sres,
@@ -415,15 +421,10 @@ class Dealer:
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )
-            else:
-                # Don't need rerank here since Infinity normalizes each way score before fusion.
-                sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
-                sim = [s if s is not None else 0.0 for s in sim]
-                tsim = sim
-                vsim = sim
 
         sim_np = np.array(sim, dtype=np.float64)
         if sim_np.size == 0:
+            ranks["doc_aggs"] = []
             return ranks
 
         sorted_idx = np.argsort(sim_np * -1)
@@ -433,6 +434,7 @@ class Dealer:
         ranks["total"] = int(filtered_count)
 
         if filtered_count == 0:
+            ranks["doc_aggs"] = []
             return ranks
 
         max_pages = max(RERANK_LIMIT // max(page_size, 1), 1)
@@ -638,3 +640,50 @@ class Dealer:
             chunks.append(d)
 
         return sorted(chunks, key=lambda x:x["similarity"]*-1)[:topn]
+
+    def retrieval_by_children(self, chunks:list[dict], tenant_ids:list[str]):
+        if not chunks:
+            return []
+        idx_nms = [index_name(tid) for tid in tenant_ids]
+        mom_chunks = defaultdict(list)
+        i = 0
+        while i < len(chunks):
+            ck = chunks[i]
+            if not ck.get("mom_id"):
+                i += 1
+                continue
+            mom_chunks[ck["mom_id"]].append(chunks.pop(i))
+
+        if not mom_chunks:
+            return chunks
+
+        if not chunks:
+            chunks = []
+
+        vector_size = 1024
+        for id, cks in mom_chunks.items():
+            chunk = self.dataStore.get(id, idx_nms, [ck["kb_id"] for ck in cks])
+            d = {
+                "chunk_id": id,
+                "content_ltks": " ".join([ck["content_ltks"] for ck in cks]),
+                "content_with_weight": chunk["content_with_weight"],
+                "doc_id": chunk["doc_id"],
+                "docnm_kwd": chunk.get("docnm_kwd", ""),
+                "kb_id": chunk["kb_id"],
+                "important_kwd": [kwd for ck in cks for kwd in ck.get("important_kwd", [])],
+                "image_id": chunk.get("img_id", ""),
+                "similarity": np.mean([ck["similarity"] for ck in cks]),
+                "vector_similarity": np.mean([ck["similarity"] for ck in cks]),
+                "term_similarity": np.mean([ck["similarity"] for ck in cks]),
+                "vector": [0.0] * vector_size,
+                "positions": chunk.get("position_int", []),
+                "doc_type_kwd": chunk.get("doc_type_kwd", "")
+            }
+            for k in cks[0].keys():
+                if k[-4:] == "_vec":
+                    d["vector"] = cks[0][k]
+                    vector_size = len(cks[0][k])
+                    break
+            chunks.append(d)
+
+        return sorted(chunks, key=lambda x:x["similarity"]*-1)

@@ -13,13 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import os
 import sys
-import logging
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from quart import Blueprint, Quart, request, g, current_app, session
-from werkzeug.wrappers.request import Request
 from flasgger import Swagger
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from quart_cors import cors
@@ -40,7 +39,6 @@ settings.init_settings()
 
 __all__ = ["app"]
 
-Request.json = property(lambda self: self.get_json(force=True, silent=True))
 
 app = Quart(__name__)
 app = cors(app, allow_origin="*")
@@ -81,6 +79,11 @@ swagger = Swagger(
 app.url_map.strict_slashes = False
 app.json_encoder = CustomJSONEncoder
 app.errorhandler(Exception)(server_error_response)
+
+# Configure Quart timeouts for slow LLM responses (e.g., local Ollama on CPU)
+# Default Quart timeouts are 60 seconds which is too short for many LLM backends
+app.config["RESPONSE_TIMEOUT"] = int(os.environ.get("QUART_RESPONSE_TIMEOUT", 600))
+app.config["BODY_TIMEOUT"] = int(os.environ.get("QUART_BODY_TIMEOUT", 600))
 
 ## convince for dev and debug
 # app.config["LOGIN_DISABLED"] = True

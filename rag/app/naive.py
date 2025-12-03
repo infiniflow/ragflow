@@ -37,7 +37,8 @@ from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
-from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
+from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table, attach_media_context
+
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     callback = callback
@@ -600,8 +601,7 @@ def load_from_xml_v2(baseURI, rels_item_xml):
             srels._srels.append(_SerializedRelationship(baseURI, rel_elm))
     return srels
 
-def chunk(filename, binary=None, from_page=0, to_page=100000,
-          lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
         Supported file formats are docx, pdf, excel, txt.
         This method apply the naive ways to chunk files.
@@ -611,12 +611,18 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     urls = set()
     url_res = []
 
-
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config", {
             "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
-    final_sections = False
+
+    child_deli = re.findall(r"`([^`]+)`", parser_config.get("children_delimiter", ""))
+    child_deli = sorted(set(child_deli), key=lambda x: -len(x))
+    child_deli = "|".join(re.escape(t) for t in child_deli if t)
+    is_markdown = False
+    table_context_size = max(0, int(parser_config.get("table_context_size", 0) or 0))
+    image_context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
+
     doc = {
         "docnm_kwd": filename,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -677,15 +683,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 "chunk_token_num", 128)), parser_config.get(
                 "delimiter", "\n!?。；！？"))
 
-        if kwargs.get("section_only", False):
-            chunks.extend(embed_res)
-            chunks.extend(url_res)
-            return chunks
-
-        res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
+        res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
         res.extend(embed_res)
         res.extend(url_res)
+        if table_context_size or image_context_size:
+            attach_media_context(res, table_context_size, image_context_size)
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
@@ -776,7 +779,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             return_section_images=True,
         )
 
-        final_sections = True
+        is_markdown = True
 
         try:
             vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
@@ -853,7 +856,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             "file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
 
     st = timer()
-    if final_sections:
+    if is_markdown:
         merged_chunks = []
         merged_images = []
         chunk_limit = max(0, int(parser_config.get("chunk_token_num", 128)))
@@ -896,13 +899,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         chunks = merged_chunks
         has_images = merged_images and any(img is not None for img in merged_images)
-        if kwargs.get("section_only", False):
-            chunks.extend(embed_res)
-            return chunks
+
         if has_images:
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images))
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli))
         else:
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
+            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
     else:
         if section_images:
             if all(image is None for image in section_images):
@@ -913,21 +914,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                                             int(parser_config.get(
                                                 "chunk_token_num", 128)), parser_config.get(
                                                 "delimiter", "\n!?。；！？"))
-            if kwargs.get("section_only", False):
-                chunks.extend(embed_res)
-                return chunks
-
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
         else:
             chunks = naive_merge(
                 sections, int(parser_config.get(
                     "chunk_token_num", 128)), parser_config.get(
                     "delimiter", "\n!?。；！？"))
-            if kwargs.get("section_only", False):
-                chunks.extend(embed_res)
-                return chunks
 
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
+            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
 
     if urls and parser_config.get("analyze_hyperlink", False) and is_root:
         for index, url in enumerate(urls):
@@ -947,6 +941,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         res.extend(embed_res)
     if url_res:
         res.extend(url_res)
+    if table_context_size or image_context_size:
+        attach_media_context(res, table_context_size, image_context_size)
     return res
 
 

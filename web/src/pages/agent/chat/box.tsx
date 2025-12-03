@@ -1,24 +1,24 @@
 import { MessageType } from '@/constants/chat';
-import { useGetFileIcon } from '@/pages/chat/hooks';
 
 import { useSendAgentMessage } from './use-send-agent-message';
 
 import { FileUploadProps } from '@/components/file-upload';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import {
   useFetchAgent,
   useUploadCanvasFileWithProgress,
 } from '@/hooks/use-agent-request';
-import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { memo, useCallback } from 'react';
 import { useParams } from 'umi';
 import DebugContent from '../debug-content';
 import { useAwaitCompentData } from '../hooks/use-chat-logic';
 import { useIsTaskMode } from '../hooks/use-get-begin-query';
+import { useGetFileIcon } from './use-get-file-icon';
 
 function AgentChatBox() {
   const { data: canvasInfo, refetch } = useFetchAgent();
@@ -127,12 +127,14 @@ function AgentChatBox() {
           />
         )}
       </section>
-      <PdfDrawer
-        visible={visible}
-        hideModal={hideModal}
-        documentId={documentId}
-        chunk={selectedChunk}
-      ></PdfDrawer>
+      {visible && (
+        <PdfSheet
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        ></PdfSheet>
+      )}
     </>
   );
 }

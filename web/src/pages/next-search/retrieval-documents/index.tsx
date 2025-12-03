@@ -17,26 +17,39 @@ import {
 import { Separator } from '@/components/ui/separator';
 import {
   useAllTestingResult,
+  useChunkIsTesting,
   useSelectTestingResult,
-} from '@/hooks/knowledge-hooks';
+} from '@/hooks/use-knowledge-request';
 import { cn } from '@/lib/utils';
 import { CheckIcon, ChevronDown, Files, XIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 interface IProps {
   onTesting(documentIds: string[]): void;
   setSelectedDocumentIds(documentIds: string[]): void;
   selectedDocumentIds: string[];
+  setLoading?: (loading: boolean) => void;
 }
 
 const RetrievalDocuments = ({
   onTesting,
   selectedDocumentIds,
   setSelectedDocumentIds,
+  setLoading,
 }: IProps) => {
   const { documents: documentsAll } = useAllTestingResult();
   const { documents } = useSelectTestingResult();
+  const isTesting = useChunkIsTesting();
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+
+  useEffect(() => {
+    if (isTesting) {
+      setLoading?.(true);
+    } else {
+      setLoading?.(false);
+    }
+  }, [isTesting, setLoading]);
+
   const { documents: useDocuments } = {
     documents:
       documentsAll?.length > documents?.length ? documentsAll : documents,
@@ -45,6 +58,9 @@ const RetrievalDocuments = ({
     useState<string[]>(selectedDocumentIds);
 
   const multiOptions = useMemo(() => {
+    if (!useDocuments || !useDocuments.length) {
+      return [];
+    }
     return useDocuments?.map((item) => {
       return {
         label: item.doc_name,
@@ -97,36 +113,38 @@ const RetrievalDocuments = ({
   return (
     <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
       <PopoverTrigger asChild>
-        <Button
-          onClick={handleTogglePopover}
-          className={cn(
-            'flex w-full p-1 rounded-md text-base text-text-primary border min-h-10 h-auto items-center justify-between bg-inherit hover:bg-inherit [&_svg]:pointer-events-auto',
-          )}
-        >
-          <div className="flex justify-between items-center w-full">
-            <div className="flex flex-wrap items-center gap-2">
-              <Files />
-              <span>
-                {selectedDocumentIds?.length ?? 0}/{useDocuments?.length ?? 0}
-              </span>
-              Files
+        {useDocuments?.length && (
+          <Button
+            onClick={handleTogglePopover}
+            className={cn(
+              'flex w-full p-1 rounded-md text-base text-text-primary border min-h-10 h-auto items-center justify-between bg-inherit hover:bg-inherit [&_svg]:pointer-events-auto',
+            )}
+          >
+            <div className="flex justify-between items-center w-full">
+              <div className="flex flex-wrap items-center gap-2">
+                <Files />
+                <span>
+                  {selectedDocumentIds?.length ?? 0}/{useDocuments?.length ?? 0}
+                </span>
+                Files
+              </div>
+              <div className="flex items-center justify-between">
+                <XIcon
+                  className="h-4 mx-2 cursor-pointer text-muted-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleClear();
+                  }}
+                />
+                <Separator
+                  orientation="vertical"
+                  className="flex min-h-6 h-full"
+                />
+                <ChevronDown className="h-4 mx-2 cursor-pointer text-muted-foreground" />
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <XIcon
-                className="h-4 mx-2 cursor-pointer text-muted-foreground"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleClear();
-                }}
-              />
-              <Separator
-                orientation="vertical"
-                className="flex min-h-6 h-full"
-              />
-              <ChevronDown className="h-4 mx-2 cursor-pointer text-muted-foreground" />
-            </div>
-          </div>
-        </Button>
+          </Button>
+        )}
       </PopoverTrigger>
       <PopoverContent
         className="w-auto p-0"

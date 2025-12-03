@@ -323,9 +323,9 @@ The status of a Docker container status does not necessarily reflect the status 
 
 2. Follow [this document](./guides/run_health_check.md) to check the health status of the Elasticsearch service.
 
-:::danger IMPORTANT
-The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
-:::
+   :::danger IMPORTANT
+   The status of a Docker container status does not necessarily reflect the status of the service. You may find that your services are unhealthy even when the corresponding Docker containers are up running. Possible reasons for this include network failures, incorrect port numbers, or DNS issues.
+   :::
 
 3. If your container keeps restarting, ensure `vm.max_map_count` >= 262144 as per [this README](https://github.com/infiniflow/ragflow?tab=readme-ov-file#-start-up-the-server). Updating the `vm.max_map_count` value in **/etc/sysctl.conf** is required, if you wish to keep your change permanent. Note that this configuration works only for Linux.
 
@@ -456,9 +456,9 @@ To switch your document engine from Elasticsearch to [Infinity](https://github.c
    ```bash
    $ docker compose -f docker/docker-compose.yml down -v
    ```
-:::caution WARNING
-`-v` will delete all Docker container volumes, and the existing data will be cleared.
-:::
+   :::caution WARNING
+   `-v` will delete all Docker container volumes, and the existing data will be cleared.
+   :::
 
 2. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
 3. Restart your Docker image: 
@@ -497,20 +497,6 @@ MinerU PDF document parsing is available starting from v0.22.0. RAGFlow supports
 
 1. Prepare MinerU
 
-   - **If you deploy RAGFlow from source**, install MinerU into an isolated virtual environment (recommended path: `$HOME/uv_tools`):
-
-   ```bash
-   mkdir -p "$HOME/uv_tools"
-   cd "$HOME/uv_tools"
-   uv venv .venv
-   source .venv/bin/activate
-   uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple
-   # or
-   # uv pip install -U "mineru[all]" -i https://mirrors.aliyun.com/pypi/simple
-   ```
-
-   - **If you deploy RAGFlow with Docker**, you usually only need to turn on MinerU support in `docker/.env`:
-
    ```bash
    # docker/.env
    ...
@@ -518,18 +504,15 @@ MinerU PDF document parsing is available starting from v0.22.0. RAGFlow supports
    ...
    ```
 
-   Enabling `USE_MINERU=true` will internally perform the same setup as the manual configuration (including setting the MinerU executable path and related environment variables). You only need the manual installation above if you are running from source or want full control over the MinerU installation.
+   Enabling `USE_MINERU=true` will internally perform the same setup as the manual configuration (including setting the MinerU executable path and related environment variables). 
+
 
 2. Start RAGFlow with MinerU enabled:
 
-   - **Source deployment** – in the RAGFlow repo, export the key MinerU-related variables and start the backend service:
+   - **Source deployment** – in the RAGFlow repo, continue to start the backend service:
 
    ```bash
-   # in RAGFlow repo
-   export MINERU_EXECUTABLE="$HOME/uv_tools/.venv/bin/mineru"
-   export MINERU_DELETE_OUTPUT=0   # keep output directory
-   export MINERU_BACKEND=pipeline  # or another backend you prefer
-
+   ...
    source .venv/bin/activate
    export PYTHONPATH=$(pwd)
    bash docker/launch_backend_service.sh

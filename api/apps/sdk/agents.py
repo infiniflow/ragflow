@@ -25,7 +25,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.constants import RetCode
 from common.misc_utils import get_uuid
-from api.utils.api_utils import get_data_error_result, get_error_data_result, get_json_result, token_required
+from api.utils.api_utils import get_data_error_result, get_error_data_result, get_json_result, get_request_json, token_required
 from api.utils.api_utils import get_result
 from quart import request, Response
 
@@ -53,7 +53,7 @@ def list_agents(tenant_id):
 @manager.route("/agents", methods=["POST"])  # noqa: F821
 @token_required
 async def create_agent(tenant_id: str):
-    req: dict[str, Any] = cast(dict[str, Any], await request.json)
+    req: dict[str, Any] = cast(dict[str, Any], await get_request_json())
     req["user_id"] = tenant_id
 
     if req.get("dsl") is not None:
@@ -90,7 +90,7 @@ async def create_agent(tenant_id: str):
 @manager.route("/agents/<agent_id>", methods=["PUT"])  # noqa: F821
 @token_required
 async def update_agent(tenant_id: str, agent_id: str):
-    req: dict[str, Any] = {k: v for k, v in cast(dict[str, Any], (await request.json)).items() if v is not None}
+    req: dict[str, Any] = {k: v for k, v in cast(dict[str, Any], (await get_request_json())).items() if v is not None}
     req["user_id"] = tenant_id
 
     if req.get("dsl") is not None:
@@ -136,7 +136,7 @@ def delete_agent(tenant_id: str, agent_id: str):
 @manager.route('/webhook/<agent_id>', methods=['POST'])  # noqa: F821
 @token_required
 async def webhook(tenant_id: str, agent_id: str):
-    req = await request.json
+    req = await get_request_json()
     if not UserCanvasService.accessible(req["id"], tenant_id):
         return get_json_result(
             data=False, message='Only owner of canvas authorized for this operation.',

@@ -8,7 +8,7 @@ import {
 } from '@/interfaces/database/agent';
 import { DSLComponents, RAGFlowNodeType } from '@/interfaces/database/flow';
 import { buildSelectOptions } from '@/utils/component-util';
-import { removeUselessFieldsFromValues } from '@/utils/form';
+import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
@@ -27,6 +27,7 @@ import {
   CategorizeAnchorPointPositions,
   FileType,
   FileTypeSuffixMap,
+  InputMode,
   NoCopyOperatorsList,
   NoDebugOperatorsList,
   NodeHandleId,
@@ -568,12 +569,6 @@ export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
     }, {});
   }
 
-  // Delete the downstream nodes corresponding to the yes and no fields of the Relevant operator
-  if (nodeData?.label === Operator.Relevant) {
-    form.yes = undefined;
-    form.no = undefined;
-  }
-
   return {
     ...(nodeData ?? { label: '' }),
     form,
@@ -772,3 +767,5 @@ export function getArrayElementType(type: string) {
 export function buildConversationVariableSelectOptions() {
   return buildSelectOptions(Object.values(TypesWithArray));
 }
+
+export const InputModeOptions = buildOptions(InputMode);

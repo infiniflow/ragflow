@@ -49,7 +49,7 @@ dependencies = [
     "html-text==0.6.2",
     "httpx[socks]>=0.28.1,<0.29.0",
     "huggingface-hub>=0.25.0,<0.26.0",
-    "infinity-sdk==0.6.6",
+    "infinity-sdk==0.6.8",
     "infinity-emb>=0.0.66,<0.0.67",
     "itsdangerous==2.1.2",
     "json-repair==0.35.0",
@@ -116,6 +116,7 @@ dependencies = [
     "google-genai>=1.41.0,<2.0.0",
     "volcengine==1.0.194",
     "voyageai==0.2.3",
+    "webdav4>=0.10.0,<0.11.0",
     "webdriver-manager==4.0.1",
     "werkzeug==3.0.6",
     "wikipedia==1.4.0",
@@ -151,6 +152,9 @@ dependencies = [
     "moodlepy>=0.23.0",
     "pypandoc>=1.16",
     "pyobvector==0.2.18",
+    "exceptiongroup>=1.3.0,<2.0.0",
+    "ffmpeg-python>=0.2.0",
+    "imageio-ffmpeg>=0.6.0",
 ]
 
 [dependency-groups]

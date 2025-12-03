@@ -37,10 +37,11 @@ from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.config_utils import show_configs
-from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector, DropboxConnector
+from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector, DropboxConnector, WebDAVConnector
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
+from common.data_source.gmail_connector import GmailConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.data_source.utils import load_all_docs_from_checkpoint_connector
 from common.log_utils import init_root_logger
@@ -67,14 +68,17 @@ class SyncBase:
                     next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
                     if task["poll_range_start"]:
                         next_update = task["poll_range_start"]
+                    
+                    failed_docs = 0
                     for document_batch in document_batch_generator:
                         if not document_batch:
                             continue
                         min_update = min([doc.doc_updated_at for doc in document_batch])
                         max_update = max([doc.doc_updated_at for doc in document_batch])
                         next_update = max([next_update, max_update])
-                        docs = [
-                            {
+                        docs = []
+                        for doc in document_batch:
+                            doc_dict = {
                                 "id": doc.id,
                                 "connector_id": task["connector_id"],
                                 "source": self.SOURCE_NAME,
@@ -84,16 +88,35 @@ class SyncBase:
                                 "doc_updated_at": doc.doc_updated_at,
                                 "blob": doc.blob,
                             }
-                            for doc in document_batch
-                        ]
+                            # Add metadata if present
+                            if doc.metadata:
+                                doc_dict["metadata"] = doc.metadata
+                            docs.append(doc_dict)
 
-                        e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-                        err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
-                        SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
-                        doc_num += len(docs)
+                        try:
+                            e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
+                            err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
+                            SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
+                            doc_num += len(docs)
+                        except Exception as batch_ex:
+                            error_msg = str(batch_ex)
+                            error_code = getattr(batch_ex, 'args', (None,))[0] if hasattr(batch_ex, 'args') else None
+                            
+                            if error_code == 1267 or "collation" in error_msg.lower():
+                                logging.warning(f"Skipping {len(docs)} document(s) due to database collation conflict (error 1267)")
+                                for doc in docs:
+                                    logging.debug(f"Skipped: {doc['semantic_identifier']}")
+                            else:
+                                logging.error(f"Error processing batch of {len(docs)} documents: {error_msg}")
+                            
+                            failed_docs += len(docs)
+                            continue
 
-                    prefix = "[Jira] " if self.SOURCE_NAME == FileSource.JIRA else ""
-                    logging.info(f"{prefix}{doc_num} docs synchronized till {next_update}")
+                    prefix = self._get_source_prefix()
+                    if failed_docs > 0:
+                        logging.info(f"{prefix}{doc_num} docs synchronized till {next_update} ({failed_docs} skipped)")
+                    else:
+                        logging.info(f"{prefix}{doc_num} docs synchronized till {next_update}")
                     SyncLogsService.done(task["id"], task["connector_id"])
                     task["poll_range_start"] = next_update
 
@@ -105,6 +128,9 @@ class SyncBase:
 
     async def _generate(self, task: dict):
         raise NotImplementedError
+    
+    def _get_source_prefix(self):
+        return ""
 
 
 class S3(SyncBase):
@@ -208,7 +234,64 @@ class Gmail(SyncBase):
     SOURCE_NAME: str = FileSource.GMAIL
 
     async def _generate(self, task: dict):
-        pass
+        # Gmail sync reuses the generic LoadConnector/PollConnector interface
+        # implemented by common.data_source.gmail_connector.GmailConnector.
+        #
+        # Config expectations (self.conf):
+        #   credentials: Gmail / Workspace OAuth JSON (with primary admin email)
+        #   batch_size:  optional, defaults to INDEX_BATCH_SIZE
+        batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+
+        self.connector = GmailConnector(batch_size=batch_size)
+
+        credentials = self.conf.get("credentials")
+        if not credentials:
+            raise ValueError("Gmail connector is missing credentials.")
+
+        new_credentials = self.connector.load_credentials(credentials)
+        if new_credentials:
+            # Persist rotated / refreshed credentials back to connector config
+            try:
+                updated_conf = copy.deepcopy(self.conf)
+                updated_conf["credentials"] = new_credentials
+                ConnectorService.update_by_id(task["connector_id"], {"config": updated_conf})
+                self.conf = updated_conf
+                logging.info(
+                    "Persisted refreshed Gmail credentials for connector %s",
+                    task["connector_id"],
+                )
+            except Exception:
+                logging.exception(
+                    "Failed to persist refreshed Gmail credentials for connector %s",
+                    task["connector_id"],
+                )
+
+        # Decide between full reindex and incremental polling by time range.
+        if task["reindex"] == "1" or not task.get("poll_range_start"):
+            start_time = None
+            end_time = None
+            begin_info = "totally"
+            document_generator = self.connector.load_from_state()
+        else:
+            poll_start = task["poll_range_start"]
+            # Defensive: if poll_start is somehow None, fall back to full load
+            if poll_start is None:
+                start_time = None
+                end_time = None
+                begin_info = "totally"
+                document_generator = self.connector.load_from_state()
+            else:
+                start_time = poll_start.timestamp()
+                end_time = datetime.now(timezone.utc).timestamp()
+                begin_info = f"from {poll_start}"
+                document_generator = self.connector.poll_source(start_time, end_time)
+
+        try:
+            admin_email = self.connector.primary_admin_email
+        except RuntimeError:
+            admin_email = "unknown"
+        logging.info(f"Connect to Gmail as {admin_email} {begin_info}")
+        return document_generator
 
 
 class Dropbox(SyncBase):
@@ -322,6 +405,9 @@ class GoogleDrive(SyncBase):
 class Jira(SyncBase):
     SOURCE_NAME: str = FileSource.JIRA
 
+    def _get_source_prefix(self):
+        return "[Jira]"
+
     async def _generate(self, task: dict):
         connector_kwargs = {
             "jira_base_url": self.conf["base_url"],
@@ -433,6 +519,36 @@ class Teams(SyncBase):
         pass
 
 
+class WebDAV(SyncBase):
+    SOURCE_NAME: str = FileSource.WEBDAV
+
+    async def _generate(self, task: dict):
+        self.connector = WebDAVConnector(
+            base_url=self.conf["base_url"],
+            remote_path=self.conf.get("remote_path", "/")
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+        
+        logging.info(f"Task info: reindex={task['reindex']}, poll_range_start={task['poll_range_start']}")
+        
+        if task["reindex"]=="1" or not task["poll_range_start"]:
+            logging.info("Using load_from_state (full sync)")
+            document_batch_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+            end_ts = datetime.now(timezone.utc).timestamp()
+            logging.info(f"Polling WebDAV from {task['poll_range_start']} (ts: {start_ts}) to now (ts: {end_ts})")
+            document_batch_generator = self.connector.poll_source(start_ts, end_ts)
+            begin_info = "from {}".format(task["poll_range_start"])
+            
+        logging.info("Connect to WebDAV: {}(path: {}) {}".format(
+            self.conf["base_url"],
+            self.conf.get("remote_path", "/"),
+            begin_info
+        ))
+        return document_batch_generator
+        
 class Moodle(SyncBase):
     SOURCE_NAME: str = FileSource.MOODLE
 
@@ -477,6 +593,7 @@ func_factory = {
     FileSource.TEAMS: Teams,
     FileSource.MOODLE: Moodle,
     FileSource.DROPBOX: Dropbox,
+    FileSource.WEBDAV: WebDAV,
 }
 
 

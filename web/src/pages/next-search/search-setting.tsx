@@ -29,12 +29,12 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
 import {
   useComposeLlmOptionsByModelTypes,
   useSelectLlmOptionsByModelType,
-} from '@/hooks/llm-hooks';
-import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
+} from '@/hooks/use-llm-request';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';

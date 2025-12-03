@@ -48,6 +48,7 @@ class DocumentSource(str, Enum):
     GOOGLE_DRIVE = "google_drive"
     GMAIL = "gmail"
     DISCORD = "discord"
+    WEBDAV = "webdav"
     MOODLE = "moodle"
     S3_COMPATIBLE = "s3_compatible"
     DROPBOX = "dropbox"
@@ -216,6 +217,7 @@ OAUTH_GOOGLE_DRIVE_CLIENT_SECRET = os.environ.get(
     "OAUTH_GOOGLE_DRIVE_CLIENT_SECRET", ""
 )
 GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI = os.environ.get("GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI", "http://localhost:9380/v1/connector/google-drive/oauth/web/callback")
+GMAIL_WEB_OAUTH_REDIRECT_URI = os.environ.get("GMAIL_WEB_OAUTH_REDIRECT_URI", "http://localhost:9380/v1/connector/gmail/oauth/web/callback")
 
 CONFLUENCE_OAUTH_TOKEN_URL = "https://auth.atlassian.com/oauth/token"
 RATE_LIMIT_MESSAGE_LOWERCASE = "Rate limit exceeded".lower()

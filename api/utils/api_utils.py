@@ -22,6 +22,7 @@ import os
 import time
 from copy import deepcopy
 from functools import wraps
+from typing import Any
 
 import requests
 import trio
@@ -45,11 +46,40 @@ from common import settings
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 
 
-async def request_json():
+async def _coerce_request_data() -> dict:
+    """Fetch JSON body with sane defaults; fallback to form data."""
+    payload: Any = None
+    last_error: Exception | None = None
+
     try:
-        return await request.json
-    except Exception:
-        return {}
+        payload = await request.get_json(force=True, silent=True)
+    except Exception as e:
+        last_error = e
+        payload = None
+
+    if payload is None:
+        try:
+            form = await request.form
+            payload = form.to_dict()
+        except Exception as e:
+            last_error = e
+            payload = None
+
+    if payload is None:
+        if last_error is not None:
+            raise last_error
+        raise ValueError("No JSON body or form data found in request.")
+
+    if isinstance(payload, dict):
+        return payload or {}
+
+    if isinstance(payload, str):
+        raise AttributeError("'str' object has no attribute 'get'")
+
+    raise TypeError(f"Unsupported request payload type: {type(payload)!r}")
+
+async def get_request_json():
+    return await _coerce_request_data()
 
 def serialize_for_json(obj):
     """
@@ -89,7 +119,8 @@ def get_data_error_result(code=RetCode.DATA_ERROR, message="Sorry! Data missing!
 
 
 def server_error_response(e):
-    logging.exception(e)
+    # Quart invokes this handler outside the original except block, so we must pass exc_info manually.
+    logging.error("Unhandled exception during request", exc_info=(type(e), e, e.__traceback__))
     try:
         msg = repr(e).lower()
         if getattr(e, "code", None) == 401 or ("unauthorized" in msg) or ("401" in msg):
@@ -136,7 +167,7 @@ def validate_request(*args, **kwargs):
     def wrapper(func):
         @wraps(func)
         async def decorated_function(*_args, **_kwargs):
-            errs = process_args(await request.json or (await request.form).to_dict())
+            errs = process_args(await _coerce_request_data())
             if errs:
                 return get_json_result(code=RetCode.ARGUMENT_ERROR, message=errs)
             if inspect.iscoroutinefunction(func):
@@ -151,7 +182,7 @@ def validate_request(*args, **kwargs):
 def not_allowed_parameters(*params):
     def decorator(func):
         async def wrapper(*args, **kwargs):
-            input_arguments = await request.json or (await request.form).to_dict()
+            input_arguments = await _coerce_request_data()
             for param in params:
                 if param in input_arguments:
                     return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")
@@ -312,6 +343,10 @@ def get_parser_config(chunk_method, parser_config):
         chunk_method = "naive"
 
     # Define default configurations for each chunking method
+    base_defaults = {
+        "table_context_size": 0,
+        "image_context_size": 0,
+    }
     key_mapping = {
         "naive": {
             "layout_recognize": "DeepDOC",
@@ -364,16 +399,19 @@ def get_parser_config(chunk_method, parser_config):
 
     default_config = key_mapping[chunk_method]
 
-    # If no parser_config provided, return default
+    # If no parser_config provided, return default merged with base defaults
     if not parser_config:
-        return default_config
+        if default_config is None:
+            return deep_merge(base_defaults, {})
+        return deep_merge(base_defaults, default_config)
 
     # If parser_config is provided, merge with defaults to ensure required fields exist
     if default_config is None:
-        return parser_config
+        return deep_merge(base_defaults, parser_config)
 
     # Ensure raptor and graphrag fields have default values if not provided
-    merged_config = deep_merge(default_config, parser_config)
+    merged_config = deep_merge(base_defaults, default_config)
+    merged_config = deep_merge(merged_config, parser_config)
 
     return merged_config
 

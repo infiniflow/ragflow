@@ -25,6 +25,7 @@ import trio
 from langfuse import Langfuse
 from peewee import fn
 from agentic_reasoning import DeepResearcher
+from api.db.services.file_service import FileService
 from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
 from api.db.services.common_service import CommonService
@@ -178,6 +179,9 @@ class DialogService(CommonService):
         return res
 
 def chat_solo(dialog, messages, stream=True):
+    attachments = ""
+    if "files" in messages[-1]:
+        attachments = "\n\n".join(FileService.get_files(messages[-1]["files"]))
     if TenantLLMService.llm_id2llm_type(dialog.llm_id) == "image2text":
         chat_mdl = LLMBundle(dialog.tenant_id, LLMType.IMAGE2TEXT, dialog.llm_id)
     else:
@@ -188,6 +192,8 @@ def chat_solo(dialog, messages, stream=True):
     if prompt_config.get("tts"):
         tts_mdl = LLMBundle(dialog.tenant_id, LLMType.TTS)
     msg = [{"role": m["role"], "content": re.sub(r"##\d+\$\$", "", m["content"])} for m in messages if m["role"] != "system"]
+    if attachments and msg:
+        msg[-1]["content"] += attachments
     if stream:
         last_ans = ""
         delta_ans = ""
@@ -380,8 +386,11 @@ def chat(dialog, messages, stream=True, **kwargs):
     retriever = settings.retriever
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else []
+    attachments_= ""
     if "doc_ids" in messages[-1]:
         attachments = messages[-1]["doc_ids"]
+    if "files" in messages[-1]:
+        attachments_ = "\n\n".join(FileService.get_files(messages[-1]["files"]))
 
     prompt_config = dialog.prompt_config
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
@@ -451,7 +460,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                 ),
             )
 
-            for think in reasoner.thinking(kbinfos, " ".join(questions)):
+            for think in reasoner.thinking(kbinfos, attachments_ + " ".join(questions)):
                 if isinstance(think, str):
                     thought = think
                     knowledges = [t for t in think.split("\n") if t]
@@ -478,6 +487,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                     cks = retriever.retrieval_by_toc(" ".join(questions), kbinfos["chunks"], tenant_ids, chat_mdl, dialog.top_n)
                     if cks:
                         kbinfos["chunks"] = cks
+                kbinfos["chunks"] = retriever.retrieval_by_children(kbinfos["chunks"], tenant_ids)
             if prompt_config.get("tavily_api_key"):
                 tav = Tavily(prompt_config["tavily_api_key"])
                 tav_res = tav.retrieve_chunks(" ".join(questions))
@@ -503,7 +513,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
 
-    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)}]
+    msg = [{"role": "system", "content": prompt_config["system"].format(**kwargs)+attachments_}]
     prompt4citation = ""
     if knowledges and (prompt_config.get("quote", True) and kwargs.get("quote", True)):
         prompt4citation = citation_prompt()
@@ -672,7 +682,11 @@ Please write the SQL, only SQL, without any other explanations or text.
         if kb_ids:
             kb_filter = "(" + " OR ".join([f"kb_id = '{kb_id}'" for kb_id in kb_ids]) + ")"
             if "where" not in sql.lower():
-                sql += f" WHERE {kb_filter}"
+                o = sql.lower().split("order by")
+                if len(o) > 1:
+                    sql = o[0] + f" WHERE {kb_filter}  order by " + o[1]
+                else:
+                    sql += f" WHERE {kb_filter}"
             else:
                 sql += f" AND {kb_filter}"
 
@@ -680,10 +694,9 @@ Please write the SQL, only SQL, without any other explanations or text.
         tried_times += 1
         return settings.retriever.sql_retrieval(sql, format="json"), sql
 
-    tbl, sql = get_table()
-    if tbl is None:
-        return None
-    if tbl.get("error") and tried_times <= 2:
+    try:
+        tbl, sql = get_table()
+    except Exception as e:
         user_prompt = """
         Table name: {};
         Table of database fields are as follows:
@@ -697,16 +710,14 @@ Please write the SQL, only SQL, without any other explanations or text.
         The SQL error you provided last time is as follows:
         {}
 
-        Error issued by database as follows:
-        {}
-
         Please correct the error and write SQL again, only SQL, without any other explanations or text.
-        """.format(index_name(tenant_id), "\n".join([f"{k}: {v}" for k, v in field_map.items()]), question, sql, tbl["error"])
-        tbl, sql = get_table()
-        logging.debug("TRY it again: {}".format(sql))
+        """.format(index_name(tenant_id), "\n".join([f"{k}: {v}" for k, v in field_map.items()]), question, e)
+        try:
+            tbl, sql = get_table()
+        except Exception:
+            return
 
-    logging.debug("GET table: {}".format(tbl))
-    if tbl.get("error") or len(tbl["rows"]) == 0:
+    if len(tbl["rows"]) == 0:
         return None
 
     docid_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"] == "doc_id"])
@@ -750,13 +761,48 @@ Please write the SQL, only SQL, without any other explanations or text.
         "prompt": sys_prompt,
     }
 
+def clean_tts_text(text: str) -> str:
+    if not text:
+        return ""
+
+    text = text.encode("utf-8", "ignore").decode("utf-8", "ignore")
+
+    text = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
+
+    emoji_pattern = re.compile(
+        "[\U0001F600-\U0001F64F"
+        "\U0001F300-\U0001F5FF"
+        "\U0001F680-\U0001F6FF"
+        "\U0001F1E0-\U0001F1FF"
+        "\U00002700-\U000027BF"
+        "\U0001F900-\U0001F9FF"
+        "\U0001FA70-\U0001FAFF"
+        "\U0001FAD0-\U0001FAFF]+",
+        flags=re.UNICODE
+    )
+    text = emoji_pattern.sub("", text)
+
+    text = re.sub(r"\s+", " ", text).strip()
+
+    MAX_LEN = 500
+    if len(text) > MAX_LEN:
+        text = text[:MAX_LEN]
+
+    return text
 
 def tts(tts_mdl, text):
     if not tts_mdl or not text:
         return None
+    text = clean_tts_text(text)
+    if not text:
+        return None
     bin = b""
-    for chunk in tts_mdl.tts(text):
-        bin += chunk
+    try:
+        for chunk in tts_mdl.tts(text):
+            bin += chunk
+    except Exception as e:
+        logging.error(f"TTS failed: {e}, text={text!r}")
+        return None
     return binascii.hexlify(bin).decode("utf-8")
 
 

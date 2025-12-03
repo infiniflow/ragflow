@@ -138,7 +138,6 @@ class RAGFlowHtmlParser:
                                             "metadata": {"table_id": table_id, "index": table_list.index(t)}})
                 return table_info_list
             else:
-                block_id = None
                 if str.lower(element.name) in BLOCK_TAGS:
                     block_id = str(uuid.uuid1())
                 for child in element.children:
@@ -172,7 +171,7 @@ class RAGFlowHtmlParser:
                 if tag_name == "table":
                     table_info_list.append(item)
                 else:
-                    current_content += (" " if current_content else "" + content)
+                    current_content += (" " if current_content else "") + content
         if current_content:
             block_content.append(current_content)
         return block_content, table_info_list

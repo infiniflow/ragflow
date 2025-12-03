@@ -56,22 +56,21 @@ import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
 import { DataOperationsNode } from './node/data-operations-node';
 import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
+import { ExitLoopNode } from './node/exit-loop-node';
 import { ExtractorNode } from './node/extractor-node';
 import { FileNode } from './node/file-node';
-import { InvokeNode } from './node/invoke-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
 import { ListOperationsNode } from './node/list-operations-node';
+import { LoopNode, LoopStartNode } from './node/loop-node';
 import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
 import ParserNode from './node/parser-node';
 import { PlaceholderNode } from './node/placeholder-node';
-import { RelevantNode } from './node/relevant-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
 import { SplitterNode } from './node/splitter-node';
 import { SwitchNode } from './node/switch-node';
-import { TemplateNode } from './node/template-node';
 import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
 import { VariableAggregatorNode } from './node/variable-aggregator-node';
@@ -82,15 +81,12 @@ export const nodeTypes: NodeTypes = {
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
   placeholderNode: PlaceholderNode,
-  relevantNode: RelevantNode,
   noteNode: NoteNode,
   switchNode: SwitchNode,
   retrievalNode: RetrievalNode,
   messageNode: MessageNode,
   rewriteNode: RewriteNode,
   keywordNode: KeywordNode,
-  invokeNode: InvokeNode,
-  templateNode: TemplateNode,
   // emailNode: EmailNode,
   group: IterationNode,
   iterationStartNode: IterationStartNode,
@@ -105,6 +101,9 @@ export const nodeTypes: NodeTypes = {
   listOperationsNode: ListOperationsNode,
   variableAssignerNode: VariableAssignerNode,
   variableAggregatorNode: VariableAggregatorNode,
+  loopNode: LoopNode,
+  loopStartNode: LoopStartNode,
+  exitLoopNode: ExitLoopNode,
 };
 
 const edgeTypes = {

@@ -1,3 +1,5 @@
+import { EmptyType } from '@/components/empty/constant';
+import Empty from '@/components/empty/empty';
 import FileStatusBadge from '@/components/file-status-badge';
 import { FileIcon, IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
@@ -344,6 +346,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState({});
   const { t } = useTranslate('knowledgeDetails');
+  const { t: tDatasetOverview } = useTranslate('datasetOverview');
   const [isModalVisible, setIsModalVisible] = useState(false);
   const { navigateToDataflowResult } = useNavigatePage();
   const [logInfo, setLogInfo] = useState<IFileLogItem>();
@@ -445,7 +448,10 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           ) : (
             <TableRow>
               <TableCell colSpan={columns.length} className="h-24 text-center">
-                No results.
+                <Empty
+                  type={EmptyType.Data}
+                  text={tDatasetOverview('noData')}
+                />
               </TableCell>
             </TableRow>
           )}

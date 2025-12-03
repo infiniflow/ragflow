@@ -12,7 +12,7 @@ on:
   # The only difference between pull_request and pull_request_target is the context in which the workflow runs:
   # — pull_request_target workflows use the workflow files from the default branch, and secrets are available.
   # — pull_request workflows use the workflow files from the pull request branch, and secrets are unavailable.
-  pull_request_target:
+  pull_request:
     types: [ synchronize, ready_for_review ]
     paths-ignore:
       - 'docs/**'
@@ -31,7 +31,7 @@ jobs:
     name: ragflow_tests
     # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
     # https://github.com/orgs/community/discussions/26261
-    if: ${{ github.event_name != 'pull_request_target' || contains(github.event.pull_request.labels.*.name, 'ci') }}
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci')) }}
     runs-on: [ "self-hosted", "ragflow-test" ]
     steps:
       # https://github.com/hmarr/debug-action
@@ -53,7 +53,7 @@ jobs:
       - name: Check workflow duplication
         if: ${{ !cancelled() && !failure() }}
         run: |
-          if [[ ${GITHUB_EVENT_NAME} != "pull_request_target" && ${GITHUB_EVENT_NAME} != "schedule" ]]; then
+          if [[ ${GITHUB_EVENT_NAME} != "pull_request" && ${GITHUB_EVENT_NAME} != "schedule" ]]; then
             HEAD=$(git rev-parse HEAD)
             # Find a PR that introduced a given commit
             gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
@@ -78,7 +78,7 @@ jobs:
                 fi
               fi
             fi
-          elif [[ ${GITHUB_EVENT_NAME} == "pull_request_target" ]]; then
+          elif [[ ${GITHUB_EVENT_NAME} == "pull_request" ]]; then
             PR_NUMBER=${{ github.event.pull_request.number }}
             PR_SHA_FP=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/PR_${PR_NUMBER}
             # Calculate the hash of the current workspace content
@@ -98,7 +98,7 @@ jobs:
       - name: Check comments of changed Python files
         if: ${{ false }}
         run: |
-          if [[ ${{ github.event_name }} == 'pull_request_target' ]]; then
+          if [[ ${{ github.event_name }} == 'pull_request' || ${{ github.event_name }} == 'pull_request_target' ]]; then
             CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }} \
               | grep -E '\.(py)$' || true)
 
@@ -193,7 +193,7 @@ jobs:
           echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
-          uv sync --python 3.10 --only-group test --no-default-groups --frozen && uv pip install sdk/python
+          uv sync --python 3.10 --only-group test --no-default-groups --frozen && uv pip install sdk/python --group test
 
       - name: Run sdk tests against Elasticsearch
         run: |

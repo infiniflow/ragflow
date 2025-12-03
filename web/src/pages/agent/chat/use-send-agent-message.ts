@@ -50,10 +50,13 @@ export function findMessageFromList(eventList: IEventList) {
 
   let startIndex = -1;
   let endIndex = -1;
-
+  let audioBinary = undefined;
   messageEventList.forEach((x, idx) => {
     const { data } = x;
-    const { content, start_to_think, end_to_think } = data;
+    const { content, start_to_think, end_to_think, audio_binary } = data;
+    if (audio_binary) {
+      audioBinary = audio_binary;
+    }
     if (start_to_think === true) {
       nextContent += '<think>' + content;
       startIndex = idx;
@@ -82,6 +85,7 @@ export function findMessageFromList(eventList: IEventList) {
   return {
     id: eventList[0]?.message_id,
     content: nextContent,
+    audio_binary: audioBinary,
     attachment: workflowFinished?.data?.outputs?.attachment || {},
   };
 }
@@ -393,12 +397,15 @@ export const useSendAgentMessage = ({
   }, [sendMessageInTaskMode]);
 
   useEffect(() => {
-    const { content, id, attachment } = findMessageFromList(answerList);
+    const { content, id, attachment, audio_binary } =
+      findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
     const answer = content || getLatestError(answerList);
+
     if (answerList.length > 0) {
       addNewestOneAnswer({
         answer: answer ?? '',
+        audio_binary: audio_binary,
         attachment: attachment as IAttachment,
         id: id,
         ...inputAnswer,

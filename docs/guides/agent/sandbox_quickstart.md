@@ -62,9 +62,9 @@ docker build -t sandbox-executor-manager:latest ./executor_manager
 
 3. Add the following entry to your /etc/hosts file to resolve the executor manager service:
 
-```bash
-127.0.0.1 es01 infinity mysql minio redis sandbox-executor-manager
-```
+    ```bash
+    127.0.0.1 es01 infinity mysql minio redis sandbox-executor-manager
+    ```
 
 4. Start the RAGFlow service as usual.
 
@@ -74,24 +74,24 @@ docker build -t sandbox-executor-manager:latest ./executor_manager
 
 1. Initialize the environment variables:
 
-```bash
-cp .env.example .env
-```
+    ```bash
+    cp .env.example .env
+    ```
 
 2. Launch the sandbox services with Docker Compose:
 
-```bash
-docker compose -f docker-compose.yml up
-```
+    ```bash
+    docker compose -f docker-compose.yml up
+    ```
 
 3. Test the sandbox setup:
 
-```bash
-source .venv/bin/activate
-export PYTHONPATH=$(pwd)
-uv pip install -r executor_manager/requirements.txt
-uv run tests/sandbox_security_tests_full.py
-```
+    ```bash
+    source .venv/bin/activate
+    export PYTHONPATH=$(pwd)
+    uv pip install -r executor_manager/requirements.txt
+    uv run tests/sandbox_security_tests_full.py
+    ```
 
 ### Using Makefile
 

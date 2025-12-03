@@ -8,6 +8,20 @@
             "rank": "999",
             "llm": [
                 {
+                    "llm_name": "gpt-5.1",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.1-chat-latest",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "gpt-5",
                     "tags": "LLM,CHAT,400k,IMAGE2TEXT",
                     "max_tokens": 400000,
@@ -270,20 +284,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "glm-4.5",
-                    "tags": "LLM,CHAT,131K",
-                    "max_tokens": 131000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "deepseek-v3.1",
-                    "tags": "LLM,CHAT,128k",
-                    "max_tokens": 128000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
                     "llm_name": "hunyuan-a13b-instruct",
                     "tags": "LLM,CHAT,256k",
                     "max_tokens": 256000,
@@ -322,6 +322,34 @@
                     "llm_name": "qwen3-vl-30b-a3b-instruct",
                     "tags": "LLM,CHAT,262k",
                     "max_tokens": 262000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-ocr",
+                    "tags": "LLM,8k",
+                    "max_tokens": 8000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "qwen3-235b-a22b-instruct-2507",
+                    "tags": "LLM,CHAT,256k",
+                    "max_tokens": 256000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-4.6",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "minimax-m2",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 200000,
                     "model_type": "chat",
                     "is_tools": true
                 }
@@ -686,19 +714,13 @@
                     "model_type": "rerank"
                 },
                 {
-                    "llm_name": "qwen-audio-asr",
+                    "llm_name": "qwen3-asr-flash",
                     "tags": "SPEECH2TEXT,8k",
                     "max_tokens": 8000,
                     "model_type": "speech2text"
                 },
                 {
-                    "llm_name": "qwen-audio-asr-latest",
-                    "tags": "SPEECH2TEXT,8k",
-                    "max_tokens": 8000,
-                    "model_type": "speech2text"
-                },
-                {
-                    "llm_name": "qwen-audio-asr-1204",
+                    "llm_name": "qwen3-asr-flash-2025-09-08",
                     "tags": "SPEECH2TEXT,8k",
                     "max_tokens": 8000,
                     "model_type": "speech2text"
@@ -1166,6 +1188,12 @@
                     "tags": "TEXT EMBEDDING",
                     "max_tokens": 8196,
                     "model_type": "embedding"
+                },
+                {
+                    "llm_name": "jina-embeddings-v4",
+                    "tags": "TEXT EMBEDDING",
+                    "max_tokens": 32768,
+                    "model_type": "embedding"
                 }
             ]
         },
@@ -1198,39 +1226,14 @@
         {
             "name": "MiniMax",
             "logo": "",
-            "tags": "LLM,TEXT EMBEDDING",
+            "tags": "LLM",
             "status": "1",
             "rank": "810",
             "llm": [
                 {
-                    "llm_name": "abab6.5-chat",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "abab6.5s-chat",
-                    "tags": "LLM,CHAT,245k",
-                    "max_tokens": 245760,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "abab6.5t-chat",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "abab6.5g-chat",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
-                    "model_type": "chat"
-                },
-                {
-                    "llm_name": "abab5.5s-chat",
-                    "tags": "LLM,CHAT,8k",
-                    "max_tokens": 8192,
+                    "llm_name": "MiniMax-M2",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 200000,
                     "model_type": "chat"
                 }
             ]
@@ -3218,6 +3221,13 @@
             "status": "1",
             "rank": "990",
             "llm": [
+                {
+                    "llm_name": "claude-opus-4-5-20251101",
+                    "tags": "LLM,CHAT,IMAGE2TEXT,200k",
+                    "max_tokens": 204800,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
                 {
                     "llm_name": "claude-opus-4-1-20250805",
                     "tags": "LLM,CHAT,IMAGE2TEXT,200k",

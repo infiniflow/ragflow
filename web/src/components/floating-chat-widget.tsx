@@ -1,8 +1,10 @@
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
-import { MessageType } from '@/constants/chat';
+import { MessageType, SharedFrom } from '@/constants/chat';
+import { useFetchExternalAgentInputs } from '@/hooks/use-agent-request';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import i18n from '@/locales/config';
+import { useSendNextSharedMessage } from '@/pages/agent/hooks/use-send-shared-message';
 import { MessageCircle, Minimize2, Send, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -20,7 +22,13 @@ const FloatingChatWidget = () => {
   const [isLoaded, setIsLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { sharedId: conversationId, locale } = useGetSharedChatSearchParams();
+  const {
+    sharedId: conversationId,
+    locale,
+    from,
+  } = useGetSharedChatSearchParams();
+
+  const isFromAgent = from === SharedFrom.Agent;
 
   // Check if we're in button-only mode or window-only mode
   const urlParams = new URLSearchParams(window.location.search);
@@ -34,7 +42,7 @@ const FloatingChatWidget = () => {
     sendLoading,
     derivedMessages,
     hasError,
-  } = useSendSharedMessage();
+  } = (isFromAgent ? useSendNextSharedMessage : useSendSharedMessage)(() => {});
 
   // Sync our local input with the hook's value when needed
   useEffect(() => {
@@ -43,7 +51,11 @@ const FloatingChatWidget = () => {
     }
   }, [hookValue, inputValue]);
 
-  const { data: chatInfo } = useFetchExternalChatInfo();
+  const { data } = (
+    isFromAgent ? useFetchExternalAgentInputs : useFetchExternalChatInfo
+  )();
+
+  const title = data.title;
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
@@ -372,7 +384,7 @@ const FloatingChatWidget = () => {
               </div>
               <div>
                 <h3 className="font-semibold text-sm">
-                  {chatInfo?.title || 'Chat Support'}
+                  {title || 'Chat Support'}
                 </h3>
                 <p className="text-xs text-blue-100">
                   We typically reply instantly
@@ -494,14 +506,16 @@ const FloatingChatWidget = () => {
             </div>
           </div>
         </div>
-        <PdfDrawer
-          visible={visible}
-          hideModal={hideModal}
-          documentId={documentId}
-          chunk={selectedChunk}
-          width={'100vw'}
-          height={'100vh'}
-        />
+        {visible && (
+          <PdfSheet
+            visible={visible}
+            hideModal={hideModal}
+            documentId={documentId}
+            chunk={selectedChunk}
+            width={'100vw'}
+            height={'100vh'}
+          />
+        )}
       </>
     );
   } // Full mode - render everything together (original behavior)
@@ -524,7 +538,7 @@ const FloatingChatWidget = () => {
               </div>
               <div>
                 <h3 className="font-semibold text-sm">
-                  {chatInfo?.title || 'Chat Support'}
+                  {title || 'Chat Support'}
                 </h3>
                 <p className="text-xs text-blue-100">
                   We typically reply instantly
@@ -695,7 +709,7 @@ const FloatingChatWidget = () => {
           </div>
         )}
       </div>
-      <PdfDrawer
+      <PdfSheet
         visible={visible}
         hideModal={hideModal}
         documentId={documentId}
