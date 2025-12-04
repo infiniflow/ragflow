@@ -1905,16 +1905,5 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       searchTitle: '尚未创建搜索应用',
       addNow: '立即添加',
     },
-
-    deleteModal: {
-      delAgent: '删除智能体',
-      delDataset: '删除知识库',
-      delSearch: '删除搜索',
-      delFile: '删除文件',
-      delFiles: '删除文件',
-      delFilesContent: '已选择 {{count}} 个文件',
-      delChat: '删除聊天',
-      delMember: '删除成员',
-    },
   },
 };
