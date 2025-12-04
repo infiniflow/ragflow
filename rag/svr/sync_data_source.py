@@ -157,9 +157,23 @@ class Confluence(SyncBase):
         from common.data_source.config import DocumentSource
         from common.data_source.interfaces import StaticCredentialsProvider
 
-        space = (self.conf.get("space") or "").strip()
-        page_id = (self.conf.get("page_id") or "").strip()
-        index_recursively = bool(self.conf.get("index_recursively", False))
+        index_mode = (self.conf.get("index_mode") or "everything").lower()
+        if index_mode not in {"everything", "space", "page"}:
+            index_mode = "everything"
+
+        space = ""
+        page_id = ""
+
+        index_recursively = False
+        if index_mode == "space":
+            space = (self.conf.get("space") or "").strip()
+            if not space:
+                raise ValueError("Space Key is required when indexing a specific Confluence space.")
+        elif index_mode == "page":
+            page_id = (self.conf.get("page_id") or "").strip()
+            if not page_id:
+                raise ValueError("Page ID is required when indexing a specific Confluence page.")
+            index_recursively = bool(self.conf.get("index_recursively", False))
 
         self.connector = ConfluenceConnector(
             wiki_base=self.conf["wiki_base"],
