@@ -129,6 +129,7 @@ jobs:
 
       - name: Run unit test
         run: |
+          echo "Start to run unit test"
           python3 run_tests.py
 
       - name: Build ragflow:nightly
