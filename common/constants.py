@@ -149,6 +149,22 @@ class Storage(Enum):
     OSS = 5
     OPENDAL = 6
 
+class MemoryType(StrEnum):
+    RAW = "raw"
+    SEMANTIC = "semantic"
+    EPISODIC = "episodic"
+    PROCEDURAL = "procedural"
+
+
+class MemoryStorageType(StrEnum):
+    TABLE = "table"
+    GRAPH = "graph"
+
+
+class ForgettingPolicy(StrEnum):
+    FIFO = "fifo"
+
+
 # environment
 # ENV_STRONG_TEST_COUNT = "STRONG_TEST_COUNT"
 # ENV_RAGFLOW_SECRET_KEY = "RAGFLOW_SECRET_KEY"

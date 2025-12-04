@@ -1113,6 +1113,27 @@ class SyncLogs(DataBaseModel):
         db_table = "sync_logs"
 
 
+class Memory(DataBaseModel):
+    memory_id = CharField(max_length=32, primary_key=True)
+    memory_name = CharField(max_length=128, null=False, index=False, help_text="Memory name")
+    avatar = TextField(null=True, help_text="avatar base64 string")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    memory_type = CharField(max_length=32, null=False, index=True, help_text="['raw', 'semantic','episodic', 'procedural']")
+    storage_type = CharField(max_length=32, null=False, index=True, help_text="table|graph")
+    embedding = CharField(max_length=128, null=False, index=False, help_text="embedding model ID")
+    llm = CharField(max_length=128, null=False, index=False, help_text="chat model ID")
+    permissions = CharField(max_length=16, null=False, index=True, help_text="me|team", default="me")
+    description = TextField(null=True, help_text="description")
+    memory_size = IntegerField(default=5242880, null=False, index=False)
+    forgetting_policy = CharField(max_length=32, null=False, default="fifo", index=False, help_text="lru|fifo")
+    temperature = FloatField(default=0.5, index=False)
+    system_prompt = TextField(null=True, help_text="system prompt", index=False)
+    user_prompt = TextField(null=True, help_text="user prompt", index=False)
+
+    class Meta:
+        db_table = "memory"
+
+
 def migrate_db():
     logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
