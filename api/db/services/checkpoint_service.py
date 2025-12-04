@@ -86,7 +86,7 @@ class CheckpointService(CommonService):
             started_at=datetime.now(),
             last_checkpoint_at=datetime.now()
         )
-        checkpoint.save()
+        checkpoint.save(force_insert=True)
         
         logging.info(f"Created checkpoint {checkpoint_id} for task {task_id} with {len(doc_ids)} documents")
         return checkpoint
