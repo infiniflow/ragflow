@@ -10,12 +10,43 @@ interface DocPreviewerProps {
   url: string;
 }
 
+// Word document preview component. Behavior:
+// 1) Fetches the document as a Blob.
+// 2) Detects .docx input via a ZIP header probe.
+// 3) Renders .docx using Mammoth; presents a controlled "unsupported" notice for non-ZIP payloads.
 export const DocPreviewer: React.FC<DocPreviewerProps> = ({
   className,
   url,
 }) => {
   const [htmlContent, setHtmlContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
+
+  // Determines whether the Blob represents a .docx document by checking for the ZIP
+  // file signature ("PK") in the initial bytes. A valid .docx file is a ZIP container
+  // and always begins with:
+  //     50 4B 03 04  ("PK..")
+  //
+  // Legacy .doc files use the CFBF binary format, commonly starting with:
+  //     D0 CF 11 E0 A1 B1 1A E1
+  //
+  // Note that some files distributed with a “.doc” extension may internally be .docx
+  // documents (e.g., renamed files or files produced by systems that export .docx
+  // content under a .doc filename). These files will still present the ZIP signature
+  // and are therefore treated as supported .docx payloads. The header inspection
+  // ensures correct routing regardless of filename or reported extension.
+  const isZipLikeBlob = async (blob: Blob): Promise<boolean> => {
+    try {
+      const headerSlice = blob.slice(0, 4);
+      const buf = await headerSlice.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+
+      // ZIP files start with "PK" (0x50, 0x4B)
+      return bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+    } catch (e) {
+      console.error('Failed to inspect blob header', e);
+      return false;
+    }
+  };
 
   const fetchDocument = async () => {
     if (!url) return;
@@ -36,24 +67,21 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
       const contentType: string =
         blob.type || (res as any).headers?.['content-type'] || '';
 
-      // ---- Detect legacy .doc via MIME or URL ----
-      const cleanUrl = url.split(/[?#]/)[0].toLowerCase();
-      const isDocMime = /application\/msword/i.test(contentType);
-      const isLegacyDocByUrl =
-        cleanUrl.endsWith('.doc') && !cleanUrl.endsWith('.docx');
-      const isLegacyDoc = isDocMime || isLegacyDocByUrl;
+      // Execution path selection: ZIP-like payloads are treated as .docx and rendered via Mammoth;
+      // non-ZIP payloads receive an explicit unsupported notice.
+      const looksLikeZip = await isZipLikeBlob(blob);
 
-      if (isLegacyDoc) {
-        // Do not call mammoth and do not throw an error; instead, show a note in the preview area
+      if (!looksLikeZip) {
+        // Non-ZIP payload (likely legacy .doc or another format): skip Mammoth processing.
         setHtmlContent(`
           <div class="flex h-full items-center justify-center">
             <div class="border border-dashed border-border-normal rounded-xl p-8 max-w-2xl text-center">
               <p class="text-2xl font-bold mb-4">
-                Preview not available for .doc files
+                Preview is not available for this Word document
               </p>
               <p class="italic text-sm text-muted-foreground leading-relaxed">
-                Mammoth does not support <code>.doc</code> documents.<br/>
-                Inline preview is unavailable.
+                Mammoth supports modern <code>.docx</code> files only.<br/>
+                The file header does not indicate a <code>.docx</code> ZIP archive.
               </p>
             </div>
           </div>
@@ -61,7 +89,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
         return;
       }
 
-      // ---- Standard .docx preview path ----
+      // ZIP-like payload: parse as .docx with Mammoth
       const arrayBuffer = await blob.arrayBuffer();
       const result = await mammoth.convertToHtml(
         { arrayBuffer },
@@ -74,8 +102,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
 
       setHtmlContent(styledContent);
     } catch (err) {
-      // Only errors from the mammoth conversion path should surface here
-      message.error('Document parsing failed');
+      message.error('Failed to parse document.');
       console.error('Error parsing document:', err);
     } finally {
       setLoading(false);
