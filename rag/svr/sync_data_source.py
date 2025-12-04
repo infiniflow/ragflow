@@ -157,11 +157,16 @@ class Confluence(SyncBase):
         from common.data_source.config import DocumentSource
         from common.data_source.interfaces import StaticCredentialsProvider
 
+        space = (self.conf.get("space") or "").strip()
+        page_id = (self.conf.get("page_id") or "").strip()
+        index_recursively = bool(self.conf.get("index_recursively", False))
+
         self.connector = ConfluenceConnector(
             wiki_base=self.conf["wiki_base"],
-            space=self.conf.get("space", ""),
             is_cloud=self.conf.get("is_cloud", True),
-            # page_id=self.conf.get("page_id", ""),
+            space=space,
+            page_id=page_id,
+            index_recursively=index_recursively,
         )
 
         credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"], connector_name=DocumentSource.CONFLUENCE, credential_json=self.conf["credentials"])
