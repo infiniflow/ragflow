@@ -1,0 +1,205 @@
+{
+  "description": "Portal Agent Example - Agent-to-Agent Invocation",
+  "graph": {
+    "nodes": [
+      {
+        "id": "begin",
+        "data": {
+          "name": "Begin",
+          "component_name": "Begin",
+          "x": 100,
+          "y": 100
+        }
+      },
+      {
+        "id": "categorize_0",
+        "data": {
+          "name": "Intent Classifier",
+          "component_name": "Categorize",
+          "x": 300,
+          "y": 100
+        }
+      },
+      {
+        "id": "agent_invoke_sales",
+        "data": {
+          "name": "Sales Analysis Agent",
+          "component_name": "AgentInvoke",
+          "x": 500,
+          "y": 50
+        }
+      },
+      {
+        "id": "agent_invoke_customer",
+        "data": {
+          "name": "Customer Service Agent",
+          "component_name": "AgentInvoke",
+          "x": 500,
+          "y": 200
+        }
+      },
+      {
+        "id": "agent_invoke_docs",
+        "data": {
+          "name": "Document Processing Agent",
+          "component_name": "AgentInvoke",
+          "x": 500,
+          "y": 350
+        }
+      },
+      {
+        "id": "message_0",
+        "data": {
+          "name": "Response",
+          "component_name": "Message",
+          "x": 700,
+          "y": 200
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "begin",
+        "target": "categorize_0"
+      },
+      {
+        "source": "categorize_0",
+        "target": "agent_invoke_sales",
+        "label": "sales"
+      },
+      {
+        "source": "categorize_0",
+        "target": "agent_invoke_customer",
+        "label": "customer_service"
+      },
+      {
+        "source": "categorize_0",
+        "target": "agent_invoke_docs",
+        "label": "documents"
+      },
+      {
+        "source": "agent_invoke_sales",
+        "target": "message_0"
+      },
+      {
+        "source": "agent_invoke_customer",
+        "target": "message_0"
+      },
+      {
+        "source": "agent_invoke_docs",
+        "target": "message_0"
+      }
+    ]
+  },
+  "components": {
+    "begin": {
+      "obj": {
+        "component_name": "Begin",
+        "params": {
+          "prologue": "Welcome to our AI Portal! I can help you with sales analysis, customer service, or document processing.",
+          "mode": "conversational"
+        }
+      },
+      "downstream": ["categorize_0"],
+      "upstream": []
+    },
+    "categorize_0": {
+      "obj": {
+        "component_name": "Categorize",
+        "params": {
+          "description": "Classify user intent to route to appropriate specialized agent",
+          "llm_id": "",
+          "items": [
+            {
+              "name": "sales",
+              "description": "Questions about sales data, revenue, reports, or business metrics"
+            },
+            {
+              "name": "customer_service",
+              "description": "Customer support requests, complaints, or general inquiries"
+            },
+            {
+              "name": "documents",
+              "description": "Document processing, analysis, or extraction tasks"
+            }
+          ]
+        }
+      },
+      "downstream": ["agent_invoke_sales", "agent_invoke_customer", "agent_invoke_docs"],
+      "upstream": ["begin"]
+    },
+    "agent_invoke_sales": {
+      "obj": {
+        "component_name": "AgentInvoke",
+        "params": {
+          "agent_id": "YOUR_SALES_AGENT_ID_HERE",
+          "agent_name": "Sales Analysis Agent",
+          "query": "{sys.query}",
+          "inputs": {
+            "period": "current",
+            "metrics": ["revenue", "units", "growth"]
+          },
+          "timeout_seconds": 180,
+          "create_new_session": true
+        }
+      },
+      "downstream": ["message_0"],
+      "upstream": ["categorize_0"]
+    },
+    "agent_invoke_customer": {
+      "obj": {
+        "component_name": "AgentInvoke",
+        "params": {
+          "agent_id": "YOUR_CUSTOMER_SERVICE_AGENT_ID_HERE",
+          "agent_name": "Customer Service Agent",
+          "query": "{sys.query}",
+          "inputs": {},
+          "timeout_seconds": 120,
+          "create_new_session": true
+        }
+      },
+      "downstream": ["message_0"],
+      "upstream": ["categorize_0"]
+    },
+    "agent_invoke_docs": {
+      "obj": {
+        "component_name": "AgentInvoke",
+        "params": {
+          "agent_id": "YOUR_DOCUMENT_PROCESSING_AGENT_ID_HERE",
+          "agent_name": "Document Processing Agent",
+          "query": "{sys.query}",
+          "inputs": {
+            "files": "{sys.files}"
+          },
+          "timeout_seconds": 300,
+          "create_new_session": true
+        }
+      },
+      "downstream": ["message_0"],
+      "upstream": ["categorize_0"]
+    },
+    "message_0": {
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": "{agent_invoke_sales@answer}{agent_invoke_customer@answer}{agent_invoke_docs@answer}"
+        }
+      },
+      "downstream": [],
+      "upstream": ["agent_invoke_sales", "agent_invoke_customer", "agent_invoke_docs"]
+    }
+  },
+  "history": [],
+  "path": ["begin"],
+  "retrieval": {
+    "chunks": [],
+    "doc_aggs": []
+  },
+  "globals": {
+    "sys.query": "",
+    "sys.user_id": "",
+    "sys.conversation_turns": 0,
+    "sys.files": []
+  }
+}
+

@@ -1,0 +1,161 @@
+{
+  "description": "Multi-Step Workflow - Sentiment Analysis → Issues → Action Items",
+  "graph": {
+    "nodes": [
+      {
+        "id": "begin",
+        "data": {
+          "name": "Start",
+          "component_name": "Begin",
+          "x": 100,
+          "y": 200
+        }
+      },
+      {
+        "id": "agent_invoke_sentiment",
+        "data": {
+          "name": "Sentiment Analysis",
+          "component_name": "AgentInvoke",
+          "x": 300,
+          "y": 200
+        }
+      },
+      {
+        "id": "agent_invoke_issues",
+        "data": {
+          "name": "Extract Key Issues",
+          "component_name": "AgentInvoke",
+          "x": 500,
+          "y": 200
+        }
+      },
+      {
+        "id": "agent_invoke_actions",
+        "data": {
+          "name": "Generate Action Items",
+          "component_name": "AgentInvoke",
+          "x": 700,
+          "y": 200
+        }
+      },
+      {
+        "id": "message_0",
+        "data": {
+          "name": "Final Report",
+          "component_name": "Message",
+          "x": 900,
+          "y": 200
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "begin",
+        "target": "agent_invoke_sentiment"
+      },
+      {
+        "source": "agent_invoke_sentiment",
+        "target": "agent_invoke_issues"
+      },
+      {
+        "source": "agent_invoke_issues",
+        "target": "agent_invoke_actions"
+      },
+      {
+        "source": "agent_invoke_actions",
+        "target": "message_0"
+      }
+    ]
+  },
+  "components": {
+    "begin": {
+      "obj": {
+        "component_name": "Begin",
+        "params": {
+          "prologue": "I'll analyze customer feedback and generate actionable insights for you.",
+          "mode": "workflow"
+        }
+      },
+      "downstream": ["agent_invoke_sentiment"],
+      "upstream": []
+    },
+    "agent_invoke_sentiment": {
+      "obj": {
+        "component_name": "AgentInvoke",
+        "params": {
+          "agent_id": "YOUR_SENTIMENT_ANALYSIS_AGENT_ID",
+          "agent_name": "Sentiment Analysis Agent",
+          "query": "{sys.query}",
+          "inputs": {
+            "analysis_depth": "detailed",
+            "include_emotions": true
+          },
+          "timeout_seconds": 120,
+          "create_new_session": true
+        }
+      },
+      "downstream": ["agent_invoke_issues"],
+      "upstream": ["begin"]
+    },
+    "agent_invoke_issues": {
+      "obj": {
+        "component_name": "AgentInvoke",
+        "params": {
+          "agent_id": "YOUR_ISSUE_EXTRACTION_AGENT_ID",
+          "agent_name": "Key Issues Extraction Agent",
+          "query": "Based on the sentiment analysis, extract the top 5 key issues:\n\n{agent_invoke_sentiment@answer}",
+          "inputs": {
+            "max_issues": 5,
+            "prioritize": "negative_sentiment"
+          },
+          "timeout_seconds": 120,
+          "create_new_session": true
+        }
+      },
+      "downstream": ["agent_invoke_actions"],
+      "upstream": ["agent_invoke_sentiment"]
+    },
+    "agent_invoke_actions": {
+      "obj": {
+        "component_name": "AgentInvoke",
+        "params": {
+          "agent_id": "YOUR_ACTION_ITEMS_AGENT_ID",
+          "agent_name": "Action Items Generator Agent",
+          "query": "Generate actionable recommendations for these issues:\n\n{agent_invoke_issues@answer}",
+          "inputs": {
+            "format": "actionable",
+            "include_timeline": true,
+            "include_ownership": true
+          },
+          "timeout_seconds": 150,
+          "create_new_session": true
+        }
+      },
+      "downstream": ["message_0"],
+      "upstream": ["agent_invoke_issues"]
+    },
+    "message_0": {
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": "# Customer Feedback Analysis Report\n\n## Sentiment Analysis\n{agent_invoke_sentiment@answer}\n\n## Key Issues Identified\n{agent_invoke_issues@answer}\n\n## Recommended Actions\n{agent_invoke_actions@answer}"
+        }
+      },
+      "downstream": [],
+      "upstream": ["agent_invoke_actions"]
+    }
+  },
+  "history": [],
+  "path": ["begin"],
+  "retrieval": {
+    "chunks": [],
+    "doc_aggs": []
+  },
+  "globals": {
+    "sys.query": "",
+    "sys.user_id": "",
+    "sys.conversation_turns": 0,
+    "sys.files": []
+  }
+}
+

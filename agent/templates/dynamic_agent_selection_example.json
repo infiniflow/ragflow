@@ -1,0 +1,251 @@
+{
+  "description": "Dynamic Agent Selection Based on Document Type",
+  "graph": {
+    "nodes": [
+      {
+        "id": "begin",
+        "data": {
+          "name": "Start",
+          "component_name": "Begin",
+          "x": 100,
+          "y": 300
+        }
+      },
+      {
+        "id": "switch_0",
+        "data": {
+          "name": "Detect Document Type",
+          "component_name": "Switch",
+          "x": 300,
+          "y": 300
+        }
+      },
+      {
+        "id": "agent_invoke_pdf",
+        "data": {
+          "name": "PDF Analyzer",
+          "component_name": "AgentInvoke",
+          "x": 500,
+          "y": 100
+        }
+      },
+      {
+        "id": "agent_invoke_excel",
+        "data": {
+          "name": "Spreadsheet Analyzer",
+          "component_name": "AgentInvoke",
+          "x": 500,
+          "y": 250
+        }
+      },
+      {
+        "id": "agent_invoke_image",
+        "data": {
+          "name": "Image Analyzer",
+          "component_name": "AgentInvoke",
+          "x": 500,
+          "y": 400
+        }
+      },
+      {
+        "id": "agent_invoke_text",
+        "data": {
+          "name": "Text Analyzer",
+          "component_name": "AgentInvoke",
+          "x": 500,
+          "y": 550
+        }
+      },
+      {
+        "id": "message_0",
+        "data": {
+          "name": "Analysis Result",
+          "component_name": "Message",
+          "x": 700,
+          "y": 300
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "begin",
+        "target": "switch_0"
+      },
+      {
+        "source": "switch_0",
+        "target": "agent_invoke_pdf",
+        "label": "pdf"
+      },
+      {
+        "source": "switch_0",
+        "target": "agent_invoke_excel",
+        "label": "excel"
+      },
+      {
+        "source": "switch_0",
+        "target": "agent_invoke_image",
+        "label": "image"
+      },
+      {
+        "source": "switch_0",
+        "target": "agent_invoke_text",
+        "label": "default"
+      },
+      {
+        "source": "agent_invoke_pdf",
+        "target": "message_0"
+      },
+      {
+        "source": "agent_invoke_excel",
+        "target": "message_0"
+      },
+      {
+        "source": "agent_invoke_image",
+        "target": "message_0"
+      },
+      {
+        "source": "agent_invoke_text",
+        "target": "message_0"
+      }
+    ]
+  },
+  "components": {
+    "begin": {
+      "obj": {
+        "component_name": "Begin",
+        "params": {
+          "prologue": "Upload any document and I'll analyze it using the appropriate specialist.",
+          "mode": "conversational"
+        }
+      },
+      "downstream": ["switch_0"],
+      "upstream": []
+    },
+    "switch_0": {
+      "obj": {
+        "component_name": "Switch",
+        "params": {
+          "conditions": [
+            {
+              "case_name": "pdf",
+              "expression": "sys.files[0].mime_type.contains('pdf')",
+              "goto": ["agent_invoke_pdf"]
+            },
+            {
+              "case_name": "excel",
+              "expression": "sys.files[0].mime_type.contains('spreadsheet') or sys.files[0].name.endswith('.xlsx')",
+              "goto": ["agent_invoke_excel"]
+            },
+            {
+              "case_name": "image",
+              "expression": "sys.files[0].mime_type.contains('image')",
+              "goto": ["agent_invoke_image"]
+            }
+          ],
+          "default_goto": ["agent_invoke_text"]
+        }
+      },
+      "downstream": ["agent_invoke_pdf", "agent_invoke_excel", "agent_invoke_image", "agent_invoke_text"],
+      "upstream": ["begin"]
+    },
+    "agent_invoke_pdf": {
+      "obj": {
+        "component_name": "AgentInvoke",
+        "params": {
+          "agent_id": "YOUR_PDF_ANALYZER_AGENT_ID",
+          "agent_name": "PDF Analysis Agent",
+          "query": "{sys.query}",
+          "inputs": {
+            "files": "{sys.files}",
+            "extract_tables": true,
+            "ocr_enabled": true
+          },
+          "timeout_seconds": 300,
+          "create_new_session": true
+        }
+      },
+      "downstream": ["message_0"],
+      "upstream": ["switch_0"]
+    },
+    "agent_invoke_excel": {
+      "obj": {
+        "component_name": "AgentInvoke",
+        "params": {
+          "agent_id": "YOUR_EXCEL_ANALYZER_AGENT_ID",
+          "agent_name": "Spreadsheet Analysis Agent",
+          "query": "{sys.query}",
+          "inputs": {
+            "files": "{sys.files}",
+            "analyze_formulas": true,
+            "generate_charts": true
+          },
+          "timeout_seconds": 240,
+          "create_new_session": true
+        }
+      },
+      "downstream": ["message_0"],
+      "upstream": ["switch_0"]
+    },
+    "agent_invoke_image": {
+      "obj": {
+        "component_name": "AgentInvoke",
+        "params": {
+          "agent_id": "YOUR_IMAGE_ANALYZER_AGENT_ID",
+          "agent_name": "Image Analysis Agent",
+          "query": "{sys.query}",
+          "inputs": {
+            "files": "{sys.files}",
+            "detect_objects": true,
+            "extract_text": true
+          },
+          "timeout_seconds": 180,
+          "create_new_session": true
+        }
+      },
+      "downstream": ["message_0"],
+      "upstream": ["switch_0"]
+    },
+    "agent_invoke_text": {
+      "obj": {
+        "component_name": "AgentInvoke",
+        "params": {
+          "agent_id": "YOUR_TEXT_ANALYZER_AGENT_ID",
+          "agent_name": "Text Analysis Agent",
+          "query": "{sys.query}",
+          "inputs": {
+            "files": "{sys.files}",
+            "summarize": true,
+            "extract_entities": true
+          },
+          "timeout_seconds": 120,
+          "create_new_session": true
+        }
+      },
+      "downstream": ["message_0"],
+      "upstream": ["switch_0"]
+    },
+    "message_0": {
+      "obj": {
+        "component_name": "Message",
+        "params": {
+          "content": "{agent_invoke_pdf@answer}{agent_invoke_excel@answer}{agent_invoke_image@answer}{agent_invoke_text@answer}"
+        }
+      },
+      "downstream": [],
+      "upstream": ["agent_invoke_pdf", "agent_invoke_excel", "agent_invoke_image", "agent_invoke_text"]
+    }
+  },
+  "history": [],
+  "path": ["begin"],
+  "retrieval": {
+    "chunks": [],
+    "doc_aggs": []
+  },
+  "globals": {
+    "sys.query": "",
+    "sys.user_id": "",
+    "sys.conversation_turns": 0,
+    "sys.files": []
+  }
+}
+
