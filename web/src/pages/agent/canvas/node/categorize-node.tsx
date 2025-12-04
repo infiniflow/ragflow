@@ -18,7 +18,7 @@ export function InnerCategorizeNode({
   const { positions } = useBuildCategorizeHandlePositions({ data, id });
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
-      <NodeWrapper selected={selected}>
+      <NodeWrapper selected={selected} id={id}>
         <LeftEndHandle></LeftEndHandle>
 
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>

@@ -40,6 +40,7 @@ import { useDropdownManager } from './context';
 
 import { AgentBackground } from '@/components/canvas/background';
 import Spotlight from '@/components/spotlight';
+import { useNodeLoading } from '../hooks/use-node-loading';
 import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
@@ -166,6 +167,8 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   });
   const [lastSendLoading, setLastSendLoading] = useState(false);
 
+  const [currentSendLoading, setCurrentSendLoading] = useState(false);
+
   const { handleBeforeDelete } = useBeforeDelete();
 
   const { addCanvasNode, addNoteNode } = useAddNode(reactFlowInstance);
@@ -182,6 +185,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   }, [chatVisible, clearEventList, currentTaskId, stopMessage]);
 
   const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
+    setCurrentSendLoading(!!loading);
     if (messageId === currentMessageId) {
       setLastSendLoading(loading);
     } else {
@@ -249,7 +253,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     clearActiveDropdown,
     removePlaceholderNode,
   ]);
-
+  const { lastNode, setDerivedMessages, startButNotFinishedNodeIds } =
+    useNodeLoading({
+      currentEventListWithoutMessageById,
+    });
   return (
     <div className={cn(styles.canvasWrapper, 'px-5 pb-5')}>
       <svg
@@ -285,7 +292,15 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           </marker>
         </defs>
       </svg>
-      <AgentInstanceContext.Provider value={{ addCanvasNode, showFormDrawer }}>
+      <AgentInstanceContext.Provider
+        value={{
+          addCanvasNode,
+          showFormDrawer,
+          lastNode,
+          currentSendLoading,
+          startButNotFinishedNodeIds,
+        }}
+      >
         <ReactFlow
           connectionMode={ConnectionMode.Loose}
           nodes={nodes}
@@ -380,9 +395,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           ></FormSheet>
         </AgentInstanceContext.Provider>
       )}
+
       {chatVisible && (
         <AgentChatContext.Provider
-          value={{ showLogSheet, setLastSendLoadingFunc }}
+          value={{ showLogSheet, setLastSendLoadingFunc, setDerivedMessages }}
         >
           <AgentChatLogContext.Provider
             value={{ addEventList, setCurrentMessageId }}

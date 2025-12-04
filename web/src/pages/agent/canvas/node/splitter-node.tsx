@@ -25,7 +25,7 @@ function InnerSplitterNode({
       showCopy={false}
       showRun={false}
     >
-      <NodeWrapper selected={selected}>
+      <NodeWrapper selected={selected} id={id}>
         <CommonHandle
           id={NodeHandleId.End}
           type="target"
