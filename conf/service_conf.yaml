@@ -60,6 +60,8 @@ user_default_llm:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
 #   region: 'region'
+#gcs:
+#  bucket: 'bridgtl-edm-d-bucket-ragflow'
 # oss:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'

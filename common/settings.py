@@ -31,6 +31,7 @@ import rag.utils.ob_conn
 import rag.utils.opensearch_conn
 from rag.utils.azure_sas_conn import RAGFlowAzureSasBlob
 from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
+from rag.utils.gcs_conn import RAGFlowGCS
 from rag.utils.minio_conn import RAGFlowMinio
 from rag.utils.opendal_conn import OpenDALStorage
 from rag.utils.s3_conn import RAGFlowS3
@@ -109,6 +110,7 @@ MINIO = {}
 OB = {}
 OSS = {}
 OS = {}
+GCS = {}
 
 DOC_MAXIMUM_SIZE: int = 128 * 1024 * 1024
 DOC_BULK_SIZE: int = 4
@@ -151,7 +153,8 @@ class StorageFactory:
         Storage.AZURE_SAS: RAGFlowAzureSasBlob,
         Storage.AWS_S3: RAGFlowS3,
         Storage.OSS: RAGFlowOSS,
-        Storage.OPENDAL: OpenDALStorage
+        Storage.OPENDAL: OpenDALStorage,
+        Storage.GCS: RAGFlowGCS,
     }
 
     @classmethod
@@ -250,7 +253,7 @@ def init_settings():
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
-    global AZURE, S3, MINIO, OSS
+    global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
         AZURE = get_base_config("azure", {})
     elif STORAGE_IMPL_TYPE == 'AWS_S3':
@@ -259,6 +262,8 @@ def init_settings():
         MINIO = decrypt_database_config(name="minio")
     elif STORAGE_IMPL_TYPE == 'OSS':
         OSS = get_base_config("oss", {})
+    elif STORAGE_IMPL_TYPE == 'GCS':
+        GCS = get_base_config("gcs", {})
 
     global STORAGE_IMPL
     STORAGE_IMPL = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
