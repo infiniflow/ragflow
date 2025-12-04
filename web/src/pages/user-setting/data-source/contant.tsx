@@ -235,7 +235,18 @@ export const DataSourceFormFields = {
       name: 'config.space',
       type: FormFieldType.Text,
       required: false,
-      tooltip: t('setting.confluenceSpaceKeyTip'),
+    },
+    {
+      label: 'Page ID',
+      name: 'config.page_id',
+      type: FormFieldType.Text,
+      required: false,
+    },
+    {
+      label: 'Index Recursively',
+      name: 'config.index_recursively',
+      type: FormFieldType.Checkbox,
+      required: false,
     },
   ],
   [DataSourceKey.GOOGLE_DRIVE]: [
