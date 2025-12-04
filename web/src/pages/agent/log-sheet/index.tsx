@@ -26,7 +26,7 @@ export function LogSheet({
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
       <SheetContent
-        className={cn('top-20 right-[620px]')}
+        className={cn('top-20 right-[clamp(0px,34%,620px)]')}
         onInteractOutside={(e) => e.preventDefault()}
       >
         <SheetHeader>
