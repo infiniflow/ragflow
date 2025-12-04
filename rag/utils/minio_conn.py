@@ -108,7 +108,7 @@ class RAGFlowMinio:
 
     @use_default_bucket
     @use_prefix_path
-    def put(self, bucket, fnm, binary):
+    def put(self, bucket, fnm, binary, tenant_id=None):
         for _ in range(3):
             try:
                 # Note: bucket must already exist - we don't have permission to create buckets
@@ -127,7 +127,7 @@ class RAGFlowMinio:
 
     @use_default_bucket
     @use_prefix_path
-    def rm(self, bucket, fnm):
+    def rm(self, bucket, fnm, tenant_id=None):
         try:
             self.conn.remove_object(bucket, fnm)
         except Exception:
@@ -135,7 +135,7 @@ class RAGFlowMinio:
 
     @use_default_bucket
     @use_prefix_path
-    def get(self, bucket, filename):
+    def get(self, bucket, filename, tenant_id=None):
         for _ in range(1):
             try:
                 r = self.conn.get_object(bucket, filename)
@@ -148,7 +148,7 @@ class RAGFlowMinio:
 
     @use_default_bucket
     @use_prefix_path
-    def obj_exist(self, bucket, filename):
+    def obj_exist(self, bucket, filename, tenant_id=None):
         try:
             if not self.conn.bucket_exists(bucket):
                 return False
@@ -179,7 +179,7 @@ class RAGFlowMinio:
 
     @use_default_bucket
     @use_prefix_path
-    def get_presigned_url(self, bucket, fnm, expires):
+    def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
         for _ in range(10):
             try:
                 return self.conn.get_presigned_url("GET", bucket, fnm, expires)
