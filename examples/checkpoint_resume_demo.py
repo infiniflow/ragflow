@@ -32,13 +32,12 @@ Run this example:
 import sys
 import time
 import random
-from typing import List
 
 # Add parent directory to path for imports
 sys.path.insert(0, '/root/ragflow')
 
 from api.db.services.checkpoint_service import CheckpointService
-from api.db.db_models import DB, TaskCheckpoint
+from api.db.db_models import DB
 
 
 def print_section(title: str):
