@@ -171,7 +171,7 @@ EXAMPLES:
                         index_file = coverage_dir / "index.html"
                         print(f"\n{Colors.BLUE}[INFO]{Colors.NC} Coverage report generated:")
                         print(f"    {index_file}")
-                        print(f"\nOpen with:")
+                        print("\nOpen with:")
                         print(f"    - Windows: start {index_file}")
                         print(f"    - macOS: open {index_file}")
                         print(f"    - Linux: xdg-open {index_file}")
