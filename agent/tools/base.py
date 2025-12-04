@@ -49,16 +49,19 @@ class LLMToolPluginCallSession(ToolCallSession):
         self.callback = callback
 
     def tool_call(self, name: str, arguments: dict[str, Any]) -> Any:
+        return asyncio.run(self.tool_call_async(name, arguments))
+
+    async def tool_call_async(self, name: str, arguments: dict[str, Any]) -> Any:
         assert name in self.tools_map, f"LLM tool {name} does not exist"
         st = timer()
         tool_obj = self.tools_map[name]
         if isinstance(tool_obj, MCPToolCallSession):
-            resp = tool_obj.tool_call(name, arguments, 60)
+            resp = await asyncio.to_thread(tool_obj.tool_call, name, arguments, 60)
         else:
             if hasattr(tool_obj, "invoke_async") and asyncio.iscoroutinefunction(tool_obj.invoke_async):
-                resp = asyncio.run(tool_obj.invoke_async(**arguments))
+                resp = await tool_obj.invoke_async(**arguments)
             else:
-                resp = asyncio.run(asyncio.to_thread(tool_obj.invoke, **arguments))
+                resp = await asyncio.to_thread(tool_obj.invoke, **arguments)
 
         self.callback(name, arguments, resp, elapsed_time=timer()-st)
         return resp
