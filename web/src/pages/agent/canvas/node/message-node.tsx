@@ -14,7 +14,7 @@ function InnerMessageNode({ id, data, selected }: NodeProps<IMessageNode>) {
   const messages: string[] = get(data, 'form.messages', []);
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
-      <NodeWrapper selected={selected}>
+      <NodeWrapper selected={selected} id={id}>
         <LeftEndHandle></LeftEndHandle>
         {/* <CommonHandle
           type="source"
