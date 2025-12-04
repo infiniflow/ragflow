@@ -5,14 +5,11 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "nltk",
-#   "huggingface_hub",
-#   "gitpython"
 # ]
 # ///
 
 import argparse
 import os
-import git
 import urllib.request
 from typing import Union
 
@@ -77,8 +74,3 @@ if __name__ == "__main__":
     for repo_id in repos:
         print(f"Downloading huggingface repo {repo_id}...")
         download_model(repo_id)
-
-    repo_url = "https://github.com/infiniflow/resource.git"
-    clone_dir = os.path.abspath("resource")
-    print(f"Cloning GitHub repo {repo_url}...")
-    repo = git.Repo.clone_from(repo_url, clone_dir)

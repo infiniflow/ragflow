@@ -15,10 +15,6 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
         /huggingface.co/InfiniFlow/deepdoc \
         | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
 
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/rag,target=/rag \
-    mkdir -p /usr/share/infinity/resource/rag/ && \
-    cp /rag/huqie.txt /usr/share/infinity/resource/rag/
-
 # https://github.com/chrismattmann/tika-python
 # This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
