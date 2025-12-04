@@ -127,6 +127,10 @@ jobs:
             fi
           fi
 
+      - name: Run unit test
+        run: |
+          python3 run_tests.py
+
       - name: Build ragflow:nightly
         run: |
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
