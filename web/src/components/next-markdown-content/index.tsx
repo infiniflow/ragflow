@@ -220,20 +220,23 @@ function MarkdownContent({
         const docType = chunkItem?.doc_type;
 
         return showImage(docType) ? (
-          <Image
-            id={imageId}
-            className={styles.referenceInnerChunkImage}
-            onClick={
-              documentId
-                ? handleDocumentButtonClick(
-                    documentId,
-                    chunkItem,
-                    fileExtension === 'pdf',
-                    documentUrl,
-                  )
-                : () => {}
-            }
-          ></Image>
+          <section>
+            <Image
+              id={imageId}
+              className={styles.referenceInnerChunkImage}
+              onClick={
+                documentId
+                  ? handleDocumentButtonClick(
+                      documentId,
+                      chunkItem,
+                      fileExtension === 'pdf',
+                      documentUrl,
+                    )
+                  : () => {}
+              }
+            ></Image>
+            <span className="text-accent-primary">{imageId}</span>
+          </section>
         ) : (
           <HoverCard key={i}>
             <HoverCardTrigger>
