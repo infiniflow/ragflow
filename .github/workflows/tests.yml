@@ -129,6 +129,9 @@ jobs:
 
       - name: Run unit test
         run: |
+          pipx ensurepath
+          which pytest || echo "pytest not in PATH"
+          python -m pytest --version
           echo "Start to run unit test"
           python3 run_tests.py
 
