@@ -25,6 +25,7 @@ export * from './pipeline';
 export enum AgentDialogueMode {
   Conversational = 'conversational',
   Task = 'task',
+  Webhook = 'Webhook',
 }
 
 import { ModelVariableType } from '@/constants/knowledge';
@@ -929,4 +930,26 @@ export const LoopTerminationStringComparisonOperatorMap = {
 export enum AgentVariableType {
   Begin = 'begin',
   Conversation = 'conversation',
+}
+
+export enum WebhookMethod {
+  Post = 'POST',
+  Get = 'GET',
+  Put = 'PUT',
+  Patch = 'PATCH',
+  Delete = 'DELETE',
+  Head = 'HEAD',
+}
+
+export enum WebhookContentType {
+  ApplicationJson = 'application/json',
+  MultipartFormData = 'multipart/form-data',
+  ApplicationXWwwFormUrlencoded = 'application/x-www-form-urlencoded',
+  TextPlain = 'text/plain',
+  ApplicationOctetStream = 'application/octet-stream',
+}
+
+export enum WebhookExecutionMode {
+  Immediately = 'Immediately',
+  Streaming = 'Streaming',
 }

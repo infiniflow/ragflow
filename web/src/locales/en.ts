@@ -1910,6 +1910,15 @@ Important structured information may include: names, dates, locations, events, k
         removeFirst: 'Remove first',
         removeLast: 'Remove last',
       },
+      webhook: {
+        name: 'Webhook',
+        methods: 'Methods',
+        contentTypes: 'Content types',
+        security: 'Security',
+        schema: 'Schema',
+        response: 'Response',
+        executionMode: 'Execution mode',
+      },
     },
     llmTools: {
       bad_calculator: {

@@ -26,10 +26,12 @@ import { QueryTable } from './query-table';
 import { useEditQueryRecord } from './use-edit-query';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
+import { WebHook } from './webhook';
 
 const ModeOptions = [
   { value: AgentDialogueMode.Conversational, label: t('flow.conversational') },
   { value: AgentDialogueMode.Task, label: t('flow.task') },
+  { value: AgentDialogueMode.Webhook, label: t('flow.webhook.name') },
 ];
 
 function BeginForm({ node }: INextOperatorForm) {
@@ -53,6 +55,12 @@ function BeginForm({ node }: INextOperatorForm) {
         }),
       )
       .optional(),
+    methods: z.string().optional(),
+    content_types: z.string().optional(),
+    security: z.string().optional(),
+    schema: z.string().optional(),
+    response: z.string().optional(),
+    execution_mode: z.string().optional(),
   });
 
   const form = useForm({
@@ -158,6 +166,7 @@ function BeginForm({ node }: INextOperatorForm) {
             )}
           />
         )}
+        {mode === AgentDialogueMode.Webhook && <WebHook></WebHook>}
         {/* Create a hidden field to make Form instance record this */}
         <FormField
           control={form.control}
