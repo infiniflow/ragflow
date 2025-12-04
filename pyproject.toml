@@ -163,6 +163,9 @@ test = [
     "openpyxl>=3.1.5",
     "pillow>=10.4.0",
     "pytest>=8.3.5",
+    "pytest-asyncio>=1.3.0",
+    "pytest-xdist>=3.8.0",
+    "pytest-cov>=7.0.0",
     "python-docx>=1.1.2",
     "python-pptx>=1.0.2",
     "reportlab>=4.4.1",
@@ -195,8 +198,83 @@ extend-select = ["ASYNC", "ASYNC1"]
 ignore = ["E402"]
 
 [tool.pytest.ini_options]
+pythonpath = [
+    "."
+]
+
+testpaths = ["test"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
 markers = [
     "p1: high priority test cases",
     "p2: medium priority test cases",
     "p3: low priority test cases",
 ]
+
+# Test collection and runtime configuration
+filterwarnings = [
+    "error",  # Treat warnings as errors
+    "ignore::DeprecationWarning",  # Ignore specific warnings
+]
+
+# Command line options
+addopts = [
+    "-v",  # Verbose output
+    "--strict-markers",  # Enforce marker definitions
+    "--tb=short",  # Simplified traceback
+    "--disable-warnings",  # Disable warnings
+    "--color=yes"  # Colored output
+]
+
+
+# Coverage configuration
+[tool.coverage.run]
+# Source paths - adjust according to your project structure
+source = [
+    # "../../api/db/services",
+    # Add more directories if needed:
+    "../../common",
+    # "../../utils",
+]
+
+# Files/directories to exclude
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/.pytest_cache/*",
+    "*/venv/*",
+    "*/.venv/*",
+    "*/env/*",
+    "*/site-packages/*",
+    "*/dist/*",
+    "*/build/*",
+    "*/migrations/*",
+    "setup.py"
+]
+
+[tool.coverage.report]
+# Report configuration
+precision = 2
+show_missing = true
+skip_covered = false
+fail_under = 0  # Minimum coverage requirement (0-100)
+
+# Lines to exclude (optional)
+exclude_lines = [
+#    "pragma: no cover",
+#    "def __repr__",
+#    "raise AssertionError",
+#    "raise NotImplementedError",
+#    "if __name__ == .__main__.:",
+#    "if TYPE_CHECKING:",
+    "pass"
+]
+
+[tool.coverage.html]
+# HTML report configuration
+directory = "htmlcov"
+title = "Test Coverage Report"
+# extra_css = "custom.css"  # Optional custom CSS
