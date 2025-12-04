@@ -27,7 +27,7 @@ function InnerRetrievalNode({
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
-      <NodeWrapper selected={selected}>
+      <NodeWrapper selected={selected} id={id}>
         <LeftEndHandle></LeftEndHandle>
         <CommonHandle
           id={NodeHandleId.Start}
