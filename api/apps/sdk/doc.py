@@ -321,9 +321,7 @@ async def update_doc(tenant_id, dataset_id, document_id):
             try:
                 if not DocumentService.update_by_id(doc.id, {"status": str(status)}):
                     return get_error_data_result(message="Database error (Document update)!")
-
                 settings.docStoreConn.update({"doc_id": doc.id}, {"available_int": status}, search.index_name(kb.tenant_id), doc.kb_id)
-                return get_result(data=True)
             except Exception as e:
                 return server_error_response(e)
 
@@ -350,12 +348,10 @@ async def update_doc(tenant_id, dataset_id, document_id):
     }
     renamed_doc = {}
     for key, value in doc.to_dict().items():
-        if key == "run":
-            renamed_doc["run"] = run_mapping.get(str(value))
         new_key = key_mapping.get(key, key)
         renamed_doc[new_key] = value
         if key == "run":
-            renamed_doc["run"] = run_mapping.get(value)
+            renamed_doc["run"] = run_mapping.get(str(value))
 
     return get_result(data=renamed_doc)
 
