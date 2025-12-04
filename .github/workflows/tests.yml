@@ -133,7 +133,6 @@ jobs:
           pipx install pytest
           pipx inject pytest pytest-cov pytest-asyncio pytest-xdist
           which pytest || echo "pytest not in PATH"
-          python3 -m pytest --version
           echo "Start to run unit test"
           python3 run_tests.py
 
