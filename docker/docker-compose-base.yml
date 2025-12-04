@@ -31,7 +31,7 @@ services:
       retries: 120
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
 
   opensearch01:
     profiles:
@@ -67,12 +67,12 @@ services:
       retries: 120
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
 
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.6.8
+    image: infiniflow/infinity:v0.6.10
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -94,7 +94,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 120
-    restart: on-failure
+    restart: unless-stopped
 
   oceanbase:
     profiles:
@@ -119,7 +119,7 @@ services:
       timeout: 10s
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
 
   sandbox-executor-manager:
     profiles:
@@ -147,7 +147,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 120
-    restart: on-failure
+    restart: unless-stopped
 
   mysql:
     # mysql:5.7 linux/arm64 image is unavailable.
@@ -175,7 +175,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 120
-    restart: on-failure
+    restart: unless-stopped
 
   minio:
     image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
@@ -191,7 +191,7 @@ services:
       - minio_data:/data
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -209,7 +209,7 @@ services:
       - redis_data:/data
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -228,7 +228,7 @@ services:
     networks:
       - ragflow
     command: ["--model-id", "/data/${TEI_MODEL}", "--auto-truncate"]
-    restart: on-failure
+    restart: unless-stopped
 
 
   tei-gpu:
@@ -249,7 +249,7 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    restart: on-failure
+    restart: unless-stopped
 
 
   kibana:
@@ -271,7 +271,7 @@ services:
       retries: 120
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
 
 
 volumes:
