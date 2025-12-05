@@ -19,13 +19,23 @@ Utility functions for Raptor processing decisions.
 """
 
 import logging
-from typing import Optional
+import re
+from typing import Optional, List, Tuple
+
+import numpy as np
 
 
 # File extensions for structured data types
 EXCEL_EXTENSIONS = {".xls", ".xlsx", ".xlsm", ".xlsb"}
 CSV_EXTENSIONS = {".csv", ".tsv"}
 STRUCTURED_EXTENSIONS = EXCEL_EXTENSIONS | CSV_EXTENSIONS
+
+# Regex patterns for detecting HTML tables in content
+HTML_TABLE_PATTERN = re.compile(r'<table[^>]*>.*?</table>', re.IGNORECASE | re.DOTALL)
+HTML_TABLE_START_PATTERN = re.compile(r'<table[^>]*>', re.IGNORECASE)
+
+# Threshold for considering content as "table-heavy" (percentage of chunks with tables)
+TABLE_CONTENT_THRESHOLD = 0.3  # If 30%+ of chunks contain tables, skip Raptor
 
 
 def is_structured_file_type(file_type: Optional[str]) -> bool:
@@ -120,7 +130,8 @@ def should_skip_raptor(
 def get_skip_reason(
     file_type: Optional[str] = None,
     parser_id: str = "",
-    parser_config: Optional[dict] = None
+    parser_config: Optional[dict] = None,
+    has_table_content: bool = False
 ) -> str:
     """
     Get a human-readable reason why Raptor was skipped.
@@ -129,6 +140,7 @@ def get_skip_reason(
         file_type: File extension
         parser_id: Parser ID being used
         parser_config: Parser configuration dict
+        has_table_content: Whether content contains HTML tables
         
     Returns:
         Reason string, or empty string if Raptor should not be skipped
@@ -142,4 +154,96 @@ def get_skip_reason(
         if is_tabular_pdf(parser_id, parser_config):
             return f"Tabular PDF (parser={parser_id}) - Raptor auto-disabled"
     
+    if has_table_content:
+        return "Content contains HTML tables - Raptor auto-disabled"
+    
     return ""
+
+
+def contains_html_table(content: str) -> bool:
+    """
+    Check if content contains HTML table markup.
+    
+    Args:
+        content: Text content to check
+        
+    Returns:
+        True if content contains HTML table tags
+    """
+    if not content:
+        return False
+    return bool(HTML_TABLE_START_PATTERN.search(content))
+
+
+def analyze_chunks_for_tables(
+    chunks: List[Tuple[str, np.ndarray]],
+    threshold: float = TABLE_CONTENT_THRESHOLD
+) -> Tuple[bool, float]:
+    """
+    Analyze chunks to determine if they contain significant table content.
+    
+    This function checks the actual content of chunks for HTML table markup,
+    which is generated when PDFs with tables are parsed.
+    
+    Args:
+        chunks: List of (content, vector) tuples
+        threshold: Percentage threshold for considering content as table-heavy
+        
+    Returns:
+        Tuple of (should_skip, table_percentage)
+    """
+    if not chunks:
+        return False, 0.0
+    
+    table_count = 0
+    for content, _ in chunks:
+        if contains_html_table(content):
+            table_count += 1
+    
+    table_percentage = table_count / len(chunks)
+    should_skip = table_percentage >= threshold
+    
+    if should_skip:
+        logging.info(
+            f"Detected table-heavy content: {table_count}/{len(chunks)} chunks "
+            f"({table_percentage:.1%}) contain HTML tables"
+        )
+    
+    return should_skip, table_percentage
+
+
+def should_skip_raptor_for_chunks(
+    chunks: List[Tuple[str, np.ndarray]],
+    raptor_config: Optional[dict] = None,
+    threshold: float = TABLE_CONTENT_THRESHOLD
+) -> Tuple[bool, str]:
+    """
+    Check if Raptor should be skipped based on chunk content analysis.
+    
+    This is a content-based check that runs after chunks are loaded,
+    detecting HTML tables that were extracted during parsing.
+    
+    Args:
+        chunks: List of (content, vector) tuples
+        raptor_config: Raptor configuration dict
+        threshold: Percentage threshold for table content
+        
+    Returns:
+        Tuple of (should_skip, reason)
+    """
+    raptor_config = raptor_config or {}
+    
+    # Check if auto-disable is explicitly disabled
+    if raptor_config.get("auto_disable_for_structured_data", True) is False:
+        return False, ""
+    
+    should_skip, table_pct = analyze_chunks_for_tables(chunks, threshold)
+    
+    if should_skip:
+        reason = (
+            f"Content contains {table_pct:.0%} HTML tables "
+            f"(threshold: {threshold:.0%}) - Raptor auto-disabled"
+        )
+        return True, reason
+    
+    return False, ""

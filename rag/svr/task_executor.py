@@ -29,7 +29,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from common.connection_utils import timeout
 from rag.utils.base64_image import image2id
-from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
+from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason, should_skip_raptor_for_chunks
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from graphrag.general.index import run_graphrag_for_kb
@@ -694,6 +694,15 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
                                                  fields=["content_with_weight", vctr_nm],
                                                  sort_by_position=True):
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+            
+            # Check if chunks contain HTML tables (content-based detection)
+            skip_for_tables, skip_reason = should_skip_raptor_for_chunks(chunks, raptor_config)
+            if skip_for_tables:
+                logging.info(f"Skipping Raptor for document {doc_id}: {skip_reason}")
+                if callback:
+                    callback(prog=(x+1.)/len(doc_ids), msg=f"Raptor skipped: {skip_reason}")
+                continue
+            
             await generate(chunks, doc_id)
             callback(prog=(x+1.)/len(doc_ids))
     else:
@@ -703,6 +712,14 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
                                                  fields=["content_with_weight", vctr_nm],
                                                  sort_by_position=True):
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
+
+        # Check if chunks contain HTML tables (content-based detection)
+        skip_for_tables, skip_reason = should_skip_raptor_for_chunks(chunks, raptor_config)
+        if skip_for_tables:
+            logging.info(f"Skipping Raptor for KB scope: {skip_reason}")
+            if callback:
+                callback(prog=1.0, msg=f"Raptor skipped: {skip_reason}")
+            return res, tk_count
 
         await generate(chunks, fake_doc_id)
 
