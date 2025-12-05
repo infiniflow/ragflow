@@ -18,6 +18,7 @@ import re
 from functools import partial
 
 from agent.component.base import ComponentParamBase, ComponentBase
+from api.db.services.file_service import FileService
 
 
 class UserFillUpParam(ComponentParamBase):
@@ -63,6 +64,13 @@ class UserFillUp(ComponentBase):
         for k, v in kwargs.get("inputs", {}).items():
             if self.check_if_canceled("UserFillUp processing"):
                 return
+            if isinstance(v, dict) and v.get("type", "").lower().find("file") >=0:
+                if v.get("optional") and v.get("value", None) is None:
+                    v = None
+                else:
+                    v = FileService.get_files([v["value"]])
+            else:
+                v = v.get("value")
             self.set_output(k, v)
 
     def thoughts(self) -> str:
