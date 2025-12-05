@@ -13,9 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
-import queue
-import threading
 import time
 from uuid import uuid4
 from common.constants import StatusEnum
