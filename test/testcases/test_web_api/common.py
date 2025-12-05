@@ -28,6 +28,7 @@ CHUNK_API_URL = f"/{VERSION}/chunk"
 DIALOG_APP_URL = f"/{VERSION}/dialog"
 # SESSION_WITH_CHAT_ASSISTANT_API_URL = "/api/v1/chats/{chat_id}/sessions"
 # SESSION_WITH_AGENT_API_URL = "/api/v1/agents/{agent_id}/sessions"
+MEMORY_API_URL = f"/{VERSION}/memory"
 
 
 # KB APP
@@ -258,3 +259,27 @@ def delete_dialogs(auth):
         dialog_ids = [dialog["id"] for dialog in res["data"]]
         if dialog_ids:
             delete_dialog(auth, {"dialog_ids": dialog_ids})
+
+# MEMORY APP
+def create_memory(auth, payload=None):
+    url = f"{HOST_ADDRESS}{MEMORY_API_URL}/create"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def update_memory(auth, memory_id:str, payload=None):
+    url = f"{HOST_ADDRESS}{MEMORY_API_URL}/{memory_id}/update"
+    res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def delete_memory(auth, memory_id:str):
+    url = f"{HOST_ADDRESS}{MEMORY_API_URL}/rm/{memory_id}"
+    res = requests.delete(url=url, headers=HEADERS, auth=auth)
+    return res.json()
+
+
+def list_memory(auth, payload=None):
+    url = f"{HOST_ADDRESS}{MEMORY_API_URL}/list"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()

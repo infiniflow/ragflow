@@ -20,7 +20,7 @@ import json
 from api.db.db_models import DB, Memory, User
 from api.db.services import duplicate_name
 from api.db.services.common_service import CommonService
-from api.utils.api_utils import get_error_argument_result
+from api.utils.memory_utils import calculate_memory_type
 from api.constants import MEMORY_NAME_LIMIT
 from common.misc_utils import get_uuid
 from common.time_utils import get_format_time, current_timestamp
@@ -33,21 +33,21 @@ class MemoryService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_by_memory_id(cls, memory_id: str) -> Memory:
-        return cls.model.select().where(cls.model.memory_id == memory_id).first()
+        return cls.model.select().where(cls.model.id == memory_id).first()
 
     @classmethod
     @DB.connection_context()
     def get_by_filter(cls, filter_dict: dict, keywords: str, page: int = 1, page_size: int = 50):
         fields = [
-            cls.model.memory_id,
-            cls.model.memory_name,
+            cls.model.id,
+            cls.model.name,
             cls.model.avatar,
             cls.model.tenant_id,
             User.nickname.alias("owner_name"),
             cls.model.memory_type,
             cls.model.storage_type,
-            cls.model.embedding,
-            cls.model.llm,
+            cls.model.embd_id,
+            cls.model.llm_id,
             cls.model.permissions,
             cls.model.description,
             cls.model.memory_size,
@@ -60,19 +60,12 @@ class MemoryService(CommonService):
         if filter_dict.get("tenant_id"):
             memories = memories.where(cls.model.tenant_id.in_(filter_dict["tenant_id"]))
         if filter_dict.get("memory_type"):
-            match len(filter_dict["memory_type"]):
-                case 1:
-                    memories = memories.where(cls.model.memory_type.contains(filter_dict["memory_type"][0]))
-                case 2:
-                    memories = memories.where(cls.model.memory_type.contains(filter_dict["memory_type"][0]) | cls.model.memory_type.contains(filter_dict["memory_type"][1]))
-                case 3:
-                    memories = memories.where(cls.model.memory_type.contains(filter_dict["memory_type"][0]) | cls.model.memory_type.contains(filter_dict["memory_type"][1]) | cls.model.memory_type.contains(filter_dict["memory_type"][2]) )
-                case _:
-                    return get_error_argument_result(message="Invalid memory type")
+            memory_type_int = calculate_memory_type(filter_dict["memory_type"])
+            memories = memories.where((cls.model.memory_type & memory_type_int))
         if filter_dict.get("storage_type"):
             memories = memories.where(cls.model.storage_type == filter_dict["storage_type"])
         if keywords:
-            memories = memories.where(cls.model.memory_name.contains(keywords))
+            memories = memories.where(cls.model.name.contains(keywords))
         count = memories.count()
         memories = memories.order_by(cls.model.update_time.desc())
         memories = memories.paginate(page, page_size)
@@ -81,7 +74,7 @@ class MemoryService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def create_memory(cls, tenant_id: str, name: str, memory_type: List[str], embedding: str, llm: str):
+    def create_memory(cls, tenant_id: str, name: str, memory_type: List[str], embd_id: str, llm_id: str):
         # Deduplicate name within tenant
         memory_name = duplicate_name(
             cls.query,
@@ -93,24 +86,23 @@ class MemoryService(CommonService):
 
         # build create dict
         memory_info = {
-            "memory_id": get_uuid(),
-            "memory_name": memory_name,
-            "memory_type": json.dumps(memory_type),
+            "id": get_uuid(),
+            "name": memory_name,
+            "memory_type": calculate_memory_type(memory_type),
             "tenant_id": tenant_id,
-            "embedding": embedding,
-            "llm": llm,
+            "embd_id": embd_id,
+            "llm_id": llm_id,
             "create_time": current_timestamp(),
             "create_date": get_format_time(),
             "update_time": current_timestamp(),
             "update_date": get_format_time(),
         }
-
-        obj = cls.model(**memory_info).save()
+        obj = cls.model(**memory_info).save(force_insert=True)
 
         if not obj:
             return False, "Could not create new memory."
 
-        db_row = cls.model.select().where(cls.model.memory_id == memory_info["memory_id"]).first()
+        db_row = cls.model.select().where(cls.model.id == memory_info["id"]).first()
 
         return obj, db_row
 
@@ -119,18 +111,16 @@ class MemoryService(CommonService):
     def update_memory(cls, memory_id: str, update_dict: dict):
         if not update_dict:
             return 0
-        if update_dict.get("memory_type") and isinstance(update_dict["memory_type"], list):
-            update_dict["memory_type"] = json.dumps(update_dict["memory_type"])
         if "temperature" in update_dict and isinstance(update_dict["temperature"], str):
-            update_dict["temperature"] = json.loads(update_dict["temperature"])
+            update_dict["temperature"] = float(update_dict["temperature"])
         update_dict.update({
             "update_time": current_timestamp(),
             "update_date": get_format_time()
         })
 
-        return cls.model.update(update_dict).where(cls.model.memory_id == memory_id).execute()
+        return cls.model.update(update_dict).where(cls.model.id == memory_id).execute()
 
     @classmethod
     @DB.connection_context()
     def delete_memory(cls, memory_id: str):
-        return cls.model.delete().where(cls.model.memory_id == memory_id).execute()
+        return cls.model.delete().where(cls.model.id == memory_id).execute()

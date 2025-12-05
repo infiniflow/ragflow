@@ -149,11 +149,12 @@ class Storage(Enum):
     OSS = 5
     OPENDAL = 6
 
-class MemoryType(StrEnum):
-    RAW = "raw"
-    SEMANTIC = "semantic"
-    EPISODIC = "episodic"
-    PROCEDURAL = "procedural"
+
+class MemoryType(Enum):
+    RAW = 0b0001          # 1 << 0 = 1 (0b00000001)
+    SEMANTIC = 0b0010     # 1 << 1 = 2 (0b00000010)
+    EPISODIC = 0b0100     # 1 << 2 = 4 (0b00000100)
+    PROCEDURAL = 0b1000   # 1 << 3 = 8 (0b00001000)
 
 
 class MemoryStorageType(StrEnum):

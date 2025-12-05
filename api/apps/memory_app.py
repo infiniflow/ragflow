@@ -19,37 +19,40 @@ import json
 from api.apps import login_required, current_user
 from api.db import TenantPermission
 from api.db.services.memory_service import MemoryService
+from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import validate_request, request_json, get_error_argument_result, get_json_result, \
     not_allowed_parameters
-from api.utils.memory_utils import format_ret_data_from_memory
+from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from common.constants import MemoryType, RetCode, ForgettingPolicy
 
 
 @manager.route("/create", methods=["POST"])  # noqa: F821
 @login_required
-@validate_request("memory_name", "memory_type", "embedding", "llm")
+@validate_request("name", "memory_type", "embd_id", "llm_id")
 async def create_memory():
     req = await request_json()
     # check name length
-    name = req["memory_name"]
+    name = req["name"]
     memory_name = name.strip()
+    if len(memory_name) == 0:
+        return get_error_argument_result("Memory name cannot be empty or whitespace.")
     if len(memory_name) > MEMORY_NAME_LIMIT:
         return get_error_argument_result(f"Memory name '{memory_name}' exceeds limit of {MEMORY_NAME_LIMIT}.")
     # check memory_type valid
     memory_type = set(req["memory_type"])
-    invalid_type = memory_type - {e.value for e in MemoryType}
+    invalid_type = memory_type - {e.name.lower() for e in MemoryType}
     if invalid_type:
         return get_error_argument_result(f"Memory type '{invalid_type}' is not supported.")
     memory_type = list(memory_type)
 
     try:
         res, memory = MemoryService.create_memory(
-            tenant_id=current_user.tenant_id,
+            tenant_id=current_user.id,
             name=memory_name,
             memory_type=memory_type,
-            embedding=req["embedding"],
-            llm=req["llm"]
+            embd_id=req["embd_id"],
+            llm_id=req["llm_id"]
         )
 
         if res:
@@ -64,31 +67,26 @@ async def create_memory():
 
 @manager.route("/update/<memory_id>", methods=["PUT"])  # noqa: F821
 @login_required
-@not_allowed_parameters("memory_id", "tenant_id", "memory_type", "storage_type", "embedding")
+@not_allowed_parameters("id", "tenant_id", "memory_type", "storage_type", "embd_id")
 async def update_memory(memory_id):
     req = await request_json()
     update_dict = {}
     # check name length
-    if req.get("memory_name"):
-        name = req["memory_name"]
+    if req.get("name"):
+        name = req["name"]
         memory_name = name.strip()
+        if len(memory_name) == 0:
+            return get_error_argument_result("Memory name cannot be empty or whitespace.")
         if len(memory_name) > MEMORY_NAME_LIMIT:
             return get_error_argument_result(f"Memory name '{memory_name}' exceeds limit of {MEMORY_NAME_LIMIT}.")
-        update_dict["memory_name"] = memory_name
-    # check memory_type valid
-    if req.get("memory_type"):
-        memory_type = set(req["memory_type"])
-        invalid_type = memory_type - {e.value for e in MemoryType}
-        if invalid_type:
-            return get_error_argument_result(f"Memory type '{invalid_type}' is not supported.")
-        update_dict["memory_type"] = list(memory_type)
+        update_dict["name"] = memory_name
     # check permissions valid
     if req.get("permissions"):
         if req["permissions"] not in [e.value for e in TenantPermission]:
             return get_error_argument_result(f"Unknown permission '{req['permissions']}'.")
         update_dict["permissions"] = req["permissions"]
-    if req.get("llm"):
-        update_dict["llm"] = req["llm"]
+    if req.get("llm_id"):
+        update_dict["llm_id"] = req["llm_id"]
     # check memory_size valid
     if req.get("memory_size"):
         if not 0 < int(req["memory_size"]) <= MEMORY_SIZE_LIMIT:
@@ -154,9 +152,18 @@ async def delete_memory(memory_id):
 async def list_memory():
     req = await request_json()
     try:
-        memory_list, count = MemoryService.get_by_filter(req["filter"], req["keywords"], req["page"], req["page_size"])
-        [memory.update({"memory_type": json.loads(memory["memory_type"]), "temperature": json.dumps(memory["temperature"])}) for memory in memory_list]
-        return get_json_result(message=True, data={"memory_list": memory_list, "count": count})
+        filter_dict = req.get("filter", {})
+        keywords = req.get("keywords", "")
+        page = req.get("page", 1)
+        page_size = req.get("page_size", 50)
+        if not filter_dict.get("tenant_id"):
+            # restrict to current user's tenants
+            user_tenants = UserTenantService.get_user_tenant_relation_by_user_id(current_user.id)
+            filter_dict["tenant_id"] = [tenant["tenant_id"] for tenant in user_tenants]
+
+        memory_list, count = MemoryService.get_by_filter(filter_dict, keywords, page, page_size)
+        [memory.update({"memory_type": get_memory_type_human(memory["memory_type"])}) for memory in memory_list]
+        return get_json_result(message=True, data={"memory_list": memory_list, "total_count": count})
 
     except Exception as e:
         logging.error(e)

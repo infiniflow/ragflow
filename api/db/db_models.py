@@ -1114,14 +1114,14 @@ class SyncLogs(DataBaseModel):
 
 
 class Memory(DataBaseModel):
-    memory_id = CharField(max_length=32, primary_key=True)
-    memory_name = CharField(max_length=128, null=False, index=False, help_text="Memory name")
+    id = CharField(max_length=32, primary_key=True)
+    name = CharField(max_length=128, null=False, index=False, help_text="Memory name")
     avatar = TextField(null=True, help_text="avatar base64 string")
     tenant_id = CharField(max_length=32, null=False, index=True)
-    memory_type = CharField(max_length=32, null=False, index=True, help_text="['raw', 'semantic','episodic', 'procedural']")
-    storage_type = CharField(max_length=32, null=False, index=True, help_text="table|graph")
-    embedding = CharField(max_length=128, null=False, index=False, help_text="embedding model ID")
-    llm = CharField(max_length=128, null=False, index=False, help_text="chat model ID")
+    memory_type = IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=raw, 2=semantic, 4=episodic, 8=procedural. E.g., 5 enables raw + episodic.")
+    storage_type = CharField(max_length=32, default='table', null=False, index=True, help_text="table|graph")
+    embd_id = CharField(max_length=128, null=False, index=False, help_text="embedding model ID")
+    llm_id = CharField(max_length=128, null=False, index=False, help_text="chat model ID")
     permissions = CharField(max_length=16, null=False, index=True, help_text="me|team", default="me")
     description = TextField(null=True, help_text="description")
     memory_size = IntegerField(default=5242880, null=False, index=False)
