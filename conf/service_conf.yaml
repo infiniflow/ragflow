@@ -17,6 +17,8 @@ minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
   host: 'localhost:9000'
+  bucket: ''
+  prefix_path: ''
 es:
   hosts: 'http://localhost:1200'
   username: 'elastic'
