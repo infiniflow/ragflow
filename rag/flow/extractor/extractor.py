@@ -15,9 +15,8 @@
 import json
 import logging
 import random
-from copy import deepcopy, copy
+from copy import deepcopy
 
-import trio
 import xxhash
 
 from agent.component.llm import LLMParam, LLM
