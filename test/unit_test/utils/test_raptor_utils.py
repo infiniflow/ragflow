@@ -19,14 +19,19 @@ Unit tests for Raptor utility functions.
 """
 
 import pytest
+import numpy as np
 from rag.utils.raptor_utils import (
     is_structured_file_type,
     is_tabular_pdf,
     should_skip_raptor,
     get_skip_reason,
+    contains_html_table,
+    analyze_chunks_for_tables,
+    should_skip_raptor_for_chunks,
     EXCEL_EXTENSIONS,
     CSV_EXTENSIONS,
-    STRUCTURED_EXTENSIONS
+    STRUCTURED_EXTENSIONS,
+    TABLE_CONTENT_THRESHOLD
 )
 
 
@@ -281,6 +286,243 @@ class TestIntegrationScenarios:
         
         # Should NOT skip when explicitly disabled
         assert should_skip_raptor(file_type, raptor_config=raptor_config) is False
+
+
+class TestContainsHtmlTable:
+    """Test HTML table detection in content"""
+
+    def test_detect_simple_table(self):
+        """Test detection of simple HTML table"""
+        content = "<table><tr><td>Cell 1</td><td>Cell 2</td></tr></table>"
+        assert contains_html_table(content) is True
+
+    def test_detect_table_with_attributes(self):
+        """Test detection of table with attributes"""
+        content = '<table class="data-table" border="1"><tr><td>Data</td></tr></table>'
+        assert contains_html_table(content) is True
+
+    def test_detect_table_case_insensitive(self):
+        """Test case insensitive detection"""
+        assert contains_html_table("<TABLE><TR><TD>X</TD></TR></TABLE>") is True
+        assert contains_html_table("<Table><tr><td>X</td></tr></Table>") is True
+
+    def test_no_table_in_plain_text(self):
+        """Test that plain text is not detected as table"""
+        content = "This is just plain text without any tables."
+        assert contains_html_table(content) is False
+
+    def test_no_table_in_empty_content(self):
+        """Test empty content handling"""
+        assert contains_html_table("") is False
+        # Note: None is rejected by type hints (beartype), which is correct behavior
+
+    def test_table_word_not_detected(self):
+        """Test that the word 'table' alone is not detected"""
+        content = "Please see the table below for more information."
+        assert contains_html_table(content) is False
+
+    def test_mixed_content_with_table(self):
+        """Test content with text and table"""
+        content = """
+        This is some introductory text.
+        <table>
+            <caption>Financial Data</caption>
+            <tr><th>Year</th><th>Revenue</th></tr>
+            <tr><td>2024</td><td>$1M</td></tr>
+        </table>
+        More text after the table.
+        """
+        assert contains_html_table(content) is True
+
+
+class TestAnalyzeChunksForTables:
+    """Test chunk analysis for table content"""
+
+    def _make_chunk(self, content: str):
+        """Helper to create a chunk tuple"""
+        return (content, np.zeros(768))
+
+    def test_all_table_chunks(self):
+        """Test when all chunks contain tables"""
+        chunks = [
+            self._make_chunk("<table><tr><td>1</td></tr></table>"),
+            self._make_chunk("<table><tr><td>2</td></tr></table>"),
+            self._make_chunk("<table><tr><td>3</td></tr></table>"),
+        ]
+        should_skip, pct = analyze_chunks_for_tables(chunks)
+        assert should_skip is True
+        assert pct == 1.0
+
+    def test_no_table_chunks(self):
+        """Test when no chunks contain tables"""
+        chunks = [
+            self._make_chunk("Plain text content 1"),
+            self._make_chunk("Plain text content 2"),
+            self._make_chunk("Plain text content 3"),
+        ]
+        should_skip, pct = analyze_chunks_for_tables(chunks)
+        assert should_skip is False
+        assert pct == 0.0
+
+    def test_mixed_chunks_below_threshold(self):
+        """Test mixed chunks below threshold"""
+        # 1 out of 5 = 20%, below 30% threshold
+        chunks = [
+            self._make_chunk("<table><tr><td>Table</td></tr></table>"),
+            self._make_chunk("Plain text 1"),
+            self._make_chunk("Plain text 2"),
+            self._make_chunk("Plain text 3"),
+            self._make_chunk("Plain text 4"),
+        ]
+        should_skip, pct = analyze_chunks_for_tables(chunks)
+        assert should_skip is False
+        assert pct == 0.2
+
+    def test_mixed_chunks_above_threshold(self):
+        """Test mixed chunks above threshold"""
+        # 2 out of 5 = 40%, above 30% threshold
+        chunks = [
+            self._make_chunk("<table><tr><td>Table 1</td></tr></table>"),
+            self._make_chunk("<table><tr><td>Table 2</td></tr></table>"),
+            self._make_chunk("Plain text 1"),
+            self._make_chunk("Plain text 2"),
+            self._make_chunk("Plain text 3"),
+        ]
+        should_skip, pct = analyze_chunks_for_tables(chunks)
+        assert should_skip is True
+        assert pct == 0.4
+
+    def test_empty_chunks(self):
+        """Test empty chunk list"""
+        should_skip, pct = analyze_chunks_for_tables([])
+        assert should_skip is False
+        assert pct == 0.0
+
+    def test_custom_threshold(self):
+        """Test with custom threshold"""
+        # 1 out of 5 = 20%
+        chunks = [
+            self._make_chunk("<table><tr><td>Table</td></tr></table>"),
+            self._make_chunk("Plain text 1"),
+            self._make_chunk("Plain text 2"),
+            self._make_chunk("Plain text 3"),
+            self._make_chunk("Plain text 4"),
+        ]
+        # With 15% threshold, should skip
+        should_skip, pct = analyze_chunks_for_tables(chunks, threshold=0.15)
+        assert should_skip is True
+        
+        # With 25% threshold, should not skip
+        should_skip, pct = analyze_chunks_for_tables(chunks, threshold=0.25)
+        assert should_skip is False
+
+    def test_default_threshold_value(self):
+        """Test that default threshold is 30%"""
+        assert TABLE_CONTENT_THRESHOLD == 0.3
+
+
+class TestShouldSkipRaptorForChunks:
+    """Test content-based Raptor skip decision"""
+
+    def _make_chunk(self, content: str):
+        """Helper to create a chunk tuple"""
+        return (content, np.zeros(768))
+
+    def test_skip_for_table_heavy_content(self):
+        """Test skipping for table-heavy content"""
+        chunks = [
+            self._make_chunk("<table><tr><td>1</td></tr></table>"),
+            self._make_chunk("<table><tr><td>2</td></tr></table>"),
+            self._make_chunk("Plain text"),
+        ]
+        should_skip, reason = should_skip_raptor_for_chunks(chunks)
+        assert should_skip is True
+        assert "HTML tables" in reason
+
+    def test_no_skip_for_text_content(self):
+        """Test not skipping for text content"""
+        chunks = [
+            self._make_chunk("Plain text content 1"),
+            self._make_chunk("Plain text content 2"),
+            self._make_chunk("Plain text content 3"),
+        ]
+        should_skip, reason = should_skip_raptor_for_chunks(chunks)
+        assert should_skip is False
+        assert reason == ""
+
+    def test_override_with_config(self):
+        """Test that auto-disable can be overridden"""
+        chunks = [
+            self._make_chunk("<table><tr><td>1</td></tr></table>"),
+            self._make_chunk("<table><tr><td>2</td></tr></table>"),
+        ]
+        raptor_config = {"auto_disable_for_structured_data": False}
+        should_skip, reason = should_skip_raptor_for_chunks(chunks, raptor_config)
+        assert should_skip is False
+        assert reason == ""
+
+    def test_empty_chunks(self):
+        """Test with empty chunks"""
+        should_skip, reason = should_skip_raptor_for_chunks([])
+        assert should_skip is False
+        assert reason == ""
+
+
+class TestPDFWithHtmlTables:
+    """Test real-world PDF with HTML tables scenario (ahmadshakil's issue)"""
+
+    def _make_chunk(self, content: str):
+        """Helper to create a chunk tuple"""
+        return (content, np.zeros(768))
+
+    def test_pdf_with_extracted_tables(self):
+        """Test PDF that has tables extracted as HTML during parsing"""
+        # Simulating chunks from a PDF like Fbr_IncomeTaxOrdinance_2001
+        chunks = [
+            self._make_chunk("Section 1: Introduction to Tax Law"),
+            self._make_chunk('<table><caption>Table Location: Section 2</caption><tr><th>Tax Rate</th><th>Income Range</th></tr><tr><td>10%</td><td>0-500,000</td></tr></table>'),
+            self._make_chunk("Section 3: Deductions and Exemptions"),
+            self._make_chunk('<table><tr><th>Deduction Type</th><th>Maximum Amount</th></tr><tr><td>Medical</td><td>100,000</td></tr></table>'),
+            self._make_chunk("Section 4: Filing Requirements"),
+        ]
+        
+        # 2 out of 5 = 40%, above 30% threshold
+        should_skip, reason = should_skip_raptor_for_chunks(chunks)
+        assert should_skip is True
+        assert "HTML tables" in reason
+
+    def test_pdf_with_few_tables(self):
+        """Test PDF with only occasional tables"""
+        chunks = [
+            self._make_chunk("Chapter 1: Overview of the legal framework..."),
+            self._make_chunk("Chapter 2: Detailed analysis of provisions..."),
+            self._make_chunk("Chapter 3: Case studies and examples..."),
+            self._make_chunk("Chapter 4: Implementation guidelines..."),
+            self._make_chunk("Chapter 5: Compliance requirements..."),
+            self._make_chunk("Chapter 6: Penalties and enforcement..."),
+            self._make_chunk("Chapter 7: Appeals process..."),
+            self._make_chunk("Chapter 8: Recent amendments..."),
+            self._make_chunk("Chapter 9: Future outlook..."),
+            self._make_chunk('<table><tr><td>Summary Table</td></tr></table>'),  # Only 1 table
+        ]
+        
+        # 1 out of 10 = 10%, below 30% threshold
+        should_skip, reason = should_skip_raptor_for_chunks(chunks)
+        assert should_skip is False
+
+    def test_financial_pdf_with_many_tables(self):
+        """Test financial PDF with many tables (should skip)"""
+        chunks = [
+            self._make_chunk('<table><caption>Balance Sheet</caption><tr><td>Assets</td><td>$1M</td></tr></table>'),
+            self._make_chunk('<table><caption>Income Statement</caption><tr><td>Revenue</td><td>$500K</td></tr></table>'),
+            self._make_chunk('<table><caption>Cash Flow</caption><tr><td>Operating</td><td>$200K</td></tr></table>'),
+            self._make_chunk("Notes to financial statements..."),
+            self._make_chunk('<table><caption>Tax Schedule</caption><tr><td>Tax</td><td>$50K</td></tr></table>'),
+        ]
+        
+        # 4 out of 5 = 80%, well above threshold
+        should_skip, reason = should_skip_raptor_for_chunks(chunks)
+        assert should_skip is True
 
 
 if __name__ == "__main__":
