@@ -293,7 +293,7 @@ class LLMBundle(LLM4Tenant):
 
     def _run_coroutine_sync(self, coro):
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
         except RuntimeError:
             return asyncio.run(coro)
 
@@ -372,7 +372,7 @@ class LLMBundle(LLM4Tenant):
                 break
 
             if txt.endswith("</think>"):
-                ans = ans[: -len("</think>")]
+                ans = txt[: -len("</think>")]
                 continue
 
             if not self.verbose_tool_use:
