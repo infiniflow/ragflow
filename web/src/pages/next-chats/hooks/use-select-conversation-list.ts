@@ -5,7 +5,7 @@ import {
   useFetchDialogList,
 } from '@/hooks/use-chat-request';
 import { IConversation } from '@/interfaces/database/chat';
-import { getConversationId } from '@/utils/chat';
+import { generateConversationId } from '@/utils/chat';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'umi';
 
@@ -54,7 +54,7 @@ export const useSelectDerivedConversationList = () => {
   const prologue = useFindPrologueFromDialogList();
 
   const addTemporaryConversation = useCallback(() => {
-    const conversationId = getConversationId();
+    const conversationId = generateConversationId();
     setList((pre) => {
       if (dialogId) {
         setNewConversationRouteParams(conversationId, 'true');

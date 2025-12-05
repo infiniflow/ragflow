@@ -133,6 +133,7 @@ export default function Chat() {
                 <SingleChatBox
                   controller={controller}
                   stopOutputMessage={stopOutputMessage}
+                  conversation={conversation}
                 ></SingleChatBox>
               </CardContent>
             </Card>

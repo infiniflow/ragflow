@@ -1,25 +1,70 @@
 import { FileUploadProps } from '@/components/file-upload';
-import { MessageType } from '@/constants/chat';
+import { ChatSearchParams, MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
   useRegenerateMessage,
   useSelectDerivedMessages,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
-import {
-  useFetchConversation,
-  useGetChatSearchParams,
-} from '@/hooks/use-chat-request';
-import { IMessage, Message } from '@/interfaces/database/chat';
+import { useGetChatSearchParams } from '@/hooks/use-chat-request';
+import { IMessage } from '@/interfaces/database/chat';
 import api from '@/utils/api';
+import { generateConversationId } from '@/utils/chat';
 import { trim } from 'lodash';
-import { useCallback, useEffect } from 'react';
-import { useParams } from 'umi';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useParams, useSearchParams } from 'umi';
 import { v4 as uuid } from 'uuid';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
-import { useSetChatRouteParams } from './use-set-chat-route';
 import { useSetConversation } from './use-set-conversation';
 import { useUploadFile } from './use-upload-file';
+
+/**
+ * Consolidated hook for managing chat URL parameters (conversationId and isNew)
+ * Replaces: useClickConversationCard from use-chat-request.ts and useSetChatRouteParams from use-set-chat-route.ts
+ */
+export const useChatUrlParams = () => {
+  const [currentQueryParameters, setSearchParams] = useSearchParams();
+  const newQueryParameters: URLSearchParams = useMemo(
+    () => new URLSearchParams(currentQueryParameters.toString()),
+    [currentQueryParameters],
+  );
+
+  const setConversationId = useCallback(
+    (conversationId: string) => {
+      newQueryParameters.set(ChatSearchParams.ConversationId, conversationId);
+      setSearchParams(newQueryParameters);
+    },
+    [setSearchParams, newQueryParameters],
+  );
+
+  const setIsNew = useCallback(
+    (isNew: string) => {
+      newQueryParameters.set(ChatSearchParams.isNew, isNew);
+      setSearchParams(newQueryParameters);
+    },
+    [setSearchParams, newQueryParameters],
+  );
+
+  const getIsNew = useCallback(() => {
+    return newQueryParameters.get(ChatSearchParams.isNew);
+  }, [newQueryParameters]);
+
+  const setConversationBoth = useCallback(
+    (conversationId: string, isNew: string) => {
+      newQueryParameters.set(ChatSearchParams.ConversationId, conversationId);
+      newQueryParameters.set(ChatSearchParams.isNew, isNew);
+      setSearchParams(newQueryParameters);
+    },
+    [setSearchParams, newQueryParameters],
+  );
+
+  return {
+    setConversationId,
+    setIsNew,
+    getIsNew,
+    setConversationBoth,
+  };
+};
 
 export const useSelectNextMessages = () => {
   const {
@@ -33,8 +78,7 @@ export const useSelectNextMessages = () => {
     removeMessageById,
     removeMessagesAfterCurrentMessage,
   } = useSelectDerivedMessages();
-  const { data: conversation, loading } = useFetchConversation();
-  const { conversationId, isNew } = useGetChatSearchParams();
+  const { isNew, conversationId } = useGetChatSearchParams();
   const { id: dialogId } = useParams();
   const prologue = useFindPrologueFromDialogList();
 
@@ -44,40 +88,27 @@ export const useSelectNextMessages = () => {
         role: MessageType.Assistant,
         content: prologue,
         id: uuid(),
+        conversationId: conversationId,
       } as IMessage;
 
       setDerivedMessages([nextMessage]);
     }
-  }, [dialogId, isNew, prologue, setDerivedMessages]);
+  }, [conversationId, dialogId, isNew, prologue, setDerivedMessages]);
 
   useEffect(() => {
     addPrologue();
   }, [addPrologue]);
 
-  useEffect(() => {
-    if (
-      conversationId &&
-      isNew !== 'true' &&
-      conversation.message?.length > 0
-    ) {
-      setDerivedMessages(conversation.message);
-    }
-
-    if (!conversationId) {
-      setDerivedMessages([]);
-    }
-  }, [conversation.message, conversationId, setDerivedMessages, isNew]);
-
   return {
     scrollRef,
     messageContainerRef,
     derivedMessages,
-    loading,
     addNewestAnswer,
     addNewestQuestion,
     removeLatestMessage,
     removeMessageById,
     removeMessagesAfterCurrentMessage,
+    setDerivedMessages,
   };
 };
 
@@ -85,6 +116,7 @@ export const useSendMessage = (controller: AbortController) => {
   const { setConversation } = useSetConversation();
   const { conversationId, isNew } = useGetChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
+  const { setIsNew, setConversationBoth } = useChatUrlParams();
 
   const { handleUploadFile, isUploading, removeFile, files, clearFiles } =
     useUploadFile();
@@ -96,21 +128,21 @@ export const useSendMessage = (controller: AbortController) => {
     scrollRef,
     messageContainerRef,
     derivedMessages,
-    loading,
     addNewestAnswer,
     addNewestQuestion,
     removeLatestMessage,
     removeMessageById,
     removeMessagesAfterCurrentMessage,
+    setDerivedMessages,
   } = useSelectNextMessages();
-  const { setConversationIsNew, getConversationIsNew } =
-    useSetChatRouteParams();
 
   const onUploadFile: NonNullable<FileUploadProps['onUpload']> = useCallback(
     async (files, options) => {
-      const isNew = getConversationIsNew();
-
-      if (isNew === 'true' && Array.isArray(files) && files.length) {
+      if (
+        (isNew === 'true' || conversationId === '') &&
+        Array.isArray(files) &&
+        files.length
+      ) {
         const data = await setConversation(files[0].name, true);
         if (data.code === 0) {
           handleUploadFile(files, options, data.data?.id);
@@ -119,7 +151,7 @@ export const useSendMessage = (controller: AbortController) => {
         handleUploadFile(files, options);
       }
     },
-    [getConversationIsNew, handleUploadFile, setConversation],
+    [conversationId, handleUploadFile, isNew, setConversation],
   );
 
   const sendMessage = useCallback(
@@ -128,14 +160,19 @@ export const useSendMessage = (controller: AbortController) => {
       currentConversationId,
       messages,
     }: {
-      message: Message;
+      message: IMessage;
       currentConversationId?: string;
-      messages?: Message[];
+      messages?: IMessage[];
     }) => {
       const res = await send(
         {
           conversation_id: currentConversationId ?? conversationId,
-          messages: [...(messages ?? derivedMessages ?? []), message],
+          messages: [
+            ...(Array.isArray(messages) && messages?.length > 0
+              ? messages
+              : derivedMessages ?? []),
+            message,
+          ],
         },
         controller,
       );
@@ -157,43 +194,73 @@ export const useSendMessage = (controller: AbortController) => {
     ],
   );
 
-  const handleSendMessage = useCallback(
-    async (message: Message) => {
-      const isNew = getConversationIsNew();
-      if (isNew !== 'true') {
-        sendMessage({ message });
-      } else {
-        const data = await setConversation(
-          message.content,
-          true,
-          conversationId,
-        );
-        if (data.code === 0) {
-          setConversationIsNew('');
-          const id = data.data.id;
-          // currentConversationIdRef.current = id;
-          sendMessage({
-            message,
-            currentConversationId: id,
-            messages: data.data.message,
-          });
-        }
-      }
-    },
-    [
-      setConversation,
-      sendMessage,
-      setConversationIsNew,
-      getConversationIsNew,
-      conversationId,
-    ],
-  );
-
   const { regenerateMessage } = useRegenerateMessage({
     removeMessagesAfterCurrentMessage,
     sendMessage,
     messages: derivedMessages,
   });
+
+  const handlePressEnter = useCallback(async () => {
+    if (trim(value) === '') return;
+
+    let currentMessages: Array<IMessage> = [];
+    const currentConversationId = generateConversationId();
+    if (conversationId === '' || isNew === 'true') {
+      if (conversationId === '') {
+        setConversationBoth(currentConversationId, 'true');
+      }
+      const data = await setConversation(
+        value,
+        true,
+        conversationId || currentConversationId,
+      );
+      if (data.code !== 0) {
+        return;
+      } else {
+        setIsNew('');
+        currentMessages = data.data.message;
+      }
+    }
+
+    const id = uuid();
+
+    addNewestQuestion({
+      content: value,
+      files: files,
+      id,
+      role: MessageType.User,
+      conversationId: conversationId || currentConversationId,
+    });
+
+    if (done) {
+      setValue('');
+      sendMessage({
+        currentConversationId: conversationId || currentConversationId,
+        messages: currentMessages,
+        message: {
+          id,
+          content: value.trim(),
+          role: MessageType.User,
+          files: files,
+          conversationId: conversationId || currentConversationId,
+        },
+      });
+    }
+    clearFiles();
+  }, [
+    value,
+    conversationId,
+    isNew,
+    addNewestQuestion,
+    files,
+    done,
+    clearFiles,
+    setConversation,
+    setConversationBoth,
+    setIsNew,
+    setValue,
+    sendMessage,
+  ]);
 
   useEffect(() => {
     //  #1289
@@ -202,36 +269,6 @@ export const useSendMessage = (controller: AbortController) => {
     }
   }, [answer, addNewestAnswer, conversationId, isNew]);
 
-  const handlePressEnter = useCallback(() => {
-    if (trim(value) === '') return;
-    const id = uuid();
-
-    addNewestQuestion({
-      content: value,
-      files: files,
-      id,
-      role: MessageType.User,
-    });
-    if (done) {
-      setValue('');
-      handleSendMessage({
-        id,
-        content: value.trim(),
-        role: MessageType.User,
-        files: files,
-      });
-    }
-    clearFiles();
-  }, [
-    value,
-    addNewestQuestion,
-    files,
-    done,
-    clearFiles,
-    setValue,
-    handleSendMessage,
-  ]);
-
   return {
     handlePressEnter,
     handleInputChange,
@@ -239,7 +276,6 @@ export const useSendMessage = (controller: AbortController) => {
     setValue,
     regenerateMessage,
     sendLoading: !done,
-    loading,
     scrollRef,
     messageContainerRef,
     derivedMessages,
@@ -247,5 +283,6 @@ export const useSendMessage = (controller: AbortController) => {
     handleUploadFile: onUploadFile,
     isUploading,
     removeFile,
+    setDerivedMessages,
   };
 };

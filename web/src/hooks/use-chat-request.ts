@@ -16,11 +16,11 @@ import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-
 import { isConversationIdExist } from '@/pages/next-chats/utils';
 import chatService from '@/services/next-chat-service';
 import api from '@/utils/api';
-import { buildMessageListWithUuid, getConversationId } from '@/utils/chat';
+import { buildMessageListWithUuid, generateConversationId } from '@/utils/chat';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { has } from 'lodash';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'umi';
 import {
@@ -57,29 +57,6 @@ export const useGetChatSearchParams = () => {
       currentQueryParameters.get(ChatSearchParams.ConversationId) || '',
     isNew: currentQueryParameters.get(ChatSearchParams.isNew) || '',
   };
-};
-
-export const useClickDialogCard = () => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [_, setSearchParams] = useSearchParams();
-
-  const newQueryParameters: URLSearchParams = useMemo(() => {
-    return new URLSearchParams();
-  }, []);
-
-  const handleClickDialog = useCallback(
-    (dialogId: string) => {
-      newQueryParameters.set(ChatSearchParams.DialogId, dialogId);
-      // newQueryParameters.set(
-      //   ChatSearchParams.ConversationId,
-      //   EmptyConversationId,
-      // );
-      setSearchParams(newQueryParameters);
-    },
-    [newQueryParameters, setSearchParams],
-  );
-
-  return { handleClickDialog };
 };
 
 export const useFetchDialogList = () => {
@@ -222,28 +199,8 @@ export const useFetchDialog = () => {
 
 //#region Conversation
 
-export const useClickConversationCard = () => {
-  const [currentQueryParameters, setSearchParams] = useSearchParams();
-  const newQueryParameters: URLSearchParams = useMemo(
-    () => new URLSearchParams(currentQueryParameters.toString()),
-    [currentQueryParameters],
-  );
-
-  const handleClickConversation = useCallback(
-    (conversationId: string, isNew: string) => {
-      newQueryParameters.set(ChatSearchParams.ConversationId, conversationId);
-      newQueryParameters.set(ChatSearchParams.isNew, isNew);
-      setSearchParams(newQueryParameters);
-    },
-    [setSearchParams, newQueryParameters],
-  );
-
-  return { handleClickConversation };
-};
-
 export const useFetchConversationList = () => {
   const { id } = useParams();
-  const { handleClickConversation } = useClickConversationCard();
 
   const { searchString, handleInputChange } = useHandleSearchStrChange();
 
@@ -267,13 +224,6 @@ export const useFetchConversationList = () => {
         { params: { dialog_id: id } },
         true,
       );
-      if (data.code === 0) {
-        if (data.data.length > 0) {
-          handleClickConversation(data.data[0].id, '');
-        } else {
-          handleClickConversation('', '');
-        }
-      }
       return data?.data;
     },
   });
@@ -284,6 +234,7 @@ export const useFetchConversationList = () => {
 export const useFetchConversation = () => {
   const { isNew, conversationId } = useGetChatSearchParams();
   const { sharedId } = useGetSharedChatSearchParams();
+  const isNotNew = isNew !== 'true';
   const {
     data,
     isFetching: loading,
@@ -291,14 +242,11 @@ export const useFetchConversation = () => {
   } = useQuery<IClientConversation>({
     queryKey: [ChatApiAction.FetchConversation, conversationId],
     initialData: {} as IClientConversation,
-    // enabled: isConversationIdExist(conversationId),
+    enabled: isConversationIdExist(conversationId) && isNotNew,
     gcTime: 0,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      if (
-        isNew !== 'true' &&
-        isConversationIdExist(sharedId || conversationId)
-      ) {
+      if (isNotNew && isConversationIdExist(sharedId || conversationId)) {
         const { data } = await chatService.getConversation(
           {
             params: {
@@ -335,7 +283,7 @@ export const useUpdateConversation = () => {
         ...params,
         conversation_id: params.conversation_id
           ? params.conversation_id
-          : getConversationId(),
+          : generateConversationId(),
       });
       if (data.code === 0) {
         queryClient.invalidateQueries({
