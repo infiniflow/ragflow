@@ -50,6 +50,7 @@ class SupportedLiteLLMProvider(StrEnum):
     GiteeAI = "GiteeAI"
     AI_302 = "302.AI"
     JiekouAI = "Jiekou.AI"
+    BurnCloud = "BurnCloud"
     ZHIPU_AI = "ZHIPU-AI"
     MiniMax = "MiniMax"
 
@@ -73,6 +74,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.AI_302: "https://api.302.ai/v1",
     SupportedLiteLLMProvider.Anthropic: "https://api.anthropic.com/",
     SupportedLiteLLMProvider.JiekouAI: "https://api.jiekou.ai/openai",
+    SupportedLiteLLMProvider.BurnCloud: "https://ai.burncloud.com/v1",
     SupportedLiteLLMProvider.ZHIPU_AI: "https://open.bigmodel.cn/api/paas/v4",
     SupportedLiteLLMProvider.MiniMax: "https://api.minimaxi.com/v1",
 }
@@ -106,6 +108,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.GiteeAI: "openai/",
     SupportedLiteLLMProvider.AI_302: "openai/",
     SupportedLiteLLMProvider.JiekouAI: "openai/",
+    SupportedLiteLLMProvider.BurnCloud: "openai/",
     SupportedLiteLLMProvider.ZHIPU_AI: "openai/",
     SupportedLiteLLMProvider.MiniMax: "openai/",
 }

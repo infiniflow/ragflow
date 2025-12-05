@@ -1560,6 +1560,7 @@ class LiteLLMBase(ABC):
         "GiteeAI",
         "302.AI",
         "Jiekou.AI",
+        "BurnCloud",
         "ZHIPU-AI",
         "MiniMax",
     ]
