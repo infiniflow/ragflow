@@ -3,6 +3,7 @@ import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { Flex, Form, Input, Modal, Select, Space } from 'antd';
 import omit from 'lodash/omit';
+import { LLMHeader } from '../../components/llm-header';
 
 type FieldType = IAddLlmRequestBody & {
   TencentCloud_sid: string;
@@ -45,7 +46,7 @@ const TencentCloudModal = ({
 
   return (
     <Modal
-      title={t('addLlmTitle', { name: llmFactory })}
+      title={<LLMHeader name={llmFactory} />}
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}

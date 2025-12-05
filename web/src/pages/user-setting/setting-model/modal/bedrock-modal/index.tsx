@@ -3,6 +3,7 @@ import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { Flex, Form, Input, InputNumber, Modal, Select, Space } from 'antd';
 import { useMemo } from 'react';
+import { LLMHeader } from '../../components/llm-header';
 import { BedrockRegionList } from '../../constant';
 
 type FieldType = IAddLlmRequestBody & {
@@ -42,7 +43,7 @@ const BedrockModal = ({
 
   return (
     <Modal
-      title={t('addLlmTitle', { name: llmFactory })}
+      title={<LLMHeader name={llmFactory} />}
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}

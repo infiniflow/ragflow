@@ -1,9 +1,10 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ControllerRenderProps, useFormContext } from 'react-hook-form';
 
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { debounce } from 'lodash';
 
 /* ---------------- Token Field ---------------- */
 
@@ -48,15 +49,15 @@ type ConfluenceIndexingMode = 'everything' | 'space' | 'page';
 export type ConfluenceIndexingModeFieldProps = ControllerRenderProps;
 
 export const ConfluenceIndexingModeField = (
-  fieldProps: ConfluenceIndexingModeFieldProps,
+  fieldProps: ControllerRenderProps,
 ) => {
   const { value, onChange, disabled } = fieldProps;
+  const [mode, setMode] = useState<ConfluenceIndexingMode>(
+    value || 'everything',
+  );
   const { watch, setValue } = useFormContext();
 
-  const mode = useMemo<ConfluenceIndexingMode>(
-    () => (value as ConfluenceIndexingMode) || 'everything',
-    [value],
-  );
+  useEffect(() => setMode(value), [value]);
 
   const spaceValue = watch('config.space');
   const pageIdValue = watch('config.page_id');
@@ -66,27 +67,40 @@ export const ConfluenceIndexingModeField = (
     if (!value) onChange('everything');
   }, [value, onChange]);
 
-  const handleModeChange = (nextMode?: string) => {
-    const normalized = (nextMode || 'everything') as ConfluenceIndexingMode;
-    onChange(normalized);
+  const handleModeChange = useCallback(
+    (nextMode?: string) => {
+      let normalized: ConfluenceIndexingMode = 'everything';
+      if (nextMode) {
+        normalized = nextMode as ConfluenceIndexingMode;
+        setMode(normalized);
+        onChange(normalized);
+      } else {
+        setMode(mode);
+        normalized = mode;
+        onChange(mode);
+        // onChange(mode);
+      }
+      if (normalized === 'everything') {
+        setValue('config.space', '');
+        setValue('config.page_id', '');
+        setValue('config.index_recursively', false);
+      } else if (normalized === 'space') {
+        setValue('config.page_id', '');
+        setValue('config.index_recursively', false);
+      } else if (normalized === 'page') {
+        setValue('config.space', '');
+      }
+    },
+    [mode, onChange, setValue],
+  );
 
-    if (normalized === 'everything') {
-      setValue('config.space', '', { shouldDirty: true, shouldTouch: true });
-      setValue('config.page_id', '', { shouldDirty: true, shouldTouch: true });
-      setValue('config.index_recursively', false, {
-        shouldDirty: true,
-        shouldTouch: true,
-      });
-    } else if (normalized === 'space') {
-      setValue('config.page_id', '', { shouldDirty: true, shouldTouch: true });
-      setValue('config.index_recursively', false, {
-        shouldDirty: true,
-        shouldTouch: true,
-      });
-    } else if (normalized === 'page') {
-      setValue('config.space', '', { shouldDirty: true, shouldTouch: true });
-    }
-  };
+  const debouncedHandleChange = useMemo(
+    () =>
+      debounce(() => {
+        handleModeChange();
+      }, 300),
+    [handleModeChange],
+  );
 
   return (
     <div className="w-full rounded-lg border border-border-button bg-bg-card p-4 space-y-4">
@@ -127,12 +141,11 @@ export const ConfluenceIndexingModeField = (
           <Input
             className="w-full"
             value={spaceValue ?? ''}
-            onChange={(e) =>
-              setValue('config.space', e.target.value, {
-                shouldDirty: true,
-                shouldTouch: true,
-              })
-            }
+            onChange={(e) => {
+              const value = e.target.value;
+              setValue('config.space', value);
+              debouncedHandleChange();
+            }}
             placeholder="e.g. KB"
             disabled={disabled}
           />
@@ -148,12 +161,10 @@ export const ConfluenceIndexingModeField = (
           <Input
             className="w-full"
             value={pageIdValue ?? ''}
-            onChange={(e) =>
-              setValue('config.page_id', e.target.value, {
-                shouldDirty: true,
-                shouldTouch: true,
-              })
-            }
+            onChange={(e) => {
+              setValue('config.page_id', e.target.value);
+              debouncedHandleChange();
+            }}
             placeholder="e.g. 123456"
             disabled={disabled}
           />
@@ -164,12 +175,10 @@ export const ConfluenceIndexingModeField = (
           <div className="flex items-center gap-2 pt-2">
             <Checkbox
               checked={Boolean(indexRecursively)}
-              onCheckedChange={(checked) =>
-                setValue('config.index_recursively', Boolean(checked), {
-                  shouldDirty: true,
-                  shouldTouch: true,
-                })
-              }
+              onCheckedChange={(checked) => {
+                setValue('config.index_recursively', Boolean(checked));
+                debouncedHandleChange();
+              }}
               disabled={disabled}
             />
             <span className="text-sm text-text-secondary">

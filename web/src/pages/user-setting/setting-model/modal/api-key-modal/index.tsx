@@ -14,6 +14,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { KeyboardEventHandler, useCallback, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { ApiKeyPostBody } from '../../../interface';
+import { LLMHeader } from '../../components/llm-header';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   loading: boolean;
@@ -70,7 +71,7 @@ const ApiKeyModal = ({
 
   return (
     <Modal
-      title={t('configureModelTitle')}
+      title={<LLMHeader name={llmFactory} />}
       open={visible}
       onOpenChange={(open) => !open && hideModal()}
       onOk={handleOk}
