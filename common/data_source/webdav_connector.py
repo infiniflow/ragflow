@@ -190,6 +190,11 @@ class WebDAVConnector(LoadConnector, PollConnector):
         files = self._list_files_recursive(self.remote_path, start, end)
         logging.info(f"Found {len(files)} files matching time criteria")
         
+        filename_counts: dict[str, int] = {}
+        for file_path, _ in files:
+            file_name = os.path.basename(file_path)
+            filename_counts[file_name] = filename_counts.get(file_name, 0) + 1
+        
         batch: list[Document] = []
         for file_path, file_info in files:
             file_name = os.path.basename(file_path)
@@ -237,12 +242,22 @@ class WebDAVConnector(LoadConnector, PollConnector):
                 else:
                     modified = datetime.now(timezone.utc)
 
+                if filename_counts.get(file_name, 0) > 1:
+                    relative_path = file_path
+                    if file_path.startswith(self.remote_path):
+                        relative_path = file_path[len(self.remote_path):]
+                    if relative_path.startswith('/'):
+                        relative_path = relative_path[1:]
+                    semantic_id = relative_path.replace('/', ' / ') if relative_path else file_name
+                else:
+                    semantic_id = file_name
+
                 batch.append(
                     Document(
                         id=f"webdav:{self.base_url}:{file_path}",
                         blob=blob,
                         source=DocumentSource.WEBDAV,
-                        semantic_identifier=file_name,
+                        semantic_identifier=semantic_id,
                         extension=get_file_ext(file_name),
                         doc_updated_at=modified,
                         size_bytes=size_bytes if size_bytes else 0
