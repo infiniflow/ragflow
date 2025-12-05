@@ -434,7 +434,7 @@ export const useSelectDerivedMessages = () => {
   );
 
   const addNewestQuestion = useCallback(
-    (message: Message, answer: string = '') => {
+    (message: IMessage, answer: string = '') => {
       setDerivedMessages((pre) => {
         return [
           ...pre,
@@ -447,6 +447,7 @@ export const useSelectDerivedMessages = () => {
           {
             role: MessageType.Assistant,
             content: answer,
+            conversationId: message.conversationId,
             id: buildMessageUuid({ ...message, role: MessageType.Assistant }),
           },
         ];
