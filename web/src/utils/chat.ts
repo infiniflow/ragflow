@@ -26,7 +26,7 @@ export const buildMessageListWithUuid = (messages?: Message[]) => {
   );
 };
 
-export const getConversationId = () => {
+export const generateConversationId = () => {
   return uuid().replace(/-/g, '');
 };
 

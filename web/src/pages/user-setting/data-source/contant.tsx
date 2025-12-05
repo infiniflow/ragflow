@@ -4,7 +4,6 @@ import { t } from 'i18next';
 import { ConfluenceIndexingModeField } from './component/confluence-token-field';
 import GmailTokenField from './component/gmail-token-field';
 import GoogleDriveTokenField from './component/google-drive-token-field';
-
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   S3 = 's3',
@@ -240,13 +239,11 @@ export const DataSourceFormFields = {
     {
       label: 'Index Method',
       name: 'config.index_mode',
-      type: FormFieldType.Text,
+      type: FormFieldType.Text, // keep as text so RHF registers it
       required: false,
       horizontal: true,
       labelClassName: 'self-start pt-4',
-      render: (fieldProps: any) => (
-        <ConfluenceIndexingModeField {...fieldProps} />
-      ),
+      render: (fieldProps) => <ConfluenceIndexingModeField {...fieldProps} />,
     },
     {
       label: 'Space Key',
