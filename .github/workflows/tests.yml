@@ -129,9 +129,8 @@ jobs:
 
       - name: Run unit test
         run: |
-          pipx ensurepath
-          pipx install pytest
-          pipx inject pytest pytest-cov pytest-asyncio pytest-xdist
+          uv sync --python 3.10 --group test --frozen
+          source .venv/bin/activate
           which pytest || echo "pytest not in PATH"
           echo "Start to run unit test"
           python3 run_tests.py
