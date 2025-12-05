@@ -60,11 +60,21 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
 def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
     mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
-    pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
+    mineru_server_url = os.environ.get("MINERU_SERVER_URL", "")
+    mineru_backend = os.environ.get("MINERU_BACKEND", "pipeline")
     parse_method = kwargs.get("parse_method", "raw")
+    
+    # Initialize parser with all configuration
+    pdf_parser = MinerUParser(
+        mineru_path=mineru_executable, 
+        mineru_api=mineru_api,
+        mineru_server_url=mineru_server_url
+    )
 
-    if not pdf_parser.check_installation():
-        callback(-1, "MinerU not found.")
+    # Check installation with the specified backend
+    ok, reason = pdf_parser.check_installation(backend=mineru_backend, server_url=mineru_server_url)
+    if not ok:
+        callback(-1, f"MinerU not found or backend unavailable: {reason}")
         return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
@@ -72,8 +82,8 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
         binary=binary,
         callback=callback,
         output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
-        backend=os.environ.get("MINERU_BACKEND", "pipeline"),
-        server_url=os.environ.get("MINERU_SERVER_URL", ""),
+        backend=mineru_backend,
+        server_url=mineru_server_url,
         delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
         parse_method=parse_method
     )
