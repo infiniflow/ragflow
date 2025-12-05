@@ -1205,15 +1205,6 @@ class TokenPonyChat(Base):
         super().__init__(key, model_name, base_url, **kwargs)
 
 
-class DeerAPIChat(Base):
-    _FACTORY_NAME = "DeerAPI"
-
-    def __init__(self, key, model_name, base_url="https://api.deerapi.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.deerapi.com/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1244,6 +1235,7 @@ class LiteLLMBase(ABC):
         "Jiekou.AI",
         "ZHIPU-AI",
         "MiniMax",
+        "DeerAPI",
     ]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
