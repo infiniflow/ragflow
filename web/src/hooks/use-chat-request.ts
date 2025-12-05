@@ -36,6 +36,7 @@ export const enum ChatApiAction {
   FetchDialog = 'fetchDialog',
   FetchConversationList = 'fetchConversationList',
   FetchConversation = 'fetchConversation',
+  FetchConversationManually = 'fetchConversationManually',
   UpdateConversation = 'updateConversation',
   RemoveConversation = 'removeConversation',
   DeleteMessage = 'deleteMessage',
@@ -268,6 +269,34 @@ export const useFetchConversation = () => {
 
   return { data, loading, refetch };
 };
+
+export function useFetchConversationManually() {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation<IClientConversation, unknown, string>({
+    mutationKey: [ChatApiAction.FetchConversationManually],
+    mutationFn: async (conversationId) => {
+      const { data } = await chatService.getConversation(
+        {
+          params: {
+            conversationId,
+          },
+        },
+        true,
+      );
+
+      const conversation = data?.data ?? {};
+
+      const messageList = buildMessageListWithUuid(conversation?.message);
+
+      return { ...conversation, message: messageList };
+    },
+  });
+
+  return { data, loading, fetchConversationManually: mutateAsync };
+}
 
 export const useUpdateConversation = () => {
   const { t } = useTranslation();

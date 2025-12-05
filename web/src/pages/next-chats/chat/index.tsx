@@ -15,13 +15,17 @@ import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import {
-  useFetchConversation,
+  useFetchConversationList,
+  useFetchConversationManually,
   useFetchDialog,
   useGetChatSearchParams,
 } from '@/hooks/use-chat-request';
+import { IClientConversation } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
+import { useMount } from 'ahooks';
 import { isEmpty } from 'lodash';
 import { ArrowUpRight, LogOut, Send } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
@@ -37,7 +41,10 @@ export default function Chat() {
   const { navigateToChatList } = useNavigatePage();
   const { data } = useFetchDialog();
   const { t } = useTranslation();
-  const { data: conversation } = useFetchConversation();
+  const [currentConversation, setCurrentConversation] =
+    useState<IClientConversation>({} as IClientConversation);
+
+  const { fetchConversationManually } = useFetchConversationManually();
 
   const { handleConversationCardClick, controller, stopOutputMessage } =
     useHandleClickConversationCard();
@@ -56,7 +63,37 @@ export default function Chat() {
 
   const { conversationId, isNew } = useGetChatSearchParams();
 
+  const { data: dialogList } = useFetchConversationList();
+
+  const currentConversationName = useMemo(() => {
+    return dialogList.find((x) => x.id === conversationId)?.name;
+  }, [conversationId, dialogList]);
+
   const { isDebugMode, switchDebugMode } = useSwitchDebugMode();
+
+  const fetchConversation: typeof handleConversationCardClick = useCallback(
+    async (conversationId, isNew) => {
+      if (conversationId && !isNew) {
+        const conversation = await fetchConversationManually(conversationId);
+        if (!isEmpty(conversation)) {
+          setCurrentConversation(conversation);
+        }
+      }
+    },
+    [fetchConversationManually],
+  );
+
+  const handleSessionClick: typeof handleConversationCardClick = useCallback(
+    (conversationId, isNew) => {
+      handleConversationCardClick(conversationId, isNew);
+      fetchConversation(conversationId, isNew);
+    },
+    [fetchConversation, handleConversationCardClick],
+  );
+
+  useMount(() => {
+    fetchConversation(conversationId, isNew === 'true');
+  });
 
   if (isDebugMode) {
     return (
@@ -104,7 +141,7 @@ export default function Chat() {
       <div className="flex flex-1 min-h-0 pb-9">
         <Sessions
           hasSingleChatBox={hasSingleChatBox}
-          handleConversationCardClick={handleConversationCardClick}
+          handleConversationCardClick={handleSessionClick}
           switchSettingVisible={switchSettingVisible}
         ></Sessions>
 
@@ -115,7 +152,7 @@ export default function Chat() {
                 className={cn('p-5', { 'border-b': hasSingleChatBox })}
               >
                 <CardTitle className="flex justify-between items-center text-base">
-                  <div className="truncate">{conversation.name}</div>
+                  <div className="truncate">{currentConversationName}</div>
                   <Button
                     variant={'ghost'}
                     onClick={switchDebugMode}
@@ -133,7 +170,7 @@ export default function Chat() {
                 <SingleChatBox
                   controller={controller}
                   stopOutputMessage={stopOutputMessage}
-                  conversation={conversation}
+                  conversation={currentConversation}
                 ></SingleChatBox>
               </CardContent>
             </Card>

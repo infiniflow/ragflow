@@ -139,19 +139,37 @@ export const useSendMessage = (controller: AbortController) => {
   const onUploadFile: NonNullable<FileUploadProps['onUpload']> = useCallback(
     async (files, options) => {
       if (
-        (isNew === 'true' || conversationId === '') &&
+        (conversationId === '' || isNew === 'true') &&
         Array.isArray(files) &&
         files.length
       ) {
-        const data = await setConversation(files[0].name, true);
+        const currentConversationId = generateConversationId();
+
+        if (conversationId === '') {
+          setConversationBoth(currentConversationId, 'true');
+        }
+
+        const data = await setConversation(
+          files[0].name,
+          true,
+          conversationId || currentConversationId,
+        );
         if (data.code === 0) {
+          setIsNew('');
           handleUploadFile(files, options, data.data?.id);
         }
       } else {
         handleUploadFile(files, options);
       }
     },
-    [conversationId, handleUploadFile, isNew, setConversation],
+    [
+      conversationId,
+      handleUploadFile,
+      isNew,
+      setConversation,
+      setConversationBoth,
+      setIsNew,
+    ],
   );
 
   const sendMessage = useCallback(

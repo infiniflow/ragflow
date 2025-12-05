@@ -10,7 +10,6 @@ import {
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { isEmpty } from 'lodash';
 import { useEffect } from 'react';
 import {
   useGetSendButtonDisabled,
@@ -58,25 +57,10 @@ export function SingleChatBox({
 
   useEffect(() => {
     const messages = conversation?.message;
-    if (
-      Array.isArray(messages) &&
-      isEmpty(derivedMessages)
-      // || !derivedMessages.some((x) => messages.some((y) => x.id === y.id)))
-    ) {
-      console.info(derivedMessages);
-      setDerivedMessages(
-        messages.map((x) => ({
-          ...x,
-          conversationId: conversationId,
-        })),
-      );
+    if (Array.isArray(messages)) {
+      setDerivedMessages(messages);
     }
-  }, [
-    conversationId,
-    derivedMessages,
-    setDerivedMessages,
-    conversation?.message,
-  ]);
+  }, [conversation?.message, setDerivedMessages]);
 
   return (
     <section className="flex flex-col p-5 h-full">

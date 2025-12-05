@@ -21,6 +21,7 @@ import {
   useSetDialog,
 } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
+import { IMessage } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
@@ -38,7 +39,6 @@ import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-creat
 import { useSendMessage } from '../../hooks/use-send-chat-message';
 import { useSendMultipleChatMessage } from '../../hooks/use-send-multiple-message';
 import { buildMessageItemReference } from '../../utils';
-import { IMessage } from '../interface';
 import { useAddChatBox } from '../use-add-box';
 
 type MultipleChatBoxProps = {
