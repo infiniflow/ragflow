@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<!--
+  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAGFlow WebSocket Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .config-section {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .config-section h2 {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+            font-size: 14px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        .status.disconnected {
+            background: #fee;
+            color: #c00;
+        }
+
+        .status.connected {
+            background: #efe;
+            color: #0a0;
+        }
+
+        .status.connecting {
+            background: #ffc;
+            color: #aa0;
+        }
+
+        .chat-section {
+            padding: 30px;
+        }
+
+        .messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            background: #f8f9fa;
+            margin-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message-content {
+            display: inline-block;
+            padding: 12px 16px;
+            border-radius: 12px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .message.assistant .message-content {
+            background: white;
+            border: 2px solid #e9ecef;
+            text-align: left;
+        }
+
+        .message-label {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .input-section {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-section input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .input-section input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        button.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        button.primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button.secondary {
+            background: #e9ecef;
+            color: #555;
+        }
+
+        button.secondary:hover:not(:disabled) {
+            background: #dee2e6;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .error {
+            background: #fee;
+            border: 2px solid #fcc;
+            color: #c00;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🚀 RAGFlow WebSocket Demo</h1>
+            <p>Real-time streaming chat with RAGFlow</p>
+        </div>
+
+        <!-- Configuration Section -->
+        <div class="config-section">
+            <h2>Connection Settings</h2>
+            <div class="form-group">
+                <label for="wsUrl">WebSocket URL</label>
+                <input type="text" id="wsUrl" placeholder="ws://localhost/v1/ws/chat" value="ws://localhost/v1/ws/chat">
+            </div>
+            <div class="form-group">
+                <label for="apiToken">API Token</label>
+                <input type="password" id="apiToken" placeholder="ragflow-your-api-token">
+            </div>
+            <div class="form-group">
+                <label for="chatId">Chat ID</label>
+                <input type="text" id="chatId" placeholder="your-chat-id">
+            </div>
+            <button id="connectBtn" class="primary" onclick="toggleConnection()">Connect</button>
+            <span id="status" class="status disconnected">Disconnected</span>
+            <div id="errorMsg" style="display: none;" class="error"></div>
+        </div>
+
+        <!-- Chat Section -->
+        <div class="chat-section">
+            <div id="messages" class="messages">
+                <div style="text-align: center; color: #888; padding: 40px;">
+                    👆 Configure connection settings above and click Connect
+                </div>
+            </div>
+            <div class="input-section">
+                <input type="text" id="messageInput" placeholder="Type your question..." disabled>
+                <button id="sendBtn" class="primary" onclick="sendMessage()" disabled>Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * RAGFlow WebSocket Client
+         * 
+         * This demo shows how to:
+         * - Connect to RAGFlow WebSocket API
+         * - Send chat messages
+         * - Receive and display streaming responses
+         * - Handle errors and reconnection
+         */
+
+        // WebSocket connection
+        let ws = null;
+        let sessionId = null;
+        let currentMessageDiv = null;
+
+        /**
+         * Toggle WebSocket connection (connect/disconnect)
+         */
+        function toggleConnection() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                // Disconnect
+                ws.close();
+            } else {
+                // Connect
+                connect();
+            }
+        }
+
+        /**
+         * Establish WebSocket connection
+         */
+        function connect() {
+            // Get configuration from form
+            const wsUrl = document.getElementById('wsUrl').value;
+            const apiToken = document.getElementById('apiToken').value;
+            const chatId = document.getElementById('chatId').value;
+
+            // Validate inputs
+            if (!wsUrl || !apiToken || !chatId) {
+                showError('Please fill in all connection settings');
+                return;
+            }
+
+            // Update UI to connecting state
+            updateStatus('connecting', 'Connecting...');
+            document.getElementById('connectBtn').disabled = true;
+
+            // Construct WebSocket URL with token
+            const url = `${wsUrl}?token=${apiToken}`;
+
+            try {
+                // Create WebSocket connection
+                ws = new WebSocket(url);
+
+                // Connection opened
+                ws.onopen = function(event) {
+                    console.log('✓ Connected to RAGFlow');
+                    updateStatus('connected', 'Connected');
+                    document.getElementById('connectBtn').textContent = 'Disconnect';
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('connectBtn').classList.remove('primary');
+                    document.getElementById('connectBtn').classList.add('secondary');
+                    document.getElementById('messageInput').disabled = false;
+                    document.getElementById('sendBtn').disabled = false;
+                    hideError();
+                    
+                    // Clear placeholder message
+                    document.getElementById('messages').innerHTML = '';
+                };
+
+                // Message received
+                ws.onmessage = function(event) {
+                    console.log('Received:', event.data);
+                    handleMessage(JSON.parse(event.data));
+                };
+
+                // Connection error
+                ws.onerror = function(error) {
+                    console.error('WebSocket error:', error);
+                    showError('Connection error. Please check your settings.');
+                };
+
+                // Connection closed
+                ws.onclose = function(event) {
+                    console.log('Connection closed:', event.code, event.reason);
+                    updateStatus('disconnected', 'Disconnected');
+                    document.getElementById('connectBtn').textContent = 'Connect';
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('connectBtn').classList.remove('secondary');
+                    document.getElementById('connectBtn').classList.add('primary');
+                    document.getElementById('messageInput').disabled = true;
+                    document.getElementById('sendBtn').disabled = true;
+                    
+                    if (event.code !== 1000) {
+                        showError(`Connection closed: ${event.code} - ${event.reason || 'Unknown reason'}`);
+                    }
+                };
+
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                showError('Failed to create WebSocket connection');
+                updateStatus('disconnected', 'Disconnected');
+                document.getElementById('connectBtn').disabled = false;
+            }
+        }
+
+        /**
+         * Send chat message through WebSocket
+         */
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const question = input.value.trim();
+
+            if (!question) {
+                return;
+            }
+
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                showError('Not connected. Please connect first.');
+                return;
+            }
+
+            // Get chat ID
+            const chatId = document.getElementById('chatId').value;
+
+            // Construct message
+            const message = {
+                type: 'chat',
+                chat_id: chatId,
+                question: question,
+                stream: true
+            };
+
+            // Include session ID if continuing conversation
+            if (sessionId) {
+                message.session_id = sessionId;
+            }
+
+            // Send message
+            try {
+                ws.send(JSON.stringify(message));
+                console.log('Sent:', message);
+
+                // Display user message
+                addMessage('user', question);
+
+                // Clear input
+                input.value = '';
+
+                // Prepare for assistant response
+                currentMessageDiv = addMessage('assistant', '');
+                
+            } catch (error) {
+                console.error('Failed to send message:', error);
+                showError('Failed to send message');
+            }
+        }
+
+        /**
+         * Handle incoming WebSocket message
+         */
+        function handleMessage(response) {
+            // Check for completion marker
+            if (response.data === true) {
+                console.log('✓ Stream completed');
+                currentMessageDiv = null;
+                return;
+            }
+
+            // Check for errors
+            if (response.code !== 0) {
+                console.error('Error:', response.message);
+                showError(`Error: ${response.message}`);
+                if (currentMessageDiv) {
+                    currentMessageDiv.querySelector('.message-content').innerHTML = 
+                        `<strong style="color: red;">Error:</strong> ${response.message}`;
+                }
+                currentMessageDiv = null;
+                return;
+            }
+
+            // Extract response data
+            const data = response.data;
+
+            if (typeof data === 'object' && data !== null) {
+                // Save session ID
+                if (data.session_id && !sessionId) {
+                    sessionId = data.session_id;
+                    console.log('Session ID:', sessionId);
+                }
+
+                // Append answer chunk
+                if (data.answer && currentMessageDiv) {
+                    const contentDiv = currentMessageDiv.querySelector('.message-content');
+                    contentDiv.textContent += data.answer;
+                    
+                    // Auto-scroll to bottom
+                    const messagesDiv = document.getElementById('messages');
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                }
+
+                // Display references
+                if (data.reference && data.reference.chunks && data.reference.chunks.length > 0) {
+                    console.log('References:', data.reference.chunks);
+                }
+            }
+        }
+
+        /**
+         * Add message to chat display
+         */
+        function addMessage(role, content) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            
+            const label = role === 'user' ? '👤 You' : '🤖 RAGFlow';
+            
+            messageDiv.innerHTML = `
+                <div class="message-label">${label}</div>
+                <div class="message-content">${content || '<span class="loading"></span>'}</div>
+            `;
+            
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            return messageDiv;
+        }
+
+        /**
+         * Update connection status display
+         */
+        function updateStatus(state, text) {
+            const statusSpan = document.getElementById('status');
+            statusSpan.className = `status ${state}`;
+            statusSpan.textContent = text;
+        }
+
+        /**
+         * Show error message
+         */
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMsg');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        /**
+         * Hide error message
+         */
+        function hideError() {
+            const errorDiv = document.getElementById('errorMsg');
+            errorDiv.style.display = 'none';
+        }
+
+        /**
+         * Handle Enter key in message input
+         */
+        document.getElementById('messageInput').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Load saved settings from localStorage
+        window.addEventListener('load', function() {
+            const savedUrl = localStorage.getItem('ragflow_ws_url');
+            const savedToken = localStorage.getItem('ragflow_api_token');
+            const savedChatId = localStorage.getItem('ragflow_chat_id');
+
+            if (savedUrl) document.getElementById('wsUrl').value = savedUrl;
+            if (savedToken) document.getElementById('apiToken').value = savedToken;
+            if (savedChatId) document.getElementById('chatId').value = savedChatId;
+        });
+
+        // Save settings to localStorage on change
+        ['wsUrl', 'apiToken', 'chatId'].forEach(function(id) {
+            document.getElementById(id).addEventListener('change', function() {
+                localStorage.setItem('ragflow_' + id.toLowerCase().replace('id', '_id'), this.value);
+            });
+        });
+    </script>
+</body>
+</html>
+
