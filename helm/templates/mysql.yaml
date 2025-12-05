@@ -1,3 +1,4 @@
+{{- if .Values.mysql.enabled }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -32,7 +33,7 @@ spec:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: mysql
   {{- with .Values.mysql.deployment.strategy }}
-  strategy:
+  updateStrategy:
     {{- . | toYaml | nindent 4 }}
   {{- end }}
   template:
@@ -44,9 +45,9 @@ spec:
         checksum/config-mysql: {{ include (print $.Template.BasePath "/mysql-config.yaml") . | sha256sum }}
         checksum/config-env: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
     spec:
-      {{- if or .Values.imagePullSecrets .Values.mysql.image.pullSecrets }}
+      {{- if or .Values.global.imagePullSecrets .Values.mysql.image.pullSecrets }}
       imagePullSecrets:
-        {{- with .Values.imagePullSecrets }}
+        {{- with .Values.global.imagePullSecrets }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         {{- with .Values.mysql.image.pullSecrets }}
@@ -55,7 +56,7 @@ spec:
       {{- end }}
       containers:
       - name: mysql
-        image: {{ .Values.mysql.image.repository }}:{{ .Values.mysql.image.tag }}
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.mysql.image.repository) }}:{{ .Values.mysql.image.tag }}
         {{- with .Values.mysql.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}
@@ -108,3 +109,4 @@ spec:
       port: 3306
       targetPort: mysql
   type: {{ .Values.mysql.service.type }}
+{{- end }}
