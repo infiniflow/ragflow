@@ -4,6 +4,7 @@ import { t } from 'i18next';
 import { ConfluenceIndexingModeField } from './component/confluence-token-field';
 import GmailTokenField from './component/gmail-token-field';
 import GoogleDriveTokenField from './component/google-drive-token-field';
+
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   S3 = 's3',
@@ -14,6 +15,7 @@ export enum DataSourceKey {
   GMAIL = 'gmail',
   JIRA = 'jira',
   WEBDAV = 'webdav',
+  BOX = 'box',
   DROPBOX = 'dropbox',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
@@ -70,6 +72,11 @@ export const DataSourceInfo = {
     name: 'Dropbox',
     description: t(`setting.${DataSourceKey.DROPBOX}Description`),
     icon: <SvgIcon name={'data-source/dropbox'} width={38} />,
+  },
+  [DataSourceKey.BOX]: {
+    name: 'Box',
+    description: t(`setting.${DataSourceKey.BOX}Description`),
+    icon: <SvgIcon name={'data-source/box'} width={38} />,
   },
 };
 
@@ -233,11 +240,13 @@ export const DataSourceFormFields = {
     {
       label: 'Index Method',
       name: 'config.index_mode',
-      type: FormFieldType.Text, // keep as text so RHF registers it
+      type: FormFieldType.Text,
       required: false,
       horizontal: true,
       labelClassName: 'self-start pt-4',
-      render: (fieldProps) => <ConfluenceIndexingModeField {...fieldProps} />,
+      render: (fieldProps: any) => (
+        <ConfluenceIndexingModeField {...fieldProps} />
+      ),
     },
     {
       label: 'Space Key',
@@ -548,6 +557,41 @@ export const DataSourceFormFields = {
       placeholder: 'Defaults to 2',
     },
   ],
+  [DataSourceKey.BOX]: [
+    {
+      label: 'Client ID',
+      name: 'config.credentials.box_client_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Client Secret',
+      name: 'config.credentials.box_client_secret',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Redirect URI',
+      name: 'config.credentials.box_redirect_uri',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://example.com/oauth2/callback',
+    },
+    {
+      label: 'Folder ID',
+      name: 'config.folder_id',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'Defaults to root (0)',
+    },
+    {
+      label: 'Index recursively',
+      name: 'config.index_recursively',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: false,
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -680,6 +724,20 @@ export const DataSourceFormDefaultValues = {
       batch_size: 2,
       credentials: {
         dropbox_access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.BOX]: {
+    name: '',
+    source: DataSourceKey.BOX,
+    config: {
+      name: '',
+      folder_id: '0',
+      index_recursively: false,
+      credentials: {
+        box_client_id: '',
+        box_client_secret: '',
+        box_redirect_uri: '',
       },
     },
   },

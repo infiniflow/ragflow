@@ -591,6 +591,19 @@ wheels = [
 ]
 
 [[package]]
+name = "boxsdk"
+version = "10.1.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "requests-toolbelt" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/44/a6/b7afb8ee4745b61470322ada33c0463b26d221367bc23c8e8c7d4b7b6cbe/boxsdk-10.1.0.tar.gz", hash = "sha256:fb409b682d173eeb9a72c03ca0dddf2e66dbd79199235815a2ad61bf39c4f231", size = 265229, upload-time = "2025-11-19T11:32:01.438Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/bf/49/bf3b693025471431ab89252f287e2203394ef0965450af3fd1b995d39646/boxsdk-10.1.0-py3-none-any.whl", hash = "sha256:2770aa7111fdd6a14a6e6447ca2f3eeb306ed123b210368368e8ac938cfb7813", size = 556301, upload-time = "2025-11-19T11:32:00.168Z" },
+]
+
+[[package]]
 name = "brotli"
 version = "1.2.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -3925,12 +3938,12 @@ name = "onnxruntime-gpu"
 version = "1.19.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "coloredlogs" },
-    { name = "flatbuffers" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "protobuf" },
-    { name = "sympy" },
+    { name = "coloredlogs", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "flatbuffers", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "numpy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "packaging", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "protobuf", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "sympy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d0/9c/3fa310e0730643051eb88e884f19813a6c8b67d0fbafcda610d960e589db/onnxruntime_gpu-1.19.2-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a49740e079e7c5215830d30cde3df792e903df007aa0b0fd7aa797937061b27a", size = 226178508, upload-time = "2024-09-04T06:43:40.83Z" },
@@ -5482,6 +5495,7 @@ dependencies = [
     { name = "blinker" },
     { name = "boto3" },
     { name = "botocore" },
+    { name = "boxsdk" },
     { name = "cachetools" },
     { name = "captcha" },
     { name = "chardet" },
@@ -5647,6 +5661,7 @@ requires-dist = [
     { name = "blinker", specifier = "==1.7.0" },
     { name = "boto3", specifier = "==1.34.140" },
     { name = "botocore", specifier = "==1.34.140" },
+    { name = "boxsdk", specifier = ">=10.1.0" },
     { name = "cachetools", specifier = "==5.3.3" },
     { name = "captcha", specifier = ">=0.7.1" },
     { name = "chardet", specifier = "==5.2.0" },
