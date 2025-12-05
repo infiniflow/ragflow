@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useParams } from 'umi';
-import { useChatUrlParams } from './use-send-chat-message';
+import { useChatUrlParams } from './use-chat-url';
 import { useSetConversation } from './use-set-conversation';
 
 export const useCreateConversationBeforeUploadDocument = () => {

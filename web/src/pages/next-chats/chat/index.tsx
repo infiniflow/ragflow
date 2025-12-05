@@ -50,13 +50,10 @@ export default function Chat() {
     useHandleClickConversationCard();
   const { visible: settingVisible, switchVisible: switchSettingVisible } =
     useSetModalState(true);
-  const {
-    removeChatBox,
-    addChatBox,
-    chatBoxIds,
-    hasSingleChatBox,
-    hasThreeChatBox,
-  } = useAddChatBox();
+
+  const { isDebugMode, switchDebugMode } = useSwitchDebugMode();
+  const { removeChatBox, addChatBox, chatBoxIds, hasSingleChatBox } =
+    useAddChatBox(isDebugMode);
 
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
@@ -68,8 +65,6 @@ export default function Chat() {
   const currentConversationName = useMemo(() => {
     return dialogList.find((x) => x.id === conversationId)?.name;
   }, [conversationId, dialogList]);
-
-  const { isDebugMode, switchDebugMode } = useSwitchDebugMode();
 
   const fetchConversation: typeof handleConversationCardClick = useCallback(
     async (conversationId, isNew) => {
@@ -112,6 +107,7 @@ export default function Chat() {
           removeChatBox={removeChatBox}
           addChatBox={addChatBox}
           stopOutputMessage={stopOutputMessage}
+          conversation={currentConversation}
         ></MultipleChatBox>
       </section>
     );
@@ -153,15 +149,7 @@ export default function Chat() {
               >
                 <CardTitle className="flex justify-between items-center text-base">
                   <div className="truncate">{currentConversationName}</div>
-                  <Button
-                    variant={'ghost'}
-                    onClick={switchDebugMode}
-                    disabled={
-                      hasThreeChatBox ||
-                      isEmpty(conversationId) ||
-                      isNew === 'true'
-                    }
-                  >
+                  <Button variant={'ghost'} onClick={switchDebugMode}>
                     <ArrowUpRight /> {t('chat.multipleModels')}
                   </Button>
                 </CardTitle>

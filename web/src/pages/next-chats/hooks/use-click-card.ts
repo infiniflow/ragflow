@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useChatUrlParams } from './use-send-chat-message';
+import { useChatUrlParams } from './use-chat-url';
 
 export function useHandleClickConversationCard() {
   const [controller, setController] = useState(new AbortController());

@@ -62,6 +62,13 @@ export function SingleChatBox({
     }
   }, [conversation?.message, setDerivedMessages]);
 
+  useEffect(() => {
+    // Clear the message list after deleting the conversation.
+    if (conversationId === '') {
+      setDerivedMessages([]);
+    }
+  }, [conversationId, setDerivedMessages]);
+
   return (
     <section className="flex flex-col p-5 h-full">
       <div ref={messageContainerRef} className="flex-1 overflow-auto min-h-0">
