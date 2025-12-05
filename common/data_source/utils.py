@@ -1146,3 +1146,4 @@ def parallel_yield(gens: list[Iterator[R]], max_workers: int = 10) -> Iterator[R
                     future_to_index[executor.submit(_next_or_none, ind, gens[ind])] = next_ind
                     next_ind += 1
                 del future_to_index[future]
+
