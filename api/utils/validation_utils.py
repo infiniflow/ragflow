@@ -364,10 +364,20 @@ class CreateDatasetReq(Base):
     description: Annotated[str | None, Field(default=None, max_length=65535)]
     embedding_model: Annotated[str | None, Field(default=None, max_length=255, serialization_alias="embd_id")]
     permission: Annotated[Literal["me", "team"], Field(default="me", min_length=1, max_length=16)]
+    shared_tenant_id: Annotated[str | None, Field(default=None, max_length=32, description="Specific tenant ID to share with when permission is 'team'")]
     chunk_method: Annotated[str | None, Field(default=None, serialization_alias="parser_id")]
     parse_type: Annotated[int | None, Field(default=None, ge=0, le=64)]
     pipeline_id: Annotated[str | None, Field(default=None, min_length=32, max_length=32, serialization_alias="pipeline_id")]
     parser_config: Annotated[ParserConfig | None, Field(default=None)]
+    
+    @field_validator("shared_tenant_id", mode="after")
+    @classmethod
+    def validate_shared_tenant_id(cls, v: str | None, info: Any) -> str | None:
+        """Validate that shared_tenant_id is only set when permission is 'team'."""
+        permission: str = info.data.get("permission", "me")
+        if v is not None and permission != "team":
+            raise ValueError("shared_tenant_id can only be set when permission is 'team'")
+        return v
 
     @field_validator("avatar", mode="after")
     @classmethod

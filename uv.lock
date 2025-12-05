@@ -5626,6 +5626,7 @@ dependencies = [
     { name = "html-text" },
     { name = "httpx", extra = ["socks"] },
     { name = "huggingface-hub" },
+    { name = "hypothesis" },
     { name = "imageio-ffmpeg" },
     { name = "infinity-emb" },
     { name = "infinity-sdk" },
@@ -5687,6 +5688,7 @@ dependencies = [
     { name = "ranx" },
     { name = "readability-lxml" },
     { name = "replicate" },
+    { name = "reportlab" },
     { name = "requests" },
     { name = "roman-numbers" },
     { name = "ruamel-base" },
@@ -5728,6 +5730,7 @@ test = [
     { name = "hypothesis" },
     { name = "openpyxl" },
     { name = "pillow" },
+    { name = "pycryptodomex" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -5737,6 +5740,7 @@ test = [
     { name = "reportlab" },
     { name = "requests" },
     { name = "requests-toolbelt" },
+    { name = "strenum" },
 ]
 
 [package.metadata]
@@ -5793,6 +5797,7 @@ requires-dist = [
     { name = "html-text", specifier = "==0.6.2" },
     { name = "httpx", extras = ["socks"], specifier = ">=0.28.1,<0.29.0" },
     { name = "huggingface-hub", specifier = ">=0.25.0,<0.26.0" },
+    { name = "hypothesis", specifier = ">=6.132.0" },
     { name = "imageio-ffmpeg", specifier = ">=0.6.0" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
     { name = "infinity-sdk", specifier = "==0.6.10" },
@@ -5854,6 +5859,7 @@ requires-dist = [
     { name = "ranx", specifier = "==0.3.20" },
     { name = "readability-lxml", specifier = "==0.8.1" },
     { name = "replicate", specifier = "==0.31.0" },
+    { name = "reportlab", specifier = ">=4.4.3" },
     { name = "requests", specifier = "==2.32.2" },
     { name = "roman-numbers", specifier = "==1.0.2" },
     { name = "ruamel-base", specifier = "==1.0.0" },
@@ -5895,15 +5901,17 @@ test = [
     { name = "hypothesis", specifier = ">=6.132.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pillow", specifier = ">=10.4.0" },
+    { name = "pycryptodomex", specifier = "==3.20.0" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "python-docx", specifier = ">=1.1.2" },
     { name = "python-pptx", specifier = ">=1.0.2" },
-    { name = "reportlab", specifier = ">=4.4.1" },
+    { name = "reportlab", specifier = ">=4.4.3" },
     { name = "requests", specifier = ">=2.32.2" },
     { name = "requests-toolbelt", specifier = ">=1.0.0" },
+    { name = "strenum", specifier = "==0.4.15" },
 ]
 
 [[package]]

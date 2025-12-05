@@ -43,8 +43,8 @@ def decrypt(line):
 
 def decrypt2(crypt_text):
     from base64 import b64decode, b16decode
-    from Crypto.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
-    from Crypto.PublicKey import RSA
+    from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
+    from Cryptodome.PublicKey import RSA
     decode_data = b64decode(crypt_text)
     if len(decode_data) == 127:
         hex_fixed = '00' + decode_data.hex()

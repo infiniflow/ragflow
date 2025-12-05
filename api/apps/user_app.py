@@ -15,27 +15,42 @@
 #
 import json
 import logging
-import string
 import os
 import re
 import secrets
+import string
 import time
 from datetime import datetime
+from typing import Any, Dict, List, Match, Optional
 
-from quart import redirect, request, session, make_response
+from quart import (
+    make_response,
+    redirect,
+    request,
+    Response,
+    session,
+)
+
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from api.apps import (
+    current_user,
+    login_required,
+    login_user,
+    logout_user,
+    smtp_mail_server,
+)
 from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
-from api.db.db_models import TenantLLM
+from api.db.db_models import TenantLLM, User
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import get_init_tenant_llm
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.db.services.user_service import TenantService, UserService, UserTenantService
-from common.time_utils import current_timestamp, datetime_format, get_format_time
-from common.misc_utils import download_img, get_uuid
-from common.constants import RetCode
-from common.connection_utils import construct_response
+from api.db.services.user_service import (
+    TenantService,
+    UserService,
+    UserTenantService,
+)
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
@@ -44,21 +59,60 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.utils.crypt import decrypt
-from rag.utils.redis_conn import REDIS_CONN
-from api.apps import smtp_mail_server, login_required, current_user, login_user, logout_user
 from api.utils.web_utils import (
-    send_email_html,
-    OTP_LENGTH,
-    OTP_TTL_SECONDS,
     ATTEMPT_LIMIT,
     ATTEMPT_LOCK_SECONDS,
+    OTP_LENGTH,
+    OTP_TTL_SECONDS,
     RESEND_COOLDOWN_SECONDS,
-    otp_keys,
-    hash_code,
     captcha_key,
+    hash_code,
+    otp_keys,
+    send_email_html,
 )
 from common import settings
+from common.connection_utils import construct_response
+from common.constants import RetCode
+from common.misc_utils import download_img, get_uuid
+from common.time_utils import current_timestamp, datetime_format, get_format_time
+from rag.utils.redis_conn import REDIS_CONN
 from common.http_client import async_request
+
+
+def sanitize_nickname(nickname: str) -> str:
+    """Sanitize nickname to prevent XSS and control character injection.
+    
+    Args:
+        nickname: Raw nickname string to sanitize.
+        
+    Returns:
+        Sanitized nickname with XSS payloads and control characters removed.
+    """
+    if not nickname:
+        return nickname
+    
+    # Remove control characters (null bytes, carriage returns, line feeds)
+    nickname = nickname.replace("\x00", "")  # Null byte
+    nickname = nickname.replace("\r", "")    # Carriage return
+    nickname = nickname.replace("\n", "")    # Line feed
+    
+    # Remove XSS payloads - script tags (case insensitive, handles nested/escaped tags)
+    # First remove complete script tags with content
+    nickname = re.sub(r"<script[^>]*>.*?</script>", "", nickname, flags=re.IGNORECASE | re.DOTALL)
+    nickname = re.sub(r"<iframe[^>]*>.*?</iframe>", "", nickname, flags=re.IGNORECASE | re.DOTALL)
+    
+    # Remove javascript: protocol (case insensitive)
+    nickname = re.sub(r"javascript:", "", nickname, flags=re.IGNORECASE)
+    
+    # Remove img tags with event handlers (onerror, onclick, etc.)
+    nickname = re.sub(r"<img[^>]*on\w+\s*=[^>]*>", "", nickname, flags=re.IGNORECASE)
+    
+    # Remove any remaining script/iframe opening and closing tags (handles cases like <<SCRIPT>)
+    # Match <script> or </script> (case insensitive, handles variations)
+    nickname = re.sub(r"<+/?\s*script[^>]*>", "", nickname, flags=re.IGNORECASE)
+    nickname = re.sub(r"<+/?\s*iframe[^>]*>", "", nickname, flags=re.IGNORECASE)
+    
+    return nickname
 
 
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
@@ -706,8 +760,8 @@ async def user_add():
     req = await get_request_json()
     email_address = req["email"]
 
-    # Validate the email address
-    if not re.match(r"^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$", email_address):
+    # Validate the email address (allow + in local part)
+    if not re.match(r"^[\w\._\+-]+@([\w_-]+\.)+[\w-]{2,}$", email_address):
         return get_json_result(
             data=False,
             message=f"Invalid email address: {email_address}!",
@@ -754,6 +808,736 @@ async def user_add():
         return get_json_result(
             data=False,
             message=f"User registration failure, error: {str(e)}",
+            code=RetCode.EXCEPTION_ERROR,
+        )
+
+
+@manager.route("/create", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("nickname", "email", "password")
+async def create_user() -> Response:
+    """
+    Create a new user.
+
+    ---
+    tags:
+      - User
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        description: User creation details.
+        required: true
+        schema:
+          type: object
+          properties:
+            nickname:
+              type: string
+              description: User nickname.
+            email:
+              type: string
+              description: User email.
+            password:
+              type: string
+              description: User password (plain text or RSA-encrypted).
+            is_superuser:
+              type: boolean
+              description: Whether the user should be a superuser (admin).
+              default: false
+    responses:
+      200:
+        description: User created successfully.
+        schema:
+          type: object
+          properties:
+            id:
+              type: string
+              description: User ID.
+            email:
+              type: string
+              description: User email.
+            nickname:
+              type: string
+              description: User nickname.
+      400:
+        description: Invalid request or email already exists.
+        schema:
+          type: object
+      500:
+        description: Server error during user creation.
+        schema:
+          type: object
+    """
+    req_json = await request.json
+    if req_json is None:
+        return get_json_result(
+            data=False,
+            message="Request body is required!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
+    req: Dict[str, Any] = req_json
+    email_address: str = str(req.get("email", ""))
+    
+    # Validate email is provided
+    if not email_address:
+        return get_json_result(
+            data=False,
+            message="Email is required!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
+    # Sanitize control characters from email (null bytes, carriage returns, line feeds)
+    email_address = email_address.replace("\x00", "")  # Null byte
+    email_address = email_address.replace("\r", "")    # Carriage return
+    email_address = email_address.replace("\n", "")    # Line feed
+    
+    # Validate email length (RFC 5321: local part max 64 chars, total max 254 chars)
+    if len(email_address) > 254:
+        return get_json_result(
+            data=False,
+            message="Invalid email address: email is too long (max 254 characters)!",
+            code=RetCode.OPERATING_ERROR,
+        )
+    
+    # Split email to check local part length
+    email_parts: List[str] = email_address.split("@")
+    if len(email_parts) != 2:
+        return get_json_result(
+            data=False,
+            message=f"Invalid email address: {email_address}!",
+            code=RetCode.OPERATING_ERROR,
+        )
+    
+    local_part: str = email_parts[0]
+    if len(local_part) > 64:
+        return get_json_result(
+            data=False,
+            message="Invalid email address: local part is too long (max 64 characters)!",
+            code=RetCode.OPERATING_ERROR,
+        )
+
+    # Validate the email address format (allow + in local part)
+    email_match: Optional[Match[str]] = re.match(
+        r"^[\w\._\+-]+@([\w_-]+\.)+[\w-]{2,}$", email_address
+    )
+    if not email_match:
+        return get_json_result(
+            data=False,
+            message=f"Invalid email address: {email_address}!",
+            code=RetCode.OPERATING_ERROR,
+        )
+
+    # Check if the email address is already used
+    existing_users_query = UserService.query(email=email_address)
+    existing_users_list: List[User] = list(existing_users_query)
+    if existing_users_list:
+        return get_json_result(
+            data=False,
+            message=f"Email: {email_address} has already registered!",
+            code=RetCode.OPERATING_ERROR,
+        )
+
+    # Construct user info data
+    nickname: str = str(req.get("nickname", ""))
+    # Sanitize nickname to prevent XSS and control character injection
+    nickname = sanitize_nickname(nickname)
+    
+    is_superuser: bool = bool(req.get("is_superuser", False))
+    
+    # Accept both encrypted (like /user/register) and plain text passwords
+    password_input: str = str(req.get("password", ""))
+    
+    # Validate password is not empty
+    if not password_input or not password_input.strip():
+        return get_json_result(
+            data=False,
+            message="Password cannot be empty!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    
+    # Try to decrypt password (if it's RSA-encrypted like from /user/register)
+    # If decryption fails, treat as plain text (backward compatibility)
+    try:
+        password: str = decrypt(password_input)
+    except BaseException:
+        # Not encrypted, use as plain text
+        password = password_input
+
+    user_dict: Dict[str, Any] = {
+        "access_token": get_uuid(),
+        "email": email_address,
+        "nickname": nickname,
+        "password": password,
+        "login_channel": "password",
+        "last_login_time": get_format_time(),
+        "is_superuser": is_superuser,
+    }
+
+    user_id: str = get_uuid()
+    try:
+        users_query = user_register(user_id, user_dict)
+        if not users_query:
+            raise Exception(f"Fail to create user {email_address}.")
+        users_list: List[User] = list(users_query)
+        if len(users_list) > 1:
+            raise Exception(f"Same email: {email_address} exists!")
+
+        user: User = users_list[0]
+        return get_json_result(
+            data=user.to_dict(),
+            message=f"User {nickname} created successfully!",
+        )
+    except Exception as e:
+        rollback_user_registration(user_id)
+        logging.exception(e)
+        return get_json_result(
+            data=False,
+            message=f"User creation failure, error: {str(e)}",
+            code=RetCode.EXCEPTION_ERROR,
+        )
+
+
+@manager.route("/update", methods=["PUT"])  # noqa: F821
+@login_required
+async def update_user() -> Response:
+    """
+    Update an existing user. Users can only update their own account.
+    ---
+    tags:
+      - User
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        description: User update details.
+        required: true
+        schema:
+          type: object
+          properties:
+            user_id:
+              type: string
+              description: User ID to update (optional if email is provided).
+            email:
+              type: string
+              description: User email to identify the user (optional if user_id
+                is provided). If user_id is provided, this can be used as
+                new_email.
+            new_email:
+              type: string
+              description: New email address (optional). Use this to update email
+                when identifying user by user_id.
+            nickname:
+              type: string
+              description: New nickname (optional).
+            password:
+              type: string
+              description: New password (encrypted, optional).
+            is_superuser:
+              type: boolean
+              description: Whether the user should be a superuser (optional).
+    responses:
+      200:
+        description: User updated successfully.
+        schema:
+          type: object
+          properties:
+            id:
+              type: string
+              description: User ID.
+            email:
+              type: string
+              description: User email.
+            nickname:
+              type: string
+              description: User nickname.
+      400:
+        description: Invalid request or user not found.
+        schema:
+          type: object
+      500:
+        description: Server error during user update.
+        schema:
+          type: object
+    """
+    req_json = await request.json
+    if req_json is None:
+        return get_json_result(
+            data=False,
+            message="Request body is required!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
+    req: Dict[str, Any] = req_json
+    user_id: Optional[str] = req.get("user_id")
+    email: Optional[str] = req.get("email")
+    identified_by_user_id: bool = bool(user_id)
+
+    # Validate that either user_id or email is provided
+    if not user_id and not email:
+        return get_json_result(
+            data=False,
+            message="Either user_id or email must be provided!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
+    # Find the user by user_id or email
+    user: Optional[User] = None
+
+    if user_id:
+        user = UserService.filter_by_id(user_id)
+    elif email:
+        # Validate the email address format (allow + in local part)
+        email_match: Optional[Match[str]] = re.match(
+            r"^[\w\._\+-]+@([\w_-]+\.)+[\w-]{2,}$", email
+        )
+        if not email_match:
+            return get_json_result(
+                data=False,
+                message=f"Invalid email address: {email}!",
+                code=RetCode.OPERATING_ERROR,
+            )
+
+        users_query = UserService.query(email=email)
+        users_list: List[User] = list(users_query)
+        if not users_list:
+            return get_json_result(
+                data=False,
+                message=f"User with email: {email} not found!",
+                code=RetCode.DATA_ERROR,
+            )
+        if len(users_list) > 1:
+            return get_json_result(
+                data=False,
+                message=f"Multiple users found with email: {email}!",
+                code=RetCode.DATA_ERROR,
+            )
+        user = users_list[0]
+        user_id = user.id
+
+    if not user:
+        return get_json_result(
+            data=False,
+            message="User not found!",
+            code=RetCode.DATA_ERROR,
+        )
+
+    # Ensure user can only update themselves
+    if user.id != current_user.id:
+        return get_json_result(
+            data=False,
+            message="You can only update your own account!",
+            code=RetCode.FORBIDDEN,
+        )
+
+    # Build update dictionary
+    update_dict: Dict[str, Any] = {}
+
+    # Handle nickname update
+    # Allow empty nickname (empty string is a valid value)
+    if "nickname" in req:
+        nickname: Any = req.get("nickname")
+        # Only skip if explicitly None, allow empty strings
+        if nickname is not None:
+            update_dict["nickname"] = nickname
+
+    # Handle password update
+    if "password" in req and req["password"]:
+        try:
+            password: str = decrypt(req["password"])
+            update_dict["password"] = generate_password_hash(password)
+        except BaseException:
+            return get_json_result(
+                data=False,
+                code=RetCode.SERVER_ERROR,
+                message="Fail to decrypt password",
+            )
+
+    # Handle email update
+    # If user_id was used to identify, "email" in req can be the new email
+    # Otherwise, use "new_email" field
+    new_email: Optional[str] = None
+    if identified_by_user_id and "email" in req and req["email"]:
+        new_email = req["email"]
+    elif "new_email" in req and req["new_email"]:
+        new_email = req["new_email"]
+
+    if new_email:
+        # Validate the new email address format (allow + in local part)
+        email_match: Optional[Match[str]] = re.match(
+            r"^[\w\._\+-]+@([\w_-]+\.)+[\w-]{2,}$", new_email
+        )
+        if not email_match:
+            return get_json_result(
+                data=False,
+                message=f"Invalid email address: {new_email}!",
+                code=RetCode.OPERATING_ERROR,
+            )
+
+        # Check if the new email is already used by another user
+        existing_users_query = UserService.query(email=new_email)
+        existing_users_list: List[User] = list(existing_users_query)
+        if existing_users_list and existing_users_list[0].id != user_id:
+            return get_json_result(
+                data=False,
+                message=(
+                    f"Email: {new_email} is already in use by another user!"
+                ),
+                code=RetCode.OPERATING_ERROR,
+            )
+        update_dict["email"] = new_email
+
+    # Handle is_superuser update
+    if "is_superuser" in req:
+        is_superuser: bool = req.get("is_superuser", False)
+        update_dict["is_superuser"] = is_superuser
+
+    # If no fields to update, return error
+    if not update_dict:
+        return get_json_result(
+            data=False,
+            message="No valid fields to update!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
+    # Update the user
+    try:
+        UserService.update_user(user_id, update_dict)
+        # Fetch updated user
+        updated_user: Optional[User] = UserService.filter_by_id(user_id)
+        if not updated_user:
+            return get_json_result(
+                data=False,
+                message="User updated but could not retrieve updated data!",
+                code=RetCode.EXCEPTION_ERROR,
+            )
+        return get_json_result(
+            data=updated_user.to_dict(),
+            message=f"User {updated_user.nickname} updated successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(
+            data=False,
+            message=f"User update failure, error: {str(e)}",
+            code=RetCode.EXCEPTION_ERROR,
+        )
+
+
+@manager.route("/list", methods=["GET"])  # noqa: F821
+@login_required
+def list_users() -> Response:
+    """
+    List all users.
+
+    ---
+    tags:
+      - User
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: query
+        name: page
+        type: integer
+        description: Page number for pagination (optional).
+        required: false
+      - in: query
+        name: page_size
+        type: integer
+        description: Number of items per page (optional).
+        required: false
+      - in: query
+        name: email
+        type: string
+        description: Filter by email address (optional).
+        required: false
+    responses:
+      200:
+        description: Users retrieved successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: object
+              properties:
+                users:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        description: User ID.
+                      email:
+                        type: string
+                        description: User email.
+                      nickname:
+                        type: string
+                        description: User nickname.
+                      is_superuser:
+                        type: boolean
+                        description: Whether the user is a superuser.
+                total:
+                  type: integer
+                  description: Total number of users.
+      401:
+        description: Unauthorized - authentication required.
+        schema:
+          type: object
+      500:
+        description: Server error during user listing.
+        schema:
+          type: object
+    """
+    # Explicitly check authentication status
+    if not current_user.is_authenticated:
+        return get_json_result(
+            data=False,
+            message="Unauthorized",
+            code=RetCode.UNAUTHORIZED,
+        )
+    
+    try:
+        # Get query parameters
+        page: Optional[int] = None
+        page_size: Optional[int] = None
+        email_filter: Optional[str] = None
+
+        if request.args:
+            page_str: Optional[str] = request.args.get("page")
+            if page_str:
+                try:
+                    page = int(page_str)
+                except ValueError:
+                    return get_json_result(
+                        data=False,
+                        message="Invalid page parameter!",
+                        code=RetCode.ARGUMENT_ERROR,
+                    )
+
+            page_size_str: Optional[str] = request.args.get("page_size")
+            if page_size_str:
+                try:
+                    page_size = int(page_size_str)
+                except ValueError:
+                    return get_json_result(
+                        data=False,
+                        message="Invalid page_size parameter!",
+                        code=RetCode.ARGUMENT_ERROR,
+                    )
+
+            email_filter = request.args.get("email")
+
+        # Validate pagination parameters if provided
+        if page is not None and page_size is not None:
+            if page < 1:
+                return get_json_result(
+                    data=False,
+                    message="Page number must be greater than 0!",
+                    code=RetCode.ARGUMENT_ERROR,
+                )
+            if page_size < 1:
+                return get_json_result(
+                    data=False,
+                    message="Page size must be greater than 0!",
+                    code=RetCode.ARGUMENT_ERROR,
+                )
+
+        # Build query
+        if email_filter:
+            # Validate email format if provided (allow + in local part)
+            email_match: Optional[Match[str]] = re.match(
+                r"^[\w\._\+-]+@([\w_-]+\.)+[\w-]{2,}$", email_filter
+            )
+            if not email_match:
+                return get_json_result(
+                    data=False,
+                    message=f"Invalid email address: {email_filter}!",
+                    code=RetCode.OPERATING_ERROR,
+                )
+            users_query = UserService.model.select().where(UserService.model.email == email_filter)
+        else:
+            users_query = UserService.model.select()
+
+        # Get total count before pagination
+        total: int = users_query.count()
+
+        # Apply pagination at database level
+        if page is not None and page_size is not None:
+            users_query = users_query.paginate(page, page_size)
+
+        # Convert to list and dictionaries
+        users_list: List[User] = list(users_query)
+        users_data: List[Dict[str, Any]] = [
+            user.to_dict() for user in users_list
+        ]
+
+        return get_json_result(
+            data={"users": users_data, "total": total},
+            message=f"Retrieved {len(users_data)} user(s) successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(
+            data=False,
+            message=f"User listing failure, error: {str(e)}",
+            code=RetCode.EXCEPTION_ERROR,
+        )
+
+
+@manager.route("/delete", methods=["DELETE"])  # noqa: F821
+@login_required
+async def delete_user() -> Response:
+    """
+    Delete a user. Users can only delete their own account.
+
+    ---
+    tags:
+      - User
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        description: User identification details.
+        required: true
+        schema:
+          type: object
+          properties:
+            user_id:
+              type: string
+              description: User ID to delete (optional if email is provided).
+            email:
+              type: string
+              description: User email to identify the user (optional if user_id
+                is provided).
+    responses:
+      200:
+        description: User deleted successfully.
+        schema:
+          type: object
+          properties:
+            data:
+              type: boolean
+              description: Deletion success status.
+            message:
+              type: string
+              description: Success message.
+      401:
+        description: Unauthorized - authentication required.
+        schema:
+          type: object
+      403:
+        description: Forbidden - users can only delete their own account.
+        schema:
+          type: object
+      400:
+        description: Invalid request or user not found.
+        schema:
+          type: object
+      500:
+        description: Server error during user deletion.
+        schema:
+          type: object
+    """
+    # Explicitly check authentication status
+    if not current_user.is_authenticated:
+        return get_json_result(
+            data=False,
+            message="Unauthorized",
+            code=RetCode.UNAUTHORIZED,
+        )
+    
+    req_json = await request.json
+    if req_json is None:
+        return get_json_result(
+            data=False,
+            message="Request body is required!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
+    req: Dict[str, Any] = req_json
+    user_id: Optional[str] = req.get("user_id")
+    email: Optional[str] = req.get("email")
+
+    # Validate that either user_id or email is provided
+    if not user_id and not email:
+        return get_json_result(
+            data=False,
+            message="Either user_id or email must be provided!",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+
+    # Find the user by user_id or email
+    user: Optional[User] = None
+
+    if user_id:
+        user = UserService.filter_by_id(user_id)
+    elif email:
+        # Validate the email address format (allow + in local part)
+        email_match: Optional[Match[str]] = re.match(
+            r"^[\w\._\+-]+@([\w_-]+\.)+[\w-]{2,}$", email
+        )
+        if not email_match:
+            return get_json_result(
+                data=False,
+                message=f"Invalid email address: {email}!",
+                code=RetCode.OPERATING_ERROR,
+            )
+
+        users_query = UserService.query(email=email)
+        users_list: List[User] = list(users_query)
+        if not users_list:
+            return get_json_result(
+                data=False,
+                message=f"User with email: {email} not found!",
+                code=RetCode.DATA_ERROR,
+            )
+        if len(users_list) > 1:
+            return get_json_result(
+                data=False,
+                message=f"Multiple users found with email: {email}!",
+                code=RetCode.DATA_ERROR,
+            )
+        user = users_list[0]
+        user_id = user.id
+
+    if not user:
+        return get_json_result(
+            data=False,
+            message="User not found!",
+            code=RetCode.DATA_ERROR,
+        )
+
+    # Ensure user can only delete themselves
+    if user.id != current_user.id:
+        return get_json_result(
+            data=False,
+            message="You can only delete your own account!",
+            code=RetCode.FORBIDDEN,
+        )
+
+    # Delete the user
+    try:
+        # Use hard delete to actually remove the user
+        deleted_count: int = UserService.delete_by_id(user_id)
+        if deleted_count == 0:
+            return get_json_result(
+                data=False,
+                message="User not found or could not be deleted!",
+                code=RetCode.DATA_ERROR,
+            )
+        return get_json_result(
+            data=True,
+            message=f"User {user.email} deleted successfully!",
+        )
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(
+            data=False,
+            message=f"User deletion failure, error: {str(e)}",
             code=RetCode.EXCEPTION_ERROR,
         )
 
