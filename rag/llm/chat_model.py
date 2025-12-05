@@ -1186,16 +1186,6 @@ class GoogleChat(Base):
             yield total_tokens
 
 
-class GPUStackChat(Base):
-    _FACTORY_NAME = "GPUStack"
-
-    def __init__(self, key=None, model_name="", base_url="", **kwargs):
-        if not base_url:
-            raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class TokenPonyChat(Base):
     _FACTORY_NAME = "TokenPony"
 
@@ -1236,6 +1226,7 @@ class LiteLLMBase(ABC):
         "ZHIPU-AI",
         "MiniMax",
         "DeerAPI",
+        "GPUStack",
     ]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
@@ -1669,8 +1660,7 @@ class LiteLLMBase(ABC):
                     "aws_region_name": self.bedrock_region,
                 }
             )
-
-        if self.provider == SupportedLiteLLMProvider.OpenRouter:
+        elif self.provider == SupportedLiteLLMProvider.OpenRouter:
             if self.provider_order:
 
                 def _to_order_list(x):
@@ -1689,6 +1679,12 @@ class LiteLLMBase(ABC):
                 provider_cfg["allow_fallbacks"] = False
                 extra_body["provider"] = provider_cfg
                 completion_args.update({"extra_body": extra_body})
+        elif self.provider == SupportedLiteLLMProvider.GPUStack:
+            completion_args.update(
+                {
+                    "api_base": self.base_url,
+                }
+            )
 
         # Ollama deployments commonly sit behind a reverse proxy that enforces
         # Bearer auth. Ensure the Authorization header is set when an API key

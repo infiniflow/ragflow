@@ -53,6 +53,7 @@ class SupportedLiteLLMProvider(StrEnum):
     ZHIPU_AI = "ZHIPU-AI"
     MiniMax = "MiniMax"
     DeerAPI = "DeerAPI"
+    GPUStack = "GPUStack"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -111,6 +112,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.ZHIPU_AI: "openai/",
     SupportedLiteLLMProvider.MiniMax: "openai/",
     SupportedLiteLLMProvider.DeerAPI: "openai/",
+    SupportedLiteLLMProvider.GPUStack: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
