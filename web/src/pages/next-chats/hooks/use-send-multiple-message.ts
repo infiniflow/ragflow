@@ -12,6 +12,7 @@ import { trim } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
 import { v4 as uuid } from 'uuid';
 import { useBuildFormRefs } from './use-build-form-refs';
+import { useCreateConversationBeforeSendMessage } from './use-chat-url';
 import { useUploadFile } from './use-upload-file';
 
 export function useSendMultipleChatMessage(
@@ -29,7 +30,11 @@ export function useSendMultipleChatMessage(
     api.completeConversation,
   );
 
-  const { handleUploadFile, files, clearFiles } = useUploadFile();
+  const { handleUploadFile, isUploading, files, clearFiles, removeFile } =
+    useUploadFile();
+
+  const { createConversationBeforeSendMessage } =
+    useCreateConversationBeforeSendMessage();
 
   const { setFormRef, getLLMConfigById, isLLMConfigEmpty } =
     useBuildFormRefs(chatBoxIds);
@@ -170,9 +175,17 @@ export function useSendMultipleChatMessage(
     ],
   );
 
-  const handlePressEnter = useCallback(() => {
+  const handlePressEnter = useCallback(async () => {
     if (trim(value) === '') return;
     const id = uuid();
+
+    const data = await createConversationBeforeSendMessage(value);
+
+    if (data === undefined) {
+      return;
+    }
+
+    const { targetConversationId, currentMessages } = data;
 
     chatBoxIds.forEach((chatBoxId) => {
       if (!isLLMConfigEmpty(chatBoxId)) {
@@ -182,6 +195,7 @@ export function useSendMultipleChatMessage(
           role: MessageType.User,
           chatBoxId,
           files,
+          conversationId: targetConversationId,
         });
       }
     });
@@ -196,8 +210,11 @@ export function useSendMultipleChatMessage(
               content: value.trim(),
               role: MessageType.User,
               files,
+              conversationId: targetConversationId,
             },
             chatBoxId,
+            currentConversationId: targetConversationId,
+            messages: currentMessages,
           });
         }
       });
@@ -205,6 +222,7 @@ export function useSendMultipleChatMessage(
     clearFiles();
   }, [
     value,
+    createConversationBeforeSendMessage,
     chatBoxIds,
     allDone,
     clearFiles,
@@ -234,5 +252,7 @@ export function useSendMultipleChatMessage(
     sendLoading: !allDone,
     setFormRef,
     handleUploadFile,
+    isUploading,
+    removeFile,
   };
 }
