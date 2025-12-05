@@ -19,13 +19,14 @@ import logging
 import queue
 import re
 import threading
-from common.token_utils import num_tokens_from_string
 from functools import partial
 from typing import Generator
-from common.constants import LLMType
+
 from api.db.db_models import LLM
 from api.db.services.common_service import CommonService
 from api.db.services.tenant_llm_service import LLM4Tenant, TenantLLMService
+from common.constants import LLMType
+from common.token_utils import num_tokens_from_string
 
 
 class LLMService(CommonService):
@@ -34,6 +35,7 @@ class LLMService(CommonService):
 
 def get_init_tenant_llm(user_id):
     from common import settings
+
     tenant_llm = []
 
     model_configs = {
@@ -194,7 +196,7 @@ class LLMBundle(LLM4Tenant):
                 generation = self.langfuse.start_generation(
                     trace_context=self.trace_context,
                     name="stream_transcription",
-                    metadata={"model": self.llm_name}
+                    metadata={"model": self.llm_name},
                 )
             final_text = ""
             used_tokens = 0
@@ -218,32 +220,34 @@ class LLMBundle(LLM4Tenant):
                 if self.langfuse:
                     generation.update(
                         output={"output": final_text},
-                        usage_details={"total_tokens": used_tokens}
+                        usage_details={"total_tokens": used_tokens},
                     )
                     generation.end()
 
             return
 
         if self.langfuse:
-            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="stream_transcription", metadata={"model": self.llm_name})
-        full_text, used_tokens = mdl.transcription(audio)
-        if not TenantLLMService.increase_usage(
-            self.tenant_id, self.llm_type, used_tokens
-        ):
-            logging.error(
-                f"LLMBundle.stream_transcription can't update token usage for {self.tenant_id}/SEQUENCE2TXT used_tokens: {used_tokens}"
+            generation = self.langfuse.start_generation(
+                trace_context=self.trace_context,
+                name="stream_transcription",
+                metadata={"model": self.llm_name},
             )
+
+        full_text, used_tokens = mdl.transcription(audio)
+        if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens):
+            logging.error(f"LLMBundle.stream_transcription can't update token usage for {self.tenant_id}/SEQUENCE2TXT used_tokens: {used_tokens}")
+
         if self.langfuse:
             generation.update(
                 output={"output": full_text},
-                usage_details={"total_tokens": used_tokens}
+                usage_details={"total_tokens": used_tokens},
             )
             generation.end()
 
         yield {
             "event": "final",
             "text": full_text,
-            "streaming": False
+            "streaming": False,
         }
 
     def tts(self, text: str) -> Generator[bytes, None, None]:
@@ -302,8 +306,8 @@ class LLMBundle(LLM4Tenant):
         def runner():
             try:
                 result_queue.put((True, asyncio.run(coro)))
-            except Exception as exc:  # pragma: no cover - defensive
-                result_queue.put((False, exc))
+            except Exception as e:
+                result_queue.put((False, e))
 
         thread = threading.Thread(target=runner, daemon=True)
         thread.start()
@@ -313,7 +317,6 @@ class LLMBundle(LLM4Tenant):
         if success:
             return value
         raise value
-
 
     def chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs) -> str:
         if self.langfuse:
@@ -327,7 +330,6 @@ class LLMBundle(LLM4Tenant):
 
         return txt
 
-
     def _sync_from_async_stream(self, async_gen_fn, *args, **kwargs):
         result_queue: queue.Queue = queue.Queue()
 
@@ -339,8 +341,8 @@ class LLMBundle(LLM4Tenant):
                 try:
                     async for item in async_gen_fn(*args, **kwargs):
                         result_queue.put(item)
-                except Exception as exc:  # pragma: no cover - defensive
-                    result_queue.put(exc)
+                except Exception as e:
+                    result_queue.put(e)
                 finally:
                     result_queue.put(StopIteration)
 
@@ -378,6 +380,7 @@ class LLMBundle(LLM4Tenant):
             if not self.verbose_tool_use:
                 txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
 
+            # cancatination has beend done in async_chat_streamly
             ans = txt
             yield ans
 
@@ -389,7 +392,7 @@ class LLMBundle(LLM4Tenant):
             try:
                 for item in gen:
                     loop.call_soon_threadsafe(queue.put_nowait, item)
-            except Exception as e:  # pragma: no cover
+            except Exception as e:
                 loop.call_soon_threadsafe(queue.put_nowait, e)
             finally:
                 loop.call_soon_threadsafe(queue.put_nowait, StopAsyncIteration)
