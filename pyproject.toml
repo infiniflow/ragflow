@@ -163,11 +163,13 @@ test = [
     "openpyxl>=3.1.5",
     "pillow>=10.4.0",
     "pytest>=8.3.5",
+    "pytest-asyncio>=0.24.0",
     "python-docx>=1.1.2",
     "python-pptx>=1.0.2",
     "reportlab>=4.4.1",
     "requests>=2.32.2",
     "requests-toolbelt>=1.0.0",
+    "websockets>=14.0",
 ]
 
 [[tool.uv.index]]
