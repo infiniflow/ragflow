@@ -42,6 +42,7 @@ from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.gmail_connector import GmailConnector
+from common.data_source.box_connector import BoxConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.data_source.utils import load_all_docs_from_checkpoint_connector
 from common.log_utils import init_root_logger
@@ -599,6 +600,34 @@ class Moodle(SyncBase):
         return document_generator
 
 
+class BOX(SyncBase):
+    SOURCE_NAME: str = FileSource.BOX
+
+    async def _generate(self, task: dict):
+        self.connector = BoxConnector(
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            folder_id=self.conf.get("folder_id", "0"),
+            use_marker=self.conf.get("use_marker", False)
+        )
+
+        self.connector.load_credentials(self.conf["credentials"])
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task["poll_range_start"]
+            if poll_start is None:
+                document_generator = self.connector.load_from_state()
+                begin_info = "totally"
+            else:
+                document_generator = self.connector.poll_source(
+                    poll_start.timestamp(),
+                    datetime.now(timezone.utc).timestamp()
+                )
+                begin_info = "from {}".format(poll_start)
+        logging.info("Connect to Box: folder_id({}) {}".format(self.conf["folder_id"], begin_info))
+        return document_generator
+    
 func_factory = {
     FileSource.S3: S3,
     FileSource.NOTION: Notion,
@@ -613,6 +642,7 @@ func_factory = {
     FileSource.MOODLE: Moodle,
     FileSource.DROPBOX: Dropbox,
     FileSource.WEBDAV: WebDAV,
+    FileSource.BOX: BOX
 }
 
 
