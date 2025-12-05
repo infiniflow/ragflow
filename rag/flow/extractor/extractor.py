@@ -15,9 +15,8 @@
 import json
 import logging
 import random
-from copy import deepcopy, copy
+from copy import deepcopy
 
-import trio
 import xxhash
 
 from agent.component.llm import LLMParam, LLM
@@ -38,13 +37,13 @@ class ExtractorParam(ProcessParamBase, LLMParam):
 class Extractor(ProcessBase, LLM):
     component_name = "Extractor"
 
-    def _build_TOC(self, docs):
-        self.callback(message="Start to generate table of content ...")
+    async def _build_TOC(self, docs):
+        self.callback(0.2,message="Start to generate table of content ...")
         docs = sorted(docs, key=lambda d:(
             d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
             d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
         ))
-        toc: list[dict] = trio.run(run_toc_from_text, [d["text"] for d in docs], self.chat_mdl)
+        toc = await run_toc_from_text([d["text"] for d in docs], self.chat_mdl)
         logging.info("------------ T O C -------------\n"+json.dumps(toc, ensure_ascii=False, indent='  '))
         ii = 0
         while ii < len(toc):
@@ -61,7 +60,8 @@ class Extractor(ProcessBase, LLM):
             ii += 1
 
         if toc:
-            d = copy.deepcopy(docs[-1])
+            d = deepcopy(docs[-1])
+            d["doc_id"] = self._canvas._doc_id
             d["content_with_weight"] = json.dumps(toc, ensure_ascii=False)
             d["toc_kwd"] = "toc"
             d["available_int"] = 0
@@ -85,11 +85,14 @@ class Extractor(ProcessBase, LLM):
 
         if chunks:
             if self._param.field_name == "toc":
-                toc = self._build_TOC(chunks)
+                for ck in chunks:
+                    ck["doc_id"] = self._canvas._doc_id
+                    ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
+                toc =await self._build_TOC(chunks)
                 chunks.append(toc)
                 self.set_output("chunks", chunks)
                 return
-            
+
             prog = 0
             for i, ck in enumerate(chunks):
                 args[chunks_key] = ck["text"]
