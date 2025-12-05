@@ -232,44 +232,6 @@ export const useFetchConversationList = () => {
   return { data, loading, refetch, searchString, handleInputChange };
 };
 
-export const useFetchConversation = () => {
-  const { isNew, conversationId } = useGetChatSearchParams();
-  const { sharedId } = useGetSharedChatSearchParams();
-  const isNotNew = isNew !== 'true';
-  const {
-    data,
-    isFetching: loading,
-    refetch,
-  } = useQuery<IClientConversation>({
-    queryKey: [ChatApiAction.FetchConversation, conversationId],
-    initialData: {} as IClientConversation,
-    enabled: isConversationIdExist(conversationId) && isNotNew,
-    gcTime: 0,
-    refetchOnWindowFocus: false,
-    queryFn: async () => {
-      if (isNotNew && isConversationIdExist(sharedId || conversationId)) {
-        const { data } = await chatService.getConversation(
-          {
-            params: {
-              conversationId: conversationId || sharedId,
-            },
-          },
-          true,
-        );
-
-        const conversation = data?.data ?? {};
-
-        const messageList = buildMessageListWithUuid(conversation?.message);
-
-        return { ...conversation, message: messageList };
-      }
-      return { message: [] };
-    },
-  });
-
-  return { data, loading, refetch };
-};
-
 export function useFetchConversationManually() {
   const {
     data,
