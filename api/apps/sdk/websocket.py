@@ -55,12 +55,13 @@ async def send_ws_message(data, code=0, message=""):
     await websocket.send(json.dumps(response, ensure_ascii=False))
 
 
-@manager.websocket("/chats/<chat_id>/completions")  # noqa: F821
+@manager.websocket("/ws/chats/<chat_id>/completions")  # noqa: F821
 @ws_token_required
 async def chat_completions_ws(tenant_id, chat_id):
     """
     WebSocket endpoint for streaming chat completions.
     Follows the same pattern as the HTTP POST /chats/<chat_id>/completions endpoint.
+    Uses /ws/ prefix to avoid routing conflicts with HTTP endpoints.
     """
     # Verify chat ownership
     if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
@@ -141,12 +142,13 @@ async def chat_completions_ws(tenant_id, chat_id):
         logging.info(f"WebSocket chat connection closed for chat_id: {chat_id}")
 
 
-@manager.websocket("/agents/<agent_id>/completions")  # noqa: F821
+@manager.websocket("/ws/agents/<agent_id>/completions")  # noqa: F821
 @ws_token_required
 async def agent_completions_ws(tenant_id, agent_id):
     """
     WebSocket endpoint for streaming agent completions.
     Follows the same pattern as the HTTP POST /agents/<agent_id>/completions endpoint.
+    Uses /ws/ prefix to avoid routing conflicts with HTTP endpoints.
     """
     # Verify agent ownership
     if not UserCanvasService.query(user_id=tenant_id, id=agent_id):
