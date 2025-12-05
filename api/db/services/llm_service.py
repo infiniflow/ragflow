@@ -319,16 +319,7 @@ class LLMBundle(LLM4Tenant):
         raise value
 
     def chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs) -> str:
-        if self.langfuse:
-            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="chat", model=self.llm_name, input={"system": system, "history": history})
-
-        txt = self._run_coroutine_sync(self.async_chat(system, history, gen_conf, **kwargs))
-
-        if self.langfuse:
-            generation.update(output={"output": txt})
-            generation.end()
-
-        return txt
+        return self._run_coroutine_sync(self.async_chat(system, history, gen_conf, **kwargs))
 
     def _sync_from_async_stream(self, async_gen_fn, *args, **kwargs):
         result_queue: queue.Queue = queue.Queue()
@@ -360,17 +351,9 @@ class LLMBundle(LLM4Tenant):
             yield item
 
     def chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
-        if self.langfuse:
-            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
-
         ans = ""
-        total_tokens = 0
         for txt in self._sync_from_async_stream(self.async_chat_streamly, system, history, gen_conf, **kwargs):
             if isinstance(txt, int):
-                total_tokens = txt
-                if self.langfuse:
-                    generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
-                    generation.end()
                 break
 
             if txt.endswith("</think>"):
@@ -408,10 +391,20 @@ class LLMBundle(LLM4Tenant):
         else:
             raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
 
+        generation = None
+        if self.langfuse:
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="chat", model=self.llm_name, input={"system": system, "history": history})
+
         chat_partial = partial(base_fn, system, history, gen_conf)
         use_kwargs = self._clean_param(chat_partial, **kwargs)
 
-        txt, used_tokens = await chat_partial(**use_kwargs)
+        try:
+            txt, used_tokens = await chat_partial(**use_kwargs)
+        except Exception as e:
+            if generation:
+                generation.update(output={"error": str(e)})
+                generation.end()
+            raise
 
         txt = self._remove_reasoning_content(txt)
         if not self.verbose_tool_use:
@@ -419,6 +412,10 @@ class LLMBundle(LLM4Tenant):
 
         if used_tokens and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, self.llm_name):
             logging.error("LLMBundle.async_chat can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, used_tokens))
+
+        if generation:
+            generation.update(output={"output": txt}, usage_details={"total_tokens": used_tokens})
+            generation.end()
 
         return txt
 
@@ -432,22 +429,35 @@ class LLMBundle(LLM4Tenant):
         else:
             raise RuntimeError(f"Model {self.mdl} does not implement async_chat or async_chat_with_tools")
 
+        generation = None
+        if self.langfuse:
+            generation = self.langfuse.start_generation(trace_context=self.trace_context, name="chat_streamly", model=self.llm_name, input={"system": system, "history": history})
+
         if stream_fn:
             chat_partial = partial(stream_fn, system, history, gen_conf)
             use_kwargs = self._clean_param(chat_partial, **kwargs)
-            async for txt in chat_partial(**use_kwargs):
-                if isinstance(txt, int):
-                    total_tokens = txt
-                    break
+            try:
+                async for txt in chat_partial(**use_kwargs):
+                    if isinstance(txt, int):
+                        total_tokens = txt
+                        break
 
-                if txt.endswith("</think>"):
-                    ans = ans[: -len("</think>")]
+                    if txt.endswith("</think>"):
+                        ans = ans[: -len("</think>")]
 
-                if not self.verbose_tool_use:
-                    txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
+                    if not self.verbose_tool_use:
+                        txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
 
-                ans += txt
-                yield ans
+                    ans += txt
+                    yield ans
+            except Exception as e:
+                if generation:
+                    generation.update(output={"error": str(e)})
+                    generation.end()
+                raise
             if total_tokens and not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, total_tokens, self.llm_name):
                 logging.error("LLMBundle.async_chat_streamly can't update token usage for {}/CHAT llm_name: {}, used_tokens: {}".format(self.tenant_id, self.llm_name, total_tokens))
+            if generation:
+                generation.update(output={"output": ans}, usage_details={"total_tokens": total_tokens})
+                generation.end()
             return
