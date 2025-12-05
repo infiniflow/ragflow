@@ -5065,12 +5065,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pyicu"
-version = "2.16"
-source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/11/c3/8d558b30deb33eb583c0bcae3e64d6db8316b69461a04bb9db5ff63d3f6e/pyicu-2.16.tar.gz", hash = "sha256:42b3a8062e3b23e927ca727e6b5e1730d86c70279834e4887152895d2eb012d9", size = 268126, upload-time = "2025-11-04T23:33:00.006Z" }
-
-[[package]]
 name = "pyjwt"
 version = "2.8.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -5674,7 +5668,6 @@ dependencies = [
     { name = "psycopg2-binary" },
     { name = "pyclipper" },
     { name = "pycryptodomex" },
-    { name = "pyicu" },
     { name = "pymysql" },
     { name = "pyobvector" },
     { name = "pyodbc" },
@@ -5842,7 +5835,6 @@ requires-dist = [
     { name = "psycopg2-binary", specifier = "==2.9.9" },
     { name = "pyclipper", specifier = "==1.3.0.post5" },
     { name = "pycryptodomex", specifier = "==3.20.0" },
-    { name = "pyicu", specifier = ">=2.15.3,<3.0.0" },
     { name = "pymysql", specifier = ">=1.1.1,<2.0.0" },
     { name = "pyobvector", specifier = "==0.2.18" },
     { name = "pyodbc", specifier = ">=5.2.0,<6.0.0" },
