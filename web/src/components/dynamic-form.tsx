@@ -7,6 +7,7 @@ import {
   useState,
 } from 'react';
 import {
+  ControllerRenderProps,
   DefaultValues,
   FieldValues,
   SubmitHandler,
@@ -67,7 +68,7 @@ export interface FormFieldConfig {
     max?: number;
     message?: string;
   };
-  render?: (fieldProps: any) => React.ReactNode;
+  render?: (fieldProps: ControllerRenderProps) => React.ReactNode;
   horizontal?: boolean;
   onChange?: (value: any) => void;
   tooltip?: React.ReactNode;
