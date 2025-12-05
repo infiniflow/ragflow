@@ -131,7 +131,6 @@ dependencies = [
     "graspologic @ git+https://github.com/yuzhichang/graspologic.git@38e680cab72bc9fb68a7992c3bcc2d53b24e42fd",
     "mini-racer>=0.12.4,<0.13.0",
     "pyodbc>=5.2.0,<6.0.0",
-    "pyicu>=2.15.3,<3.0.0",
     "flasgger>=0.9.7.1,<0.10.0",
     "xxhash>=3.5.0,<4.0.0",
     "trio>=0.17.0,<0.29.0",
