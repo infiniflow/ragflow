@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 
-
+import asyncio
 import pathlib
 import re
 from quart import request, make_response
@@ -29,6 +29,7 @@ from api.db import FileType
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
 from api.utils.file_utils import filename_type
+from api.utils.web_utils import CONTENT_TYPE_MAP
 from common import settings
 from common.constants import RetCode
 
@@ -629,6 +630,19 @@ async def get(tenant_id, file_id):
     except Exception as e:
         return server_error_response(e)
 
+@manager.route("/file/download/<attachment_id>", methods=["GET"])  # noqa: F821
+@token_required
+async def download_attachment(tenant_id,attachment_id):
+    try:
+        ext = request.args.get("ext", "markdown")
+        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        response = await make_response(data)
+        response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
+
+        return response
+
+    except Exception as e:
+        return server_error_response(e)
 
 @manager.route('/file/mv', methods=['POST'])  # noqa: F821
 @token_required
