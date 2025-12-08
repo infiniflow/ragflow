@@ -81,19 +81,20 @@ export default function Agents() {
   }, [isCreate, showCreatingModal, searchUrl, setSearchUrl]);
   return (
     <>
-      {(!data?.length || data?.length <= 0) && (
+      {(!data?.length || data?.length <= 0) && !searchString && (
         <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
           <EmptyAppCard
             showIcon
             size="large"
             className="w-[480px] p-14"
+            isSearch={!!searchString}
             type={EmptyCardType.Agent}
             onClick={() => showCreatingModal()}
           />
         </div>
       )}
       <section className="flex flex-col w-full flex-1">
-        {!!data?.length && (
+        {(!!data?.length || searchString) && (
           <>
             <div className="px-8 pt-8 ">
               <ListFilterBar
@@ -138,6 +139,18 @@ export default function Agents() {
                 </DropdownMenu>
               </ListFilterBar>
             </div>
+            {(!data?.length || data?.length <= 0) && searchString && (
+              <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
+                <EmptyAppCard
+                  showIcon
+                  size="large"
+                  className="w-[480px] p-14"
+                  isSearch={!!searchString}
+                  type={EmptyCardType.Agent}
+                  onClick={() => showCreatingModal()}
+                />
+              </div>
+            )}
             <div className="flex-1 overflow-auto">
               <CardContainer className="max-h-[calc(100dvh-280px)] overflow-auto px-8">
                 {data.map((x) => {

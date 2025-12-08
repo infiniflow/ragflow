@@ -51,7 +51,7 @@ We use vision information to resolve problems as human being.
     ```bash
         python deepdoc/vision/t_ocr.py --inputs=path_to_images_or_pdfs --output_dir=path_to_store_result
      ```
-    The inputs could be directory to images or PDF, or a image or PDF. 
+    The inputs could be directory to images or PDF, or an image or PDF. 
     You can look into the folder 'path_to_store_result' where has images which demonstrate the positions of results,
     txt files which contain the OCR text.
     <div align="center" style="margin-top:20px;margin-bottom:20px;">
@@ -78,7 +78,7 @@ We use vision information to resolve problems as human being.
      ```bash
         python deepdoc/vision/t_recognizer.py --inputs=path_to_images_or_pdfs --threshold=0.2 --mode=layout --output_dir=path_to_store_result
      ```
-    The inputs could be directory to images or PDF, or a image or PDF. 
+    The inputs could be directory to images or PDF, or an image or PDF. 
     You can look into the folder 'path_to_store_result' where has images which demonstrate the detection results as following:
     <div align="center" style="margin-top:20px;margin-bottom:20px;">
     <img src="https://github.com/infiniflow/ragflow/assets/12318111/07e0f625-9b28-43d0-9fbb-5bf586cd286f" width="1000"/>
