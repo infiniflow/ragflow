@@ -654,7 +654,8 @@ class Dealer:
         i = 0
         while i < len(chunks):
             ck = chunks[i]
-            if not ck.get("mom_id"):
+            mom_id = ck.get("mom_id")
+            if not isinstance(mom_id, str) or not mom_id.strip():
                 i += 1
                 continue
             mom_chunks[ck["mom_id"]].append(chunks.pop(i))
