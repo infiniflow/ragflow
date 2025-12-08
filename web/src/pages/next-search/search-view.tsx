@@ -1,5 +1,6 @@
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
+import HighLightMarkdown from '@/components/highlight-markdown';
 import { FileIcon } from '@/components/icon-font';
 import { ImageWithPopover } from '@/components/image';
 import { Input } from '@/components/originui/input';
@@ -20,7 +21,6 @@ import { Dispatch, SetStateAction, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ISearchAppDetailProps } from '../next-searches/hooks';
 import PdfDrawer from './document-preview-modal';
-import HightLightMarkdown from './highlight-markdown';
 import { ISearchReturnProps } from './hooks';
 import './index.less';
 import MarkdownContent from './markdown-content';
@@ -217,9 +217,9 @@ export default function SearchingView({
                               </PopoverTrigger>
                               <PopoverContent className="text-text-primary !w-full max-w-lg ">
                                 <div className="max-h-96 overflow-auto scrollbar-thin">
-                                  <HightLightMarkdown>
+                                  <HighLightMarkdown>
                                     {chunk.content_with_weight}
-                                  </HightLightMarkdown>
+                                  </HighLightMarkdown>
                                 </div>
                               </PopoverContent>
                             </Popover>

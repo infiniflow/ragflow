@@ -122,7 +122,7 @@ export function MemoryTable({
           cellClassName: 'w-12',
         },
         cell: () => (
-          <div className=" hidden group-hover:flex">
+          <div className=" flex opacity-0 group-hover:opacity-100">
             <Button variant={'ghost'} className="bg-transparent">
               <TextSelect />
             </Button>
