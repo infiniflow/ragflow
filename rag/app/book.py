@@ -143,13 +143,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        binary = BytesIO(binary)
-        doc_parsed = parser.from_buffer(binary)
-        sections = doc_parsed['content'].split('\n')
-        sections = [(line, "") for line in sections if line]
-        remove_contents_table(sections, eng=is_english(
-            random_choices([t for t, _ in sections], k=200)))
-        callback(0.8, "Finish parsing.")
+        with BytesIO(binary) as binary:
+            binary = BytesIO(binary)
+            doc_parsed = parser.from_buffer(binary)
+            sections = doc_parsed['content'].split('\n')
+            sections = [(line, "") for line in sections if line]
+            remove_contents_table(sections, eng=is_english(
+                random_choices([t for t, _ in sections], k=200)))
+            callback(0.8, "Finish parsing.")
 
     else:
         raise NotImplementedError(
