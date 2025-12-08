@@ -268,7 +268,7 @@ def create_memory(auth, payload=None):
 
 
 def update_memory(auth, memory_id:str, payload=None):
-    url = f"{HOST_ADDRESS}{MEMORY_API_URL}/{memory_id}/update"
+    url = f"{HOST_ADDRESS}{MEMORY_API_URL}/update/{memory_id}"
     res = requests.put(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()
 
@@ -282,4 +282,10 @@ def delete_memory(auth, memory_id:str):
 def list_memory(auth, payload=None):
     url = f"{HOST_ADDRESS}{MEMORY_API_URL}/list"
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def get_memory_config(auth, memory_id:str):
+    url = f"{HOST_ADDRESS}{MEMORY_API_URL}/config/{memory_id}"
+    res = requests.get(url=url, headers=HEADERS, auth=auth)
     return res.json()

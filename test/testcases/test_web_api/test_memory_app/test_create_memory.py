@@ -13,3 +13,94 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import random
+import re
+
+import pytest
+from test_web_api.common import create_memory
+from configs import INVALID_API_TOKEN
+from libs.auth import RAGFlowWebApiAuth
+from hypothesis import example, given, settings
+from test.testcases.utils.hypothesis_utils import valid_names
+
+
+class TestAuthorization:
+    @pytest.mark.p1
+    @pytest.mark.parametrize(
+        "invalid_auth, expected_code, expected_message",
+        [
+            (None, 401, "<Unauthorized '401: Unauthorized'>"),
+            (RAGFlowWebApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
+        ],
+        ids=["empty_auth", "invalid_api_token"]
+    )
+    def test_auth_invalid(self, invalid_auth, expected_code, expected_message):
+        res = create_memory(invalid_auth)
+        assert res["code"] == expected_code, res
+        assert res["message"] == expected_message, res
+
+
+class TestMemoryCreate:
+    @pytest.mark.p1
+    @given(name=valid_names())
+    @example("d" * 128)
+    @settings(max_examples=20)
+    def test_name(self, WebApiAuth, name):
+        payload = {
+            "name": name,
+            "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
+            "embd_id": "SILICONFLOW@BAAI/bge-large-zh-v1.5",
+            "llm_id": "ZHIPU-AI@glm-4-flash"
+        }
+        res = create_memory(WebApiAuth, payload)
+        assert res["code"] == 0, res
+        pattern = rf'^{name}|{name}(?:\((\d+)\))?$'
+        escaped_name = re.escape(res["data"]["name"])
+        assert re.match(pattern, escaped_name), res
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "name, expected_message",
+        [
+            ("", "Memory name cannot be empty or whitespace."),
+            (" ", "Memory name cannot be empty or whitespace."),
+            ("a" * 129, f"Memory name '{'a'*129}' exceeds limit of 128."),
+        ],
+        ids=["empty_name", "space_name", "too_long_name"],
+    )
+    def test_name_invalid(self, WebApiAuth, name, expected_message):
+        payload = {
+            "name": name,
+            "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
+            "embd_id": "SILICONFLOW@BAAI/bge-large-zh-v1.5",
+            "llm_id": "ZHIPU-AI@glm-4-flash"
+        }
+        res = create_memory(WebApiAuth, payload)
+        assert res["message"] == expected_message, res
+
+    @pytest.mark.p2
+    @given(name=valid_names())
+    def test_type_invalid(self, WebApiAuth, name):
+        payload = {
+            "name": name,
+            "memory_type": ["something"],
+            "embd_id": "SILICONFLOW@BAAI/bge-large-zh-v1.5",
+            "llm_id": "ZHIPU-AI@glm-4-flash"
+        }
+        res = create_memory(WebApiAuth, payload)
+        assert res["message"] == f"Memory type '{ {'something'} }' is not supported.", res
+
+    @pytest.mark.p3
+    def test_name_duplicated(self, WebApiAuth):
+        name = "duplicated_name_test"
+        payload = {
+            "name": name,
+            "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
+            "embd_id": "SILICONFLOW@BAAI/bge-large-zh-v1.5",
+            "llm_id": "ZHIPU-AI@glm-4-flash"
+        }
+        res1 = create_memory(WebApiAuth, payload)
+        assert res1["code"] == 0, res1
+
+        res2 = create_memory(WebApiAuth, payload)
+        assert res2["code"] == 0, res2

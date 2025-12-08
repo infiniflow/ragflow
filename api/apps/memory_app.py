@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import logging
-import json
 
 from api.apps import login_required, current_user
 from api.db import TenantPermission
@@ -72,7 +71,7 @@ async def update_memory(memory_id):
     req = await request_json()
     update_dict = {}
     # check name length
-    if req.get("name"):
+    if "name" in req:
         name = req["name"]
         memory_name = name.strip()
         if len(memory_name) == 0:
@@ -112,7 +111,7 @@ async def update_memory(memory_id):
         return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
 
     memory_dict = current_memory.to_dict()
-    memory_dict.update({"memory_type": json.loads(current_memory.memory_type)})
+    memory_dict.update({"memory_type": get_memory_type_human(current_memory.memory_type)})
     to_update = {}
     for k, v in update_dict.items():
         if isinstance(v, list) and set(memory_dict[k]) != set(v):
@@ -168,3 +167,12 @@ async def list_memory():
     except Exception as e:
         logging.error(e)
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
+
+
+@manager.route("/config/<memory_id>", methods=["GET"])  # noqa: F821
+@login_required
+async def get_memory_config(memory_id):
+    memory = MemoryService.get_with_owner_name_by_id(memory_id)
+    if not memory:
+        return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
+    return get_json_result(message=True, data=format_ret_data_from_memory(memory))

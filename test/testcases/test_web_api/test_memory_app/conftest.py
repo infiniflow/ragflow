@@ -15,7 +15,7 @@
 #
 import pytest
 import random
-from common import create_memory, list_memory, delete_memory
+from test_web_api.common import create_memory, list_memory, delete_memory
 
 @pytest.fixture(scope="function")
 def add_memory_func(request, WebApiAuth):
@@ -36,6 +36,5 @@ def add_memory_func(request, WebApiAuth):
             "llm_id": "ZHIPU-AI@glm-4-flash"
         }
         res = create_memory(WebApiAuth, payload)
-        print(res)
         memory_ids.append(res["data"]["id"])
     return memory_ids

@@ -22,6 +22,7 @@ def format_ret_data_from_memory(memory):
         "name": memory.name,
         "avatar": memory.avatar,
         "tenant_id": memory.tenant_id,
+        "owner_name": memory.owner_name if hasattr(memory, "owner_name") else None,
         "memory_type": get_memory_type_human(memory.memory_type),
         "storage_type": memory.storage_type,
         "embd_id": memory.embd_id,

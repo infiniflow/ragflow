@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import (list_memory, delete_memory)
+from test_web_api.common import (list_memory, delete_memory)
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 
@@ -41,7 +41,7 @@ class TestMemoryDelete:
         assert res["code"] == 0, res
 
         res = list_memory(WebApiAuth)
-        assert len(res["data"]["total_count"]) == 2, res
+        assert res["data"]["total_count"] == 2, res
 
     @pytest.mark.p2
     @pytest.mark.usefixtures("add_memory_func")
