@@ -122,15 +122,15 @@ async def create_container(name: str, language: SupportLanguage) -> bool:
     logger.info(f"Sandbox config:\n\t {create_args}")
 
     try:
-        returncode, _, stderr = await async_run_command(*create_args, timeout=10)
-        if returncode != 0:
+        return_code, _, stderr = await async_run_command(*create_args, timeout=10)
+        if return_code != 0:
             logger.error(f"❌ Container creation failed {name}: {stderr}")
             return False
 
         if language == SupportLanguage.NODEJS:
             copy_cmd = ["docker", "exec", name, "bash", "-c", "cp -a /app/node_modules /workspace/"]
-            returncode, _, stderr = await async_run_command(*copy_cmd, timeout=10)
-            if returncode != 0:
+            return_code, _, stderr = await async_run_command(*copy_cmd, timeout=10)
+            if return_code != 0:
                 logger.error(f"❌ Failed to prepare dependencies for {name}: {stderr}")
                 return False
 
@@ -185,7 +185,7 @@ async def allocate_container_blocking(language: SupportLanguage, timeout=10) -> 
 async def container_is_running(name: str) -> bool:
     """Asynchronously check the container status"""
     try:
-        returncode, stdout, _ = await async_run_command("docker", "inspect", "-f", "{{.State.Running}}", name, timeout=2)
-        return returncode == 0 and stdout.strip() == "true"
+        return_code, stdout, _ = await async_run_command("docker", "inspect", "-f", "{{.State.Running}}", name, timeout=2)
+        return return_code == 0 and stdout.strip() == "true"
     except Exception:
         return False

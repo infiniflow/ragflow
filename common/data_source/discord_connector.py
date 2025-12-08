@@ -33,7 +33,7 @@ def _convert_message_to_document(
     metadata: dict[str, str | list[str]] = {}
     semantic_substring = ""
 
-    # Only messages from TextChannels will make it here but we have to check for it anyways
+    # Only messages from TextChannels will make it here, but we have to check for it anyway
     if isinstance(message.channel, TextChannel) and (channel_name := message.channel.name):
         metadata["Channel"] = channel_name
         semantic_substring += f" in Channel: #{channel_name}"
@@ -176,7 +176,7 @@ def _manage_async_retrieval(
     # parse requested_start_date_string to datetime
     pull_date: datetime | None = datetime.strptime(requested_start_date_string, "%Y-%m-%d").replace(tzinfo=timezone.utc) if requested_start_date_string else None
 
-    # Set start_time to the later of start and pull_date, or whichever is provided
+    # Set start_time to the most recent of start and pull_date, or whichever is provided
     start_time = max(filter(None, [start, pull_date])) if start or pull_date else None
 
     end_time: datetime | None = end

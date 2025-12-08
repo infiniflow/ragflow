@@ -67,10 +67,10 @@ class DBPostProcess:
             [[1, 1], [1, 1]])
 
     def polygons_from_bitmap(self, pred, _bitmap, dest_width, dest_height):
-        '''
+        """
         _bitmap: single map with shape (1, H, W),
             whose values are binarized as {0, 1}
-        '''
+        """
 
         bitmap = _bitmap
         height, width = bitmap.shape
@@ -114,10 +114,10 @@ class DBPostProcess:
         return boxes, scores
 
     def boxes_from_bitmap(self, pred, _bitmap, dest_width, dest_height):
-        '''
+        """
         _bitmap: single map with shape (1, H, W),
                 whose values are binarized as {0, 1}
-        '''
+        """
 
         bitmap = _bitmap
         height, width = bitmap.shape
@@ -192,9 +192,9 @@ class DBPostProcess:
         return box, min(bounding_box[1])
 
     def box_score_fast(self, bitmap, _box):
-        '''
+        """
         box_score_fast: use bbox mean score as the mean score
-        '''
+        """
         h, w = bitmap.shape[:2]
         box = _box.copy()
         xmin = np.clip(np.floor(box[:, 0].min()).astype("int32"), 0, w - 1)
@@ -209,9 +209,9 @@ class DBPostProcess:
         return cv2.mean(bitmap[ymin:ymax + 1, xmin:xmax + 1], mask)[0]
 
     def box_score_slow(self, bitmap, contour):
-        '''
-        box_score_slow: use polyon mean score as the mean score
-        '''
+        """
+        box_score_slow: use polygon mean score as the mean score
+        """
         h, w = bitmap.shape[:2]
         contour = contour.copy()
         contour = np.reshape(contour, (-1, 2))
