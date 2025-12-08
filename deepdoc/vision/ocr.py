@@ -582,7 +582,7 @@ class OCR:
         self.crop_image_res_index = 0
 
     def get_rotate_crop_image(self, img, points):
-        '''
+        """
         img_height, img_width = img.shape[0:2]
         left = int(np.min(points[:, 0]))
         right = int(np.max(points[:, 0]))
@@ -591,7 +591,7 @@ class OCR:
         img_crop = img[top:bottom, left:right, :].copy()
         points[:, 0] = points[:, 0] - left
         points[:, 1] = points[:, 1] - top
-        '''
+        """
         assert len(points) == 4, "shape of points must be 4*2"
         img_crop_width = int(
             max(

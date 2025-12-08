@@ -5,6 +5,7 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "nltk",
+#   "huggingface-hub"
 # ]
 # ///
 
@@ -43,7 +44,6 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
 repos = [
     "InfiniFlow/text_concat_xgb_v1.0",
     "InfiniFlow/deepdoc",
-    "InfiniFlow/huqie",
 ]
 
 

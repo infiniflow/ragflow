@@ -1,6 +1,6 @@
 import { NodeCollapsible } from '@/components/collapse';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
 import { IRetrievalNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
@@ -27,7 +27,7 @@ function InnerRetrievalNode({
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
-      <NodeWrapper selected={selected}>
+      <NodeWrapper selected={selected} id={id}>
         <LeftEndHandle></LeftEndHandle>
         <CommonHandle
           id={NodeHandleId.Start}

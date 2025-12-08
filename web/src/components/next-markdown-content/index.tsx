@@ -13,7 +13,6 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { visitParents } from 'unist-util-visit-parents';
 
-import { useFetchDocumentThumbnailsByIds } from '@/hooks/document-hooks';
 import { useTranslation } from 'react-i18next';
 
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
@@ -26,6 +25,7 @@ import {
   showImage,
 } from '@/utils/chat';
 
+import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { cn } from '@/lib/utils';
 import classNames from 'classnames';
 import { omit } from 'lodash';
@@ -220,20 +220,23 @@ function MarkdownContent({
         const docType = chunkItem?.doc_type;
 
         return showImage(docType) ? (
-          <Image
-            id={imageId}
-            className={styles.referenceInnerChunkImage}
-            onClick={
-              documentId
-                ? handleDocumentButtonClick(
-                    documentId,
-                    chunkItem,
-                    fileExtension === 'pdf',
-                    documentUrl,
-                  )
-                : () => {}
-            }
-          ></Image>
+          <section>
+            <Image
+              id={imageId}
+              className={styles.referenceInnerChunkImage}
+              onClick={
+                documentId
+                  ? handleDocumentButtonClick(
+                      documentId,
+                      chunkItem,
+                      fileExtension === 'pdf',
+                      documentUrl,
+                    )
+                  : () => {}
+              }
+            ></Image>
+            <span className="text-accent-primary">{imageId}</span>
+          </section>
         ) : (
           <HoverCard key={i}>
             <HoverCardTrigger>

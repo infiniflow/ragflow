@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useListTenantUser } from '@/hooks/user-setting-hooks';
+import { useListTenantUser } from '@/hooks/use-user-setting-request';
 import { formatDate } from '@/utils/date';
 import { upperFirst } from 'lodash';
 import { ArrowDown, ArrowUp, ArrowUpDown, Trash2 } from 'lucide-react';

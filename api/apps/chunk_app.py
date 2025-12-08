@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import datetime
 import json
 import re
@@ -27,7 +28,7 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request, \
-    request_json
+    get_request_json
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
@@ -42,7 +43,7 @@ from api.apps import login_required, current_user
 @login_required
 @validate_request("doc_id")
 async def list_chunk():
-    req = await request_json()
+    req = await get_request_json()
     doc_id = req["doc_id"]
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
@@ -123,7 +124,7 @@ def get():
 @login_required
 @validate_request("doc_id", "chunk_id", "content_with_weight")
 async def set():
-    req = await request_json()
+    req = await get_request_json()
     d = {
         "id": req["chunk_id"],
         "content_with_weight": req["content_with_weight"]}
@@ -147,31 +148,35 @@ async def set():
         d["available_int"] = req["available_int"]
 
     try:
-        tenant_id = DocumentService.get_tenant_id(req["doc_id"])
-        if not tenant_id:
-            return get_data_error_result(message="Tenant not found!")
+        def _set_sync():
+            tenant_id = DocumentService.get_tenant_id(req["doc_id"])
+            if not tenant_id:
+                return get_data_error_result(message="Tenant not found!")
 
-        embd_id = DocumentService.get_embd_id(req["doc_id"])
-        embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embd_id)
+            embd_id = DocumentService.get_embd_id(req["doc_id"])
+            embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embd_id)
 
-        e, doc = DocumentService.get_by_id(req["doc_id"])
-        if not e:
-            return get_data_error_result(message="Document not found!")
+            e, doc = DocumentService.get_by_id(req["doc_id"])
+            if not e:
+                return get_data_error_result(message="Document not found!")
 
-        if doc.parser_id == ParserType.QA:
-            arr = [
-                t for t in re.split(
-                    r"[\n\t]",
-                    req["content_with_weight"]) if len(t) > 1]
-            q, a = rmPrefix(arr[0]), rmPrefix("\n".join(arr[1:]))
-            d = beAdoc(d, q, a, not any(
-                [rag_tokenizer.is_chinese(t) for t in q + a]))
+            _d = d
+            if doc.parser_id == ParserType.QA:
+                arr = [
+                    t for t in re.split(
+                        r"[\n\t]",
+                        req["content_with_weight"]) if len(t) > 1]
+                q, a = rmPrefix(arr[0]), rmPrefix("\n".join(arr[1:]))
+                _d = beAdoc(d, q, a, not any(
+                    [rag_tokenizer.is_chinese(t) for t in q + a]))
 
-        v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d.get("question_kwd") else "\n".join(d["question_kwd"])])
-        v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
-        d["q_%d_vec" % len(v)] = v.tolist()
-        settings.docStoreConn.update({"id": req["chunk_id"]}, d, search.index_name(tenant_id), doc.kb_id)
-        return get_json_result(data=True)
+            v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not _d.get("question_kwd") else "\n".join(_d["question_kwd"])])
+            v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
+            _d["q_%d_vec" % len(v)] = v.tolist()
+            settings.docStoreConn.update({"id": req["chunk_id"]}, _d, search.index_name(tenant_id), doc.kb_id)
+            return get_json_result(data=True)
+
+        return await asyncio.to_thread(_set_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -180,18 +185,21 @@ async def set():
 @login_required
 @validate_request("chunk_ids", "available_int", "doc_id")
 async def switch():
-    req = await request_json()
+    req = await get_request_json()
     try:
-        e, doc = DocumentService.get_by_id(req["doc_id"])
-        if not e:
-            return get_data_error_result(message="Document not found!")
-        for cid in req["chunk_ids"]:
-            if not settings.docStoreConn.update({"id": cid},
-                                                {"available_int": int(req["available_int"])},
-                                                search.index_name(DocumentService.get_tenant_id(req["doc_id"])),
-                                                doc.kb_id):
-                return get_data_error_result(message="Index updating failure")
-        return get_json_result(data=True)
+        def _switch_sync():
+            e, doc = DocumentService.get_by_id(req["doc_id"])
+            if not e:
+                return get_data_error_result(message="Document not found!")
+            for cid in req["chunk_ids"]:
+                if not settings.docStoreConn.update({"id": cid},
+                                                    {"available_int": int(req["available_int"])},
+                                                    search.index_name(DocumentService.get_tenant_id(req["doc_id"])),
+                                                    doc.kb_id):
+                    return get_data_error_result(message="Index updating failure")
+            return get_json_result(data=True)
+
+        return await asyncio.to_thread(_switch_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -200,22 +208,25 @@ async def switch():
 @login_required
 @validate_request("chunk_ids", "doc_id")
 async def rm():
-    req = await request_json()
+    req = await get_request_json()
     try:
-        e, doc = DocumentService.get_by_id(req["doc_id"])
-        if not e:
-            return get_data_error_result(message="Document not found!")
-        if not settings.docStoreConn.delete({"id": req["chunk_ids"]},
-                                            search.index_name(DocumentService.get_tenant_id(req["doc_id"])),
-                                            doc.kb_id):
-            return get_data_error_result(message="Chunk deleting failure")
-        deleted_chunk_ids = req["chunk_ids"]
-        chunk_number = len(deleted_chunk_ids)
-        DocumentService.decrement_chunk_num(doc.id, doc.kb_id, 1, chunk_number, 0)
-        for cid in deleted_chunk_ids:
-            if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
-                settings.STORAGE_IMPL.rm(doc.kb_id, cid)
-        return get_json_result(data=True)
+        def _rm_sync():
+            e, doc = DocumentService.get_by_id(req["doc_id"])
+            if not e:
+                return get_data_error_result(message="Document not found!")
+            if not settings.docStoreConn.delete({"id": req["chunk_ids"]},
+                                                search.index_name(DocumentService.get_tenant_id(req["doc_id"])),
+                                                doc.kb_id):
+                return get_data_error_result(message="Chunk deleting failure")
+            deleted_chunk_ids = req["chunk_ids"]
+            chunk_number = len(deleted_chunk_ids)
+            DocumentService.decrement_chunk_num(doc.id, doc.kb_id, 1, chunk_number, 0)
+            for cid in deleted_chunk_ids:
+                if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
+                    settings.STORAGE_IMPL.rm(doc.kb_id, cid)
+            return get_json_result(data=True)
+
+        return await asyncio.to_thread(_rm_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -224,7 +235,7 @@ async def rm():
 @login_required
 @validate_request("doc_id", "content_with_weight")
 async def create():
-    req = await request_json()
+    req = await get_request_json()
     chunck_id = xxhash.xxh64((req["content_with_weight"] + req["doc_id"]).encode("utf-8")).hexdigest()
     d = {"id": chunck_id, "content_ltks": rag_tokenizer.tokenize(req["content_with_weight"]),
          "content_with_weight": req["content_with_weight"]}
@@ -245,35 +256,38 @@ async def create():
         d["tag_feas"] = req["tag_feas"]
 
     try:
-        e, doc = DocumentService.get_by_id(req["doc_id"])
-        if not e:
-            return get_data_error_result(message="Document not found!")
-        d["kb_id"] = [doc.kb_id]
-        d["docnm_kwd"] = doc.name
-        d["title_tks"] = rag_tokenizer.tokenize(doc.name)
-        d["doc_id"] = doc.id
+        def _create_sync():
+            e, doc = DocumentService.get_by_id(req["doc_id"])
+            if not e:
+                return get_data_error_result(message="Document not found!")
+            d["kb_id"] = [doc.kb_id]
+            d["docnm_kwd"] = doc.name
+            d["title_tks"] = rag_tokenizer.tokenize(doc.name)
+            d["doc_id"] = doc.id
 
-        tenant_id = DocumentService.get_tenant_id(req["doc_id"])
-        if not tenant_id:
-            return get_data_error_result(message="Tenant not found!")
+            tenant_id = DocumentService.get_tenant_id(req["doc_id"])
+            if not tenant_id:
+                return get_data_error_result(message="Tenant not found!")
 
-        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
-        if not e:
-            return get_data_error_result(message="Knowledgebase not found!")
-        if kb.pagerank:
-            d[PAGERANK_FLD] = kb.pagerank
+            e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
+            if not e:
+                return get_data_error_result(message="Knowledgebase not found!")
+            if kb.pagerank:
+                d[PAGERANK_FLD] = kb.pagerank
 
-        embd_id = DocumentService.get_embd_id(req["doc_id"])
-        embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING.value, embd_id)
+            embd_id = DocumentService.get_embd_id(req["doc_id"])
+            embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING.value, embd_id)
 
-        v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
-        v = 0.1 * v[0] + 0.9 * v[1]
-        d["q_%d_vec" % len(v)] = v.tolist()
-        settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
+            v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
+            v = 0.1 * v[0] + 0.9 * v[1]
+            d["q_%d_vec" % len(v)] = v.tolist()
+            settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
 
-        DocumentService.increment_chunk_num(
-            doc.id, doc.kb_id, c, 1, 0)
-        return get_json_result(data={"chunk_id": chunck_id})
+            DocumentService.increment_chunk_num(
+                doc.id, doc.kb_id, c, 1, 0)
+            return get_json_result(data={"chunk_id": chunck_id})
+
+        return await asyncio.to_thread(_create_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -282,7 +296,7 @@ async def create():
 @login_required
 @validate_request("kb_id", "question")
 async def retrieval_test():
-    req = await request_json()
+    req = await get_request_json()
     page = int(req.get("page", 1))
     size = int(req.get("size", 30))
     question = req["question"]
@@ -297,25 +311,28 @@ async def retrieval_test():
     use_kg = req.get("use_kg", False)
     top = int(req.get("top_k", 1024))
     langs = req.get("cross_languages", [])
-    tenant_ids = []
+    user_id = current_user.id
 
-    if req.get("search_id", ""):
-        search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
-        meta_data_filter = search_config.get("meta_data_filter", {})
-        metas = DocumentService.get_meta_by_kbs(kb_ids)
-        if meta_data_filter.get("method") == "auto":
-            chat_mdl = LLMBundle(current_user.id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
-            filters: dict = gen_meta_filter(chat_mdl, metas, question)
-            doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
-            if not doc_ids:
-                doc_ids = None
-        elif meta_data_filter.get("method") == "manual":
-            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
-            if meta_data_filter["manual"] and not doc_ids:
-                doc_ids = ["-999"]
+    def _retrieval_sync():
+        local_doc_ids = list(doc_ids) if doc_ids else []
+        tenant_ids = []
 
-    try:
-        tenants = UserTenantService.query(user_id=current_user.id)
+        if req.get("search_id", ""):
+            search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
+            meta_data_filter = search_config.get("meta_data_filter", {})
+            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            if meta_data_filter.get("method") == "auto":
+                chat_mdl = LLMBundle(user_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
+                filters: dict = gen_meta_filter(chat_mdl, metas, question)
+                local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
+                if not local_doc_ids:
+                    local_doc_ids = None
+            elif meta_data_filter.get("method") == "manual":
+                local_doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
+                if meta_data_filter["manual"] and not local_doc_ids:
+                    local_doc_ids = ["-999"]
+
+        tenants = UserTenantService.query(user_id=user_id)
         for kb_id in kb_ids:
             for tenant in tenants:
                 if KnowledgebaseService.query(
@@ -331,8 +348,9 @@ async def retrieval_test():
         if not e:
             return get_data_error_result(message="Knowledgebase not found!")
 
+        _question = question
         if langs:
-            question = cross_languages(kb.tenant_id, None, question, langs)
+            _question = cross_languages(kb.tenant_id, None, _question, langs)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
@@ -342,19 +360,19 @@ async def retrieval_test():
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
-            question += keyword_extraction(chat_mdl, question)
+            _question += keyword_extraction(chat_mdl, _question)
 
-        labels = label_question(question, [kb])
-        ranks = settings.retriever.retrieval(question, embd_mdl, tenant_ids, kb_ids, page, size,
+        labels = label_question(_question, [kb])
+        ranks = settings.retriever.retrieval(_question, embd_mdl, tenant_ids, kb_ids, page, size,
                                float(req.get("similarity_threshold", 0.0)),
                                float(req.get("vector_similarity_weight", 0.3)),
                                top,
-                               doc_ids, rerank_mdl=rerank_mdl,
+                               local_doc_ids, rerank_mdl=rerank_mdl,
                                              highlight=req.get("highlight", False),
                                rank_feature=labels
                                )
         if use_kg:
-            ck = settings.kg_retriever.retrieval(question,
+            ck = settings.kg_retriever.retrieval(_question,
                                                    tenant_ids,
                                                    kb_ids,
                                                    embd_mdl,
@@ -367,6 +385,9 @@ async def retrieval_test():
         ranks["labels"] = labels
 
         return get_json_result(data=ranks)
+
+    try:
+        return await asyncio.to_thread(_retrieval_sync)
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message='No chunk found! Check the chunk status please!',

@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 from collections import Counter
+import string
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -25,6 +26,7 @@ from pydantic import (
     StringConstraints,
     ValidationError,
     field_validator,
+    model_validator,
 )
 from pydantic_core import PydanticCustomError
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType
@@ -329,6 +331,7 @@ class RaptorConfig(Base):
     threshold: Annotated[float, Field(default=0.1, ge=0.0, le=1.0)]
     max_cluster: Annotated[int, Field(default=64, ge=1, le=1024)]
     random_seed: Annotated[int, Field(default=0, ge=0)]
+    auto_disable_for_structured_data: Annotated[bool, Field(default=True)]
 
 
 class GraphragConfig(Base):
@@ -361,10 +364,9 @@ class CreateDatasetReq(Base):
     description: Annotated[str | None, Field(default=None, max_length=65535)]
     embedding_model: Annotated[str | None, Field(default=None, max_length=255, serialization_alias="embd_id")]
     permission: Annotated[Literal["me", "team"], Field(default="me", min_length=1, max_length=16)]
-    chunk_method: Annotated[
-        Literal["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
-        Field(default="naive", min_length=1, max_length=32, serialization_alias="parser_id"),
-    ]
+    chunk_method: Annotated[str | None, Field(default=None, serialization_alias="parser_id")]
+    parse_type: Annotated[int | None, Field(default=None, ge=0, le=64)]
+    pipeline_id: Annotated[str | None, Field(default=None, min_length=32, max_length=32, serialization_alias="pipeline_id")]
     parser_config: Annotated[ParserConfig | None, Field(default=None)]
 
     @field_validator("avatar", mode="after")
@@ -524,6 +526,93 @@ class CreateDatasetReq(Base):
         if (json_str := v.model_dump_json()) and len(json_str) > 65535:
             raise PydanticCustomError("string_too_long", "Parser config exceeds size limit (max 65,535 characters). Current size: {actual}", {"actual": len(json_str)})
         return v
+
+    @field_validator("pipeline_id", mode="after")
+    @classmethod
+    def validate_pipeline_id(cls, v: str | None) -> str | None:
+        """Validate pipeline_id as 32-char lowercase hex string if provided.
+
+        Rules:
+        - None or empty string: treat as None (not set)
+        - Must be exactly length 32
+        - Must contain only hex digits (0-9a-fA-F); normalized to lowercase
+        """
+        if v is None:
+            return None
+        if v == "":
+            return None
+        if len(v) != 32:
+            raise PydanticCustomError("format_invalid", "pipeline_id must be 32 hex characters")
+        if any(ch not in string.hexdigits for ch in v):
+            raise PydanticCustomError("format_invalid", "pipeline_id must be hexadecimal")
+        return v.lower()
+
+    @model_validator(mode="after")
+    def validate_parser_dependency(self) -> "CreateDatasetReq":
+        """
+        Mixed conditional validation:
+        - If parser_id is omitted (field not set):
+            * If both parse_type and pipeline_id are omitted → default chunk_method = "naive"
+            * If both parse_type and pipeline_id are provided → allow ingestion pipeline mode
+        - If parser_id is provided (valid enum) → parse_type and pipeline_id must be None (disallow mixed usage)
+
+        Raises:
+            PydanticCustomError with code 'dependency_error' on violation.
+        """
+        # Omitted chunk_method (not in fields) logic
+        if self.chunk_method is None and "chunk_method" not in self.model_fields_set:
+            # All three absent → default naive
+            if self.parse_type is None and self.pipeline_id is None:
+                object.__setattr__(self, "chunk_method", "naive")
+                return self
+            # parser_id omitted: require BOTH parse_type & pipeline_id present (no partial allowed)
+            if self.parse_type is None or self.pipeline_id is None:
+                missing = []
+                if self.parse_type is None:
+                    missing.append("parse_type")
+                if self.pipeline_id is None:
+                    missing.append("pipeline_id")
+                raise PydanticCustomError(
+                    "dependency_error",
+                    "parser_id omitted → required fields missing: {fields}",
+                    {"fields": ", ".join(missing)},
+                )
+            # Both provided → allow pipeline mode
+            return self
+
+        # parser_id provided (valid): MUST NOT have parse_type or pipeline_id
+        if isinstance(self.chunk_method, str):
+            if self.parse_type is not None or self.pipeline_id is not None:
+                invalid = []
+                if self.parse_type is not None:
+                    invalid.append("parse_type")
+                if self.pipeline_id is not None:
+                    invalid.append("pipeline_id")
+                raise PydanticCustomError(
+                    "dependency_error",
+                    "parser_id provided → disallowed fields present: {fields}",
+                    {"fields": ", ".join(invalid)},
+                )
+        return self
+
+    @field_validator("chunk_method", mode="wrap")
+    @classmethod
+    def validate_chunk_method(cls, v: Any, handler) -> Any:
+        """Wrap validation to unify error messages, including type errors (e.g. list)."""
+        allowed = {"naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"}
+        error_msg = "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'"
+        # Omitted field: handler won't be invoked (wrap still gets value); None treated as explicit invalid
+        if v is None:
+            raise PydanticCustomError("literal_error", error_msg)
+        try:
+            # Run inner validation (type checking)
+            result = handler(v)
+        except Exception:
+            raise PydanticCustomError("literal_error", error_msg)
+        # After handler, enforce enumeration
+        if not isinstance(result, str) or result == "" or result not in allowed:
+            raise PydanticCustomError("literal_error", error_msg)
+        return result
 
 
 class UpdateDatasetReq(CreateDatasetReq):

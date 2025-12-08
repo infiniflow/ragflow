@@ -21,10 +21,9 @@ from common.constants import StatusEnum
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService, UserTenantService
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
+from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.misc_utils import get_uuid
 from common.constants import RetCode
-from api.utils.api_utils import get_json_result
 from api.apps import login_required, current_user
 
 
@@ -32,7 +31,7 @@ from api.apps import login_required, current_user
 @validate_request("prompt_config")
 @login_required
 async def set_dialog():
-    req = await request.json
+    req = await get_request_json()
     dialog_id = req.get("dialog_id", "")
     is_create = not dialog_id
     name = req.get("name", "New Dialog")
@@ -181,7 +180,7 @@ async def list_dialogs_next():
     else:
         desc = True
 
-    req = await request.get_json()
+    req = await get_request_json()
     owner_ids = req.get("owner_ids", [])
     try:
         if not owner_ids:
@@ -209,7 +208,7 @@ async def list_dialogs_next():
 @login_required
 @validate_request("dialog_ids")
 async def rm():
-    req = await request.json
+    req = await get_request_json()
     dialog_list=[]
     tenants = UserTenantService.query(user_id=current_user.id)
     try:

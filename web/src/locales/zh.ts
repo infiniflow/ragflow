@@ -701,6 +701,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '检查这是否是 Confluence Cloud 实例，如果是 Confluence 服务/数据中心，则取消选中。',
       confluenceWikiBaseUrlTip:
         'Confluence Wiki 的基础 URL（例如 https://your-domain.atlassian.net/wiki）',
+      confluenceSpaceKeyTip:
+        '可选：指定空间键以限制同步到特定空间。留空则同步所有可访问的空间。多个空间请用逗号分隔（例如：DEV,DOCS,HR）',
       s3PrefixTip: `指定 S3 存储桶内的文件夹路径，用于读取文件。
 示例：general/v2/`,
       addDataSourceModalTital: '创建你的 {{name}} 链接',
@@ -813,6 +815,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       tongyiBaseUrlTip:
         '对于中国用户，不需要填写或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。对于国际用户，使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1。',
       tongyiBaseUrlPlaceholder: '(仅国际用户需要)',
+      minimaxBaseUrlTip: '仅国际用户：使用 https://api.minimax.io/v1。',
+      minimaxBaseUrlPlaceholder: '(仅国际用户填写 https://api.minimax.io/v1)',
       modify: '修改',
       systemModelSettings: '设置默认模型',
       chatModel: 'LLM',
@@ -990,6 +994,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       pleaseUploadAtLeastOneFile: '请上传至少一个文件',
     },
     flow: {
+      autoPlay: '自动播放',
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',
       formatTypeError: '格式或类型错误',
@@ -1895,21 +1900,16 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
     empty: {
       noMCP: '暂无 MCP 服务器可用',
       agentTitle: '尚未创建智能体',
+      notFoundAgent: '未查询到智能体',
       datasetTitle: '尚未创建数据集',
+      notFoundDataset: '未查询到数据集',
       chatTitle: '尚未创建聊天应用',
+      notFoundChat: '未查询到聊天应用',
       searchTitle: '尚未创建搜索应用',
+      notFoundSearch: '未查询到搜索应用',
+      memoryTitle: '尚未创建记忆',
+      notFoundMemory: '未查询到记忆',
       addNow: '立即添加',
-    },
-
-    deleteModal: {
-      delAgent: '删除智能体',
-      delDataset: '删除知识库',
-      delSearch: '删除搜索',
-      delFile: '删除文件',
-      delFiles: '删除文件',
-      delFilesContent: '已选择 {{count}} 个文件',
-      delChat: '删除聊天',
-      delMember: '删除成员',
     },
   },
 };

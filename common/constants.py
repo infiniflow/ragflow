@@ -148,6 +148,7 @@ class Storage(Enum):
     AWS_S3 = 4
     OSS = 5
     OPENDAL = 6
+    GCS = 7
 
 
 class MemoryType(Enum):

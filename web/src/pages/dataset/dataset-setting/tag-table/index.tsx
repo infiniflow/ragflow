@@ -33,7 +33,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useDeleteTag, useFetchTagList } from '@/hooks/knowledge-hooks';
+import { useDeleteTag, useFetchTagList } from '@/hooks/use-knowledge-request';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRenameKnowledgeTag } from '../hooks';

@@ -26,7 +26,7 @@ function InnerRagNode({
       showRun={needsSingleStepDebugging(data.label)}
       showCopy={showCopyIcon(data.label)}
     >
-      <NodeWrapper selected={selected}>
+      <NodeWrapper selected={selected} id={id}>
         <LeftEndHandle></LeftEndHandle>
         <CommonHandle
           type="source"

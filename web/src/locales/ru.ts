@@ -711,6 +711,8 @@ export default {
         'Отметьте, если это экземпляр Confluence Cloud, снимите для Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
         'Базовый URL вашего экземпляра Confluence (например, https://your-domain.atlassian.net/wiki)',
+      confluenceSpaceKeyTip:
+        'Необязательно: Укажите ключ пространства для синхронизации только определенного пространства. Оставьте пустым для синхронизации всех доступных пространств. Для нескольких пространств разделите запятыми (например, DEV,DOCS,HR)',
       s3PrefixTip: `Укажите путь к папке в вашем S3 бакете для получения файлов. 
 Пример: general/v2/`,
       S3CompatibleEndpointUrlTip: `Требуется для S3 совместимого Storage Box. Укажите URL конечной точки, совместимой с S3.
@@ -846,6 +848,10 @@ export default {
         'Для китайских пользователей не нужно заполнять или используйте https://dashscope.aliyuncs.com/compatible-mode/v1. Для международных пользователей используйте https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       tongyiBaseUrlPlaceholder:
         '(Только для международных пользователей, см. подсказку)',
+      minimaxBaseUrlTip:
+        'Только для международных пользователей: используйте https://api.minimax.io/v1.',
+      minimaxBaseUrlPlaceholder:
+        '(Только для международных пользователей, введите https://api.minimax.io/v1)',
       modify: 'Изменить',
       systemModelSettings: 'Установить модели по умолчанию',
       chatModel: 'LLM',

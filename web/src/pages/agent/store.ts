@@ -301,12 +301,7 @@ const useGraphStore = create<RFState>()(
         });
       },
       deleteEdgeById: (id: string) => {
-        const {
-          edges,
-          updateNodeForm,
-          getOperatorTypeFromId,
-          updateSwitchFormData,
-        } = get();
+        const { edges, getOperatorTypeFromId, updateSwitchFormData } = get();
         const currentEdge = edges.find((x) => x.id === id);
 
         if (currentEdge) {
@@ -314,11 +309,6 @@ const useGraphStore = create<RFState>()(
           const operatorType = getOperatorTypeFromId(source);
           // After deleting the edge, set the corresponding field in the node's form field to undefined
           switch (operatorType) {
-            case Operator.Relevant:
-              updateNodeForm(source, {
-                [sourceHandle as string]: undefined,
-              });
-              break;
             // case Operator.Categorize:
             //   if (sourceHandle)
             //     updateNodeForm(source, undefined, [
