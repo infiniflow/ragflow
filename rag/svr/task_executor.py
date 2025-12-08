@@ -592,7 +592,8 @@ async def run_dataflow(task: dict):
         ck["docnm_kwd"] = task["name"]
         ck["create_time"] = str(datetime.now()).replace("T", " ")[:19]
         ck["create_timestamp_flt"] = datetime.now().timestamp()
-        ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
+        if not ck.get("id"):
+            ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
         if "questions" in ck:
             if "question_tks" not in ck:
                 ck["question_kwd"] = ck["questions"].split("\n")
