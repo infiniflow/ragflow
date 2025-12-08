@@ -306,7 +306,7 @@ def ws_token_required(func):
                     objs = APIToken.query(token=token)
                     if objs:
                         kwargs["tenant_id"] = objs[0].tenant_id
-                        logging.info(f"WebSocket authenticated via API token")
+                        logging.info("WebSocket authenticated via API token")
                         return True, kwargs
             except Exception as e:
                 logging.error(f"WebSocket API token auth error: {str(e)}")
@@ -327,7 +327,7 @@ def ws_token_required(func):
                         user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
                         if user and user[0]:
                             kwargs["tenant_id"] = user[0].id
-                            logging.info(f"WebSocket authenticated via user session")
+                            logging.info("WebSocket authenticated via user session")
                             return True, kwargs
                 except Exception:
                     pass
@@ -341,7 +341,7 @@ def ws_token_required(func):
                 objs = APIToken.query(token=token_param)
                 if objs:
                     kwargs["tenant_id"] = objs[0].tenant_id
-                    logging.info(f"WebSocket authenticated via query parameter")
+                    logging.info("WebSocket authenticated via query parameter")
                     return True, kwargs
             except Exception:
                 pass
