@@ -43,9 +43,6 @@ export default function MemoryMessage() {
         // setRowSelection={setRowSelection}
         // loading={loading}
       ></MemoryTable>
-      <div className="flex items-center gap-2">
-        <div className="h-4 w-4 rounded-full bg-text ">message</div>
-      </div>
     </div>
   );
 }

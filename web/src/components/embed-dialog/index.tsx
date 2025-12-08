@@ -1,5 +1,5 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
-import HightLightMarkdown from '@/components/highlight-markdown';
+import HighLightMarkdown from '@/components/highlight-markdown';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import {
   Dialog,
@@ -277,7 +277,7 @@ function EmbedDialog({
           <div className="max-h-[350px] overflow-auto">
             <span>{t('embedCode', { keyPrefix: 'search' })}</span>
             <div className="max-h-full overflow-y-auto">
-              <HightLightMarkdown>{text}</HightLightMarkdown>
+              <HighLightMarkdown>{text}</HighLightMarkdown>
             </div>
           </div>
           <div className=" font-medium mt-4 mb-1">
