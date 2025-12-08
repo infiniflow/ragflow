@@ -953,3 +953,11 @@ export enum WebhookExecutionMode {
   Immediately = 'Immediately',
   Streaming = 'Streaming',
 }
+
+export enum WebhookSecurityAuthType {
+  None = 'none',
+  Token = 'token',
+  Basic = 'basic',
+  Jwt = 'jwt',
+  Hmac = 'hmac',
+}

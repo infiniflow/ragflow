@@ -57,9 +57,27 @@ function BeginForm({ node }: INextOperatorForm) {
       .optional(),
     methods: z.string().optional(),
     content_types: z.string().optional(),
-    security: z.string().optional(),
+    security: z
+      .object({
+        auth_type: z.string(),
+        ip_whitelist: z.array(z.object({ value: z.string() })),
+        rate_limit: z.object({
+          limit: z.number(),
+          per: z.string().optional(),
+        }),
+        max_body_size: z.string(),
+      })
+      .optional(),
     schema: z.string().optional(),
-    response: z.string().optional(),
+    response: z
+      .object({
+        status: z.number(),
+        headers: z.array(z.object({ key: z.string(), value: z.string() })),
+        body_template: z.array(
+          z.object({ key: z.string(), value: z.string() }),
+        ),
+      })
+      .optional(),
     execution_mode: z.string().optional(),
   });
 
