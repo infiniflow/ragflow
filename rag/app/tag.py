@@ -37,7 +37,7 @@ def beAdoc(d, q, a, eng, row_num=-1):
 def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     """
         Excel and csv(txt) format files are supported.
-        If the file is in excel format, there should be 2 column content and tags without header.
+        If the file is in Excel format, there should be 2 column content and tags without header.
         And content column is ahead of tags column.
         And it's O.K if it has multiple sheets as long as the columns are rightly composed.
 
