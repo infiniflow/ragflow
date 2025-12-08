@@ -3,6 +3,7 @@ import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { Form, Input, InputNumber, Modal, Select, Switch } from 'antd';
 import omit from 'lodash/omit';
+import { LLMHeader } from '../../components/llm-header';
 
 type FieldType = IAddLlmRequestBody & {
   api_version: string;
@@ -57,7 +58,7 @@ const AzureOpenAIModal = ({
 
   return (
     <Modal
-      title={t('addLlmTitle', { name: llmFactory })}
+      title={<LLMHeader name={llmFactory} />}
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}

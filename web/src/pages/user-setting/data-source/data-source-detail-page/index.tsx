@@ -136,7 +136,7 @@ const SourceDetailPage = () => {
         ...customFields,
       ] as FormFieldConfig[];
 
-      const neweFields = fields.map((field) => {
+      const newFields = fields.map((field) => {
         return {
           ...field,
           horizontal: true,
@@ -145,7 +145,7 @@ const SourceDetailPage = () => {
           },
         };
       });
-      setFields(neweFields);
+      setFields(newFields);
 
       const defultValueTemp = {
         ...(DataSourceFormDefaultValues[
