@@ -4,7 +4,7 @@ import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import searchService from '@/services/search-service';
+import searchService, { searchServiceNext } from '@/services/search-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback, useState } from 'react';
@@ -103,7 +103,7 @@ export const useFetchSearchList = () => {
       },
     ],
     queryFn: async () => {
-      const { data: response } = await searchService.getSearchList(
+      const { data: response } = await searchServiceNext.getSearchList(
         {
           params: {
             keywords: debouncedSearchString,

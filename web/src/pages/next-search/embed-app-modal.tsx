@@ -1,4 +1,4 @@
-import HightLightMarkdown from '@/components/highlight-markdown';
+import HighLightMarkdown from '@/components/highlight-markdown';
 import message from '@/components/ui/message';
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowSelect } from '@/components/ui/select';
@@ -102,7 +102,7 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
           </label>
           {/* <div className=" border rounded-lg"> */}
           {/* <pre className="text-sm whitespace-pre-wrap">{text}</pre> */}
-          <HightLightMarkdown>{text}</HightLightMarkdown>
+          <HighLightMarkdown>{text}</HighLightMarkdown>
           {/* </div> */}
         </div>
 
