@@ -75,7 +75,7 @@ class YahooFinance(ToolBase, ABC):
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 60)))
     def _invoke(self, **kwargs):
         if self.check_if_canceled("YahooFinance processing"):
-            return
+            return None
 
         if not kwargs.get("stock_code"):
             self.set_output("report", "")
@@ -84,33 +84,33 @@ class YahooFinance(ToolBase, ABC):
         last_e = ""
         for _ in range(self._param.max_retries+1):
             if self.check_if_canceled("YahooFinance processing"):
-                return
+                return None
 
-            yohoo_res = []
+            yahoo_res = []
             try:
                 msft = yf.Ticker(kwargs["stock_code"])
                 if self.check_if_canceled("YahooFinance processing"):
-                    return
+                    return None
 
                 if self._param.info:
-                    yohoo_res.append("# Information:\n" + pd.Series(msft.info).to_markdown() + "\n")
+                    yahoo_res.append("# Information:\n" + pd.Series(msft.info).to_markdown() + "\n")
                 if self._param.history:
-                    yohoo_res.append("# History:\n" + msft.history().to_markdown() + "\n")
+                    yahoo_res.append("# History:\n" + msft.history().to_markdown() + "\n")
                 if self._param.financials:
-                    yohoo_res.append("# Calendar:\n" + pd.DataFrame(msft.calendar).to_markdown() + "\n")
+                    yahoo_res.append("# Calendar:\n" + pd.DataFrame(msft.calendar).to_markdown() + "\n")
                 if self._param.balance_sheet:
-                    yohoo_res.append("# Balance sheet:\n" + msft.balance_sheet.to_markdown() + "\n")
-                    yohoo_res.append("# Quarterly balance sheet:\n" + msft.quarterly_balance_sheet.to_markdown() + "\n")
+                    yahoo_res.append("# Balance sheet:\n" + msft.balance_sheet.to_markdown() + "\n")
+                    yahoo_res.append("# Quarterly balance sheet:\n" + msft.quarterly_balance_sheet.to_markdown() + "\n")
                 if self._param.cash_flow_statement:
-                    yohoo_res.append("# Cash flow statement:\n" + msft.cashflow.to_markdown() + "\n")
-                    yohoo_res.append("# Quarterly cash flow statement:\n" + msft.quarterly_cashflow.to_markdown() + "\n")
+                    yahoo_res.append("# Cash flow statement:\n" + msft.cashflow.to_markdown() + "\n")
+                    yahoo_res.append("# Quarterly cash flow statement:\n" + msft.quarterly_cashflow.to_markdown() + "\n")
                 if self._param.news:
-                    yohoo_res.append("# News:\n" + pd.DataFrame(msft.news).to_markdown() + "\n")
-                self.set_output("report", "\n\n".join(yohoo_res))
+                    yahoo_res.append("# News:\n" + pd.DataFrame(msft.news).to_markdown() + "\n")
+                self.set_output("report", "\n\n".join(yahoo_res))
                 return self.output("report")
             except Exception as e:
                 if self.check_if_canceled("YahooFinance processing"):
-                    return
+                    return None
 
                 last_e = e
                 logging.exception(f"YahooFinance error: {e}")

@@ -70,7 +70,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     """
         Supported file formats are docx, pdf, txt.
         Since a book is long and not all the parts are useful, if it's a PDF,
-        please setup the page ranges for every book in order eliminate negative effects and save elapsed computing time.
+        please set up the page ranges for every book in order eliminate negative effects and save elapsed computing time.
     """
     parser_config = kwargs.get(
         "parser_config", {

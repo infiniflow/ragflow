@@ -120,7 +120,7 @@ def format_document_soup(
             # table is standard HTML element
             if e.name == "table":
                 in_table = True
-            # tr is for rows
+            # TR is for rows
             elif e.name == "tr" and in_table:
                 text += "\n"
             # td for data cell, th for header

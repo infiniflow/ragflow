@@ -126,7 +126,7 @@ class OnyxConfluence:
     def _renew_credentials(self) -> tuple[dict[str, Any], bool]:
         """credential_json - the current json credentials
         Returns a tuple
-        1. The up to date credentials
+        1. The up-to-date credentials
         2. True if the credentials were updated
 
         This method is intended to be used within a distributed lock.
@@ -179,8 +179,8 @@ class OnyxConfluence:
             credential_json["confluence_refresh_token"],
         )
 
-        # store the new credentials to redis and to the db thru the provider
-        # redis: we use a 5 min TTL because we are given a 10 minute grace period
+        # store the new credentials to redis and to the db through the provider
+        # redis: we use a 5 min TTL because we are given a 10 minutes grace period
         # when keys are rotated. it's easier to expire the cached credentials
         # reasonably frequently rather than trying to handle strong synchronization
         # between the db and redis everywhere the credentials might be updated
@@ -690,7 +690,7 @@ class OnyxConfluence:
     ) -> Iterator[dict[str, Any]]:
         """
         This function will paginate through the top level query first, then
-        paginate through all of the expansions.
+        paginate through all the expansions.
         """
 
         def _traverse_and_update(data: dict | list) -> None:
@@ -863,7 +863,7 @@ def get_user_email_from_username__server(
             # For now, we'll just return None and log a warning. This means
             # we will keep retrying to get the email every group sync.
             email = None
-            # We may want to just return a string that indicates failure so we dont
+            # We may want to just return a string that indicates failure so we don't
             # keep retrying
             # email = f"FAILED TO GET CONFLUENCE EMAIL FOR {user_name}"
         _USER_EMAIL_CACHE[user_name] = email
@@ -912,7 +912,7 @@ def extract_text_from_confluence_html(
     confluence_object: dict[str, Any],
     fetched_titles: set[str],
 ) -> str:
-    """Parse a Confluence html page and replace the 'user Id' by the real
+    """Parse a Confluence html page and replace the 'user id' by the real
         User Display Name
 
     Args:

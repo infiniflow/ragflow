@@ -180,7 +180,7 @@ def login_user(user, remember=False, duration=None, force=False, fresh=True):
     user's `is_active` property is ``False``, they will not be logged in
     unless `force` is ``True``.
 
-    This will return ``True`` if the log in attempt succeeds, and ``False`` if
+    This will return ``True`` if the login attempt succeeds, and ``False`` if
     it fails (i.e. because the user is inactive).
 
     :param user: The user object to log in.

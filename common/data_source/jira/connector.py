@@ -80,7 +80,7 @@ _TZ_OFFSET_PATTERN = re.compile(r"([+-])(\d{2})(:?)(\d{2})$")
 
 
 class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync):
-    """Retrieve Jira issues and emit them as markdown documents."""
+    """Retrieve Jira issues and emit them as Markdown documents."""
 
     def __init__(
         self,

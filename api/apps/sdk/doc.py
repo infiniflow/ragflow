@@ -552,7 +552,7 @@ def list_docs(dataset_id, tenant_id):
     create_time_from     = int(q.get("create_time_from", 0))
     create_time_to       = int(q.get("create_time_to", 0))
 
-    # map run status (accept text or numeric) - align with API parameter
+    # map run status (text or numeric) - align with API parameter
     run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
     run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
 
@@ -890,7 +890,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
         type: string
         required: false
         default: ""
-        description: Chunk Id.
+        description: Chunk id.
       - in: header
         name: Authorization
         type: string
