@@ -31,7 +31,6 @@ from quart import (
     jsonify,
     request
 )
-
 from peewee import OperationalError
 
 from common.constants import ActiveEnum
