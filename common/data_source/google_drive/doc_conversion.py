@@ -76,7 +76,7 @@ ALL_ACCEPTED_FILE_EXTENSIONS = ACCEPTED_PLAIN_TEXT_FILE_EXTENSIONS + ACCEPTED_DO
 
 MAX_RETRIEVER_EMAILS = 20
 CHUNK_SIZE_BUFFER = 64  # extra bytes past the limit to read
-# This is not a standard valid unicode char, it is used by the docs advanced API to
+# This is not a standard valid Unicode char, it is used by the docs advanced API to
 # represent smart chips (elements like dates and doc links).
 SMART_CHIP_CHAR = "\ue907"
 WEB_VIEW_LINK_KEY = "webViewLink"

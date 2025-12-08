@@ -7,6 +7,7 @@ import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
+import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { useSearchParams } from 'umi';
@@ -19,10 +20,13 @@ export default function SearchList() {
   // const [isEdit, setIsEdit] = useState(false);
   const {
     data: list,
-    searchParams,
-    setSearchListParams,
+    pagination,
+    searchString,
+    handleInputChange,
+    setPagination,
     refetch: refetchList,
   } = useFetchSearchList();
+
   const {
     openCreateModal,
     showSearchRenameModal,
@@ -32,9 +36,9 @@ export default function SearchList() {
     initialSearchName,
   } = useRenameSearch();
 
-  const handleSearchChange = (value: string) => {
-    console.log(value);
-  };
+  // const handleSearchChange = (value: string) => {
+  //   console.log(value);
+  // };
   const onSearchRenameConfirm = (name: string) => {
     onSearchRenameOk(name, () => {
       refetchList();
@@ -44,10 +48,12 @@ export default function SearchList() {
     // setIsEdit(false);
     showSearchRenameModal();
   }, [showSearchRenameModal]);
-  const handlePageChange = (page: number, pageSize: number) => {
-    // setIsEdit(false);
-    setSearchListParams({ ...searchParams, page, page_size: pageSize });
-  };
+  const handlePageChange = useCallback(
+    (page: number, pageSize?: number) => {
+      setPagination({ page, pageSize });
+    },
+    [setPagination],
+  );
 
   const [searchUrl, setSearchUrl] = useSearchParams();
   const isCreate = searchUrl.get('isCreate') === 'true';
@@ -62,25 +68,28 @@ export default function SearchList() {
   return (
     <section className="w-full h-full flex flex-col">
       {(!list?.data?.search_apps?.length ||
-        list?.data?.search_apps?.length <= 0) && (
-        <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
-          <EmptyAppCard
-            showIcon
-            size="large"
-            className="w-[480px] p-14"
-            type={EmptyCardType.Search}
-            onClick={() => openCreateModalFun()}
-          />
-        </div>
-      )}
-      {!!list?.data?.search_apps?.length && (
+        list?.data?.search_apps?.length <= 0) &&
+        !searchString && (
+          <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
+            <EmptyAppCard
+              showIcon
+              size="large"
+              className="w-[480px] p-14"
+              type={EmptyCardType.Search}
+              isSearch={!!searchString}
+              onClick={() => openCreateModalFun()}
+            />
+          </div>
+        )}
+      {(!!list?.data?.search_apps?.length || searchString) && (
         <>
           <div className="px-8 pt-8">
             <ListFilterBar
               icon="searches"
               title={t('searchApps')}
               showFilter={false}
-              onSearchChange={(e) => handleSearchChange(e.target.value)}
+              searchString={searchString}
+              onSearchChange={handleInputChange}
             >
               <Button
                 variant={'default'}
@@ -93,6 +102,20 @@ export default function SearchList() {
               </Button>
             </ListFilterBar>
           </div>
+          {(!list?.data?.search_apps?.length ||
+            list?.data?.search_apps?.length <= 0) &&
+            searchString && (
+              <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
+                <EmptyAppCard
+                  showIcon
+                  size="large"
+                  className="w-[480px] p-14"
+                  type={EmptyCardType.Search}
+                  isSearch={!!searchString}
+                  onClick={() => openCreateModalFun()}
+                />
+              </div>
+            )}
           <div className="flex-1">
             <CardContainer className="max-h-[calc(100dvh-280px)] overflow-auto px-8">
               {list?.data.search_apps.map((x) => {
@@ -111,8 +134,8 @@ export default function SearchList() {
           {list?.data.total && list?.data.total > 0 && (
             <div className="px-8 mb-4">
               <RAGFlowPagination
-                current={searchParams.page}
-                pageSize={searchParams.page_size}
+                {...pick(pagination, 'current', 'pageSize')}
+                // total={pagination.total}
                 total={list?.data.total}
                 onChange={handlePageChange}
               />

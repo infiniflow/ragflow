@@ -29,8 +29,8 @@ class GmailService(Resource):
 
 class RefreshableDriveObject:
     """
-    Running Google drive service retrieval functions
-    involves accessing methods of the service object (ie. files().list())
+    Running Google Drive service retrieval functions
+    involves accessing methods of the service object (i.e. files().list())
     which can raise a RefreshError if the access token is expired.
     This class is a wrapper that propagates the ability to refresh the access token
     and retry the final retrieval function until execute() is called.

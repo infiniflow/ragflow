@@ -14,6 +14,7 @@ import {
 } from 'antd';
 import omit from 'lodash/omit';
 import { useEffect } from 'react';
+import { LLMHeader } from '../../components/llm-header';
 
 type FieldType = IAddLlmRequestBody & {
   vision: boolean;
@@ -147,11 +148,7 @@ const OllamaModal = ({
   };
   return (
     <Modal
-      title={
-        editMode
-          ? t('editLlmTitle', { name: llmFactory })
-          : t('addLlmTitle', { name: llmFactory })
-      }
+      title={<LLMHeader name={llmFactory} />}
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}

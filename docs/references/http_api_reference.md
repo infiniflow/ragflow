@@ -4013,7 +4013,7 @@ Failure:
 
 **DELETE** `/api/v1/agents/{agent_id}/sessions`
 
-Deletes sessions of a agent by ID.
+Deletes sessions of an agent by ID.
 
 #### Request
 
@@ -4072,7 +4072,7 @@ Failure:
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
-This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find the it in the Request Headers in your browser easily as shown below:
+This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find it in the Request Headers in your browser easily as shown below:
 
 ![Image](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/login_token.jpg)
 
