@@ -25,7 +25,7 @@ services:
     #   - --no-transport-streamable-http-enabled #  Disable Streamable HTTP transport (/mcp endpoint)
     #   - --no-json-response # Disable JSON response mode in Streamable HTTP transport (instead of SSE over HTTP)
 
-    # Example configration to start Admin server:
+    # Example configuration to start Admin server:
     command:
       - --enable-adminserver
     ports:
@@ -74,9 +74,9 @@ services:
     #   - --no-transport-streamable-http-enabled #  Disable Streamable HTTP transport (/mcp endpoint)
     #   - --no-json-response # Disable JSON response mode in Streamable HTTP transport (instead of SSE over HTTP)
 
-    # Example configration to start Admin server:
-    # command:
-    #   - --enable-adminserver
+    # Example configuration to start Admin server:
+    command:
+      - --enable-adminserver
     ports:
       - ${SVR_WEB_HTTP_PORT}:80
       - ${SVR_WEB_HTTPS_PORT}:443
