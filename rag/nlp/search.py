@@ -91,7 +91,7 @@ class Dealer:
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                        "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
                        "question_kwd", "question_tks", "doc_type_kwd",
-                       "available_int", "content_with_weight", PAGERANK_FLD, TAG_FLD])
+                       "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD])
         kwds = set([])
 
         qst = req.get("question", "")
@@ -389,9 +389,6 @@ class Dealer:
             "topk": top,
             "similarity": similarity_threshold,
             "available_int": 1,
-            "fields":["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
-                      "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
-                      "question_kwd", "question_tks", "doc_type_kwd","available_int", "content_with_weight","mom_id", PAGERANK_FLD, TAG_FLD]
         }
 
         if isinstance(tenant_ids, str):
