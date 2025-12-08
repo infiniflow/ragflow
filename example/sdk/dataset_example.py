@@ -14,9 +14,9 @@
 #  limitations under the License.
 #
 
-'''
+"""
 The example is about CRUD operations (Create, Read, Update, Delete) on a dataset.
-'''
+"""
 
 from ragflow_sdk import RAGFlow
 import sys

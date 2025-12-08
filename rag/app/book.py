@@ -70,7 +70,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     """
         Supported file formats are docx, pdf, txt.
         Since a book is long and not all the parts are useful, if it's a PDF,
-        please setup the page ranges for every book in order eliminate negative effects and save elapsed computing time.
+        please set up the page ranges for every book in order eliminate negative effects and save elapsed computing time.
     """
     parser_config = kwargs.get(
         "parser_config", {
@@ -143,13 +143,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        binary = BytesIO(binary)
-        doc_parsed = parser.from_buffer(binary)
-        sections = doc_parsed['content'].split('\n')
-        sections = [(line, "") for line in sections if line]
-        remove_contents_table(sections, eng=is_english(
-            random_choices([t for t, _ in sections], k=200)))
-        callback(0.8, "Finish parsing.")
+        with BytesIO(binary) as binary:
+            binary = BytesIO(binary)
+            doc_parsed = parser.from_buffer(binary)
+            sections = doc_parsed['content'].split('\n')
+            sections = [(line, "") for line in sections if line]
+            remove_contents_table(sections, eng=is_english(
+                random_choices([t for t, _ in sections], k=200)))
+            callback(0.8, "Finish parsing.")
 
     else:
         raise NotImplementedError(
