@@ -74,7 +74,7 @@ async def set_api_key():
             assert factory in ChatModel, f"Chat model from {factory} is not supported yet."
             mdl = ChatModel[factory](req["api_key"], llm.llm_name, base_url=req.get("base_url"), **extra)
             try:
-                m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {"temperature": 0.9, "max_tokens": 50})
+                m, tc = await mdl.async_chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {"temperature": 0.9, "max_tokens": 50})
                 if m.find("**ERROR**") >= 0:
                     raise Exception(m)
                 chat_passed = True
@@ -217,7 +217,7 @@ async def add_llm():
             **extra,
         )
         try:
-            m, tc = mdl.chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {"temperature": 0.9})
+            m, tc = await mdl.async_chat(None, [{"role": "user", "content": "Hello! How are you doing!"}], {"temperature": 0.9})
             if not tc and m.find("**ERROR**:") >= 0:
                 raise Exception(m)
         except Exception as e:
