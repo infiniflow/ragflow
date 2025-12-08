@@ -1494,7 +1494,7 @@ class ConfluenceConnector(
         return comment_string
 
     def _convert_page_to_document(
-        self, page: dict[str, Any]
+        self, page: dict[str, Any], title_counts: dict[str, int] | None = None
     ) -> Document | ConnectorFailure:
         """
         Converts a Confluence page to a Document object.
@@ -1552,11 +1552,18 @@ class ConfluenceConnector(
                     BasicExpertInfo(display_name=display_name, email=email)
                 )
 
+            # Build semantic identifier - use full path only if title appears multiple times
+            semantic_id = page_title
+            if title_counts and title_counts.get(page_title, 0) > 1:
+                space_name = page.get("space", {}).get("name", "")
+                if space_name:
+                    semantic_id = f"{space_name} / {page_title}"
+
             # Create the document
             return Document(
                 id=page_url,
                 source=DocumentSource.CONFLUENCE,
-                semantic_identifier=page_title,
+                semantic_identifier=semantic_id,
                 extension=".html",  # Confluence pages are HTML
                 blob=page_content.encode("utf-8"),  # Encode page content as bytes
                 size_bytes=len(page_content.encode("utf-8")),  # Calculate size in bytes
@@ -1593,10 +1600,21 @@ class ConfluenceConnector(
         attachment_docs: list[Document] = []
         page_url = ""
 
+        # Collect all attachments first to count filename occurrences
+        all_attachments = []
         for attachment in self.confluence_client.paginated_cql_retrieval(
             cql=attachment_query,
             expand=",".join(_ATTACHMENT_EXPANSION_FIELDS),
         ):
+            all_attachments.append(attachment)
+        
+        # Count attachment title occurrences
+        attachment_title_counts: dict[str, int] = {}
+        for attachment in all_attachments:
+            attachment_title = attachment.get("title", "")
+            attachment_title_counts[attachment_title] = attachment_title_counts.get(attachment_title, 0) + 1
+
+        for attachment in all_attachments:
             media_type: str = attachment.get("metadata", {}).get("mediaType", "")
 
             # TODO(rkuo): this check is partially redundant with validate_attachment_filetype
@@ -1677,11 +1695,22 @@ class ConfluenceConnector(
 
                 extension = Path(attachment.get("title", "")).suffix or ".unknown"
 
+                # Build semantic identifier - use full path only if title appears multiple times
+                attachment_title = attachment.get("title", object_url)
+                semantic_id = attachment_title
+                if attachment_title_counts.get(attachment_title, 0) > 1:
+                    space_name = attachment.get("space", {}).get("name", "")
+                    page_title = page.get("title", "")
+                    if space_name and page_title:
+                        semantic_id = f"{space_name} / {page_title} / {attachment_title}"
+                    elif page_title:
+                        semantic_id = f"{page_title} / {attachment_title}"
+
                 attachment_doc = Document(
                     id=attachment_id,
                     # sections=sections,
                     source=DocumentSource.CONFLUENCE,
-                    semantic_identifier=attachment.get("title", object_url),
+                    semantic_identifier=semantic_id,
                     extension=extension,
                     blob=file_blob,
                     size_bytes=len(file_blob),
@@ -1739,7 +1768,9 @@ class ConfluenceConnector(
         )
         logging.debug(f"page_query_url: {page_query_url}")
 
-        # store the next page start for confluence server, cursor for confluence cloud
+        # Collect all pages first to count title occurrences
+        all_pages = []
+        
         def store_next_page_url(next_page_url: str) -> None:
             checkpoint.next_page_url = next_page_url
 
@@ -1748,8 +1779,18 @@ class ConfluenceConnector(
             limit=self.batch_size,
             next_page_callback=store_next_page_url,
         ):
-            # Build doc from page
-            doc_or_failure = self._convert_page_to_document(page)
+            all_pages.append(page)
+        
+        # Count page title occurrences
+        title_counts: dict[str, int] = {}
+        for page in all_pages:
+            page_title = page.get("title", "")
+            title_counts[page_title] = title_counts.get(page_title, 0) + 1
+        
+        # Process all pages
+        for page in all_pages:
+            # Build doc from page with conditional semantic_id
+            doc_or_failure = self._convert_page_to_document(page, title_counts)
 
             if isinstance(doc_or_failure, ConnectorFailure):
                 yield doc_or_failure

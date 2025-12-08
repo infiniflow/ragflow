@@ -87,15 +87,69 @@ class DropboxConnector(LoadConnector, PollConnector):
         if self.dropbox_client is None:
             raise ConnectorMissingCredentialError("Dropbox")
 
+        # Collect all files first to count filename occurrences
+        all_files = []
+        self._collect_files_recursive(path, start, end, all_files)
+        
+        # Count filename occurrences
+        filename_counts: dict[str, int] = {}
+        for entry, _ in all_files:
+            filename_counts[entry.name] = filename_counts.get(entry.name, 0) + 1
+        
+        # Process files in batches
+        batch: list[Document] = []
+        for entry, downloaded_file in all_files:
+            modified_time = entry.client_modified
+            if modified_time.tzinfo is None:
+                modified_time = modified_time.replace(tzinfo=timezone.utc)
+            else:
+                modified_time = modified_time.astimezone(timezone.utc)
+            
+            # Use full path only if filename appears multiple times
+            if filename_counts.get(entry.name, 0) > 1:
+                # Remove leading slash and replace slashes with ' / '
+                relative_path = entry.path_display.lstrip('/')
+                semantic_id = relative_path.replace('/', ' / ') if relative_path else entry.name
+            else:
+                semantic_id = entry.name
+            
+            batch.append(
+                Document(
+                    id=f"dropbox:{entry.id}",
+                    blob=downloaded_file,
+                    source=DocumentSource.DROPBOX,
+                    semantic_identifier=semantic_id,
+                    extension=get_file_ext(entry.name),
+                    doc_updated_at=modified_time,
+                    size_bytes=entry.size if getattr(entry, "size", None) is not None else len(downloaded_file),
+                )
+            )
+            
+            if len(batch) == self.batch_size:
+                yield batch
+                batch = []
+        
+        if batch:
+            yield batch
+
+    def _collect_files_recursive(
+        self,
+        path: str,
+        start: SecondsSinceUnixEpoch | None,
+        end: SecondsSinceUnixEpoch | None,
+        all_files: list,
+    ) -> None:
+        """Recursively collect all files matching time criteria."""
+        if self.dropbox_client is None:
+            raise ConnectorMissingCredentialError("Dropbox")
+
         result = self.dropbox_client.files_list_folder(
             path,
-            limit=self.batch_size,
             recursive=False,
             include_non_downloadable_files=False,
         )
 
         while True:
-            batch: list[Document] = []
             for entry in result.entries:
                 if isinstance(entry, FileMetadata):
                     modified_time = entry.client_modified
@@ -112,27 +166,13 @@ class DropboxConnector(LoadConnector, PollConnector):
 
                     try:
                         downloaded_file = self._download_file(entry.path_display)
+                        all_files.append((entry, downloaded_file))
                     except Exception:
                         logger.exception(f"[Dropbox]: Error downloading file {entry.path_display}")
                         continue
 
-                    batch.append(
-                        Document(
-                            id=f"dropbox:{entry.id}",
-                            blob=downloaded_file,
-                            source=DocumentSource.DROPBOX,
-                            semantic_identifier=entry.name,
-                            extension=get_file_ext(entry.name),
-                            doc_updated_at=modified_time,
-                            size_bytes=entry.size if getattr(entry, "size", None) is not None else len(downloaded_file),
-                        )
-                    )
-
                 elif isinstance(entry, FolderMetadata):
-                    yield from self._yield_files_recursive(entry.path_lower, start, end)
-
-            if batch:
-                yield batch
+                    self._collect_files_recursive(entry.path_lower, start, end, all_files)
 
             if not result.has_more:
                 break

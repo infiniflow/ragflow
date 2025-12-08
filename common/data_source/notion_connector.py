@@ -447,6 +447,17 @@ class NotionConnector(LoadConnector, PollConnector):
 
             raw_page_title = self._read_page_title(page)
             page_title = raw_page_title or f"Untitled Page with ID {page.id}"
+            
+            # Count attachment semantic_identifier occurrences within this page
+            attachment_name_counts: dict[str, int] = {}
+            for att_doc in attachment_docs:
+                name = att_doc.semantic_identifier
+                attachment_name_counts[name] = attachment_name_counts.get(name, 0) + 1
+            
+            # Update semantic identifiers for duplicate attachments
+            for att_doc in attachment_docs:
+                if attachment_name_counts.get(att_doc.semantic_identifier, 0) > 1:
+                    att_doc.semantic_identifier = f"{page_title} / {att_doc.semantic_identifier}"
 
             if not page_blocks:
                 if not raw_page_title:
