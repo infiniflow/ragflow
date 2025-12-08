@@ -218,9 +218,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             callback(0.8, f"tika.parser got empty content from {filename}.")
             logging.warning(f"tika.parser got empty content from {filename}.")
             return []
-
-        callback(0.8, "Finish parsing.")
-
     else:
         raise NotImplementedError(
             "file type not supported yet(doc, docx, pdf, txt supported)")
