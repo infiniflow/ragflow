@@ -226,6 +226,13 @@ export default {
   getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,
   retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
 
+  // memory
+  createMemory: `${api_host}/memory/create`,
+  getMemoryList: `${api_host}/memory/list`,
+  deleteMemory: (id: string) => `${api_host}/memory/rm/${id}`,
+  getMemoryDetail: (id: string) => `${api_host}/memory/detail/${id}`,
+  updateMemorySetting: (id: string) => `${api_host}/memory/update/${id}`,
+
   // data pipeline
   fetchDataflow: (id: string) => `${api_host}/dataflow/get/${id}`,
   setDataflow: `${api_host}/dataflow/set`,

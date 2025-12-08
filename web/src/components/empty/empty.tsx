@@ -76,9 +76,10 @@ export const EmptyAppCard = (props: {
   onClick?: () => void;
   showIcon?: boolean;
   className?: string;
+  isSearch?: boolean;
   size?: 'small' | 'large';
 }) => {
-  const { type, showIcon, className } = props;
+  const { type, showIcon, className, isSearch } = props;
   let defaultClass = '';
   let style = {};
   switch (props.size) {
@@ -95,19 +96,29 @@ export const EmptyAppCard = (props: {
       break;
   }
   return (
-    <div className=" cursor-pointer " onClick={props.onClick}>
+    <div
+      className=" cursor-pointer "
+      onClick={isSearch ? undefined : props.onClick}
+    >
       <EmptyCard
         icon={showIcon ? EmptyCardData[type].icon : undefined}
-        title={EmptyCardData[type].title}
+        title={
+          isSearch ? EmptyCardData[type].notFound : EmptyCardData[type].title
+        }
         className={className}
         style={style}
         // description={EmptyCardData[type].description}
       >
-        <div
-          className={cn(defaultClass, 'flex items-center justify-start w-full')}
-        >
-          <Plus size={24} />
-        </div>
+        {!isSearch && (
+          <div
+            className={cn(
+              defaultClass,
+              'flex items-center justify-start w-full',
+            )}
+          >
+            <Plus size={24} />
+          </div>
+        )}
       </EmptyCard>
     </div>
   );

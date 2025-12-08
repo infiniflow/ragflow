@@ -1,9 +1,7 @@
 import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
-import { IconFont } from '@/components/icon-font';
 import ListFilterBar from '@/components/list-filter-bar';
-import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
@@ -11,12 +9,14 @@ import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { useSearchParams } from 'umi';
-import { useFetchSearchList, useRenameSearch } from './hooks';
-import { SearchCard } from './search-card';
+import { AddOrEditModal } from './add-or-edit-modal';
+import { useFetchMemoryList, useRenameMemory } from './hooks';
+import { ICreateMemoryProps } from './interface';
+import { MemoryCard } from './memory-card';
 
-export default function SearchList() {
+export default function MemoryList() {
   // const { data } = useFetchFlowList();
-  const { t } = useTranslate('search');
+  const { t } = useTranslate('memory');
   // const [isEdit, setIsEdit] = useState(false);
   const {
     data: list,
@@ -25,29 +25,26 @@ export default function SearchList() {
     handleInputChange,
     setPagination,
     refetch: refetchList,
-  } = useFetchSearchList();
+  } = useFetchMemoryList();
 
   const {
     openCreateModal,
-    showSearchRenameModal,
-    hideSearchRenameModal,
+    showMemoryRenameModal,
+    hideMemoryModal,
     searchRenameLoading,
-    onSearchRenameOk,
-    initialSearchName,
-  } = useRenameSearch();
+    onMemoryRenameOk,
+    initialMemory,
+  } = useRenameMemory();
 
-  // const handleSearchChange = (value: string) => {
-  //   console.log(value);
-  // };
-  const onSearchRenameConfirm = (name: string) => {
-    onSearchRenameOk(name, () => {
+  const onMemoryConfirm = (data: ICreateMemoryProps) => {
+    onMemoryRenameOk(data, () => {
       refetchList();
     });
   };
   const openCreateModalFun = useCallback(() => {
     // setIsEdit(false);
-    showSearchRenameModal();
-  }, [showSearchRenameModal]);
+    showMemoryRenameModal();
+  }, [showMemoryRenameModal]);
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
       setPagination({ page, pageSize });
@@ -55,41 +52,41 @@ export default function SearchList() {
     [setPagination],
   );
 
-  const [searchUrl, setSearchUrl] = useSearchParams();
+  const [searchUrl, setMemoryUrl] = useSearchParams();
   const isCreate = searchUrl.get('isCreate') === 'true';
   useEffect(() => {
     if (isCreate) {
       openCreateModalFun();
       searchUrl.delete('isCreate');
-      setSearchUrl(searchUrl);
+      setMemoryUrl(searchUrl);
     }
-  }, [isCreate, openCreateModalFun, searchUrl, setSearchUrl]);
+  }, [isCreate, openCreateModalFun, searchUrl, setMemoryUrl]);
 
   return (
     <section className="w-full h-full flex flex-col">
-      {(!list?.data?.search_apps?.length ||
-        list?.data?.search_apps?.length <= 0) &&
+      {(!list?.data?.memory_list?.length ||
+        list?.data?.memory_list?.length <= 0) &&
         !searchString && (
           <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
             <EmptyAppCard
               showIcon
               size="large"
               className="w-[480px] p-14"
-              type={EmptyCardType.Search}
               isSearch={!!searchString}
+              type={EmptyCardType.Memory}
               onClick={() => openCreateModalFun()}
             />
           </div>
         )}
-      {(!!list?.data?.search_apps?.length || searchString) && (
+      {(!!list?.data?.memory_list?.length || searchString) && (
         <>
           <div className="px-8 pt-8">
             <ListFilterBar
-              icon="searches"
-              title={t('searchApps')}
+              icon="memory"
+              title={t('memory')}
               showFilter={false}
-              searchString={searchString}
               onSearchChange={handleInputChange}
+              searchString={searchString}
             >
               <Button
                 variant={'default'}
@@ -98,35 +95,35 @@ export default function SearchList() {
                 }}
               >
                 <Plus className="mr-2 h-4 w-4" />
-                {t('createSearch')}
+                {t('createMemory')}
               </Button>
             </ListFilterBar>
           </div>
-          {(!list?.data?.search_apps?.length ||
-            list?.data?.search_apps?.length <= 0) &&
+          {(!list?.data?.memory_list?.length ||
+            list?.data?.memory_list?.length <= 0) &&
             searchString && (
               <div className="flex w-full items-center justify-center h-[calc(100vh-164px)]">
                 <EmptyAppCard
                   showIcon
                   size="large"
                   className="w-[480px] p-14"
-                  type={EmptyCardType.Search}
                   isSearch={!!searchString}
+                  type={EmptyCardType.Memory}
                   onClick={() => openCreateModalFun()}
                 />
               </div>
             )}
           <div className="flex-1">
             <CardContainer className="max-h-[calc(100dvh-280px)] overflow-auto px-8">
-              {list?.data.search_apps.map((x) => {
+              {list?.data.memory_list.map((x) => {
                 return (
-                  <SearchCard
+                  <MemoryCard
                     key={x.id}
                     data={x}
-                    showSearchRenameModal={() => {
-                      showSearchRenameModal(x);
+                    showMemoryRenameModal={() => {
+                      showMemoryRenameModal(x);
                     }}
-                  ></SearchCard>
+                  ></MemoryCard>
                 );
               })}
             </CardContainer>
@@ -143,14 +140,23 @@ export default function SearchList() {
           )}
         </>
       )}
-      {openCreateModal && (
+      {/* {openCreateModal && (
         <RenameDialog
-          hideModal={hideSearchRenameModal}
-          onOk={onSearchRenameConfirm}
-          initialName={initialSearchName}
+          hideModal={hideMemoryRenameModal}
+          onOk={onMemoryRenameConfirm}
+          initialName={initialMemoryName}
           loading={searchRenameLoading}
-          title={<IconFont name="search" className="size-6"></IconFont>}
+          title={<HomeIcon name="memory" width={'24'} />}
         ></RenameDialog>
+      )} */}
+      {openCreateModal && (
+        <AddOrEditModal
+          initialMemory={initialMemory}
+          open={openCreateModal}
+          loading={searchRenameLoading}
+          onClose={hideMemoryModal}
+          onSubmit={onMemoryConfirm}
+        />
       )}
     </section>
   );

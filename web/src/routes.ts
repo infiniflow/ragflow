@@ -11,6 +11,10 @@ export enum Routes {
   Agent = '/agent',
   AgentTemplates = '/agent-templates',
   Agents = '/agents',
+  Memories = '/memories',
+  Memory = '/memory',
+  MemoryMessage = '/memory-message',
+  MemorySetting = '/memory-setting',
   AgentList = '/agent-list',
   Searches = '/next-searches',
   Search = '/next-search',
@@ -89,6 +93,7 @@ const routes = [
     path: Routes.AgentList,
     component: `@/pages/${Routes.Agents}`,
   },
+
   {
     path: '/document/:id',
     component: '@/pages/document-viewer',
@@ -148,6 +153,41 @@ const routes = [
         component: `@/pages${Routes.Searches}`,
       },
     ],
+  },
+  {
+    path: Routes.Memories,
+    layout: false,
+    component: '@/layouts/next',
+    routes: [
+      {
+        path: Routes.Memories,
+        component: `@/pages${Routes.Memories}`,
+      },
+    ],
+  },
+  {
+    path: `${Routes.Memory}`,
+    layout: false,
+    component: '@/layouts/next',
+    routes: [
+      {
+        path: `${Routes.Memory}`,
+        layout: false,
+        component: `@/pages${Routes.Memory}`,
+        routes: [
+          {
+            path: `${Routes.Memory}/${Routes.MemoryMessage}/:id`,
+            component: `@/pages${Routes.Memory}${Routes.MemoryMessage}`,
+          },
+          {
+            path: `${Routes.Memory}/${Routes.MemorySetting}/:id`,
+            component: `@/pages${Routes.Memory}${Routes.MemorySetting}`,
+          },
+        ],
+      },
+    ],
+    // component: `@/pages${Routes.DatasetBase}`,
+    // component: `@/pages${Routes.Memory}`,
   },
   {
     path: `${Routes.Search}/:id`,

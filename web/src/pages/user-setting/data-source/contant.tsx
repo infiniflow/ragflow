@@ -1,6 +1,7 @@
 import { FormFieldType } from '@/components/dynamic-form';
 import SvgIcon from '@/components/svg-icon';
 import { t } from 'i18next';
+import { ControllerRenderProps } from 'react-hook-form';
 import { ConfluenceIndexingModeField } from './component/confluence-token-field';
 import GmailTokenField from './component/gmail-token-field';
 import GoogleDriveTokenField from './component/google-drive-token-field';
@@ -237,7 +238,9 @@ export const DataSourceFormFields = {
       required: false,
       horizontal: true,
       labelClassName: 'self-start pt-4',
-      render: (fieldProps) => <ConfluenceIndexingModeField {...fieldProps} />,
+      render: (fieldProps: ControllerRenderProps) => (
+        <ConfluenceIndexingModeField {...fieldProps} />
+      ),
     },
     {
       label: 'Space Key',
@@ -598,6 +601,7 @@ export const DataSourceFormDefaultValues = {
         confluence_username: '',
         confluence_access_token: '',
       },
+      index_mode: 'everything',
     },
   },
   [DataSourceKey.GOOGLE_DRIVE]: {
