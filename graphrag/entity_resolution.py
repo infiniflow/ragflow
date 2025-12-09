@@ -146,6 +146,7 @@ class EntityResolution(Extractor):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
+            logging.error(f"Error resolving candidate pairs: {e}")
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -169,6 +170,7 @@ class EntityResolution(Extractor):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
+            logging.error(f"Error merging nodes: {e}")
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)

@@ -707,6 +707,7 @@ async def is_strong_enough(chat_model, embedding_model):
     try:
         await asyncio.gather(*tasks, return_exceptions=False)
     except Exception as e:
+        logging.error(f"Pressure test failed: {e}")
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

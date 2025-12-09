@@ -15,6 +15,7 @@
 #
 
 import asyncio
+import logging
 import os
 import sys
 sys.path.insert(
@@ -78,6 +79,7 @@ def main(args):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
+            logging.error("OCR tasks failed: {}".format(e))
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)

@@ -479,6 +479,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
+            logging.error(f"Error while deleting edges: {e}")
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)

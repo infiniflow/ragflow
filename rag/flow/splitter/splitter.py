@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 import asyncio
+import logging
 import random
 import re
 from copy import deepcopy
@@ -135,6 +136,7 @@ class Splitter(ProcessBase):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
+            logging.error(f"error when splitting: {e}")
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)

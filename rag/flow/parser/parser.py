@@ -20,6 +20,7 @@ import random
 import re
 from functools import partial
 
+from litellm import logging
 import numpy as np
 from PIL import Image
 
@@ -819,6 +820,7 @@ class Parser(ProcessBase):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
+            logging.error("Error while parsing: %s" % e)
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)

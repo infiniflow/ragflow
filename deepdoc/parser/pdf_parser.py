@@ -1150,6 +1150,7 @@ class RAGFlowPdfParser:
                 try:
                     await asyncio.gather(*tasks, return_exceptions=False)
                 except Exception as e:
+                    logging.error(f"Error in OCR: {e}")
                     for t in tasks:
                         t.cancel()
                     await asyncio.gather(*tasks, return_exceptions=True)

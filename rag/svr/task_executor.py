@@ -339,6 +339,7 @@ async def build_chunks(task, progress_callback):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
+            logging.error("Error in doc_keyword_extraction: {}".format(e))
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -370,6 +371,7 @@ async def build_chunks(task, progress_callback):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
+            logging.error("Error in doc_question_proposal", exc_info=e)
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -430,6 +432,7 @@ async def build_chunks(task, progress_callback):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
+            logging.error("Error tagging docs: {}".format(e))
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)

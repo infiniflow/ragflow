@@ -108,6 +108,7 @@ class MindMapExtractor(Extractor):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
+            logging.error(f"Error processing document: {e}")
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
