@@ -15,22 +15,23 @@
 #
 import logging
 
+from quart import request
 from api.apps import login_required, current_user
 from api.db import TenantPermission
 from api.db.services.memory_service import MemoryService
 from api.db.services.user_service import UserTenantService
-from api.utils.api_utils import validate_request, request_json, get_error_argument_result, get_json_result, \
+from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result, \
     not_allowed_parameters
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from common.constants import MemoryType, RetCode, ForgettingPolicy
 
 
-@manager.route("/create", methods=["POST"])  # noqa: F821
+@manager.route("", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name", "memory_type", "embd_id", "llm_id")
 async def create_memory():
-    req = await request_json()
+    req = await get_request_json()
     # check name length
     name = req["name"]
     memory_name = name.strip()
@@ -64,11 +65,11 @@ async def create_memory():
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 
-@manager.route("/update/<memory_id>", methods=["PUT"])  # noqa: F821
+@manager.route("/<memory_id>", methods=["PUT"])  # noqa: F821
 @login_required
 @not_allowed_parameters("id", "tenant_id", "memory_type", "storage_type", "embd_id")
 async def update_memory(memory_id):
-    req = await request_json()
+    req = await get_request_json()
     update_dict = {}
     # check name length
     if "name" in req:
@@ -132,7 +133,7 @@ async def update_memory(memory_id):
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 
-@manager.route("/rm/<memory_id>", methods=["DELETE"]) # noqa: F821
+@manager.route("/<memory_id>", methods=["DELETE"]) # noqa: F821
 @login_required
 async def delete_memory(memory_id):
     memory = MemoryService.get_by_memory_id(memory_id)
@@ -146,19 +147,25 @@ async def delete_memory(memory_id):
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 
-@manager.route("/list", methods=["POST"]) # noqa: F821
+@manager.route("", methods=["GET"]) # noqa: F821
 @login_required
 async def list_memory():
-    req = await request_json()
+    args = request.args
     try:
-        filter_dict = req.get("filter", {})
-        keywords = req.get("keywords", "")
-        page = req.get("page", 1)
-        page_size = req.get("page_size", 50)
-        if not filter_dict.get("tenant_id"):
+        tenant_ids = args.getlist("tenant_id")
+        memory_types = args.getlist("memory_type")
+        storage_type = args.get("storage_type")
+        keywords = args.get("keywords", "")
+        page = int(args.get("page", 1))
+        page_size = int(args.get("page_size", 50))
+        # make filter dict
+        filter_dict = {"memory_type": memory_types, "storage_type": storage_type}
+        if not tenant_ids:
             # restrict to current user's tenants
             user_tenants = UserTenantService.get_user_tenant_relation_by_user_id(current_user.id)
             filter_dict["tenant_id"] = [tenant["tenant_id"] for tenant in user_tenants]
+        else:
+            filter_dict["tenant_id"] = tenant_ids
 
         memory_list, count = MemoryService.get_by_filter(filter_dict, keywords, page, page_size)
         [memory.update({"memory_type": get_memory_type_human(memory["memory_type"])}) for memory in memory_list]
@@ -169,7 +176,7 @@ async def list_memory():
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 
-@manager.route("/config/<memory_id>", methods=["GET"])  # noqa: F821
+@manager.route("/<memory_id>/config", methods=["GET"])  # noqa: F821
 @login_required
 async def get_memory_config(memory_id):
     memory = MemoryService.get_with_owner_name_by_id(memory_id)

@@ -30,14 +30,14 @@ class TestAuthorization:
         ],
     )
     def test_auth_invalid(self, invalid_auth, expected_code, expected_message):
-        res = list_memory(invalid_auth, "some_memory_id")
+        res = list_memory(invalid_auth)
         assert res["code"] == expected_code, res
         assert res["message"] == expected_message, res
 
 
 class TestCapability:
     @pytest.mark.p3
-    def test_memory_id(self, WebApiAuth):
+    def test_capability(self, WebApiAuth):
         count = 100
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(list_memory, WebApiAuth) for i in range(count)]
@@ -78,14 +78,21 @@ class TestMemoryList:
 
     @pytest.mark.p2
     def test_filter_memory_type(self, WebApiAuth):
-        res = list_memory(WebApiAuth, {"filter": {"memory_type": ["semantic"]}})
+        res = list_memory(WebApiAuth, {"memory_type": ["semantic"]})
         assert res["code"] == 0, res
         for memory in res["data"]["memory_list"]:
             assert "semantic" in memory["memory_type"], res
 
     @pytest.mark.p2
+    def test_filter_multi_memory_type(self, WebApiAuth):
+        res = list_memory(WebApiAuth, {"memory_type": ["episodic", "procedural"]})
+        assert res["code"] == 0, res
+        for memory in res["data"]["memory_list"]:
+            assert "episodic" in memory["memory_type"] or "procedural" in memory["memory_type"], res
+
+    @pytest.mark.p2
     def test_filter_storage_type(self, WebApiAuth):
-        res = list_memory(WebApiAuth, {"filter":{"storage_type": "table"}})
+        res = list_memory(WebApiAuth, {"storage_type": "table"})
         assert res["code"] == 0, res
         for memory in res["data"]["memory_list"]:
             assert memory["storage_type"] == "table", res
