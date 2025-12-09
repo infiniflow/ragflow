@@ -53,7 +53,12 @@ export function RAGFlowFormItem({
               {label}
             </FormLabel>
           )}
-          <div className="w-full flex flex-col">
+          <div
+            className={cn('flex flex-col', {
+              'w-3/4': horizontal,
+              'w-full': !horizontal,
+            })}
+          >
             <FormControl>
               {typeof children === 'function'
                 ? children(field)

@@ -67,6 +67,7 @@ export default function DatasetSettings() {
         html4excel: false,
         topn_tags: 3,
         toc_extraction: false,
+        overlapped_percent: 0,
         raptor: {
           use_raptor: true,
           max_token: 256,
