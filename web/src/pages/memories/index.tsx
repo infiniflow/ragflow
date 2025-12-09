@@ -7,7 +7,7 @@ import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { useTranslate } from '@/hooks/common-hooks';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'umi';
 import { AddOrEditModal } from './add-or-edit-modal';
 import { useFetchMemoryList, useRenameMemory } from './hooks';
@@ -16,7 +16,8 @@ import { MemoryCard } from './memory-card';
 
 export default function MemoryList() {
   // const { data } = useFetchFlowList();
-  const { t } = useTranslate('memory');
+  const { t } = useTranslate('memories');
+  const [addOrEditType, setAddOrEditType] = useState<'add' | 'edit'>('add');
   // const [isEdit, setIsEdit] = useState(false);
   const {
     data: list,
@@ -43,6 +44,7 @@ export default function MemoryList() {
   };
   const openCreateModalFun = useCallback(() => {
     // setIsEdit(false);
+    setAddOrEditType('add');
     showMemoryRenameModal();
   }, [showMemoryRenameModal]);
   const handlePageChange = useCallback(
@@ -121,6 +123,7 @@ export default function MemoryList() {
                     key={x.id}
                     data={x}
                     showMemoryRenameModal={() => {
+                      setAddOrEditType('edit');
                       showMemoryRenameModal(x);
                     }}
                   ></MemoryCard>
@@ -152,6 +155,7 @@ export default function MemoryList() {
       {openCreateModal && (
         <AddOrEditModal
           initialMemory={initialMemory}
+          isCreate={addOrEditType === 'add'}
           open={openCreateModal}
           loading={searchRenameLoading}
           onClose={hideMemoryModal}
