@@ -22,7 +22,6 @@ from copy import deepcopy
 from typing import Tuple
 import jinja2
 import json_repair
-import trio
 from common.misc_utils import hash_str2int
 from rag.nlp import rag_tokenizer
 from rag.prompts.template import load_prompt
@@ -744,12 +743,19 @@ async def run_toc_from_text(chunks, chat_mdl, callback=None):
     titles = []
 
     chunks_res = []
-    async with trio.open_nursery() as nursery:
-        for i, chunk in enumerate(chunk_sections):
-            if not chunk:
-                continue
-            chunks_res.append({"chunks": chunk})
-            nursery.start_soon(gen_toc_from_text, chunks_res[-1], chat_mdl, callback)
+    tasks = []
+    for i, chunk in enumerate(chunk_sections):
+        if not chunk:
+            continue
+        chunks_res.append({"chunks": chunk})
+        tasks.append(asyncio.create_task(gen_toc_from_text(chunks_res[-1], chat_mdl, callback)))
+    try:
+        await asyncio.gather(*tasks, return_exceptions=False)
+    except Exception as e:
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
     for chunk in chunks_res:
         titles.extend(chunk.get("toc", []))

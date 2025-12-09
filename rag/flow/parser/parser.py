@@ -12,6 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import asyncio
 import io
 import json
 import os
@@ -20,7 +21,6 @@ import re
 from functools import partial
 
 import numpy as np
-import trio
 from PIL import Image
 
 from api.db.services.file2document_service import File2DocumentService
@@ -804,7 +804,7 @@ class Parser(ProcessBase):
         for p_type, conf in self._param.setups.items():
             if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            await trio.to_thread.run_sync(function_map[p_type], name, blob)
+            await asyncio.to_thread(function_map[p_type], name, blob)
             done = True
             break
 
@@ -812,6 +812,14 @@ class Parser(ProcessBase):
             raise Exception("No suitable for file extension: `.%s`" % from_upstream.name.split(".")[-1].lower())
 
         outs = self.output()
-        async with trio.open_nursery() as nursery:
-            for d in outs.get("json", []):
-                nursery.start_soon(image2id, d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())
+        tasks = []
+        for d in outs.get("json", []):
+            tasks.append(asyncio.create_task(image2id(d,partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id),get_uuid())))
+
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
