@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import binascii
 import logging
 import re
@@ -21,7 +22,6 @@ from copy import deepcopy
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
-import trio
 from langfuse import Langfuse
 from peewee import fn
 from agentic_reasoning import DeepResearcher
@@ -931,5 +931,5 @@ def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         rank_feature=label_question(question, kbs),
     )
     mindmap = MindMapExtractor(chat_mdl)
-    mind_map = trio.run(mindmap, [c["content_with_weight"] for c in ranks["chunks"]])
+    mind_map = asyncio.run(mindmap([c["content_with_weight"] for c in ranks["chunks"]]))
     return mind_map.output

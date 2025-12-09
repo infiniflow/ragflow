@@ -19,7 +19,6 @@ import queue
 import threading
 from typing import Any, Callable, Coroutine, Optional, Type, Union
 import asyncio
-import trio
 from functools import wraps
 from quart import make_response, jsonify
 from common.constants import RetCode
@@ -70,11 +69,10 @@ def timeout(seconds: float | int | str = None, attempts: int = 2, *, exception: 
             for a in range(attempts):
                 try:
                     if os.environ.get("ENABLE_TIMEOUT_ASSERTION"):
-                        with trio.fail_after(seconds):
-                            return await func(*args, **kwargs)
+                        return await asyncio.wait_for(func(*args, **kwargs), timeout=seconds)
                     else:
                         return await func(*args, **kwargs)
-                except trio.TooSlowError:
+                except asyncio.TimeoutError:
                     if a < attempts - 1:
                         continue
                     if on_timeout is not None:

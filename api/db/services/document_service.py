@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import json
 import logging
 import random
@@ -22,7 +23,6 @@ from copy import deepcopy
 from datetime import datetime
 from io import BytesIO
 
-import trio
 import xxhash
 from peewee import fn, Case, JOIN
 
@@ -999,7 +999,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             from graphrag.general.mind_map_extractor import MindMapExtractor
             mindmap = MindMapExtractor(llm_bdl)
             try:
-                mind_map = trio.run(mindmap, [c["content_with_weight"] for c in docs if c["doc_id"] == doc_id])
+                mind_map = asyncio.run(mindmap([c["content_with_weight"] for c in docs if c["doc_id"] == doc_id]))
                 mind_map = json.dumps(mind_map.output, ensure_ascii=False, indent=2)
                 if len(mind_map) < 32:
                     raise Exception("Few content: " + mind_map)
