@@ -16,12 +16,13 @@
 import json
 import logging
 import random
+import re
+import asyncio
 
-from flask import request
-from flask_login import login_required, current_user
+from quart import request
 import numpy as np
 
-from api.db import LLMType
+from api.db.services.connector_service import Connector2KbService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.document_service import DocumentService, queue_raptor_o_graphrag_tasks
 from api.db.services.file2document_service import File2DocumentService
@@ -29,36 +30,40 @@ from api.db.services.file_service import FileService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from api.db.services.task_service import TaskService, GRAPH_RAPTOR_FAKE_DOC_ID
 from api.db.services.user_service import TenantService, UserTenantService
-from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters
-from api.db import PipelineTaskType, StatusEnum, FileSource, VALID_FILE_TYPES, VALID_TASK_STATUS
+from api.utils.api_utils import get_error_data_result, server_error_response, get_data_error_result, validate_request, not_allowed_parameters, \
+    get_request_json
+from api.db import VALID_FILE_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
-from api import settings
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
-from rag.settings import PAGERANK_FLD
 from rag.utils.redis_conn import REDIS_CONN
-from rag.utils.storage_factory import STORAGE_IMPL
-from rag.utils.doc_store_conn import OrderByExpr  
+from rag.utils.doc_store_conn import OrderByExpr
+from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType, PAGERANK_FLD
+from common import settings
+from api.apps import login_required, current_user
 
 
 @manager.route('/create', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("name")
-def create():
-    req = request.json
-    req = KnowledgebaseService.create_with_name(
+async def create():
+    req = await get_request_json()
+    e, res = KnowledgebaseService.create_with_name(
         name = req.pop("name", None),
         tenant_id = current_user.id,
         parser_id = req.pop("parser_id", None),
         **req
-    )        
+    )
+
+    if not e:
+        return res
 
     try:
-        if not KnowledgebaseService.save(**req):
+        if not KnowledgebaseService.save(**res):
             return get_data_error_result()
-        return get_json_result(data={"kb_id":req["id"]})
+        return get_json_result(data={"kb_id":res["id"]})
     except Exception as e:
         return server_error_response(e)
 
@@ -67,8 +72,8 @@ def create():
 @login_required
 @validate_request("kb_id", "name", "description", "parser_id")
 @not_allowed_parameters("id", "tenant_id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
-def update():
-    req = request.json
+async def update():
+    req = await get_request_json()
     if not isinstance(req["name"], str):
         return get_data_error_result(message="Dataset name must be string.")
     if req["name"].strip() == "":
@@ -82,14 +87,14 @@ def update():
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     try:
         if not KnowledgebaseService.query(
                 created_by=current_user.id, id=req["kb_id"]):
             return get_json_result(
                 data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+                code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
         if not e:
@@ -103,24 +108,42 @@ def update():
                 message="Duplicated knowledgebase name.")
 
         del req["kb_id"]
+        connectors = []
+        if "connectors" in req:
+            connectors = req["connectors"]
+            del req["connectors"]
         if not KnowledgebaseService.update_by_id(kb.id, req):
             return get_data_error_result()
 
         if kb.pagerank != req.get("pagerank", 0):
             if req.get("pagerank", 0) > 0:
-                settings.docStoreConn.update({"kb_id": kb.id}, {PAGERANK_FLD: req["pagerank"]},
-                                         search.index_name(kb.tenant_id), kb.id)
+                await asyncio.to_thread(
+                    settings.docStoreConn.update,
+                    {"kb_id": kb.id},
+                    {PAGERANK_FLD: req["pagerank"]},
+                    search.index_name(kb.tenant_id),
+                    kb.id,
+                )
             else:
                 # Elasticsearch requires PAGERANK_FLD be non-zero!
-                settings.docStoreConn.update({"exists": PAGERANK_FLD}, {"remove": PAGERANK_FLD},
-                                         search.index_name(kb.tenant_id), kb.id)
+                await asyncio.to_thread(
+                    settings.docStoreConn.update,
+                    {"exists": PAGERANK_FLD},
+                    {"remove": PAGERANK_FLD},
+                    search.index_name(kb.tenant_id),
+                    kb.id,
+                )
 
         e, kb = KnowledgebaseService.get_by_id(kb.id)
         if not e:
             return get_data_error_result(
                 message="Database error (Knowledgebase rename)!")
+        errors = Connector2KbService.link_connectors(kb.id, [conn for conn in connectors], current_user.id)
+        if errors:
+            logging.error("Link KB errors: ", errors)
         kb = kb.to_dict()
         kb.update(req)
+        kb["connectors"] = connectors
 
         return get_json_result(data=kb)
     except Exception as e:
@@ -140,12 +163,14 @@ def detail():
         else:
             return get_json_result(
                 data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+                code=RetCode.OPERATING_ERROR)
         kb = KnowledgebaseService.get_detail(kb_id)
         if not kb:
             return get_data_error_result(
                 message="Can't find this knowledgebase!")
         kb["size"] = DocumentService.get_total_size_by_kb_id(kb_id=kb["id"],keywords="", run_status=[], types=[])
+        kb["connectors"] = Connector2KbService.list_connectors(kb_id)
+
         for key in ["graphrag_task_finish_at", "raptor_task_finish_at", "mindmap_task_finish_at"]:
             if finish_at := kb.get(key):
                 kb[key] = finish_at.strftime("%Y-%m-%d %H:%M:%S")
@@ -156,18 +181,19 @@ def detail():
 
 @manager.route('/list', methods=['POST'])  # noqa: F821
 @login_required
-def list_kbs():
-    keywords = request.args.get("keywords", "")
-    page_number = int(request.args.get("page", 0))
-    items_per_page = int(request.args.get("page_size", 0))
-    parser_id = request.args.get("parser_id")
-    orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc", "true").lower() == "false":
+async def list_kbs():
+    args = request.args
+    keywords = args.get("keywords", "")
+    page_number = int(args.get("page", 0))
+    items_per_page = int(args.get("page_size", 0))
+    parser_id = args.get("parser_id")
+    orderby = args.get("orderby", "create_time")
+    if args.get("desc", "true").lower() == "false":
         desc = False
     else:
         desc = True
 
-    req = request.get_json()
+    req = await get_request_json()
     owner_ids = req.get("owner_ids", [])
     try:
         if not owner_ids:
@@ -189,16 +215,17 @@ def list_kbs():
     except Exception as e:
         return server_error_response(e)
 
+
 @manager.route('/rm', methods=['post'])  # noqa: F821
 @login_required
 @validate_request("kb_id")
-def rm():
-    req = request.json
+async def rm():
+    req = await get_request_json()
     if not KnowledgebaseService.accessible4deletion(req["kb_id"], current_user.id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     try:
         kbs = KnowledgebaseService.query(
@@ -206,27 +233,30 @@ def rm():
         if not kbs:
             return get_json_result(
                 data=False, message='Only owner of knowledgebase authorized for this operation.',
-                code=settings.RetCode.OPERATING_ERROR)
+                code=RetCode.OPERATING_ERROR)
 
-        for doc in DocumentService.query(kb_id=req["kb_id"]):
-            if not DocumentService.remove_document(doc, kbs[0].tenant_id):
+        def _rm_sync():
+            for doc in DocumentService.query(kb_id=req["kb_id"]):
+                if not DocumentService.remove_document(doc, kbs[0].tenant_id):
+                    return get_data_error_result(
+                        message="Database error (Document removal)!")
+                f2d = File2DocumentService.get_by_document_id(doc.id)
+                if f2d:
+                    FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
+                File2DocumentService.delete_by_document_id(doc.id)
+            FileService.filter_delete(
+                [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
+            if not KnowledgebaseService.delete_by_id(req["kb_id"]):
                 return get_data_error_result(
-                    message="Database error (Document removal)!")
-            f2d = File2DocumentService.get_by_document_id(doc.id)
-            if f2d:
-                FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
-            File2DocumentService.delete_by_document_id(doc.id)
-        FileService.filter_delete(
-            [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
-        if not KnowledgebaseService.delete_by_id(req["kb_id"]):
-            return get_data_error_result(
-                message="Database error (Knowledgebase removal)!")
-        for kb in kbs:
-            settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
-            settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
-            if hasattr(STORAGE_IMPL, 'remove_bucket'):
-                STORAGE_IMPL.remove_bucket(kb.id)
-        return get_json_result(data=True)
+                    message="Database error (Knowledgebase removal)!")
+            for kb in kbs:
+                settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
+                settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
+                if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
+                    settings.STORAGE_IMPL.remove_bucket(kb.id)
+            return get_json_result(data=True)
+
+        return await asyncio.to_thread(_rm_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -238,7 +268,7 @@ def list_tags(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
 
     tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
@@ -257,7 +287,7 @@ def list_tags_from_kbs():
             return get_json_result(
                 data=False,
                 message='No authorization.',
-                code=settings.RetCode.AUTHENTICATION_ERROR
+                code=RetCode.AUTHENTICATION_ERROR
             )
 
     tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
@@ -269,13 +299,13 @@ def list_tags_from_kbs():
 
 @manager.route('/<kb_id>/rm_tags', methods=['POST'])  # noqa: F821
 @login_required
-def rm_tags(kb_id):
-    req = request.json
+async def rm_tags(kb_id):
+    req = await get_request_json()
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     e, kb = KnowledgebaseService.get_by_id(kb_id)
 
@@ -289,13 +319,13 @@ def rm_tags(kb_id):
 
 @manager.route('/<kb_id>/rename_tag', methods=['POST'])  # noqa: F821
 @login_required
-def rename_tags(kb_id):
-    req = request.json
+async def rename_tags(kb_id):
+    req = await get_request_json()
     if not KnowledgebaseService.accessible(kb_id, current_user.id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     e, kb = KnowledgebaseService.get_by_id(kb_id)
 
@@ -313,7 +343,7 @@ def knowledge_graph(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(kb_id)
     req = {
@@ -353,7 +383,7 @@ def delete_knowledge_graph(kb_id):
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(kb_id)
     settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
@@ -370,7 +400,7 @@ def get_meta():
             return get_json_result(
                 data=False,
                 message='No authorization.',
-                code=settings.RetCode.AUTHENTICATION_ERROR
+                code=RetCode.AUTHENTICATION_ERROR
             )
     return get_json_result(data=DocumentService.get_meta_by_kbs(kb_ids))
 
@@ -383,7 +413,7 @@ def get_basic_info():
         return get_json_result(
             data=False,
             message='No authorization.',
-            code=settings.RetCode.AUTHENTICATION_ERROR
+            code=RetCode.AUTHENTICATION_ERROR
         )
 
     basic_info = DocumentService.knowledgebase_basic_info(kb_id)
@@ -393,10 +423,10 @@ def get_basic_info():
 
 @manager.route("/list_pipeline_logs", methods=["POST"])  # noqa: F821
 @login_required
-def list_pipeline_logs():
+async def list_pipeline_logs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
 
     keywords = request.args.get("keywords", "")
 
@@ -412,7 +442,7 @@ def list_pipeline_logs():
     if create_date_to > create_date_from:
         return get_data_error_result(message="Create data filter is abnormal.")
 
-    req = request.get_json()
+    req = await get_request_json()
 
     operation_status = req.get("operation_status", [])
     if operation_status:
@@ -437,10 +467,10 @@ def list_pipeline_logs():
 
 @manager.route("/list_pipeline_dataset_logs", methods=["POST"])  # noqa: F821
 @login_required
-def list_pipeline_dataset_logs():
+async def list_pipeline_dataset_logs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
 
     page_number = int(request.args.get("page", 0))
     items_per_page = int(request.args.get("page_size", 0))
@@ -454,7 +484,7 @@ def list_pipeline_dataset_logs():
     if create_date_to > create_date_from:
         return get_data_error_result(message="Create data filter is abnormal.")
 
-    req = request.get_json()
+    req = await get_request_json()
 
     operation_status = req.get("operation_status", [])
     if operation_status:
@@ -471,12 +501,12 @@ def list_pipeline_dataset_logs():
 
 @manager.route("/delete_pipeline_logs", methods=["POST"])  # noqa: F821
 @login_required
-def delete_pipeline_logs():
+async def delete_pipeline_logs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
-        return get_json_result(data=False, message='Lack of "KB ID"', code=settings.RetCode.ARGUMENT_ERROR)
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
 
-    req = request.get_json()
+    req = await get_request_json()
     log_ids = req.get("log_ids", [])
 
     PipelineOperationLogService.delete_by_ids(log_ids)
@@ -489,7 +519,7 @@ def delete_pipeline_logs():
 def pipeline_log_detail():
     log_id = request.args.get("log_id")
     if not log_id:
-        return get_json_result(data=False, message='Lack of "Pipeline log ID"', code=settings.RetCode.ARGUMENT_ERROR)
+        return get_json_result(data=False, message='Lack of "Pipeline log ID"', code=RetCode.ARGUMENT_ERROR)
 
     ok, log = PipelineOperationLogService.get_by_id(log_id)
     if not ok:
@@ -500,8 +530,8 @@ def pipeline_log_detail():
 
 @manager.route("/run_graphrag", methods=["POST"])  # noqa: F821
 @login_required
-def run_graphrag():
-    req = request.json
+async def run_graphrag():
+    req = await get_request_json()
 
     kb_id = req.get("kb_id", "")
     if not kb_id:
@@ -562,15 +592,15 @@ def trace_graphrag():
 
     ok, task = TaskService.get_by_id(task_id)
     if not ok:
-        return get_error_data_result(message="GraphRAG Task Not Found or Error Occurred")
+        return get_json_result(data={})
 
     return get_json_result(data=task.to_dict())
 
 
 @manager.route("/run_raptor", methods=["POST"])  # noqa: F821
 @login_required
-def run_raptor():
-    req = request.json
+async def run_raptor():
+    req = await get_request_json()
 
     kb_id = req.get("kb_id", "")
     if not kb_id:
@@ -638,8 +668,8 @@ def trace_raptor():
 
 @manager.route("/run_mindmap", methods=["POST"])  # noqa: F821
 @login_required
-def run_mindmap():
-    req = request.json
+async def run_mindmap():
+    req = await get_request_json()
 
     kb_id = req.get("kb_id", "")
     if not kb_id:
@@ -719,26 +749,32 @@ def delete_kb_task():
     if not pipeline_task_type or pipeline_task_type not in [PipelineTaskType.GRAPH_RAG, PipelineTaskType.RAPTOR, PipelineTaskType.MINDMAP]:
         return get_error_data_result(message="Invalid task type")
 
+    def cancel_task(task_id):
+        REDIS_CONN.set(f"{task_id}-cancel", "x")
+
+    kb_task_id_field: str = ""
+    kb_task_finish_at: str = ""
     match pipeline_task_type:
         case PipelineTaskType.GRAPH_RAG:
-            settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
             kb_task_id_field = "graphrag_task_id"
             task_id = kb.graphrag_task_id
             kb_task_finish_at = "graphrag_task_finish_at"
+            cancel_task(task_id)
+            settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
         case PipelineTaskType.RAPTOR:
             kb_task_id_field = "raptor_task_id"
             task_id = kb.raptor_task_id
             kb_task_finish_at = "raptor_task_finish_at"
+            cancel_task(task_id)
+            settings.docStoreConn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), kb_id)
         case PipelineTaskType.MINDMAP:
             kb_task_id_field = "mindmap_task_id"
             task_id = kb.mindmap_task_id
             kb_task_finish_at = "mindmap_task_finish_at"
+            cancel_task(task_id)
         case _:
             return get_error_data_result(message="Internal Error: Invalid task type")
 
-    def cancel_task(task_id):
-        REDIS_CONN.set(f"{task_id}-cancel", "x")
-    cancel_task(task_id)
 
     ok = KnowledgebaseService.update_by_id(kb_id, {kb_task_id_field: "", kb_task_finish_at: None})
     if not ok:
@@ -748,7 +784,7 @@ def delete_kb_task():
 
 @manager.route("/check_embedding", methods=["post"])  # noqa: F821
 @login_required
-def check_embedding():
+async def check_embedding():
 
     def _guess_vec_field(src: dict) -> str | None:
         for k in src or {}:
@@ -767,14 +803,14 @@ def check_embedding():
 
     def _to_1d(x):
         a = np.asarray(x, dtype=np.float32)
-        return a.reshape(-1)  
+        return a.reshape(-1)
 
     def _cos_sim(a, b, eps=1e-12):
         a = _to_1d(a)
         b = _to_1d(b)
         na = np.linalg.norm(a)
         nb = np.linalg.norm(b)
-        if na < eps or nb < eps: 
+        if na < eps or nb < eps:
             return 0.0
         return float(np.dot(a, b) / (na * nb))
 
@@ -794,12 +830,12 @@ def check_embedding():
             offset=0, limit=1,
             indexNames=index_nm, knowledgebaseIds=[kb_id]
         )
-        total = docStoreConn.getTotal(res0)
+        total = docStoreConn.get_total(res0)
         if total <= 0:
             return []
 
         n = min(n, total)
-        offsets = sorted(random.sample(range(total), n))
+        offsets = sorted(random.sample(range(min(total,1000)), n))
         out = []
 
         for off in offsets:
@@ -811,8 +847,8 @@ def check_embedding():
                 offset=off, limit=1,
                 indexNames=index_nm, knowledgebaseIds=[kb_id]
             )
-            ids = docStoreConn.getChunkIds(res1)
-            if not ids: 
+            ids = docStoreConn.get_chunk_ids(res1)
+            if not ids:
                 continue
 
             cid = ids[0]
@@ -832,9 +868,14 @@ def check_embedding():
                 "position_int": full_doc.get("position_int"),
                 "top_int": full_doc.get("top_int"),
                 "content_with_weight": full_doc.get("content_with_weight") or "",
+                "question_kwd": full_doc.get("question_kwd") or []
             })
         return out
-    req = request.json
+
+    def _clean(s: str) -> str:
+        s = re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", s or "")
+        return s if s else "None"
+    req = await get_request_json()
     kb_id = req.get("kb_id", "")
     embd_id = req.get("embd_id", "")
     n = int(req.get("check_num", 5))
@@ -846,8 +887,10 @@ def check_embedding():
 
     results, eff_sims = [], []
     for ck in samples:
-        txt = (ck.get("content_with_weight") or "").strip()
-        if not txt:
+        title = ck.get("doc_name") or "Title"
+        txt_in = "\n".join(ck.get("question_kwd") or []) or ck.get("content_with_weight") or ""
+        txt_in = _clean(txt_in)
+        if not txt_in:
             results.append({"chunk_id": ck["chunk_id"], "reason": "no_text"})
             continue
 
@@ -856,10 +899,19 @@ def check_embedding():
             continue
 
         try:
-            qv, _ = emb_mdl.encode_queries(txt)  
-            sim = _cos_sim(qv, ck["vector"])
-        except Exception:
-            return get_error_data_result(message="embedding failure")
+            v, _ = emb_mdl.encode([title, txt_in])
+            assert len(v[1]) == len(ck["vector"]), f"The dimension ({len(v[1])}) of given embedding model is different from the original ({len(ck['vector'])})"
+            sim_content = _cos_sim(v[1], ck["vector"])
+            title_w = 0.1
+            qv_mix = title_w * v[0] + (1 - title_w) * v[1]
+            sim_mix = _cos_sim(qv_mix, ck["vector"])
+            sim = sim_content
+            mode = "content_only"
+            if sim_mix > sim:
+                sim = sim_mix
+                mode = "title+content"
+        except Exception as e:
+            return get_error_data_result(message=f"Embedding failure. {e}")
 
         eff_sims.append(sim)
         results.append({
@@ -879,7 +931,8 @@ def check_embedding():
         "avg_cos_sim": round(float(np.mean(eff_sims)) if eff_sims else 0.0, 6),
         "min_cos_sim": round(float(np.min(eff_sims)) if eff_sims else 0.0, 6),
         "max_cos_sim": round(float(np.max(eff_sims)) if eff_sims else 0.0, 6),
+        "match_mode": mode,
     }
-    if summary["avg_cos_sim"] > 0.99:
+    if summary["avg_cos_sim"] > 0.9:
         return get_json_result(data={"summary": summary, "results": results})
-    return get_json_result(code=settings.RetCode.NOT_EFFECTIVE, message="failed", data={"summary": summary, "results": results})
+    return get_json_result(code=RetCode.NOT_EFFECTIVE, message="Embedding model switch failed: the average similarity between old and new vectors is below 0.9, indicating incompatible vector spaces.", data={"summary": summary, "results": results})

@@ -12,9 +12,14 @@ import { ReactComponent as WenCaiIcon } from '@/assets/svg/wencai.svg';
 import { ReactComponent as WikipediaIcon } from '@/assets/svg/wikipedia.svg';
 import { ReactComponent as YahooFinanceIcon } from '@/assets/svg/yahoo-finance.svg';
 
-import { IconFont } from '@/components/icon-font';
+import { IconFontFill } from '@/components/icon-font';
 import { cn } from '@/lib/utils';
-import { FileCode, HousePlus } from 'lucide-react';
+import {
+  FileCode,
+  HousePlus,
+  Infinity as InfinityIcon,
+  LogOut,
+} from 'lucide-react';
 import { Operator } from './constant';
 
 interface IProps {
@@ -37,6 +42,9 @@ export const OperatorIconMap = {
   [Operator.ExeSQL]: 'executesql-0',
   [Operator.Invoke]: 'httprequest-0',
   [Operator.Email]: 'sendemail-0',
+  [Operator.ListOperations]: 'a-listoperations',
+  [Operator.VariableAssigner]: 'a-ariableassigner',
+  [Operator.VariableAggregator]: 'aggregator',
 };
 
 export const SVGIconMap = {
@@ -55,9 +63,10 @@ export const SVGIconMap = {
   [Operator.WenCai]: WenCaiIcon,
   [Operator.Crawler]: CrawlerIcon,
 };
-
 export const LucideIconMap = {
   [Operator.DataOperations]: FileCode,
+  [Operator.Loop]: InfinityIcon,
+  [Operator.ExitLoop]: LogOut,
 };
 
 const Empty = () => {
@@ -84,7 +93,10 @@ const OperatorIcon = ({ name, className }: IProps) => {
 
   if (Icon) {
     return (
-      <IconFont name={Icon} className={cn('size-5 ', className)}></IconFont>
+      <IconFontFill
+        name={Icon}
+        className={cn('size-5 ', className)}
+      ></IconFontFill>
     );
   }
 

@@ -1,5 +1,5 @@
 [general]
-version                  = "0.6.2"
+version                  = "0.6.11"
 time_zone                = "utc-8"
 
 [network]
@@ -17,7 +17,7 @@ log_file_max_size        = "100MB"
 log_file_rotate_count    = 10
 
 # trace/debug/info/warning/error/critical 6 log levels, default: info
-log_level               = "trace"
+log_level               = "info"
 
 [storage]
 persistence_dir         = "/var/infinity/persistence"
@@ -54,4 +54,3 @@ memindex_memory_quota    = "1GB"
 wal_dir                       = "/var/infinity/wal"
 
 [resource]
-resource_dir                  = "/var/infinity/resource"

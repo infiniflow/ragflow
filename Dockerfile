@@ -10,11 +10,10 @@ WORKDIR /ragflow
 # Copy models downloaded via download_deps.py
 RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
-    cp /huggingface.co/InfiniFlow/huqie/huqie.txt.trie /ragflow/rag/res/ && \
     tar --exclude='.*' -cf - \
         /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
         /huggingface.co/InfiniFlow/deepdoc \
-        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc 
+        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
 
 # https://github.com/chrismattmann/tika-python
 # This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
@@ -50,18 +49,24 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y libatk-bridge2.0-0 && \
     apt install -y libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev && \
     apt install -y libjemalloc-dev && \
-    apt install -y python3-pip pipx nginx unzip curl wget git vim less && \
-    apt install -y ghostscript
+    apt install -y nginx unzip curl wget git vim less && \
+    apt install -y ghostscript && \
+    apt install -y pandoc && \
+    apt install -y texlive
 
-RUN if [ "$NEED_MIRROR" == "1" ]; then \
-        pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
-        pip3 config set global.trusted-host pypi.tuna.tsinghua.edu.cn; \
+# Install uv
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
+    if [ "$NEED_MIRROR" == "1" ]; then \
         mkdir -p /etc/uv && \
-        echo "[[index]]" > /etc/uv/uv.toml && \
+        echo 'python-install-mirror = "https://registry.npmmirror.com/-/binary/python-build-standalone/"' > /etc/uv/uv.toml && \
+        echo '[[index]]' >> /etc/uv/uv.toml && \
         echo 'url = "https://pypi.tuna.tsinghua.edu.cn/simple"' >> /etc/uv/uv.toml && \
-        echo "default = true" >> /etc/uv/uv.toml; \
+        echo 'default = true' >> /etc/uv/uv.toml; \
     fi; \
-    pipx install uv
+    tar xzf /deps/uv-x86_64-unknown-linux-gnu.tar.gz \
+    && cp uv-x86_64-unknown-linux-gnu/* /usr/local/bin/ \
+    && rm -rf uv-x86_64-unknown-linux-gnu \
+    && uv python install 3.11
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 ENV PATH=/root/.local/bin:$PATH
@@ -77,12 +82,12 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
 # A modern version of cargo is needed for the latest version of the Rust compiler.
 RUN apt update && apt install -y curl build-essential \
     && if [ "$NEED_MIRROR" == "1" ]; then \
-         # Use TUNA mirrors for rustup/rust dist files
+         # Use TUNA mirrors for rustup/rust dist files \
          export RUSTUP_DIST_SERVER="https://mirrors.tuna.tsinghua.edu.cn/rustup"; \
          export RUSTUP_UPDATE_ROOT="https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup"; \
          echo "Using TUNA mirrors for Rustup."; \
        fi; \
-    # Force curl to use HTTP/1.1
+    # Force curl to use HTTP/1.1 \
     curl --proto '=https' --tlsv1.2 --http1.1 -sSf https://sh.rustup.rs | bash -s -- -y --profile minimal \
     && echo 'export PATH="/root/.cargo/bin:${PATH}"' >> /root/.bashrc
 
@@ -146,7 +151,7 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     else \
         sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
     fi; \
-    uv sync --python 3.10 --frozen
+    uv sync --python 3.11 --frozen
 
 COPY web web
 COPY docs docs

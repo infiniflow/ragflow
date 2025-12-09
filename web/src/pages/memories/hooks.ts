@@ -1,0 +1,292 @@
+// src/pages/next-memoryes/hooks.ts
+
+import message from '@/components/ui/message';
+import { useSetModalState } from '@/hooks/common-hooks';
+import { useHandleSearchChange } from '@/hooks/logic-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import memoryService, { updateMemoryById } from '@/services/memory-service';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useDebounce } from 'ahooks';
+import { omit } from 'lodash';
+import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useParams, useSearchParams } from 'umi';
+import {
+  CreateMemoryResponse,
+  DeleteMemoryProps,
+  DeleteMemoryResponse,
+  ICreateMemoryProps,
+  IMemory,
+  IMemoryAppDetailProps,
+  MemoryDetailResponse,
+  MemoryListResponse,
+} from './interface';
+
+export const useCreateMemory = () => {
+  const { t } = useTranslation();
+
+  const {
+    data,
+    isError,
+    mutateAsync: createMemoryMutation,
+  } = useMutation<CreateMemoryResponse, Error, ICreateMemoryProps>({
+    mutationKey: ['createMemory'],
+    mutationFn: async (props) => {
+      const { data: response } = await memoryService.createMemory(props);
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to create memory');
+      }
+      return response.data;
+    },
+    onSuccess: () => {
+      message.success(t('message.created'));
+    },
+    onError: (error) => {
+      message.error(t('message.error', { error: error.message }));
+    },
+  });
+
+  const createMemory = useCallback(
+    (props: ICreateMemoryProps) => {
+      return createMemoryMutation(props);
+    },
+    [createMemoryMutation],
+  );
+
+  return { data, isError, createMemory };
+};
+
+export const useFetchMemoryList = () => {
+  const { handleInputChange, searchString, pagination, setPagination } =
+    useHandleSearchChange();
+  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  const { data, isLoading, isError, refetch } = useQuery<
+    MemoryListResponse,
+    Error
+  >({
+    queryKey: [
+      'memoryList',
+      {
+        debouncedSearchString,
+        ...pagination,
+      },
+    ],
+    queryFn: async () => {
+      const { data: response } = await memoryService.getMemoryList(
+        {
+          data: {
+            keywords: debouncedSearchString,
+            page_size: pagination.pageSize,
+            page: pagination.current,
+          },
+          params: {},
+        },
+        true,
+      );
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to fetch memory list');
+      }
+      console.log(response);
+      return response;
+    },
+  });
+
+  // const setMemoryListParams = (newParams: MemoryListParams) => {
+  //   setMemoryParams((prevParams) => ({
+  //     ...prevParams,
+  //     ...newParams,
+  //   }));
+  // };
+
+  return {
+    data,
+    isLoading,
+    isError,
+    pagination,
+    searchString,
+    handleInputChange,
+    setPagination,
+    refetch,
+  };
+};
+
+export const useFetchMemoryDetail = (tenantId?: string) => {
+  const { id } = useParams();
+
+  const [memoryParams] = useSearchParams();
+  const shared_id = memoryParams.get('shared_id');
+  const memoryId = id || shared_id;
+  let param: { id: string | null; tenant_id?: string } = {
+    id: memoryId,
+  };
+  if (shared_id) {
+    param = {
+      id: memoryId,
+      tenant_id: tenantId,
+    };
+  }
+  const fetchMemoryDetailFunc = shared_id
+    ? memoryService.getMemoryDetailShare
+    : memoryService.getMemoryDetail;
+
+  const { data, isLoading, isError } = useQuery<MemoryDetailResponse, Error>({
+    queryKey: ['memoryDetail', memoryId],
+    enabled: !shared_id || !!tenantId,
+    queryFn: async () => {
+      const { data: response } = await fetchMemoryDetailFunc(param);
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to fetch memory detail');
+      }
+      return response;
+    },
+  });
+
+  return { data: data?.data, isLoading, isError };
+};
+
+export const useDeleteMemory = () => {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isError,
+    mutateAsync: deleteMemoryMutation,
+  } = useMutation<DeleteMemoryResponse, Error, DeleteMemoryProps>({
+    mutationKey: ['deleteMemory'],
+    mutationFn: async (props) => {
+      const { data: response } = await memoryService.deleteMemory(
+        props.memory_id,
+      );
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to delete memory');
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['memoryList'] });
+      return response;
+    },
+    onSuccess: () => {
+      message.success(t('message.deleted'));
+    },
+    onError: (error) => {
+      message.error(t('message.error', { error: error.message }));
+    },
+  });
+
+  const deleteMemory = useCallback(
+    (props: DeleteMemoryProps) => {
+      return deleteMemoryMutation(props);
+    },
+    [deleteMemoryMutation],
+  );
+
+  return { data, isError, deleteMemory };
+};
+
+export const useUpdateMemory = () => {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isError,
+    mutateAsync: updateMemoryMutation,
+  } = useMutation<any, Error, IMemoryAppDetailProps>({
+    mutationKey: ['updateMemory'],
+    mutationFn: async (formData) => {
+      const param = omit(formData, ['id']);
+      const { data: response } = await updateMemoryById(formData.id, param);
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to update memory');
+      }
+      return response.data;
+    },
+    onSuccess: (data, variables) => {
+      message.success(t('message.updated'));
+      queryClient.invalidateQueries({
+        queryKey: ['memoryDetail', variables.id],
+      });
+    },
+    onError: (error) => {
+      message.error(t('message.error', { error: error.message }));
+    },
+  });
+
+  const updateMemory = useCallback(
+    (formData: IMemoryAppDetailProps) => {
+      return updateMemoryMutation(formData);
+    },
+    [updateMemoryMutation],
+  );
+
+  return { data, isError, updateMemory };
+};
+
+export const useRenameMemory = () => {
+  const [memory, setMemory] = useState<IMemory>({} as IMemory);
+  const { navigateToMemory } = useNavigatePage();
+  const {
+    visible: openCreateModal,
+    hideModal: hideChatRenameModal,
+    showModal: showChatRenameModal,
+  } = useSetModalState();
+  const { updateMemory } = useUpdateMemory();
+  const { createMemory } = useCreateMemory();
+  const [loading, setLoading] = useState(false);
+
+  const handleShowChatRenameModal = useCallback(
+    (record?: IMemory) => {
+      if (record) {
+        setMemory(record);
+      }
+      showChatRenameModal();
+    },
+    [showChatRenameModal],
+  );
+
+  const handleHideModal = useCallback(() => {
+    hideChatRenameModal();
+    setMemory({} as IMemory);
+  }, [hideChatRenameModal]);
+
+  const onMemoryRenameOk = useCallback(
+    async (data: ICreateMemoryProps, callBack?: () => void) => {
+      let res;
+      setLoading(true);
+      if (memory?.id) {
+        try {
+          // const reponse = await memoryService.getMemoryDetail({
+          //   id: memory?.id,
+          // });
+          // const detail = reponse.data?.data;
+          // console.log('detail-->', detail);
+
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          // const { id, created_by, update_time, ...memoryDataTemp } = detail;
+          res = await updateMemory({
+            // ...memoryDataTemp,
+            name: data.name,
+            id: memory?.id,
+          } as unknown as IMemoryAppDetailProps);
+        } catch (e) {
+          console.error('error', e);
+        }
+      } else {
+        res = await createMemory(data);
+      }
+      // if (res && !memory?.id) {
+      //   navigateToMemory(res?.id)();
+      // }
+      callBack?.();
+      setLoading(false);
+      handleHideModal();
+    },
+    [memory, createMemory, handleHideModal, navigateToMemory, updateMemory],
+  );
+  return {
+    memoryRenameLoading: loading,
+    initialMemory: memory,
+    onMemoryRenameOk,
+    openCreateModal,
+    hideMemoryModal: handleHideModal,
+    showMemoryRenameModal: handleShowChatRenameModal,
+  };
+};

@@ -1,4 +1,4 @@
-import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { Avatar } from 'antd';
 import React from 'react';
 import { history } from 'umi';

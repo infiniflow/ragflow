@@ -3,14 +3,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   useFetchUserInfo,
   useListTenantUser,
-} from '@/hooks/user-setting-hooks';
+} from '@/hooks/use-user-setting-request';
 import { useTranslation } from 'react-i18next';
 
 import Spotlight from '@/components/spotlight';
 import { SearchInput } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
 import { UserPlus } from 'lucide-react';
 import { useState } from 'react';
+import {
+  ProfileSettingWrapperCard,
+  UserSettingHeader,
+} from '../components/user-setting-header';
 import AddingUserModal from './add-user-modal';
 import { useAddUser } from './hooks';
 import TenantTable from './tenant-table';
@@ -30,18 +33,21 @@ const UserSettingTeam = () => {
   } = useAddUser();
 
   return (
-    <div className="w-full flex flex-col gap-4 p-4 relative">
+    // <div className="w-full flex flex-col gap-4 relative">
+    //   <Spotlight />
+    //   <UserSettingHeader
+    //     name={userInfo?.nickname + ' ' + t('setting.workspace')}
+    //   />
+    <ProfileSettingWrapperCard
+      header={
+        <UserSettingHeader
+          name={userInfo?.nickname + ' ' + t('setting.workspace')}
+        />
+      }
+    >
       <Spotlight />
-      <Card className="bg-transparent border-none px-0">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 px-0 pt-1">
-          <CardTitle className="text-2xl font-medium">
-            {userInfo?.nickname} {t('setting.workspace')}
-          </CardTitle>
-        </CardHeader>
-      </Card>
-      <Separator className="border-border-button bg-border-button w-[calc(100%+2rem)] -translate-x-4 -translate-y-4" />
       <Card className="bg-transparent border-none">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-0 pb-4">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-4">
           {/* <User className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
           <CardTitle className="text-base">
             {t('setting.teamMembers')}
@@ -59,15 +65,15 @@ const UserSettingTeam = () => {
             </Button>
           </section>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-4">
           <UserTable searchUser={searchUser}></UserTable>
         </CardContent>
       </Card>
 
       <Card className="bg-transparent border-none mt-8">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-0 pb-4">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-4">
           {/* <Users className="mr-2 h-5 w-5 text-[#1677ff]" /> */}
-          <CardTitle className="text-base">
+          <CardTitle className="text-base w-fit">
             {t('setting.joinedTeams')}
           </CardTitle>
           <SearchInput
@@ -77,7 +83,7 @@ const UserSettingTeam = () => {
             placeholder={t('common.search')}
           />
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-4">
           <TenantTable searchTerm={searchTerm}></TenantTable>
         </CardContent>
       </Card>
@@ -89,7 +95,7 @@ const UserSettingTeam = () => {
           onOk={handleAddUserOk}
         ></AddingUserModal>
       )}
-    </div>
+    </ProfileSettingWrapperCard>
   );
 };
 

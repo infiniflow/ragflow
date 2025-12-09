@@ -1,14 +1,19 @@
 import { Authorization } from '@/constants/authorization';
 import { MessageType } from '@/constants/chat';
 import { LanguageTranslationMap } from '@/constants/common';
+import { Pagination } from '@/interfaces/common';
 import { ResponseType } from '@/interfaces/database/base';
-import { IAnswer, Message } from '@/interfaces/database/chat';
+import {
+  IAnswer,
+  IClientConversation,
+  IMessage,
+  Message,
+} from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/knowledge';
-import { IClientConversation, IMessage } from '@/pages/chat/interface';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { buildMessageUuid } from '@/utils/chat';
-import { PaginationProps, message } from 'antd';
+import { message } from 'antd';
 import { FormInstance } from 'antd/lib';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
@@ -25,7 +30,7 @@ import { useTranslation } from 'react-i18next';
 import { v4 as uuid } from 'uuid';
 import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
-import { useFetchTenantInfo, useSaveSetting } from './user-setting-hooks';
+import { useFetchTenantInfo, useSaveSetting } from './use-user-setting-request';
 
 export function usePrevious<T>(value: T) {
   const ref = useRef<T>();
@@ -67,8 +72,8 @@ export const useGetPaginationWithRouter = () => {
     size: pageSize,
   } = useSetPaginationParams();
 
-  const onPageChange: PaginationProps['onChange'] = useCallback(
-    (pageNumber: number, pageSize: number) => {
+  const onPageChange: Pagination['onChange'] = useCallback(
+    (pageNumber: number, pageSize?: number) => {
       setPaginationParams(pageNumber, pageSize);
     },
     [setPaginationParams],
@@ -84,7 +89,7 @@ export const useGetPaginationWithRouter = () => {
     [setPaginationParams, pageSize],
   );
 
-  const pagination: PaginationProps = useMemo(() => {
+  const pagination: Pagination = useMemo(() => {
     return {
       showQuickJumper: true,
       total: 0,
@@ -93,7 +98,7 @@ export const useGetPaginationWithRouter = () => {
       pageSize: pageSize,
       pageSizeOptions: [1, 2, 10, 20, 50, 100],
       onChange: onPageChange,
-      showTotal: (total) => `${t('total')} ${total}`,
+      showTotal: (total: number) => `${t('total')} ${total}`,
     };
   }, [t, onPageChange, page, pageSize]);
 
@@ -105,7 +110,7 @@ export const useGetPaginationWithRouter = () => {
 
 export const useHandleSearchChange = () => {
   const [searchString, setSearchString] = useState('');
-  const { setPagination } = useGetPaginationWithRouter();
+  const { pagination, setPagination } = useGetPaginationWithRouter();
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const value = e.target.value;
@@ -115,21 +120,21 @@ export const useHandleSearchChange = () => {
     [setPagination],
   );
 
-  return { handleInputChange, searchString };
+  return { handleInputChange, searchString, pagination, setPagination };
 };
 
 export const useGetPagination = () => {
   const [pagination, setPagination] = useState({ page: 1, pageSize: 10 });
   const { t } = useTranslate('common');
 
-  const onPageChange: PaginationProps['onChange'] = useCallback(
+  const onPageChange: Pagination['onChange'] = useCallback(
     (pageNumber: number, pageSize: number) => {
       setPagination({ page: pageNumber, pageSize });
     },
     [],
   );
 
-  const currentPagination: PaginationProps = useMemo(() => {
+  const currentPagination: Pagination = useMemo(() => {
     return {
       showQuickJumper: true,
       total: 0,
@@ -138,7 +143,7 @@ export const useGetPagination = () => {
       pageSize: pagination.pageSize,
       pageSizeOptions: [1, 2, 10, 20, 50, 100],
       onChange: onPageChange,
-      showTotal: (total) => `${t('total')} ${total}`,
+      showTotal: (total: number) => `${t('total')} ${total}`,
     };
   }, [t, onPageChange, pagination]);
 
@@ -429,7 +434,7 @@ export const useSelectDerivedMessages = () => {
   );
 
   const addNewestQuestion = useCallback(
-    (message: Message, answer: string = '') => {
+    (message: IMessage, answer: string = '') => {
       setDerivedMessages((pre) => {
         return [
           ...pre,
@@ -442,6 +447,7 @@ export const useSelectDerivedMessages = () => {
           {
             role: MessageType.Assistant,
             content: answer,
+            conversationId: message.conversationId,
             id: buildMessageUuid({ ...message, role: MessageType.Assistant }),
           },
         ];

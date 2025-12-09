@@ -51,9 +51,11 @@ def chunk(
     attachment_res = []
 
     if binary:
-        msg = BytesParser(policy=policy.default).parse(io.BytesIO(binary))
+        with io.BytesIO(binary) as buffer:
+            msg = BytesParser(policy=policy.default).parse(buffer)
     else:
-        msg = BytesParser(policy=policy.default).parse(open(filename, "rb"))
+        with open(filename, "rb") as buffer:
+            msg = BytesParser(policy=policy.default).parse(buffer)
 
     text_txt, html_txt = [], []
     # get the email header info

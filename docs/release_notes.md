@@ -7,20 +7,67 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
-:::info
-Each RAGFlow release is available in two editions:
-- **Slim edition**: excludes built-in embedding models and is identified by a **-slim** suffix added to the version name. Example: `infiniflow/ragflow:v0.21.1-slim`
-- **Full edition**: includes built-in embedding models and has no suffix added to the version name. Example: `infiniflow/ragflow:v0.21.1`
-:::
+## v0.22.1
+
+Released on November 19, 2025.
+
+### Improvements
+
+- Agent:
+  - Supports exporting Agent outputs in Word or Markdown formats.
+  - Adds a **List operations** component.
+  - Adds a **Variable aggregator** component.
+- Data sources:
+  - Supports S3-compatible data sources, e.g., MinIO.
+  - Adds data synchronization with JIRA.
+- Continues the redesign of the **Profile** page layouts.
+- Upgrades the Flask web framework from synchronous to asynchronous, increasing concurrency and preventing blocking issues caused when requesting upstream LLM services.
+
+### Fixed issues
+
+- A v0.22.0 issue: Users failed to parse uploaded files or switch embedding model in a dataset containing parsed files using a built-in model from a `-full` RAGFlow edition.
+- Image concatenated in Word documents. [#11310](https://github.com/infiniflow/ragflow/pull/11310)
+- Mixed images and text were not correctly displayed in the chat history.
+
+### Newly supported models
+
+- Gemini 3 Pro Preview
+
+## v0.22.0
+
+Released on November 12, 2025.
+
+### Breaking Changes
 
 :::danger IMPORTANT
-The embedding models included in a full edition are:
-
-- BAAI/bge-large-zh-v1.5
-- maidalun1020/bce-embedding-base_v1
-
-These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
+From this release onwards, we ship only the slim edition (without embedding models) Docker image and no longer append the `-slim` suffix to the image tag.
 :::
+
+### New Features
+
+- Dataset:
+  - Supports data synchronization from five online sources (AWS S3, Google Drive, Notion, Confluence, and Discord).
+  - RAPTOR can be built across an entire dataset or on individual documents.
+- Ingestion pipeline: Supports [Docling document parsing](https://github.com/docling-project/docling) in the **Parser** component.
+- Launches a new administrative Web UI dashboard for graphical user management and service status monitoring.
+- Agent:
+  - Supports structured output.
+  - Supports metadata filtering in the **Retrieval** component.
+  - Introduces a **Variable aggregator** component with data operation and session variable definition capabilities.
+
+### Improvements
+
+- Agent: Supports visualizing previous components' outputs in the **Await Response** component.
+- Revamps the model provider page.
+- Upgrades RAGFlow's document engine Infinity to v0.6.5.
+
+### Added Models
+
+- Kimi-K2-Thinking
+
+### New agent templates
+
+- Interactive Agent, incorporates real-time user feedback to dynamically optimize Agent output.
 
 ## v0.21.1
 
@@ -56,7 +103,7 @@ Released on October 15, 2025.
 - Redesigns RAGFlow's Login and Registration pages.
 - Upgrades RAGFlow's document engine Infinity to v0.6.0.
 
-### Added models
+### Newly supported models
 
 - Tongyi Qwen 3 series
 - Claude Sonnet 4.5
@@ -79,7 +126,7 @@ Released on September 10, 2025.
   - **Execute SQL** component enhanced: Replaces the original variable reference component with a text input field, allowing users to write free-form SQL queries and reference variables. See [here](./guides/agent/agent_component_reference/execute_sql.md).
 - Chat: Re-enables **Reasoning** and **Cross-language search**.
 
-### Added models
+### Newly supported models
 
 - Meituan LongCat
 - Kimi: kimi-k2-turbo-preview and kimi-k2-0905-preview
@@ -118,7 +165,7 @@ Released on August 27, 2025.
   - Improves Markdown file parsing, with AST support to avoid unintended chunking.
   - Enhances HTML parsing, supporting bs4-based HTML tag traversal.
 
-### Added models
+### Newly supported models
 
 ZHIPU GLM-4.5
 
@@ -179,7 +226,7 @@ Released on August 8, 2025.
 - The **Retrieval** component now supports the dynamic specification of dataset names using variables.
 - The user interface now includes a French language option.
 
-### Added Models
+### Newly supported models
 
 - GPT-5
 - Claude 4.1
@@ -243,7 +290,7 @@ Released on June 23, 2025.
 - Added support for models installed via Ollama or VLLM when creating a dataset through the API. [#8069](https://github.com/infiniflow/ragflow/pull/8069)
 - Enabled role-based authentication for S3 bucket access. [#8149](https://github.com/infiniflow/ragflow/pull/8149)
 
-### Added models
+### Newly supported models
 
 - Qwen 3 Embedding. [#8184](https://github.com/infiniflow/ragflow/pull/8184) 
 - Voyage Multimodal 3. [#7987](https://github.com/infiniflow/ragflow/pull/7987)
@@ -672,7 +719,7 @@ Released on August 26, 2024.
 - Incorporates monitoring for the task executor.
 - Introduces Agent tools **GitHub**, **DeepL**, **BaiduFanyi**, **QWeather**, and **GoogleScholar**.
 - Supports chunking of EML files.
-- Supports more LLMs or model services: **GPT-4o-mini**, **PerfXCloud**, **TogetherAI**, **Upstage**, **Novita AI**, **01.AI**, **SiliconFlow**, **PPIO**, **XunFei Spark**, **Baidu Yiyan**, and **Tencent Hunyuan**.
+- Supports more LLMs or model services: **GPT-4o-mini**, **PerfXCloud**, **TogetherAI**, **Upstage**, **Novita AI**, **01.AI**, **SiliconFlow**, **PPIO**, **XunFei Spark**, **Jiekou.AI**, **Baidu Yiyan**, and **Tencent Hunyuan**.
 
 ## v0.9.0
 

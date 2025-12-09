@@ -21,6 +21,7 @@ from copy import deepcopy
 from deepdoc.parser.utils import get_text
 from rag.app.qa import Excel
 from rag.nlp import rag_tokenizer
+from common import settings
 
 
 def beAdoc(d, q, a, eng, row_num=-1):
@@ -36,7 +37,7 @@ def beAdoc(d, q, a, eng, row_num=-1):
 def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
     """
         Excel and csv(txt) format files are supported.
-        If the file is in excel format, there should be 2 column content and tags without header.
+        If the file is in Excel format, there should be 2 column content and tags without header.
         And content column is ahead of tags column.
         And it's O.K if it has multiple sheets as long as the columns are rightly composed.
 
@@ -124,7 +125,6 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
 def label_question(question, kbs):
     from api.db.services.knowledgebase_service import KnowledgebaseService
     from graphrag.utils import get_tags_from_cache, set_tags_to_cache
-    from api import settings
     tags = None
     tag_kb_ids = []
     for kb in kbs:

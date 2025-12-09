@@ -4,7 +4,7 @@
 
 Admin Service is a dedicated management component designed to monitor, maintain, and administrate the RAGFlow system. It provides comprehensive tools for ensuring system stability, performing operational tasks, and managing users and permissions efficiently.
 
-The service offers real-time monitoring of critical components, including the RAGFlow server, Task Executor processes, and dependent services such as MySQL, Elasticsearch, Redis, and MinIO. It automatically checks their health status, resource usage, and uptime, and performs restarts in case of failures to minimize downtime.
+The service offers real-time monitoring of critical components, including the RAGFlow server, Task Executor processes, and dependent services such as MySQL, Infinity, Elasticsearch, Redis, and MinIO. It automatically checks their health status, resource usage, and uptime, and performs restarts in case of failures to minimize downtime.
 
 For user and system management, it supports listing, creating, modifying, and deleting users and their associated resources like knowledge bases and Agents.
 
@@ -48,7 +48,7 @@ It consists of a server-side Service and a command-line client (CLI), both imple
 1.  Ensure the Admin Service is running.
 2.  Install ragflow-cli.
     ```bash
-    pip install ragflow-cli==0.21.1
+    pip install ragflow-cli==0.22.1
     ```
 3.  Launch the CLI client:
     ```bash

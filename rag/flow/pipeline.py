@@ -41,7 +41,7 @@ class Pipeline(Graph):
                 self._doc_id = None
 
     def callback(self, component_name: str, progress: float | int | None = None, message: str = "") -> None:
-        from rag.svr.task_executor import TaskCanceledException
+        from common.exceptions import TaskCanceledException
         log_key = f"{self._flow_id}-{self.task_id}-logs"
         timestamp = timer()
         if has_canceled(self.task_id):

@@ -13,15 +13,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import json
 import logging
 import os
 import re
+import threading
 from copy import deepcopy
-from typing import Any, Generator
+from typing import Any, Generator, AsyncGenerator
 import json_repair
 from functools import partial
-from api.db import LLMType
+from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from agent.component.base import ComponentBase, ComponentParamBase
@@ -171,6 +173,13 @@ class LLM(ComponentBase):
             return self.chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
         return self.chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
 
+    async def _generate_async(self, msg: list[dict], **kwargs) -> str:
+        if not self.imgs and hasattr(self.chat_mdl, "async_chat"):
+            return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
+        if self.imgs and hasattr(self.chat_mdl, "async_chat"):
+            return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
+        return await asyncio.to_thread(self._generate, msg, **kwargs)
+
     def _generate_streamly(self, msg:list[dict], **kwargs) -> Generator[str, None, None]:
         ans = ""
         last_idx = 0
@@ -205,8 +214,123 @@ class LLM(ComponentBase):
             for txt in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs):
                 yield delta(txt)
 
+    async def _generate_streamly_async(self, msg: list[dict], **kwargs) -> AsyncGenerator[str, None]:
+        async def delta_wrapper(txt_iter):
+            ans = ""
+            last_idx = 0
+            endswith_think = False
+
+            def delta(txt):
+                nonlocal ans, last_idx, endswith_think
+                delta_ans = txt[last_idx:]
+                ans = txt
+
+                if delta_ans.find("<think>") == 0:
+                    last_idx += len("<think>")
+                    return "<think>"
+                elif delta_ans.find("<think>") > 0:
+                    delta_ans = txt[last_idx:last_idx + delta_ans.find("<think>")]
+                    last_idx += delta_ans.find("<think>")
+                    return delta_ans
+                elif delta_ans.endswith("</think>"):
+                    endswith_think = True
+                elif endswith_think:
+                    endswith_think = False
+                    return "</think>"
+
+                last_idx = len(ans)
+                if ans.endswith("</think>"):
+                    last_idx -= len("</think>")
+                return re.sub(r"(<think>|</think>)", "", delta_ans)
+
+            async for t in txt_iter:
+                yield delta(t)
+
+        if not self.imgs and hasattr(self.chat_mdl, "async_chat_streamly"):
+            async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)):
+                yield t
+            return
+        if self.imgs and hasattr(self.chat_mdl, "async_chat_streamly"):
+            async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)):
+                yield t
+            return
+
+        # fallback
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def worker():
+            try:
+                for item in self._generate_streamly(msg, **kwargs):
+                    loop.call_soon_threadsafe(queue.put_nowait, item)
+            except Exception as e:
+                loop.call_soon_threadsafe(queue.put_nowait, e)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, StopAsyncIteration)
+
+        threading.Thread(target=worker, daemon=True).start()
+        while True:
+            item = await queue.get()
+            if item is StopAsyncIteration:
+                break
+            if isinstance(item, Exception):
+                raise item
+            yield item
+
+    async def _stream_output_async(self, prompt, msg):
+        _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
+        answer = ""
+        last_idx = 0
+        endswith_think = False
+
+        def delta(txt):
+            nonlocal answer, last_idx, endswith_think
+            delta_ans = txt[last_idx:]
+            answer = txt
+
+            if delta_ans.find("<think>") == 0:
+                last_idx += len("<think>")
+                return "<think>"
+            elif delta_ans.find("<think>") > 0:
+                delta_ans = txt[last_idx:last_idx + delta_ans.find("<think>")]
+                last_idx += delta_ans.find("<think>")
+                return delta_ans
+            elif delta_ans.endswith("</think>"):
+                endswith_think = True
+            elif endswith_think:
+                endswith_think = False
+                return "</think>"
+
+            last_idx = len(answer)
+            if answer.endswith("</think>"):
+                last_idx -= len("</think>")
+            return re.sub(r"(<think>|</think>)", "", delta_ans)
+
+        stream_kwargs = {"images": self.imgs} if self.imgs else {}
+        async for ans in self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **stream_kwargs):
+            if self.check_if_canceled("LLM streaming"):
+                return
+
+            if isinstance(ans, int):
+                continue
+
+            if ans.find("**ERROR**") >= 0:
+                if self.get_exception_default_value():
+                    self.set_output("content", self.get_exception_default_value())
+                    yield self.get_exception_default_value()
+                else:
+                    self.set_output("_ERROR", ans)
+                return
+
+            yield delta(ans)
+
+        self.set_output("content", answer)
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
-    def _invoke(self, **kwargs):
+    async def _invoke_async(self, **kwargs):
+        if self.check_if_canceled("LLM processing"):
+            return
+
         def clean_formated_answer(ans: str) -> str:
             ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
             ans = re.sub(r"^.*```json", "", ans, flags=re.DOTALL)
@@ -214,19 +338,25 @@ class LLM(ComponentBase):
 
         prompt, msg, _ = self._prepare_prompt_variables()
         error: str = ""
-        output_structure=None
+        output_structure = None
         try:
-            output_structure=self._param.outputs['structured']
+            output_structure = self._param.outputs["structured"]
         except Exception:
             pass
-        if output_structure:
-            schema=json.dumps(output_structure, ensure_ascii=False, indent=2)
-            prompt += structured_output_prompt(schema)
-            for _ in range(self._param.max_retries+1):
-                _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
+        if output_structure and isinstance(output_structure, dict) and output_structure.get("properties") and len(output_structure["properties"]) > 0:
+            schema = json.dumps(output_structure, ensure_ascii=False, indent=2)
+            prompt_with_schema = prompt + structured_output_prompt(schema)
+            for _ in range(self._param.max_retries + 1):
+                if self.check_if_canceled("LLM processing"):
+                    return
+
+                _, msg_fit = message_fit_in(
+                    [{"role": "system", "content": prompt_with_schema}, *deepcopy(msg)],
+                    int(self.chat_mdl.max_length * 0.97),
+                )
                 error = ""
-                ans = self._generate(msg)
-                msg.pop(0)
+                ans = await self._generate_async(msg_fit)
+                msg_fit.pop(0)
                 if ans.find("**ERROR**") >= 0:
                     logging.error(f"LLM response error: {ans}")
                     error = ans
@@ -235,7 +365,7 @@ class LLM(ComponentBase):
                     self.set_output("structured", json_repair.loads(clean_formated_answer(ans)))
                     return
                 except Exception:
-                    msg.append({"role": "user", "content": "The answer can't not be parsed as JSON"})
+                    msg_fit.append({"role": "user", "content": "The answer can't not be parsed as JSON"})
                     error = "The answer can't not be parsed as JSON"
             if error:
                 self.set_output("_ERROR", error)
@@ -243,15 +373,23 @@ class LLM(ComponentBase):
 
         downstreams = self._canvas.get_component(self._id)["downstream"] if self._canvas.get_component(self._id) else []
         ex = self.exception_handler()
-        if any([self._canvas.get_component_obj(cid).component_name.lower()=="message" for cid in downstreams]) and not output_structure and not (ex and ex["goto"]):
-            self.set_output("content", partial(self._stream_output, prompt, msg))
+        if any([self._canvas.get_component_obj(cid).component_name.lower() == "message" for cid in downstreams]) and not (
+            ex and ex["goto"]
+        ):
+            self.set_output("content", partial(self._stream_output_async, prompt, deepcopy(msg)))
             return
 
-        for _ in range(self._param.max_retries+1):
-            _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
+        error = ""
+        for _ in range(self._param.max_retries + 1):
+            if self.check_if_canceled("LLM processing"):
+                return
+
+            _, msg_fit = message_fit_in(
+                [{"role": "system", "content": prompt}, *deepcopy(msg)], int(self.chat_mdl.max_length * 0.97)
+            )
             error = ""
-            ans = self._generate(msg)
-            msg.pop(0)
+            ans = await self._generate_async(msg_fit)
+            msg_fit.pop(0)
             if ans.find("**ERROR**") >= 0:
                 logging.error(f"LLM response error: {ans}")
                 error = ans
@@ -265,20 +403,9 @@ class LLM(ComponentBase):
             else:
                 self.set_output("_ERROR", error)
 
-    def _stream_output(self, prompt, msg):
-        _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
-        answer = ""
-        for ans in self._generate_streamly(msg):
-            if ans.find("**ERROR**") >= 0:
-                if self.get_exception_default_value():
-                    self.set_output("content", self.get_exception_default_value())
-                    yield self.get_exception_default_value()
-                else:
-                    self.set_output("_ERROR", ans)
-                return
-            yield ans
-            answer += ans
-        self.set_output("content", answer)
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    def _invoke(self, **kwargs):
+        return asyncio.run(self._invoke_async(**kwargs))
 
     def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str, user_defined_prompt:dict={}):
         summ = tool_call_summary(self.chat_mdl, func_name, params, results, user_defined_prompt)

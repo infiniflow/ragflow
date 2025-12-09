@@ -8,12 +8,15 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { RAGFlowSelect } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
 import { memo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { ExportFileType } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { PromptEditor } from '../components/prompt-editor';
@@ -33,10 +36,16 @@ function MessageForm({ node }: INextOperatorForm) {
         }),
       )
       .optional(),
+    output_format: z.string().optional(),
+    auto_play: z.boolean().optional(),
   });
 
   const form = useForm({
-    defaultValues: values,
+    defaultValues: {
+      ...values,
+      output_format: values.output_format,
+      auto_play: values.auto_play,
+    },
     resolver: zodResolver(FormSchema),
   });
 
@@ -62,7 +71,6 @@ function MessageForm({ node }: INextOperatorForm) {
                     render={({ field }) => (
                       <FormItem className="flex-1">
                         <FormControl>
-                          {/* <Textarea {...field}> </Textarea> */}
                           <PromptEditor
                             {...field}
                             placeholder={t('flow.messagePlaceholder')}
@@ -91,6 +99,57 @@ function MessageForm({ node }: INextOperatorForm) {
               </BlockButton>
             </div>
             <FormMessage />
+          </FormItem>
+        </FormContainer>
+        <FormContainer>
+          <FormItem>
+            <FormLabel tooltip={t('flow.downloadFileTypeTip')}>
+              {t('flow.downloadFileType')}
+            </FormLabel>
+            <FormField
+              control={form.control}
+              name={`output_format`}
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormControl>
+                    <RAGFlowSelect
+                      options={Object.keys(ExportFileType).map(
+                        (key: string) => {
+                          return {
+                            value:
+                              ExportFileType[
+                                key as keyof typeof ExportFileType
+                              ],
+                            label: key,
+                          };
+                        },
+                      )}
+                      {...field}
+                      onValueChange={field.onChange}
+                      placeholder={t('common.selectPlaceholder')}
+                      allowClear
+                    ></RAGFlowSelect>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </FormItem>
+          <FormItem>
+            <FormLabel>{t('flow.autoPlay')}</FormLabel>
+            <FormField
+              control={form.control}
+              name={`auto_play`}
+              render={({ field }) => (
+                <FormItem className="flex-1">
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
           </FormItem>
         </FormContainer>
       </FormWrapper>

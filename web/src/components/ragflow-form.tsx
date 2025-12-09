@@ -17,6 +17,7 @@ type RAGFlowFormItemProps = {
   horizontal?: boolean;
   required?: boolean;
   labelClassName?: string;
+  className?: string;
 };
 
 export function RAGFlowFormItem({
@@ -27,6 +28,7 @@ export function RAGFlowFormItem({
   horizontal = false,
   required = false,
   labelClassName,
+  className,
 }: RAGFlowFormItemProps) {
   const form = useFormContext();
   return (
@@ -35,9 +37,12 @@ export function RAGFlowFormItem({
       name={name}
       render={({ field }) => (
         <FormItem
-          className={cn({
-            'flex items-center': horizontal,
-          })}
+          className={cn(
+            {
+              'flex items-center w-full': horizontal,
+            },
+            className,
+          )}
         >
           {label && (
             <FormLabel
@@ -48,14 +53,21 @@ export function RAGFlowFormItem({
               {label}
             </FormLabel>
           )}
-          <FormControl>
-            {typeof children === 'function'
-              ? children(field)
-              : isValidElement(children)
-                ? cloneElement(children, { ...field })
-                : children}
-          </FormControl>
-          <FormMessage />
+          <div
+            className={cn('flex flex-col', {
+              'w-3/4': horizontal,
+              'w-full': !horizontal,
+            })}
+          >
+            <FormControl>
+              {typeof children === 'function'
+                ? children(field)
+                : isValidElement(children)
+                  ? cloneElement(children, { ...field })
+                  : children}
+            </FormControl>
+            <FormMessage />
+          </div>
         </FormItem>
       )}
     />

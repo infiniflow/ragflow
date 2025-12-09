@@ -14,25 +14,24 @@
 #  limitations under the License.
 #
 
-from flask import request
-from flask_login import login_required, current_user
+from quart import request
 from api.db.services import duplicate_name
 from api.db.services.dialog_service import DialogService
-from api.db import StatusEnum
+from common.constants import StatusEnum
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.user_service import TenantService, UserTenantService
-from api import settings
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
+from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.misc_utils import get_uuid
-from api.utils.api_utils import get_json_result
+from common.constants import RetCode
+from api.apps import login_required, current_user
 
 
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @validate_request("prompt_config")
 @login_required
-def set_dialog():
-    req = request.json
+async def set_dialog():
+    req = await get_request_json()
     dialog_id = req.get("dialog_id", "")
     is_create = not dialog_id
     name = req.get("name", "New Dialog")
@@ -154,33 +153,34 @@ def get_kb_names(kb_ids):
 @login_required
 def list_dialogs():
     try:
-        diags = DialogService.query(
+        conversations = DialogService.query(
             tenant_id=current_user.id,
             status=StatusEnum.VALID.value,
             reverse=True,
             order_by=DialogService.model.create_time)
-        diags = [d.to_dict() for d in diags]
-        for d in diags:
-            d["kb_ids"], d["kb_names"] = get_kb_names(d["kb_ids"])
-        return get_json_result(data=diags)
+        conversations = [d.to_dict() for d in conversations]
+        for conversation in conversations:
+            conversation["kb_ids"], conversation["kb_names"] = get_kb_names(conversation["kb_ids"])
+        return get_json_result(data=conversations)
     except Exception as e:
         return server_error_response(e)
 
 
 @manager.route('/next', methods=['POST'])  # noqa: F821
 @login_required
-def list_dialogs_next():
-    keywords = request.args.get("keywords", "")
-    page_number = int(request.args.get("page", 0))
-    items_per_page = int(request.args.get("page_size", 0))
-    parser_id = request.args.get("parser_id")
-    orderby = request.args.get("orderby", "create_time")
-    if request.args.get("desc", "true").lower() == "false":
+async def list_dialogs_next():
+    args = request.args
+    keywords = args.get("keywords", "")
+    page_number = int(args.get("page", 0))
+    items_per_page = int(args.get("page_size", 0))
+    parser_id = args.get("parser_id")
+    orderby = args.get("orderby", "create_time")
+    if args.get("desc", "true").lower() == "false":
         desc = False
     else:
         desc = True
 
-    req = request.get_json()
+    req = await get_request_json()
     owner_ids = req.get("owner_ids", [])
     try:
         if not owner_ids:
@@ -207,8 +207,8 @@ def list_dialogs_next():
 @manager.route('/rm', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("dialog_ids")
-def rm():
-    req = request.json
+async def rm():
+    req = await get_request_json()
     dialog_list=[]
     tenants = UserTenantService.query(user_id=current_user.id)
     try:
@@ -219,7 +219,7 @@ def rm():
             else:
                 return get_json_result(
                     data=False, message='Only owner of dialog authorized for this operation.',
-                    code=settings.RetCode.OPERATING_ERROR)
+                    code=RetCode.OPERATING_ERROR)
             dialog_list.append({"id": id,"status":StatusEnum.INVALID.value})
         DialogService.update_many_by_id(dialog_list)
         return get_json_result(data=True)

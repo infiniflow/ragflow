@@ -14,25 +14,24 @@
 #  limitations under the License.
 #
 
-from flask import request
-from flask_login import current_user, login_required
+from quart import request
+from api.apps import current_user, login_required
 
-from api import settings
 from api.constants import DATASET_NAME_LIMIT
-from api.db import StatusEnum
 from api.db.db_models import DB
 from api.db.services import duplicate_name
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
-from api.utils.api_utils import get_data_error_result, get_json_result, not_allowed_parameters, server_error_response, validate_request
+from common.constants import RetCode, StatusEnum
+from api.utils.api_utils import get_data_error_result, get_json_result, not_allowed_parameters, get_request_json, server_error_response, validate_request
 
 
 @manager.route("/create", methods=["post"])  # noqa: F821
 @login_required
 @validate_request("name")
-def create():
-    req = request.get_json()
+async def create():
+    req = await get_request_json()
     search_name = req["name"]
     description = req.get("description", "")
     if not isinstance(search_name, str):
@@ -66,8 +65,8 @@ def create():
 @login_required
 @validate_request("search_id", "name", "search_config", "tenant_id")
 @not_allowed_parameters("id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
-def update():
-    req = request.get_json()
+async def update():
+    req = await get_request_json()
     if not isinstance(req["name"], str):
         return get_data_error_result(message="Search name must be string.")
     if req["name"].strip() == "":
@@ -82,12 +81,12 @@ def update():
 
     search_id = req["search_id"]
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         search_app = SearchService.query(tenant_id=tenant_id, id=search_id)[0]
         if not search_app:
-            return get_json_result(data=False, message=f"Cannot find search {search_id}", code=settings.RetCode.DATA_ERROR)
+            return get_json_result(data=False, message=f"Cannot find search {search_id}", code=RetCode.DATA_ERROR)
 
         if req["name"].lower() != search_app.name.lower() and len(SearchService.query(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)) >= 1:
             return get_data_error_result(message="Duplicated search name.")
@@ -129,7 +128,7 @@ def detail():
             if SearchService.query(tenant_id=tenant.tenant_id, id=search_id):
                 break
         else:
-            return get_json_result(data=False, message="Has no permission for this operation.", code=settings.RetCode.OPERATING_ERROR)
+            return get_json_result(data=False, message="Has no permission for this operation.", code=RetCode.OPERATING_ERROR)
 
         search = SearchService.get_detail(search_id)
         if not search:
@@ -141,7 +140,7 @@ def detail():
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required
-def list_search_app():
+async def list_search_app():
     keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 0))
     items_per_page = int(request.args.get("page_size", 0))
@@ -151,7 +150,7 @@ def list_search_app():
     else:
         desc = True
 
-    req = request.get_json()
+    req = await get_request_json()
     owner_ids = req.get("owner_ids", [])
     try:
         if not owner_ids:
@@ -174,11 +173,11 @@ def list_search_app():
 @manager.route("/rm", methods=["post"])  # noqa: F821
 @login_required
 @validate_request("search_id")
-def rm():
-    req = request.get_json()
+async def rm():
+    req = await get_request_json()
     search_id = req["search_id"]
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=settings.RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         if not SearchService.delete_by_id(search_id):

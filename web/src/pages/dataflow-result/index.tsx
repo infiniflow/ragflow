@@ -1,7 +1,7 @@
+import DocumentPreview from '@/components/document-preview';
 import { useFetchNextChunkList } from '@/hooks/use-chunk-request';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import DocumentPreview from './components/document-preview';
 import {
   useFetchPipelineFileLogDetail,
   useFetchPipelineResult,
@@ -13,8 +13,9 @@ import {
   useTimelineDataFlow,
 } from './hooks';
 
-import DocumentHeader from './components/document-preview/document-header';
+import DocumentHeader from '@/components/document-preview/document-header';
 
+import { useGetDocumentUrl } from '@/components/document-preview/hooks';
 import { TimelineNode } from '@/components/originui/timeline';
 import { PageHeader } from '@/components/page-header';
 import Spotlight from '@/components/spotlight';
@@ -32,7 +33,6 @@ import { AgentCategory } from '@/constants/agent';
 import { Images } from '@/constants/common';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
-import { useGetDocumentUrl } from './components/document-preview/hooks';
 import TimelineDataFlow from './components/time-line';
 import { TimelineNodeType } from './constant';
 import styles from './index.less';
@@ -76,13 +76,14 @@ const Chunk = () => {
   const fileType = useMemo(() => {
     if (isAgent) {
       return Images.some((x) => x === documentExtension)
-        ? 'visual'
+        ? documentInfo?.name.split('.').pop() || 'visual'
         : documentExtension;
     }
     switch (documentInfo?.type) {
       case 'doc':
         return documentInfo?.name.split('.').pop() || 'doc';
       case 'visual':
+        return documentInfo?.name.split('.').pop() || 'visual';
       case 'docx':
       case 'txt':
       case 'md':
@@ -190,7 +191,7 @@ const Chunk = () => {
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               <BreadcrumbPage>
-                {knowledgeId ? documentInfo?.name : t('dataflow.viewResult')}
+                {knowledgeId ? documentInfo?.name : t('flow.viewResult')}
               </BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>

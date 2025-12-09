@@ -20,30 +20,26 @@
 
 from common.log_utils import init_root_logger
 from plugin import GlobalPluginManager
-init_root_logger("ragflow_server")
 
 import logging
 import os
 import signal
 import sys
-import time
 import traceback
 import threading
 import uuid
+import faulthandler
 
-from werkzeug.serving import run_simple
-from api import settings
 from api.apps import app, smtp_mail_server
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
 from common.file_utils import get_project_base_directory
-
+from common import settings
 from api.db.db_models import init_database_tables as init_web_db
-from api.db.init_data import init_web_data
-from api.versions import get_ragflow_version
+from api.db.init_data import init_web_data, init_superuser
+from common.versions import get_ragflow_version
 from common.config_utils import show_configs
-from rag.settings import print_rag_settings
-from rag.utils.mcp_tool_call_conn import shutdown_all_mcp_sessions
+from common.mcp_tool_call_conn import shutdown_all_mcp_sessions
 from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
@@ -72,10 +68,12 @@ def signal_handler(sig, frame):
     logging.info("Received interrupt signal, shutting down...")
     shutdown_all_mcp_sessions()
     stop_event.set()
-    time.sleep(1)
+    stop_event.wait(1)
     sys.exit(0)
 
 if __name__ == '__main__':
+    faulthandler.enable()
+    init_root_logger("ragflow_server")
     logging.info(r"""
         ____   ___    ______ ______ __
        / __ \ /   |  / ____// ____// /____  _      __
@@ -92,7 +90,7 @@ if __name__ == '__main__':
     )
     show_configs()
     settings.init_settings()
-    print_rag_settings()
+    settings.print_rag_settings()
 
     if RAGFLOW_DEBUGPY_LISTEN > 0:
         logging.info(f"debugpy listen on {RAGFLOW_DEBUGPY_LISTEN}")
@@ -112,11 +110,16 @@ if __name__ == '__main__':
     parser.add_argument(
         "--debug", default=False, help="debug mode", action="store_true"
     )
+    parser.add_argument(
+        "--init-superuser", default=False, help="init superuser", action="store_true"
+    )
     args = parser.parse_args()
     if args.version:
         print(get_ragflow_version())
         sys.exit(0)
 
+    if args.init_superuser:
+        init_superuser()
     RuntimeConfig.DEBUG = args.debug
     if RuntimeConfig.DEBUG:
         logging.info("run on debug mode")
@@ -155,16 +158,9 @@ if __name__ == '__main__':
     # start http server
     try:
         logging.info("RAGFlow HTTP server start...")
-        run_simple(
-            hostname=settings.HOST_IP,
-            port=settings.HOST_PORT,
-            application=app,
-            threaded=True,
-            use_reloader=RuntimeConfig.DEBUG,
-            use_debugger=RuntimeConfig.DEBUG,
-        )
+        app.run(host=settings.HOST_IP, port=settings.HOST_PORT)
     except Exception:
         traceback.print_exc()
         stop_event.set()
-        time.sleep(1)
+        stop_event.wait(1)
         os.kill(os.getpid(), signal.SIGKILL)

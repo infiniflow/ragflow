@@ -83,10 +83,10 @@
                                     "value": []
                                 }
                             },
-                            "password": "20010812Yy!",
+                            "password": "",
                             "port": 3306,
                             "sql": "{Agent:WickedGoatsDivide@content}",
-                            "username": "13637682833@163.com"
+                            "username": ""
                         }
                     },
                     "upstream": [
@@ -527,10 +527,10 @@
                                         "value": []
                                     }
                                 },
-                                "password": "20010812Yy!",
+                                "password": "",
                                 "port": 3306,
                                 "sql": "{Agent:WickedGoatsDivide@content}",
-                                "username": "13637682833@163.com"
+                                "username": ""
                             },
                             "label": "ExeSQL",
                             "name": "ExeSQL"

@@ -51,6 +51,7 @@ export const LanguageList = [
   'Portuguese BR',
   'German',
   'French',
+  'Italian',
 ];
 export const LanguageMap = {
   English: 'English',
@@ -64,6 +65,7 @@ export const LanguageMap = {
   'Portuguese BR': 'Português BR',
   German: 'German',
   French: 'Français',
+  Italian: 'Italiano',
 };
 
 export enum LanguageAbbreviation {
@@ -78,6 +80,7 @@ export enum LanguageAbbreviation {
   PtBr = 'pt-BR',
   De = 'de',
   Fr = 'fr',
+  It = 'it',
 }
 
 export const LanguageAbbreviationMap = {
@@ -92,6 +95,7 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.PtBr]: 'Português BR',
   [LanguageAbbreviation.De]: 'Deutsch',
   [LanguageAbbreviation.Fr]: 'Français',
+  [LanguageAbbreviation.It]: 'Italiano',
 };
 
 export const LanguageTranslationMap = {
@@ -106,6 +110,7 @@ export const LanguageTranslationMap = {
   'Portuguese BR': 'pt-br',
   German: 'de',
   French: 'fr',
+  Italian: 'it',
 };
 
 export enum FileMimeType {
@@ -148,7 +153,7 @@ export const Images = [
 ];
 
 // Without FileViewer
-export const ExceptiveType = ['xlsx', 'xls', 'pdf', 'docx', ...Images];
+export const ExceptiveType = ['xlsx', 'xls', 'pdf', 'docx', 'md', ...Images];
 
 export const SupportedPreviewDocumentTypes = [...ExceptiveType];
 //#endregion

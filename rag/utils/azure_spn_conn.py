@@ -17,10 +17,10 @@
 import logging
 import os
 import time
-from rag import settings
 from common.decorator import singleton
 from azure.identity import ClientSecretCredential, AzureAuthorityHosts
 from azure.storage.filedatalake import FileSystemClient
+from common import settings
 
 
 @singleton
@@ -67,6 +67,8 @@ class RAGFlowAzureSpnBlob:
                 logging.exception(f"Fail put {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
+                return None
+        return None
 
     def rm(self, bucket, fnm):
         try:
@@ -84,7 +86,7 @@ class RAGFlowAzureSpnBlob:
                 logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
-        return
+        return None
 
     def obj_exist(self, bucket, fnm):
         try:
@@ -102,4 +104,4 @@ class RAGFlowAzureSpnBlob:
                 logging.exception(f"fail get {bucket}/{fnm}")
                 self.__open__()
                 time.sleep(1)
-        return
+        return None

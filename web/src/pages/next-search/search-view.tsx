@@ -1,3 +1,6 @@
+import { EmptyType } from '@/components/empty/constant';
+import Empty from '@/components/empty/empty';
+import HighLightMarkdown from '@/components/highlight-markdown';
 import { FileIcon } from '@/components/icon-font';
 import { ImageWithPopover } from '@/components/image';
 import { Input } from '@/components/originui/input';
@@ -18,7 +21,6 @@ import { Dispatch, SetStateAction, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ISearchAppDetailProps } from '../next-searches/hooks';
 import PdfDrawer from './document-preview-modal';
-import HightLightMarkdown from './highlight-markdown';
 import { ISearchReturnProps } from './hooks';
 import './index.less';
 import MarkdownContent from './markdown-content';
@@ -65,6 +67,7 @@ export default function SearchingView({
   //   changeLanguage();
   // }, [i18n]);
   const [searchtext, setSearchtext] = useState<string>('');
+  const [retrievalLoading, setRetrievalLoading] = useState(false);
 
   useEffect(() => {
     setSearchtext(searchStr);
@@ -182,6 +185,9 @@ export default function SearchingView({
                     selectedDocumentIds={selectedDocumentIds}
                     setSelectedDocumentIds={setSelectedDocumentIds}
                     onTesting={handleTestChunk}
+                    setLoading={(loading: boolean) => {
+                      setRetrievalLoading(loading);
+                    }}
                   ></RetrievalDocuments>
                 </div>
                 {/* <div className="w-full border-b border-border-default/80 my-6"></div> */}
@@ -211,9 +217,9 @@ export default function SearchingView({
                               </PopoverTrigger>
                               <PopoverContent className="text-text-primary !w-full max-w-lg ">
                                 <div className="max-h-96 overflow-auto scrollbar-thin">
-                                  <HightLightMarkdown>
+                                  <HighLightMarkdown>
                                     {chunk.content_with_weight}
-                                  </HightLightMarkdown>
+                                  </HighLightMarkdown>
                                 </div>
                               </PopoverContent>
                             </Popover>
@@ -264,6 +270,17 @@ export default function SearchingView({
                   </>
                 )}
             </div>
+            {!isSearchStrEmpty &&
+              !retrievalLoading &&
+              !answer.answer &&
+              !sendingLoading &&
+              total <= 0 &&
+              chunks?.length <= 0 &&
+              relatedQuestions?.length <= 0 && (
+                <div className="h-2/5 flex items-center justify-center">
+                  <Empty type={EmptyType.SearchData} iconWidth={80} />
+                </div>
+              )}
           </div>
 
           {total > 0 && (

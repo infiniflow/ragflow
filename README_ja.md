@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.1">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.22.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -66,6 +66,8 @@
 
 ## 🔥 最新情報
 
+- 2025-11-19 Gemini 3 Proをサポートしています
+- 2025-11-12 Confluence、S3、Notion、Discord、Google Drive からのデータ同期をサポートします。
 - 2025-10-23 ドキュメント解析方法として MinerU と Docling をサポートします。
 - 2025-10-15 オーケストレーションされたデータパイプラインのサポート。
 - 2025-08-08 OpenAI の最新 GPT-5 シリーズモデルをサポートします。
@@ -73,7 +75,6 @@
 - 2025-05-23 エージェントに Python/JS コードエグゼキュータコンポーネントを追加しました。
 - 2025-05-05 言語間クエリをサポートしました。
 - 2025-03-19 PDFまたはDOCXファイル内の画像を理解するために、多モーダルモデルを使用することをサポートします。
-- 2025-02-28 インターネット検索 (TAVILY) と組み合わせて、あらゆる LLM の詳細な調査をサポートします。
 - 2024-12-18 DeepDoc のドキュメント レイアウト分析モデルをアップグレードします。
 - 2024-08-22 RAG を介して SQL ステートメントへのテキストをサポートします。
 
@@ -166,28 +167,34 @@
 > 現在、公式に提供されているすべての Docker イメージは x86 アーキテクチャ向けにビルドされており、ARM64 用の Docker イメージは提供されていません。
 > ARM64 アーキテクチャのオペレーティングシステムを使用している場合は、[このドキュメント](https://ragflow.io/docs/dev/build_docker_image)を参照して Docker イメージを自分でビルドしてください。
 
-> 以下のコマンドは、RAGFlow Docker イメージの v0.21.1 エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.21.1 とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。
+> 以下のコマンドは、RAGFlow Docker イメージの v0.22.1 エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.22.1 とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。
 
 ```bash
    $ cd ragflow/docker
-   # Use CPU for embedding and DeepDoc tasks:
+
+   # git checkout v0.22.1
+   # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases)
+   # この手順は、コード内の entrypoint.sh ファイルが Docker イメージのバージョンと一致していることを確認します。
+
+   # Use CPU for DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
 
-   # To use GPU to accelerate embedding and DeepDoc tasks:
+   # To use GPU to accelerate DeepDoc tasks:
    # sed -i '1i DEVICE=gpu' .env
    # docker compose -f docker-compose.yml up -d
 ```
 
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                    |
-| ----------------- | --------------- | --------------------- | -------------------------- |
-| v0.21.1           | &approx;9       | ✔️                  | Stable release             |
-| v0.21.1-slim      | &approx;2       | ❌                    | Stable release             |
-| nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
+> 注意：`v0.22.0` より前のバージョンでは、embedding モデルを含むイメージと、embedding モデルを含まない slim イメージの両方を提供していました。詳細は以下の通りです：
 
-> 注意：`v0.22.0` 以降、当プロジェクトでは slim エディションのみを提供し、イメージタグに **-slim** サフィックスを付けなくなりました。
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
+| ----------------- | --------------- | --------------------- | ------------------------ |
+| v0.21.1           | &approx;9       | ✔️                    | Stable release           |
+| v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
 
-1. サーバーを立ち上げた後、サーバーの状態を確認する:
+> `v0.22.0` 以降、当プロジェクトでは slim エディションのみを提供し、イメージタグに **-slim** サフィックスを付けなくなりました。
 
+   1. サーバーを立ち上げた後、サーバーの状態を確認する:   
+   
    ```bash
    $ docker logs -f docker-ragflow-cpu-1
    ```
@@ -259,7 +266,7 @@ RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトル
    > Linux/arm64 マシンでの Infinity への切り替えは正式にサポートされていません。
    >
 
-## 🔧 ソースコードで Docker イメージを作成（埋め込みモデルなし）
+## 🔧 ソースコードで Docker イメージを作成
 
 この Docker イメージのサイズは約 1GB で、外部の大モデルと埋め込みサービスに依存しています。
 
@@ -281,7 +288,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 # install RAGFlow dependent python modules
+   uv sync --python 3.11 # install RAGFlow dependent python modules
    uv run download_deps.py
    pre-commit install
    ```

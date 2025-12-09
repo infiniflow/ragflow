@@ -15,7 +15,7 @@
 #
 
 import jwt
-import requests
+from common.http_client import sync_request
 from .oauth import OAuthClient
 
 
@@ -43,16 +43,17 @@ class OIDCClient(OAuthClient):
         self.jwks_uri = config['jwks_uri']
 
 
-    def _load_oidc_metadata(self, issuer):
+    @staticmethod
+    def _load_oidc_metadata(issuer):
         """
         Load OIDC metadata from `/.well-known/openid-configuration`.
         """
         try:
             metadata_url = f"{issuer}/.well-known/openid-configuration"
-            response = requests.get(metadata_url, timeout=7)
+            response = sync_request("GET", metadata_url, timeout=7)
             response.raise_for_status()
             return response.json()
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             raise ValueError(f"Failed to fetch OIDC metadata: {e}")
 
 
@@ -92,6 +93,13 @@ class OIDCClient(OAuthClient):
         if id_token:
             user_info = self.parse_id_token(id_token)
         user_info.update(super().fetch_user_info(access_token).to_dict())
+        return self.normalize_user_info(user_info)
+
+    async def async_fetch_user_info(self, access_token, id_token=None, **kwargs):
+        user_info = {}
+        if id_token:
+            user_info = self.parse_id_token(id_token)
+        user_info.update((await super().async_fetch_user_info(access_token)).to_dict())
         return self.normalize_user_info(user_info)
 
 

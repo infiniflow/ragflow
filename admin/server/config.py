@@ -25,8 +25,21 @@ from common.config_utils import read_config
 from urllib.parse import urlparse
 
 
+class BaseConfig(BaseModel):
+    id: int
+    name: str
+    host: str
+    port: int
+    service_type: str
+    detail_func_name: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {'id': self.id, 'name': self.name, 'host': self.host, 'port': self.port,
+                'service_type': self.service_type}
+
+
 class ServiceConfigs:
-    configs = dict
+    configs = list[BaseConfig]
 
     def __init__(self):
         self.configs = []
@@ -43,19 +56,6 @@ class ServiceType(Enum):
     RAGFLOW_SERVER = "ragflow_server"
     TASK_EXECUTOR = "task_executor"
     FILE_STORE = "file_store"
-
-
-class BaseConfig(BaseModel):
-    id: int
-    name: str
-    host: str
-    port: int
-    service_type: str
-    detail_func_name: str
-
-    def to_dict(self) -> dict[str, Any]:
-        return {'id': self.id, 'name': self.name, 'host': self.host, 'port': self.port,
-                'service_type': self.service_type}
 
 
 class MetaConfig(BaseConfig):
@@ -183,11 +183,13 @@ class RAGFlowServerConfig(BaseConfig):
 
 
 class TaskExecutorConfig(BaseConfig):
+    message_queue_type: str
 
     def to_dict(self) -> dict[str, Any]:
         result = super().to_dict()
         if 'extra' not in result:
             result['extra'] = dict()
+        result['extra']['message_queue_type'] = self.message_queue_type
         return result
 
 
@@ -225,7 +227,7 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
     ragflow_count = 0
     id_count = 0
     for k, v in raw_configs.items():
-        match (k):
+        match k:
             case "ragflow":
                 name: str = f'ragflow_{ragflow_count}'
                 host: str = v['host']
@@ -299,6 +301,15 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 id_count += 1
             case "admin":
                 pass
+            case "task_executor":
+                name: str = 'task_executor'
+                host: str = v.get('host', '')
+                port: int = v.get('port', 0)
+                message_queue_type: str = v.get('message_queue_type')
+                config = TaskExecutorConfig(id=id_count, name=name, host=host, port=port, message_queue_type=message_queue_type,
+                                            service_type="task_executor", detail_func_name="check_task_executor_alive")
+                configurations.append(config)
+                id_count += 1
             case _:
                 logging.warning(f"Unknown configuration key: {k}")
                 continue

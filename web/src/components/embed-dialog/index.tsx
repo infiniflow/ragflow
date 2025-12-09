@@ -1,5 +1,5 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
-import HightLightMarkdown from '@/components/highlight-markdown';
+import HighLightMarkdown from '@/components/highlight-markdown';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import {
   Dialog,
@@ -22,6 +22,7 @@ import { SharedFrom } from '@/constants/chat';
 import {
   LanguageAbbreviation,
   LanguageAbbreviationMap,
+  ThemeEnum,
 } from '@/constants/common';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
@@ -36,6 +37,7 @@ const FormSchema = z.object({
   locale: z.string(),
   embedType: z.enum(['fullscreen', 'widget']),
   enableStreaming: z.boolean(),
+  theme: z.enum([ThemeEnum.Light, ThemeEnum.Dark]),
 });
 
 type IProps = IModalProps<any> & {
@@ -61,6 +63,7 @@ function EmbedDialog({
       locale: '',
       embedType: 'fullscreen' as const,
       enableStreaming: false,
+      theme: ThemeEnum.Light,
     },
   });
 
@@ -74,7 +77,7 @@ function EmbedDialog({
   }, []);
 
   const generateIframeSrc = useCallback(() => {
-    const { visibleAvatar, locale, embedType, enableStreaming } = values;
+    const { visibleAvatar, locale, embedType, enableStreaming, theme } = values;
     const baseRoute =
       embedType === 'widget'
         ? Routes.ChatWidget
@@ -90,6 +93,9 @@ function EmbedDialog({
     }
     if (enableStreaming) {
       src += '&streaming=true';
+    }
+    if (theme && embedType === 'fullscreen') {
+      src += `&theme=${theme}`;
     }
     return src;
   }, [beta, from, token, values]);
@@ -181,6 +187,41 @@ function EmbedDialog({
                   </FormItem>
                 )}
               />
+              {values.embedType === 'fullscreen' && (
+                <FormField
+                  control={form.control}
+                  name="theme"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Theme</FormLabel>
+                      <FormControl>
+                        <RadioGroup
+                          onValueChange={field.onChange}
+                          value={field.value}
+                          className="flex flex-row space-x-4"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem
+                              value={ThemeEnum.Light}
+                              id="light"
+                            />
+                            <Label htmlFor="light" className="text-sm">
+                              Light
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value={ThemeEnum.Dark} id="dark" />
+                            <Label htmlFor="dark" className="text-sm">
+                              Dark
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <FormField
                 control={form.control}
                 name="visibleAvatar"
@@ -236,7 +277,7 @@ function EmbedDialog({
           <div className="max-h-[350px] overflow-auto">
             <span>{t('embedCode', { keyPrefix: 'search' })}</span>
             <div className="max-h-full overflow-y-auto">
-              <HightLightMarkdown>{text}</HightLightMarkdown>
+              <HighLightMarkdown>{text}</HighLightMarkdown>
             </div>
           </div>
           <div className=" font-medium mt-4 mb-1">

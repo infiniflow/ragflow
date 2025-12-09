@@ -1,5 +1,5 @@
 import api from '@/utils/api';
-import registerServer from '@/utils/register-server';
+import registerServer, { registerNextServer } from '@/utils/register-server';
 import request from '@/utils/request';
 
 const {
@@ -50,5 +50,7 @@ const methods = {
   },
 } as const;
 const searchService = registerServer<keyof typeof methods>(methods, request);
+export const searchServiceNext =
+  registerNextServer<keyof typeof methods>(methods);
 
 export default searchService;

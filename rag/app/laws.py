@@ -15,18 +15,17 @@
 #
 
 import logging
-from tika import parser
 import re
 from io import BytesIO
 from docx import Document
 
-from api.db import ParserType
+from common.constants import ParserType
 from deepdoc.parser.utils import get_text
 from rag.nlp import bullets_category, remove_contents_table, \
     make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge
 from rag.nlp import rag_tokenizer, Node
-from deepdoc.parser import PdfParser, DocxParser, PlainParser, HtmlParser
-
+from deepdoc.parser import PdfParser, DocxParser, HtmlParser
+from rag.app.naive import by_plaintext, PARSERS
 
 
 
@@ -156,13 +155,37 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         return tokenize_chunks(chunks, doc, eng, None)
     
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        pdf_parser = Pdf()
-        if parser_config.get("layout_recognize", "DeepDOC") == "Plain Text":
-            pdf_parser = PlainParser()
-        for txt, poss in pdf_parser(filename if not binary else binary,
-                                    from_page=from_page, to_page=to_page, callback=callback)[0]:
+        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+
+        if isinstance(layout_recognizer, bool):
+            layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
+
+        name = layout_recognizer.strip().lower()
+        parser = PARSERS.get(name, by_plaintext)
+        callback(0.1, "Start to parse.")
+
+        raw_sections, tables, pdf_parser = parser(
+            filename = filename,
+            binary = binary,
+            from_page = from_page,
+            to_page = to_page,
+            lang = lang,
+            callback = callback,
+            pdf_cls = Pdf,
+            layout_recognizer = layout_recognizer,
+            **kwargs
+        )
+
+        if not raw_sections and not tables:
+            return []
+
+        if name in ["tcadp", "docling", "mineru"]:
+            parser_config["chunk_token_num"] = 0
+        
+        for txt, poss in raw_sections:
             sections.append(txt + poss)
 
+        callback(0.8, "Finish parsing.")
     elif re.search(r"\.(txt|md|markdown|mdx)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
@@ -178,12 +201,23 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        binary = BytesIO(binary)
-        doc_parsed = parser.from_buffer(binary)
-        sections = doc_parsed['content'].split('\n')
-        sections = [s for s in sections if s]
-        callback(0.8, "Finish parsing.")
+        try:
+            from tika import parser as tika_parser
+        except Exception as e:
+            callback(0.8, f"tika not available: {e}. Unsupported .doc parsing.")
+            logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
+            return []
 
+        binary = BytesIO(binary)
+        doc_parsed = tika_parser.from_buffer(binary)
+        if doc_parsed.get('content', None) is not None:
+            sections = doc_parsed['content'].split('\n')
+            sections = [s for s in sections if s]
+            callback(0.8, "Finish parsing.")
+        else:
+            callback(0.8, f"tika.parser got empty content from {filename}.")
+            logging.warning(f"tika.parser got empty content from {filename}.")
+            return []
     else:
         raise NotImplementedError(
             "file type not supported yet(doc, docx, pdf, txt supported)")

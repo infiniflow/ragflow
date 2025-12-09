@@ -9,7 +9,7 @@ Initiate an AI-powered chat with a configured chat assistant.
 
 ---
 
-Knowledge base, hallucination-free chat, and file management are the three pillars of RAGFlow. Chats in RAGFlow are based on a particular dataset or multiple datasets. Once you have created your dataset, finished file parsing, and [run a retrieval test](../dataset/run_retrieval_test.md), you can go ahead and start an AI conversation.
+Chats in RAGFlow are based on a particular dataset or multiple datasets. Once you have created your dataset, finished file parsing, and [run a retrieval test](../dataset/run_retrieval_test.md), you can go ahead and start an AI conversation.
 
 ## Start an AI chat
 
@@ -48,14 +48,14 @@ You start an AI conversation by creating an assistant.
      - If no target language is selected, the system will search only in the language of your query, which may cause relevant information in other languages to be missed.
    - **Variable** refers to the variables (keys) to be used in the system prompt. `{knowledge}` is a reserved variable. Click **Add** to add more variables for the system prompt.
       - If you are uncertain about the logic behind **Variable**, leave it *as-is*.
-      - As of v0.21.1, if you add custom variables here, the only way you can pass in their values is to call:
+      - As of v0.17.2, if you add custom variables here, the only way you can pass in their values is to call:
          - HTTP method [Converse with chat assistant](../../references/http_api_reference.md#converse-with-chat-assistant), or
          - Python method [Converse with chat assistant](../../references/python_api_reference.md#converse-with-chat-assistant).
 
 4. Update Model-specific Settings:
 
    - In **Model**: you select the chat model. Though you have selected the default chat model in **System Model Settings**, RAGFlow allows you to choose an alternative chat model for your dialogue.
-   - **Creavity**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
+   - **Creativity**: A shortcut to **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty** settings, indicating the freedom level of the model. From **Improvise**, **Precise**, to **Balance**, each preset configuration corresponds to a unique combination of **Temperature**, **Top P**, **Presence penalty**, and **Frequency penalty**.   
    This parameter has three options:
       - **Improvise**: Produces more creative responses.
       - **Precise**: (Default) Produces more conservative responses.
@@ -83,13 +83,13 @@ You start an AI conversation by creating an assistant.
 
 1. Click the light bulb icon above the answer to view the expanded system prompt:
 
-![prompt_display](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/prompt_display.jpg)
+   ![prompt_display](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/prompt_display.jpg)
 
    *The light bulb icon is available only for the current dialogue.*
 
 2. Scroll down the expanded prompt to view the time consumed for each task:
 
-![time_elapsed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/time_elapsed.jpg)
+   ![time_elapsed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/time_elapsed.jpg)
 :::
 
 ## Update settings of an existing chat assistant

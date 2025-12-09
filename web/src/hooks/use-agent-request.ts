@@ -14,7 +14,7 @@ import { IDebugSingleRequestBody } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
 import { BeginId } from '@/pages/agent/constant';
 import { IInputs } from '@/pages/agent/interface';
-import { useGetSharedChatSearchParams } from '@/pages/chat/shared-hooks';
+import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
 import agentService, {
   fetchAgentLogsByCanvasId,
   fetchPipeLineList,
@@ -54,6 +54,7 @@ export const enum AgentApiAction {
   SetAgentSetting = 'setAgentSetting',
   FetchPrompt = 'fetchPrompt',
   CancelDataflow = 'cancelDataflow',
+  CancelCanvas = 'cancelCanvas',
 }
 
 export const EmptyDsl = {
@@ -734,3 +735,54 @@ export const useCancelDataflow = () => {
 
 //   return { list: data, loading };
 // };
+
+export function useCancelConversation() {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.CancelCanvas],
+    mutationFn: async (taskId: string) => {
+      const ret = await agentService.cancelCanvas(taskId);
+
+      return ret?.data?.code;
+    },
+  });
+
+  return { data, loading, cancelConversation: mutateAsync };
+}
+
+export const useFetchFlowSSE = (): {
+  data: IFlow;
+  loading: boolean;
+  refetch: () => void;
+} => {
+  const { sharedId } = useGetSharedChatSearchParams();
+
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery({
+    queryKey: ['flowDetailSSE'],
+    initialData: {} as IFlow,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    gcTime: 0,
+    queryFn: async () => {
+      if (!sharedId) return {};
+      const { data } = await agentService.getCanvasSSE(sharedId);
+
+      const messageList = buildMessageListWithUuid(
+        get(data, 'data.dsl.messages', []),
+      );
+      set(data, 'data.dsl.messages', messageList);
+
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading, refetch };
+};

@@ -5,7 +5,7 @@ slug: /configure_knowledge_base
 
 # Configure dataset
 
-Most of RAGFlow's chat assistants and Agents are based on datasets. Each of RAGFlow's datasets serves as a knowledge source, *parsing* files uploaded from your local machine and file references generated in **File Management** into the real 'knowledge' for future AI chats. This guide demonstrates some basic usages of the dataset feature, covering the following topics:
+Most of RAGFlow's chat assistants and Agents are based on datasets. Each of RAGFlow's datasets serves as a knowledge source, *parsing* files uploaded from your local machine and file references generated in RAGFlow's File system into the real 'knowledge' for future AI chats. This guide demonstrates some basic usages of the dataset feature, covering the following topics:
 
 - Create a dataset
 - Configure a dataset
@@ -59,7 +59,7 @@ You can also change a file's chunking method on the **Files** page.
 ![change chunking method](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/change_chunking_method.jpg)
 
 <details>
-  <summary>From v0.21.1 onward, RAGFlow supports ingestion pipeline for customized data ingestion and cleansing workflows.</summary>
+  <summary>From v0.21.0 onward, RAGFlow supports ingestion pipeline for customized data ingestion and cleansing workflows.</summary>
    
   To use a customized data pipeline:
 
@@ -76,21 +76,16 @@ You can also change a file's chunking method on the **Files** page.
 
 An embedding model converts chunks into embeddings. It cannot be changed once the dataset has chunks. To switch to a different embedding model, you must delete all existing chunks in the dataset. The obvious reason is that we *must* ensure that files in a specific dataset are converted to embeddings using the *same* embedding model (ensure that they are compared in the same embedding space).
 
-The following embedding models can be deployed locally:
-
-- BAAI/bge-large-zh-v1.5
-- maidalun1020/bce-embedding-base_v1
-
 :::danger IMPORTANT
-These two embedding models are optimized specifically for English and Chinese, so performance may be compromised if you use them to embed documents in other languages.
+Some embedding models are optimized for specific languages, so performance may be compromised if you use them to embed documents in other languages.
 :::
 
 ### Upload file
 
-- RAGFlow's **File Management** allows you to link a file to multiple datasets, in which case each target dataset holds a reference to the file.
+- RAGFlow's File system allows you to link a file to multiple datasets, in which case each target dataset holds a reference to the file.
 - In **Knowledge Base**, you are also given the option of uploading a single file or a folder of files (bulk upload) from your local machine to a dataset, in which case the dataset holds file copies. 
 
-While uploading files directly to a dataset seems more convenient, we *highly* recommend uploading files to **File Management** and then linking them to the target datasets. This way, you can avoid permanently deleting files uploaded to the dataset. 
+While uploading files directly to a dataset seems more convenient, we *highly* recommend uploading files to RAGFlow's File system and then linking them to the target datasets. This way, you can avoid permanently deleting files uploaded to the dataset. 
 
 ### Parse file
 
@@ -138,7 +133,7 @@ See [Run retrieval test](./run_retrieval_test.md) for details.
 
 ## Search for dataset
 
-As of RAGFlow v0.21.1, the search feature is still in a rudimentary form, supporting only dataset search by name.
+As of RAGFlow v0.22.1, the search feature is still in a rudimentary form, supporting only dataset search by name.
 
 ![search dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/search_datasets.jpg)
 
@@ -147,6 +142,6 @@ As of RAGFlow v0.21.1, the search feature is still in a rudimentary form, suppor
 You are allowed to delete a dataset. Hover your mouse over the three dot of the intended dataset card and the **Delete** option appears. Once you delete a dataset, the associated folder under **root/.knowledge** directory is AUTOMATICALLY REMOVED. The consequence is:
 
 - The files uploaded directly to the dataset are gone;  
-- The file references, which you created from within **File Management**, are gone, but the associated files still exist in **File Management**. 
+- The file references, which you created from within RAGFlow's File system, are gone, but the associated files still exist. 
 
 ![delete dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/delete_datasets.jpg)

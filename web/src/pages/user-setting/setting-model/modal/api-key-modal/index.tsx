@@ -14,6 +14,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { KeyboardEventHandler, useCallback, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { ApiKeyPostBody } from '../../../interface';
+import { LLMHeader } from '../../components/llm-header';
 
 interface IProps extends Omit<IModalManagerChildrenProps, 'showModal'> {
   loading: boolean;
@@ -34,6 +35,7 @@ const modelsWithBaseUrl = [
   LLMFactory.OpenAI,
   LLMFactory.AzureOpenAI,
   LLMFactory.TongYiQianWen,
+  LLMFactory.MiniMax,
 ];
 
 const ApiKeyModal = ({
@@ -69,7 +71,7 @@ const ApiKeyModal = ({
 
   return (
     <Modal
-      title={editMode ? t('editModel') : t('modify')}
+      title={<LLMHeader name={llmFactory} />}
       open={visible}
       onOpenChange={(open) => !open && hideModal()}
       onOk={handleOk}
@@ -77,6 +79,7 @@ const ApiKeyModal = ({
       confirmLoading={loading}
       okText={t('save')}
       cancelText={t('cancel')}
+      className="!w-[600px]"
     >
       <Form {...form}>
         <div className="space-y-4 py-4">
@@ -85,9 +88,11 @@ const ApiKeyModal = ({
             rules={{ required: t('apiKeyMessage') }}
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-sm font-medium text-text-primary">
+                <FormLabel
+                  className="text-sm font-medium text-text-secondary"
+                  required
+                >
                   {t('apiKey')}
-                  <span className="ml-1 text-destructive">*</span>
                 </FormLabel>
                 <FormControl>
                   <Input
@@ -106,7 +111,16 @@ const ApiKeyModal = ({
               name="base_url"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-sm font-medium text-text-primary">
+                  <FormLabel
+                    className="text-sm font-medium text-text-primary"
+                    tooltip={
+                      llmFactory === LLMFactory.MiniMax
+                        ? t('minimaxBaseUrlTip')
+                        : llmFactory === LLMFactory.TongYiQianWen
+                          ? t('tongyiBaseUrlTip')
+                          : t('baseUrlTip')
+                    }
+                  >
                     {t('baseUrl')}
                   </FormLabel>
                   <FormControl>
@@ -115,7 +129,9 @@ const ApiKeyModal = ({
                       placeholder={
                         llmFactory === LLMFactory.TongYiQianWen
                           ? t('tongyiBaseUrlPlaceholder')
-                          : 'https://api.openai.com/v1'
+                          : llmFactory === LLMFactory.MiniMax
+                            ? t('minimaxBaseUrlPlaceholder')
+                            : 'https://api.openai.com/v1'
                       }
                       onKeyDown={handleKeyDown}
                       className="w-full"

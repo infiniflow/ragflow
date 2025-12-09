@@ -5,8 +5,8 @@ import {
   useLoginChannels,
   useLoginWithChannel,
   useRegister,
-} from '@/hooks/login-hooks';
-import { useSystemConfig } from '@/hooks/system-hooks';
+} from '@/hooks/use-login-request';
+import { useSystemConfig } from '@/hooks/use-system-request';
 import { rsaPsw } from '@/utils';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -26,7 +26,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { BgSvg } from './bg';
@@ -43,7 +42,9 @@ const Login = () => {
     useLoginWithChannel();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
   const [isLoginPage, setIsLoginPage] = useState(true);
-  const [showPassword, setShowPassword] = useState(false);
+
+  const [isUserInteracting, setIsUserInteracting] = useState(true);
+
   const loading =
     signLoading ||
     registerLoading ||
@@ -153,12 +154,11 @@ const Login = () => {
         color={'rgb(128, 255, 248)'}
       />
       <div className=" h-[inherit] relative overflow-auto">
-        <BgSvg />
+        <BgSvg isPaused={isUserInteracting} />
 
-        {/* <SpotlightTopRight opcity={0.7} coverage={10} /> */}
         <div className="absolute top-3 flex flex-col items-center mb-12 w-full text-text-primary">
           <div className="flex items-center mb-4 w-full pl-10 pt-10 ">
-            <div className="w-12 h-12 p-2 rounded-lg bg-bg-base border-2 border-border flex items-center justify-center mr-3">
+            <div className="w-12 h-12 p-2 rounded-lg flex items-center justify-center mr-3">
               <img
                 src={'/logo.svg'}
                 alt="logo"
@@ -238,7 +238,7 @@ const Login = () => {
                           <FormControl>
                             <div className="relative">
                               <Input
-                                type={showPassword ? 'text' : 'password'}
+                                type={'password'}
                                 placeholder={t('passwordPlaceholder')}
                                 autoComplete={
                                   title === 'login'
@@ -247,7 +247,7 @@ const Login = () => {
                                 }
                                 {...field}
                               />
-                              <button
+                              {/* <button
                                 type="button"
                                 className="absolute inset-y-0 right-0 pr-3 flex items-center"
                                 onClick={() => setShowPassword(!showPassword)}
@@ -257,7 +257,7 @@ const Login = () => {
                                 ) : (
                                   <Eye className="h-4 w-4 text-gray-500" />
                                 )}
-                              </button>
+                              </button> */}
                             </div>
                           </FormControl>
                           <FormMessage />

@@ -44,9 +44,15 @@ export interface IInputData {
   inputs: Record<string, BeginQuery>;
   tips: string;
 }
-
+export interface IAttachment {
+  doc_id: string;
+  format: string;
+  file_name: string;
+}
 export interface IMessageData {
   content: string;
+  audio_binary: string;
+  outputs: any;
   start_to_think?: boolean;
   end_to_think?: boolean;
 }

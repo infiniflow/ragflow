@@ -420,8 +420,10 @@ Creates a dataset.
   - `"permission"`: `string`
   - `"chunk_method"`: `string`
   - `"parser_config"`: `object`
+  - `"parse_type"`: `int`
+  - `"pipeline_id"`: `string`
 
-##### Request example
+##### A basic request example
 
 ```bash
 curl --request POST \
@@ -431,6 +433,24 @@ curl --request POST \
      --data '{
       "name": "test_1"
       }'
+```
+
+##### A request example specifying ingestion pipeline
+
+:::caution WARNING
+You must *not* include `"chunk_method"` or `"parser_config"` when specifying an ingestion pipeline.
+:::
+
+```bash
+curl --request POST \
+  --url http://{address}/api/v1/datasets \
+  --header 'Content-Type: application/json' \
+  --header 'Authorization: Bearer <YOUR_API_KEY>' \
+  --data '{
+   "name": "test-sdk",
+   "parse_type": <NUMBER_OF_PARSERS_IN_YOUR_PARSER_COMPONENT>,
+   "pipeline_id": "<PIPELINE_ID_32_HEX>"
+  }'
 ```
 
 ##### Request parameters
@@ -460,7 +480,8 @@ curl --request POST \
   - `"team"`: All team members can manage the dataset.
 
 - `"chunk_method"`: (*Body parameter*), `enum<string>`  
-  The chunking method of the dataset to create. Available options:  
+  The default chunk method of the dataset to create. Mutually exclusive with `"parse_type"` and `"pipeline_id"`. If you set `"chunk_method"`, do not include `"parse_type"` or `"pipeline_id"`.  
+  Available options:  
   - `"naive"`: General (default)
   - `"book"`: Book
   - `"email"`: Email
@@ -491,13 +512,16 @@ curl --request POST \
       - Maximum: `2048`
     - `"delimiter"`: `string`
       - Defaults to `"\n"`.
-    - `"html4excel"`: `bool` Indicates whether to convert Excel documents into HTML format.
+    - `"html4excel"`: `bool`
+      - Whether to convert Excel documents into HTML format.
       - Defaults to `false`
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
-    - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
-      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
-    - `"task_page_size"`: `int` For PDF only.
+    - `"tag_kb_ids"`: `array<string>`
+      - IDs of datasets to be parsed using the ​​Tag chunk method.
+      - Before setting this, ensure a tag set is created and properly configured. For details, see [Use tag set](https://ragflow.io/docs/dev/use_tag_sets).
+    - `"task_page_size"`: `int`
+      - For PDFs only.
       - Defaults to `12`
       - Minimum: `1`
     - `"raptor"`: `object` RAPTOR-specific settings.
@@ -508,6 +532,26 @@ curl --request POST \
     - `"raptor"`: `object` RAPTOR-specific settings.
       - Defaults to: `{"use_raptor": false}`.
   - If `"chunk_method"` is `"table"`, `"picture"`, `"one"`, or `"email"`, `"parser_config"` is an empty JSON object.
+
+- `"parse_type"`: (*Body parameter*), `int`  
+  The ingestion pipeline parse type identifier, i.e., the number of parsers in your **Parser** component.  
+  - Required (along with `"pipeline_id"`) if specifying an ingestion pipeline.
+  - Must not be included when `"chunk_method"` is specified.
+
+- `"pipeline_id"`: (*Body parameter*), `string`  
+  The ingestion pipeline ID. Can be found in the corresponding URL in the RAGFlow UI.
+  - Required (along with `"parse_type"`) if specifying an ingestion pipeline.
+  - Must be a 32-character lowercase hexadecimal string, e.g., `"d0bebe30ae2211f0970942010a8e0005"`.
+  - Must not be included when `"chunk_method"` is specified.
+
+:::caution WARNING
+You can choose either of the following ingestion options when creating a dataset, but *not* both:
+
+- Use a built-in chunk method -- specify `"chunk_method"` (optionally with `"parser_config"`).
+- Use an ingestion pipeline -- specify both `"parse_type"` and `"pipeline_id"`.
+
+If none of `"chunk_method"`, `"parse_type"`, or `"pipeline_id"` are provided, the system defaults to `chunk_method = "naive"`.
+:::
 
 #### Response
 
@@ -969,6 +1013,237 @@ Failure:
 {
     "code": 102,
     "message": "The dataset doesn't exist"
+}
+```
+
+---
+
+### Construct knowledge graph
+
+**POST** `/api/v1/datasets/{dataset_id}/run_graphrag`
+
+Constructs a knowledge graph from a specified dataset.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/datasets/{dataset_id}/run_graphrag`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/datasets/{dataset_id}/run_graphrag \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the target dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code":0,
+    "data":{
+      "graphrag_task_id":"e498de54bfbb11f0ba028f704583b57b"
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Invalid Dataset ID"
+}
+```
+
+---
+
+### Get knowledge graph construction status
+
+**GET** `/api/v1/datasets/{dataset_id}/trace_graphrag`
+
+Retrieves the knowledge graph construction status for a specified dataset.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/trace_graphrag`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/datasets/{dataset_id}/trace_graphrag \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the target dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code":0,
+    "data":{
+        "begin_at":"Wed, 12 Nov 2025 19:36:56 GMT",
+        "chunk_ids":"",
+        "create_date":"Wed, 12 Nov 2025 19:36:56 GMT",
+        "create_time":1762947416350,
+        "digest":"39e43572e3dcd84f",
+        "doc_id":"44661c10bde211f0bc93c164a47ffc40",
+        "from_page":100000000,
+        "id":"e498de54bfbb11f0ba028f704583b57b",
+        "priority":0,
+        "process_duration":2.45419,
+        "progress":1.0,
+        "progress_msg":"19:36:56 created task graphrag\n19:36:57 Task has been received.\n19:36:58 [GraphRAG] doc:083661febe2411f0bc79456921e5745f has no available chunks, skip generation.\n19:36:58 [GraphRAG] build_subgraph doc:44661c10bde211f0bc93c164a47ffc40 start (chunks=1, timeout=10000000000s)\n19:36:58 Graph already contains 44661c10bde211f0bc93c164a47ffc40\n19:36:58 [GraphRAG] build_subgraph doc:44661c10bde211f0bc93c164a47ffc40 empty\n19:36:58 [GraphRAG] kb:33137ed0bde211f0bc93c164a47ffc40 no subgraphs generated successfully, end.\n19:36:58 Knowledge Graph done (0.72s)","retry_count":1,
+        "task_type":"graphrag",
+        "to_page":100000000,
+        "update_date":"Wed, 12 Nov 2025 19:36:58 GMT",
+        "update_time":1762947418454
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Invalid Dataset ID"
+}
+```
+
+---
+
+### Construct RAPTOR
+
+**POST** `/api/v1/datasets/{dataset_id}/run_raptor`
+
+Construct a RAPTOR from a specified dataset.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/datasets/{dataset_id}/run_raptor`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/datasets/{dataset_id}/run_raptor \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the target dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code":0,
+    "data":{
+        "raptor_task_id":"50d3c31cbfbd11f0ba028f704583b57b"
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Invalid Dataset ID"
+}
+```
+
+---
+
+### Get RAPTOR construction status
+
+**GET** `/api/v1/datasets/{dataset_id}/trace_raptor`
+
+Retrieves the RAPTOR construction status for a specified dataset.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/trace_raptor`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/datasets/{dataset_id}/trace_raptor \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The ID of the target dataset.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code":0,
+    "data":{
+        "begin_at":"Wed, 12 Nov 2025 19:47:07 GMT",
+        "chunk_ids":"",
+        "create_date":"Wed, 12 Nov 2025 19:47:07 GMT",
+        "create_time":1762948027427,
+        "digest":"8b279a6248cb8fc6",
+        "doc_id":"44661c10bde211f0bc93c164a47ffc40",
+        "from_page":100000000,
+        "id":"50d3c31cbfbd11f0ba028f704583b57b",
+        "priority":0,
+        "process_duration":0.948244,
+        "progress":1.0,
+        "progress_msg":"19:47:07 created task raptor\n19:47:07 Task has been received.\n19:47:07 Processing...\n19:47:07 Processing...\n19:47:07 Indexing done (0.01s).\n19:47:07 Task done (0.29s)",
+        "retry_count":1,
+        "task_type":"raptor",
+        "to_page":100000000,
+        "update_date":"Wed, 12 Nov 2025 19:47:07 GMT",
+        "update_time":1762948027948
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 102,
+    "message": "Invalid Dataset ID"
 }
 ```
 
@@ -1840,7 +2115,8 @@ Retrieves chunks from specified datasets.
   - `"highlight"`: `boolean`
   - `"cross_languages"`: `list[string]`
   - `"metadata_condition"`: `object`
-
+  - `"use_kg"`: `boolean`
+  - `"toc_enhance"`: `boolean`
 ##### Request example
 
 ```bash
@@ -1854,6 +2130,7 @@ curl --request POST \
           "dataset_ids": ["b2a62730759d11ef987d0242ac120004"],
           "document_ids": ["77df9ef4759a11ef8bdd0242ac120004"],
           "metadata_condition": {
+            "logic": "and",
             "conditions": [
               {
                 "name": "author",
@@ -1888,6 +2165,10 @@ curl --request POST \
   The weight of vector cosine similarity. Defaults to `0.3`. If x represents the weight of vector cosine similarity, then (1 - x) is the term similarity weight.
 - `"top_k"`: (*Body parameter*), `integer`  
   The number of chunks engaged in vector cosine computation. Defaults to `1024`.
+- `"use_kg"`: (*Body parameter*), `boolean`  
+  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](https://ragflow.io/docs/dev/construct_knowledge_graph) for details.
+- `"toc_enhance"`: (*Body parameter*), `boolean`  
+  Whether to search chunks with extracted table of content. Defaults to `False`. Before enabling this, ensure you have enabled `TOC_Enhance` and successfully extracted table of contents for the specified datasets. See [here](https://ragflow.io/docs/dev/enable_table_of_contents) for details.
 - `"rerank_id"`: (*Body parameter*), `integer`  
   The ID of the rerank model.
 - `"keyword"`: (*Body parameter*), `boolean`  
@@ -1902,6 +2183,9 @@ curl --request POST \
   The languages that should be translated into, in order to achieve keywords retrievals in different languages.
 - `"metadata_condition"`: (*Body parameter*), `object`  
   The metadata condition used for filtering chunks:  
+  - `"logic"`: (*Body parameter*), `string`
+    - `"and"`: Return only results that satisfy *every* condition (default).
+    - `"or"`: Return results that satisfy *any* condition.
   - `"conditions"`: (*Body parameter*), `array`  
     A list of metadata filter conditions.  
     - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
@@ -3729,7 +4013,7 @@ Failure:
 
 **DELETE** `/api/v1/agents/{agent_id}/sessions`
 
-Deletes sessions of a agent by ID.
+Deletes sessions of an agent by ID.
 
 #### Request
 
@@ -3788,7 +4072,7 @@ Failure:
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
-This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find the it in the Request Headers in your browser easily as shown below:
+This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find it in the Request Headers in your browser easily as shown below:
 
 ![Image](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/login_token.jpg)
 
@@ -4238,3 +4522,687 @@ Explanation:
 - Each service is reported as "ok" or "nok".  
 - The top-level `status` reflects overall health.  
 - If any service is "nok", detailed error info appears in `_meta`.  
+
+---
+
+## FILE MANAGEMENT
+
+---
+
+### Upload file
+
+**POST** `/api/v1/file/upload`
+
+Uploads one or multiple files to the system.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/upload`
+- Headers:
+  - `'Content-Type: multipart/form-data'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Form:
+  - `'file=@{FILE_PATH}'`
+  - `'parent_id'`: `string` (optional)
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/upload \
+     --header 'Content-Type: multipart/form-data' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --form 'file=@./test1.txt' \
+     --form 'file=@./test2.pdf' \
+     --form 'parent_id={folder_id}'
+```
+
+##### Request parameters
+
+- `'file'`: (*Form parameter*), `file`, *Required*  
+  The file(s) to upload. Multiple files can be uploaded in a single request.
+- `'parent_id'`: (*Form parameter*), `string`  
+  The parent folder ID where the file will be uploaded. If not specified, files will be uploaded to the root folder.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "id": "b330ec2e91ec11efbc510242ac120004",
+            "name": "test1.txt",
+            "size": 17966,
+            "type": "doc",
+            "parent_id": "527fa74891e811ef9c650242ac120006",
+            "location": "test1.txt",
+            "create_time": 1729763127646
+        }
+    ]
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 400,
+    "message": "No file part!"
+}
+```
+
+---
+
+### Create file or folder
+
+**POST** `/api/v1/file/create`
+
+Creates a new file or folder in the system.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/create`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"name"`: `string`
+  - `"parent_id"`: `string` (optional)
+  - `"type"`: `string`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/create \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "name": "New Folder",
+          "type": "FOLDER",
+          "parent_id": "{folder_id}"
+     }'
+```
+
+##### Request parameters
+
+- `"name"`: (*Body parameter*), `string`, *Required*  
+  The name of the file or folder to create.
+- `"parent_id"`: (*Body parameter*), `string`  
+  The parent folder ID. If not specified, the file/folder will be created in the root folder.
+- `"type"`: (*Body parameter*), `string`  
+  The type of the file to create. Available options:
+  - `"FOLDER"`: Create a folder
+  - `"VIRTUAL"`: Create a virtual file
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "id": "b330ec2e91ec11efbc510242ac120004",
+        "name": "New Folder",
+        "type": "FOLDER",
+        "parent_id": "527fa74891e811ef9c650242ac120006",
+        "size": 0,
+        "create_time": 1729763127646
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 409,
+    "message": "Duplicated folder name in the same folder."
+}
+```
+
+---
+
+### List files
+
+**GET** `/api/v1/file/list?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+
+Lists files and folders under a specific folder.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/file/list?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/file/list?parent_id={folder_id}&page=1&page_size=15' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `parent_id`: (*Filter parameter*), `string`  
+  The folder ID to list files from. If not specified, the root folder is used by default.
+- `keywords`: (*Filter parameter*), `string`  
+  Search keyword to filter files by name.
+- `page`: (*Filter parameter*), `integer`  
+  Specifies the page on which the files will be displayed. Defaults to `1`.
+- `page_size`: (*Filter parameter*), `integer`  
+  The number of files on each page. Defaults to `15`.
+- `orderby`: (*Filter parameter*), `string`  
+  The field by which files should be sorted. Available options:
+  - `create_time` (default)
+- `desc`: (*Filter parameter*), `boolean`  
+  Indicates whether the retrieved files should be sorted in descending order. Defaults to `true`.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "total": 10,
+        "files": [
+            {
+                "id": "b330ec2e91ec11efbc510242ac120004",
+                "name": "test1.txt",
+                "type": "doc",
+                "size": 17966,
+                "parent_id": "527fa74891e811ef9c650242ac120006",
+                "create_time": 1729763127646
+            }
+        ],
+        "parent_folder": {
+            "id": "527fa74891e811ef9c650242ac120006",
+            "name": "Parent Folder"
+        }
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "Folder not found!"
+}
+```
+
+---
+
+### Get root folder
+
+**GET** `/api/v1/file/root_folder`
+
+Retrieves the user's root folder information.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/file/root_folder`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/file/root_folder \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+No parameters required.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "root_folder": {
+            "id": "527fa74891e811ef9c650242ac120006",
+            "name": "root",
+            "type": "FOLDER"
+        }
+    }
+}
+```
+
+---
+
+### Get parent folder
+
+**GET** `/api/v1/file/parent_folder?file_id={file_id}`
+
+Retrieves the immediate parent folder information of a specified file.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/file/parent_folder?file_id={file_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/file/parent_folder?file_id={file_id}' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `file_id`: (*Filter parameter*), `string`, *Required*  
+  The ID of the file whose immediate parent folder to retrieve.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "parent_folder": {
+            "id": "527fa74891e811ef9c650242ac120006",
+            "name": "Parent Folder"
+        }
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "Folder not found!"
+}
+```
+
+---
+
+### Get all parent folders
+
+**GET** `/api/v1/file/all_parent_folder?file_id={file_id}`
+
+Retrieves all parent folders of a specified file in the folder hierarchy.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/file/all_parent_folder?file_id={file_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/file/all_parent_folder?file_id={file_id}' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `file_id`: (*Filter parameter*), `string`, *Required*  
+  The ID of the file whose parent folders to retrieve.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "parent_folders": [
+            {
+                "id": "527fa74891e811ef9c650242ac120006",
+                "name": "Parent Folder 1"
+            },
+            {
+                "id": "627fa74891e811ef9c650242ac120007",
+                "name": "Parent Folder 2"
+            }
+        ]
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "Folder not found!"
+}
+```
+
+---
+
+### Delete files
+
+**POST** `/api/v1/file/rm`
+
+Deletes one or multiple files or folders.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/rm`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"file_ids"`: `list[string]`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/rm \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "file_ids": ["file_id_1", "file_id_2"]
+     }'
+```
+
+##### Request parameters
+
+- `"file_ids"`: (*Body parameter*), `list[string]`, *Required*  
+  The IDs of the files or folders to delete.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "File or Folder not found!"
+}
+```
+
+---
+
+### Rename file
+
+**POST** `/api/v1/file/rename`
+
+Renames a file or folder.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/rename`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"file_id"`: `string`
+  - `"name"`: `string`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/rename \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "file_id": "{file_id}",
+          "name": "new_name.txt"
+     }'
+```
+
+##### Request parameters
+
+- `"file_id"`: (*Body parameter*), `string`, *Required*  
+  The ID of the file or folder to rename.
+- `"name"`: (*Body parameter*), `string`, *Required*  
+  The new name for the file or folder. Note: Changing file extensions is *not* supported.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 400,
+    "message": "The extension of file can't be changed"
+}
+```
+
+or
+
+```json
+{
+    "code": 409,
+    "message": "Duplicated file name in the same folder."
+}
+```
+
+---
+
+### Download file
+
+**GET** `/api/v1/file/get/{file_id}`
+
+Downloads a file from the system.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/file/get/{file_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/file/get/{file_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --output ./downloaded_file.txt
+```
+
+##### Request parameters
+
+- `file_id`: (*Path parameter*), `string`, *Required*  
+  The ID of the file to download.
+
+#### Response
+
+Success:
+
+Returns the file content as a binary stream with appropriate Content-Type headers.
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "Document not found!"
+}
+```
+
+---
+
+### Move files
+
+**POST** `/api/v1/file/mv`
+
+Moves one or multiple files or folders to a specified folder.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/mv`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"src_file_ids"`: `list[string]`
+  - `"dest_file_id"`: `string`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/mv \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "src_file_ids": ["file_id_1", "file_id_2"],
+          "dest_file_id": "{destination_folder_id}"
+     }'
+```
+
+##### Request parameters
+
+- `"src_file_ids"`: (*Body parameter*), `list[string]`, *Required*  
+  The IDs of the files or folders to move.
+- `"dest_file_id"`: (*Body parameter*), `string`, *Required*  
+  The ID of the destination folder.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "File or Folder not found!"
+}
+```
+
+or
+
+```json
+{
+    "code": 404,
+    "message": "Parent Folder not found!"
+}
+```
+
+---
+
+### Convert files to documents and link them to datasets
+
+**POST** `/api/v1/file/convert`
+
+Converts files to documents and links them to specified datasets.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/convert`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"file_ids"`: `list[string]`
+  - `"kb_ids"`: `list[string]`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/convert \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "file_ids": ["file_id_1", "file_id_2"],
+          "kb_ids": ["dataset_id_1", "dataset_id_2"]
+     }'
+```
+
+##### Request parameters
+
+- `"file_ids"`: (*Body parameter*), `list[string]`, *Required*  
+  The IDs of the files to convert. If a folder ID is provided, all files within that folder will be converted.
+- `"kb_ids"`: (*Body parameter*), `list[string]`, *Required*  
+  The IDs of the target datasets.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "id": "file2doc_id_1",
+            "file_id": "file_id_1",
+            "document_id": "document_id_1"
+        }
+    ]
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "File not found!"
+}
+```
+
+or
+
+```json
+{
+    "code": 404,
+    "message": "Can't find this knowledgebase!"
+}
+```

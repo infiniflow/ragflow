@@ -26,9 +26,8 @@ import trio
 import xxhash
 from peewee import fn, Case, JOIN
 
-from api import settings
 from api.constants import IMG_BASE64_PREFIX, FILE_NAME_LEN_LIMIT
-from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole, CanvasCategory
+from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES, FileType, UserTenantRole, CanvasCategory
 from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant, File2Document, File, UserCanvas, \
     User
 from api.db.db_utils import bulk_insert_into_db
@@ -36,11 +35,11 @@ from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
+from common.constants import LLMType, ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME
 from rag.nlp import rag_tokenizer, search
-from rag.settings import get_svr_queue_name, SVR_CONSUMER_GROUP_NAME
 from rag.utils.redis_conn import REDIS_CONN
-from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.doc_store_conn import OrderByExpr
+from common import settings
 
 
 class DocumentService(CommonService):
@@ -115,7 +114,7 @@ class DocumentService(CommonService):
     def check_doc_health(cls, tenant_id: str, filename):
         import os
         MAX_FILE_NUM_PER_USER = int(os.environ.get("MAX_FILE_NUM_PER_USER", 0))
-        if MAX_FILE_NUM_PER_USER > 0 and DocumentService.get_doc_count(tenant_id) >= MAX_FILE_NUM_PER_USER:
+        if 0 < MAX_FILE_NUM_PER_USER <= DocumentService.get_doc_count(tenant_id):
             raise RuntimeError("Exceed the maximum file number of a free user!")
         if len(filename.encode("utf-8")) > FILE_NAME_LEN_LIMIT:
             raise RuntimeError("Exceed the maximum length of file name!")
@@ -311,20 +310,20 @@ class DocumentService(CommonService):
                 chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
                                                       page * page_size, page_size, search.index_name(tenant_id),
                                                       [doc.kb_id])
-                chunk_ids = settings.docStoreConn.getChunkIds(chunks)
+                chunk_ids = settings.docStoreConn.get_chunk_ids(chunks)
                 if not chunk_ids:
                     break
                 all_chunk_ids.extend(chunk_ids)
                 page += 1
             for cid in all_chunk_ids:
-                if STORAGE_IMPL.obj_exist(doc.kb_id, cid):
-                    STORAGE_IMPL.rm(doc.kb_id, cid)
+                if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
+                    settings.STORAGE_IMPL.rm(doc.kb_id, cid)
             if doc.thumbnail and not doc.thumbnail.startswith(IMG_BASE64_PREFIX):
-                if STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
-                    STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
+                if settings.STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
+                    settings.STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
             settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
-            graph_source = settings.docStoreConn.getFields(
+            graph_source = settings.docStoreConn.get_fields(
                 settings.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
             )
             if len(graph_source) > 0 and doc.id in list(graph_source.values())[0]["source_id"]:
@@ -374,12 +373,16 @@ class DocumentService(CommonService):
     def get_unfinished_docs(cls):
         fields = [cls.model.id, cls.model.process_begin_at, cls.model.parser_config, cls.model.progress_msg,
                   cls.model.run, cls.model.parser_id]
+        unfinished_task_query = Task.select(Task.doc_id).where(
+            (Task.progress >= 0) & (Task.progress < 1)
+        )
+
         docs = cls.model.select(*fields) \
             .where(
             cls.model.status == StatusEnum.VALID.value,
             ~(cls.model.type == FileType.VIRTUAL.value),
-            cls.model.progress < 1,
-            cls.model.progress > 0)
+            (((cls.model.progress < 1) & (cls.model.progress > 0)) |
+             (cls.model.id.in_(unfinished_task_query)))) # including unfinished tasks like GraphRAG, RAPTOR and Mindmap
         return list(docs.dicts())
 
     @classmethod
@@ -462,7 +465,7 @@ class DocumentService(CommonService):
             cls.model.id == doc_id, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
-            return
+            return None
         return docs[0]["tenant_id"]
 
     @classmethod
@@ -471,7 +474,7 @@ class DocumentService(CommonService):
         docs = cls.model.select(cls.model.kb_id).where(cls.model.id == doc_id)
         docs = docs.dicts()
         if not docs:
-            return
+            return None
         return docs[0]["kb_id"]
 
     @classmethod
@@ -484,7 +487,7 @@ class DocumentService(CommonService):
             cls.model.name == name, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
-            return
+            return None
         return docs[0]["tenant_id"]
 
     @classmethod
@@ -531,7 +534,7 @@ class DocumentService(CommonService):
             cls.model.id == doc_id, Knowledgebase.status == StatusEnum.VALID.value)
         docs = docs.dicts()
         if not docs:
-            return
+            return None
         return docs[0]["embd_id"]
 
     @classmethod
@@ -567,7 +570,7 @@ class DocumentService(CommonService):
             .where(cls.model.name == doc_name)
         doc_id = doc_id.dicts()
         if not doc_id:
-            return
+            return None
         return doc_id[0]["id"]
 
     @classmethod
@@ -621,12 +624,17 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def begin2parse(cls, docid):
-        cls.update_by_id(
-            docid, {"progress": random.random() * 1 / 100.,
-                    "progress_msg": "Task is queued...",
-                    "process_begin_at": get_format_time()
-                    })
+    def begin2parse(cls, doc_id, keep_progress=False):
+        info = {
+            "progress_msg": "Task is queued...",
+            "process_begin_at": get_format_time(),
+        }
+        if not keep_progress:
+            info["progress"] = random.random() * 1 / 100.
+            info["run"] = TaskStatus.RUNNING.value
+            # keep the doc in DONE state when keep_progress=True for GraphRAG, RAPTOR and Mindmap tasks
+
+        cls.update_by_id(doc_id, info)
 
     @classmethod
     @DB.connection_context()
@@ -685,8 +693,13 @@ class DocumentService(CommonService):
                 bad = 0
                 e, doc = DocumentService.get_by_id(d["id"])
                 status = doc.run  # TaskStatus.RUNNING.value
+                doc_progress = doc.progress if doc and doc.progress else 0.0
+                special_task_running = False
                 priority = 0
                 for t in tsks:
+                    task_type = (t.task_type or "").lower()
+                    if task_type in PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES:
+                        special_task_running = True
                     if 0 <= t.progress < 1:
                         finished = False
                     if t.progress == -1:
@@ -703,13 +716,19 @@ class DocumentService(CommonService):
                     prg = 1
                     status = TaskStatus.DONE.value
 
+                # only for special task and parsed docs and unfinished
+                freeze_progress = special_task_running and doc_progress >= 1 and not finished
                 msg = "\n".join(sorted(msg))
+                begin_at = d.get("process_begin_at")
+                if not begin_at:
+                    begin_at = datetime.now()
+                    # fallback
+                    cls.update_by_id(d["id"], {"process_begin_at": begin_at})
+
                 info = {
-                    "process_duration": datetime.timestamp(
-                        datetime.now()) -
-                                       d["process_begin_at"].timestamp(),
+                    "process_duration": max(datetime.timestamp(datetime.now()) - begin_at.timestamp(), 0),
                     "run": status}
-                if prg != 0:
+                if prg != 0 and not freeze_progress:
                     info["progress"] = prg
                 if msg:
                     info["progress_msg"] = msg
@@ -756,6 +775,14 @@ class DocumentService(CommonService):
             .where((cls.model.kb_id == kb_id) & (cls.model.run == TaskStatus.CANCEL))
             .scalar()
         )
+        downloaded = (
+            cls.model.select(fn.COUNT(1))
+            .where(
+                cls.model.kb_id == kb_id,
+                cls.model.source_type != "local"
+            )
+            .scalar()
+        )
 
         row = (
             cls.model.select(
@@ -792,6 +819,7 @@ class DocumentService(CommonService):
             "finished": int(row["finished"]),
             "failed": int(row["failed"]),
             "cancelled": int(cancelled),
+            "downloaded": int(downloaded)
         }
 
     @classmethod
@@ -838,7 +866,7 @@ def queue_raptor_o_graphrag_tasks(sample_doc_id, ty, priority, fake_doc_id="", d
             "to_page": 100000000,
             "task_type": ty,
             "progress_msg":  datetime.now().strftime("%H:%M:%S") + " created task " + ty,
-            "begin_at": datetime.now(),
+            "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
     task = new_task()
@@ -850,13 +878,13 @@ def queue_raptor_o_graphrag_tasks(sample_doc_id, ty, priority, fake_doc_id="", d
 
     task["doc_id"] = fake_doc_id
     task["doc_ids"] = doc_ids
-    DocumentService.begin2parse(sample_doc_id["id"])
-    assert REDIS_CONN.queue_product(get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
+    DocumentService.begin2parse(sample_doc_id["id"], keep_progress=True)
+    assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
     return task["id"]
 
 
 def get_queue_length(priority):
-    group_info = REDIS_CONN.queue_info(get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
+    group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
     if not group_info:
         return 0
     return int(group_info.get("lag", 0) or 0)
@@ -899,7 +927,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
         ParserType.AUDIO.value: audio,
         ParserType.EMAIL.value: email
     }
-    parser_config = {"chunk_token_num": 4096, "delimiter": "\n!?;。；！？", "layout_recognize": "Plain Text"}
+    parser_config = {"chunk_token_num": 4096, "delimiter": "\n!?;。；！？", "layout_recognize": "Plain Text", "table_context_size": 0, "image_context_size": 0}
     exe = ThreadPoolExecutor(max_workers=12)
     threads = []
     doc_nm = {}
@@ -938,7 +966,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             else:
                 d["image"].save(output_buffer, format='JPEG')
 
-            STORAGE_IMPL.put(kb.id, d["id"], output_buffer.getvalue())
+            settings.STORAGE_IMPL.put(kb.id, d["id"], output_buffer.getvalue())
             d["img_id"] = "{}-{}".format(kb.id, d["id"])
             d.pop("image", None)
             docs.append(d)
@@ -951,13 +979,13 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
 
     def embedding(doc_id, cnts, batch_size=16):
         nonlocal embd_mdl, chunk_counts, token_counts
-        vects = []
+        vectors = []
         for i in range(0, len(cnts), batch_size):
             vts, c = embd_mdl.encode(cnts[i: i + batch_size])
-            vects.extend(vts.tolist())
+            vectors.extend(vts.tolist())
             chunk_counts[doc_id] += len(cnts[i:i + batch_size])
             token_counts[doc_id] += c
-        return vects
+        return vectors
 
     idxnm = search.index_name(kb.tenant_id)
     try_create_idx = True
@@ -988,15 +1016,15 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             except Exception:
                 logging.exception("Mind map generation error")
 
-        vects = embedding(doc_id, [c["content_with_weight"] for c in cks])
-        assert len(cks) == len(vects)
+        vectors = embedding(doc_id, [c["content_with_weight"] for c in cks])
+        assert len(cks) == len(vectors)
         for i, d in enumerate(cks):
-            v = vects[i]
+            v = vectors[i]
             d["q_%d_vec" % len(v)] = v
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
                 if not settings.docStoreConn.indexExist(idxnm, kb_id):
-                    settings.docStoreConn.createIdx(idxnm, kb_id, len(vects[0]))
+                    settings.docStoreConn.createIdx(idxnm, kb_id, len(vectors[0]))
                 try_create_idx = False
             settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 
@@ -1004,4 +1032,3 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)
 
     return [d["id"] for d, _ in files]
-

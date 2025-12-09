@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.21.1">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.22.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -85,6 +85,8 @@
 
 ## 🔥 近期更新
 
+- 2025-11-19 支持 Gemini 3 Pro.
+- 2025-11-12 支持从 Confluence、S3、Notion、Discord、Google Drive 进行数据同步。
 - 2025-10-23 支持 MinerU 和 Docling 作为文档解析方法。
 - 2025-10-15 支持可编排的数据管道。
 - 2025-08-08 支持 OpenAI 最新的 GPT-5 系列模型。
@@ -92,7 +94,6 @@
 - 2025-05-23 Agent 新增 Python/JS 代码执行器组件。
 - 2025-05-05 支持跨语言查询。
 - 2025-03-19 PDF 和 DOCX 中的图支持用多模态大模型去解析得到描述.
-- 2025-02-28 结合互联网搜索（Tavily），对于任意大模型实现类似 Deep Research 的推理功能.
 - 2024-12-18 升级了 DeepDoc 的文档布局分析模型。
 - 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
 
@@ -186,25 +187,31 @@
 > 请注意，目前官方提供的所有 Docker 镜像均基于 x86 架构构建，并不提供基于 ARM64 的 Docker 镜像。
 > 如果你的操作系统是 ARM64 架构，请参考[这篇文档](https://ragflow.io/docs/dev/build_docker_image)自行构建 Docker 镜像。
 
-   > 运行以下命令会自动下载 RAGFlow slim Docker 镜像 `v0.21.1`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.21.1` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。
+   > 运行以下命令会自动下载 RAGFlow Docker 镜像 `v0.22.1`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.22.1` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。
 
    ```bash
    $ cd ragflow/docker
-   # Use CPU for embedding and DeepDoc tasks:
+   
+   # git checkout v0.22.1
+   # 可选：使用稳定版本标签（查看发布：https://github.com/infiniflow/ragflow/releases）
+   # 这一步确保代码中的 entrypoint.sh 文件与 Docker 镜像的版本保持一致。
+
+   # Use CPU for DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
 
-   # To use GPU to accelerate embedding and DeepDoc tasks:
+   # To use GPU to accelerate DeepDoc tasks:
    # sed -i '1i DEVICE=gpu' .env
    # docker compose -f docker-compose.yml up -d
    ```
+   
+   > 注意：在 `v0.22.0` 之前的版本，我们会同时提供包含 embedding 模型的镜像和不含 embedding 模型的 slim 镜像。具体如下：
 
    | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
    | ----------------- | --------------- | --------------------- | ------------------------ |
    | v0.21.1           | &approx;9       | ✔️                    | Stable release           |
    | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
-   | nightly           | &approx;2       | ❌                    | _Unstable_ nightly build |
 
-   > 注意：从 `v0.22.0` 开始，我们只发布 slim 版本，并且不再在镜像标签后附加 **-slim** 后缀。
+   > 从 `v0.22.0` 开始，我们只发布 slim 版本，并且不再在镜像标签后附加 **-slim** 后缀。
 
    > [!TIP]
    > 如果你遇到 Docker 镜像拉不下来的问题，可以在 **docker/.env** 文件内根据变量 `RAGFLOW_IMAGE` 的注释提示选择华为云或者阿里云的相应镜像。
@@ -284,7 +291,7 @@ RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换�
 > [!WARNING]
 > Infinity 目前官方并未正式支持在 Linux/arm64 架构下的机器上运行.
 
-## 🔧 源码编译 Docker 镜像（不含 embedding 模型）
+## 🔧 源码编译 Docker 镜像
 
 本 Docker 镜像大小约 2 GB 左右并且依赖外部的大模型和 embedding 服务。
 
@@ -308,7 +315,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 # install RAGFlow dependent python modules
+   uv sync --python 3.11 # install RAGFlow dependent python modules
    uv run download_deps.py
    pre-commit install
    ```

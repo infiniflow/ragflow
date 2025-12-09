@@ -1,18 +1,49 @@
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
-import { Search } from 'lucide-react';
+import { Eye, EyeOff, Search } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export interface InputProps
-  extends React.InputHTMLAttributes<HTMLInputElement> {
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
   value?: string | number | readonly string[] | undefined;
+  prefix?: React.ReactNode;
+  suffix?: React.ReactNode;
+  rootClassName?: string;
 }
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, value, onChange, ...props }, ref) => {
+  (
+    {
+      className,
+      rootClassName,
+      type,
+      value,
+      onChange,
+      prefix,
+      suffix,
+      ...props
+    },
+    ref,
+  ) => {
     const isControlled = value !== undefined;
     const { defaultValue, ...restProps } = props;
     const inputValue = isControlled ? value : defaultValue;
+    const [showPassword, setShowPassword] = useState(false);
+    const [prefixWidth, setPrefixWidth] = useState(0);
+    const [suffixWidth, setSuffixWidth] = useState(0);
+
+    const prefixRef = useRef<HTMLSpanElement>(null);
+    const suffixRef = useRef<HTMLSpanElement>(null);
+
+    useEffect(() => {
+      if (prefixRef.current) {
+        setPrefixWidth(prefixRef.current.offsetWidth);
+      }
+      if (suffixRef.current) {
+        setSuffixWidth(suffixRef.current.offsetWidth);
+      }
+    }, [prefix, suffix, prefixRef, suffixRef]);
     const handleChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
       if (type === 'number') {
         const numValue = e.target.value === '' ? '' : Number(e.target.value);
@@ -27,68 +58,107 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         onChange?.(e);
       }
     };
-    return (
-      <input
-        type={type}
-        className={cn(
-          'flex h-8 w-full rounded-md border border-input bg-bg-input px-2 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-text-primary',
-          className,
-        )}
-        ref={ref}
-        value={inputValue ?? ''}
-        onChange={handleChange}
-        {...restProps}
-      />
+
+    const isPasswordInput = type === 'password';
+
+    const inputEl = useMemo(
+      () => (
+        <input
+          ref={ref}
+          type={isPasswordInput && showPassword ? 'text' : type}
+          className={cn(
+            'peer/input',
+            'flex h-8 w-full rounded-md border-0.5 border-border-button bg-bg-input px-3 py-2 outline-none text-sm text-text-primary',
+            'file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-text-disabled',
+            'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-primary',
+            'disabled:cursor-not-allowed disabled:opacity-50 transition-colors',
+            type === 'number' &&
+              '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
+            className,
+          )}
+          style={{
+            paddingLeft: !!prefix && prefixWidth ? `${prefixWidth}px` : '',
+            paddingRight: isPasswordInput
+              ? '40px'
+              : !!suffix
+                ? `${suffixWidth}px`
+                : '',
+          }}
+          value={inputValue ?? ''}
+          onChange={handleChange}
+          {...restProps}
+        />
+      ),
+      [
+        prefixWidth,
+        suffixWidth,
+        isPasswordInput,
+        inputValue,
+        className,
+        handleChange,
+        restProps,
+      ],
     );
+
+    if (prefix || suffix || isPasswordInput) {
+      return (
+        <div className={cn('relative', rootClassName)}>
+          {prefix && (
+            <span
+              ref={prefixRef}
+              className="absolute left-0 top-[50%] translate-y-[-50%]"
+            >
+              {prefix}
+            </span>
+          )}
+          {inputEl}
+          {suffix && (
+            <span
+              ref={suffixRef}
+              className={cn('absolute right-0 top-[50%] translate-y-[-50%]', {
+                'right-14': isPasswordInput,
+              })}
+            >
+              {suffix}
+            </span>
+          )}
+          {isPasswordInput && (
+            <button
+              type="button"
+              className="
+                p-2 text-text-secondary
+                absolute border-0 right-1 top-[50%] translate-y-[-50%]
+                dark:peer-autofill/input:text-text-secondary-inverse
+                dark:peer-autofill/input:hover:text-text-primary-inverse
+                dark:peer-autofill/input:focus-visible:text-text-primary-inverse
+              "
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? (
+                <EyeOff className="size-[1em]" />
+              ) : (
+                <Eye className="size-[1em]" />
+              )}
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    return inputEl;
   },
 );
+
 Input.displayName = 'Input';
 
-export interface ExpandedInputProps extends Omit<InputProps, 'prefix'> {
-  prefix?: React.ReactNode;
-  suffix?: React.ReactNode;
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+export interface ExpandedInputProps extends InputProps {}
 
-const ExpandedInput = ({
-  suffix,
-  prefix,
-  className,
-  ...props
-}: ExpandedInputProps) => {
-  return (
-    <div className="relative">
-      <span
-        className={cn({
-          ['absolute left-3 top-[50%] translate-y-[-50%]']: prefix,
-        })}
-      >
-        {prefix}
-      </span>
-      <Input
-        className={cn(
-          { 'pr-8': !!suffix, 'pl-8': !!prefix },
-          'bg-bg-base',
-          className,
-        )}
-        {...props}
-      ></Input>
-      <span
-        className={cn({
-          ['absolute right-3 top-[50%] translate-y-[-50%]']: suffix,
-        })}
-      >
-        {suffix}
-      </span>
-    </div>
-  );
-};
+const ExpandedInput = Input;
 
 const SearchInput = (props: InputProps) => {
   return (
-    <ExpandedInput
-      prefix={<Search className="size-3.5" />}
-      {...props}
-    ></ExpandedInput>
+    <Input {...props} prefix={<Search className="ml-2 mr-1 size-[1em]" />} />
   );
 };
 

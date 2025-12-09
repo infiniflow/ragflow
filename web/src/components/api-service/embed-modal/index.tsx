@@ -1,5 +1,5 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
-import HightLightMarkdown from '@/components/highlight-markdown';
+import HighLightMarkdown from '@/components/highlight-markdown';
 import { SharedFrom } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
@@ -111,7 +111,7 @@ const EmbedModal = ({
               />
             </Form.Item>
           </div>
-          <HightLightMarkdown>{text}</HightLightMarkdown>
+          <HighLightMarkdown>{text}</HighLightMarkdown>
         </Card>
       ),
     },

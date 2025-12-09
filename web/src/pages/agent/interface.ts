@@ -41,3 +41,11 @@ export type IInputs = {
   prologue: string;
   mode: string;
 };
+
+export type IOutputs = Record<
+  string,
+  {
+    type?: string;
+    value?: string;
+  }
+>;

@@ -79,6 +79,7 @@
     "input-otp": "^1.4.1",
     "js-base64": "^3.7.5",
     "jsencrypt": "^3.3.2",
+    "jsoneditor": "^10.4.2",
     "lexical": "^0.23.1",
     "lodash": "^4.17.21",
     "lucide-react": "^0.546.0",
@@ -88,6 +89,7 @@
     "pptx-preview": "^1.0.5",
     "rc-tween-one": "^3.0.6",
     "react": "^18.2.0",
+    "react-audio-voice-recorder": "^2.2.0",
     "react-copy-to-clipboard": "^5.1.0",
     "react-day-picker": "^9.8.0",
     "react-dom": "^18.2.0",
@@ -98,6 +100,7 @@
     "react-infinite-scroll-component": "^6.1.0",
     "react-markdown": "^9.0.1",
     "react-pdf-highlighter": "^6.1.0",
+    "react-resizable-panels": "^3.0.6",
     "react-string-replace": "^1.1.1",
     "react-syntax-highlighter": "^15.5.0",
     "react18-json-view": "^0.2.8",
@@ -119,6 +122,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@hookform/devtools": "^4.4.0",
     "@react-dev-inspector/umi4-plugin": "^2.0.1",
     "@redux-devtools/extension": "^3.3.0",
     "@storybook/addon-docs": "^9.1.4",

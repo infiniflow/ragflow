@@ -17,7 +17,7 @@ An Agent’s response time generally depends on many factors, e.g., the LLM’s 
 
 - For simple tasks, such as retrieval, rewriting, formatting, or structured data extraction, use concise prompts, remove planning or reasoning instructions, enforce output length limits, and select smaller or Turbo-class models. This significantly reduces latency and cost with minimal impact on quality.
 
-- For complex tasks, like multi-step reasoning, cross-document synthesis, or tool-based workflows, maintain or enhance prompts that include planning, reflection, and verification steps.
+- For complex tasks, like multistep reasoning, cross-document synthesis, or tool-based workflows, maintain or enhance prompts that include planning, reflection, and verification steps.
 
 - In multi-Agent orchestration systems, delegate simple subtasks to sub-Agents using smaller, faster models, and reserve more powerful models for the lead Agent to handle complexity and uncertainty.
 
@@ -45,13 +45,13 @@ Click the light bulb icon above the *current* dialogue and scroll down the popup
 
 
 | Item name         | Description                                                                                   |
-| ----------------- | --------------------------------------------------------------------------------------------- |
+| ----------------- |-----------------------------------------------------------------------------------------------|
 | Total             | Total time spent on this conversation round, including chunk retrieval and answer generation. |
 | Check LLM         | Time to validate the specified LLM.                                                           |
 | Create retriever  | Time to create a chunk retriever.                                                             |
 | Bind embedding    | Time to initialize an embedding model instance.                                               |
 | Bind LLM          | Time to initialize an LLM instance.                                                           |
-| Tune question     | Time to optimize the user query using the context of the mult-turn conversation.              |
+| Tune question     | Time to optimize the user query using the context of the multi-turn conversation.             |
 | Bind reranker     | Time to initialize an reranker model instance for chunk retrieval.                            |
 | Generate keywords | Time to extract keywords from the user query.                                                 |
 | Retrieval         | Time to retrieve the chunks.                                                                  |

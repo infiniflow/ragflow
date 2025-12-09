@@ -4,17 +4,19 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#   "huggingface-hub",
 #   "nltk",
+#   "huggingface-hub"
 # ]
 # ///
 
-from huggingface_hub import snapshot_download
-from typing import Union
-import nltk
+import argparse
 import os
 import urllib.request
-import argparse
+from typing import Union
+
+import nltk
+from huggingface_hub import snapshot_download
+
 
 def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
     if use_china_mirrors:
@@ -26,6 +28,7 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
             ["https://registry.npmmirror.com/-/binary/chrome-for-testing/121.0.6167.85/linux64/chrome-linux64.zip", "chrome-linux64-121-0-6167-85"],
             ["https://registry.npmmirror.com/-/binary/chrome-for-testing/121.0.6167.85/linux64/chromedriver-linux64.zip", "chromedriver-linux64-121-0-6167-85"],
+            "https://github.com/astral-sh/uv/releases/download/0.9.16/uv-x86_64-unknown-linux-gnu.tar.gz",
         ]
     else:
         return [
@@ -36,13 +39,15 @@ def get_urls(use_china_mirrors=False) -> list[Union[str, list[str]]]:
             "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
             ["https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chrome-linux64.zip", "chrome-linux64-121-0-6167-85"],
             ["https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chromedriver-linux64.zip", "chromedriver-linux64-121-0-6167-85"],
+            "https://github.com/astral-sh/uv/releases/download/0.9.16/uv-x86_64-unknown-linux-gnu.tar.gz",
         ]
+
 
 repos = [
     "InfiniFlow/text_concat_xgb_v1.0",
     "InfiniFlow/deepdoc",
-    "InfiniFlow/huqie",
 ]
+
 
 def download_model(repo_id):
     local_dir = os.path.abspath(os.path.join("huggingface.co", repo_id))
@@ -51,12 +56,12 @@ def download_model(repo_id):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Download dependencies with optional China mirror support')
-    parser.add_argument('--china-mirrors', action='store_true', help='Use China-accessible mirrors for downloads')
+    parser = argparse.ArgumentParser(description="Download dependencies with optional China mirror support")
+    parser.add_argument("--china-mirrors", action="store_true", help="Use China-accessible mirrors for downloads")
     args = parser.parse_args()
-    
+
     urls = get_urls(args.china_mirrors)
-    
+
     for url in urls:
         download_url = url[0] if isinstance(url, list) else url
         filename = url[1] if isinstance(url, list) else url.split("/")[-1]
@@ -64,8 +69,8 @@ if __name__ == "__main__":
         if not os.path.exists(filename):
             urllib.request.urlretrieve(download_url, filename)
 
-    local_dir = os.path.abspath('nltk_data')
-    for data in ['wordnet', 'punkt', 'punkt_tab']:
+    local_dir = os.path.abspath("nltk_data")
+    for data in ["wordnet", "punkt", "punkt_tab"]:
         print(f"Downloading nltk {data}...")
         nltk.download(data, download_dir=local_dir)
 

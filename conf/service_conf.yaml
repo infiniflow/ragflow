@@ -28,10 +28,21 @@ os:
 infinity:
   uri: 'localhost:23817'
   db_name: 'default_db'
+oceanbase:
+  scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
+  config:
+    db_name: 'test'
+    user: 'root@ragflow'
+    password: 'infini_rag_flow'
+    host: 'localhost'
+    port: 2881
 redis:
   db: 1
+  username: ''
   password: 'infini_rag_flow'
   host: 'localhost:6379'
+task_executor:
+  message_queue_type: 'redis'
 user_default_llm:
   default_models:
     embedding_model:
@@ -49,6 +60,8 @@ user_default_llm:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
 #   region: 'region'
+#gcs:
+#  bucket: 'bridgtl-edm-d-bucket-ragflow'
 # oss:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
@@ -137,5 +150,3 @@ user_default_llm:
 #  secret_id: 'tencent_secret_id'
 #  secret_key: 'tencent_secret_key'
 #  region: 'tencent_region'
-#  table_result_type: '1'
-#  markdown_image_response_type: '1'

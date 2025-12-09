@@ -6,6 +6,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from typing import Any, cast, Iterator, Callable, Generator
 
 import requests
@@ -19,6 +20,7 @@ from requests.exceptions import HTTPError
 
 from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource, CONTINUE_ON_CONNECTOR_FAILURE, \
     CONFLUENCE_CONNECTOR_LABELS_TO_SKIP, CONFLUENCE_TIMEZONE_OFFSET, CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE, \
+    CONFLUENCE_SYNC_TIME_BUFFER_SECONDS, \
     OAUTH_CONFLUENCE_CLOUD_CLIENT_ID, OAUTH_CONFLUENCE_CLOUD_CLIENT_SECRET, _DEFAULT_PAGINATION_LIMIT, \
     _PROBLEMATIC_EXPANSIONS, _REPLACEMENT_EXPANSIONS, _USER_NOT_FOUND, _COMMENT_EXPANSION_FIELDS, \
     _ATTACHMENT_EXPANSION_FIELDS, _PAGE_EXPANSION_FIELDS, ONE_DAY, ONE_HOUR, _RESTRICTIONS_EXPANSION_FIELDS, \
@@ -46,6 +48,8 @@ from common.data_source.utils import load_all_docs_from_checkpoint_connector, sc
     is_atlassian_date_error, validate_attachment_filetype
 from rag.utils.redis_conn import RedisDB, REDIS_CONN
 
+_USER_ID_TO_DISPLAY_NAME_CACHE: dict[str, str | None] = {}
+_USER_EMAIL_CACHE: dict[str, str | None] = {}
 
 class ConfluenceCheckpoint(ConnectorCheckpoint):
 
@@ -122,7 +126,7 @@ class OnyxConfluence:
     def _renew_credentials(self) -> tuple[dict[str, Any], bool]:
         """credential_json - the current json credentials
         Returns a tuple
-        1. The up to date credentials
+        1. The up-to-date credentials
         2. True if the credentials were updated
 
         This method is intended to be used within a distributed lock.
@@ -175,8 +179,8 @@ class OnyxConfluence:
             credential_json["confluence_refresh_token"],
         )
 
-        # store the new credentials to redis and to the db thru the provider
-        # redis: we use a 5 min TTL because we are given a 10 minute grace period
+        # store the new credentials to redis and to the db through the provider
+        # redis: we use a 5 min TTL because we are given a 10 minutes grace period
         # when keys are rotated. it's easier to expire the cached credentials
         # reasonably frequently rather than trying to handle strong synchronization
         # between the db and redis everywhere the credentials might be updated
@@ -686,7 +690,7 @@ class OnyxConfluence:
     ) -> Iterator[dict[str, Any]]:
         """
         This function will paginate through the top level query first, then
-        paginate through all of the expansions.
+        paginate through all the expansions.
         """
 
         def _traverse_and_update(data: dict | list) -> None:
@@ -859,7 +863,7 @@ def get_user_email_from_username__server(
             # For now, we'll just return None and log a warning. This means
             # we will keep retrying to get the email every group sync.
             email = None
-            # We may want to just return a string that indicates failure so we dont
+            # We may want to just return a string that indicates failure so we don't
             # keep retrying
             # email = f"FAILED TO GET CONFLUENCE EMAIL FOR {user_name}"
         _USER_EMAIL_CACHE[user_name] = email
@@ -908,7 +912,7 @@ def extract_text_from_confluence_html(
     confluence_object: dict[str, Any],
     fetched_titles: set[str],
 ) -> str:
-    """Parse a Confluence html page and replace the 'user Id' by the real
+    """Parse a Confluence html page and replace the 'user id' by the real
         User Display Name
 
     Args:
@@ -1064,6 +1068,7 @@ def get_page_restrictions(
     return ee_get_all_page_restrictions(
         confluence_client, page_id, page_restrictions, ancestors
     )"""
+    return {}
 
 
 def get_all_space_permissions(
@@ -1095,6 +1100,7 @@ def get_all_space_permissions(
     )
 
     return ee_get_all_space_permissions(confluence_client, is_cloud)"""
+    return {}
 
 
 def _make_attachment_link(
@@ -1129,25 +1135,7 @@ def _process_image_attachment(
     media_type: str,
 ) -> AttachmentProcessingResult:
     """Process an image attachment by saving it without generating a summary."""
-    """
-    try:
-        # Use the standardized image storage and section creation
-        section, file_name = store_image_and_create_section(
-            image_data=raw_bytes,
-            file_id=Path(attachment["id"]).name,
-            display_name=attachment["title"],
-            media_type=media_type,
-            file_origin=FileOrigin.CONNECTOR,
-        )
-        logging.info(f"Stored image attachment with file name: {file_name}")
-
-        # Return empty text but include the file_name for later processing
-        return AttachmentProcessingResult(text="", file_name=file_name, error=None)
-    except Exception as e:
-        msg = f"Image storage failed for {attachment['title']}: {e}"
-        logging.error(msg, exc_info=e)
-        return AttachmentProcessingResult(text=None, file_name=None, error=msg)
-    """
+    return AttachmentProcessingResult(text="", file_blob=raw_bytes, file_name=attachment.get("title", "unknown_title"), error=None)
 
 
 def process_attachment(
@@ -1167,6 +1155,7 @@ def process_attachment(
         if not validate_attachment_filetype(attachment):
             return AttachmentProcessingResult(
                 text=None,
+                file_blob=None,
                 file_name=None,
                 error=f"Unsupported file type: {media_type}",
             )
@@ -1176,7 +1165,7 @@ def process_attachment(
         )
         if not attachment_link:
             return AttachmentProcessingResult(
-                text=None, file_name=None, error="Failed to make attachment link"
+                text=None, file_blob=None, file_name=None, error="Failed to make attachment link"
             )
 
         attachment_size = attachment["extensions"]["fileSize"]
@@ -1185,6 +1174,7 @@ def process_attachment(
             if not allow_images:
                 return AttachmentProcessingResult(
                     text=None,
+                    file_blob=None,
                     file_name=None,
                     error="Image downloading is not enabled",
                 )
@@ -1197,6 +1187,7 @@ def process_attachment(
                 )
                 return AttachmentProcessingResult(
                     text=None,
+                    file_blob=None,
                     file_name=None,
                     error=f"Attachment text too long: {attachment_size} chars",
                 )
@@ -1216,6 +1207,7 @@ def process_attachment(
             )
             return AttachmentProcessingResult(
                 text=None,
+                file_blob=None,
                 file_name=None,
                 error=f"Attachment download status code is {resp.status_code}",
             )
@@ -1223,7 +1215,7 @@ def process_attachment(
         raw_bytes = resp.content
         if not raw_bytes:
             return AttachmentProcessingResult(
-                text=None, file_name=None, error="attachment.content is None"
+                text=None, file_blob=None, file_name=None, error="attachment.content is None"
             )
 
         # Process image attachments
@@ -1233,31 +1225,17 @@ def process_attachment(
             )
 
         # Process document attachments
-        """
         try:
-            text = extract_file_text(
-                file=BytesIO(raw_bytes),
-                file_name=attachment["title"],
-            )
-
-            # Skip if the text is too long
-            if len(text) > CONFLUENCE_CONNECTOR_ATTACHMENT_CHAR_COUNT_THRESHOLD:
-                return AttachmentProcessingResult(
-                    text=None,
-                    file_name=None,
-                    error=f"Attachment text too long: {len(text)} chars",
-                )
-
-            return AttachmentProcessingResult(text=text, file_name=None, error=None)
+            return AttachmentProcessingResult(text="",file_blob=raw_bytes, file_name=attachment.get("title", "unknown_title"), error=None)
         except Exception as e:
+            logging.exception(e)
             return AttachmentProcessingResult(
-                text=None, file_name=None, error=f"Failed to extract text: {e}"
+                text=None, file_blob=None, file_name=None, error=f"Failed to extract text: {e}"
             )
-        """
 
     except Exception as e:
         return AttachmentProcessingResult(
-            text=None, file_name=None, error=f"Failed to process attachment: {e}"
+            text=None, file_blob=None, file_name=None, error=f"Failed to process attachment: {e}"
         )
 
 
@@ -1266,7 +1244,7 @@ def convert_attachment_to_content(
     attachment: dict[str, Any],
     page_id: str,
     allow_images: bool,
-) -> tuple[str | None, str | None] | None:
+) -> tuple[str | None, bytes | bytearray | None] | None:
     """
     Facade function which:
       1. Validates attachment type
@@ -1288,8 +1266,7 @@ def convert_attachment_to_content(
         )
         return None
 
-    # Return the text and the file name
-    return result.text, result.file_name
+    return result.file_name, result.file_blob
 
 
 class ConfluenceConnector(
@@ -1313,6 +1290,7 @@ class ConfluenceConnector(
         # pages.
         labels_to_skip: list[str] = CONFLUENCE_CONNECTOR_LABELS_TO_SKIP,
         timezone_offset: float = CONFLUENCE_TIMEZONE_OFFSET,
+        time_buffer_seconds: int = CONFLUENCE_SYNC_TIME_BUFFER_SECONDS,
         scoped_token: bool = False,
     ) -> None:
         self.wiki_base = wiki_base
@@ -1324,6 +1302,7 @@ class ConfluenceConnector(
         self.batch_size = batch_size
         self.labels_to_skip = labels_to_skip
         self.timezone_offset = timezone_offset
+        self.time_buffer_seconds = max(0, time_buffer_seconds)
         self.scoped_token = scoped_token
         self._confluence_client: OnyxConfluence | None = None
         self._low_timeout_confluence_client: OnyxConfluence | None = None
@@ -1379,6 +1358,24 @@ class ConfluenceConnector(
     def set_allow_images(self, value: bool) -> None:
         logging.info(f"Setting allow_images to {value}.")
         self.allow_images = value
+
+    def _adjust_start_for_query(
+        self, start: SecondsSinceUnixEpoch | None
+    ) -> SecondsSinceUnixEpoch | None:
+        if not start or start <= 0:
+            return start
+        if self.time_buffer_seconds <= 0:
+            return start
+        return max(0.0, start - self.time_buffer_seconds)
+
+    def _is_newer_than_start(
+        self, doc_time: datetime | None, start: SecondsSinceUnixEpoch | None
+    ) -> bool:
+        if not start or start <= 0:
+            return True
+        if doc_time is None:
+            return True
+        return doc_time.timestamp() > start
 
     @property
     def confluence_client(self) -> OnyxConfluence:
@@ -1438,9 +1435,10 @@ class ConfluenceConnector(
         """
         page_query = self.base_cql_page_query + self.cql_label_filter
         # Add time filters
-        if start:
+        query_start = self._adjust_start_for_query(start)
+        if query_start:
             formatted_start_time = datetime.fromtimestamp(
-                start, tz=self.timezone
+                query_start, tz=self.timezone
             ).strftime("%Y-%m-%d %H:%M")
             page_query += f" and lastmodified >= '{formatted_start_time}'"
         if end:
@@ -1460,10 +1458,12 @@ class ConfluenceConnector(
     ) -> str:
         attachment_query = f"type=attachment and container='{confluence_page_id}'"
         attachment_query += self.cql_label_filter
+
         # Add time filters to avoid reprocessing unchanged attachments during refresh
-        if start:
+        query_start = self._adjust_start_for_query(start)
+        if query_start:
             formatted_start_time = datetime.fromtimestamp(
-                start, tz=self.timezone
+                query_start, tz=self.timezone
             ).strftime("%Y-%m-%d %H:%M")
             attachment_query += f" and lastmodified >= '{formatted_start_time}'"
         if end:
@@ -1471,6 +1471,7 @@ class ConfluenceConnector(
                 "%Y-%m-%d %H:%M"
             )
             attachment_query += f" and lastmodified <= '{formatted_end_time}'"
+
         attachment_query += " order by lastmodified asc"
         return attachment_query
 
@@ -1554,12 +1555,14 @@ class ConfluenceConnector(
             # Create the document
             return Document(
                 id=page_url,
-                sections=sections,
                 source=DocumentSource.CONFLUENCE,
                 semantic_identifier=page_title,
-                metadata=metadata,
+                extension=".html",  # Confluence pages are HTML
+                blob=page_content.encode("utf-8"),  # Encode page content as bytes
+                size_bytes=len(page_content.encode("utf-8")),  # Calculate size in bytes
                 doc_updated_at=datetime_from_string(page["version"]["when"]),
                 primary_owners=primary_owners if primary_owners else None,
+                metadata=metadata if metadata else None,
             )
         except Exception as e:
             logging.error(f"Error converting page {page.get('id', 'unknown')}: {e}")
@@ -1614,6 +1617,7 @@ class ConfluenceConnector(
                 )
                 continue
 
+
             logging.info(
                 f"Processing attachment: {attachment['title']} attached to page {page['title']}"
             )
@@ -1638,15 +1642,11 @@ class ConfluenceConnector(
                 if response is None:
                     continue
 
-                content_text, file_storage_name = response
+                file_storage_name, file_blob = response
 
-                sections: list[TextSection | ImageSection] = []
-                if content_text:
-                    sections.append(TextSection(text=content_text, link=object_url))
-                elif file_storage_name:
-                    sections.append(
-                        ImageSection(link=object_url, image_file_id=file_storage_name)
-                    )
+                if not file_blob:
+                    logging.info("Skipping attachment because it is no blob fetched")
+                    continue
 
                 # Build attachment-specific metadata
                 attachment_metadata: dict[str, str | list[str]] = {}
@@ -1675,11 +1675,16 @@ class ConfluenceConnector(
                         BasicExpertInfo(display_name=display_name, email=email)
                     ]
 
+                extension = Path(attachment.get("title", "")).suffix or ".unknown"
+
                 attachment_doc = Document(
                     id=attachment_id,
-                    sections=sections,
+                    # sections=sections,
                     source=DocumentSource.CONFLUENCE,
                     semantic_identifier=attachment.get("title", object_url),
+                    extension=extension,
+                    blob=file_blob,
+                    size_bytes=len(file_blob),
                     metadata=attachment_metadata,
                     doc_updated_at=(
                         datetime_from_string(attachment["version"]["when"])
@@ -1689,7 +1694,8 @@ class ConfluenceConnector(
                     ),
                     primary_owners=primary_owners,
                 )
-                attachment_docs.append(attachment_doc)
+                if self._is_newer_than_start(attachment_doc.doc_updated_at, start):
+                    attachment_docs.append(attachment_doc)
             except Exception as e:
                 logging.error(
                     f"Failed to extract/summarize attachment {attachment['title']}",
@@ -1750,7 +1756,8 @@ class ConfluenceConnector(
                 continue
 
             # yield completed document (or failure)
-            yield doc_or_failure
+            if self._is_newer_than_start(doc_or_failure.doc_updated_at, start):
+                yield doc_or_failure
 
             # Now get attachments for that page:
             attachment_docs, attachment_failures = self._fetch_page_attachments(
@@ -1758,7 +1765,7 @@ class ConfluenceConnector(
             )
             # yield attached docs and failures
             yield from attachment_docs
-            yield from attachment_failures
+            # yield from attachment_failures
 
             # Create checkpoint once a full page of results is returned
             if checkpoint.next_page_url and checkpoint.next_page_url != page_query_url:
@@ -1782,6 +1789,7 @@ class ConfluenceConnector(
         cql_url = self.confluence_client.build_cql_url(
             page_query, expand=",".join(_PAGE_EXPANSION_FIELDS)
         )
+        logging.info(f"[Confluence Connector] Building CQL URL {cql_url}")
         return update_param_in_path(cql_url, "limit", str(limit))
 
     @override

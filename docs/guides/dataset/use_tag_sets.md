@@ -56,9 +56,9 @@ Once a tag set is created, you can apply it to your dataset:
 1. Navigate to the **Configuration** page of your dataset.
 2. Select the tag set from the **Tag sets** dropdown and click **Save** to confirm.
 
-:::tip NOTE
-If the tag set is missing from the dropdown, check that it has been created or configured correctly.
-:::
+   :::tip NOTE
+   If the tag set is missing from the dropdown, check that it has been created or configured correctly.
+   :::
 
 3. Re-parse your documents to start the auto-tagging process.  
    _In an AI chat scenario using auto-tagged datasets, each query will be tagged using the corresponding tag set(s) and chunks with these tags will have a higher chance to be retrieved._
@@ -73,7 +73,7 @@ Creating a tag set is *not* for once and for all. Oftentimes, you may find it ne
 ### Update tag set in tag frequency table
 
 1. Navigate to the **Configuration** page in your tag set.
-2. Click the **Table** tab under **Tag view** to view the tag frequncy table, where you can update tag names or delete tags.
+2. Click the **Table** tab under **Tag view** to view the tag frequency table, where you can update tag names or delete tags.
 
 :::danger IMPORTANT
 When a tag set is updated, you must re-parse the documents in your dataset so that their tags can be updated accordingly.

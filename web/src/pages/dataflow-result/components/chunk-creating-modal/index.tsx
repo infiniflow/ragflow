@@ -17,7 +17,7 @@ import { Modal } from '@/components/ui/modal/modal';
 import Space from '@/components/ui/space';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { useFetchChunk } from '@/hooks/chunk-hooks';
+import { useFetchChunk } from '@/hooks/use-chunk-request';
 import { IModalProps } from '@/interfaces/common';
 import { Trash2 } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';

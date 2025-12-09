@@ -1,11 +1,15 @@
 import { CardSineLineContainer } from '@/components/card-singleline-container';
+import { EmptyCardType } from '@/components/empty/constant';
+import { EmptyAppCard } from '@/components/empty/empty';
 import { RenameDialog } from '@/components/rename-dialog';
 import { HomeIcon } from '@/components/svg-icon';
 import { CardSkeleton } from '@/components/ui/skeleton';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchNextKnowledgeListByPage } from '@/hooks/use-knowledge-request';
 import { useTranslation } from 'react-i18next';
-import { DatasetCard, SeeAllCard } from '../datasets/dataset-card';
+import { DatasetCard } from '../datasets/dataset-card';
 import { useRenameDataset } from '../datasets/use-rename-dataset';
+import { SeeAllAppCard } from './application-card';
 
 export function Datasets() {
   const { t } = useTranslation();
@@ -18,6 +22,7 @@ export function Datasets() {
     hideDatasetRenameModal,
     showDatasetRenameModal,
   } = useRenameDataset();
+  const { navigateToDatasetList } = useNavigatePage();
 
   return (
     <section>
@@ -26,27 +31,38 @@ export function Datasets() {
         <HomeIcon name="datasets" width={'32'} />
         {t('header.dataset')}
       </h2>
-      <div className="flex gap-6">
+      <div className="">
         {loading ? (
           <div className="flex-1">
             <CardSkeleton />
           </div>
         ) : (
-          // <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-7 max-h-[78vh] overflow-auto">
-          <CardSineLineContainer>
-            {kbs
-              ?.slice(0, 6)
-              .map((dataset) => (
-                <DatasetCard
-                  key={dataset.id}
-                  dataset={dataset}
-                  showDatasetRenameModal={showDatasetRenameModal}
-                ></DatasetCard>
-              ))}
-            <div className="min-h-24">
-              <SeeAllCard></SeeAllCard>
-            </div>
-          </CardSineLineContainer>
+          <>
+            {kbs?.length > 0 && (
+              <CardSineLineContainer>
+                {kbs
+                  ?.slice(0, 6)
+                  .map((dataset) => (
+                    <DatasetCard
+                      key={dataset.id}
+                      dataset={dataset}
+                      showDatasetRenameModal={showDatasetRenameModal}
+                    ></DatasetCard>
+                  ))}
+                {
+                  <SeeAllAppCard
+                    click={() => navigateToDatasetList({ isCreate: false })}
+                  ></SeeAllAppCard>
+                }
+              </CardSineLineContainer>
+            )}
+            {kbs?.length <= 0 && (
+              <EmptyAppCard
+                type={EmptyCardType.Dataset}
+                onClick={() => navigateToDatasetList({ isCreate: true })}
+              />
+            )}
+          </>
           // </div>
         )}
       </div>

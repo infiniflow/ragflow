@@ -1,17 +1,25 @@
 import { JSONSchema } from '@/components/jsonjoy-builder';
-import { get, isPlainObject } from 'lodash';
+import { getStructuredDatatype } from '@/utils/canvas-util';
+import { get, isPlainObject, toLower } from 'lodash';
 import { JsonSchemaDataType } from '../constant';
+
+function predicate(types: string[], value: unknown) {
+  return types.some(
+    (x) =>
+      toLower(x) === toLower(getStructuredDatatype(value).compositeDataType),
+  );
+}
 
 export function hasSpecificTypeChild(
   data: Record<string, any> | Array<any>,
-  type: string,
+  types: string[] = [],
 ) {
   if (Array.isArray(data)) {
     for (const value of data) {
-      if (isPlainObject(value) && value.type === type) {
+      if (isPlainObject(value) && predicate(types, value)) {
         return true;
       }
-      if (hasSpecificTypeChild(value, type)) {
+      if (hasSpecificTypeChild(value, types)) {
         return true;
       }
     }
@@ -19,11 +27,15 @@ export function hasSpecificTypeChild(
 
   if (isPlainObject(data)) {
     for (const value of Object.values(data)) {
-      if (isPlainObject(value) && value.type === type) {
+      if (
+        isPlainObject(value) &&
+        predicate(types, value) &&
+        get(data, 'type') !== JsonSchemaDataType.Array
+      ) {
         return true;
       }
 
-      if (hasSpecificTypeChild(value, type)) {
+      if (hasSpecificTypeChild(value, types)) {
         return true;
       }
     }
@@ -33,7 +45,7 @@ export function hasSpecificTypeChild(
 }
 
 export function hasArrayChild(data: Record<string, any> | Array<any>) {
-  return hasSpecificTypeChild(data, JsonSchemaDataType.Array);
+  return hasSpecificTypeChild(data, [JsonSchemaDataType.Array]);
 }
 
 export function hasJsonSchemaChild(data: JSONSchema) {

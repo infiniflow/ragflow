@@ -13,26 +13,31 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
+import base64
 import logging
 import re
+import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Union
 
-from flask_login import current_user
 from peewee import fn
 
-from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileSource, FileType, ParserType, TaskStatus
+from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileType
 from api.db.db_models import DB, Document, File, File2Document, Knowledgebase, Task
 from api.db.services import duplicate_name
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from common.misc_utils import get_uuid
+from common.constants import TaskStatus, FileSource, ParserType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import TaskService
-from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img
+from api.utils.file_utils import filename_type, read_potential_broken_pdf, thumbnail_img, sanitize_path
 from rag.llm.cv_model import GptV4
-from rag.utils.storage_factory import STORAGE_IMPL
+from common import settings
 
 
 class FileService(CommonService):
@@ -183,6 +188,7 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def create_folder(cls, file, parent_id, name, count):
+        from api.apps import current_user
         # Recursively create folder structure
         # Args:
         #     file: Current file object
@@ -328,7 +334,7 @@ class FileService(CommonService):
         current_id = start_id
         while current_id:
             e, file = cls.get_by_id(current_id)
-            if file.parent_id != file.id and e:
+            if e and file.parent_id != file.id:
                 parent_folders.append(file)
                 current_id = file.parent_id
             else:
@@ -422,12 +428,14 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def upload_document(self, kb, file_objs, user_id, src="local"):
+    def upload_document(self, kb, file_objs, user_id, src="local", parent_path: str | None = None):
         root_folder = self.get_root_folder(user_id)
         pf_id = root_folder["id"]
         self.init_knowledgebase_docs(pf_id, user_id)
         kb_root_folder = self.get_kb_folder(user_id)
         kb_folder = self.new_a_file_from_kb(kb.tenant_id, kb.name, kb_root_folder["id"])
+
+        safe_parent_path = sanitize_path(parent_path)
 
         err, files = [], []
         for file in file_objs:
@@ -438,14 +446,14 @@ class FileService(CommonService):
                 if filetype == FileType.OTHER.value:
                     raise RuntimeError("This type of file has not been supported yet!")
 
-                location = filename
-                while STORAGE_IMPL.obj_exist(kb.id, location):
+                location = filename if not safe_parent_path else f"{safe_parent_path}/{filename}"
+                while settings.STORAGE_IMPL.obj_exist(kb.id, location):
                     location += "_"
 
                 blob = file.read()
                 if filetype == FileType.PDF.value:
                     blob = read_potential_broken_pdf(blob)
-                STORAGE_IMPL.put(kb.id, location, blob)
+                settings.STORAGE_IMPL.put(kb.id, location, blob)
 
                 doc_id = get_uuid()
 
@@ -453,7 +461,7 @@ class FileService(CommonService):
                 thumbnail_location = ""
                 if img is not None:
                     thumbnail_location = f"thumbnail_{doc_id}.png"
-                    STORAGE_IMPL.put(kb.id, thumbnail_location, img)
+                    settings.STORAGE_IMPL.put(kb.id, thumbnail_location, img)
 
                 doc = {
                     "id": doc_id,
@@ -505,6 +513,7 @@ class FileService(CommonService):
     @staticmethod
     def parse(filename, blob, img_base64=True, tenant_id=None):
         from rag.app import audio, email, naive, picture, presentation
+        from api.apps import current_user
 
         def dummy(prog=None, msg=""):
             pass
@@ -516,7 +525,7 @@ class FileService(CommonService):
         if img_base64 and file_type == FileType.VISUAL.value:
             return GptV4.image2base64(blob)
         cks = FACTORY.get(FileService.get_parser(filename_type(filename), filename, ""), naive).chunk(filename, blob, **kwargs)
-        return "\n".join([ck["content_with_weight"] for ck in cks])
+        return f"\n -----------------\nFile: {filename}\nContent as following: \n" + "\n".join([ck["content_with_weight"] for ck in cks])
 
     @staticmethod
     def get_parser(doc_type, filename, default):
@@ -533,12 +542,12 @@ class FileService(CommonService):
     @staticmethod
     def get_blob(user_id, location):
         bname = f"{user_id}-downloads"
-        return STORAGE_IMPL.get(bname, location)
+        return settings.STORAGE_IMPL.get(bname, location)
 
     @staticmethod
     def put_blob(user_id, location, blob):
         bname = f"{user_id}-downloads"
-        return STORAGE_IMPL.put(bname, location, blob)
+        return settings.STORAGE_IMPL.put(bname, location, blob)
 
     @classmethod
     @DB.connection_context()
@@ -569,7 +578,7 @@ class FileService(CommonService):
                     deleted_file_count = FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
                 File2DocumentService.delete_by_document_id(doc_id)
                 if deleted_file_count > 0:
-                    STORAGE_IMPL.rm(b, n)
+                    settings.STORAGE_IMPL.rm(b, n)
 
                 doc_parser = doc.parser_id
                 if doc_parser == ParserType.TABLE:
@@ -584,3 +593,80 @@ class FileService(CommonService):
                 errors += str(e)
 
         return errors
+
+    @staticmethod
+    def upload_info(user_id, file, url: str|None=None):
+        def structured(filename, filetype, blob, content_type):
+            nonlocal user_id
+            if filetype == FileType.PDF.value:
+                blob = read_potential_broken_pdf(blob)
+
+            location = get_uuid()
+            FileService.put_blob(user_id, location, blob)
+
+            return {
+                "id": location,
+                "name": filename,
+                "size": sys.getsizeof(blob),
+                "extension": filename.split(".")[-1].lower(),
+                "mime_type": content_type,
+                "created_by": user_id,
+                "created_at": time.time(),
+                "preview_url": None
+            }
+
+        if url:
+            from crawl4ai import (
+                AsyncWebCrawler,
+                BrowserConfig,
+                CrawlerRunConfig,
+                DefaultMarkdownGenerator,
+                PruningContentFilter,
+                CrawlResult
+            )
+            filename = re.sub(r"\?.*", "", url.split("/")[-1])
+            async def adownload():
+                browser_config = BrowserConfig(
+                    headless=True,
+                    verbose=False,
+                )
+                async with AsyncWebCrawler(config=browser_config) as crawler:
+                    crawler_config = CrawlerRunConfig(
+                        markdown_generator=DefaultMarkdownGenerator(
+                            content_filter=PruningContentFilter()
+                        ),
+                        pdf=True,
+                        screenshot=False
+                    )
+                    result: CrawlResult = await crawler.arun(
+                        url=url,
+                        config=crawler_config
+                    )
+                    return result
+            page = asyncio.run(adownload())
+            if page.pdf:
+                if filename.split(".")[-1].lower() != "pdf":
+                    filename += ".pdf"
+                return structured(filename, "pdf", page.pdf, page.response_headers["content-type"])
+
+            return structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"], user_id)
+
+        DocumentService.check_doc_health(user_id, file.filename)
+        return structured(file.filename, filename_type(file.filename), file.read(), file.content_type)
+
+    @staticmethod
+    def get_files(files: Union[None, list[dict]]) -> list[str]:
+        if not files:
+            return  []
+        def image_to_base64(file):
+            return "data:{};base64,{}".format(file["mime_type"],
+                                        base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
+        exe = ThreadPoolExecutor(max_workers=5)
+        threads = []
+        for file in files:
+            if file["mime_type"].find("image") >=0:
+                threads.append(exe.submit(image_to_base64, file))
+                continue
+            threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"]))
+        return [th.result() for th in threads]
+
