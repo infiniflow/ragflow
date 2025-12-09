@@ -68,7 +68,7 @@ function BeginForm({ node }: INextOperatorForm) {
         max_body_size: z.string(),
       })
       .optional(),
-    schema: z.string().optional(),
+    schema: z.record(z.any()).optional(),
     response: z
       .object({
         status: z.number(),

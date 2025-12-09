@@ -1,8 +1,10 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { buildOptions } from '@/utils/form';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
   WebhookContentType,
@@ -12,11 +14,18 @@ import {
 } from '../../../constant';
 import { DynamicStringForm } from '../../components/dynamic-string-form';
 import { Auth } from './auth';
+import { WebhookResponse } from './response';
 
 const RateLimitPerOptions = buildOptions(['minute', 'hour', 'day']);
 
 export function WebHook() {
   const { t } = useTranslation();
+  const form = useFormContext();
+
+  const executionMode = useWatch({
+    control: form.control,
+    name: 'execution_mode',
+  });
 
   return (
     <>
@@ -33,7 +42,8 @@ export function WebHook() {
           options={buildOptions(WebhookContentType)}
         ></SelectWithSearch>
       </RAGFlowFormItem>
-      <section className="space-y-5 bg-bg-card p-2 rounded">
+      <Separator></Separator>
+      <>
         <RAGFlowFormItem
           name="security.auth_type"
           label={t('flow.webhook.authType')}
@@ -65,11 +75,8 @@ export function WebHook() {
           name="security.ip_whitelist"
           label={t('flow.webhook.ipWhitelist')}
         ></DynamicStringForm>
-      </section>
+      </>
       <RAGFlowFormItem name="schema" label={t('flow.webhook.schema')}>
-        <Textarea></Textarea>
-      </RAGFlowFormItem>
-      <RAGFlowFormItem name="response" label={t('flow.webhook.response')}>
         <Textarea></Textarea>
       </RAGFlowFormItem>
       <RAGFlowFormItem
@@ -80,6 +87,9 @@ export function WebHook() {
           options={buildOptions(WebhookExecutionMode)}
         ></SelectWithSearch>
       </RAGFlowFormItem>
+      {executionMode === WebhookExecutionMode.Immediately && (
+        <WebhookResponse></WebhookResponse>
+      )}
     </>
   );
 }
