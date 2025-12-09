@@ -1,5 +1,6 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
@@ -13,6 +14,9 @@ import {
   WebhookSecurityAuthType,
 } from '../../../constant';
 import { DynamicStringForm } from '../../components/dynamic-string-form';
+import { SchemaDialog } from '../../components/schema-dialog';
+import { SchemaPanel } from '../../components/schema-panel';
+import { useShowSchemaDialog } from '../use-show-schema-dialog';
 import { Auth } from './auth';
 import { WebhookResponse } from './response';
 
@@ -26,6 +30,15 @@ export function WebHook() {
     control: form.control,
     name: 'execution_mode',
   });
+
+  const {
+    showSchemaDialog,
+    schemaDialogVisible,
+    hideSchemaDialog,
+    handleSchemaDialogOk,
+  } = useShowSchemaDialog(form);
+
+  const schema = form.getValues('schema');
 
   return (
     <>
@@ -76,7 +89,11 @@ export function WebHook() {
           label={t('flow.webhook.ipWhitelist')}
         ></DynamicStringForm>
       </>
-      <RAGFlowFormItem name="schema" label={t('flow.webhook.schema')}>
+      <RAGFlowFormItem
+        name="schema"
+        label={t('flow.webhook.schema')}
+        className="hidden"
+      >
         <Textarea></Textarea>
       </RAGFlowFormItem>
       <RAGFlowFormItem
@@ -89,6 +106,21 @@ export function WebHook() {
       </RAGFlowFormItem>
       {executionMode === WebhookExecutionMode.Immediately && (
         <WebhookResponse></WebhookResponse>
+      )}
+      <Separator></Separator>
+      <section className="flex justify-between items-center">
+        Schema
+        <Button variant={'ghost'} onClick={showSchemaDialog}>
+          {t('flow.structuredOutput.configuration')}
+        </Button>
+      </section>
+      <SchemaPanel value={schema}></SchemaPanel>
+      {schemaDialogVisible && (
+        <SchemaDialog
+          initialValues={schema}
+          hideModal={hideSchemaDialog}
+          onOk={handleSchemaDialogOk}
+        ></SchemaDialog>
       )}
     </>
   );

@@ -24,6 +24,7 @@ import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
 import { QueryTable } from './query-table';
 import { useEditQueryRecord } from './use-edit-query';
+import { useHandleModeChange } from './use-handle-mode-change';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 import { WebHook } from './webhook';
@@ -98,6 +99,8 @@ function BeginForm({ node }: INextOperatorForm) {
 
   const previousModeRef = useRef(mode);
 
+  const { handleModeChange } = useHandleModeChange(form);
+
   useEffect(() => {
     if (
       previousModeRef.current === AgentDialogueMode.Task &&
@@ -137,6 +140,10 @@ function BeginForm({ node }: INextOperatorForm) {
                   placeholder={t('common.pleaseSelect')}
                   options={ModeOptions}
                   {...field}
+                  onChange={(val) => {
+                    handleModeChange(val);
+                    field.onChange(val);
+                  }}
                 ></RAGFlowSelect>
               </FormControl>
               <FormMessage />
@@ -185,44 +192,48 @@ function BeginForm({ node }: INextOperatorForm) {
           />
         )}
         {mode === AgentDialogueMode.Webhook && <WebHook></WebHook>}
-        {/* Create a hidden field to make Form instance record this */}
-        <FormField
-          control={form.control}
-          name={'inputs'}
-          render={() => <div></div>}
-        />
-        <Collapse
-          title={
-            <div>
-              {t('flow.input')}
-              <FormTooltip tooltip={t('flow.beginInputTip')}></FormTooltip>
-            </div>
-          }
-          rightContent={
-            <Button
-              variant={'ghost'}
-              onClick={(e) => {
-                e.preventDefault();
-                showModal();
-              }}
+        {mode !== AgentDialogueMode.Webhook && (
+          <>
+            {/* Create a hidden field to make Form instance record this */}
+            <FormField
+              control={form.control}
+              name={'inputs'}
+              render={() => <div></div>}
+            />
+            <Collapse
+              title={
+                <div>
+                  {t('flow.input')}
+                  <FormTooltip tooltip={t('flow.beginInputTip')}></FormTooltip>
+                </div>
+              }
+              rightContent={
+                <Button
+                  variant={'ghost'}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    showModal();
+                  }}
+                >
+                  <Plus />
+                </Button>
+              }
             >
-              <Plus />
-            </Button>
-          }
-        >
-          <QueryTable
-            data={inputs}
-            showModal={showModal}
-            deleteRecord={handleDeleteRecord}
-          ></QueryTable>
-        </Collapse>
-        {visible && (
-          <ParameterDialog
-            hideModal={hideModal}
-            initialValue={currentRecord}
-            otherThanCurrentQuery={otherThanCurrentQuery}
-            submit={ok}
-          ></ParameterDialog>
+              <QueryTable
+                data={inputs}
+                showModal={showModal}
+                deleteRecord={handleDeleteRecord}
+              ></QueryTable>
+            </Collapse>
+            {visible && (
+              <ParameterDialog
+                hideModal={hideModal}
+                initialValue={currentRecord}
+                otherThanCurrentQuery={otherThanCurrentQuery}
+                submit={ok}
+              ></ParameterDialog>
+            )}
+          </>
         )}
       </Form>
     </section>

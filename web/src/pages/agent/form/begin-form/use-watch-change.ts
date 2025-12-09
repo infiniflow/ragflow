@@ -23,6 +23,7 @@ export function useWatchFormChange(id?: string, form?: UseFormReturn) {
       const nextValues = {
         ...values,
         inputs: transferInputsArrayToObject(values.inputs),
+        outputs: values.schema,
       };
 
       updateNodeForm(id, nextValues);

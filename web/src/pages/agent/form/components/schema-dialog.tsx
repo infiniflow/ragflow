@@ -16,7 +16,7 @@ import { IModalProps } from '@/interfaces/common';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export function StructuredOutputDialog({
+export function SchemaDialog({
   hideModal,
   onOk,
   initialValues,
