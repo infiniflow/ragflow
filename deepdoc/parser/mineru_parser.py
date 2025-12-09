@@ -392,6 +392,22 @@ class MinerUParser(RAGFlowPdfParser):
                 return None, None
             return
 
+        # Convert 0-1000 normalized coordinates to pixels using page dimensions
+        # This ensures compatibility with GAP/padding logic and correct cropping
+        pixel_poss = []
+        for pns, left, right, top, bottom in poss:
+            if not pns: continue
+            page_idx = pns[0]
+            if not (0 <= page_idx < page_count): continue
+            
+            W, H = self.page_images[page_idx].size
+            x0 = left * W / 1000.0
+            x1 = right * W / 1000.0
+            y0 = top * H / 1000.0
+            y1 = bottom * H / 1000.0
+            pixel_poss.append((pns, x0, x1, y0, y1))
+        poss = pixel_poss
+
         # 避免超长拼接图 - 只取首个位置
         if len(poss) > 1:
             poss = [poss[0]]
