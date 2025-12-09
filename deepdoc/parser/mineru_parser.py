@@ -849,7 +849,7 @@ class MinerUParser(RAGFlowPdfParser):
             return
         img_root = subdir / "generated_images"
         img_root.mkdir(parents=True, exist_ok=True)
-        text_types = {MinerUContentType.TEXT, MinerUContentType.LIST, MinerUContentType.CODE, MinerUContentType.HEADER}
+        text_types = {"text", "list", "code", "header"}
         generated = 0
         for idx, item in enumerate(outputs):
             if item.get("type") not in text_types:
