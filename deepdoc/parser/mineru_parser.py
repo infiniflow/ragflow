@@ -436,6 +436,7 @@ class MinerUParser(RAGFlowPdfParser):
         )
 
         positions = []
+        imgs = []
         for ii, (pns, left, right, top, bottom) in enumerate(poss):
             right = left + max_width
 
