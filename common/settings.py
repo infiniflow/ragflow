@@ -210,7 +210,10 @@ def init_settings():
     IMAGE2TEXT_CFG = _resolve_per_model_config(image2text_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
 
     CHAT_MDL = CHAT_CFG.get("model", "") or ""
-    EMBEDDING_MDL = os.getenv("TEI_MODEL", "BAAI/bge-small-en-v1.5") if "tei-" in os.getenv("COMPOSE_PROFILES", "") else ""
+    EMBEDDING_MDL = EMBEDDING_CFG.get("model", "") or ""
+    compose_profiles = os.getenv("COMPOSE_PROFILES", "")
+    if "tei-" in compose_profiles:
+        EMBEDDING_MDL = os.getenv("TEI_MODEL", EMBEDDING_MDL or "BAAI/bge-small-en-v1.5")
     RERANK_MDL = RERANK_CFG.get("model", "") or ""
     ASR_MDL = ASR_CFG.get("model", "") or ""
     IMAGE2TEXT_MDL = IMAGE2TEXT_CFG.get("model", "") or ""

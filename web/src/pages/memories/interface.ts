@@ -1,10 +1,3 @@
-export interface ICreateMemoryProps {
-  memory_name: string;
-  memory_type: Array<string>;
-  embedding: string;
-  llm: string;
-}
-
 export interface CreateMemoryResponse {
   id: string;
   name: string;
@@ -24,17 +17,18 @@ export type MemoryType = 'raw' | 'semantic' | 'episodic' | 'procedural';
 export type StorageType = 'table' | 'graph';
 export type Permissions = 'me' | 'team';
 export type ForgettingPolicy = 'fifo' | 'lru';
-
-export interface IMemory {
-  id: string;
+export interface ICreateMemoryProps {
   name: string;
+  memory_type: MemoryType[];
+  embd_id: string;
+  llm_id: string;
+}
+export interface IMemory extends ICreateMemoryProps {
+  id: string;
   avatar: string;
   tenant_id: string;
   owner_name: string;
-  memory_type: MemoryType[];
   storage_type: StorageType;
-  embedding: string;
-  llm: string;
   permissions: Permissions;
   description: string;
   memory_size: number;

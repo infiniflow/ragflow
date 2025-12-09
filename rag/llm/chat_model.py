@@ -28,7 +28,7 @@ import json_repair
 import litellm
 import openai
 from openai import AsyncOpenAI, OpenAI
-from openai.lib.azure import AzureOpenAI
+from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 from strenum import StrEnum
 
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
@@ -187,14 +187,15 @@ class Base(ABC):
                     ans = delta_ans
                     total_tokens += tol
                     yield ans
+
+                yield total_tokens
+                return
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
                     yield e
                     yield total_tokens
                     return
-
-        yield total_tokens
 
     def _length_stop(self, ans):
         if is_chinese([ans]):
@@ -535,6 +536,7 @@ class AzureChat(Base):
         api_version = json.loads(key).get("api_version", "2024-02-01")
         super().__init__(key, model_name, base_url, **kwargs)
         self.client = AzureOpenAI(api_key=api_key, azure_endpoint=base_url, api_version=api_version)
+        self.async_client = AsyncAzureOpenAI(api_key=key, base_url=base_url, api_version=api_version)
         self.model_name = model_name
 
     @property
