@@ -193,7 +193,7 @@
                         "presence_penalty": 0.4,
                         "prompts": [
                             {
-                                "content": "Text Content:\n{Splitter:KindDingosJam@chunks}\n",
+                                "content": "Text Content:\n{Splitter:NineTiesSin@chunks}\n",
                                 "role": "user"
                             }
                         ],
@@ -226,7 +226,7 @@
                         "presence_penalty": 0.4,
                         "prompts": [
                             {
-                                "content": "Text Content:\n\n{Splitter:KindDingosJam@chunks}\n",
+                                "content": "Text Content:\n\n{Splitter:TastyPointsLay@chunks}\n",
                                 "role": "user"
                             }
                         ],
@@ -259,7 +259,7 @@
                         "presence_penalty": 0.4,
                         "prompts": [
                             {
-                                "content": "Content: \n\n{Splitter:KindDingosJam@chunks}",
+                                "content": "Content: \n\n{Splitter:CuteBusesBet@chunks}",
                                 "role": "user"
                             }
                         ],
@@ -485,7 +485,7 @@
                             "outputs": {},
                             "presencePenaltyEnabled": false,
                             "presence_penalty": 0.4,
-                            "prompts": "Text Content:\n{Splitter:KindDingosJam@chunks}\n",
+                            "prompts": "Text Content:\n{Splitter:NineTiesSin@chunks}\n",
                             "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nExtract the most important keywords/phrases of a given piece of text content.\n\nRequirements\n- Summarize the text content, and give the top 5 important keywords/phrases.\n- The keywords MUST be in the same language as the given piece of text content.\n- The keywords are delimited by ENGLISH COMMA.\n- Output keywords ONLY.",
                             "temperature": 0.1,
                             "temperatureEnabled": false,
@@ -522,7 +522,7 @@
                             "outputs": {},
                             "presencePenaltyEnabled": false,
                             "presence_penalty": 0.4,
-                            "prompts": "Text Content:\n\n{Splitter:KindDingosJam@chunks}\n",
+                            "prompts": "Text Content:\n\n{Splitter:TastyPointsLay@chunks}\n",
                             "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nPropose 3 questions about a given piece of text content.\n\nRequirements\n- Understand and summarize the text content, and propose the top 3 important questions.\n- The questions SHOULD NOT have overlapping meanings.\n- The questions SHOULD cover the main content of the text as much as possible.\n- The questions MUST be in the same language as the given piece of text content.\n- One question per line.\n- Output questions ONLY.",
                             "temperature": 0.1,
                             "temperatureEnabled": false,
@@ -559,7 +559,7 @@
                             "outputs": {},
                             "presencePenaltyEnabled": false,
                             "presence_penalty": 0.4,
-                            "prompts": "Content: \n\n{Splitter:KindDingosJam@chunks}",
+                            "prompts": "Content: \n\n{Splitter:BlueResultsWink@chunks}",
                             "sys_prompt": "Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.\n\nImportant structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.",
                             "temperature": 0.1,
                             "temperatureEnabled": false,
