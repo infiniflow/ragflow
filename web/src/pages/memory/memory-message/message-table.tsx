@@ -1,20 +1,11 @@
 import {
-  ColumnDef,
-  ColumnFiltersState,
-  SortingState,
-  VisibilityState,
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import * as React from 'react';
-
+  ConfirmDeleteDialog,
+  ConfirmDeleteDialogNode,
+} from '@/components/confirm-delete-dialog';
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -26,10 +17,26 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Pagination } from '@/interfaces/common';
+import { replaceText } from '@/pages/dataset/process-log-modal';
+import {
+  ColumnDef,
+  ColumnFiltersState,
+  SortingState,
+  VisibilityState,
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { t } from 'i18next';
 import { pick } from 'lodash';
-import { Eraser, TextSelect } from 'lucide-react';
-import { useMemo } from 'react';
+import { Copy, Eraser, TextSelect } from 'lucide-react';
+import * as React from 'react';
+import { useMemo, useState } from 'react';
+import { CopyToClipboard } from 'react-copy-to-clipboard';
+import { useMessageAction } from './hook';
 import { IMessageInfo } from './interface';
 
 export type MemoryTableProps = {
@@ -51,13 +58,27 @@ export function MemoryTable({
   );
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
+  const [copied, setCopied] = useState(false);
+  const {
+    showDeleteDialog,
+    setShowDeleteDialog,
+    handleClickDeleteMessage,
+    selectedMessage,
+    handleDeleteMessage,
+
+    fetchMessageContent,
+    selectedMessageContent,
+    showMessageContentDialog,
+    setShowMessageContentDialog,
+    handleClickMessageContentDialog,
+  } = useMessageAction();
 
   // Define columns for the memory table
   const columns: ColumnDef<IMessageInfo>[] = useMemo(
     () => [
       {
         accessorKey: 'session_id',
-        header: () => <span>{t('memoryDetail.messages.sessionId')}</span>,
+        header: () => <span>{t('memory.messages.sessionId')}</span>,
         cell: ({ row }) => (
           <div className="text-sm font-medium ">
             {row.getValue('session_id')}
@@ -66,7 +87,7 @@ export function MemoryTable({
       },
       {
         accessorKey: 'agent_name',
-        header: () => <span>{t('memoryDetail.messages.agent')}</span>,
+        header: () => <span>{t('memory.messages.agent')}</span>,
         cell: ({ row }) => (
           <div className="text-sm font-medium ">
             {row.getValue('agent_name')}
@@ -75,7 +96,7 @@ export function MemoryTable({
       },
       {
         accessorKey: 'message_type',
-        header: () => <span>{t('memoryDetail.messages.type')}</span>,
+        header: () => <span>{t('memory.messages.type')}</span>,
         cell: ({ row }) => (
           <div className="text-sm font-medium  capitalize">
             {row.getValue('message_type')}
@@ -84,28 +105,28 @@ export function MemoryTable({
       },
       {
         accessorKey: 'valid_at',
-        header: () => <span>{t('memoryDetail.messages.validDate')}</span>,
+        header: () => <span>{t('memory.messages.validDate')}</span>,
         cell: ({ row }) => (
           <div className="text-sm ">{row.getValue('valid_at')}</div>
         ),
       },
       {
         accessorKey: 'forget_at',
-        header: () => <span>{t('memoryDetail.messages.forgetAt')}</span>,
+        header: () => <span>{t('memory.messages.forgetAt')}</span>,
         cell: ({ row }) => (
           <div className="text-sm ">{row.getValue('forget_at')}</div>
         ),
       },
       {
         accessorKey: 'source_id',
-        header: () => <span>{t('memoryDetail.messages.source')}</span>,
+        header: () => <span>{t('memory.messages.source')}</span>,
         cell: ({ row }) => (
           <div className="text-sm ">{row.getValue('source_id')}</div>
         ),
       },
       {
         accessorKey: 'status',
-        header: () => <span>{t('memoryDetail.messages.enable')}</span>,
+        header: () => <span>{t('memory.messages.enable')}</span>,
         cell: ({ row }) => {
           const isEnabled = row.getValue('status') as boolean;
           return (
@@ -117,19 +138,28 @@ export function MemoryTable({
       },
       {
         accessorKey: 'action',
-        header: () => <span>{t('memoryDetail.messages.action')}</span>,
+        header: () => <span>{t('memory.messages.action')}</span>,
         meta: {
           cellClassName: 'w-12',
         },
-        cell: () => (
+        cell: ({ row }) => (
           <div className=" flex opacity-0 group-hover:opacity-100">
-            <Button variant={'ghost'} className="bg-transparent">
+            <Button
+              variant={'ghost'}
+              className="bg-transparent"
+              onClick={() => {
+                handleClickMessageContentDialog(row.original);
+              }}
+            >
               <TextSelect />
             </Button>
             <Button
               variant={'delete'}
               className="bg-transparent"
               aria-label="Edit"
+              onClick={() => {
+                handleClickDeleteMessage(row.original);
+              }}
             >
               <Eraser />
             </Button>
@@ -137,7 +167,7 @@ export function MemoryTable({
         ),
       },
     ],
-    [],
+    [handleClickDeleteMessage],
   );
 
   const currentPagination = useMemo(() => {
@@ -210,6 +240,85 @@ export function MemoryTable({
           )}
         </TableBody>
       </Table>
+      {showDeleteDialog && (
+        <ConfirmDeleteDialog
+          onOk={handleDeleteMessage}
+          title={t('memory.messages.forgetMessage')}
+          open={showDeleteDialog}
+          onOpenChange={setShowDeleteDialog}
+          content={{
+            node: (
+              <ConfirmDeleteDialogNode
+                // avatar={{ avatar: selectedMessage.avatar, name: selectedMessage.name }}
+                name={
+                  t('memory.messages.sessionId') +
+                  ': ' +
+                  selectedMessage.session_id
+                }
+                warnText={t('memory.messages.delMessageWarn')}
+              />
+            ),
+          }}
+        />
+      )}
+
+      {showMessageContentDialog && (
+        <Modal
+          title={t('memory.messages.content')}
+          open={showMessageContentDialog}
+          onOpenChange={setShowMessageContentDialog}
+          className="!w-[640px]"
+          footer={
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowMessageContentDialog(false)}
+                className={
+                  'px-2 py-1 border border-border-button rounded-md hover:bg-bg-card hover:text-text-primary '
+                }
+              >
+                {t('common.close')}
+              </button>
+            </div>
+          }
+        >
+          <div className="flex flex-col gap-2.5">
+            <div className="text-text-secondary text-sm">
+              {t('memory.messages.sessionId')}:&nbsp;&nbsp;
+              {selectedMessage.session_id}
+            </div>
+            {selectedMessageContent?.content && (
+              <div className="w-full bg-accent-primary-5  whitespace-pre-line text-wrap rounded-lg h-fit max-h-[350px] overflow-y-auto scrollbar-auto px-2.5 py-1">
+                {replaceText(selectedMessageContent?.content || '')}
+              </div>
+            )}
+            {selectedMessageContent?.content_embed && (
+              <div className="flex gap-2 items-center">
+                <CopyToClipboard
+                  text={selectedMessageContent?.content_embed}
+                  onCopy={() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1000);
+                  }}
+                >
+                  <Button
+                    variant={'ghost'}
+                    className="border border-border-button "
+                  >
+                    {t('memory.messages.contentEmbed')}
+                    <Copy />
+                  </Button>
+                </CopyToClipboard>
+                {copied && (
+                  <span className="text-xs text-text-secondary">
+                    {t('memory.messages.copied')}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
 
       <div className="flex items-center justify-end py-4 absolute bottom-3 right-3">
         <RAGFlowPagination
