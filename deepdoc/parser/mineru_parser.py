@@ -334,6 +334,13 @@ class MinerUParser(RAGFlowPdfParser):
 
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join([str(p) for p in pn]), x0, x1, top, bott)
 
+    def _raw_line_tag(self, bx):
+        """生成原始归一化坐标(0-1000)的line_tag,用于缓存key匹配"""
+        pn = bx.get("page_idx", 0) + 1
+        bbox = bx.get("bbox", [0, 0, 0, 0])
+        x0, y0, x1, y1 = bbox
+        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(pn, x0, x1, y0, y1)
+
     def crop(self, text, ZM=1, need_position=False):
         """Crop image for chunk. Prioritize cached img_path from MinerU/兜底生成, fallback to page crop."""
         poss = self.extract_positions(text)
@@ -545,16 +552,8 @@ class MinerUParser(RAGFlowPdfParser):
                 img_path_str = str(out_path.resolve())
                 item["img_path"] = img_path_str
                 
-                # Cache for crop() lookup: map line_tag to img_path
-                # 缓存两种格式的 key,确保无论 _transfer_to_sections 怎么生成 tag 都能匹配
-                line_tag = self._line_tag(item)
-                self._img_path_cache[line_tag] = img_path_str
-                
-                # 同时缓存原始 bbox 格式 (不依赖 page_images 的归一化坐标)
-                raw_bbox = item.get("bbox", [0, 0, 0, 0])
-                raw_tag = "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(
-                    page_idx + 1, float(raw_bbox[0]), float(raw_bbox[2]), float(raw_bbox[1]), float(raw_bbox[3])
-                )
+                # Cache for crop() lookup: use raw 0-1000 normalized tag for consistent matching
+                raw_tag = self._raw_line_tag(item)
                 self._img_path_cache[raw_tag] = img_path_str
                 generated += 1
             except Exception as e:
@@ -649,36 +648,30 @@ class MinerUParser(RAGFlowPdfParser):
     def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None):
         sections = []
         for output in outputs:
-            section = None
-            content_type = output.get("type", "")
-            
-            # 使用字符串匹配,兼容 MinerU API 返回的原始类型
-            match content_type:
-                case "text" | MinerUContentType.TEXT:
-                    section = output.get("text", "")
-                case "table" | MinerUContentType.TABLE:
+            match output["type"]:
+                case MinerUContentType.TEXT:
+                    section = output["text"]
+                case MinerUContentType.TABLE:
                     section = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
                     if not section.strip():
                         section = "FAILED TO PARSE TABLE"
-                case "image" | MinerUContentType.IMAGE:
+                case MinerUContentType.IMAGE:
                     section = "".join(output.get("image_caption", [])) + "\n" + "".join(output.get("image_footnote", []))
-                case "equation" | MinerUContentType.EQUATION:
-                    section = output.get("text", "")
-                case "code" | MinerUContentType.CODE:
-                    section = output.get("code_body", "") + "\n".join(output.get("code_caption", []))
-                case "list" | MinerUContentType.LIST:
+                case MinerUContentType.EQUATION:
+                    section = output["text"]
+                case MinerUContentType.CODE:
+                    section = output["code_body"] + "\n".join(output.get("code_caption", []))
+                case MinerUContentType.LIST:
                     section = "\n".join(output.get("list_items", []))
-                case "header":
-                    section = output.get("text", "")
-                case "discarded" | MinerUContentType.DISCARDED:
+                case MinerUContentType.DISCARDED:
                     pass
 
             if section and parse_method == "manual":
-                sections.append((section, output["type"], self._line_tag(output)))
+                sections.append((section, output["type"], self._raw_line_tag(output)))
             elif section and parse_method == "paper":
-                sections.append((section + self._line_tag(output), output["type"]))
-            elif section:
-                sections.append((section, self._line_tag(output)))
+                sections.append((section + self._raw_line_tag(output), output["type"]))
+            else:
+                sections.append((section, self._raw_line_tag(output)))
         return sections
 
     def _transfer_to_tables(self, outputs: list[dict[str, Any]]):
