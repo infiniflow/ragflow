@@ -63,6 +63,7 @@ class RetrievalParam(ToolParamBase):
         self.cross_languages = []
         self.toc_enhance = False
         self.meta_data_filter={}
+        self.hierarchical_retrieval = False  # Enable hierarchical retrieval
 
     def check(self):
         self.check_decimal_float(self.similarity_threshold, "[Retrieval] Similarity threshold")
@@ -174,20 +175,42 @@ class Retrieval(ToolBase, ABC):
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
-            kbinfos = settings.retriever.retrieval(
-                query,
-                embd_mdl,
-                [kb.tenant_id for kb in kbs],
-                filtered_kb_ids,
-                1,
-                self._param.top_n,
-                self._param.similarity_threshold,
-                1 - self._param.keywords_similarity_weight,
-                doc_ids=doc_ids,
-                aggs=False,
-                rerank_mdl=rerank_mdl,
-                rank_feature=label_question(query, kbs),
-            )
+            
+            # Use hierarchical retrieval if enabled
+            if self._param.hierarchical_retrieval:
+                from rag.nlp.search import HierarchicalConfig
+                kb_infos = [{"id": kb.id, "name": kb.name, "description": kb.description or ""} for kb in kbs]
+                kbinfos = settings.retriever.hierarchical_retrieval(
+                    question=query,
+                    embd_mdl=embd_mdl,
+                    tenant_ids=[kb.tenant_id for kb in kbs],
+                    kb_ids=filtered_kb_ids,
+                    kb_infos=kb_infos,
+                    page=1,
+                    page_size=self._param.top_n,
+                    similarity_threshold=self._param.similarity_threshold,
+                    vector_similarity_weight=1 - self._param.keywords_similarity_weight,
+                    doc_ids=doc_ids,
+                    aggs=False,
+                    rerank_mdl=rerank_mdl,
+                    rank_feature=label_question(query, kbs),
+                    hierarchical_config=HierarchicalConfig(enabled=True),
+                )
+            else:
+                kbinfos = settings.retriever.retrieval(
+                    query,
+                    embd_mdl,
+                    [kb.tenant_id for kb in kbs],
+                    filtered_kb_ids,
+                    1,
+                    self._param.top_n,
+                    self._param.similarity_threshold,
+                    1 - self._param.keywords_similarity_weight,
+                    doc_ids=doc_ids,
+                    aggs=False,
+                    rerank_mdl=rerank_mdl,
+                    rank_feature=label_question(query, kbs),
+                )
             if self.check_if_canceled("Retrieval processing"):
                 return
 
