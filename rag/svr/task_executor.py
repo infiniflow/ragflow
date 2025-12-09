@@ -920,7 +920,7 @@ async def do_handle_task(task):
         file_type = task.get("type", "")
         parser_id = task.get("parser_id", "")
         raptor_config = kb_parser_config.get("raptor", {})
-        
+
         if should_skip_raptor(file_type, parser_id, task_parser_config, raptor_config):
             skip_reason = get_skip_reason(file_type, parser_id, task_parser_config)
             logging.info(f"Skipping Raptor for document {task_document_name}: {skip_reason}")
