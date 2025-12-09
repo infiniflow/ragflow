@@ -4,6 +4,7 @@ import {
   IMessage,
   IReferenceChunk,
   IReferenceObject,
+  UploadResponseDataType,
 } from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import {
@@ -24,6 +25,11 @@ import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workflow-timeline';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
 import MarkdownContent from '../next-markdown-content';
+import {
+  PDFDownloadButton,
+  extractPDFDownloadInfo,
+  removePDFDownloadInfo,
+} from '../pdf-download-button';
 import { RAGFlowAvatar } from '../ragflow-avatar';
 import { useTheme } from '../theme-provider';
 import { Button } from '../ui/button';
@@ -94,6 +100,20 @@ function MessageItem({
 
     return Object.values(docs);
   }, [reference?.doc_aggs]);
+
+  // Extract PDF download info from message content
+  const pdfDownloadInfo = useMemo(
+    () => extractPDFDownloadInfo(item.content),
+    [item.content],
+  );
+
+  // If we have PDF download info, extract the remaining text
+  const messageContent = useMemo(() => {
+    if (!pdfDownloadInfo) return item.content;
+
+    // Remove the JSON part from the content to avoid showing it
+    return removePDFDownloadInfo(item.content, pdfDownloadInfo);
+  }, [item.content, pdfDownloadInfo]);
 
   const handleRegenerateMessage = useCallback(() => {
     regenerateMessage?.(item);
@@ -219,28 +239,39 @@ function MessageItem({
                   />
                 </div>
               )}
-            <div
-              className={cn({
-                [theme === 'dark'
-                  ? styles.messageTextDark
-                  : styles.messageText]: isAssistant,
-                [styles.messageUserText]: !isAssistant,
-                'bg-bg-card': !isAssistant,
-              })}
-            >
-              {item.data ? (
-                children
-              ) : sendLoading && isEmpty(item.content) ? (
-                <>{!isShare && 'running...'}</>
-              ) : (
-                <MarkdownContent
-                  loading={loading}
-                  content={item.content}
-                  reference={reference}
-                  clickDocumentButton={clickDocumentButton}
-                ></MarkdownContent>
-              )}
-            </div>
+            {/* Show PDF download button if download info is present */}
+            {pdfDownloadInfo && (
+              <PDFDownloadButton
+                downloadInfo={pdfDownloadInfo}
+                className="mb-2"
+              />
+            )}
+
+            {/* Show message content if there's any text besides the download */}
+            {messageContent && (
+              <div
+                className={cn({
+                  [theme === 'dark'
+                    ? styles.messageTextDark
+                    : styles.messageText]: isAssistant,
+                  [styles.messageUserText]: !isAssistant,
+                  'bg-bg-card': !isAssistant,
+                })}
+              >
+                {item.data ? (
+                  children
+                ) : sendLoading && isEmpty(messageContent) ? (
+                  <>{!isShare && 'running...'}</>
+                ) : (
+                  <MarkdownContent
+                    loading={loading}
+                    content={messageContent}
+                    reference={reference}
+                    clickDocumentButton={clickDocumentButton}
+                  ></MarkdownContent>
+                )}
+              </div>
+            )}
             {isAssistant && referenceDocuments.length > 0 && (
               <ReferenceDocumentList
                 list={referenceDocuments}
@@ -248,7 +279,9 @@ function MessageItem({
             )}
 
             {isUser && (
-              <UploadedMessageFiles files={item.files}></UploadedMessageFiles>
+              <UploadedMessageFiles
+                files={item.files as File[] | UploadResponseDataType[]}
+              ></UploadedMessageFiles>
             )}
             {/* {isAssistant && item.attachment && item.attachment.doc_id && (
               <div className="w-full flex items-center justify-end">

@@ -930,3 +930,68 @@ export enum AgentVariableType {
   Begin = 'begin',
   Conversation = 'conversation',
 }
+
+// PDF Generator enums
+export enum PDFGeneratorFontFamily {
+  Helvetica = 'Helvetica',
+  TimesRoman = 'Times-Roman',
+  Courier = 'Courier',
+  HelveticaBold = 'Helvetica-Bold',
+  TimesBold = 'Times-Bold',
+}
+
+export enum PDFGeneratorLogoPosition {
+  Left = 'left',
+  Center = 'center',
+  Right = 'right',
+}
+
+export enum PDFGeneratorPageSize {
+  A4 = 'A4',
+  Letter = 'Letter',
+}
+
+export enum PDFGeneratorOrientation {
+  Portrait = 'portrait',
+  Landscape = 'landscape',
+}
+
+export const initialPDFGeneratorValues = {
+  output_format: 'pdf',
+  content: '',
+  title: '',
+  subtitle: '',
+  header_text: '',
+  footer_text: '',
+  logo_image: '',
+  logo_position: PDFGeneratorLogoPosition.Left,
+  logo_width: 2.0,
+  logo_height: 1.0,
+  font_family: PDFGeneratorFontFamily.Helvetica,
+  font_size: 12,
+  title_font_size: 24,
+  heading1_font_size: 18,
+  heading2_font_size: 16,
+  heading3_font_size: 14,
+  text_color: '#000000',
+  title_color: '#000000',
+  page_size: PDFGeneratorPageSize.A4,
+  orientation: PDFGeneratorOrientation.Portrait,
+  margin_top: 1.0,
+  margin_bottom: 1.0,
+  margin_left: 1.0,
+  margin_right: 1.0,
+  line_spacing: 1.2,
+  filename: '',
+  output_directory: '/tmp/pdf_outputs',
+  add_page_numbers: true,
+  add_timestamp: true,
+  watermark_text: '',
+  enable_toc: false,
+  outputs: {
+    file_path: { type: 'string', value: '' },
+    pdf_base64: { type: 'string', value: '' },
+    download: { type: 'string', value: '' },
+    success: { type: 'boolean', value: false },
+  },
+};
