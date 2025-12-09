@@ -27,9 +27,7 @@ function VariableNodeDisplay({
     );
   }
 
-  return (
-    <div className="text-primary inline-flex items-center mr-1">{content}</div>
-  );
+  return <div className="inline-flex items-center mr-1">{content}</div>;
 }
 
 export function VariableDisplay({ content, getLabel }: VariableDisplayProps) {
