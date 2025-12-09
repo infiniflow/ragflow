@@ -43,6 +43,31 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
+Resolve image repository with optional global repo prefix.
+If .Values.global.repo is set, replace registry part and keep image path.
+Detect existing registry by first segment containing '.' or ':' or being 'localhost'.
+Usage: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.foo.image.repository) }}
+*/}}
+{{- define "ragflow.imageRepo" -}}
+{{- $root := .root -}}
+{{- $repo := .repo -}}
+{{- $global := $root.Values.global -}}
+{{- if and $global $global.repo }}
+  {{- $parts := splitList "/" $repo -}}
+  {{- $first := index $parts 0 -}}
+  {{- $hasRegistry := or (regexMatch "\\." $first) (regexMatch ":" $first) (eq $first "localhost") -}}
+  {{- if $hasRegistry -}}
+    {{- $path := join "/" (rest $parts) -}}
+    {{- printf "%s/%s" $global.repo $path -}}
+  {{- else -}}
+    {{- printf "%s/%s" $global.repo $repo -}}
+  {{- end -}}
+{{- else -}}
+  {{- $repo -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Selector labels
 */}}
 {{- define "ragflow.selectorLabels" -}}

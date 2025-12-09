@@ -1,7 +1,14 @@
 # Based on docker compose .env file
 
 # Global image pull secrets configuration
-imagePullSecrets: []
+global:
+  # Global image repo prefix to render all images from a mirror/registry.
+  # Example: "registry.example.com/myproj"
+  # When set, template will replace the registry part of each image and keep the path.
+  # Leave empty to use per-image repositories as-is.
+  repo: ""
+  # Global image pull secrets for all pods
+  imagePullSecrets: []
 
 env:
   # The type of doc engine to use.
@@ -27,14 +34,28 @@ env:
   MYSQL_PASSWORD: infini_rag_flow_helm
   # The database of the MySQL service to use
   MYSQL_DBNAME: rag_flow
+  # External MySQL host (only required when mysql.enabled=false)
+  # MYSQL_HOST: ""
+  # External MySQL port (defaults to 3306 if not set)
+  # MYSQL_PORT: "3306"
+  # External MySQL user (only when mysql.enabled=false), default is root if omitted
+  # MYSQL_USER: "root"
 
   # The username for MinIO.
   MINIO_ROOT_USER: rag_flow
   # The password for MinIO
   MINIO_PASSWORD: infini_rag_flow_helm
+  # External MinIO host
+  # MINIO_HOST: ""
+  # External MinIO port (defaults to 9000 if not set)
+  # MINIO_PORT: "9000"
 
   # The password for Redis
   REDIS_PASSWORD: infini_rag_flow_helm
+  # External Redis host (only required when redis.enabled=false)
+  # REDIS_HOST: ""
+  # External Redis port (defaults to 6379 if not set)
+  # REDIS_PORT: "6379"
 
   # The local time zone.
   TZ: "Asia/Shanghai"
@@ -163,6 +184,7 @@ opensearch:
     type: ClusterIP
 
 minio:
+  enabled: true
   image:
     repository: quay.io/minio/minio
     tag: RELEASE.2023-12-20T01-00-02Z
@@ -178,6 +200,7 @@ minio:
     type: ClusterIP
 
 mysql:
+  enabled: true
   image:
     repository: mysql
     tag: 8.0.39
@@ -193,6 +216,7 @@ mysql:
     type: ClusterIP
 
 redis:
+  enabled: true
   image:
     repository: valkey/valkey
     tag: 8
