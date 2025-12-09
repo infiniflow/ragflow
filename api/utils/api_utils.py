@@ -123,6 +123,9 @@ def server_error_response(e):
     logging.error("Unhandled exception during request", exc_info=(type(e), e, e.__traceback__))
     try:
         msg = repr(e).lower()
+        # Check if it's a RuntimeError about request context - treat as Unauthorized
+        if isinstance(e, RuntimeError) and "request context" in msg:
+            return get_json_result(code=RetCode.UNAUTHORIZED, message="Unauthorized")
         if getattr(e, "code", None) == 401 or ("unauthorized" in msg) or ("401" in msg):
             return get_json_result(code=RetCode.UNAUTHORIZED, message=repr(e))
     except Exception as ex:

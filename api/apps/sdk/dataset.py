@@ -18,6 +18,7 @@
 import logging
 import os
 import json
+from typing import Dict, Any, Optional
 from quart import request
 from peewee import OperationalError
 from api.db.db_models import File
@@ -26,7 +27,7 @@ from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
-from api.db.services.user_service import TenantService
+from api.db.services.user_service import TenantService, UserTenantService
 from common.constants import RetCode, FileSource, StatusEnum
 from api.utils.api_utils import (
     deep_merge,
@@ -51,10 +52,9 @@ from rag.nlp import search
 from common.constants import PAGERANK_FLD
 from common import settings
 
-
 @manager.route("/datasets", methods=["POST"])  # noqa: F821
 @token_required
-async def create(tenant_id):
+async def create(tenant_id: str) -> Any:
     """
     Create a new dataset.
     ---
@@ -116,9 +116,24 @@ async def create(tenant_id):
     # | embedding_model| embd_id     |
     # | chunk_method   | parser_id   |
 
+    req: Dict[str, Any]
+    err: Optional[Any]
     req, err = await validate_and_parse_json_request(request, CreateDatasetReq)
     if err is not None:
         return get_error_argument_result(err)
+    
+    # Validate shared_tenant_id if provided
+    shared_tenant_id: Optional[str] = req.get("shared_tenant_id")
+    if shared_tenant_id:
+        if req.get("permission") != "team":
+            return get_error_argument_result("shared_tenant_id can only be set when permission is 'team'")
+        # Verify user is a member of the shared tenant
+        
+        user_tenant = UserTenantService.filter_by_tenant_and_user_id(shared_tenant_id, tenant_id)
+        if not user_tenant or user_tenant.status != StatusEnum.VALID.value:
+            return get_error_permission_result(message=f"User is not a member of tenant '{shared_tenant_id}'")
+    
+    e: bool
     e, req = KnowledgebaseService.create_with_name(
         name = req.pop("name", None),
         tenant_id = tenant_id,
@@ -130,6 +145,8 @@ async def create(tenant_id):
         return req
 
     # Insert embedding model(embd id)
+    ok: bool
+    t: Any
     ok, t = TenantService.get_by_id(tenant_id)
     if not ok:
         return get_error_permission_result(message="Tenant not found")
@@ -219,6 +236,11 @@ async def delete(tenant_id):
         errors = []
         success_count = 0
         for kb_id, kb in kb_id_instance_pairs:
+            # Check delete permission for each dataset
+            if not KnowledgebaseService.accessible4deletion(kb_id, tenant_id):
+                errors.append(f"User lacks delete permission for dataset '{kb_id}'")
+                continue
+            
             for doc in DocumentService.query(kb_id=kb_id):
                 if not DocumentService.remove_document(doc, tenant_id):
                     errors.append(f"Remove document '{doc.id}' error for dataset '{kb_id}'")
@@ -327,10 +349,15 @@ async def update(tenant_id, dataset_id):
         return get_error_argument_result(message="No properties were modified")
 
     try:
+        # Check update permission
+        if not KnowledgebaseService.accessible(dataset_id, tenant_id, required_permission="update"):
+            return get_error_permission_result(
+                message=f"User lacks update permission for dataset '{dataset_id}'")
+        
         kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
         if kb is None:
             return get_error_permission_result(
-                message=f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'")
+                message=f"Dataset '{dataset_id}' not found")
 
         if req.get("parser_config"):
             req["parser_config"] = deep_merge(kb.parser_config, req["parser_config"])

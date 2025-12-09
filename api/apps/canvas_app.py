@@ -16,32 +16,53 @@
 import asyncio
 import json
 import logging
+import time
 from functools import partial
-from quart import request, Response, make_response
+from typing import Any, Dict, Optional
+
+from peewee import MySQLDatabase, PostgresqlDatabase
+from quart import (
+    make_response,
+    request,
+    Response,
+)
+from agent.canvas import Canvas
 from agent.component import LLM
+from api.apps import current_user, login_required
+from api.common.permission_utils import has_permission
 from api.db import CanvasCategory
-from api.db.services.canvas_service import CanvasTemplateService, UserCanvasService, API4ConversationService
+from api.db.db_models import APIToken, Task
+from api.db.services.canvas_service import (
+    API4ConversationService,
+    CanvasTemplateService,
+    UserCanvasService,
+)
 from api.db.services.document_service import DocumentService
 from api.db.services.file_service import FileService
-from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
-from api.db.services.task_service import queue_dataflow, CANVAS_DEBUG_DOC_ID, TaskService
-from api.db.services.user_service import TenantService
+from api.db.services.pipeline_operation_log_service import (
+    PipelineOperationLogService,
+)
+from api.db.services.task_service import (
+    CANVAS_DEBUG_DOC_ID,
+    TaskService,
+    queue_dataflow,
+)
+from api.db.services.user_service import TenantService, UserTenantService
 from api.db.services.user_canvas_version import UserCanvasVersionService
-from common.constants import RetCode
+from api.utils.api_utils import (
+    get_data_error_result,
+    get_json_result,
+    get_request_json,
+    server_error_response,
+    validate_request,
+)
+from common import settings
+from common.constants import RetCode, StatusEnum
 from common.misc_utils import get_uuid
-from api.utils.api_utils import get_json_result, server_error_response, validate_request, get_data_error_result, \
-    get_request_json
-from agent.canvas import Canvas
-from peewee import MySQLDatabase, PostgresqlDatabase
-from api.db.db_models import APIToken, Task
-import time
 
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
 from rag.utils.redis_conn import REDIS_CONN
-from common import settings
-from api.apps import login_required, current_user
-
 
 @manager.route('/templates', methods=['GET'])  # noqa: F821
 @login_required
@@ -55,10 +76,13 @@ def templates():
 async def rm():
     req = await get_request_json()
     for i in req["canvas_ids"]:
-        if not UserCanvasService.accessible(i, current_user.id):
+        # Check delete permission
+        if not UserCanvasService.accessible(i, current_user.id, required_permission="delete"):
             return get_json_result(
-                data=False, message='Only owner of canvas authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
+                data=False,
+                message='You do not have delete permission for this canvas.',
+                code=RetCode.PERMISSION_ERROR
+            )
         UserCanvasService.delete_by_id(i)
     return get_json_result(data=True)
 
@@ -66,13 +90,44 @@ async def rm():
 @manager.route('/set', methods=['POST'])  # noqa: F821
 @validate_request("dsl", "title")
 @login_required
-async def save():
-    req = await get_request_json()
+async def save() -> Any:
+    req: Dict[str, Any] = await get_request_json()
     if not isinstance(req["dsl"], str):
         req["dsl"] = json.dumps(req["dsl"], ensure_ascii=False)
     req["dsl"] = json.loads(req["dsl"])
+
+    # Validate shared_tenant_id if provided
+    shared_tenant_id: Optional[str] = req.get("shared_tenant_id")
+    if shared_tenant_id:
+        if req.get("permission") != "team":
+            return get_json_result(
+                data=False,
+                message="shared_tenant_id can only be set when permission is 'team'",
+                code=RetCode.ARGUMENT_ERROR
+            )
+        # Verify user is a member of the shared tenant
+
+        user_tenant = UserTenantService.filter_by_tenant_and_user_id(shared_tenant_id, current_user.id)
+        if not user_tenant or user_tenant.status != StatusEnum.VALID.value:
+            return get_json_result(
+                data=False,
+                message="You are not a member of the selected team",
+                code=RetCode.PERMISSION_ERROR
+            )
+
     cate = req.get("canvas_category", CanvasCategory.Agent)
     if "id" not in req:
+        # Check create permission if sharing with team
+        if req.get("permission") == "team":
+            shared_tenant_id: Optional[str] = req.get("shared_tenant_id")
+            target_tenant_id: str = shared_tenant_id if shared_tenant_id else current_user.id
+            if not has_permission(target_tenant_id, current_user.id, "canvas", "create"):
+                return get_json_result(
+                    data=False,
+                    message='You do not have create permission for canvases in this team.',
+                    code=RetCode.PERMISSION_ERROR
+                )
+        
         req["user_id"] = current_user.id
         if UserCanvasService.query(user_id=current_user.id, title=req["title"].strip(), canvas_category=cate):
             return get_data_error_result(message=f"{req['title'].strip()} already exists.")
@@ -80,10 +135,13 @@ async def save():
         if not UserCanvasService.save(**req):
             return get_data_error_result(message="Fail to save canvas.")
     else:
-        if not UserCanvasService.accessible(req["id"], current_user.id):
+        # Check update permission
+        if not UserCanvasService.accessible(req["id"], current_user.id, required_permission="update"):
             return get_json_result(
-                data=False, message='Only owner of canvas authorized for this operation.',
-                code=RetCode.OPERATING_ERROR)
+                data=False,
+                message='You do not have update permission for this canvas.',
+                code=RetCode.PERMISSION_ERROR
+            )
         UserCanvasService.update_by_id(req["id"], req)
     # save version
     UserCanvasVersionService.insert(user_canvas_id=req["id"], dsl=req["dsl"], title="{0}_{1}".format(req["title"], time.strftime("%Y_%m_%d_%H_%M_%S")))
@@ -95,7 +153,11 @@ async def save():
 @login_required
 def get(canvas_id):
     if not UserCanvasService.accessible(canvas_id, current_user.id):
-        return get_data_error_result(message="canvas not found.")
+        return get_json_result(
+            data=False,
+            message='You do not have read permission for this canvas.',
+            code=RetCode.PERMISSION_ERROR
+        )
     e, c = UserCanvasService.get_by_canvas_id(canvas_id)
     return get_json_result(data=c)
 
@@ -131,10 +193,13 @@ async def run():
     files = req.get("files", [])
     inputs = req.get("inputs", {})
     user_id = req.get("user_id", current_user.id)
-    if not await asyncio.to_thread(UserCanvasService.accessible, req["id"], current_user.id):
+    # Check read permission (to run the canvas)
+    if not UserCanvasService.accessible(req["id"], current_user.id, required_permission="read"):
         return get_json_result(
-            data=False, message='Only owner of canvas authorized for this operation.',
-            code=RetCode.OPERATING_ERROR)
+            data=False,
+            message='You do not have read permission for this canvas.',
+            code=RetCode.PERMISSION_ERROR
+        )
 
     e, cvs = await asyncio.to_thread(UserCanvasService.get_by_id, req["id"])
     if not e:
@@ -197,8 +262,8 @@ async def rerun():
     doc["chunk_num"] = 0
     doc["token_num"] = 0
     DocumentService.clear_chunk_num_when_rerun(doc["id"])
-    DocumentService.update_by_id(id, doc)
-    TaskService.filter_delete([Task.doc_id == id])
+    DocumentService.update_by_id(doc["id"], doc)
+    TaskService.filter_delete([Task.doc_id == doc["id"]])
 
     dsl = req["dsl"]
     dsl["path"] = [req["component_id"]]
@@ -222,10 +287,14 @@ def cancel(task_id):
 @login_required
 async def reset():
     req = await get_request_json()
-    if not UserCanvasService.accessible(req["id"], current_user.id):
+    # Check update permission (to reset the canvas)
+    if not UserCanvasService.accessible(req["id"], current_user.id, required_permission="update"):
         return get_json_result(
-            data=False, message='Only owner of canvas authorized for this operation.',
-            code=RetCode.OPERATING_ERROR)
+            data=False,
+            message='You do not have update permission for this canvas.',
+            code=RetCode.PERMISSION_ERROR
+        )
+
     try:
         e, user_canvas = UserCanvasService.get_by_id(req["id"])
         if not e:
@@ -252,7 +321,7 @@ async def upload(canvas_id):
     try:
         return get_json_result(data=FileService.upload_info(user_id, file, request.args.get("url")))
     except Exception as e:
-        return  server_error_response(e)
+        return server_error_response(e)
 
 
 @manager.route('/input_form', methods=['GET'])  # noqa: F821
@@ -280,10 +349,13 @@ def input_form():
 @login_required
 async def debug():
     req = await get_request_json()
-    if not UserCanvasService.accessible(req["id"], current_user.id):
+    # Check read permission (to debug the canvas)
+    if not UserCanvasService.accessible(req["id"], current_user.id, required_permission="read"):
         return get_json_result(
-            data=False, message='Only owner of canvas authorized for this operation.',
-            code=RetCode.OPERATING_ERROR)
+            data=False,
+            message='You do not have read permission for this canvas.',
+            code=RetCode.PERMISSION_ERROR
+        )
     try:
         e, user_canvas = UserCanvasService.get_by_id(req["id"])
         canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
@@ -294,7 +366,7 @@ async def debug():
 
         if isinstance(component, LLM):
             component.set_debug_inputs(req["params"])
-        component.invoke(**{k: o["value"] for k,o in req["params"].items()})
+        component.invoke(**{k: o["value"] for k, o in req["params"].items()})
         outputs = component.output()
         for k in outputs.keys():
             if isinstance(outputs[k], partial):
@@ -406,7 +478,7 @@ async def test_db_connect():
 @login_required
 def getlistversion(canvas_id):
     try:
-        versions =sorted([c.to_dict() for c in UserCanvasVersionService.list_by_canvas_id(canvas_id)], key=lambda x: x["update_time"]*-1)
+        versions = sorted([c.to_dict() for c in UserCanvasVersionService.list_by_canvas_id(canvas_id)], key=lambda x: x["update_time"] * -1)
         return get_json_result(data=versions)
     except Exception as e:
         return get_data_error_result(message=f"Error getting history files: {e}")
@@ -415,7 +487,7 @@ def getlistversion(canvas_id):
 #api get version dsl of canvas
 @manager.route('/getversion/<version_id>', methods=['GET'])  # noqa: F821
 @login_required
-def getversion( version_id):
+def getversion(version_id):
     try:
         e, version = UserCanvasVersionService.get_by_id(version_id)
         if version:
@@ -436,7 +508,7 @@ def list_canvas():
         desc = False
     else:
         desc = True
-    owner_ids = [id for id in request.args.get("owner_ids", "").strip().split(",") if id]
+    owner_ids = [owner_id for owner_id in request.args.get("owner_ids", "").strip().split(",") if owner_id]
     if not owner_ids:
         tenants = TenantService.get_joined_tenants_by_user_id(current_user.id)
         tenants = [m["tenant_id"] for m in tenants]
@@ -459,12 +531,15 @@ async def setting():
     req = await get_request_json()
     req["user_id"] = current_user.id
 
-    if not UserCanvasService.accessible(req["id"], current_user.id):
+    # Check update permission (to change settings)
+    if not UserCanvasService.accessible(req["id"], current_user.id, required_permission="update"):
         return get_json_result(
-            data=False, message='Only owner of canvas authorized for this operation.',
-            code=RetCode.OPERATING_ERROR)
+            data=False,
+            message='You do not have update permission for this canvas.',
+            code=RetCode.PERMISSION_ERROR
+        )
 
-    e,flow = UserCanvasService.get_by_id(req["id"])
+    e, flow = UserCanvasService.get_by_id(req["id"])
     if not e:
         return get_data_error_result(message="canvas not found.")
     flow = flow.to_dict()
@@ -474,7 +549,7 @@ async def setting():
         if value := req.get(key):
             flow[key] = value
 
-    num= UserCanvasService.update_by_id(req["id"], flow)
+    num = UserCanvasService.update_by_id(req["id"], flow)
     return get_json_result(data=num)
 
 

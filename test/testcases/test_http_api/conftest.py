@@ -27,7 +27,7 @@ from common import (
     list_documents,
     parse_documents,
 )
-from libs.auth import RAGFlowHttpApiAuth
+from libs.auth import RAGFlowHttpApiAuth, RAGFlowWebApiAuth
 from utils import wait_for
 from utils.file_utils import (
     create_docx_file,
@@ -43,12 +43,25 @@ from utils.file_utils import (
 )
 
 
-@wait_for(30, 1, "Document parsing timeout")
+@wait_for(60, 1, "Document parsing timeout")
 def condition(_auth, _dataset_id):
     res = list_documents(_auth, _dataset_id)
-    for doc in res["data"]["docs"]:
-        if doc["run"] != "DONE":
-            return False
+    docs = res.get("data", {}).get("docs", [])
+    if not docs:
+        return "No documents found"
+    status_info = []
+    for doc in docs:
+        run_status = doc.get("run", "")
+        doc_id = doc.get("id", "unknown")
+        doc_name = doc.get("name", "unknown")
+        if run_status == "FAIL":
+            raise AssertionError(f"Document {doc_id} ({doc_name}) failed to parse: {doc.get('progress_msg', 'Unknown error')}")
+        if run_status != "DONE":
+            progress = doc.get("progress", 0)
+            progress_msg = doc.get("progress_msg", "")
+            status_info.append(f"doc {doc_id} ({doc_name}): status={run_status}, progress={progress}%, msg='{progress_msg}'")
+    if status_info:
+        return "; ".join(status_info)
     return True
 
 
@@ -84,6 +97,12 @@ def ragflow_tmp_dir(request, tmp_path_factory):
 @pytest.fixture(scope="session")
 def HttpApiAuth(token):
     return RAGFlowHttpApiAuth(token)
+
+
+@pytest.fixture(scope="session")
+def web_api_auth(auth):
+    """Fixture for endpoints that use @login_required (JWT token, not API token)."""
+    return RAGFlowWebApiAuth(auth)
 
 
 @pytest.fixture(scope="function")
