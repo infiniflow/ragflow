@@ -167,6 +167,8 @@ class MinerUContentType(StrEnum):
     CODE = "code"
     LIST = "list"
     DISCARDED = "discarded"
+    HEADER = "header"
+    PAGE_NUMBER = "page_number"
 
 
 class MinerUParser(RAGFlowPdfParser):
@@ -822,6 +824,67 @@ class MinerUParser(RAGFlowPdfParser):
             poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
         return poss
 
+    def _bbox_to_pixels(self, bbox, page_size):
+        x0, y0, x1, y1 = bbox
+        pw, ph = page_size
+        maxv = max(bbox)
+        # 经验：MinerU bbox 常为 0~1000 归一化；否则认为已是像素
+        if maxv <= 1.5:
+            sx, sy = pw, ph
+        elif maxv <= 1200:
+            sx, sy = pw / 1000.0, ph / 1000.0
+        else:
+            sx, sy = 1.0, 1.0
+        return (
+            int(x0 * sx),
+            int(y0 * sy),
+            int(x1 * sx),
+            int(y1 * sy),
+        )
+
+    def _generate_missing_images(self, outputs: list[dict[str, Any]], subdir: Path, file_stem: str):
+        if not getattr(self, "page_images", None):
+            return
+        if not subdir:
+            return
+        img_root = subdir / "generated_images"
+        img_root.mkdir(parents=True, exist_ok=True)
+        text_types = {MinerUContentType.TEXT, MinerUContentType.LIST, MinerUContentType.CODE, MinerUContentType.HEADER}
+        generated = 0
+        for idx, item in enumerate(outputs):
+            if item.get("type") not in text_types:
+                continue
+            if item.get("img_path"):
+                continue
+            
+            bbox = item.get("bbox")
+            if not bbox or len(bbox) != 4:
+                continue
+            
+            page_idx = int(item.get("page_idx", 0))
+            if page_idx < 0 or page_idx >= len(self.page_images):
+                continue
+                
+            x0, y0, x1, y1 = self._bbox_to_pixels(bbox, self.page_images[page_idx].size)
+            
+            # guard invalid bbox
+            if x1 - x0 < 2 or y1 - y0 < 2:
+                continue
+                
+            try:
+                crop = self.page_images[page_idx].crop((x0, y0, x1, y1))
+                fname = f"{file_stem}_gen_{idx}.jpg"
+                out_path = img_root / fname
+                crop.save(out_path, format="JPEG", quality=80)
+                item["img_path"] = str(out_path.resolve())
+                generated += 1
+            except Exception as e:
+                self.logger.debug(f"[MinerU] skip image gen idx={idx} page={page_idx}: {e}")
+                continue
+                
+        if generated:
+            self.logger.info(f"[MinerU] generated {generated} fallback images for text blocks")
+
     def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto", backend: str = "pipeline") -> list[dict[str, Any]]:
         candidates = []
         seen = set()
@@ -895,6 +958,13 @@ class MinerUParser(RAGFlowPdfParser):
             for key in ("img_path", "table_img_path", "equation_img_path"):
                 if key in item and item[key]:
                     item[key] = str((subdir / item[key]).resolve())
+
+        # MinerU(vlm-http-client) 不会为纯文本生成图片，这里兜底用本地页图裁剪生成，方便后续引用/MinIO 存图
+        try:
+            self._generate_missing_images(data, subdir, file_stem)
+        except Exception as e:
+            self.logger.warning(f"[MinerU] generate missing images failed: {e}")
+
         return data
 
     def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None):
