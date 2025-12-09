@@ -443,6 +443,9 @@ class InfinityConnection(DocStoreConnection):
                     del matchExpr.extra_options["similarity"]
                 logger.debug(f"INFINITY search MatchDenseExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, FusionExpr):
+                if matchExpr.method == "weighted_sum":
+                    # The default is "minmax" which gives a zero score for the last doc.
+                    matchExpr.fusion_params["normalize"] = "atan"
                 logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
 
         order_by_expr_list = list()

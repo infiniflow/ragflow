@@ -3,11 +3,12 @@ name: release
 on:
   schedule:
     - cron: '0 13 * * *'  # This schedule runs every 13:00:00Z(21:00:00+08:00)
+  # https://github.com/orgs/community/discussions/26286?utm_source=chatgpt.com#discussioncomment-3251208
+  # "The create event does not support branch filter and tag filter."
   # The "create tags" trigger is specifically focused on the creation of new tags, while the "push tags" trigger is activated when tags are pushed, including both new tag creations and updates to existing tags.
-  create:
+  push:
     tags:
       - "v*.*.*"                  # normal release
-      - "nightly"                 # the only one mutable tag
 
 # https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
@@ -21,9 +22,9 @@ jobs:
       - name: Ensure workspace ownership
         run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
 
-      # https://github.com/actions/checkout/blob/v3/README.md
+      # https://github.com/actions/checkout/blob/v6/README.md
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}  # Use the secret as an environment variable
           fetch-depth: 0
@@ -31,12 +32,12 @@ jobs:
 
       - name: Prepare release body
         run: |
-          if [[ ${GITHUB_EVENT_NAME} == "create" ]]; then
+          if [[ ${GITHUB_EVENT_NAME} != "schedule" ]]; then
             RELEASE_TAG=${GITHUB_REF#refs/tags/}
-            if [[ ${RELEASE_TAG} == "nightly" ]]; then
-              PRERELEASE=true
-            else
+            if [[ ${RELEASE_TAG} == v* ]]; then
               PRERELEASE=false
+            else
+              PRERELEASE=true
             fi
             echo "Workflow triggered by create tag: ${RELEASE_TAG}"
           else
@@ -55,7 +56,7 @@ jobs:
           git fetch --tags
           if [[ ${GITHUB_EVENT_NAME} == "schedule" ]]; then
             # Determine if a given tag exists and matches a specific Git commit.
-            # actions/checkout@v4 fetch-tags doesn't work when triggered by schedule
+            # actions/checkout@v6 fetch-tags doesn't work when triggered by schedule
             if [ "$(git rev-parse -q --verify "refs/tags/${RELEASE_TAG}")" = "${GITHUB_SHA}" ]; then
               echo "mutable tag ${RELEASE_TAG} exists and matches ${GITHUB_SHA}"
             else
@@ -88,7 +89,7 @@ jobs:
       - name: Build and push image
         run: |
           sudo docker login --username infiniflow --password-stdin <<< ${{ secrets.DOCKERHUB_TOKEN }}
-          sudo docker build --build-arg NEED_MIRROR=1 -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
+          sudo docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
           sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
           sudo docker push infiniflow/ragflow:${RELEASE_TAG}
           sudo docker push infiniflow/ragflow:latest

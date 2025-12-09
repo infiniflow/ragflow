@@ -56,7 +56,7 @@ async def async_request(
     method: str,
     url: str,
     *,
-    timeout: float | httpx.Timeout | None = None,
+    request_timeout: float | httpx.Timeout | None = None,
     follow_redirects: bool | None = None,
     max_redirects: Optional[int] = None,
     headers: Optional[Dict[str, str]] = None,
@@ -67,7 +67,7 @@ async def async_request(
     **kwargs: Any,
 ) -> httpx.Response:
     """Lightweight async HTTP wrapper using httpx.AsyncClient with safe defaults."""
-    timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
+    timeout = request_timeout if request_timeout is not None else DEFAULT_TIMEOUT
     follow_redirects = (
         DEFAULT_FOLLOW_REDIRECTS if follow_redirects is None else follow_redirects
     )
