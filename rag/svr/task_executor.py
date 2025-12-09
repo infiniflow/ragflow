@@ -29,6 +29,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from common.connection_utils import timeout
 from rag.utils.base64_image import image2id
+from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from graphrag.general.index import run_graphrag_for_kb
@@ -68,7 +69,7 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
-from common.misc_utils import install_mineru
+from common.misc_utils import check_and_install_mineru
 
 BATCH_SIZE = 64
 
@@ -591,7 +592,8 @@ async def run_dataflow(task: dict):
         ck["docnm_kwd"] = task["name"]
         ck["create_time"] = str(datetime.now()).replace("T", " ")[:19]
         ck["create_timestamp_flt"] = datetime.now().timestamp()
-        ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
+        if not ck.get("id"):
+            ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
         if "questions" in ck:
             if "question_tks" not in ck:
                 ck["question_kwd"] = ck["questions"].split("\n")
@@ -725,17 +727,17 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
         if not mom:
             continue
         id = xxhash.xxh64(mom.encode("utf-8")).hexdigest()
+        ck["mom_id"] = id
         if id in mother_ids:
             continue
         mother_ids.add(id)
-        ck["mom_id"] = id
         mom_ck = copy.deepcopy(ck)
         mom_ck["id"] = id
         mom_ck["content_with_weight"] = mom
         mom_ck["available_int"] = 0
         flds = list(mom_ck.keys())
         for fld in flds:
-            if fld not in ["id", "content_with_weight", "doc_id", "kb_id", "available_int", "position_int"]:
+            if fld not in ["id", "content_with_weight", "doc_id", "docnm_kwd", "kb_id", "available_int", "position_int"]:
                 del mom_ck[fld]
         mothers.append(mom_ck)
 
@@ -852,6 +854,17 @@ async def do_handle_task(task):
             if not KnowledgebaseService.update_by_id(kb.id, {"parser_config":kb_parser_config}):
                 progress_callback(prog=-1.0, msg="Internal error: Invalid RAPTOR configuration")
                 return
+
+        # Check if Raptor should be skipped for structured data
+        file_type = task.get("type", "")
+        parser_id = task.get("parser_id", "")
+        raptor_config = kb_parser_config.get("raptor", {})
+        
+        if should_skip_raptor(file_type, parser_id, task_parser_config, raptor_config):
+            skip_reason = get_skip_reason(file_type, parser_id, task_parser_config)
+            logging.info(f"Skipping Raptor for document {task_document_name}: {skip_reason}")
+            progress_callback(prog=1.0, msg=f"Raptor skipped: {skip_reason}")
+            return
 
         # bind LLM for raptor
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
@@ -1101,8 +1114,8 @@ async def main():
     show_configs()
     settings.init_settings()
     settings.check_and_install_torch()
-    install_mineru()
-    logging.info(f'settings.EMBEDDING_CFG: {settings.EMBEDDING_CFG}')
+    check_and_install_mineru()
+    logging.info(f'default embedding config: {settings.EMBEDDING_CFG}')
     settings.print_rag_settings()
     if sys.platform != "win32":
         signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)

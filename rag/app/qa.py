@@ -313,7 +313,7 @@ def mdQuestionLevel(s):
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
         Excel and csv(txt) format files are supported.
-        If the file is in excel format, there should be 2 column question and answer without header.
+        If the file is in Excel format, there should be 2 column question and answer without header.
         And question column is ahead of answer column.
         And it's O.K if it has multiple sheets as long as the columns are rightly composed.
 

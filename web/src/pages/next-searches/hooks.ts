@@ -2,9 +2,11 @@
 
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
+import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import searchService from '@/services/search-service';
+import searchService, { searchServiceNext } from '@/services/search-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useDebounce } from 'ahooks';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'umi';
@@ -84,21 +86,34 @@ interface SearchListResponse {
   message: string;
 }
 
-export const useFetchSearchList = (params?: SearchListParams) => {
-  const [searchParams, setSearchParams] = useState<SearchListParams>({
-    page: 1,
-    page_size: 50,
-    ...params,
-  });
+export const useFetchSearchList = () => {
+  const { handleInputChange, searchString, pagination, setPagination } =
+    useHandleSearchChange();
+  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
   const { data, isLoading, isError, refetch } = useQuery<
     SearchListResponse,
     Error
   >({
-    queryKey: ['searchList', searchParams],
+    queryKey: [
+      'searchList',
+      {
+        debouncedSearchString,
+        ...pagination,
+      },
+    ],
     queryFn: async () => {
-      const { data: response } =
-        await searchService.getSearchList(searchParams);
+      const { data: response } = await searchServiceNext.getSearchList(
+        {
+          params: {
+            keywords: debouncedSearchString,
+            page_size: pagination.pageSize,
+            page: pagination.current,
+          },
+          data: {},
+        },
+        true,
+      );
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch search list');
       }
@@ -106,19 +121,14 @@ export const useFetchSearchList = (params?: SearchListParams) => {
     },
   });
 
-  const setSearchListParams = (newParams: SearchListParams) => {
-    setSearchParams((prevParams) => ({
-      ...prevParams,
-      ...newParams,
-    }));
-  };
-
   return {
     data,
     isLoading,
     isError,
-    searchParams,
-    setSearchListParams,
+    pagination,
+    searchString,
+    handleInputChange,
+    setPagination,
     refetch,
   };
 };

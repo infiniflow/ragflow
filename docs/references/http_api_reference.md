@@ -512,13 +512,16 @@ curl --request POST \
       - Maximum: `2048`
     - `"delimiter"`: `string`
       - Defaults to `"\n"`.
-    - `"html4excel"`: `bool` Indicates whether to convert Excel documents into HTML format.
+    - `"html4excel"`: `bool`
+      - Whether to convert Excel documents into HTML format.
       - Defaults to `false`
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
-    - `"tag_kb_ids"`: `array<string>` refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets)
-      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
-    - `"task_page_size"`: `int` For PDF only.
+    - `"tag_kb_ids"`: `array<string>`
+      - IDs of datasets to be parsed using the ​​Tag chunk method.
+      - Before setting this, ensure a tag set is created and properly configured. For details, see [Use tag set](https://ragflow.io/docs/dev/use_tag_sets).
+    - `"task_page_size"`: `int`
+      - For PDFs only.
       - Defaults to `12`
       - Minimum: `1`
     - `"raptor"`: `object` RAPTOR-specific settings.
@@ -4010,7 +4013,7 @@ Failure:
 
 **DELETE** `/api/v1/agents/{agent_id}/sessions`
 
-Deletes sessions of a agent by ID.
+Deletes sessions of an agent by ID.
 
 #### Request
 
@@ -4069,7 +4072,7 @@ Failure:
 
 Generates five to ten alternative question strings from the user's original query to retrieve more relevant search results.
 
-This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find the it in the Request Headers in your browser easily as shown below:
+This operation requires a `Bearer Login Token`, which typically expires with in 24 hours. You can find it in the Request Headers in your browser easily as shown below:
 
 ![Image](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/login_token.jpg)
 

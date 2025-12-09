@@ -1,4 +1,5 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { SliderInputFormField } from '@/components/slider-input-form-field';
 import {
   FormControl,
   FormField,
@@ -11,8 +12,9 @@ import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
+import { t } from 'i18next';
 import { useMemo, useState } from 'react';
-import { useFormContext } from 'react-hook-form';
+import { FieldValues, useFormContext } from 'react-hook-form';
 import {
   useHandleKbEmbedding,
   useHasParsedDocument,
@@ -65,17 +67,59 @@ export function ChunkMethodItem(props: IProps) {
     />
   );
 }
-export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
+
+export const EmbeddingSelect = ({
+  isEdit,
+  field,
+  name,
+}: {
+  isEdit: boolean;
+  field: FieldValues;
+  name?: string;
+}) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   const embeddingModelOptions = useSelectEmbeddingModelOptions();
   const { handleChange } = useHandleKbEmbedding();
   const disabled = useHasParsedDocument(isEdit);
   const oldValue = useMemo(() => {
-    const embdStr = form.getValues('embd_id');
+    const embdStr = form.getValues(name || 'embd_id');
     return embdStr || '';
   }, [form]);
   const [loading, setLoading] = useState(false);
+  return (
+    <Spin
+      spinning={loading}
+      className={cn(' rounded-lg after:bg-bg-base', {
+        'opacity-20': loading,
+      })}
+    >
+      <SelectWithSearch
+        onChange={async (value) => {
+          field.onChange(value);
+          if (isEdit && disabled) {
+            setLoading(true);
+            const res = await handleChange({
+              embed_id: value,
+              callback: field.onChange,
+            });
+            if (res.code !== 0) {
+              field.onChange(oldValue);
+            }
+            setLoading(false);
+          }
+        }}
+        value={field.value}
+        options={embeddingModelOptions}
+        placeholder={t('embeddingModelPlaceholder')}
+      />
+    </Spin>
+  );
+};
+
+export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
+  const { t } = useTranslate('knowledgeConfiguration');
+  const form = useFormContext();
   return (
     <>
       <FormField
@@ -102,33 +146,10 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
                 className={cn('text-muted-foreground', { 'w-3/4': line === 1 })}
               >
                 <FormControl>
-                  <Spin
-                    spinning={loading}
-                    className={cn(' rounded-lg after:bg-bg-base', {
-                      'opacity-20': loading,
-                    })}
-                  >
-                    <SelectWithSearch
-                      onChange={async (value) => {
-                        field.onChange(value);
-                        if (isEdit && disabled) {
-                          setLoading(true);
-                          const res = await handleChange({
-                            embed_id: value,
-                            callback: field.onChange,
-                          });
-                          if (res.code !== 0) {
-                            field.onChange(oldValue);
-                          }
-                          setLoading(false);
-                        }
-                      }}
-                      value={field.value}
-                      options={embeddingModelOptions}
-                      placeholder={t('embeddingModelPlaceholder')}
-                      triggerClassName="!bg-bg-base"
-                    />
-                  </Spin>
+                  <EmbeddingSelect
+                    isEdit={!!isEdit}
+                    field={field}
+                  ></EmbeddingSelect>
                 </FormControl>
               </div>
             </div>
@@ -264,5 +285,16 @@ export function EnableTocToggle() {
         </FormItem>
       )}
     />
+  );
+}
+
+export function OverlappedPercent() {
+  return (
+    <SliderInputFormField
+      name="parser_config.overlapped_percent"
+      label={t('flow.filenameEmbeddingWeight')}
+      max={0.5}
+      step={0.01}
+    ></SliderInputFormField>
   );
 }

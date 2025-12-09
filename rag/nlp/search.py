@@ -91,7 +91,7 @@ class Dealer:
                       ["docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
                        "doc_id", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
                        "question_kwd", "question_tks", "doc_type_kwd",
-                       "available_int", "content_with_weight", PAGERANK_FLD, TAG_FLD])
+                       "available_int", "content_with_weight", "mom_id", PAGERANK_FLD, TAG_FLD])
         kwds = set([])
 
         qst = req.get("question", "")
@@ -469,6 +469,7 @@ class Dealer:
                 "vector": chunk.get(vector_column, zero_vector),
                 "positions": position_int,
                 "doc_type_kwd": chunk.get("doc_type_kwd", ""),
+                "mom_id": chunk.get("mom_id", ""),
             }
             if highlight and sres.highlight:
                 if id in sres.highlight:
@@ -537,7 +538,8 @@ class Dealer:
                 doc["id"] = id
             if dict_chunks:
                 res.extend(dict_chunks.values())
-            if len(dict_chunks.values()) < bs:
+            # FIX: Solo terminar si no hay chunks, no si hay menos de bs
+            if len(dict_chunks.values()) == 0:
                 break
         return res
 
@@ -649,7 +651,8 @@ class Dealer:
         i = 0
         while i < len(chunks):
             ck = chunks[i]
-            if not ck.get("mom_id"):
+            mom_id = ck.get("mom_id")
+            if not isinstance(mom_id, str) or not mom_id.strip():
                 i += 1
                 continue
             mom_chunks[ck["mom_id"]].append(chunks.pop(i))

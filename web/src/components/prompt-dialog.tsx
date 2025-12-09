@@ -1,6 +1,6 @@
 import { IModalProps } from '@/interfaces/common';
 import { IFeedbackRequestBody } from '@/interfaces/request/chat';
-import HightLightMarkdown from './highlight-markdown';
+import HighLightMarkdown from './highlight-markdown';
 import SvgIcon from './svg-icon';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 
@@ -25,7 +25,7 @@ export function PromptDialog({
           </DialogTitle>
         </DialogHeader>
         <section className="max-h-[80vh] overflow-auto">
-          <HightLightMarkdown>{prompt}</HightLightMarkdown>
+          <HighLightMarkdown>{prompt}</HighLightMarkdown>
         </section>
       </DialogContent>
     </Dialog>

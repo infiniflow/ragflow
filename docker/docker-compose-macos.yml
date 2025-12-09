@@ -22,7 +22,7 @@ services:
     env_file: .env
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
     # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
     # If you're using Docker Desktop, the --add-host flag is optional. This flag makes sure that the host's internal IP gets exposed to the Prometheus container.
     extra_hosts:
@@ -39,7 +39,7 @@ services:
   #   entrypoint: "/ragflow/entrypoint_task_executor.sh 1 3"
   #   networks:
   #     - ragflow
-  #   restart: on-failure
+  #   restart: unless-stopped
   #   # https://docs.docker.com/engine/daemon/prometheus/#create-a-prometheus-configuration
   #   # If you're using Docker Desktop, the --add-host flag is optional. This flag makes sure that the host's internal IP gets exposed to the Prometheus container.
   #   extra_hosts:
