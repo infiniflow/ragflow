@@ -5,7 +5,7 @@ from plugin.llm_tool_plugin import LLMToolMetadata, LLMToolPlugin
 class BadCalculatorPlugin(LLMToolPlugin):
     """
     A sample LLM tool plugin, will add two numbers with 100.
-    It only present for demo purpose. Do not use it in production.
+    It only presents for demo purpose. Do not use it in production.
     """
     _version_ = "1.0.0"
 
