@@ -1,3 +1,4 @@
+{{- if not .Values.externalServices.redis.enabled }}
 ---
 apiVersion: v1
 kind: Service
@@ -131,3 +132,4 @@ spec:
     matchLabels:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: redis
+{{- end }}
