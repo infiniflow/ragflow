@@ -727,17 +727,17 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
         if not mom:
             continue
         id = xxhash.xxh64(mom.encode("utf-8")).hexdigest()
+        ck["mom_id"] = id
         if id in mother_ids:
             continue
         mother_ids.add(id)
-        ck["mom_id"] = id
         mom_ck = copy.deepcopy(ck)
         mom_ck["id"] = id
         mom_ck["content_with_weight"] = mom
         mom_ck["available_int"] = 0
         flds = list(mom_ck.keys())
         for fld in flds:
-            if fld not in ["id", "content_with_weight", "doc_id", "kb_id", "available_int", "position_int"]:
+            if fld not in ["id", "content_with_weight", "doc_id", "docnm_kwd", "kb_id", "available_int", "position_int"]:
                 del mom_ck[fld]
         mothers.append(mom_ck)
 
