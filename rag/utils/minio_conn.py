@@ -193,18 +193,47 @@ class RAGFlowMinio:
         return
 
     @use_default_bucket
-    def remove_bucket(self, bucket):
+    def remove_bucket(self, bucket, **kwargs):
+        orig_bucket = kwargs.pop('_orig_bucket', None)
         try:
-            if self.conn.bucket_exists(bucket):
-                objects_to_delete = self.conn.list_objects(bucket, recursive=True)
+            if self.bucket:
+                # Single bucket mode: remove objects with prefix
+                prefix = ""
+                if self.prefix_path:
+                    prefix = f"{self.prefix_path}/"
+                if orig_bucket:
+                    prefix += f"{orig_bucket}/"
+
+                # List objects with prefix
+                objects_to_delete = self.conn.list_objects(bucket, prefix=prefix, recursive=True)
                 for obj in objects_to_delete:
                     self.conn.remove_object(bucket, obj.object_name)
-                self.conn.remove_bucket(bucket)
+                # Do NOT remove the physical bucket
+            else:
+                if self.conn.bucket_exists(bucket):
+                    objects_to_delete = self.conn.list_objects(bucket, recursive=True)
+                    for obj in objects_to_delete:
+                        self.conn.remove_object(bucket, obj.object_name)
+                    self.conn.remove_bucket(bucket)
         except Exception:
             logging.exception(f"Fail to remove bucket {bucket}")
 
+    def _resolve_bucket_and_path(self, bucket, fnm):
+        if self.bucket:
+            if self.prefix_path:
+                fnm = f"{self.prefix_path}/{bucket}/{fnm}"
+            else:
+                fnm = f"{bucket}/{fnm}"
+            bucket = self.bucket
+        elif self.prefix_path:
+            fnm = f"{self.prefix_path}/{fnm}"
+        return bucket, fnm
+
     def copy(self, src_bucket, src_path, dest_bucket, dest_path):
         try:
+            src_bucket, src_path = self._resolve_bucket_and_path(src_bucket, src_path)
+            dest_bucket, dest_path = self._resolve_bucket_and_path(dest_bucket, dest_path)
+
             if not self.conn.bucket_exists(dest_bucket):
                 self.conn.make_bucket(dest_bucket)
 
