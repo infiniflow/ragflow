@@ -187,14 +187,15 @@ class Base(ABC):
                     ans = delta_ans
                     total_tokens += tol
                     yield ans
+
+                yield total_tokens
+                return
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
                     yield e
                     yield total_tokens
                     return
-
-        yield total_tokens
 
     def _length_stop(self, ans):
         if is_chinese([ans]):
