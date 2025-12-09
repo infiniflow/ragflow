@@ -1,4 +1,15 @@
+---
+sidebar_position: 10
+slug: /websocket_api_reference
+---
+
 # WebSocket API for Streaming Responses
+
+---
+
+:::info KUDOS
+This document is contributed by our community contributor [SmartDever02](https://github.com/SmartDever02). 👏
+:::
 
 ## Overview
 
@@ -602,7 +613,7 @@ ws.send(JSON.stringify({
 
 - [WebSocket API Standard](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket)
 - [WeChat Mini Program WebSocket](https://developers.weixin.qq.com/miniprogram/dev/api/network/websocket/wx.connectSocket.html)
-- [RAGFlow API Documentation](../references/api_reference.md)
+- [RAGFlow HTTP API Documentation](./http_api_reference.md)
 
 ## Support
 
