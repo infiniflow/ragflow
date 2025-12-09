@@ -28,8 +28,10 @@ from common import settings
 class RAGFlowMinio:
     def __init__(self):
         self.conn = None
-        self.bucket = settings.MINIO.get('bucket', None)
-        self.prefix_path = settings.MINIO.get('prefix_path', None)
+        # Use `or None` to convert empty strings to None, ensuring single-bucket
+        # mode is truly disabled when not configured
+        self.bucket = settings.MINIO.get('bucket', None) or None
+        self.prefix_path = settings.MINIO.get('prefix_path', None) or None
         self.__open__()
 
     @staticmethod
