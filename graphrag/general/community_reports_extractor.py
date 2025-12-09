@@ -150,6 +150,7 @@ class CommunityReportsExtractor(Extractor):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
+            logging.error(f"Error in community processing: {e}")
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)

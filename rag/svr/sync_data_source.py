@@ -664,6 +664,7 @@ async def dispatch_tasks():
     try:
         await asyncio.gather(*tasks, return_exceptions=False)
     except Exception as e:
+        logging.error(f"Error in dispatch_tasks: {e}")
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

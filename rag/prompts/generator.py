@@ -752,6 +752,7 @@ async def run_toc_from_text(chunks, chat_mdl, callback=None):
     try:
         await asyncio.gather(*tasks, return_exceptions=False)
     except Exception as e:
+        logging.error(f"Error generating TOC: {e}")
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

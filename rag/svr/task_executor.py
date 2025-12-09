@@ -305,6 +305,7 @@ async def build_chunks(task, progress_callback):
     try:
         await asyncio.gather(*tasks, return_exceptions=False)
     except Exception as e:
+        logging.error("Saving chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -830,6 +831,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
             try:
                 await asyncio.gather(*tasks, return_exceptions=False)
             except Exception as e:
+                logging.error(f"do_handle_task delete_image failed since task {task_id} is unknown.")
                 for t in tasks:
                     t.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)

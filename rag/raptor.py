@@ -209,6 +209,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             try:
                 await asyncio.gather(*tasks, return_exceptions=False)
             except Exception as e:
+                logging.error(f"Error in RAPTOR cluster processing: {e}")
                 for t in tasks:
                     t.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)

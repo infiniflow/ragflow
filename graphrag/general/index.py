@@ -286,6 +286,7 @@ async def run_graphrag_for_kb(
     try:
         await asyncio.gather(*tasks, return_exceptions=False)
     except Exception as e:
+        logging.error(f"Error in asyncio.gather: {e}")
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
