@@ -146,7 +146,6 @@ class Base(ABC):
             request_kwargs["stop"] = stop
 
         response = await self.async_client.chat.completions.create(**request_kwargs)
-
         async for resp in response:
             if not resp.choices:
                 continue
@@ -161,7 +160,6 @@ class Base(ABC):
             else:
                 reasoning_start = False
                 ans = resp.choices[0].delta.content
-
             tol = total_token_count_from_response(resp)
             if not tol:
                 tol = num_tokens_from_string(resp.choices[0].delta.content)
@@ -187,12 +185,12 @@ class Base(ABC):
                     ans = delta_ans
                     total_tokens += tol
                     yield ans
+                yield total_tokens
+                return
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
                     yield e
-                    yield total_tokens
-                    return
 
         yield total_tokens
 
