@@ -192,6 +192,7 @@ class Base(ABC):
                 e = await self._exceptions_async(e, attempt)
                 if e:
                     yield e
+        yield total_tokens
 
     def _length_stop(self, ans):
         if is_chinese([ans]):
