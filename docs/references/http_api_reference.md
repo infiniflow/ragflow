@@ -4693,7 +4693,7 @@ curl --request GET \
 ##### Request parameters
 
 - `parent_id`: (*Filter parameter*), `string`  
-  The folder ID to list files from. If not specified, lists files from the root folder.
+  The folder ID to list files from. If not specified, the root folder is used by default.
 - `keywords`: (*Filter parameter*), `string`  
   Search keyword to filter files by name.
 - `page`: (*Filter parameter*), `integer`  
@@ -4792,7 +4792,7 @@ Success:
 
 **GET** `/api/v1/file/parent_folder?file_id={file_id}`
 
-Retrieves the parent folder information of a specified file.
+Retrieves the immediate parent folder information of a specified file.
 
 #### Request
 
@@ -4812,7 +4812,7 @@ curl --request GET \
 ##### Request parameters
 
 - `file_id`: (*Filter parameter*), `string`, *Required*  
-  The ID of the file whose parent folder to retrieve.
+  The ID of the file whose immediate parent folder to retrieve.
 
 #### Response
 
@@ -4990,7 +4990,7 @@ curl --request POST \
 - `"file_id"`: (*Body parameter*), `string`, *Required*  
   The ID of the file or folder to rename.
 - `"name"`: (*Body parameter*), `string`, *Required*  
-  The new name for the file or folder. Note: The file extension cannot be changed for files.
+  The new name for the file or folder. Note: Changing file extensions is *not* supported.
 
 #### Response
 
@@ -5071,7 +5071,7 @@ Failure:
 
 **POST** `/api/v1/file/mv`
 
-Moves one or multiple files or folders to another folder.
+Moves one or multiple files or folders to a specified folder.
 
 #### Request
 
@@ -5135,7 +5135,7 @@ or
 
 ---
 
-### Convert files to documents
+### Convert files to documents and link them to datasets
 
 **POST** `/api/v1/file/convert`
 
@@ -5170,7 +5170,7 @@ curl --request POST \
 - `"file_ids"`: (*Body parameter*), `list[string]`, *Required*  
   The IDs of the files to convert. If a folder ID is provided, all files within that folder will be converted.
 - `"kb_ids"`: (*Body parameter*), `list[string]`, *Required*  
-  The IDs of the datasets to link the converted documents to.
+  The IDs of the target datasets.
 
 #### Response
 
