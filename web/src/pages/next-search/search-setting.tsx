@@ -2,6 +2,10 @@
 
 import { AvatarUpload } from '@/components/avatar-upload';
 import {
+  LlmSettingFieldItems,
+  LlmSettingSchema,
+} from '@/components/llm-setting-items/next';
+import {
   MetadataFilter,
   MetadataFilterSchema,
 } from '@/components/metadata-filter';
@@ -25,12 +29,12 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { useFetchKnowledgeList } from '@/hooks/knowledge-hooks';
+import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
 import {
   useComposeLlmOptionsByModelTypes,
   useSelectLlmOptionsByModelType,
-} from '@/hooks/llm-hooks';
-import { useFetchTenantInfo } from '@/hooks/user-setting-hooks';
+} from '@/hooks/use-llm-request';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IKnowledge } from '@/interfaces/database/knowledge';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -46,10 +50,10 @@ import {
   IllmSettingProps,
   useUpdateSearch,
 } from '../next-searches/hooks';
-import {
-  LlmSettingFieldItems,
-  LlmSettingSchema,
-} from './search-setting-aisummery-config';
+// import {
+//   LlmSettingFieldItems,
+//   LlmSettingSchema,
+// } from './search-setting-aisummery-config';
 
 interface SearchSettingProps {
   open: boolean;
@@ -397,6 +401,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               isTooltipShown
               similarityName="search_config.similarity_threshold"
               vectorSimilarityWeightName="search_config.vector_similarity_weight"
+              numberInputClassName="rounded-sm"
             ></SimilaritySliderFormField>
             {/* Rerank Model */}
             <FormField
@@ -462,7 +467,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                         <FormControl>
                           <Input
                             type={'number'}
-                            className="h-7 w-20 bg-bg-card"
+                            className="h-7 w-20 bg-bg-card border border-border-button rounded-sm"
                             max={2048}
                             min={0}
                             step={1}
@@ -493,9 +498,19 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
               )}
             />
             {aiSummaryDisabled && (
+              // <LlmSettingFieldItems
+              //   prefix="search_config.llm_setting"
+              //   options={aiSummeryModelOptions}
+              // ></LlmSettingFieldItems>
               <LlmSettingFieldItems
                 prefix="search_config.llm_setting"
                 options={aiSummeryModelOptions}
+                showFields={[
+                  'temperature',
+                  'top_p',
+                  'presence_penalty',
+                  'frequency_penalty',
+                ]}
               ></LlmSettingFieldItems>
             )}
             {/* Feature Controls */}

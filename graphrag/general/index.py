@@ -21,6 +21,8 @@ import networkx as nx
 import trio
 
 from api.db.services.document_service import DocumentService
+from api.db.services.task_service import has_canceled
+from common.exceptions import TaskCanceledException
 from common.misc_utils import get_uuid
 from common.connection_utils import timeout
 from graphrag.entity_resolution import EntityResolution
@@ -39,7 +41,7 @@ from graphrag.utils import (
 )
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import RedisDistributedLock
-from common import globals
+from common import settings
 
 
 async def run_graphrag(
@@ -55,7 +57,7 @@ async def run_graphrag(
     start = trio.current_time()
     tenant_id, kb_id, doc_id = row["tenant_id"], str(row["kb_id"]), row["doc_id"]
     chunks = []
-    for d in globals.retriever.chunk_list(doc_id, tenant_id, [kb_id], fields=["content_with_weight", "doc_id"], sort_by_position=True):
+    for d in settings.retriever.chunk_list(doc_id, tenant_id, [kb_id], max_count=10000, fields=["content_with_weight", "doc_id"], sort_by_position=True):
         chunks.append(d["content_with_weight"])
 
     with trio.fail_after(max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000):
@@ -106,6 +108,7 @@ async def run_graphrag(
                 chat_model,
                 embedding_model,
                 callback,
+                task_id=row["id"],
             )
         if with_community:
             await graphrag_task_lock.spin_acquire()
@@ -118,6 +121,7 @@ async def run_graphrag(
                 chat_model,
                 embedding_model,
                 callback,
+                task_id=row["id"],
             )
     finally:
         graphrag_task_lock.release()
@@ -170,13 +174,19 @@ async def run_graphrag_for_kb(
         chunks = []
         current_chunk = ""
 
-        for d in globals.retriever.chunk_list(
+        # DEBUG: Obtener todos los chunks primero
+        raw_chunks = list(settings.retriever.chunk_list(
             doc_id,
             tenant_id,
             [kb_id],
+            max_count=10000,  # FIX: Aumentar límite para procesar todos los chunks
             fields=fields_for_chunks,
             sort_by_position=True,
-        ):
+        ))
+
+        callback(msg=f"[DEBUG] chunk_list() returned {len(raw_chunks)} raw chunks for doc {doc_id}")
+
+        for d in raw_chunks:
             content = d["content_with_weight"]
             if num_tokens_from_string(current_chunk + content) < 1024:
                 current_chunk += content
@@ -207,6 +217,10 @@ async def run_graphrag_for_kb(
     failed_docs: list[tuple[str, str]] = []  # (doc_id, error)
 
     async def build_one(doc_id: str):
+        if has_canceled(row["id"]):
+            callback(msg=f"Task {row['id']} cancelled, stopping execution.")
+            raise TaskCanceledException(f"Task {row['id']} was cancelled")
+
         chunks = all_doc_chunks.get(doc_id, [])
         if not chunks:
             callback(msg=f"[GraphRAG] doc:{doc_id} has no available chunks, skip generation.")
@@ -232,6 +246,7 @@ async def run_graphrag_for_kb(
                         chat_model,
                         embedding_model,
                         callback,
+                        task_id=row["id"]
                     )
                 if sg:
                     subgraphs[doc_id] = sg
@@ -239,13 +254,23 @@ async def run_graphrag_for_kb(
                 else:
                     failed_docs.append((doc_id, "subgraph is empty"))
                     callback(msg=f"{msg} empty")
+            except TaskCanceledException as canceled:
+                callback(msg=f"[GraphRAG] build_subgraph doc:{doc_id} FAILED: {canceled}")
             except Exception as e:
                 failed_docs.append((doc_id, repr(e)))
                 callback(msg=f"[GraphRAG] build_subgraph doc:{doc_id} FAILED: {e!r}")
 
+    if has_canceled(row["id"]):
+        callback(msg=f"Task {row['id']} cancelled before processing documents.")
+        raise TaskCanceledException(f"Task {row['id']} was cancelled")
+
     async with trio.open_nursery() as nursery:
         for doc_id in doc_ids:
             nursery.start_soon(build_one, doc_id)
+
+    if has_canceled(row["id"]):
+        callback(msg=f"Task {row['id']} cancelled after document processing.")
+        raise TaskCanceledException(f"Task {row['id']} was cancelled")
 
     ok_docs = [d for d in doc_ids if d in subgraphs]
     if not ok_docs:
@@ -256,6 +281,10 @@ async def run_graphrag_for_kb(
     kb_lock = RedisDistributedLock(f"graphrag_task_{kb_id}", lock_value="batch_merge", timeout=1200)
     await kb_lock.spin_acquire()
     callback(msg=f"[GraphRAG] kb:{kb_id} merge lock acquired")
+
+    if has_canceled(row["id"]):
+        callback(msg=f"Task {row['id']} cancelled before merging subgraphs.")
+        raise TaskCanceledException(f"Task {row['id']} was cancelled")
 
     try:
         union_nodes: set = set()
@@ -288,6 +317,10 @@ async def run_graphrag_for_kb(
         callback(msg=f"[GraphRAG] KB merge done in {now - start:.2f}s. ok={len(ok_docs)} / total={len(doc_ids)}")
         return {"ok_docs": ok_docs, "failed_docs": failed_docs, "total_docs": len(doc_ids), "total_chunks": total_chunks, "seconds": now - start}
 
+    if has_canceled(row["id"]):
+        callback(msg=f"Task {row['id']} cancelled before resolution/community extraction.")
+        raise TaskCanceledException(f"Task {row['id']} was cancelled")
+
     await kb_lock.spin_acquire()
     callback(msg=f"[GraphRAG] kb:{kb_id} post-merge lock acquired for resolution/community")
 
@@ -306,6 +339,7 @@ async def run_graphrag_for_kb(
                 chat_model,
                 embedding_model,
                 callback,
+                task_id=row["id"],
             )
 
         if with_community:
@@ -317,6 +351,7 @@ async def run_graphrag_for_kb(
                 chat_model,
                 embedding_model,
                 callback,
+                task_id=row["id"],
             )
     finally:
         kb_lock.release()
@@ -343,7 +378,12 @@ async def generate_subgraph(
     llm_bdl,
     embed_bdl,
     callback,
+    task_id: str = "",
 ):
+    if task_id and has_canceled(task_id):
+        callback(msg=f"Task {task_id} cancelled during subgraph generation for doc {doc_id}.")
+        raise TaskCanceledException(f"Task {task_id} was cancelled")
+
     contains = await does_graph_contains(tenant_id, kb_id, doc_id)
     if contains:
         callback(msg=f"Graph already contains {doc_id}")
@@ -354,15 +394,24 @@ async def generate_subgraph(
         language=language,
         entity_types=entity_types,
     )
-    ents, rels = await ext(doc_id, chunks, callback)
+    ents, rels = await ext(doc_id, chunks, callback, task_id=task_id)
     subgraph = nx.Graph()
+
     for ent in ents:
+        if task_id and has_canceled(task_id):
+            callback(msg=f"Task {task_id} cancelled during entity processing for doc {doc_id}.")
+            raise TaskCanceledException(f"Task {task_id} was cancelled")
+
         assert "description" in ent, f"entity {ent} does not have description"
         ent["source_id"] = [doc_id]
         subgraph.add_node(ent["entity_name"], **ent)
 
     ignored_rels = 0
     for rel in rels:
+        if task_id and has_canceled(task_id):
+            callback(msg=f"Task {task_id} cancelled during relationship processing for doc {doc_id}.")
+            raise TaskCanceledException(f"Task {task_id} was cancelled")
+
         assert "description" in rel, f"relation {rel} does not have description"
         if not subgraph.has_node(rel["src_id"]) or not subgraph.has_node(rel["tgt_id"]):
             ignored_rels += 1
@@ -387,8 +436,8 @@ async def generate_subgraph(
         "removed_kwd": "N",
     }
     cid = chunk_id(chunk)
-    await trio.to_thread.run_sync(globals.docStoreConn.delete, {"knowledge_graph_kwd": "subgraph", "source_id": doc_id}, search.index_name(tenant_id), kb_id)
-    await trio.to_thread.run_sync(globals.docStoreConn.insert, [{"id": cid, **chunk}], search.index_name(tenant_id), kb_id)
+    await trio.to_thread.run_sync(settings.docStoreConn.delete, {"knowledge_graph_kwd": "subgraph", "source_id": doc_id}, search.index_name(tenant_id), kb_id)
+    await trio.to_thread.run_sync(settings.docStoreConn.insert, [{"id": cid, **chunk}], search.index_name(tenant_id), kb_id)
     now = trio.current_time()
     callback(msg=f"generated subgraph for doc {doc_id} in {now - start:.2f} seconds.")
     return subgraph
@@ -434,16 +483,26 @@ async def resolve_entities(
     llm_bdl,
     embed_bdl,
     callback,
+    task_id: str = "",
 ):
+    # Check if task has been canceled before resolution
+    if task_id and has_canceled(task_id):
+        callback(msg=f"Task {task_id} cancelled during entity resolution.")
+        raise TaskCanceledException(f"Task {task_id} was cancelled")
+
     start = trio.current_time()
     er = EntityResolution(
         llm_bdl,
     )
-    reso = await er(graph, subgraph_nodes, callback=callback)
+    reso = await er(graph, subgraph_nodes, callback=callback, task_id=task_id)
     graph = reso.graph
     change = reso.change
     callback(msg=f"Graph resolution removed {len(change.removed_nodes)} nodes and {len(change.removed_edges)} edges.")
     callback(msg="Graph resolution updated pagerank.")
+
+    if task_id and has_canceled(task_id):
+        callback(msg=f"Task {task_id} cancelled after entity resolution.")
+        raise TaskCanceledException(f"Task {task_id} was cancelled")
 
     await set_graph(tenant_id, kb_id, embed_bdl, graph, change, callback)
     now = trio.current_time()
@@ -459,12 +518,22 @@ async def extract_community(
     llm_bdl,
     embed_bdl,
     callback,
+    task_id: str = "",
 ):
+    if task_id and has_canceled(task_id):
+        callback(msg=f"Task {task_id} cancelled before community extraction.")
+        raise TaskCanceledException(f"Task {task_id} was cancelled")
+
     start = trio.current_time()
     ext = CommunityReportsExtractor(
         llm_bdl,
     )
-    cr = await ext(graph, callback=callback)
+    cr = await ext(graph, callback=callback, task_id=task_id)
+
+    if task_id and has_canceled(task_id):
+        callback(msg=f"Task {task_id} cancelled during community extraction.")
+        raise TaskCanceledException(f"Task {task_id} was cancelled")
+
     community_structure = cr.structured_output
     community_reports = cr.output
     doc_ids = graph.graph["source_id"]
@@ -472,6 +541,10 @@ async def extract_community(
     now = trio.current_time()
     callback(msg=f"Graph extracted {len(cr.structured_output)} communities in {now - start:.2f}s.")
     start = now
+    if task_id and has_canceled(task_id):
+        callback(msg=f"Task {task_id} cancelled during community indexing.")
+        raise TaskCanceledException(f"Task {task_id} was cancelled")
+
     chunks = []
     for stru, rep in zip(community_structure, community_reports):
         obj = {
@@ -496,7 +569,7 @@ async def extract_community(
         chunks.append(chunk)
 
     await trio.to_thread.run_sync(
-        lambda: globals.docStoreConn.delete(
+        lambda: settings.docStoreConn.delete(
             {"knowledge_graph_kwd": "community_report", "kb_id": kb_id},
             search.index_name(tenant_id),
             kb_id,
@@ -504,10 +577,14 @@ async def extract_community(
     )
     es_bulk_size = 4
     for b in range(0, len(chunks), es_bulk_size):
-        doc_store_result = await trio.to_thread.run_sync(lambda: globals.docStoreConn.insert(chunks[b : b + es_bulk_size], search.index_name(tenant_id), kb_id))
+        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b : b + es_bulk_size], search.index_name(tenant_id), kb_id))
         if doc_store_result:
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
             raise Exception(error_message)
+
+    if task_id and has_canceled(task_id):
+        callback(msg=f"Task {task_id} cancelled after community indexing.")
+        raise TaskCanceledException(f"Task {task_id} was cancelled")
 
     now = trio.current_time()
     callback(msg=f"Graph indexed {len(cr.structured_output)} communities in {now - start:.2f}s.")

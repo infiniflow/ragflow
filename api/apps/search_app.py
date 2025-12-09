@@ -14,8 +14,8 @@
 #  limitations under the License.
 #
 
-from flask import request
-from flask_login import current_user, login_required
+from quart import request
+from api.apps import current_user, login_required
 
 from api.constants import DATASET_NAME_LIMIT
 from api.db.db_models import DB
@@ -24,14 +24,14 @@ from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
 from common.constants import RetCode, StatusEnum
-from api.utils.api_utils import get_data_error_result, get_json_result, not_allowed_parameters, server_error_response, validate_request
+from api.utils.api_utils import get_data_error_result, get_json_result, not_allowed_parameters, get_request_json, server_error_response, validate_request
 
 
 @manager.route("/create", methods=["post"])  # noqa: F821
 @login_required
 @validate_request("name")
-def create():
-    req = request.get_json()
+async def create():
+    req = await get_request_json()
     search_name = req["name"]
     description = req.get("description", "")
     if not isinstance(search_name, str):
@@ -65,8 +65,8 @@ def create():
 @login_required
 @validate_request("search_id", "name", "search_config", "tenant_id")
 @not_allowed_parameters("id", "created_by", "create_time", "update_time", "create_date", "update_date", "created_by")
-def update():
-    req = request.get_json()
+async def update():
+    req = await get_request_json()
     if not isinstance(req["name"], str):
         return get_data_error_result(message="Search name must be string.")
     if req["name"].strip() == "":
@@ -140,7 +140,7 @@ def detail():
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required
-def list_search_app():
+async def list_search_app():
     keywords = request.args.get("keywords", "")
     page_number = int(request.args.get("page", 0))
     items_per_page = int(request.args.get("page_size", 0))
@@ -150,7 +150,7 @@ def list_search_app():
     else:
         desc = True
 
-    req = request.get_json()
+    req = await get_request_json()
     owner_ids = req.get("owner_ids", [])
     try:
         if not owner_ids:
@@ -173,8 +173,8 @@ def list_search_app():
 @manager.route("/rm", methods=["post"])  # noqa: F821
 @login_required
 @validate_request("search_id")
-def rm():
-    req = request.get_json()
+async def rm():
+    req = await get_request_json()
     search_id = req["search_id"]
     if not SearchService.accessible4deletion(search_id, current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)

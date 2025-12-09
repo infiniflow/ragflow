@@ -26,6 +26,7 @@ from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
 from docx.opc.oxml import parse_xml
 from markdown import markdown
 from PIL import Image
+from common.token_utils import num_tokens_from_string
 
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
@@ -36,9 +37,10 @@ from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
-from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table
+from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table, attach_media_context
 
-def DeepDOC_parser(filename, binary=None, from_page=0, to_page=100000, callback=None, pdf_cls = None ,**kwargs):
+
+def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     callback = callback
     binary = binary
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
@@ -48,20 +50,22 @@ def DeepDOC_parser(filename, binary=None, from_page=0, to_page=100000, callback=
         to_page=to_page,
         callback=callback
     )
+
     tables = vision_figure_parser_pdf_wrapper(tbls=tables,
                                               callback=callback,
                                               **kwargs)
     return sections, tables, pdf_parser
 
 
-def MinerU_parser(filename, binary=None, callback=None, **kwargs):
+def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
     mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
     pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
+    parse_method = kwargs.get("parse_method", "raw")
 
     if not pdf_parser.check_installation():
         callback(-1, "MinerU not found.")
-        return None, None
+        return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
@@ -69,17 +73,20 @@ def MinerU_parser(filename, binary=None, callback=None, **kwargs):
         callback=callback,
         output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
         backend=os.environ.get("MINERU_BACKEND", "pipeline"),
+        server_url=os.environ.get("MINERU_SERVER_URL", ""),
         delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+        parse_method=parse_method
     )
     return sections, tables, pdf_parser
 
 
-def Docling_parser(filename, binary=None, callback=None, **kwargs):
+def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     pdf_parser = DoclingParser()
+    parse_method = kwargs.get("parse_method", "raw")
 
     if not pdf_parser.check_installation():
         callback(-1, "Docling not found.")
-        return None, None
+        return None, None, pdf_parser
 
     sections, tables = pdf_parser.parse_pdf(
         filepath=filename,
@@ -87,16 +94,17 @@ def Docling_parser(filename, binary=None, callback=None, **kwargs):
         callback=callback,
         output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
         delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+        parse_method=parse_method
     )
     return sections, tables, pdf_parser
 
 
-def TCADP_parser(filename, binary=None, callback=None, **kwargs):
+def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     tcadp_parser = TCADPParser()
 
     if not tcadp_parser.check_installation():
         callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
-        return None, None
+        return None, None, tcadp_parser
 
     sections, tables = tcadp_parser.parse_pdf(
         filepath=filename,
@@ -108,13 +116,13 @@ def TCADP_parser(filename, binary=None, callback=None, **kwargs):
     return sections, tables, tcadp_parser
 
 
-def plaintext_parser(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
+def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
     if kwargs.get("layout_recognizer", "") == "Plain Text":
         pdf_parser = PlainParser()
     else:
         vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT, llm_name=kwargs.get("layout_recognizer", ""), lang=kwargs.get("lang", "Chinese"))
         pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
-    
+
     sections, tables = pdf_parser(
         filename if not binary else binary,
         from_page=from_page,
@@ -125,11 +133,11 @@ def plaintext_parser(filename, binary=None, from_page=0, to_page=100000, callbac
 
 
 PARSERS = {
-    "deepdoc":  DeepDOC_parser,
-    "mineru":   MinerU_parser,
-    "docling":  Docling_parser,
-    "tcadp":    TCADP_parser,
-    "plaintext": plaintext_parser,  # default
+    "deepdoc":  by_deepdoc,
+    "mineru":   by_mineru,
+    "docling":  by_docling,
+    "tcadp":    by_tcadp,
+    "plaintext": by_plaintext,  # default
 }
 
 
@@ -458,49 +466,88 @@ class Markdown(MarkdownParser):
         html_content = markdown(text)
         soup = BeautifulSoup(html_content, 'html.parser')
         return soup
-    
-    def get_picture_urls(self, soup):
-        if soup:
-            return [img.get('src') for img in soup.find_all('img') if img.get('src')]
-        return []
 
     def get_hyperlink_urls(self, soup):
         if soup:
             return set([a.get('href') for a in soup.find_all('a') if a.get('href')])
         return []
-    
-    def get_pictures(self, text):
-        """Download and open all images from markdown text."""
+
+    def extract_image_urls_with_lines(self, text):
+        md_img_re = re.compile(r"!\[[^\]]*\]\(([^)\s]+)")
+        html_img_re = re.compile(r'src=["\\\']([^"\\\'>\\s]+)', re.IGNORECASE)
+        urls = []
+        seen = set()
+        lines = text.splitlines()
+        for idx, line in enumerate(lines):
+            for url in md_img_re.findall(line):
+                if (url, idx) not in seen:
+                    urls.append({"url": url, "line": idx})
+                    seen.add((url, idx))
+            for url in html_img_re.findall(line):
+                if (url, idx) not in seen:
+                    urls.append({"url": url, "line": idx})
+                    seen.add((url, idx))
+
+        # cross-line
+        try:
+            from bs4 import BeautifulSoup
+
+            soup = BeautifulSoup(text, 'html.parser')
+            newline_offsets = [m.start() for m in re.finditer(r"\n", text)] + [len(text)]
+            for img_tag in soup.find_all('img'):
+                src = img_tag.get('src')
+                if not src:
+                    continue
+
+                tag_str = str(img_tag)
+                pos = text.find(tag_str)
+                if pos == -1:
+                    # fallback
+                    pos = max(text.find(src), 0)
+                line_no = 0
+                for i, off in enumerate(newline_offsets):
+                    if pos <= off:
+                        line_no = i
+                        break
+                if (src, line_no) not in seen:
+                    urls.append({"url": src, "line": line_no})
+                    seen.add((src, line_no))
+        except Exception:
+            pass
+
+        return urls
+
+    def load_images_from_urls(self, urls, cache=None):
         import requests
-        soup = self.md_to_html(text)
-        image_urls = self.get_picture_urls(soup)
+        from pathlib import Path
+
+        cache = cache or {}
         images = []
-        # Find all image URLs in text
-        for url in image_urls:
+        for url in urls:
+            if url in cache:
+                if cache[url]:
+                    images.append(cache[url])
+                continue
+            img_obj = None
             try:
-                # check if the url is a local file or a remote URL
                 if url.startswith(('http://', 'https://')):
-                    # For remote URLs, download the image
                     response = requests.get(url, stream=True, timeout=30)
-                    if response.status_code == 200 and response.headers['Content-Type'].startswith('image/'):
-                        img = Image.open(BytesIO(response.content)).convert('RGB')
-                        images.append(img)
+                    if response.status_code == 200 and response.headers.get('Content-Type', '').startswith('image/'):
+                        img_obj = Image.open(BytesIO(response.content)).convert('RGB')
                 else:
-                    # For local file paths, open the image directly
-                    from pathlib import Path
                     local_path = Path(url)
-                    if not local_path.exists():
+                    if local_path.exists():
+                        img_obj = Image.open(url).convert('RGB')
+                    else:
                         logging.warning(f"Local image file not found: {url}")
-                        continue
-                    img = Image.open(url).convert('RGB')
-                    images.append(img)
             except Exception as e:
                 logging.error(f"Failed to download/open image from {url}: {e}")
-                continue
+            cache[url] = img_obj
+            if img_obj:
+                images.append(img_obj)
+        return images, cache
 
-        return images if images else None
-
-    def __call__(self, filename, binary=None, separate_tables=True,delimiter=None):
+    def __call__(self, filename, binary=None, separate_tables=True, delimiter=None, return_section_images=False):
         if binary:
             encoding = find_codec(binary)
             txt = binary.decode(encoding, errors="ignore")
@@ -509,14 +556,34 @@ class Markdown(MarkdownParser):
                 txt = f.read()
 
         remainder, tables = self.extract_tables_and_remainder(f'{txt}\n', separate_tables=separate_tables)
-
+        # To eliminate duplicate tables in chunking result, uncomment code below and set separate_tables to True in line 410.
+        # extractor = MarkdownElementExtractor(remainder)
         extractor = MarkdownElementExtractor(txt)
-        element_sections = extractor.extract_elements(delimiter)
-        sections = [(element, "") for element in element_sections]
+        image_refs = self.extract_image_urls_with_lines(txt)
+        element_sections = extractor.extract_elements(delimiter, include_meta=True)
+
+        sections = []
+        section_images = []
+        image_cache = {}
+        for element in element_sections:
+            content = element["content"]
+            start_line = element["start_line"]
+            end_line = element["end_line"]
+            urls_in_section = [ref["url"] for ref in image_refs if start_line <= ref["line"] <= end_line]
+            imgs = []
+            if urls_in_section:
+                imgs, image_cache = self.load_images_from_urls(urls_in_section, image_cache)
+            combined_image = None
+            if imgs:
+                combined_image = reduce(concat_img, imgs) if len(imgs) > 1 else imgs[0]
+            sections.append((content, ""))
+            section_images.append(combined_image)
 
         tbls = []
         for table in tables:
             tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
+        if return_section_images:
+            return sections, tbls, section_images
         return sections, tbls
 
 def load_from_xml_v2(baseURI, rels_item_xml):
@@ -534,8 +601,7 @@ def load_from_xml_v2(baseURI, rels_item_xml):
             srels._srels.append(_SerializedRelationship(baseURI, rel_elm))
     return srels
 
-def chunk(filename, binary=None, from_page=0, to_page=100000,
-          lang="Chinese", callback=None, **kwargs):
+def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
         Supported file formats are docx, pdf, excel, txt.
         This method apply the naive ways to chunk files.
@@ -545,11 +611,18 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     urls = set()
     url_res = []
 
-
     is_english = lang.lower() == "english"  # is_english(cks)
     parser_config = kwargs.get(
         "parser_config", {
             "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
+
+    child_deli = re.findall(r"`([^`]+)`", parser_config.get("children_delimiter", ""))
+    child_deli = sorted(set(child_deli), key=lambda x: -len(x))
+    child_deli = "|".join(re.escape(t) for t in child_deli if t)
+    is_markdown = False
+    table_context_size = max(0, int(parser_config.get("table_context_size", 0) or 0))
+    image_context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
+
     doc = {
         "docnm_kwd": filename,
         "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))
@@ -598,7 +671,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         _SerializedRelationships.load_from_xml = load_from_xml_v2
         sections, tables = Docx()(filename, binary)
 
-        tables=vision_figure_parser_docx_wrapper(sections=sections,tbls=tables,callback=callback,**kwargs)
+        tables = vision_figure_parser_docx_wrapper(sections=sections, tbls=tables, callback=callback, **kwargs)
 
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
@@ -610,15 +683,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 "chunk_token_num", 128)), parser_config.get(
                 "delimiter", "\n!?。；！？"))
 
-        if kwargs.get("section_only", False):
-            chunks.extend(embed_res)
-            chunks.extend(url_res)
-            return chunks
-
-        res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
+        res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
         logging.info("naive_merge({}): {}".format(filename, timer() - st))
         res.extend(embed_res)
         res.extend(url_res)
+        if table_context_size or image_context_size:
+            attach_media_context(res, table_context_size, image_context_size)
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
@@ -630,16 +700,17 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
 
         name = layout_recognizer.strip().lower()
-        parser = PARSERS.get(name, plaintext_parser)
+        parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
 
-        sections, tables, _ = parser(
+        sections, tables, pdf_parser = parser(
             filename = filename,
             binary = binary,
             from_page = from_page,
             to_page = to_page,
             lang = lang,
             callback = callback,
+            layout_recognizer = layout_recognizer,
             **kwargs
         )
 
@@ -648,18 +719,47 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         if name in ["tcadp", "docling", "mineru"]:
             parser_config["chunk_token_num"] = 0
-        
+
         res = tokenize_table(tables, doc, is_english)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        excel_parser = ExcelParser()
-        if parser_config.get("html4excel"):
-            sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
+
+        # Check if tcadp_parser is selected for spreadsheet files
+        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+        if layout_recognizer == "TCADP Parser":
+            table_result_type = parser_config.get("table_result_type", "1")
+            markdown_image_response_type = parser_config.get("markdown_image_response_type", "1")
+            tcadp_parser = TCADPParser(
+                table_result_type=table_result_type,
+                markdown_image_response_type=markdown_image_response_type
+            )
+            if not tcadp_parser.check_installation():
+                callback(-1, "TCADP parser not available. Please check Tencent Cloud API configuration.")
+                return res
+
+            # Determine file type based on extension
+            file_type = "XLSX" if re.search(r"\.xlsx?$", filename, re.IGNORECASE) else "CSV"
+
+            sections, tables = tcadp_parser.parse_pdf(
+                filepath=filename,
+                binary=binary,
+                callback=callback,
+                output_dir=os.environ.get("TCADP_OUTPUT_DIR", ""),
+                file_type=file_type
+            )
+            parser_config["chunk_token_num"] = 0
+            res = tokenize_table(tables, doc, is_english)
+            callback(0.8, "Finish parsing.")
         else:
-            sections = [(_, "") for _ in excel_parser(binary) if _]
-        parser_config["chunk_token_num"] = 12800
+            # Default DeepDOC parser
+            excel_parser = ExcelParser()
+            if parser_config.get("html4excel"):
+                sections = [(_, "") for _ in excel_parser.html(binary, 12) if _]
+                parser_config["chunk_token_num"] = 0
+            else:
+                sections = [(_, "") for _ in excel_parser(binary) if _]
 
     elif re.search(r"\.(txt|py|js|java|c|cpp|h|php|go|ts|sh|cs|kt|sql)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -671,7 +771,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
-        sections, tables = markdown_parser(filename, binary, separate_tables=False,delimiter=parser_config.get("delimiter", "\n!?;。；！？"))
+        sections, tables, section_images = markdown_parser(
+            filename,
+            binary,
+            separate_tables=False,
+            delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
+            return_section_images=True,
+        )
+
+        is_markdown = True
 
         try:
             vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
@@ -681,19 +789,22 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         if vision_model:
             # Process images for each section
-            section_images = []
             for idx, (section_text, _) in enumerate(sections):
-                images = markdown_parser.get_pictures(section_text) if section_text else None
+                images = []
+                if section_images and len(section_images) > idx and section_images[idx] is not None:
+                    images.append(section_images[idx])
 
-                if images:
+                if images and len(images) > 0:
                     # If multiple images found, combine them using concat_img
                     combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
-                    section_images.append(combined_image)
+                    if section_images:
+                        section_images[idx] = combined_image
+                    else:
+                        section_images = [None] * len(sections)
+                        section_images[idx] = combined_image
                     markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data= [((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
                     boosted_figures = markdown_vision_parser(callback=callback)
                     sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
-                else:
-                    section_images.append(None)
 
         else:
             logging.warning("No visual model detected. Skipping figure parsing enhancement.")
@@ -723,8 +834,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
 
+        try:
+            from tika import parser as tika_parser
+        except Exception as e:
+            callback(0.8, f"tika not available: {e}. Unsupported .doc parsing.")
+            logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
+            return []
+
         binary = BytesIO(binary)
-        doc_parsed = parser.from_buffer(binary)
+        doc_parsed = tika_parser.from_buffer(binary)
         if doc_parsed.get('content', None) is not None:
             sections = doc_parsed['content'].split('\n')
             sections = [(_, "") for _ in sections if _]
@@ -738,31 +856,72 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             "file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
 
     st = timer()
-    if section_images:
-        # if all images are None, set section_images to None
-        if all(image is None for image in section_images):
-            section_images = None
+    if is_markdown:
+        merged_chunks = []
+        merged_images = []
+        chunk_limit = max(0, int(parser_config.get("chunk_token_num", 128)))
+        overlapped_percent = int(parser_config.get("overlapped_percent", 0))
+        overlapped_percent = max(0, min(overlapped_percent, 90))
 
-    if section_images:
-        chunks, images = naive_merge_with_images(sections, section_images,
-                                        int(parser_config.get(
-                                            "chunk_token_num", 128)), parser_config.get(
-                                            "delimiter", "\n!?。；！？"))
-        if kwargs.get("section_only", False):
-            chunks.extend(embed_res)
-            return chunks
+        current_text = ""
+        current_tokens = 0
+        current_image = None
 
-        res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images))
+        for idx, sec in enumerate(sections):
+            text = sec[0] if isinstance(sec, tuple) else sec
+            sec_tokens = num_tokens_from_string(text)
+            sec_image = section_images[idx] if section_images and idx < len(section_images) else None
+
+            if current_text and current_tokens + sec_tokens > chunk_limit:
+                merged_chunks.append(current_text)
+                merged_images.append(current_image)
+                overlap_part = ""
+                if overlapped_percent > 0:
+                    overlap_len = int(len(current_text) * overlapped_percent / 100)
+                    if overlap_len > 0:
+                        overlap_part = current_text[-overlap_len:]
+                current_text = overlap_part
+                current_tokens = num_tokens_from_string(current_text)
+                current_image = current_image if overlap_part else None
+
+            if current_text:
+                current_text += "\n" + text
+            else:
+                current_text = text
+            current_tokens += sec_tokens
+
+            if sec_image:
+                current_image = concat_img(current_image, sec_image) if current_image else sec_image
+
+        if current_text:
+            merged_chunks.append(current_text)
+            merged_images.append(current_image)
+
+        chunks = merged_chunks
+        has_images = merged_images and any(img is not None for img in merged_images)
+
+        if has_images:
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli))
+        else:
+            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
     else:
-        chunks = naive_merge(
-            sections, int(parser_config.get(
-                "chunk_token_num", 128)), parser_config.get(
-                "delimiter", "\n!?。；！？"))
-        if kwargs.get("section_only", False):
-            chunks.extend(embed_res)
-            return chunks
+        if section_images:
+            if all(image is None for image in section_images):
+                section_images = None
 
-        res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser))
+        if section_images:
+            chunks, images = naive_merge_with_images(sections, section_images,
+                                            int(parser_config.get(
+                                                "chunk_token_num", 128)), parser_config.get(
+                                                "delimiter", "\n!?。；！？"))
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
+        else:
+            chunks = naive_merge(
+                sections, int(parser_config.get(
+                    "chunk_token_num", 128)), parser_config.get(
+                    "delimiter", "\n!?。；！？"))
+
+            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
 
     if urls and parser_config.get("analyze_hyperlink", False) and is_root:
         for index, url in enumerate(urls):
@@ -775,13 +934,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 logging.info(f"Failed to chunk url in registered file type {url}: {e}")
                 sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
             url_res.extend(sub_url_res)
-        
+
     logging.info("naive_merge({}): {}".format(filename, timer() - st))
-    
+
     if embed_res:
         res.extend(embed_res)
     if url_res:
         res.extend(url_res)
+    if table_context_size or image_context_size:
+        attach_media_context(res, table_context_size, image_context_size)
     return res
 
 

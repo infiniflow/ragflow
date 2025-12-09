@@ -1,3 +1,18 @@
+#
+#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
 from abc import ABC
 import ast
 import os
@@ -10,7 +25,7 @@ class DataOperationsParam(ComponentParamBase):
     """
     def __init__(self):
         super().__init__()
-        self.inputs = []
+        self.query = []
         self.operations = "literal_eval"
         self.select_keys = []
         self.filter_values=[]
@@ -35,18 +50,19 @@ class DataOperations(ComponentBase,ABC):
     def get_input_form(self) -> dict[str, dict]:
         return {
             k: {"name": o.get("name", ""), "type": "line"}
-            for input_item in (self._param.inputs or [])
+            for input_item in (self._param.query or [])
             for k, o in self.get_input_elements_from_text(input_item).items()
         }
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     def _invoke(self, **kwargs):
         self.input_objects=[]
-        inputs = getattr(self._param, "inputs", None)
+        inputs = getattr(self._param, "query", None)
         if not isinstance(inputs, (list, tuple)):
             inputs = [inputs]
-        for input_ref in self._param.inputs:
+        for input_ref in inputs:
             input_object=self._canvas.get_variable_value(input_ref)
+            self.set_input_value(input_ref, input_object)
             if input_object is None:
                 continue
             if isinstance(input_object,dict):
@@ -57,7 +73,7 @@ class DataOperations(ComponentBase,ABC):
                 continue
         if self._param.operations == "select_keys":
             self._select_keys()
-        elif self._param.operations == "literal_eval":
+        elif self._param.operations == "recursive_eval":
             self._literal_eval()
         elif self._param.operations == "combine":
             self._combine()
@@ -100,7 +116,7 @@ class DataOperations(ComponentBase,ABC):
 
     def _combine(self):
         result={}
-        for obj in self.input_objects():
+        for obj in self.input_objects:
             for key, value in obj.items():
                 if key not in result:
                     result[key] = value
@@ -123,6 +139,7 @@ class DataOperations(ComponentBase,ABC):
         key = rule.get("key")
         op = (rule.get("operator") or "equals").lower()
         target = self.norm(rule.get("value"))
+        target = self._canvas.get_value_with_variable(target) or target
         if key not in obj:
             return False
         val = obj.get(key, None)
@@ -142,7 +159,7 @@ class DataOperations(ComponentBase,ABC):
     def _filter_values(self):
         results=[]
         rules = (getattr(self._param, "filter_values", None) or [])
-        for obj in self.input_objects():
+        for obj in self.input_objects:
             if not rules:
                 results.append(obj)
                 continue
@@ -154,7 +171,7 @@ class DataOperations(ComponentBase,ABC):
     def _append_or_update(self):
         results=[]
         updates = getattr(self._param, "updates", []) or [] 
-        for obj in self.input_objects():
+        for obj in self.input_objects:
             new_obj = dict(obj)
             for item in updates:
                 if not isinstance(item, dict):
@@ -162,7 +179,7 @@ class DataOperations(ComponentBase,ABC):
                 k = (item.get("key") or "").strip()
                 if not k:
                     continue
-                new_obj[k] = item.get("value")
+                new_obj[k] = self._canvas.get_value_with_variable(item.get("value")) or item.get("value")
             results.append(new_obj)
         self.set_output("result", results)
 

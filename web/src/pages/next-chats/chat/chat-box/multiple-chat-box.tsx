@@ -2,7 +2,7 @@ import { LargeModelFormFieldWithoutFilter } from '@/components/large-model-form-
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/message-item';
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,12 +15,12 @@ import {
 import { MessageType } from '@/constants/chat';
 import { useScrollToBottom } from '@/hooks/logic-hooks';
 import {
-  useFetchConversation,
   useFetchDialog,
   useGetChatSearchParams,
   useSetDialog,
 } from '@/hooks/use-chat-request';
-import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
+import { IClientConversation, IMessage } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
@@ -38,13 +38,14 @@ import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-creat
 import { useSendMessage } from '../../hooks/use-send-chat-message';
 import { useSendMultipleChatMessage } from '../../hooks/use-send-multiple-message';
 import { buildMessageItemReference } from '../../utils';
-import { IMessage } from '../interface';
 import { useAddChatBox } from '../use-add-box';
+import { useSetDefaultModel } from './use-set-default-model';
 
 type MultipleChatBoxProps = {
   controller: AbortController;
   chatBoxIds: string[];
   stopOutputMessage(): void;
+  conversation: IClientConversation;
 } & Pick<
   ReturnType<typeof useAddChatBox>,
   'removeChatBox' | 'addChatBox' | 'chatBoxIds'
@@ -55,6 +56,7 @@ type ChatCardProps = {
   idx: number;
   derivedMessages: IMessage[];
   sendLoading: boolean;
+  conversation: IClientConversation;
 } & Pick<
   MultipleChatBoxProps,
   'controller' | 'removeChatBox' | 'addChatBox' | 'chatBoxIds'
@@ -72,6 +74,7 @@ const ChatCard = forwardRef(function ChatCard(
     derivedMessages,
     sendLoading,
     clickDocumentButton,
+    conversation,
   }: ChatCardProps,
   ref,
 ) {
@@ -97,7 +100,8 @@ const ChatCard = forwardRef(function ChatCard(
 
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchDialog();
-  const { data: conversation } = useFetchConversation();
+
+  useSetDefaultModel(form);
 
   const isLatestChat = idx === chatBoxIds.length - 1;
 
@@ -202,6 +206,7 @@ export function MultipleChatBox({
   removeChatBox,
   addChatBox,
   stopOutputMessage,
+  conversation,
 }: MultipleChatBoxProps) {
   const {
     value,
@@ -237,6 +242,7 @@ export function MultipleChatBox({
             ref={setFormRef(id)}
             sendLoading={sendLoading}
             clickDocumentButton={clickDocumentButton}
+            conversation={conversation}
           ></ChatCard>
         ))}
       </div>
@@ -257,12 +263,12 @@ export function MultipleChatBox({
         />
       </div>
       {visible && (
-        <PdfDrawer
+        <PdfSheet
           visible={visible}
           hideModal={hideModal}
           documentId={documentId}
           chunk={selectedChunk}
-        ></PdfDrawer>
+        ></PdfSheet>
       )}
     </section>
   );

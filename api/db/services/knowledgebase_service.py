@@ -28,6 +28,7 @@ from common.constants import StatusEnum
 from api.constants import DATASET_NAME_LIMIT
 from api.utils.api_utils import get_parser_config, get_data_error_result
 
+
 class KnowledgebaseService(CommonService):
     """Service class for managing knowledge base operations.
 
@@ -201,6 +202,7 @@ class KnowledgebaseService(CommonService):
         # will get all permitted kb, be cautious.
         fields = [
             cls.model.name,
+            cls.model.avatar,
             cls.model.language,
             cls.model.permission,
             cls.model.doc_num,
@@ -390,12 +392,12 @@ class KnowledgebaseService(CommonService):
         """
         # Validate name
         if not isinstance(name, str):
-            return get_data_error_result(message="Dataset name must be string.")
+            return False, get_data_error_result(message="Dataset name must be string.")
         dataset_name = name.strip()
         if dataset_name == "":
-            return get_data_error_result(message="Dataset name can't be empty.")
+            return False, get_data_error_result(message="Dataset name can't be empty.")
         if len(dataset_name.encode("utf-8")) > DATASET_NAME_LIMIT:
-            return get_data_error_result(message=f"Dataset name length is {len(dataset_name)} which is larger than {DATASET_NAME_LIMIT}")
+            return False, get_data_error_result(message=f"Dataset name length is {len(dataset_name)} which is larger than {DATASET_NAME_LIMIT}")
 
         # Deduplicate name within tenant
         dataset_name = duplicate_name(
@@ -408,7 +410,7 @@ class KnowledgebaseService(CommonService):
         # Verify tenant exists
         ok, _t = TenantService.get_by_id(tenant_id)
         if not ok:
-            return False, "Tenant not found."
+            return False, get_data_error_result(message="Tenant not found.")
 
         # Build payload
         kb_id = get_uuid()
@@ -418,12 +420,13 @@ class KnowledgebaseService(CommonService):
             "tenant_id": tenant_id,
             "created_by": tenant_id,
             "parser_id": (parser_id or "naive"),
-            **kwargs
+            **kwargs # Includes optional fields such as description, language, permission, avatar, parser_config, etc.
         }
 
-        # Default parser_config (align with kb_app.create) — do not accept external overrides
+        # Update parser_config (always override with validated default/merged config)
         payload["parser_config"] = get_parser_config(parser_id, kwargs.get("parser_config"))
-        return payload
+
+        return True, payload
 
 
     @classmethod

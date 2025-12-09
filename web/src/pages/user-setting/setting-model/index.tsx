@@ -1,5 +1,6 @@
+import Spotlight from '@/components/spotlight';
 import { LLMFactory } from '@/constants/llm';
-import { LlmItem, useFetchMyLlmListDetailed } from '@/hooks/llm-hooks';
+import { LlmItem, useFetchMyLlmListDetailed } from '@/hooks/use-llm-request';
 import { useCallback, useMemo } from 'react';
 import { isLocalLlmFactory } from '../utils';
 import SystemSetting from './components/system-setting';
@@ -192,8 +193,9 @@ const ModelProviders = () => {
     [showApiKeyModal, showLlmAddingModal, ModalMap, detailedLlmList],
   );
   return (
-    <div className="flex w-full">
-      <section className="flex flex-col gap-4 w-3/5 px-5 border-r border-border-button overflow-auto scrollbar-auto">
+    <div className="flex w-full border-[0.5px] border-border-button rounded-lg relative ">
+      <Spotlight />
+      <section className="flex flex-col gap-4 w-3/5 px-5 border-r-[0.5px] border-border-button overflow-auto scrollbar-auto">
         <SystemSetting
           onOk={onSystemSettingSavingOk}
           loading={saveSystemModelSettingLoading}

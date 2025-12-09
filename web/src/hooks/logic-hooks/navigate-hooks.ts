@@ -14,9 +14,27 @@ export const useNavigatePage = () => {
   const [searchParams] = useSearchParams();
   const { id } = useParams();
 
-  const navigateToDatasetList = useCallback(() => {
-    navigate(Routes.Datasets);
-  }, [navigate]);
+  const navigateToDatasetList = useCallback(
+    ({ isCreate = false }: { isCreate?: boolean }) => {
+      if (isCreate) {
+        navigate(Routes.Datasets + '?isCreate=true');
+      } else {
+        navigate(Routes.Datasets);
+      }
+    },
+    [navigate],
+  );
+
+  const navigateToMemoryList = useCallback(
+    ({ isCreate = false }: { isCreate?: boolean }) => {
+      if (isCreate) {
+        navigate(Routes.Memories + '?isCreate=true');
+      } else {
+        navigate(Routes.Memories);
+      }
+    },
+    [navigate],
+  );
 
   const navigateToDataset = useCallback(
     (id: string) => () => {
@@ -98,6 +116,12 @@ export const useNavigatePage = () => {
     },
     [navigate],
   );
+  const navigateToMemory = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.Memory}${Routes.MemoryMessage}/${id}`);
+    },
+    [navigate],
+  );
 
   const navigateToChunkParsedResult = useCallback(
     (id: string, knowledgeId?: string) => () => {
@@ -141,12 +165,21 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToDataSourceDetail = useCallback(
+    (id?: string) => {
+      navigate(
+        `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}?id=${id}`,
+      );
+    },
+    [navigate],
+  );
+
   const navigateToDataflowResult = useCallback(
     (props: NavigateToDataflowResultProps) => () => {
       let params: string[] = [];
       Object.keys(props).forEach((key) => {
-        if (props[key]) {
-          params.push(`${key}=${props[key]}`);
+        if (props[key as keyof typeof props]) {
+          params.push(`${key}=${props[key as keyof typeof props]}`);
         }
       });
       navigate(
@@ -179,5 +212,8 @@ export const useNavigatePage = () => {
     navigateToOldProfile,
     navigateToDataflowResult,
     navigateToDataFile,
+    navigateToDataSourceDetail,
+    navigateToMemory,
+    navigateToMemoryList,
   };
 };

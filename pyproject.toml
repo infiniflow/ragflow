@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "0.21.1"
+version = "0.22.1"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -16,7 +16,7 @@ dependencies = [
     "arxiv==2.1.3",
     "aspose-slides>=25.10.0,<26.0.0; platform_machine == 'x86_64' or (sys_platform == 'darwin' and platform_machine == 'arm64')",
     "atlassian-python-api==4.0.7",
-    "beartype>=0.18.5,<0.19.0",
+    "beartype>=0.20.0,<1.0.0",
     "bio==1.7.1",
     "blinker==1.7.0",
     "boto3==1.34.140",
@@ -43,12 +43,13 @@ dependencies = [
     "flask-login==0.6.3",
     "flask-session==0.8.0",
     "google-search-results==2.4.2",
+    "google-auth-oauthlib>=1.2.0,<2.0.0",
     "groq==0.9.0",
     "hanziconv==0.3.2",
     "html-text==0.6.2",
     "httpx[socks]>=0.28.1,<0.29.0",
     "huggingface-hub>=0.25.0,<0.26.0",
-    "infinity-sdk==0.6.2",
+    "infinity-sdk==0.6.10",
     "infinity-emb>=0.0.66,<0.0.67",
     "itsdangerous==2.1.2",
     "json-repair==0.35.0",
@@ -79,12 +80,15 @@ dependencies = [
     "pyclipper==1.3.0.post5",
     "pycryptodomex==3.20.0",
     "pymysql>=1.1.1,<2.0.0",
-    "pypdf==6.0.0",
+    "pypdf==6.4.0",
     "python-dotenv==1.0.1",
     "python-dateutil==2.8.2",
     "python-pptx>=1.0.2,<2.0.0",
     "pywencai==0.12.2",
     "qianfan==0.4.6",
+    "quart-auth==0.11.0",
+    "quart-cors==0.8.0",
+    "Quart==0.20.0",
     "ranx==0.3.20",
     "readability-lxml==0.8.1",
     "valkey==6.0.2",
@@ -112,6 +116,7 @@ dependencies = [
     "google-genai>=1.41.0,<2.0.0",
     "volcengine==1.0.194",
     "voyageai==0.2.3",
+    "webdav4>=0.10.0,<0.11.0",
     "webdriver-manager==4.0.1",
     "werkzeug==3.0.6",
     "wikipedia==1.4.0",
@@ -123,13 +128,12 @@ dependencies = [
     "google-generativeai>=0.8.1,<0.9.0", # Needed for cv_model and embedding_model
     "python-docx>=1.1.2,<2.0.0",
     "pypdf2>=3.0.1,<4.0.0",
-    "graspologic>=3.4.1,<4.0.0",
+    "graspologic @ git+https://github.com/yuzhichang/graspologic.git@38e680cab72bc9fb68a7992c3bcc2d53b24e42fd",
     "mini-racer>=0.12.4,<0.13.0",
     "pyodbc>=5.2.0,<6.0.0",
-    "pyicu>=2.15.3,<3.0.0",
     "flasgger>=0.9.7.1,<0.10.0",
     "xxhash>=3.5.0,<4.0.0",
-    "trio>=0.29.0",
+    "trio>=0.17.0,<0.29.0",
     "langfuse>=2.60.0",
     "debugpy>=1.8.13",
     "mcp>=1.9.4",
@@ -144,6 +148,12 @@ dependencies = [
     "markdownify>=1.2.0",
     "captcha>=0.7.1",
     "pip>=25.2",
+    "moodlepy>=0.23.0",
+    "pypandoc>=1.16",
+    "pyobvector==0.2.18",
+    "exceptiongroup>=1.3.0,<2.0.0",
+    "ffmpeg-python>=0.2.0",
+    "imageio-ffmpeg>=0.6.0",
 ]
 
 [dependency-groups]
@@ -152,6 +162,9 @@ test = [
     "openpyxl>=3.1.5",
     "pillow>=10.4.0",
     "pytest>=8.3.5",
+    "pytest-asyncio>=1.3.0",
+    "pytest-xdist>=3.8.0",
+    "pytest-cov>=7.0.0",
     "python-docx>=1.1.2",
     "python-pptx>=1.0.2",
     "reportlab>=4.4.1",
@@ -184,8 +197,83 @@ extend-select = ["ASYNC", "ASYNC1"]
 ignore = ["E402"]
 
 [tool.pytest.ini_options]
+pythonpath = [
+    "."
+]
+
+testpaths = ["test"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
 markers = [
     "p1: high priority test cases",
     "p2: medium priority test cases",
     "p3: low priority test cases",
 ]
+
+# Test collection and runtime configuration
+filterwarnings = [
+    "error",  # Treat warnings as errors
+    "ignore::DeprecationWarning",  # Ignore specific warnings
+]
+
+# Command line options
+addopts = [
+    "-v",  # Verbose output
+    "--strict-markers",  # Enforce marker definitions
+    "--tb=short",  # Simplified traceback
+    "--disable-warnings",  # Disable warnings
+    "--color=yes"  # Colored output
+]
+
+
+# Coverage configuration
+[tool.coverage.run]
+# Source paths - adjust according to your project structure
+source = [
+    # "../../api/db/services",
+    # Add more directories if needed:
+    "../../common",
+    # "../../utils",
+]
+
+# Files/directories to exclude
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/.pytest_cache/*",
+    "*/venv/*",
+    "*/.venv/*",
+    "*/env/*",
+    "*/site-packages/*",
+    "*/dist/*",
+    "*/build/*",
+    "*/migrations/*",
+    "setup.py"
+]
+
+[tool.coverage.report]
+# Report configuration
+precision = 2
+show_missing = true
+skip_covered = false
+fail_under = 0  # Minimum coverage requirement (0-100)
+
+# Lines to exclude (optional)
+exclude_lines = [
+#    "pragma: no cover",
+#    "def __repr__",
+#    "raise AssertionError",
+#    "raise NotImplementedError",
+#    "if __name__ == .__main__.:",
+#    "if TYPE_CHECKING:",
+    "pass"
+]
+
+[tool.coverage.html]
+# HTML report configuration
+directory = "htmlcov"
+title = "Test Coverage Report"
+# extra_css = "custom.css"  # Optional custom CSS

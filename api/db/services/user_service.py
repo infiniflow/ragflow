@@ -27,7 +27,7 @@ from api.db.services.common_service import CommonService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
 from common.constants import StatusEnum
-from rag.settings import MINIO
+from common import settings
 
 
 class UserService(CommonService):
@@ -221,7 +221,7 @@ class TenantService(CommonService):
     @DB.connection_context()
     def user_gateway(cls, tenant_id):
         hash_obj = hashlib.sha256(tenant_id.encode("utf-8"))
-        return int(hash_obj.hexdigest(), 16)%len(MINIO)
+        return int(hash_obj.hexdigest(), 16)%len(settings.MINIO)
 
 
 class UserTenantService(CommonService):

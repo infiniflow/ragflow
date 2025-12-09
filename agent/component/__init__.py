@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
 import os
 import importlib
 import inspect
@@ -50,9 +49,10 @@ del _package_path, _import_submodules, _extract_classes_from_module
 
 
 def component_class(class_name):
-    for mdl in ["agent.component", "agent.tools", "rag.flow"]:
+    for module_name in ["agent.component", "agent.tools", "rag.flow"]:
         try:
-            return getattr(importlib.import_module(mdl), class_name)
+            return getattr(importlib.import_module(module_name), class_name)
         except Exception:
+            # logging.warning(f"Can't import module: {module_name}, error: {e}")
             pass
     assert False, f"Can't import {class_name}"

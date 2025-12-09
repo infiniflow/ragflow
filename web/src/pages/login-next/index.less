@@ -1,6 +1,3 @@
-.animate-glow {
-  animation: glow 16s infinite linear;
-}
 .mask-path {
   stroke-width: 8;
   ::after {
@@ -34,9 +31,18 @@
     stroke-dashoffset: -600;
   } /* 15+300-30=285 */
 }
-
+.animate-glow {
+  animation: glow 16s infinite linear;
+}
 .animate-highlight {
   animation: highlight-flow 16s linear infinite;
+}
+
+.paused {
+  .animate-glow,
+  .animate-highlight {
+    animation-play-state: paused;
+  }
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -47,11 +53,13 @@
   min-height: 680px;
   display: flex;
   align-items: center;
+  will-change: transform;
 }
 .transform-style-3d {
   transform-style: preserve-3d;
   -webkit-transform-style: preserve-3d;
   transition-duration: 0.4s;
+  will-change: transform;
 }
 .backface-hidden {
   backface-visibility: hidden;

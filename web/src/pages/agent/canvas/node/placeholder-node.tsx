@@ -1,5 +1,5 @@
+import { Skeleton } from '@/components/ui/skeleton';
 import { NodeProps, Position } from '@xyflow/react';
-import { Skeleton } from 'antd';
 import { memo } from 'react';
 import { NodeHandleId } from '../../constant';
 import { CommonHandle } from './handle';
@@ -17,19 +17,10 @@ function InnerPlaceholderNode({ id, selected }: NodeProps) {
         nodeId={id}
         id={NodeHandleId.End}
       ></CommonHandle>
-
-      <section className="flex items-center gap-2">
-        <Skeleton.Avatar
-          active
-          size={24}
-          shape="square"
-          style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-        />
-      </section>
-
-      <section className={'flex gap-2 flex-col'} style={{ marginTop: 10 }}>
-        <Skeleton.Input active style={{ width: '100%', height: 30 }} />
-      </section>
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-8 rounded-full" />
+        <Skeleton className="h-6 w-full" />
+      </div>
     </NodeWrapper>
   );
 }

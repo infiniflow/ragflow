@@ -1,7 +1,6 @@
 import { FormLayout } from '@/constants/form';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
-import { Form, Slider } from 'antd';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
 import { SliderInputFormField } from '../slider-input-form-field';
@@ -15,50 +14,11 @@ import {
 } from '../ui/form';
 import { NumberInput } from '../ui/input';
 
-type FieldType = {
-  similarity_threshold?: number;
-  // vector_similarity_weight?: number;
-};
-
-interface IProps {
-  isTooltipShown?: boolean;
-  vectorSimilarityWeightName?: string;
-}
-
-const SimilaritySlider = ({
-  isTooltipShown = false,
-  vectorSimilarityWeightName = 'vector_similarity_weight',
-}: IProps) => {
-  const { t } = useTranslate('knowledgeDetails');
-
-  return (
-    <>
-      <Form.Item<FieldType>
-        label={t('similarityThreshold')}
-        name={'similarity_threshold'}
-        tooltip={isTooltipShown && t('similarityThresholdTip')}
-        initialValue={0.2}
-      >
-        <Slider max={1} step={0.01} />
-      </Form.Item>
-      <Form.Item
-        label={t('vectorSimilarityWeight')}
-        name={vectorSimilarityWeightName}
-        initialValue={1 - 0.3}
-        tooltip={isTooltipShown && t('vectorSimilarityWeightTip')}
-      >
-        <Slider max={1} step={0.01} />
-      </Form.Item>
-    </>
-  );
-};
-
-export default SimilaritySlider;
-
 interface SimilaritySliderFormFieldProps {
   similarityName?: string;
   vectorSimilarityWeightName?: string;
   isTooltipShown?: boolean;
+  numberInputClassName?: string;
 }
 
 export const initialSimilarityThresholdValue = {
@@ -86,6 +46,7 @@ export function SimilaritySliderFormField({
   similarityName = 'similarity_threshold',
   vectorSimilarityWeightName = 'vector_similarity_weight',
   isTooltipShown,
+  numberInputClassName,
 }: SimilaritySliderFormFieldProps) {
   const { t } = useTranslate('knowledgeDetails');
   const form = useFormContext();
@@ -101,6 +62,7 @@ export function SimilaritySliderFormField({
         step={0.01}
         layout={FormLayout.Vertical}
         tooltip={isTooltipShown && t('similarityThresholdTip')}
+        numberInputClassName={numberInputClassName}
       ></SliderInputFormField>
       <FormField
         control={form.control}
@@ -124,7 +86,7 @@ export function SimilaritySliderFormField({
                 isVector ? 'vectorSimilarityWeight' : 'keywordSimilarityWeight',
               )}
             </FormLabel>
-            <div className={cn('flex items-end gap-14 justify-between')}>
+            <div className={cn('flex items-end gap-4 justify-between')}>
               <FormControl>
                 <div className="flex flex-col flex-1 gap-2">
                   <div className="flex justify-between items-center">
@@ -156,8 +118,9 @@ export function SimilaritySliderFormField({
               <FormControl>
                 <NumberInput
                   className={cn(
-                    'h-6 w-10 p-0 text-center bg-bg-input border-border-default border text-text-secondary',
+                    'h-6 w-10 p-0 text-center bg-bg-input border-border-button border text-text-secondary',
                     '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
+                    numberInputClassName,
                   )}
                   max={1}
                   min={0}

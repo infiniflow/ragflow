@@ -29,20 +29,22 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
 from api.db.services.llm_service import LLMService, LLMBundle, get_init_tenant_llm
 from api.db.services.user_service import TenantService, UserTenantService
-from api import settings
 from common.constants import LLMType
 from common.file_utils import get_project_base_directory
-from common import globals
+from common import settings
 from api.common.base64 import encode_to_base64
 
+DEFAULT_SUPERUSER_NICKNAME = os.getenv("DEFAULT_SUPERUSER_NICKNAME", "admin")
+DEFAULT_SUPERUSER_EMAIL = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
+DEFAULT_SUPERUSER_PASSWORD = os.getenv("DEFAULT_SUPERUSER_PASSWORD", "admin")
 
-def init_superuser():
+def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_EMAIL, password=DEFAULT_SUPERUSER_PASSWORD, role=UserTenantRole.OWNER):
     user_info = {
         "id": uuid.uuid1().hex,
-        "password": encode_to_base64("admin"),
-        "nickname": "admin",
+        "password": encode_to_base64(password),
+        "nickname": nickname,
         "is_superuser": True,
-        "email": "admin@ragflow.io",
+        "email": email,
         "creator": "system",
         "status": "1",
     }
@@ -50,7 +52,7 @@ def init_superuser():
         "id": user_info["id"],
         "name": user_info["nickname"] + "‘s Kingdom",
         "llm_id": settings.CHAT_MDL,
-        "embd_id": globals.EMBEDDING_MDL,
+        "embd_id": settings.EMBEDDING_MDL,
         "asr_id": settings.ASR_MDL,
         "parser_ids": settings.PARSERS,
         "img2txt_id": settings.IMAGE2TEXT_MDL
@@ -59,7 +61,7 @@ def init_superuser():
         "tenant_id": user_info["id"],
         "user_id": user_info["id"],
         "invited_by": user_info["id"],
-        "role": UserTenantRole.OWNER
+        "role": role
     }
 
     tenant_llm = get_init_tenant_llm(user_info["id"])
@@ -71,7 +73,7 @@ def init_superuser():
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
     logging.info(
-        "Super user initialized. email: admin@ragflow.io, password: admin. Changing the password after login is strongly recommended.")
+        f"Super user initialized. email: {email}, password: {password}. Changing the password after login is strongly recommended.")
 
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
     msg = chat_mdl.chat(system="", history=[
@@ -90,13 +92,7 @@ def init_superuser():
 
 
 def init_llm_factory():
-    try:
-        LLMService.filter_delete([(LLM.fid == "MiniMax" or LLM.fid == "Minimax")])
-        LLMService.filter_delete([(LLM.fid == "cohere")])
-        LLMFactoriesService.filter_delete([LLMFactories.name == "cohere"])
-    except Exception:
-        pass
-
+    LLMFactoriesService.filter_delete([1 == 1])
     factory_llm_infos = settings.FACTORY_LLM_INFOS
     for factory_llm_info in factory_llm_infos:
         info = deepcopy(factory_llm_info)

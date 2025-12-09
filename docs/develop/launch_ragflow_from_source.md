@@ -42,11 +42,7 @@ cd ragflow/
    ```
 
 2. Install Python dependencies:
-   - slim:
-   ```bash
-   uv sync --python 3.10 # install RAGFlow dependent python modules
-   ```
-   - full:
+
    ```bash
    uv sync --python 3.10 # install RAGFlow dependent python modules
    ```

@@ -3,28 +3,61 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
-import { Loader2, Plus } from 'lucide-react';
+import { LucideLoader2, Plus } from 'lucide-react';
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  cn(
+    'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors outline-0',
+    'disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*="size-"])]:size-4 shrink-0 [&_svg]:shrink-0',
+  ),
   {
     variants: {
       variant: {
         default:
-          'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90',
-        destructive:
-          'bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
-        outline:
-          'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
+          'bg-text-primary text-bg-base shadow-xs hover:bg-text-primary/90 focus-visible:bg-text-primary/90',
+
+        destructive: `
+          bg-state-error text-white shadow-xs
+          hover:bg-state-error/90 focus-visible:ring-state-error/20 dark:focus-visible:ring-state-error/40
+        `,
+        outline: `
+          text-text-secondary bg-bg-input border-0.5 border-border-button
+          hover:text-text-primary hover:bg-border-button hover:border-border-default
+          focus-visible:text-text-primary focus-visible:bg-border-button focus-visible:border-border-button
+        `,
         secondary:
           'bg-bg-input text-text-primary shadow-xs hover:bg-bg-input/80 border border-border-button',
-        ghost:
-          'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
+
+        ghost: `
+          text-text-secondary
+          hover:bg-border-button hover:text-text-primary
+          focus-visible:text-text-primary focus-visible:bg-border-button
+        `,
+
         link: 'text-primary underline-offset-4 hover:underline',
         icon: 'bg-colors-background-inverse-standard text-foreground hover:bg-colors-background-inverse-standard/80',
         dashed: 'border border-dashed border-input hover:bg-accent',
-        transparent: 'bg-transparent hover:bg-accent border',
-        danger: 'bg-transparent border border-state-error text-state-error',
+
+        transparent: `
+          text-text-secondary bg-transparent border-0.5 border-border-button
+          hover:text-text-primary hover:bg-border-button
+          focus-visible:text-text-primary focus-visible:bg-border-button focus-visible:border-border-button
+        `,
+
+        danger: `
+          bg-transparent border border-state-error text-state-error
+          hover:bg-state-error/10 focus-visible:bg-state-error/10
+        `,
+
+        highlighted: `
+          bg-text-primary text-bg-base border-b-4 border-b-accent-primary
+          hover:bg-text-primary/90 focus-visible:bg-text-primary/90
+        `,
+        delete: `
+          text-text-secondary
+          hover:bg-state-error-5 hover:text-state-error
+          focus-visible:text-state-error focus-visible:bg-state-error-5
+        `,
       },
       size: {
         default: 'h-8 px-2.5 py-1.5 ',
@@ -45,46 +78,48 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  loading?: boolean;
+  block?: boolean;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  (
+    {
+      children,
+      className,
+      variant,
+      size,
+      asChild = false,
+      loading = false,
+      disabled = false,
+      block = false,
+      ...props
+    },
+    ref,
+  ) => {
     const Comp = asChild ? Slot : 'button';
+
     return (
       <Comp
         className={cn(
           'bg-bg-card',
+          { 'block w-full': block },
           buttonVariants({ variant, size, className }),
         )}
         ref={ref}
+        disabled={loading || disabled}
         {...props}
-      />
+      >
+        {loading && <LucideLoader2 className="animate-spin" />}
+        {children}
+      </Comp>
     );
   },
 );
+
 Button.displayName = 'Button';
 
-export const ButtonLoading = React.forwardRef<
-  HTMLButtonElement,
-  Omit<ButtonProps, 'asChild'> & { loading?: boolean }
->(
-  (
-    { className, variant, size, children, loading = false, disabled, ...props },
-    ref,
-  ) => {
-    return (
-      <Button
-        className={cn(buttonVariants({ variant, size, className }))}
-        ref={ref}
-        {...props}
-        disabled={loading || disabled}
-      >
-        {loading && <Loader2 className="animate-spin" />}
-        {children}
-      </Button>
-    );
-  },
-);
+export const ButtonLoading = Button;
 
 ButtonLoading.displayName = 'ButtonLoading';
 

@@ -20,6 +20,7 @@ from requests.exceptions import HTTPError
 
 from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource, CONTINUE_ON_CONNECTOR_FAILURE, \
     CONFLUENCE_CONNECTOR_LABELS_TO_SKIP, CONFLUENCE_TIMEZONE_OFFSET, CONFLUENCE_CONNECTOR_USER_PROFILES_OVERRIDE, \
+    CONFLUENCE_SYNC_TIME_BUFFER_SECONDS, \
     OAUTH_CONFLUENCE_CLOUD_CLIENT_ID, OAUTH_CONFLUENCE_CLOUD_CLIENT_SECRET, _DEFAULT_PAGINATION_LIMIT, \
     _PROBLEMATIC_EXPANSIONS, _REPLACEMENT_EXPANSIONS, _USER_NOT_FOUND, _COMMENT_EXPANSION_FIELDS, \
     _ATTACHMENT_EXPANSION_FIELDS, _PAGE_EXPANSION_FIELDS, ONE_DAY, ONE_HOUR, _RESTRICTIONS_EXPANSION_FIELDS, \
@@ -125,7 +126,7 @@ class OnyxConfluence:
     def _renew_credentials(self) -> tuple[dict[str, Any], bool]:
         """credential_json - the current json credentials
         Returns a tuple
-        1. The up to date credentials
+        1. The up-to-date credentials
         2. True if the credentials were updated
 
         This method is intended to be used within a distributed lock.
@@ -178,8 +179,8 @@ class OnyxConfluence:
             credential_json["confluence_refresh_token"],
         )
 
-        # store the new credentials to redis and to the db thru the provider
-        # redis: we use a 5 min TTL because we are given a 10 minute grace period
+        # store the new credentials to redis and to the db through the provider
+        # redis: we use a 5 min TTL because we are given a 10 minutes grace period
         # when keys are rotated. it's easier to expire the cached credentials
         # reasonably frequently rather than trying to handle strong synchronization
         # between the db and redis everywhere the credentials might be updated
@@ -689,7 +690,7 @@ class OnyxConfluence:
     ) -> Iterator[dict[str, Any]]:
         """
         This function will paginate through the top level query first, then
-        paginate through all of the expansions.
+        paginate through all the expansions.
         """
 
         def _traverse_and_update(data: dict | list) -> None:
@@ -862,7 +863,7 @@ def get_user_email_from_username__server(
             # For now, we'll just return None and log a warning. This means
             # we will keep retrying to get the email every group sync.
             email = None
-            # We may want to just return a string that indicates failure so we dont
+            # We may want to just return a string that indicates failure so we don't
             # keep retrying
             # email = f"FAILED TO GET CONFLUENCE EMAIL FOR {user_name}"
         _USER_EMAIL_CACHE[user_name] = email
@@ -911,7 +912,7 @@ def extract_text_from_confluence_html(
     confluence_object: dict[str, Any],
     fetched_titles: set[str],
 ) -> str:
-    """Parse a Confluence html page and replace the 'user Id' by the real
+    """Parse a Confluence html page and replace the 'user id' by the real
         User Display Name
 
     Args:
@@ -1289,6 +1290,7 @@ class ConfluenceConnector(
         # pages.
         labels_to_skip: list[str] = CONFLUENCE_CONNECTOR_LABELS_TO_SKIP,
         timezone_offset: float = CONFLUENCE_TIMEZONE_OFFSET,
+        time_buffer_seconds: int = CONFLUENCE_SYNC_TIME_BUFFER_SECONDS,
         scoped_token: bool = False,
     ) -> None:
         self.wiki_base = wiki_base
@@ -1300,6 +1302,7 @@ class ConfluenceConnector(
         self.batch_size = batch_size
         self.labels_to_skip = labels_to_skip
         self.timezone_offset = timezone_offset
+        self.time_buffer_seconds = max(0, time_buffer_seconds)
         self.scoped_token = scoped_token
         self._confluence_client: OnyxConfluence | None = None
         self._low_timeout_confluence_client: OnyxConfluence | None = None
@@ -1355,6 +1358,24 @@ class ConfluenceConnector(
     def set_allow_images(self, value: bool) -> None:
         logging.info(f"Setting allow_images to {value}.")
         self.allow_images = value
+
+    def _adjust_start_for_query(
+        self, start: SecondsSinceUnixEpoch | None
+    ) -> SecondsSinceUnixEpoch | None:
+        if not start or start <= 0:
+            return start
+        if self.time_buffer_seconds <= 0:
+            return start
+        return max(0.0, start - self.time_buffer_seconds)
+
+    def _is_newer_than_start(
+        self, doc_time: datetime | None, start: SecondsSinceUnixEpoch | None
+    ) -> bool:
+        if not start or start <= 0:
+            return True
+        if doc_time is None:
+            return True
+        return doc_time.timestamp() > start
 
     @property
     def confluence_client(self) -> OnyxConfluence:
@@ -1414,9 +1435,10 @@ class ConfluenceConnector(
         """
         page_query = self.base_cql_page_query + self.cql_label_filter
         # Add time filters
-        if start:
+        query_start = self._adjust_start_for_query(start)
+        if query_start:
             formatted_start_time = datetime.fromtimestamp(
-                start, tz=self.timezone
+                query_start, tz=self.timezone
             ).strftime("%Y-%m-%d %H:%M")
             page_query += f" and lastmodified >= '{formatted_start_time}'"
         if end:
@@ -1436,10 +1458,12 @@ class ConfluenceConnector(
     ) -> str:
         attachment_query = f"type=attachment and container='{confluence_page_id}'"
         attachment_query += self.cql_label_filter
+
         # Add time filters to avoid reprocessing unchanged attachments during refresh
-        if start:
+        query_start = self._adjust_start_for_query(start)
+        if query_start:
             formatted_start_time = datetime.fromtimestamp(
-                start, tz=self.timezone
+                query_start, tz=self.timezone
             ).strftime("%Y-%m-%d %H:%M")
             attachment_query += f" and lastmodified >= '{formatted_start_time}'"
         if end:
@@ -1447,6 +1471,7 @@ class ConfluenceConnector(
                 "%Y-%m-%d %H:%M"
             )
             attachment_query += f" and lastmodified <= '{formatted_end_time}'"
+
         attachment_query += " order by lastmodified asc"
         return attachment_query
 
@@ -1537,6 +1562,7 @@ class ConfluenceConnector(
                 size_bytes=len(page_content.encode("utf-8")),  # Calculate size in bytes
                 doc_updated_at=datetime_from_string(page["version"]["when"]),
                 primary_owners=primary_owners if primary_owners else None,
+                metadata=metadata if metadata else None,
             )
         except Exception as e:
             logging.error(f"Error converting page {page.get('id', 'unknown')}: {e}")
@@ -1668,7 +1694,8 @@ class ConfluenceConnector(
                     ),
                     primary_owners=primary_owners,
                 )
-                attachment_docs.append(attachment_doc)
+                if self._is_newer_than_start(attachment_doc.doc_updated_at, start):
+                    attachment_docs.append(attachment_doc)
             except Exception as e:
                 logging.error(
                     f"Failed to extract/summarize attachment {attachment['title']}",
@@ -1729,7 +1756,8 @@ class ConfluenceConnector(
                 continue
 
             # yield completed document (or failure)
-            yield doc_or_failure
+            if self._is_newer_than_start(doc_or_failure.doc_updated_at, start):
+                yield doc_or_failure
 
             # Now get attachments for that page:
             attachment_docs, attachment_failures = self._fetch_page_attachments(
@@ -1761,6 +1789,7 @@ class ConfluenceConnector(
         cql_url = self.confluence_client.build_cql_url(
             page_query, expand=",".join(_PAGE_EXPANSION_FIELDS)
         )
+        logging.info(f"[Confluence Connector] Building CQL URL {cql_url}")
         return update_param_in_path(cql_url, "limit", str(limit))
 
     @override

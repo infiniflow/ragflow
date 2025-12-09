@@ -13,17 +13,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 import random
+import re
+from copy import deepcopy
 from functools import partial
-
 import trio
-
 from common.misc_utils import get_uuid
 from rag.utils.base64_image import id2image, image2id
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.splitter.schema import SplitterFromUpstream
 from rag.nlp import naive_merge, naive_merge_with_images
-from rag.utils.storage_factory import STORAGE_IMPL
+from common import settings
 
 
 class SplitterParam(ProcessParamBase):
@@ -32,6 +32,7 @@ class SplitterParam(ProcessParamBase):
         self.chunk_token_size = 512
         self.delimiters = ["\n"]
         self.overlapped_percent = 0
+        self.children_delimiters = []
 
     def check(self):
         self.check_empty(self.delimiters, "Delimiters.")
@@ -58,6 +59,14 @@ class Splitter(ProcessBase):
                 deli += f"`{d}`"
             else:
                 deli += d
+        child_deli = ""
+        for d in self._param.children_delimiters:
+            if len(d) > 1:
+                child_deli += f"`{d}`"
+            else:
+                child_deli += d
+        child_deli = [m.group(1) for m in re.finditer(r"`([^`]+)`", child_deli)]
+        custom_pattern = "|".join(re.escape(t) for t in sorted(set(child_deli), key=len, reverse=True))
 
         self.set_output("output_format", "chunks")
         self.callback(random.randint(1, 5) / 100.0, "Start to split into chunks.")
@@ -78,7 +87,23 @@ class Splitter(ProcessBase):
                 deli,
                 self._param.overlapped_percent,
             )
-            self.set_output("chunks", [{"text": c.strip()} for c in cks if c.strip()])
+            if custom_pattern:
+                docs = []
+                for c in cks:
+                    if not c.strip():
+                        continue
+                    split_sec = re.split(r"(%s)" % custom_pattern, c, flags=re.DOTALL)
+                    if split_sec:
+                        for txt in split_sec:
+                            docs.append({
+                                "text": txt,
+                                "mom": c
+                            })
+                    else:
+                        docs.append({"text": c})
+                self.set_output("chunks", docs)
+            else:
+                self.set_output("chunks", [{"text": c.strip()} for c in cks if c.strip()])
 
             self.callback(1, "Done.")
             return
@@ -87,7 +112,7 @@ class Splitter(ProcessBase):
         sections, section_images = [], []
         for o in from_upstream.json_result or []:
             sections.append((o.get("text", ""), o.get("position_tag", "")))
-            section_images.append(id2image(o.get("img_id"), partial(STORAGE_IMPL.get, tenant_id=self._canvas._tenant_id)))
+            section_images.append(id2image(o.get("img_id"), partial(settings.STORAGE_IMPL.get, tenant_id=self._canvas._tenant_id)))
 
         chunks, images = naive_merge_with_images(
             sections,
@@ -100,12 +125,27 @@ class Splitter(ProcessBase):
             {
                 "text": RAGFlowPdfParser.remove_tag(c),
                 "image": img,
-                "positions": [[pos[0][-1]+1, *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(c)],
+                "positions": [[pos[0][-1], *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(c)]
             }
             for c, img in zip(chunks, images) if c.strip()
         ]
         async with trio.open_nursery() as nursery:
             for d in cks:
-                nursery.start_soon(image2id, d, partial(STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())
-        self.set_output("chunks",  cks)
+                nursery.start_soon(image2id, d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())
+
+        if custom_pattern:
+            docs = []
+            for c in cks:
+                split_sec = re.split(r"(%s)" % custom_pattern, c["text"], flags=re.DOTALL)
+                if split_sec:
+                    c["mom"] = c["text"]
+                    for txt in split_sec:
+                        cc = deepcopy(c)
+                        cc["text"] = txt
+                        docs.append(cc)
+                else:
+                    docs.append(c)
+            self.set_output("chunks", docs)
+        else:
+            self.set_output("chunks",  cks)
         self.callback(1, "Done.")

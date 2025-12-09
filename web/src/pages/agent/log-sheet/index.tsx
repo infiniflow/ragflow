@@ -25,7 +25,10 @@ export function LogSheet({
 }: LogSheetProps) {
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
-      <SheetContent className={cn('top-20 right-[620px]')}>
+      <SheetContent
+        className={cn('top-20 right-[clamp(0px,34%,620px)]')}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <SheetHeader>
           <SheetTitle className="flex items-center gap-1">
             <NotebookText className="size-4" />

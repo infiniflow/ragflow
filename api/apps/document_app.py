@@ -13,16 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License
 #
+import asyncio
 import json
 import os.path
 import pathlib
 import re
 from pathlib import Path
-
-import flask
-from flask import request
-from flask_login import current_user, login_required
-
+from quart import request, make_response
+from api.apps import current_user, login_required
 from api.common.check_team_permission import check_kb_team_permission
 from api.constants import FILE_NAME_LEN_LIMIT, IMG_BASE64_PREFIX
 from api.db import VALID_FILE_TYPES, FileType
@@ -39,7 +37,7 @@ from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
     server_error_response,
-    validate_request,
+    validate_request, get_request_json,
 )
 from api.utils.file_utils import filename_type, thumbnail
 from common.file_utils import get_project_base_directory
@@ -47,21 +45,22 @@ from common.constants import RetCode, VALID_TASK_STATUS, ParserType, TaskStatus
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search, rag_tokenizer
-from rag.utils.storage_factory import STORAGE_IMPL
-from common import globals
+from common import settings
 
 
 @manager.route("/upload", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id")
-def upload():
-    kb_id = request.form.get("kb_id")
+async def upload():
+    form = await request.form
+    kb_id = form.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    if "file" not in request.files:
+    files = await request.files
+    if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
-    file_objs = request.files.getlist("file")
+    file_objs = files.getlist("file")
     for file_obj in file_objs:
         if file_obj.filename == "":
             return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
@@ -74,7 +73,7 @@ def upload():
     if not check_kb_team_permission(kb, current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
-    err, files = FileService.upload_document(kb, file_objs, current_user.id)
+    err, files = await asyncio.to_thread(FileService.upload_document, kb, file_objs, current_user.id)
     if err:
         return get_json_result(data=files, message="\n".join(err), code=RetCode.SERVER_ERROR)
 
@@ -88,12 +87,13 @@ def upload():
 @manager.route("/web_crawl", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("kb_id", "name", "url")
-def web_crawl():
-    kb_id = request.form.get("kb_id")
+async def web_crawl():
+    form = await request.form
+    kb_id = form.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
-    name = request.form.get("name")
-    url = request.form.get("url")
+    name = form.get("name")
+    url = form.get("url")
     if not is_valid_url(url):
         return get_json_result(data=False, message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
     e, kb = KnowledgebaseService.get_by_id(kb_id)
@@ -119,9 +119,9 @@ def web_crawl():
             raise RuntimeError("This type of file has not been supported yet!")
 
         location = filename
-        while STORAGE_IMPL.obj_exist(kb_id, location):
+        while settings.STORAGE_IMPL.obj_exist(kb_id, location):
             location += "_"
-        STORAGE_IMPL.put(kb_id, location, blob)
+        settings.STORAGE_IMPL.put(kb_id, location, blob)
         doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
@@ -153,8 +153,8 @@ def web_crawl():
 @manager.route("/create", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name", "kb_id")
-def create():
-    req = request.json
+async def create():
+    req = await get_request_json()
     kb_id = req["kb_id"]
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -209,7 +209,7 @@ def create():
 
 @manager.route("/list", methods=["POST"])  # noqa: F821
 @login_required
-def list_docs():
+async def list_docs():
     kb_id = request.args.get("kb_id")
     if not kb_id:
         return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
@@ -231,7 +231,7 @@ def list_docs():
     create_time_from = int(request.args.get("create_time_from", 0))
     create_time_to = int(request.args.get("create_time_to", 0))
 
-    req = request.get_json()
+    req = await get_request_json()
 
     run_status = req.get("run_status", [])
     if run_status:
@@ -261,6 +261,8 @@ def list_docs():
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
                 doc_item["thumbnail"] = f"/v1/document/image/{kb_id}-{doc_item['thumbnail']}"
+            if doc_item.get("source_type"):
+                doc_item["source_type"] = doc_item["source_type"].split("/")[0]
 
         return get_json_result(data={"total": tol, "docs": docs})
     except Exception as e:
@@ -269,8 +271,8 @@ def list_docs():
 
 @manager.route("/filter", methods=["POST"])  # noqa: F821
 @login_required
-def get_filter():
-    req = request.get_json()
+async def get_filter():
+    req = await get_request_json()
 
     kb_id = req.get("kb_id")
     if not kb_id:
@@ -307,8 +309,8 @@ def get_filter():
 
 @manager.route("/infos", methods=["POST"])  # noqa: F821
 @login_required
-def docinfos():
-    req = request.json
+async def doc_infos():
+    req = await get_request_json()
     doc_ids = req["doc_ids"]
     for doc_id in doc_ids:
         if not DocumentService.accessible(doc_id, current_user.id):
@@ -339,8 +341,8 @@ def thumbnails():
 @manager.route("/change_status", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids", "status")
-def change_status():
-    req = request.get_json()
+async def change_status():
+    req = await get_request_json()
     doc_ids = req.get("doc_ids", [])
     status = str(req.get("status", ""))
 
@@ -367,7 +369,7 @@ def change_status():
                 continue
 
             status_int = int(status)
-            if not globals.docStoreConn.update({"doc_id": doc_id}, {"available_int": status_int}, search.index_name(kb.tenant_id), doc.kb_id):
+            if not settings.docStoreConn.update({"doc_id": doc_id}, {"available_int": status_int}, search.index_name(kb.tenant_id), doc.kb_id):
                 result[doc_id] = {"error": "Database error (docStore update)!"}
             result[doc_id] = {"status": status}
         except Exception as e:
@@ -379,8 +381,8 @@ def change_status():
 @manager.route("/rm", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id")
-def rm():
-    req = request.json
+async def rm():
+    req = await get_request_json()
     doc_ids = req["doc_id"]
     if isinstance(doc_ids, str):
         doc_ids = [doc_ids]
@@ -389,7 +391,7 @@ def rm():
         if not DocumentService.accessible4deletion(doc_id, current_user.id):
             return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
-    errors = FileService.delete_docs(doc_ids, current_user.id)
+    errors = await asyncio.to_thread(FileService.delete_docs, doc_ids, current_user.id)
 
     if errors:
         return get_json_result(data=False, message=errors, code=RetCode.SERVER_ERROR)
@@ -400,46 +402,50 @@ def rm():
 @manager.route("/run", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_ids", "run")
-def run():
-    req = request.json
-    for doc_id in req["doc_ids"]:
-        if not DocumentService.accessible(doc_id, current_user.id):
-            return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+async def run():
+    req = await get_request_json()
     try:
-        kb_table_num_map = {}
-        for id in req["doc_ids"]:
-            info = {"run": str(req["run"]), "progress": 0}
-            if str(req["run"]) == TaskStatus.RUNNING.value and req.get("delete", False):
-                info["progress_msg"] = ""
-                info["chunk_num"] = 0
-                info["token_num"] = 0
+        def _run_sync():
+            for doc_id in req["doc_ids"]:
+                if not DocumentService.accessible(doc_id, current_user.id):
+                    return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
-            tenant_id = DocumentService.get_tenant_id(id)
-            if not tenant_id:
-                return get_data_error_result(message="Tenant not found!")
-            e, doc = DocumentService.get_by_id(id)
-            if not e:
-                return get_data_error_result(message="Document not found!")
+            kb_table_num_map = {}
+            for id in req["doc_ids"]:
+                info = {"run": str(req["run"]), "progress": 0}
+                if str(req["run"]) == TaskStatus.RUNNING.value and req.get("delete", False):
+                    info["progress_msg"] = ""
+                    info["chunk_num"] = 0
+                    info["token_num"] = 0
 
-            if str(req["run"]) == TaskStatus.CANCEL.value:
-                if str(doc.run) == TaskStatus.RUNNING.value:
-                    cancel_all_task_of(id)
-                else:
-                    return get_data_error_result(message="Cannot cancel a task that is not in RUNNING status")
-            if all([("delete" not in req or req["delete"]), str(req["run"]) == TaskStatus.RUNNING.value, str(doc.run) == TaskStatus.DONE.value]):
-                DocumentService.clear_chunk_num_when_rerun(doc.id)
+                tenant_id = DocumentService.get_tenant_id(id)
+                if not tenant_id:
+                    return get_data_error_result(message="Tenant not found!")
+                e, doc = DocumentService.get_by_id(id)
+                if not e:
+                    return get_data_error_result(message="Document not found!")
 
-            DocumentService.update_by_id(id, info)
-            if req.get("delete", False):
-                TaskService.filter_delete([Task.doc_id == id])
-                if globals.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
-                    globals.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
+                if str(req["run"]) == TaskStatus.CANCEL.value:
+                    if str(doc.run) == TaskStatus.RUNNING.value:
+                        cancel_all_task_of(id)
+                    else:
+                        return get_data_error_result(message="Cannot cancel a task that is not in RUNNING status")
+                if all([("delete" not in req or req["delete"]), str(req["run"]) == TaskStatus.RUNNING.value, str(doc.run) == TaskStatus.DONE.value]):
+                    DocumentService.clear_chunk_num_when_rerun(doc.id)
 
-            if str(req["run"]) == TaskStatus.RUNNING.value:
-                doc = doc.to_dict()
-                DocumentService.run(tenant_id, doc, kb_table_num_map)
+                DocumentService.update_by_id(id, info)
+                if req.get("delete", False):
+                    TaskService.filter_delete([Task.doc_id == id])
+                    if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+                        settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
 
-        return get_json_result(data=True)
+                if str(req["run"]) == TaskStatus.RUNNING.value:
+                    doc_dict = doc.to_dict()
+                    DocumentService.run(tenant_id, doc_dict, kb_table_num_map)
+
+            return get_json_result(data=True)
+
+        return await asyncio.to_thread(_run_sync)
     except Exception as e:
         return server_error_response(e)
 
@@ -447,66 +453,72 @@ def run():
 @manager.route("/rename", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id", "name")
-def rename():
-    req = request.json
-    if not DocumentService.accessible(req["doc_id"], current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+async def rename():
+    req = await get_request_json()
     try:
-        e, doc = DocumentService.get_by_id(req["doc_id"])
-        if not e:
-            return get_data_error_result(message="Document not found!")
-        if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
-            return get_json_result(data=False, message="The extension of file can't be changed", code=RetCode.ARGUMENT_ERROR)
-        if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
-            return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=RetCode.ARGUMENT_ERROR)
+        def _rename_sync():
+            if not DocumentService.accessible(req["doc_id"], current_user.id):
+                return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
-        for d in DocumentService.query(name=req["name"], kb_id=doc.kb_id):
-            if d.name == req["name"]:
-                return get_data_error_result(message="Duplicated document name in the same knowledgebase.")
+            e, doc = DocumentService.get_by_id(req["doc_id"])
+            if not e:
+                return get_data_error_result(message="Document not found!")
+            if pathlib.Path(req["name"].lower()).suffix != pathlib.Path(doc.name.lower()).suffix:
+                return get_json_result(data=False, message="The extension of file can't be changed", code=RetCode.ARGUMENT_ERROR)
+            if len(req["name"].encode("utf-8")) > FILE_NAME_LEN_LIMIT:
+                return get_json_result(data=False, message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.", code=RetCode.ARGUMENT_ERROR)
 
-        if not DocumentService.update_by_id(req["doc_id"], {"name": req["name"]}):
-            return get_data_error_result(message="Database error (Document rename)!")
+            for d in DocumentService.query(name=req["name"], kb_id=doc.kb_id):
+                if d.name == req["name"]:
+                    return get_data_error_result(message="Duplicated document name in the same knowledgebase.")
 
-        informs = File2DocumentService.get_by_document_id(req["doc_id"])
-        if informs:
-            e, file = FileService.get_by_id(informs[0].file_id)
-            FileService.update_by_id(file.id, {"name": req["name"]})
+            if not DocumentService.update_by_id(req["doc_id"], {"name": req["name"]}):
+                return get_data_error_result(message="Database error (Document rename)!")
 
-        tenant_id = DocumentService.get_tenant_id(req["doc_id"])
-        title_tks = rag_tokenizer.tokenize(req["name"])
-        es_body = {
-            "docnm_kwd": req["name"],
-            "title_tks": title_tks,
-            "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
-        }
-        if globals.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
-            globals.docStoreConn.update(
-                {"doc_id": req["doc_id"]},
-                es_body,
-                search.index_name(tenant_id),
-                doc.kb_id,
-            )
+            informs = File2DocumentService.get_by_document_id(req["doc_id"])
+            if informs:
+                e, file = FileService.get_by_id(informs[0].file_id)
+                FileService.update_by_id(file.id, {"name": req["name"]})
 
-        return get_json_result(data=True)
+            tenant_id = DocumentService.get_tenant_id(req["doc_id"])
+            title_tks = rag_tokenizer.tokenize(req["name"])
+            es_body = {
+                "docnm_kwd": req["name"],
+                "title_tks": title_tks,
+                "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
+            }
+            if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+                settings.docStoreConn.update(
+                    {"doc_id": req["doc_id"]},
+                    es_body,
+                    search.index_name(tenant_id),
+                    doc.kb_id,
+                )
+            return get_json_result(data=True)
+
+        return await asyncio.to_thread(_rename_sync)
+
     except Exception as e:
         return server_error_response(e)
 
 
 @manager.route("/get/<doc_id>", methods=["GET"])  # noqa: F821
 # @login_required
-def get(doc_id):
+async def get(doc_id):
     try:
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
             return get_data_error_result(message="Document not found!")
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
-        response = flask.make_response(STORAGE_IMPL.get(b, n))
+        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, b, n)
+        response = await make_response(data)
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())
         ext = ext.group(1) if ext else None
         if ext:
             if doc.type == FileType.VISUAL.value:
+
                 content_type = CONTENT_TYPE_MAP.get(ext, f"image/{ext}")
             else:
                 content_type = CONTENT_TYPE_MAP.get(ext, f"application/{ext}")
@@ -516,12 +528,27 @@ def get(doc_id):
         return server_error_response(e)
 
 
+@manager.route("/download/<attachment_id>", methods=["GET"])  # noqa: F821
+@login_required
+async def download_attachment(attachment_id):
+    try:
+        ext = request.args.get("ext", "markdown")
+        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, current_user.id, attachment_id)
+        response = await make_response(data)
+        response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
+
+        return response
+
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/change_parser", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id")
-def change_parser():
+async def change_parser():
 
-    req = request.json
+    req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
@@ -541,8 +568,9 @@ def change_parser():
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
-            if globals.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
-                globals.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+            if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+                settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+        return None
 
     try:
         if "pipeline_id" in req and req["pipeline_id"] != "":
@@ -571,13 +599,14 @@ def change_parser():
 
 @manager.route("/image/<image_id>", methods=["GET"])  # noqa: F821
 # @login_required
-def get_image(image_id):
+async def get_image(image_id):
     try:
         arr = image_id.split("-")
         if len(arr) != 2:
             return get_data_error_result(message="Image not found.")
         bkt, nm = image_id.split("-")
-        response = flask.make_response(STORAGE_IMPL.get(bkt, nm))
+        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, bkt, nm)
+        response = await make_response(data)
         response.headers.set("Content-Type", "image/JPEG")
         return response
     except Exception as e:
@@ -587,24 +616,26 @@ def get_image(image_id):
 @manager.route("/upload_and_parse", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("conversation_id")
-def upload_and_parse():
-    if "file" not in request.files:
+async def upload_and_parse():
+    files = await request.files
+    if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
-    file_objs = request.files.getlist("file")
+    file_objs = files.getlist("file")
     for file_obj in file_objs:
         if file_obj.filename == "":
             return get_json_result(data=False, message="No file selected!", code=RetCode.ARGUMENT_ERROR)
 
-    doc_ids = doc_upload_and_parse(request.form.get("conversation_id"), file_objs, current_user.id)
-
+    form = await request.form
+    doc_ids = doc_upload_and_parse(form.get("conversation_id"), file_objs, current_user.id)
     return get_json_result(data=doc_ids)
 
 
 @manager.route("/parse", methods=["POST"])  # noqa: F821
 @login_required
-def parse():
-    url = request.json.get("url") if request.json else ""
+async def parse():
+    req = await get_request_json()
+    url = req.get("url", "")
     if url:
         if not is_valid_url(url):
             return get_json_result(data=False, message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
@@ -645,10 +676,11 @@ def parse():
         txt = FileService.parse_docs([f], current_user.id)
         return get_json_result(data=txt)
 
-    if "file" not in request.files:
+    files = await request.files
+    if "file" not in files:
         return get_json_result(data=False, message="No file part!", code=RetCode.ARGUMENT_ERROR)
 
-    file_objs = request.files.getlist("file")
+    file_objs = files.getlist("file")
     txt = FileService.parse_docs(file_objs, current_user.id)
 
     return get_json_result(data=txt)
@@ -657,8 +689,8 @@ def parse():
 @manager.route("/set_meta", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("doc_id", "meta")
-def set_meta():
-    req = request.json
+async def set_meta():
+    req = await get_request_json()
     if not DocumentService.accessible(req["doc_id"], current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     try:
@@ -684,3 +716,13 @@ def set_meta():
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
+
+
+@manager.route("/upload_info", methods=["POST"])  # noqa: F821
+async def upload_info():
+    files = await request.files
+    file = files['file'] if files and files.get("file") else None
+    try:
+        return get_json_result(data=FileService.upload_info(current_user.id, file, request.args.get("url")))
+    except Exception as e:
+        return  server_error_response(e)

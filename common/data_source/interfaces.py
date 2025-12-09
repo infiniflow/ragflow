@@ -30,7 +30,6 @@ class LoadConnector(ABC):
         """Load documents from state"""
         pass
 
-    @abstractmethod
     def validate_connector_settings(self) -> None:
         """Validate connector settings"""
         pass
@@ -69,7 +68,7 @@ class SlimConnectorWithPermSync(ABC):
 
 
 class CheckpointedConnectorWithPermSync(ABC):
-    """Checkpointed connector interface (with permission sync)"""
+    """Checkpoint connector interface (with permission sync)"""
 
     @abstractmethod
     def load_from_checkpoint(
@@ -143,7 +142,7 @@ class CredentialsProviderInterface(abc.ABC, Generic[T]):
 
     @abc.abstractmethod
     def is_dynamic(self) -> bool:
-        """If dynamic, the credentials may change during usage ... maening the client
+        """If dynamic, the credentials may change during usage ... meaning the client
         needs to use the locking features of the credentials provider to operate
         correctly.
 
@@ -396,8 +395,7 @@ class AttachmentProcessingResult(BaseModel):
 
 
 class IndexingHeartbeatInterface(ABC):
-    """Defines a callback interface to be passed to
-    to run_indexing_entrypoint."""
+    """Defines a callback interface to be passed to run_indexing_entrypoint."""
 
     @abstractmethod
     def should_stop(self) -> bool:

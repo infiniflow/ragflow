@@ -12,7 +12,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import {
   ISystemModelSettingSavingParams,
   useComposeLlmOptionsByModelTypes,
-} from '@/hooks/llm-hooks';
+} from '@/hooks/use-llm-request';
 import { CircleQuestionMark } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFetchSystemModelSettingOnMount } from '../hooks';
@@ -139,7 +139,7 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
   }) => {
     return (
       <div className="flex gap-3">
-        <label className="block text-sm font-medium text-text-primary mb-1 w-1/4">
+        <label className="block text-sm font-normal text-text-secondary mb-1 w-1/4">
           {isRequired && <span className="text-red-500">*</span>}
           {label}
           {tooltip && (
@@ -148,18 +148,20 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
               <TooltipTrigger>
                 <CircleQuestionMark
                   size={12}
-                  className="ml-1 text-text-disabled text-xs"
+                  className="ml-1 text-text-secondary text-xs"
                 />
               </TooltipTrigger>
             </Tooltip>
           )}
         </label>
         <SelectWithSearch
-          triggerClassName="w-3/4"
+          triggerClassName="w-3/4 flex items-center"
+          allowClear={id !== 'llm_id'}
           value={value}
           options={options}
           onChange={(value) => handleFieldChange(id, value)}
-          placeholder={t('common:selectPlaceholder')}
+          placeholder={t('selectModelPlaceholder')}
+          emptyData={t('modelEmptyTip')}
         />
       </div>
     );
@@ -168,12 +170,12 @@ const SystemSetting = ({ onOk, loading }: IProps) => {
   return (
     <div className="rounded-lg w-full">
       <div className="flex flex-col py-4">
-        <div className="text-2xl font-semibold">{t('systemModelSettings')}</div>
+        <div className="text-2xl font-medium">{t('systemModelSettings')}</div>
         <div className="text-sm text-text-secondary">
           {t('systemModelDescription')}
         </div>
       </div>
-      <div className="px-7 py-6 space-y-6 max-h-[70vh] overflow-y-auto border rounded-lg">
+      <div className="px-7 py-6 space-y-6 max-h-[70vh] overflow-y-auto border border-border-button rounded-lg">
         {llmList.map((item) => (
           <Items key={item.id} {...item} />
         ))}

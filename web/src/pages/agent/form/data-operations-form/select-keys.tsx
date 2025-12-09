@@ -1,11 +1,10 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { BlockButton, Button } from '@/components/ui/button';
-import { FormLabel } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
+import { DynamicFormHeader } from '../components/dynamic-fom-header';
+import { PromptEditor } from '../components/prompt-editor';
 
 type SelectKeysProps = {
   name: string;
@@ -13,7 +12,6 @@ type SelectKeysProps = {
   tooltip?: string;
 };
 export function SelectKeys({ name, label, tooltip }: SelectKeysProps) {
-  const { t } = useTranslation();
   const form = useFormContext();
 
   const { fields, remove, append } = useFieldArray({
@@ -23,7 +21,11 @@ export function SelectKeys({ name, label, tooltip }: SelectKeysProps) {
 
   return (
     <section className="space-y-2">
-      <FormLabel tooltip={tooltip}>{label}</FormLabel>
+      <DynamicFormHeader
+        label={label}
+        tooltip={tooltip}
+        onClick={() => append({ name: '' })}
+      ></DynamicFormHeader>
       <div className="space-y-5">
         {fields.map((field, index) => {
           const nameField = `${name}.${index}.name`;
@@ -31,7 +33,7 @@ export function SelectKeys({ name, label, tooltip }: SelectKeysProps) {
           return (
             <div key={field.id} className="flex items-center gap-2">
               <RAGFlowFormItem name={nameField} className="flex-1">
-                <Input></Input>
+                <PromptEditor showToolbar={false} multiLine={false} />
               </RAGFlowFormItem>
               <Button variant={'ghost'} onClick={() => remove(index)}>
                 <X />
@@ -40,10 +42,6 @@ export function SelectKeys({ name, label, tooltip }: SelectKeysProps) {
           );
         })}
       </div>
-
-      <BlockButton onClick={() => append({ name: '' })}>
-        {t('common.add')}
-      </BlockButton>
     </section>
   );
 }

@@ -1,6 +1,10 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
-import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
+import {
+  IMessage,
+  IReferenceChunk,
+  IReferenceObject,
+} from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import {
   PropsWithChildren,
@@ -17,7 +21,6 @@ import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
 import { cn } from '@/lib/utils';
 import { AgentChatContext } from '@/pages/agent/context';
 import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workflow-timeline';
-import { IMessage } from '@/pages/chat/interface';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
 import MarkdownContent from '../next-markdown-content';
@@ -171,6 +174,7 @@ function MessageItem({
                         audioBinary={item.audio_binary}
                         showLoudspeaker={showLoudspeaker}
                         showLog={showLog}
+                        attachment={item.attachment}
                       ></AssistantGroupButton>
                     )}
                     {!isShare && (
@@ -182,6 +186,7 @@ function MessageItem({
                         audioBinary={item.audio_binary}
                         showLoudspeaker={showLoudspeaker}
                         showLog={showLog}
+                        attachment={item.attachment}
                       ></AssistantGroupButton>
                     )}
                   </>
@@ -245,6 +250,32 @@ function MessageItem({
             {isUser && (
               <UploadedMessageFiles files={item.files}></UploadedMessageFiles>
             )}
+            {/* {isAssistant && item.attachment && item.attachment.doc_id && (
+              <div className="w-full flex items-center justify-end">
+                <Button
+                  variant="link"
+                  className="p-1 m-0 h-auto text-text-sub-title-invert"
+                  onClick={async () => {
+                    if (item.attachment?.doc_id) {
+                      try {
+                        const response = await downloadFile({
+                          docId: item.attachment.doc_id,
+                          ext: item.attachment.format,
+                        });
+                        const blob = new Blob([response.data], {
+                          type: response.data.type,
+                        });
+                        downloadFileFromBlob(blob, item.attachment.file_name);
+                      } catch (error) {
+                        console.error('Download failed:', error);
+                      }
+                    }
+                  }}
+                >
+                  <Download size={16} />
+                </Button>
+              </div>
+            )} */}
           </section>
         </div>
       </section>

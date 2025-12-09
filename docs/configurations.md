@@ -89,6 +89,8 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 
 - `REDIS_PORT`
   The port used to expose the Redis service to the host machine, allowing **external** access to the Redis service running inside the Docker container. Defaults to `6379`.
+- `REDIS_USERNAME`
+  Optional Redis ACL username when using Redis 6+ authentication.
 - `REDIS_PASSWORD`
   The password for Redis.
 
@@ -97,14 +99,7 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW-IMAGE`
-  The Docker image edition. Available editions:
-
-  - `infiniflow/ragflow:v0.21.1-slim` (default): The RAGFlow Docker image without embedding models.
-  - `infiniflow/ragflow:v0.21.1`: The RAGFlow Docker image with embedding models including:
-    - Built-in embedding models:
-      - `BAAI/bge-large-zh-v1.5`
-      - `maidalun1020/bce-embedding-base_v1`
-
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.22.1` (the RAGFlow Docker image without embedding models).
 
 :::tip NOTE
 If you cannot download the RAGFlow Docker image, try the following mirrors.
@@ -166,6 +161,13 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `user`: The username for MinIO.
 - `password`: The password for MinIO.
 - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
+
+### `redis`
+
+- `host`: The Redis serving IP *and* port inside the Docker container. Defaults to `redis:6379`.
+- `db`: The Redis database index to use. Defaults to `1`.
+- `username`: Optional Redis ACL username (Redis 6+).
+- `password`: The password for the specified Redis user.
 
 ### `oauth`
 

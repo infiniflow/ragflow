@@ -10,10 +10,12 @@ from .notion_connector import NotionConnector
 from .confluence_connector import ConfluenceConnector
 from .discord_connector import DiscordConnector
 from .dropbox_connector import DropboxConnector
-from .google_drive_connector import GoogleDriveConnector
-from .jira_connector import JiraConnector
+from .google_drive.connector import GoogleDriveConnector
+from .jira.connector import JiraConnector
 from .sharepoint_connector import SharePointConnector
 from .teams_connector import TeamsConnector
+from .webdav_connector import WebDAVConnector
+from .moodle_connector import MoodleConnector
 from .config import BlobType, DocumentSource
 from .models import Document, TextSection, ImageSection, BasicExpertInfo
 from .exceptions import (
@@ -36,6 +38,8 @@ __all__ = [
     "JiraConnector",
     "SharePointConnector",
     "TeamsConnector",
+    "WebDAVConnector",
+    "MoodleConnector",
     "BlobType",
     "DocumentSource",
     "Document",

@@ -35,7 +35,6 @@ const {
   web_crawl,
   knowledge_graph,
   document_infos,
-  upload_and_parse,
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
@@ -47,6 +46,7 @@ const {
   traceGraphRag,
   runRaptor,
   traceRaptor,
+  check_embedding,
 } = api;
 
 const methods = {
@@ -157,10 +157,6 @@ const methods = {
     url: document_delete,
     method: 'delete',
   },
-  upload_and_parse: {
-    url: upload_and_parse,
-    method: 'post',
-  },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
     method: 'get',
@@ -212,6 +208,11 @@ const methods = {
   },
   pipelineRerun: {
     url: api.pipelineRerun,
+    method: 'post',
+  },
+
+  checkEmbedding: {
+    url: check_embedding,
     method: 'post',
   },
 };

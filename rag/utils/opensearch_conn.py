@@ -24,13 +24,13 @@ import copy
 from opensearchpy import OpenSearch, NotFoundError
 from opensearchpy import UpdateByQuery, Q, Search, Index
 from opensearchpy import ConnectionTimeout
-from rag import settings
-from rag.settings import TAG_FLD, PAGERANK_FLD
 from common.decorator import singleton
 from common.file_utils import get_project_base_directory
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer
+from common.constants import PAGERANK_FLD, TAG_FLD
+from common import settings
 
 ATTEMPT_TIME = 2
 
@@ -455,12 +455,12 @@ class OSConnection(DocStoreConnection):
     Helper functions for search result
     """
 
-    def getTotal(self, res):
+    def get_total(self, res):
         if isinstance(res["hits"]["total"], type({})):
             return res["hits"]["total"]["value"]
         return res["hits"]["total"]
 
-    def getChunkIds(self, res):
+    def get_chunk_ids(self, res):
         return [d["_id"] for d in res["hits"]["hits"]]
 
     def __getSource(self, res):
@@ -471,7 +471,7 @@ class OSConnection(DocStoreConnection):
             rr.append(d["_source"])
         return rr
 
-    def getFields(self, res, fields: list[str]) -> dict[str, dict]:
+    def get_fields(self, res, fields: list[str]) -> dict[str, dict]:
         res_fields = {}
         if not fields:
             return {}
@@ -490,7 +490,7 @@ class OSConnection(DocStoreConnection):
                 res_fields[d["id"]] = m
         return res_fields
 
-    def getHighlight(self, res, keywords: list[str], fieldnm: str):
+    def get_highlight(self, res, keywords: list[str], fieldnm: str):
         ans = {}
         for d in res["hits"]["hits"]:
             hlts = d.get("highlight")
@@ -515,7 +515,7 @@ class OSConnection(DocStoreConnection):
 
         return ans
 
-    def getAggregation(self, res, fieldnm: str):
+    def get_aggregation(self, res, fieldnm: str):
         agg_field = "aggs_" + fieldnm
         if "aggregations" not in res or agg_field not in res["aggregations"]:
             return list()

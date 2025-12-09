@@ -3,6 +3,7 @@ import isEmpty from 'lodash/isEmpty';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { buildNodesAndCombos } from './util';
 
+import { useIsDarkTheme } from '@/components/theme-provider';
 import styles from './index.less';
 
 const TooltipColorMap = {
@@ -19,7 +20,7 @@ interface IProps {
 const ForceGraph = ({ data, show }: IProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
-
+  const isDark = useIsDarkTheme();
   const nextData = useMemo(() => {
     if (!isEmpty(data)) {
       const graphData = data;
@@ -80,8 +81,13 @@ const ForceGraph = ({ data, show }: IProps) => {
       },
       node: {
         style: {
-          size: 150,
+          size: (d) => {
+            let size = 100 + ((d.rank as number) || 0) * 5;
+            size = size > 300 ? 300 : size;
+            return size;
+          },
           labelText: (d) => d.id,
+          labelFill: isDark ? 'rgba(255,255,255,1)' : 'rgba(0,0,0,1)',
           // labelPadding: 30,
           labelFontSize: 40,
           //   labelOffsetX: 20,
@@ -101,8 +107,9 @@ const ForceGraph = ({ data, show }: IProps) => {
           const weight: number = Number(model?.weight) || 2;
           const lineWeight = weight * 4;
           return {
-            stroke: '#99ADD1',
-            lineWidth: lineWeight > 10 ? 10 : lineWeight,
+            stroke: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+            lineDash: [10, 10],
+            lineWidth: lineWeight > 8 ? 8 : lineWeight,
           };
         },
       },

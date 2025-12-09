@@ -1,11 +1,14 @@
 import {
+  DSL,
+  GlobalVariableType,
   IAgentForm,
   ICategorizeForm,
   ICategorizeItem,
   ICategorizeItemResult,
 } from '@/interfaces/database/agent';
 import { DSLComponents, RAGFlowNodeType } from '@/interfaces/database/flow';
-import { removeUselessFieldsFromValues } from '@/utils/form';
+import { buildSelectOptions } from '@/utils/component-util';
+import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
@@ -24,10 +27,12 @@ import {
   CategorizeAnchorPointPositions,
   FileType,
   FileTypeSuffixMap,
+  InputMode,
   NoCopyOperatorsList,
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
+  TypesWithArray,
 } from './constant';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
@@ -212,6 +217,36 @@ function transformParserParams(params: ParserFormSchemaType) {
             parse_method: cur.parse_method,
             lang: cur.lang,
           };
+          // Only include TCADP parameters if TCADP Parser is selected
+          if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
+            filteredSetup.table_result_type = cur.table_result_type;
+            filteredSetup.markdown_image_response_type =
+              cur.markdown_image_response_type;
+          }
+          break;
+        case FileType.Spreadsheet:
+          filteredSetup = {
+            ...filteredSetup,
+            parse_method: cur.parse_method,
+          };
+          // Only include TCADP parameters if TCADP Parser is selected
+          if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
+            filteredSetup.table_result_type = cur.table_result_type;
+            filteredSetup.markdown_image_response_type =
+              cur.markdown_image_response_type;
+          }
+          break;
+        case FileType.PowerPoint:
+          filteredSetup = {
+            ...filteredSetup,
+            parse_method: cur.parse_method,
+          };
+          // Only include TCADP parameters if TCADP Parser is selected
+          if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
+            filteredSetup.table_result_type = cur.table_result_type;
+            filteredSetup.markdown_image_response_type =
+              cur.markdown_image_response_type;
+          }
           break;
         case FileType.Image:
           filteredSetup = {
@@ -273,7 +308,7 @@ function transformDataOperationsParams(params: DataOperationsFormSchemaType) {
     ...params,
     select_keys: params?.select_keys?.map((x) => x.name),
     remove_keys: params?.remove_keys?.map((x) => x.name),
-    inputs: params.inputs.map((x) => x.input),
+    query: params.query.map((x) => x.input),
   };
 }
 
@@ -326,7 +361,6 @@ export const buildDslComponentsByGraph = (
         case Operator.DataOperations:
           params = transformDataOperationsParams(params);
           break;
-
         default:
           break;
       }
@@ -344,6 +378,32 @@ export const buildDslComponentsByGraph = (
     });
 
   return components;
+};
+
+export const buildDslGlobalVariables = (
+  dsl: DSL,
+  globalVariables?: Record<string, GlobalVariableType>,
+) => {
+  if (!globalVariables) {
+    return { globals: dsl.globals, variables: dsl.variables || {} };
+  }
+
+  let globalVariablesTemp: Record<string, any> = {};
+  let globalSystem: Record<string, any> = {};
+  Object.keys(dsl.globals)?.forEach((key) => {
+    if (key.indexOf('sys') > -1) {
+      globalSystem[key] = dsl.globals[key];
+    }
+  });
+  Object.keys(globalVariables).forEach((key) => {
+    globalVariablesTemp['env.' + key] = globalVariables[key].value;
+  });
+
+  const globalVariablesResult = {
+    ...globalSystem,
+    ...globalVariablesTemp,
+  };
+  return { globals: globalVariablesResult, variables: globalVariables };
 };
 
 export const receiveMessageError = (res: any) =>
@@ -507,12 +567,6 @@ export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
       };
       return pre;
     }, {});
-  }
-
-  // Delete the downstream nodes corresponding to the yes and no fields of the Relevant operator
-  if (nodeData?.label === Operator.Relevant) {
-    form.yes = undefined;
-    form.no = undefined;
   }
 
   return {
@@ -705,3 +759,13 @@ export function buildBeginQueryWithObject(
 
   return nextInputs;
 }
+
+export function getArrayElementType(type: string) {
+  return typeof type === 'string' ? type.match(/<([^>]+)>/)?.at(1) ?? '' : '';
+}
+
+export function buildConversationVariableSelectOptions() {
+  return buildSelectOptions(Object.values(TypesWithArray));
+}
+
+export const InputModeOptions = buildOptions(InputMode);

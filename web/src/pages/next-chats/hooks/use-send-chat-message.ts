@@ -1,4 +1,3 @@
-import { FileUploadProps } from '@/components/file-upload';
 import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
@@ -6,20 +5,15 @@ import {
   useSelectDerivedMessages,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
-import {
-  useFetchConversation,
-  useGetChatSearchParams,
-} from '@/hooks/use-chat-request';
-import { Message } from '@/interfaces/database/chat';
+import { useGetChatSearchParams } from '@/hooks/use-chat-request';
+import { IMessage } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { trim } from 'lodash';
 import { useCallback, useEffect } from 'react';
 import { useParams } from 'umi';
 import { v4 as uuid } from 'uuid';
-import { IMessage } from '../chat/interface';
+import { useCreateConversationBeforeSendMessage } from './use-chat-url';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
-import { useSetChatRouteParams } from './use-set-chat-route';
-import { useSetConversation } from './use-set-conversation';
 import { useUploadFile } from './use-upload-file';
 
 export const useSelectNextMessages = () => {
@@ -34,8 +28,7 @@ export const useSelectNextMessages = () => {
     removeMessageById,
     removeMessagesAfterCurrentMessage,
   } = useSelectDerivedMessages();
-  const { data: conversation, loading } = useFetchConversation();
-  const { conversationId, isNew } = useGetChatSearchParams();
+  const { isNew, conversationId } = useGetChatSearchParams();
   const { id: dialogId } = useParams();
   const prologue = useFindPrologueFromDialogList();
 
@@ -45,49 +38,35 @@ export const useSelectNextMessages = () => {
         role: MessageType.Assistant,
         content: prologue,
         id: uuid(),
+        conversationId: conversationId,
       } as IMessage;
 
       setDerivedMessages([nextMessage]);
     }
-  }, [dialogId, isNew, prologue, setDerivedMessages]);
+  }, [conversationId, dialogId, isNew, prologue, setDerivedMessages]);
 
   useEffect(() => {
     addPrologue();
   }, [addPrologue]);
 
-  useEffect(() => {
-    if (
-      conversationId &&
-      isNew !== 'true' &&
-      conversation.message?.length > 0
-    ) {
-      setDerivedMessages(conversation.message);
-    }
-
-    if (!conversationId) {
-      setDerivedMessages([]);
-    }
-  }, [conversation.message, conversationId, setDerivedMessages, isNew]);
-
   return {
     scrollRef,
     messageContainerRef,
     derivedMessages,
-    loading,
     addNewestAnswer,
     addNewestQuestion,
     removeLatestMessage,
     removeMessageById,
     removeMessagesAfterCurrentMessage,
+    setDerivedMessages,
   };
 };
 
 export const useSendMessage = (controller: AbortController) => {
-  const { setConversation } = useSetConversation();
   const { conversationId, isNew } = useGetChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
-  const { handleUploadFile, fileIds, clearFileIds, isUploading, removeFile } =
+  const { handleUploadFile, isUploading, removeFile, files, clearFiles } =
     useUploadFile();
 
   const { send, answer, done } = useSendMessageWithSse(
@@ -97,31 +76,13 @@ export const useSendMessage = (controller: AbortController) => {
     scrollRef,
     messageContainerRef,
     derivedMessages,
-    loading,
     addNewestAnswer,
     addNewestQuestion,
     removeLatestMessage,
     removeMessageById,
     removeMessagesAfterCurrentMessage,
+    setDerivedMessages,
   } = useSelectNextMessages();
-  const { setConversationIsNew, getConversationIsNew } =
-    useSetChatRouteParams();
-
-  const onUploadFile: NonNullable<FileUploadProps['onUpload']> = useCallback(
-    async (files, options) => {
-      const isNew = getConversationIsNew();
-
-      if (isNew === 'true' && Array.isArray(files) && files.length) {
-        const data = await setConversation(files[0].name, true);
-        if (data.code === 0) {
-          handleUploadFile(files, options, data.data?.id);
-        }
-      } else {
-        handleUploadFile(files, options);
-      }
-    },
-    [getConversationIsNew, handleUploadFile, setConversation],
-  );
 
   const sendMessage = useCallback(
     async ({
@@ -129,14 +90,19 @@ export const useSendMessage = (controller: AbortController) => {
       currentConversationId,
       messages,
     }: {
-      message: Message;
+      message: IMessage;
       currentConversationId?: string;
-      messages?: Message[];
+      messages?: IMessage[];
     }) => {
       const res = await send(
         {
           conversation_id: currentConversationId ?? conversationId,
-          messages: [...(messages ?? derivedMessages ?? []), message],
+          messages: [
+            ...(Array.isArray(messages) && messages?.length > 0
+              ? messages
+              : derivedMessages ?? []),
+            message,
+          ],
         },
         controller,
       );
@@ -158,43 +124,61 @@ export const useSendMessage = (controller: AbortController) => {
     ],
   );
 
-  const handleSendMessage = useCallback(
-    async (message: Message) => {
-      const isNew = getConversationIsNew();
-      if (isNew !== 'true') {
-        sendMessage({ message });
-      } else {
-        const data = await setConversation(
-          message.content,
-          true,
-          conversationId,
-        );
-        if (data.code === 0) {
-          setConversationIsNew('');
-          const id = data.data.id;
-          // currentConversationIdRef.current = id;
-          sendMessage({
-            message,
-            currentConversationId: id,
-            messages: data.data.message,
-          });
-        }
-      }
-    },
-    [
-      setConversation,
-      sendMessage,
-      setConversationIsNew,
-      getConversationIsNew,
-      conversationId,
-    ],
-  );
-
   const { regenerateMessage } = useRegenerateMessage({
     removeMessagesAfterCurrentMessage,
     sendMessage,
     messages: derivedMessages,
   });
+
+  const { createConversationBeforeSendMessage } =
+    useCreateConversationBeforeSendMessage();
+
+  const handlePressEnter = useCallback(async () => {
+    if (trim(value) === '') return;
+
+    const data = await createConversationBeforeSendMessage(value);
+
+    if (data === undefined) {
+      return;
+    }
+
+    const { targetConversationId, currentMessages } = data;
+
+    const id = uuid();
+
+    addNewestQuestion({
+      content: value,
+      files: files,
+      id,
+      role: MessageType.User,
+      conversationId: targetConversationId,
+    });
+
+    if (done) {
+      setValue('');
+      sendMessage({
+        currentConversationId: targetConversationId,
+        messages: currentMessages,
+        message: {
+          id,
+          content: value.trim(),
+          role: MessageType.User,
+          files: files,
+          conversationId: targetConversationId,
+        },
+      });
+    }
+    clearFiles();
+  }, [
+    value,
+    createConversationBeforeSendMessage,
+    addNewestQuestion,
+    files,
+    done,
+    clearFiles,
+    setValue,
+    sendMessage,
+  ]);
 
   useEffect(() => {
     //  #1289
@@ -203,36 +187,6 @@ export const useSendMessage = (controller: AbortController) => {
     }
   }, [answer, addNewestAnswer, conversationId, isNew]);
 
-  const handlePressEnter = useCallback(() => {
-    if (trim(value) === '') return;
-    const id = uuid();
-
-    addNewestQuestion({
-      content: value,
-      doc_ids: fileIds,
-      id,
-      role: MessageType.User,
-    });
-    if (done) {
-      setValue('');
-      handleSendMessage({
-        id,
-        content: value.trim(),
-        role: MessageType.User,
-        doc_ids: fileIds,
-      });
-    }
-    clearFileIds();
-  }, [
-    value,
-    addNewestQuestion,
-    fileIds,
-    done,
-    clearFileIds,
-    setValue,
-    handleSendMessage,
-  ]);
-
   return {
     handlePressEnter,
     handleInputChange,
@@ -240,13 +194,13 @@ export const useSendMessage = (controller: AbortController) => {
     setValue,
     regenerateMessage,
     sendLoading: !done,
-    loading,
     scrollRef,
     messageContainerRef,
     derivedMessages,
     removeMessageById,
-    handleUploadFile: onUploadFile,
+    handleUploadFile,
     isUploading,
     removeFile,
+    setDerivedMessages,
   };
 };

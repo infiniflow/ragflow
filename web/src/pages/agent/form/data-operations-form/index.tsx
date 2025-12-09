@@ -1,8 +1,10 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { Form, FormLabel } from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
+import { Separator } from '@/components/ui/separator';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { memo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -17,14 +19,18 @@ import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { FormWrapper } from '../components/form-wrapper';
-import { Output } from '../components/output';
+import { Output, OutputSchema } from '../components/output';
 import { QueryVariableList } from '../components/query-variable-list';
 import { FilterValues } from './filter-values';
 import { SelectKeys } from './select-keys';
 import { Updates } from './updates';
 
 export const RetrievalPartialSchema = {
-  inputs: z.array(z.object({ input: z.string().optional() })),
+  query: z.array(
+    z.object({
+      input: z.string().min(1, { message: t('flow.queryRequired') }),
+    }),
+  ),
   operations: z.string(),
   select_keys: z.array(z.object({ name: z.string().optional() })).optional(),
   remove_keys: z.array(z.object({ name: z.string().optional() })).optional(),
@@ -50,6 +56,7 @@ export const RetrievalPartialSchema = {
       }),
     )
     .optional(),
+  ...OutputSchema,
 };
 
 export const FormSchema = z.object(RetrievalPartialSchema);
@@ -65,6 +72,7 @@ function DataOperationsForm({ node }: INextOperatorForm) {
 
   const form = useForm<DataOperationsFormSchemaType>({
     defaultValues: defaultValues,
+    mode: 'onChange',
     resolver: zodResolver(FormSchema),
     shouldUnregister: true,
   });
@@ -78,17 +86,17 @@ function DataOperationsForm({ node }: INextOperatorForm) {
     true,
   );
 
-  useWatchFormChange(node?.id, form);
+  useWatchFormChange(node?.id, form, true);
 
   return (
     <Form {...form}>
       <FormWrapper>
-        <div className="space-y-2">
-          <FormLabel tooltip={t('flow.queryTip')}>{t('flow.query')}</FormLabel>
-          <QueryVariableList
-            types={[JsonSchemaDataType.Array, JsonSchemaDataType.Object]}
-          ></QueryVariableList>
-        </div>
+        <QueryVariableList
+          tooltip={t('flow.queryTip')}
+          label={t('flow.query')}
+          types={[JsonSchemaDataType.Object]}
+        ></QueryVariableList>
+        <Separator />
         <RAGFlowFormItem name="operations" label={t('flow.operations')}>
           <SelectWithSearch options={OperationsOptions} allowClear />
         </RAGFlowFormItem>
@@ -107,7 +115,7 @@ function DataOperationsForm({ node }: INextOperatorForm) {
         {operations === Operations.AppendOrUpdate && (
           <Updates
             name="updates"
-            label={t('flow.operationsOptions.updates')}
+            label={t('flow.operationsOptions.appendOrUpdate')}
             keyField="key"
             valueField="value"
           ></Updates>
@@ -126,7 +134,7 @@ function DataOperationsForm({ node }: INextOperatorForm) {
             label={t('flow.operationsOptions.filterValues')}
           ></FilterValues>
         )}
-        <Output list={outputList}></Output>
+        <Output list={outputList} isFormRequired></Output>
       </FormWrapper>
     </Form>
   );

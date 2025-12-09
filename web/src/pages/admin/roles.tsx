@@ -18,15 +18,9 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { LoadingButton } from '@/components/ui/loading-button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs-underlined';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LucideEdit3, LucideTrash2, LucideUserPlus } from 'lucide-react';
 
 import {
@@ -149,7 +143,7 @@ function AdminRoles() {
 
   return (
     <>
-      <Card className="!shadow-none relative w-full h-full border border-border-button bg-transparent rounded-xl">
+      <Card className="!shadow-none relative w-full h-full border-0.5 border-border-button bg-transparent rounded-xl">
         <Spotlight />
 
         <ScrollArea className="size-full">
@@ -170,9 +164,9 @@ function AdminRoles() {
               roleList.map((role) => (
                 <Card
                   key={role.id}
-                  className="group border border-border-default bg-transparent dark:hover:bg-bg-card transition-color duration-150"
+                  className="group/role border-0.5 border-border-default bg-transparent dark:hover:bg-bg-card transition-color duration-150"
                 >
-                  <CardHeader className="space-y-0 flex flex-row gap-4 items-center border-b border-border-button">
+                  <CardHeader className="space-y-0 flex flex-row gap-4 items-center border-b-0.5 border-border-button">
                     <div className="space-y-1.5 w-0 flex-1">
                       <CardTitle className="font-normal text-xl">
                         {role.role_name}
@@ -187,7 +181,10 @@ function AdminRoles() {
 
                         <Button
                           variant="transparent"
-                          className="ml-2 p-0 border-0 size-[1em] align-middle opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                          className="
+                            ml-2 p-0 border-0 size-[1em] align-middle opacity-0
+                            group-hover/role:opacity-100 group-focus-within/role:opacity-100
+                          "
                           onClick={() => {
                             setEditRoleDescriptionModalOpen(true);
                             setRoleToMakeAction(role);
@@ -202,7 +199,7 @@ function AdminRoles() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="ml-auto opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                      className="ml-auto opacity-0 group-hover/role:opacity-100 group-focus-within/role:opacity-100"
                       disabled={deleteRoleMutation.isPending}
                       onClick={() => {
                         setDeleteModalOpen(true);
@@ -218,12 +215,12 @@ function AdminRoles() {
                       className="h-full flex flex-col"
                       defaultValue={resourceTypes?.[0]}
                     >
-                      <TabsList className="p-0 mb-2 gap-4 bg-transparent">
+                      <TabsList className="p-0 mb-2 gap-4 bg-transparent justify-start">
                         {resourceTypes?.map((resourceName) => (
                           <TabsTrigger
                             key={resourceName}
                             value={resourceName}
-                            className="text-text-secondary !border-border-button data-[state=active]:bg-bg-card data-[state=active]:text-text-primary"
+                            className="text-text-secondary border-0.5 border-border-button data-[state=active]:bg-bg-card"
                           >
                             {t(
                               `admin.resourceType.${resourceName.toLowerCase()}`,
@@ -283,24 +280,24 @@ function AdminRoles() {
       {/* Add role modal */}
       <Dialog open={isAddRoleModalOpen} onOpenChange={setAddRoleModalOpen}>
         <DialogContent
-          className="max-w-2xl p-0 border-border-button"
+          className="max-w-2xl"
           onAnimationEnd={() => {
             if (!isAddRoleModalOpen) {
               createRoleForm.form.reset();
             }
           }}
         >
-          <DialogHeader className="p-6 border-b border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.addNewRole')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4">
+          <section className="px-6">
             <createRoleForm.FormComponent
               onSubmit={createRoleMutation.mutate}
             />
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -309,14 +306,14 @@ function AdminRoles() {
               {t('admin.cancel')}
             </Button>
 
-            <LoadingButton
+            <Button
               type="submit"
               form={createRoleForm.id}
               className="px-4 h-10"
               variant="default"
             >
               {t('admin.confirm')}
-            </LoadingButton>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -327,18 +324,17 @@ function AdminRoles() {
         onOpenChange={setEditRoleDescriptionModalOpen}
       >
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!isEditRoleDescriptionModalOpen) {
               setRoleToMakeAction(null);
             }
           }}
         >
-          <DialogHeader className="p-6 border-b border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.editRoleDescription')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4">
+          <section className="px-6">
             <form
               id={editRoleDescriptionFormId}
               onSubmit={(evt) => {
@@ -363,7 +359,7 @@ function AdminRoles() {
             </form>
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -372,13 +368,13 @@ function AdminRoles() {
               {t('admin.cancel')}
             </Button>
 
-            <LoadingButton
+            <Button
               type="submit"
               form={editRoleDescriptionFormId}
               className="px-4 h-10"
             >
               {t('admin.confirm')}
-            </LoadingButton>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -386,28 +382,27 @@ function AdminRoles() {
       {/* Delete role modal */}
       <Dialog open={deleteModalOpen} onOpenChange={setDeleteModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
           onAnimationEnd={() => {
             if (!deleteModalOpen) {
               setRoleToMakeAction(null);
             }
           }}
         >
-          <DialogHeader className="p-6 border-b border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.deleteRole')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 py-4">
+          <section className="px-6">
             <DialogDescription className="text-text-primary">
               {t('admin.deleteRoleConfirmation')}
             </DialogDescription>
 
-            <div className="rounded-lg mt-6 p-4 border border-border-button">
+            <div className="rounded-lg mt-6 p-4 border-0.5 border-border-button">
               {roleToMakeAction?.role_name}
             </div>
           </section>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -417,7 +412,7 @@ function AdminRoles() {
               {t('admin.cancel')}
             </Button>
 
-            <LoadingButton
+            <Button
               className="px-4 h-10"
               variant="destructive"
               onClick={() =>
@@ -428,7 +423,7 @@ function AdminRoles() {
               loading={deleteRoleMutation.isPending}
             >
               {t('admin.delete')}
-            </LoadingButton>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

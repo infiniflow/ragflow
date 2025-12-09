@@ -1,3 +1,4 @@
+import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { FormContainer } from '@/components/form-container';
 import { FilterButton } from '@/components/list-filter-bar';
@@ -99,9 +100,9 @@ export function TestingResult({
         </>
       )}
       {!data.chunks?.length && !loading && (
-        <div className="flex justify-center items-center w-full h-[calc(100vh-241px)]">
+        <div className="flex justify-center items-center w-full h-[calc(100vh-280px)]">
           <div>
-            <Empty>
+            <Empty type={EmptyType.SearchData} iconWidth={80}>
               {data.isRuned && (
                 <div className="text-text-secondary">
                   {t('knowledgeDetails.noTestResultsForRuned')}

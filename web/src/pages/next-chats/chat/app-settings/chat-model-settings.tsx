@@ -3,7 +3,10 @@ import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
 export function ChatModelSettings() {
   return (
     <div className="space-y-8">
-      <LlmSettingFieldItems prefix="llm_setting"></LlmSettingFieldItems>
+      <LlmSettingFieldItems
+        prefix="llm_setting"
+        llmId="llm_id"
+      ></LlmSettingFieldItems>
     </div>
   );
 }

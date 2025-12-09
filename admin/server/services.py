@@ -13,8 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-
+import logging
 import re
 from werkzeug.security import check_password_hash
 from common.constants import ActiveEnum
@@ -52,6 +51,7 @@ class UserMgr:
         result = []
         for user in users:
             result.append({
+                'avatar': user.avatar,
                 'email': user.email,
                 'language': user.language,
                 'last_login_time': user.last_login_time,
@@ -170,7 +170,8 @@ class UserServiceMgr:
         return [{
             'title': r['title'],
             'permission': r['permission'],
-            'canvas_category': r['canvas_category'].split('_')[0]
+            'canvas_category': r['canvas_category'].split('_')[0],
+            'avatar': r['avatar']
         } for r in res]
 
 
@@ -188,8 +189,13 @@ class ServiceMgr:
                     config_dict['status'] = service_detail['status']
                 else:
                     config_dict['status'] = 'timeout'
-            except Exception:
+            except Exception as e:
+                logging.warning(f"Can't get service details, error: {e}")
                 config_dict['status'] = 'timeout'
+            if not config_dict['host']:
+                config_dict['host'] = '-'
+            if not config_dict['port']:
+                config_dict['port'] = '-'
             result.append(config_dict)
         return result
 
@@ -199,17 +205,13 @@ class ServiceMgr:
 
     @staticmethod
     def get_service_details(service_id: int):
-        service_id = int(service_id)
+        service_idx = int(service_id)
         configs = SERVICE_CONFIGS.configs
-        service_config_mapping = {
-            c.id: {
-                'name': c.name,
-                'detail_func_name': c.detail_func_name
-            } for c in configs
-        }
-        service_info = service_config_mapping.get(service_id, {})
-        if not service_info:
-            raise AdminException(f"invalid service_id: {service_id}")
+        if service_idx < 0 or service_idx >= len(configs):
+            raise AdminException(f"invalid service_index: {service_idx}")
+
+        service_config = configs[service_idx]
+        service_info = {'name': service_config.name, 'detail_func_name': service_config.detail_func_name}
 
         detail_func = getattr(health_utils, service_info.get('detail_func_name'))
         res = detail_func()

@@ -1,10 +1,18 @@
-import { get } from 'lodash';
+import { getStructuredDatatype } from '@/utils/canvas-util';
+import { get, isPlainObject } from 'lodash';
 import { ReactNode, useCallback } from 'react';
-import { AgentStructuredOutputField, Operator } from '../constant';
+import {
+  AgentStructuredOutputField,
+  JsonSchemaDataType,
+  Operator,
+} from '../constant';
 import useGraphStore from '../store';
 
+function splitValue(value?: string) {
+  return typeof value === 'string' ? value?.split('@') : [];
+}
 function getNodeId(value: string) {
-  return value.split('@').at(0);
+  return splitValue(value).at(0);
 }
 
 export function useShowSecondaryMenu() {
@@ -59,7 +67,7 @@ export function useFindAgentStructuredOutputLabel() {
       }>,
     ) => {
       // agent structured output
-      const fields = value.split('@');
+      const fields = splitValue(value);
       if (
         getOperatorTypeFromId(fields.at(0)) === Operator.Agent &&
         fields.at(1)?.startsWith(AgentStructuredOutputField)
@@ -78,6 +86,94 @@ export function useFindAgentStructuredOutputLabel() {
       }
     },
     [getOperatorTypeFromId],
+  );
+
+  return findAgentStructuredOutputLabel;
+}
+
+export function useFindAgentStructuredOutputTypeByValue() {
+  const { getOperatorTypeFromId } = useGraphStore((state) => state);
+  const filterStructuredOutput = useGetStructuredOutputByValue();
+
+  const findTypeByValue = useCallback(
+    (
+      values: unknown,
+      target: string,
+      path: string = '',
+    ): string | undefined => {
+      const properties =
+        get(values, 'properties') || get(values, 'items.properties');
+
+      if (isPlainObject(values) && properties) {
+        for (const [key, value] of Object.entries(properties)) {
+          const nextPath = path ? `${path}.${key}` : key;
+          const { dataType, compositeDataType } = getStructuredDatatype(value);
+
+          if (nextPath === target) {
+            return compositeDataType;
+          }
+
+          if (
+            [JsonSchemaDataType.Object, JsonSchemaDataType.Array].some(
+              (x) => x === dataType,
+            )
+          ) {
+            const type = findTypeByValue(value, target, nextPath);
+            if (type) {
+              return type;
+            }
+          }
+        }
+      }
+    },
+    [],
+  );
+
+  const findAgentStructuredOutputTypeByValue = useCallback(
+    (value?: string) => {
+      if (!value) {
+        return;
+      }
+      const fields = splitValue(value);
+      const nodeId = fields.at(0);
+      const jsonSchema = filterStructuredOutput(value);
+
+      if (
+        getOperatorTypeFromId(nodeId) === Operator.Agent &&
+        fields.at(1)?.startsWith(AgentStructuredOutputField)
+      ) {
+        const jsonSchemaFields = fields
+          .at(1)
+          ?.slice(AgentStructuredOutputField.length + 1);
+
+        if (jsonSchemaFields) {
+          const type = findTypeByValue(jsonSchema, jsonSchemaFields);
+          return type;
+        }
+      }
+    },
+    [filterStructuredOutput, findTypeByValue, getOperatorTypeFromId],
+  );
+
+  return findAgentStructuredOutputTypeByValue;
+}
+
+export function useFindAgentStructuredOutputLabelByValue() {
+  const { getNode } = useGraphStore((state) => state);
+
+  const findAgentStructuredOutputLabel = useCallback(
+    (value?: string) => {
+      if (value) {
+        const operatorName = getNode(getNodeId(value ?? ''))?.data.name;
+
+        if (operatorName) {
+          return operatorName + ' / ' + splitValue(value).at(1);
+        }
+      }
+
+      return '';
+    },
+    [getNode],
   );
 
   return findAgentStructuredOutputLabel;

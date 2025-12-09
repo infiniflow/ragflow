@@ -8,7 +8,7 @@ slug: /manage_users_and_services
 
 
 
-The Admin CLI and Admin Service form a client-server architectural suite for RAGflow system administration. The Admin CLI serves as an interactive command-line interface that receives instructions and displays execution results from the Admin Service in real-time. This duo enables real-time monitoring of system operational status, supporting visibility into RAGflow Server services and dependent components including MySQL, Elasticsearch, Redis, and MinIO. In administrator mode, they provide user management capabilities that allow viewing users and performing critical operations—such as user creation, password updates, activation status changes, and comprehensive user data deletion—even when corresponding web interface functionalities are disabled.
+The Admin CLI and Admin Service form a client-server architectural suite for RAGFlow system administration. The Admin CLI serves as an interactive command-line interface that receives instructions and displays execution results from the Admin Service in real-time. This duo enables real-time monitoring of system operational status, supporting visibility into RAGFlow Server services and dependent components including MySQL, Elasticsearch, Redis, and MinIO. In administrator mode, they provide user management capabilities that allow viewing users and performing critical operations—such as user creation, password updates, activation status changes, and comprehensive user data deletion—even when corresponding web interface functionalities are disabled.
 
 
 
@@ -46,7 +46,7 @@ The Admin CLI and Admin Service form a client-server architectural suite for RAG
 2. Install ragflow-cli.
 
    ```bash
-   pip install ragflow-cli==0.21.1
+   pip install ragflow-cli==0.22.1
    ```
 
 3. Launch the CLI client:
@@ -64,7 +64,10 @@ The Admin CLI and Admin Service form a client-server architectural suite for RAG
     
     - -p: RAGFlow admin server port
 
+## Default administrative account
 
+- Username: admin@ragflow.io
+- Password: admin
 
 ## Supported Commands
 
@@ -72,7 +75,7 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 
 ### Service manage commands
 
- `LIST SERVICES;`
+`LIST SERVICES;`
 
 - Lists all available services within the RAGFlow system.
 
@@ -82,6 +85,11 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 
 - Shows detailed status information for the service identified by **id**.
 - [Example](#example-show-service)
+
+`SHOW VERSION;`
+
+- Shows RAGFlow version.
+- [Example](#example-show-version)
 
 ### User Management Commands
 
@@ -231,6 +239,18 @@ Service redis is alive. Detail:
 +-----------------+-------------------+---------------------------+-------------------------+---------------+-------------+--------------------------+---------------------+-------------+
 | 0               | 2                 | 1                         | 10.41                   | 7.2.4         | standalone  | 10446                    | 30.84G              | 1.10M       |
 +-----------------+-------------------+---------------------------+-------------------------+---------------+-------------+--------------------------+---------------------+-------------+
+```
+<span id="example-show-version"></span>
+
+- Show RAGFlow version
+
+```
+admin> show version;
++-----------------------+
+| version               |
++-----------------------+
+| v0.21.0-241-gc6cf58d5 |
++-----------------------+
 ```
 
 <span id="example-list-users"></span>

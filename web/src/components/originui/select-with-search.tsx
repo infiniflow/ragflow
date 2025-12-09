@@ -47,6 +47,7 @@ export type SelectWithSearchFlagProps = {
   allowClear?: boolean;
   disabled?: boolean;
   placeholder?: string;
+  emptyData?: string;
 };
 
 function findLabelWithoutOptions(
@@ -78,6 +79,7 @@ export const SelectWithSearch = forwardRef<
       allowClear = false,
       disabled = false,
       placeholder = t('common.selectPlaceholder'),
+      emptyData = t('common.noDataFound'),
     },
     ref,
   ) => {
@@ -140,7 +142,7 @@ export const SelectWithSearch = forwardRef<
             ref={ref}
             disabled={disabled}
             className={cn(
-              '!bg-bg-input hover:bg-background border-input w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto',
+              '!bg-bg-input hover:bg-background border-border-button w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto group',
               triggerClassName,
             )}
           >
@@ -149,37 +151,44 @@ export const SelectWithSearch = forwardRef<
                 <span className="leading-none truncate">{selectLabel}</span>
               </span>
             ) : (
-              <span className="text-muted-foreground">{placeholder}</span>
+              <span className="text-text-disabled">{placeholder}</span>
             )}
             <div className="flex items-center justify-between">
               {value && allowClear && (
                 <>
                   <XIcon
-                    className="h-4 mx-2 cursor-pointer text-muted-foreground"
+                    className="h-4 mx-2 cursor-pointer text-text-disabled hidden group-hover:block"
                     onClick={handleClear}
                   />
                   <Separator
                     orientation="vertical"
-                    className="flex min-h-6 h-full"
+                    className=" min-h-6 h-full hidden group-hover:flex"
                   />
                 </>
               )}
               <ChevronDownIcon
                 size={16}
-                className="text-muted-foreground/80 shrink-0 ml-2"
+                className="text-text-disabled shrink-0 ml-2"
                 aria-hidden="true"
               />
             </div>
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="border-input w-full min-w-[var(--radix-popper-anchor-width)] p-0"
+          className="border-border-button w-full min-w-[var(--radix-popper-anchor-width)] p-0"
           align="start"
         >
-          <Command>
-            <CommandInput placeholder={t('common.search') + '...'} />
-            <CommandList>
-              <CommandEmpty>{t('common.noDataFound')}</CommandEmpty>
+          <Command className="p-5">
+            {options && options.length > 0 && (
+              <CommandInput
+                placeholder={t('common.search') + '...'}
+                className=" placeholder:text-text-disabled"
+              />
+            )}
+            <CommandList className="mt-2 outline-none">
+              <CommandEmpty>
+                <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
+              </CommandEmpty>
               {options.map((group, idx) => {
                 if (group.options) {
                   return (
@@ -191,6 +200,9 @@ export const SelectWithSearch = forwardRef<
                             value={option.value}
                             disabled={option.disabled}
                             onSelect={handleSelect}
+                            className={
+                              value === option.value ? 'bg-bg-card' : ''
+                            }
                           >
                             <span className="leading-none">{option.label}</span>
 
@@ -209,6 +221,11 @@ export const SelectWithSearch = forwardRef<
                       value={group.value}
                       disabled={group.disabled}
                       onSelect={handleSelect}
+                      className={
+                        value === group.value
+                          ? 'bg-bg-card min-h-10'
+                          : 'min-h-10'
+                      }
                     >
                       <span className="leading-none">{group.label}</span>
 

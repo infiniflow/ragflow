@@ -15,17 +15,14 @@ import {
   LucideClipboardList,
   LucideDot,
   LucideFilter,
-  LucideSearch,
   LucideSettings2,
 } from 'lucide-react';
 
 import { useQuery } from '@tanstack/react-query';
 
-import { cn } from '@/lib/utils';
-
 import Spotlight from '@/components/spotlight';
 import { TableEmpty } from '@/components/table-skeleton';
-import { Badge } from '@/components/ui/badge';
+import { Badge, BadgeProps } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -37,11 +34,12 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Popover,
@@ -69,7 +67,9 @@ import {
   getSortIcon,
 } from './utils';
 
+import JsonView from 'react18-json-view';
 import ServiceDetail from './service-detail';
+import TaskExecutorDetail from './task-executor-detail';
 
 const columnHelper = createColumnHelper<AdminService.ListServicesItem>();
 const globalFilterFn = createFuzzySearchFn<AdminService.ListServicesItem>([
@@ -127,17 +127,17 @@ function AdminServiceStatus() {
       }),
       columnHelper.accessor('host', {
         header: t('admin.host'),
-        cell: ({ row }) => (
-          <Badge variant="secondary" className="font-normal text-text-primary">
-            <i>{row.getValue('host')}</i>
+        cell: ({ cell }) => (
+          <Badge variant="secondary">
+            <i>{cell.getValue()}</i>
           </Badge>
         ),
       }),
       columnHelper.accessor('port', {
         header: t('admin.port'),
-        cell: ({ row }) => (
-          <Badge variant="secondary" className="font-normal text-text-primary">
-            <i>{row.getValue('port')}</i>
+        cell: ({ cell }) => (
+          <Badge variant="secondary">
+            <i>{cell.getValue()}</i>
           </Badge>
         ),
       }),
@@ -145,15 +145,14 @@ function AdminServiceStatus() {
         header: t('admin.status'),
         cell: ({ cell }) => (
           <Badge
-            variant="secondary"
-            className={cn(
-              'pl-2 font-normal text-sm text-text-primary capitalize',
+            variant={
               {
-                alive: 'bg-state-success-5 text-state-success',
-                timeout: 'bg-state-error-5 text-state-error',
-                fail: 'bg-gray-500/5 text-text-disable',
-              }[cell.getValue()],
-            )}
+                alive: 'success',
+                timeout: 'destructive',
+                fail: 'grey',
+              }[cell.getValue()] as BadgeProps['variant']
+            }
+            className="pl-[.5em] capitalize"
           >
             <LucideDot className="size-[1em] stroke-[8] mr-1" />
             {t(`admin.${cell.getValue()}`)}
@@ -165,7 +164,7 @@ function AdminServiceStatus() {
         id: 'actions',
         header: t('admin.actions'),
         cell: ({ row }) => (
-          <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-100">
+          <div className="opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 transition-opacity">
             <Button
               variant="transparent"
               size="icon"
@@ -206,6 +205,8 @@ function AdminServiceStatus() {
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+
+    enableSorting: false,
   });
 
   useEffect(() => {
@@ -216,7 +217,7 @@ function AdminServiceStatus() {
 
   return (
     <>
-      <Card className="!shadow-none relative h-full border border-border-button bg-transparent rounded-xl">
+      <Card className="!shadow-none relative h-full bg-transparent rounded-xl overflow-hidden">
         <Spotlight />
 
         <ScrollArea className="size-full">
@@ -229,16 +230,20 @@ function AdminServiceStatus() {
                   <Button
                     size="icon"
                     variant="outline"
-                    className="dark:bg-bg-input dark:border-border-button text-text-secondary"
+                    className="border-0.5"
+                    // className="
+                    //   text-text-secondary
+                    //   dark:bg-bg-input dark:border-border-button
+                    //   hover:bg-border-button dark:hover:bg-border-button
+                    //   focus-visible:ring-0 focus-visible:text-text-primary
+                    //   focus-visible:bg-border-button focus-visible:border-border-button
+                    // "
                   >
                     <LucideFilter className="h-4 w-4" />
                   </Button>
                 </PopoverTrigger>
 
-                <PopoverContent
-                  align="end"
-                  className="bg-bg-base text-text-secondary"
-                >
+                <PopoverContent align="end">
                   <div className="p-2 space-y-6">
                     <section>
                       <div className="font-bold mb-3">
@@ -247,9 +252,9 @@ function AdminServiceStatus() {
 
                       <RadioGroup
                         value={
-                          table
+                          (table
                             .getColumn('service_type')!
-                            ?.getFilterValue() as string
+                            ?.getFilterValue() as string) ?? ''
                         }
                         onValueChange={
                           table.getColumn('service_type')!?.setFilterValue
@@ -291,15 +296,12 @@ function AdminServiceStatus() {
                 </PopoverContent>
               </Popover>
 
-              <div className="relative w-56">
-                <LucideSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <Input
-                  className="pl-10 h-10 bg-bg-input border-border-button"
-                  placeholder={t('header.search')}
-                  value={table.getState().globalFilter}
-                  onChange={(e) => table.setGlobalFilter(e.target.value)}
-                />
-              </div>
+              <SearchInput
+                className="w-56 h-10 bg-bg-input border-border-button"
+                placeholder={t('header.search')}
+                value={table.getState().globalFilter}
+                onChange={(e) => table.setGlobalFilter(e.target.value)}
+              />
             </div>
           </CardHeader>
 
@@ -345,7 +347,7 @@ function AdminServiceStatus() {
               <TableBody>
                 {table.getRowModel().rows?.length ? (
                   table.getRowModel().rows.map((row) => (
-                    <TableRow key={row.id} className="group">
+                    <TableRow key={row.id} className="group/row">
                       {row.getVisibleCells().map((cell) => (
                         <TableCell key={cell.id}>
                           {flexRender(
@@ -382,28 +384,29 @@ function AdminServiceStatus() {
       {/* Extra info modal*/}
       <Dialog open={extraInfoModalOpen} onOpenChange={setExtraInfoModalOpen}>
         <DialogContent
-          className="p-0 border-border-button"
+          className="flex flex-col max-h-[calc(100vh-4rem)] overflow-hidden"
           onAnimationEnd={() => {
             if (!extraInfoModalOpen) {
               setItemToMakeAction(null);
             }
           }}
         >
-          <DialogHeader className="p-6 border-b border-border-button">
+          <DialogHeader>
             <DialogTitle>{t('admin.extraInfo')}</DialogTitle>
           </DialogHeader>
 
-          <section className="px-12 pt-6 pb-4">
-            <div className="rounded-lg p-4 border border-border-button bg-bg-input">
-              <pre className="text-sm">
-                <code>
-                  {JSON.stringify(itemToMakeAction?.extra ?? {}, null, 2)}
-                </code>
-              </pre>
-            </div>
-          </section>
+          <DialogDescription className="sr-only" />
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <ScrollArea className="h-0 flex-1 grid">
+            <div className="px-6">
+              <JsonView
+                src={itemToMakeAction?.extra ?? {}}
+                className="rounded-lg p-4 bg-bg-card break-words text-text-secondary"
+              />
+            </div>
+          </ScrollArea>
+
+          <DialogFooter className="flex justify-end gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"
@@ -418,26 +421,42 @@ function AdminServiceStatus() {
       {/* Service details modal */}
       <Dialog open={detailModalOpen} onOpenChange={setDetailModalOpen}>
         <DialogContent
-          className="flex flex-col max-h-[calc(100vh-4rem)] max-w-6xl p-0 border-border-button"
+          className="flex flex-col max-h-[calc(100vh-4rem)] max-w-6xl overflow-hidden"
           onAnimationEnd={() => {
             if (!detailModalOpen) {
               setItemToMakeAction(null);
             }
           }}
         >
-          <DialogHeader className="p-6 border-b border-border-button">
+          <DialogHeader className="p-6 border-b-0.5 border-border-button">
             <DialogTitle>
-              <Trans i18nKey="admin.serviceDetail">
-                {{ name: itemToMakeAction?.name }}
-              </Trans>
+              {itemToMakeAction?.service_type === 'task_executor' ? (
+                t('admin.taskExecutorDetail')
+              ) : (
+                <Trans i18nKey="admin.serviceDetail">
+                  {{ name: itemToMakeAction?.name }}
+                </Trans>
+              )}
             </DialogTitle>
           </DialogHeader>
 
-          <ScrollArea className="pt-6 pb-4 px-12 h-0 flex-1 text-text-secondary flex flex-col">
-            <ServiceDetail content={serviceDetails?.message} />
+          <DialogDescription className="sr-only" />
+
+          <ScrollArea className="h-0 flex-1 text-text-secondary grid">
+            <div className="px-6">
+              {itemToMakeAction?.service_type === 'task_executor' ? (
+                <TaskExecutorDetail
+                  content={
+                    serviceDetails?.message as AdminService.TaskExecutorInfo
+                  }
+                />
+              ) : (
+                <ServiceDetail content={serviceDetails?.message} />
+              )}
+            </div>
           </ScrollArea>
 
-          <DialogFooter className="flex justify-end gap-4 px-12 pt-4 pb-8">
+          <DialogFooter className="flex justify-end gap-4 px-6 py-4">
             <Button
               className="px-4 h-10 dark:border-border-button"
               variant="outline"

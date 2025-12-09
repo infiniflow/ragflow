@@ -25,7 +25,7 @@ from rag.nlp import bullets_category, remove_contents_table, \
     make_colon_as_title, tokenize_chunks, docx_question_level, tree_merge
 from rag.nlp import rag_tokenizer, Node
 from deepdoc.parser import PdfParser, DocxParser, HtmlParser
-from rag.app.naive import plaintext_parser, PARSERS
+from rag.app.naive import by_plaintext, PARSERS
 
 
 
@@ -161,10 +161,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
 
         name = layout_recognizer.strip().lower()
-        parser = PARSERS.get(name, plaintext_parser)
+        parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
 
-        raw_sections, tables, _ = parser(
+        raw_sections, tables, pdf_parser = parser(
             filename = filename,
             binary = binary,
             from_page = from_page,
@@ -172,6 +172,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             lang = lang,
             callback = callback,
             pdf_cls = Pdf,
+            layout_recognizer = layout_recognizer,
             **kwargs
         )
 
@@ -200,12 +201,23 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        binary = BytesIO(binary)
-        doc_parsed = parser.from_buffer(binary)
-        sections = doc_parsed['content'].split('\n')
-        sections = [s for s in sections if s]
-        callback(0.8, "Finish parsing.")
+        try:
+            from tika import parser as tika_parser
+        except Exception as e:
+            callback(0.8, f"tika not available: {e}. Unsupported .doc parsing.")
+            logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
+            return []
 
+        binary = BytesIO(binary)
+        doc_parsed = tika_parser.from_buffer(binary)
+        if doc_parsed.get('content', None) is not None:
+            sections = doc_parsed['content'].split('\n')
+            sections = [s for s in sections if s]
+            callback(0.8, "Finish parsing.")
+        else:
+            callback(0.8, f"tika.parser got empty content from {filename}.")
+            logging.warning(f"tika.parser got empty content from {filename}.")
+            return []
     else:
         raise NotImplementedError(
             "file type not supported yet(doc, docx, pdf, txt supported)")
