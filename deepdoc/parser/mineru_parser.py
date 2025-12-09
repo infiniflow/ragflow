@@ -63,6 +63,7 @@ class MinerUParser(RAGFlowPdfParser):
         self.using_api = False
         self.outlines = []
         self.logger = logging.getLogger(self.__class__.__name__)
+        self._img_path_cache = {}  # line_tag -> img_path mapping for crop() lookup
 
     def _extract_zip_no_root(self, zip_path, extract_to, root_dir):
         self.logger.info(f"[MinerU] Extract zip: zip_path={zip_path}, extract_to={extract_to}, root_hint={root_dir}")
@@ -334,13 +335,33 @@ class MinerUParser(RAGFlowPdfParser):
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join([str(p) for p in pn]), x0, x1, top, bott)
 
     def crop(self, text, ZM=1, need_position=False):
-        imgs = []
+        """Crop image for chunk. Prioritize cached img_path from MinerU/兜底生成, fallback to page crop."""
         poss = self.extract_positions(text)
         if not poss:
             if need_position:
                 return None, None
             return
+        
+        # 优先使用缓存的 img_path (来自 MinerU 或 _generate_missing_images)
+        cache = getattr(self, "_img_path_cache", {})
+        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", text):
+            # 尝试精确匹配或近似匹配缓存
+            if tag in cache:
+                try:
+                    img = Image.open(cache[tag])
+                    if need_position:
+                        # 从第一个位置提取 position 信息
+                        first_pos = poss[0]
+                        pn = first_pos[0][0] if first_pos[0] else 0
+                        left, right, top, bottom = first_pos[1], first_pos[2], first_pos[3], first_pos[4]
+                        positions = [(pn + getattr(self, "page_from", 0), int(left), int(right), int(top), int(bottom))]
+                        return img, positions
+                    return img
+                except Exception as e:
+                    self.logger.debug(f"[MinerU] cached img_path load failed: {e}")
+                    break  # fallback to crop
 
+        # Fallback: 使用 page_images 裁剪
         if not getattr(self, "page_images", None):
             self.logger.warning("[MinerU] crop called without page images; skipping image generation.")
             if need_position:
@@ -352,20 +373,21 @@ class MinerUParser(RAGFlowPdfParser):
         filtered_poss = []
         for pns, left, right, top, bottom in poss:
             if not pns:
-                self.logger.warning("[MinerU] Empty page index list in crop; skipping this position.")
                 continue
             valid_pns = [p for p in pns if 0 <= p < page_count]
             if not valid_pns:
-                self.logger.warning(f"[MinerU] All page indices {pns} out of range for {page_count} pages; skipping.")
                 continue
             filtered_poss.append((valid_pns, left, right, top, bottom))
 
         poss = filtered_poss
         if not poss:
-            self.logger.warning("[MinerU] No valid positions after filtering; skip cropping.")
             if need_position:
                 return None, None
             return
+
+        # 避免超长拼接图 - 只取首个位置
+        if len(poss) > 1:
+            poss = [poss[0]]
 
         max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), 6)
         GAP = 6
@@ -486,7 +508,7 @@ class MinerUParser(RAGFlowPdfParser):
             return
         img_root = subdir / "generated_images"
         img_root.mkdir(parents=True, exist_ok=True)
-        text_types = {MinerUContentType.TEXT, MinerUContentType.LIST, MinerUContentType.CODE, MinerUContentType.HEADER}
+        text_types = {"text", "list", "header", "code", MinerUContentType.TEXT, MinerUContentType.LIST, MinerUContentType.EQUATION, MinerUContentType.CODE}
         generated = 0
         for idx, item in enumerate(outputs):
             if item.get("type") not in text_types:
@@ -504,23 +526,43 @@ class MinerUParser(RAGFlowPdfParser):
                 
             x0, y0, x1, y1 = self._bbox_to_pixels(bbox, self.page_images[page_idx].size)
             
+            # clamp to page boundary
+            pw, ph = self.page_images[page_idx].size
+            x0 = max(0, min(x0, pw))
+            y0 = max(0, min(y0, ph))
+            x1 = max(0, min(x1, pw))
+            y1 = max(0, min(y1, ph))
+
             # guard invalid bbox
             if x1 - x0 < 2 or y1 - y0 < 2:
                 continue
                 
             try:
-                crop = self.page_images[page_idx].crop((x0, y0, x1, y1))
+                cropped = self.page_images[page_idx].crop((x0, y0, x1, y1))
                 fname = f"{file_stem}_gen_{idx}.jpg"
                 out_path = img_root / fname
-                crop.save(out_path, format="JPEG", quality=80)
-                item["img_path"] = str(out_path.resolve())
+                cropped.save(out_path, format="JPEG", quality=80)
+                img_path_str = str(out_path.resolve())
+                item["img_path"] = img_path_str
+                
+                # Cache for crop() lookup: map line_tag to img_path
+                # 缓存两种格式的 key,确保无论 _transfer_to_sections 怎么生成 tag 都能匹配
+                line_tag = self._line_tag(item)
+                self._img_path_cache[line_tag] = img_path_str
+                
+                # 同时缓存原始 bbox 格式 (不依赖 page_images 的归一化坐标)
+                raw_bbox = item.get("bbox", [0, 0, 0, 0])
+                raw_tag = "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(
+                    page_idx + 1, float(raw_bbox[0]), float(raw_bbox[2]), float(raw_bbox[1]), float(raw_bbox[3])
+                )
+                self._img_path_cache[raw_tag] = img_path_str
                 generated += 1
             except Exception as e:
                 self.logger.debug(f"[MinerU] skip image gen idx={idx} page={page_idx}: {e}")
                 continue
                 
         if generated:
-            self.logger.info(f"[MinerU] generated {generated} fallback images for text blocks")
+            self.logger.info(f"[MinerU] generated {generated} fallback images, cached {len(self._img_path_cache)} tags")
 
     def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto", backend: str = "pipeline") -> list[dict[str, Any]]:
         candidates = []
@@ -607,29 +649,35 @@ class MinerUParser(RAGFlowPdfParser):
     def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None):
         sections = []
         for output in outputs:
-            match output["type"]:
-                case MinerUContentType.TEXT:
-                    section = output["text"]
-                case MinerUContentType.TABLE:
+            section = None
+            content_type = output.get("type", "")
+            
+            # 使用字符串匹配,兼容 MinerU API 返回的原始类型
+            match content_type:
+                case "text" | MinerUContentType.TEXT:
+                    section = output.get("text", "")
+                case "table" | MinerUContentType.TABLE:
                     section = output.get("table_body", "") + "\n".join(output.get("table_caption", [])) + "\n".join(output.get("table_footnote", []))
                     if not section.strip():
                         section = "FAILED TO PARSE TABLE"
-                case MinerUContentType.IMAGE:
+                case "image" | MinerUContentType.IMAGE:
                     section = "".join(output.get("image_caption", [])) + "\n" + "".join(output.get("image_footnote", []))
-                case MinerUContentType.EQUATION:
-                    section = output["text"]
-                case MinerUContentType.CODE:
-                    section = output["code_body"] + "\n".join(output.get("code_caption", []))
-                case MinerUContentType.LIST:
+                case "equation" | MinerUContentType.EQUATION:
+                    section = output.get("text", "")
+                case "code" | MinerUContentType.CODE:
+                    section = output.get("code_body", "") + "\n".join(output.get("code_caption", []))
+                case "list" | MinerUContentType.LIST:
                     section = "\n".join(output.get("list_items", []))
-                case MinerUContentType.DISCARDED:
+                case "header":
+                    section = output.get("text", "")
+                case "discarded" | MinerUContentType.DISCARDED:
                     pass
 
             if section and parse_method == "manual":
                 sections.append((section, output["type"], self._line_tag(output)))
             elif section and parse_method == "paper":
                 sections.append((section + self._line_tag(output), output["type"]))
-            else:
+            elif section:
                 sections.append((section, self._line_tag(output)))
         return sections
 
