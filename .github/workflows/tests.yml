@@ -34,9 +34,6 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci')) }}
     runs-on: [ "self-hosted", "ragflow-test" ]
     steps:
-      # https://github.com/hmarr/debug-action
-      #- uses: hmarr/debug-action@v2
-
       - name: Ensure workspace ownership
         run: |
           echo "Workflow triggered by ${{ github.event_name }}"
@@ -44,7 +41,7 @@ jobs:
 
       # https://github.com/actions/checkout/issues/1781
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
           fetch-depth: 0
@@ -129,7 +126,7 @@ jobs:
 
       - name: Run unit test
         run: |
-          uv sync --python 3.10 --group test --frozen
+          uv sync --python 3.11 --group test --frozen
           source .venv/bin/activate
           which pytest || echo "pytest not in PATH"
           echo "Start to run unit test"
@@ -141,7 +138,7 @@ jobs:
           RAGFLOW_IMAGE=infiniflow/ragflow:${GITHUB_RUN_ID}
           echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> ${GITHUB_ENV}
           sudo docker pull ubuntu:22.04
-          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 -f Dockerfile -t ${RAGFLOW_IMAGE} .
+          sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} -f Dockerfile -t ${RAGFLOW_IMAGE} .
           if [[ ${GITHUB_EVENT_NAME} == "schedule" ]]; then
             export HTTP_API_TEST_LEVEL=p3
           else
@@ -201,7 +198,7 @@ jobs:
           echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
-          uv sync --python 3.10 --only-group test --no-default-groups --frozen && uv pip install sdk/python --group test
+          uv sync --python 3.11 --only-group test --no-default-groups --frozen && uv pip install sdk/python --group test
 
       - name: Run sdk tests against Elasticsearch
         run: |
