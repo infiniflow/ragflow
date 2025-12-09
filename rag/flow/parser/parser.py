@@ -12,6 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import asyncio
 import io
 import json
 import os
@@ -634,7 +635,7 @@ class Parser(ProcessBase):
         self.set_output("output_format", conf["output_format"])
 
         cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"])
-        txt = cv_mdl.chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name)
+        txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name))
 
         self.set_output("text", txt)
 
