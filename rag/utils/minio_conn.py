@@ -115,8 +115,8 @@ class RAGFlowMinio:
         for _ in range(3):
             try:
                 # Note: bucket must already exist - we don't have permission to create buckets
-                # if not self.conn.bucket_exists(bucket):
-                #     self.conn.make_bucket(bucket)
+                if not self.bucket and not self.conn.bucket_exists(bucket):
+                    self.conn.make_bucket(bucket)
 
                 r = self.conn.put_object(bucket, fnm,
                                          BytesIO(binary),
