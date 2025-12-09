@@ -26,7 +26,7 @@ from quart import websocket
 
 from api.db.services.dialog_service import DialogService
 from api.db.services.canvas_service import UserCanvasService
-from api.db.services.conversation_service import completion as rag_completion
+from api.db.services.conversation_service import async_completion as rag_completion
 from api.db.services.canvas_service import completion as agent_completion
 from api.utils.api_utils import ws_token_required
 from common.constants import StatusEnum
@@ -91,7 +91,7 @@ async def chat_completions_ws(tenant_id, chat_id):
             
             try:
                 if stream:
-                    for response_chunk in rag_completion(
+                    async for response_chunk in rag_completion(
                         tenant_id=tenant_id,
                         chat_id=chat_id,
                         question=question,
@@ -110,7 +110,7 @@ async def chat_completions_ws(tenant_id, chat_id):
                     logging.info(f"Chat completion streamed successfully for chat_id: {chat_id}")
                 else:
                     response = None
-                    for resp in rag_completion(
+                    async for resp in rag_completion(
                         tenant_id=tenant_id,
                         chat_id=chat_id,
                         question=question,
