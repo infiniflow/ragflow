@@ -101,7 +101,7 @@ async def update_memory(memory_id):
     if "temperature" in req:
         temperature = float(req["temperature"])
         if not 0 <= temperature <= 1:
-            return get_error_argument_result(f"Temperature should be in range [0, 1].")
+            return get_error_argument_result("Temperature should be in range [0, 1].")
         update_dict["temperature"] = temperature
     # allow update to empty fields
     for field in ["avatar", "description", "system_prompt", "user_prompt"]:
