@@ -126,7 +126,7 @@ jobs:
 
       - name: Run unit test
         run: |
-          uv sync --python 3.11 --group test --frozen
+          uv sync --python 3.12 --group test --frozen
           source .venv/bin/activate
           which pytest || echo "pytest not in PATH"
           echo "Start to run unit test"
@@ -198,7 +198,7 @@ jobs:
           echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
 
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
-          uv sync --python 3.11 --only-group test --no-default-groups --frozen && uv pip install sdk/python --group test
+          uv sync --python 3.12 --only-group test --no-default-groups --frozen && uv pip install sdk/python --group test
 
       - name: Run sdk tests against Elasticsearch
         run: |

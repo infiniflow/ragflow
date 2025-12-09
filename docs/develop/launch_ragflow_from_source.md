@@ -44,14 +44,14 @@ cd ragflow/
 2. Install RAGFlow service's Python dependencies:
 
    ```bash
-   uv sync --python 3.11 --frozen
+   uv sync --python 3.12 --frozen
    ```
    *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment.*
 
    If you need to run tests against the RAGFlow service, install the test dependencies:
 
    ```bash
-   uv sync --python 3.11 --group test --frozen && uv pip install sdk/python --group test
+   uv sync --python 3.12 --group test --frozen && uv pip install sdk/python --group test
    ```
 
 ### Launch third-party services
