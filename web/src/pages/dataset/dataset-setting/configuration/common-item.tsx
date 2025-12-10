@@ -292,7 +292,7 @@ export function OverlappedPercent() {
   return (
     <SliderInputFormField
       name="parser_config.overlapped_percent"
-      label={t('flow.filenameEmbeddingWeight')}
+      label={t('knowledgeConfiguration.overlappedPercent')}
       max={0.5}
       step={0.01}
     ></SliderInputFormField>
