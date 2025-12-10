@@ -161,6 +161,21 @@ export function removePDFDownloadInfo(
   downloadInfo: DocumentDownloadInfo,
 ): string {
   try {
+    // First, check if the entire content is just the JSON (most common case)
+    try {
+      const parsed = JSON.parse(content);
+      if (
+        parsed &&
+        parsed.filename === downloadInfo.filename &&
+        parsed.base64 === downloadInfo.base64
+      ) {
+        // The entire content is just the download JSON, return empty
+        return '';
+      }
+    } catch {
+      // Content is not pure JSON, continue with removal
+    }
+
     // Try to remove the JSON string from content
     const jsonStr = JSON.stringify(downloadInfo);
     let cleaned = content.replace(jsonStr, '').trim();
@@ -168,6 +183,11 @@ export function removePDFDownloadInfo(
     // Also try with pretty-printed JSON (with indentation)
     const prettyJsonStr = JSON.stringify(downloadInfo, null, 2);
     cleaned = cleaned.replace(prettyJsonStr, '').trim();
+
+    // Also try to find and remove JSON object pattern from mixed content
+    // This handles cases where the JSON might have different formatting
+    const startPattern = /\{[^{}]*"filename"[^{}]*"base64"[^{}]*\}/g;
+    cleaned = cleaned.replace(startPattern, '').trim();
 
     return cleaned;
   } catch {
