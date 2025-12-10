@@ -1,6 +1,6 @@
 import ListFilterBar from '@/components/list-filter-bar';
 import { t } from 'i18next';
-import { useFetchMemoryMessageList } from '../hooks/use-memory-messages';
+import { useFetchMemoryMessageList } from './hook';
 import { MemoryTable } from './message-table';
 
 export default function MemoryMessage() {
@@ -43,9 +43,6 @@ export default function MemoryMessage() {
         // setRowSelection={setRowSelection}
         // loading={loading}
       ></MemoryTable>
-      <div className="flex items-center gap-2">
-        <div className="h-4 w-4 rounded-full bg-text ">message</div>
-      </div>
     </div>
   );
 }

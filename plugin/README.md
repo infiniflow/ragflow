@@ -92,6 +92,6 @@ def get_metadata(cls) -> LLMToolMetadata:
 
 The `get_metadata` method is a `classmethod`. It will provide the description of this tool to LLM.
 
-The fields starts with `display` can use a special notation: `$t:xxx`, which will use the i18n mechanism in the RAGFlow frontend, getting text from the `llmTools` category. The frontend will display what you put here if you don't use this notation.
+The fields start with `display` can use a special notation: `$t:xxx`, which will use the i18n mechanism in the RAGFlow frontend, getting text from the `llmTools` category. The frontend will display what you put here if you don't use this notation.
 
 Now our tool is ready. You can select it in the `Generate` component and try it out.

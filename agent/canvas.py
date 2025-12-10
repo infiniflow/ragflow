@@ -478,7 +478,7 @@ class Canvas(Graph):
                 })
             await _run_batch(idx, to)
             to = len(self.path)
-            # post processing of components invocation
+            # post-processing of components invocation
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])
                 cpn_obj = self.get_component_obj(self.path[i])
