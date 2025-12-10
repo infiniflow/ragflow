@@ -64,6 +64,7 @@ class MinerUParser(RAGFlowPdfParser):
         self.outlines = []
         self.logger = logging.getLogger(self.__class__.__name__)
         self._img_path_cache = {}  # line_tag -> img_path mapping for crop() lookup
+        self._native_img_map = {}  # line_tag -> native mineru image (image/table/equation)
 
     def _extract_zip_no_root(self, zip_path, extract_to, root_dir):
         self.logger.info(f"[MinerU] Extract zip: zip_path={zip_path}, extract_to={extract_to}, root_hint={root_dir}")
@@ -342,160 +343,171 @@ class MinerUParser(RAGFlowPdfParser):
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(pn, x0, x1, y0, y1)
 
     def crop(self, text, ZM=1, need_position=False):
-        """Crop image for chunk. Prioritize cached img_path from MinerU/兜底生成, fallback to page crop."""
+        """
+        MinerU专用智能crop：
+        1. 混合使用原生图（表格/图片）+ 兜底图（页宽条带）
+        2. 拼接时去重（相同bbox的图只用一次）
+        3. 阈值控制（最多10张，总高<2000px）
+        4. 保持高清（不缩放）
+        """
         poss = self.extract_positions(text)
         if not poss:
             if need_position:
                 return None, None
             return
         
-        # 优先使用缓存的 img_path (来自 MinerU 或 _generate_missing_images)
-        cache = getattr(self, "_img_path_cache", {})
-        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", text):
-            # 尝试精确匹配或近似匹配缓存
+        # Step 1: 收集所有tag对应的图片
+        images_to_stitch = []
+        seen_tags = set()  # 用于去重
+        
+        for pos in poss:
+            # 构造tag用于查找
+            pns, left, right, top, bottom = pos
+            if not pns:
+                continue
+            
+            page_num = pns[0] + 1  # 转为1-based
+            tag = f"@@{page_num}\t{left:.1f}\t{right:.1f}\t{top:.1f}\t{bottom:.1f}##"
+            
+            # ✅ 去重：如果tag已处理过，跳过
+            if tag in seen_tags:
+                self.logger.debug(f"[MinerU] Skipping duplicate tag: {tag}")
+                continue
+            seen_tags.add(tag)
+            
+            # 优先级1: 查找MinerU原生图（表格/图片/公式）
+            native_img_path = self._find_native_image_path(tag)
+            if native_img_path:
+                try:
+                    img = Image.open(native_img_path)
+                    images_to_stitch.append(("native", img, pos, tag))
+                    self.logger.debug(f"[MinerU] Using native image for tag: {tag}")
+                    continue
+                except Exception as e:
+                    self.logger.debug(f"[MinerU] Failed to load native image {native_img_path}: {e}")
+            
+            # 优先级2: 查找兜底生成的页宽图（缓存）
+            cache = getattr(self, "_img_path_cache", {})
             if tag in cache:
                 try:
                     img = Image.open(cache[tag])
-                    if need_position:
-                        # 从第一个位置提取 position 信息
-                        first_pos = poss[0]
-                        pn = first_pos[0][0] if first_pos[0] else 0
-                        left, right, top, bottom = first_pos[1], first_pos[2], first_pos[3], first_pos[4]
-                        positions = [(pn + getattr(self, "page_from", 0), int(left), int(right), int(top), int(bottom))]
-                        return img, positions
-                    return img
-                except Exception as e:
-                    self.logger.debug(f"[MinerU] cached img_path load failed: {e}")
-                    break  # fallback to crop
-
-        # Fallback: 使用 page_images 裁剪
-        if not getattr(self, "page_images", None):
-            self.logger.warning("[MinerU] crop called without page images; skipping image generation.")
-            if need_position:
-                return None, None
-            return
-
-        page_count = len(self.page_images)
-
-        filtered_poss = []
-        for pns, left, right, top, bottom in poss:
-            if not pns:
-                continue
-            valid_pns = [p for p in pns if 0 <= p < page_count]
-            if not valid_pns:
-                continue
-            filtered_poss.append((valid_pns, left, right, top, bottom))
-
-        poss = filtered_poss
-        if not poss:
-            if need_position:
-                return None, None
-            return
-
-        # Convert 0-1000 normalized coordinates to pixels using page dimensions
-        # This ensures compatibility with GAP/padding logic and correct cropping
-        pixel_poss = []
-        for pns, left, right, top, bottom in poss:
-            if not pns: continue
-            page_idx = pns[0]
-            if not (0 <= page_idx < page_count): continue
-            
-            W, H = self.page_images[page_idx].size
-            x0 = left * W / 1000.0
-            x1 = right * W / 1000.0
-            y0 = top * H / 1000.0
-            y1 = bottom * H / 1000.0
-            pixel_poss.append((pns, x0, x1, y0, y1))
-        poss = pixel_poss
-
-        # 避免超长拼接图 - 只取首个位置
-        if len(poss) > 1:
-            poss = [poss[0]]
-
-        max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), 6)
-        GAP = 6
-        pos = poss[0]
-        first_page_idx = pos[0][0]
-        poss.insert(0, ([first_page_idx], pos[1], pos[2], max(0, pos[3] - 120), max(pos[3] - GAP, 0)))
-        pos = poss[-1]
-        last_page_idx = pos[0][-1]
-        if not (0 <= last_page_idx < page_count):
-            self.logger.warning(f"[MinerU] Last page index {last_page_idx} out of range for {page_count} pages; skipping crop.")
-            if need_position:
-                return None, None
-            return
-        last_page_height = self.page_images[last_page_idx].size[1]
-        poss.append(
-            (
-                [last_page_idx],
-                pos[1],
-                pos[2],
-                min(last_page_height, pos[4] + GAP),
-                min(last_page_height, pos[4] + 120),
-            )
-        )
-
-        positions = []
-        imgs = []
-        for ii, (pns, left, right, top, bottom) in enumerate(poss):
-            right = left + max_width
-
-            if bottom <= top:
-                bottom = top + 2
-
-            for pn in pns[1:]:
-                if 0 <= pn - 1 < page_count:
-                    bottom += self.page_images[pn - 1].size[1]
-                else:
-                    self.logger.warning(f"[MinerU] Page index {pn}-1 out of range for {page_count} pages during crop; skipping height accumulation.")
-
-            if not (0 <= pns[0] < page_count):
-                self.logger.warning(f"[MinerU] Base page index {pns[0]} out of range for {page_count} pages during crop; skipping this segment.")
-                continue
-
-            img0 = self.page_images[pns[0]]
-            x0, y0, x1, y1 = int(left), int(top), int(right), int(min(bottom, img0.size[1]))
-            crop0 = img0.crop((x0, y0, x1, y1))
-            imgs.append(crop0)
-            if 0 < ii < len(poss) - 1:
-                positions.append((pns[0] + self.page_from, x0, x1, y0, y1))
-
-            bottom -= img0.size[1]
-            for pn in pns[1:]:
-                if not (0 <= pn < page_count):
-                    self.logger.warning(f"[MinerU] Page index {pn} out of range for {page_count} pages during crop; skipping this page.")
+                    images_to_stitch.append(("cached", img, pos, tag))
+                    self.logger.debug(f"[MinerU] Using cached fallback image for tag: {tag}")
                     continue
-                page = self.page_images[pn]
-                x0, y0, x1, y1 = int(left), 0, int(right), int(min(bottom, page.size[1]))
-                cimgp = page.crop((x0, y0, x1, y1))
-                imgs.append(cimgp)
-                if 0 < ii < len(poss) - 1:
-                    positions.append((pn + self.page_from, x0, x1, y0, y1))
-                bottom -= page.size[1]
-
-        if not imgs:
+                except Exception as e:
+                    self.logger.debug(f"[MinerU] Failed to load cached image: {e}")
+            
+            # 优先级3: 完整页兜底（如果page_images可用）
+            if hasattr(self, "page_images") and self.page_images:
+                page_idx = pns[0]
+                if 0 <= page_idx < len(self.page_images):
+                    img = self.page_images[page_idx]
+                    images_to_stitch.append(("fullpage", img, pos, tag))
+                    self.logger.debug(f"[MinerU] Using full page fallback for tag: {tag}")
+        
+        if not images_to_stitch:
+            self.logger.warning("[MinerU] No images found for chunk")
             if need_position:
                 return None, None
             return
-
-        height = 0
-        for img in imgs:
-            height += img.size[1] + GAP
-        height = int(height)
-        width = int(np.max([i.size[0] for i in imgs]))
-        pic = Image.new("RGB", (width, height), (245, 245, 245))
-        height = 0
-        for ii, img in enumerate(imgs):
-            if ii == 0 or ii + 1 == len(imgs):
-                img = img.convert("RGBA")
-                overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-                overlay.putalpha(128)
-                img = Image.alpha_composite(img, overlay).convert("RGB")
-            pic.paste(img, (0, int(height)))
-            height += img.size[1] + GAP
-
+        
+        # Step 2: 智能拼接（带阈值控制）
+        return self._smart_stitch_with_thresholds(images_to_stitch, need_position)
+    
+    def _find_native_image_path(self, tag):
+        """查找MinerU原生图片路径（表格/图片/公式）"""
+        # 需要在_read_output时建立 tag → native_img_path 的映射
+        native_map = getattr(self, "_native_img_map", {})
+        return native_map.get(tag)
+    
+    def _smart_stitch_with_thresholds(self, images_with_metadata, need_position):
+        """
+        智能拼接：应用阈值控制
+        
+        Thresholds:
+        - MAX_COUNT: 最多10张图
+        - MAX_HEIGHT: 总高度不超过2000px
+        
+        Strategies:
+        - 数量过多: 均匀采样（保留首尾）
+        - 高度过高: 截断到2000px
+        - 不缩放图片（保持高清）
+        """
+        MAX_COUNT = 10
+        MAX_HEIGHT = 2000
+        GAP = 6
+        
+        # 1. 数量控制：如果超过10张，均匀采样
+        if len(images_with_metadata) > MAX_COUNT:
+            self.logger.info(f"[MinerU] Too many images ({len(images_with_metadata)}), sampling to {MAX_COUNT}")
+            images_with_metadata = self._sample_images_uniformly(images_with_metadata, MAX_COUNT)
+        
+        # 2. 高度控制：累加到2000px为止
+        trimmed_images = []
+        current_height = 0
+        
+        for src, img, pos, tag in images_with_metadata:
+            if current_height + img.height > MAX_HEIGHT:
+                self.logger.info(f"[MinerU] Reached max height {MAX_HEIGHT}px at {len(trimmed_images)} images, stopping")
+                break
+            trimmed_images.append((src, img, pos, tag))
+            current_height += img.height + GAP
+        
+        # 至少保留一张图
+        if not trimmed_images and images_with_metadata:
+            trimmed_images = [images_with_metadata[0]]
+        
+        # 3. 垂直拼接（不缩放）
+        return self._stitch_images_vertically(trimmed_images, need_position, GAP)
+    
+    def _sample_images_uniformly(self, images, target_count):
+        """均匀采样：保留首尾，均匀抽取中间"""
+        if len(images) <= target_count:
+            return images
+        
+        sampled = [images[0]]  # 首张
+        step = len(images) / (target_count - 1)
+        for i in range(1, target_count - 1):
+            idx = int(i * step)
+            sampled.append(images[idx])
+        sampled.append(images[-1])  # 末张
+        return sampled
+    
+    def _stitch_images_vertically(self, images_with_metadata, need_position, gap):
+        """垂直拼接图片（不加补丁，不缩放）"""
+        if not images_with_metadata:
+            if need_position:
+                return None, None
+            return
+        
+        imgs = [img for _, img, _, _ in images_with_metadata]
+        positions_list = [pos for _, _, pos, _ in images_with_metadata]
+        
+        # 计算画布尺寸
+        total_height = sum(img.height for img in imgs) + gap * (len(imgs) - 1)
+        max_width = max(img.width for img in imgs)
+        
+        # 创建画布
+        pic = Image.new("RGB", (max_width, total_height), (245, 245, 245))
+        
+        # 逐张粘贴（垂直堆叠）
+        current_y = 0
+        positions = []
+        
+        for idx, (img, pos) in enumerate(zip(imgs, positions_list)):
+            pic.paste(img, (0, current_y))
+            
+            # 提取position信息
+            if pos and len(pos) >= 5:
+                pns, left, right, top, bottom = pos
+                if pns:
+                    page_num = pns[0] + getattr(self, "page_from", 0)
+                    positions.append((page_num, int(left), int(right), int(top), int(bottom)))
+            
+            current_y += img.height + gap
+        
         if need_position:
-            return pic, positions
+            return pic, positions if positions else [(0, 0, max_width, 0, total_height)]
         return pic
 
     @staticmethod
@@ -526,6 +538,7 @@ class MinerUParser(RAGFlowPdfParser):
         )
 
     def _generate_missing_images(self, outputs: list[dict[str, Any]], subdir: Path, file_stem: str):
+        """生成兜底图：按页宽（横向全宽，纵向按bbox）"""
         if not getattr(self, "page_images", None):
             return
         if not subdir:
@@ -550,19 +563,24 @@ class MinerUParser(RAGFlowPdfParser):
                 
             x0, y0, x1, y1 = self._bbox_to_pixels(bbox, self.page_images[page_idx].size)
             
-            # clamp to page boundary
+            # 获取页面尺寸
             pw, ph = self.page_images[page_idx].size
-            x0 = max(0, min(x0, pw))
-            y0 = max(0, min(y0, ph))
-            x1 = max(0, min(x1, pw))
-            y1 = max(0, min(y1, ph))
+            
+            # ✅ 改为按页宽生成：横向=整页宽度，纵向=bbox范围
+            # x坐标：0 到 页宽
+            # y坐标：bbox的y0到y1（clamp到页面内）
+            crop_x0 = 0
+            crop_x1 = pw
+            crop_y0 = max(0, min(y0, ph))
+            crop_y1 = max(0, min(y1, ph))
 
             # guard invalid bbox
-            if x1 - x0 < 2 or y1 - y0 < 2:
+            if crop_y1 - crop_y0 < 2:
                 continue
                 
             try:
-                cropped = self.page_images[page_idx].crop((x0, y0, x1, y1))
+                # 裁剪页宽条带
+                cropped = self.page_images[page_idx].crop((crop_x0, crop_y0, crop_x1, crop_y1))
                 fname = f"{file_stem}_gen_{idx}.jpg"
                 out_path = img_root / fname
                 cropped.save(out_path, format="JPEG", quality=80)
@@ -578,7 +596,7 @@ class MinerUParser(RAGFlowPdfParser):
                 continue
                 
         if generated:
-            self.logger.info(f"[MinerU] generated {generated} fallback images, cached {len(self._img_path_cache)} tags")
+            self.logger.info(f"[MinerU] generated {generated} page-width fallback images, cached {len(self._img_path_cache)} tags")
 
     def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto", backend: str = "pipeline") -> list[dict[str, Any]]:
         candidates = []
@@ -649,10 +667,24 @@ class MinerUParser(RAGFlowPdfParser):
         with open(json_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
+        # 建立 tag → 原生img_path 的映射（表格/图片/公式）
+        self._native_img_map = {}
+        
         for item in data:
+            # 解析并补全路径
             for key in ("img_path", "table_img_path", "equation_img_path"):
                 if key in item and item[key]:
                     item[key] = str((subdir / item[key]).resolve())
+                    
+                    # 建立映射: tag → native_img_path
+                    try:
+                        tag = self._raw_line_tag(item)
+                        self._native_img_map[tag] = item[key]
+                        self.logger.debug(f"[MinerU] Mapped native image: {tag} → {item[key]}")
+                    except Exception as e:
+                        self.logger.debug(f"[MinerU] Failed to map native image: {e}")
+                    
+                    break  # 只需要第一个找到的图片路径
 
         # MinerU(vlm-http-client) 不会为纯文本生成图片，这里兜底用本地页图裁剪生成，方便后续引用/MinIO 存图
         try:
@@ -712,6 +744,9 @@ class MinerUParser(RAGFlowPdfParser):
 
         temp_pdf = None
         created_tmp_dir = False
+        # per-task cache reset to avoid stale images across documents
+        self._img_path_cache = {}
+        self._native_img_map = {}
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
