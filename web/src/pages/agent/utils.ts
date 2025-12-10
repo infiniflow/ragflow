@@ -319,7 +319,9 @@ export function transformArrayToObject(
 ) {
   if (!Array.isArray(list)) return {};
   return list?.reduce<Record<string, any>>((pre, cur) => {
-    pre[cur.key] = cur.value;
+    if (cur.key) {
+      pre[cur.key] = cur.value;
+    }
     return pre;
   }, {});
 }
