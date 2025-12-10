@@ -478,7 +478,7 @@ class Canvas(Graph):
                 })
             await _run_batch(idx, to)
             to = len(self.path)
-            # post processing of components invocation
+            # post-processing of components invocation
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])
                 cpn_obj = self.get_component_obj(self.path[i])
@@ -534,10 +534,12 @@ class Canvas(Graph):
                         yield decorate("message", {"content": cpn_obj.output("content")})
                         cite = re.search(r"\[ID:[ 0-9]+\]",  cpn_obj.output("content"))
 
-                    if isinstance(cpn_obj.output("attachment"), tuple):
-                        yield decorate("message", {"attachment": cpn_obj.output("attachment")})
-
-                    yield decorate("message_end", {"reference": self.get_reference() if cite else None})
+                    message_end = {}
+                    if isinstance(cpn_obj.output("attachment"), dict):
+                        message_end["attachment"] = cpn_obj.output("attachment")
+                    if cite:
+                        message_end["reference"] = self.get_reference()
+                    yield decorate("message_end", message_end)
 
                     while partials:
                         _cpn_obj = self.get_component_obj(partials[0])

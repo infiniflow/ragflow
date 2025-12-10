@@ -29,6 +29,7 @@ export const formSchema = z
         tag_kb_ids: z.array(z.string()).nullish(),
         topn_tags: z.number().optional(),
         toc_extraction: z.boolean().optional(),
+        overlapped_percent: z.number().optional(),
         raptor: z
           .object({
             use_raptor: z.boolean().optional(),

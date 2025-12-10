@@ -150,7 +150,7 @@ class MCPToolCallSession(ToolCallSession):
             except asyncio.CancelledError:
                 break
 
-    async def _call_mcp_server(self, task_type: MCPTaskType, timeout: float | int = 8, **kwargs) -> Any:
+    async def _call_mcp_server(self, task_type: MCPTaskType, request_timeout: float | int = 8, **kwargs) -> Any:
         if self._close:
             raise ValueError("Session is closed")
 
@@ -158,18 +158,18 @@ class MCPToolCallSession(ToolCallSession):
         await self._queue.put((task_type, kwargs, results))
 
         try:
-            result: CallToolResult | Exception = await asyncio.wait_for(results.get(), timeout=timeout)
+            result: CallToolResult | Exception = await asyncio.wait_for(results.get(), timeout=request_timeout)
             if isinstance(result, Exception):
                 raise result
             return result
         except asyncio.TimeoutError:
-            raise asyncio.TimeoutError(f"MCP task '{task_type}' timeout after {timeout}s")
+            raise asyncio.TimeoutError(f"MCP task '{task_type}' timeout after {request_timeout}s")
         except Exception:
             raise
 
-    async def _call_mcp_tool(self, name: str, arguments: dict[str, Any], timeout: float | int = 10) -> str:
+    async def _call_mcp_tool(self, name: str, arguments: dict[str, Any], request_timeout: float | int = 10) -> str:
         result: CallToolResult = await self._call_mcp_server("tool_call", name=name, arguments=arguments,
-                                                             timeout=timeout)
+                                                             request_timeout=request_timeout)
 
         if result.isError:
             return f"MCP server error: {result.content}"
@@ -180,9 +180,9 @@ class MCPToolCallSession(ToolCallSession):
         else:
             return f"Unsupported content type {type(result.content)}"
 
-    async def _get_tools_from_mcp_server(self, timeout: float | int = 8) -> list[Tool]:
+    async def _get_tools_from_mcp_server(self, request_timeout: float | int = 8) -> list[Tool]:
         try:
-            result: ListToolsResult = await self._call_mcp_server("list_tools", timeout=timeout)
+            result: ListToolsResult = await self._call_mcp_server("list_tools", request_timeout=request_timeout)
             return result.tools
         except Exception:
             raise
@@ -191,7 +191,7 @@ class MCPToolCallSession(ToolCallSession):
         if self._close:
             raise ValueError("Session is closed")
 
-        future = asyncio.run_coroutine_threadsafe(self._get_tools_from_mcp_server(timeout=timeout), self._event_loop)
+        future = asyncio.run_coroutine_threadsafe(self._get_tools_from_mcp_server(request_timeout=timeout), self._event_loop)
         try:
             return future.result(timeout=timeout)
         except FuturesTimeoutError:

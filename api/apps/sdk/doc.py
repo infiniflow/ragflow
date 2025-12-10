@@ -33,7 +33,7 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.db.services.task_service import TaskService, queue_tasks
+from api.db.services.task_service import TaskService, queue_tasks, cancel_all_task_of
 from api.db.services.dialog_service import meta_filter, convert_conditions
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, \
     get_request_json
@@ -552,7 +552,7 @@ def list_docs(dataset_id, tenant_id):
     create_time_from     = int(q.get("create_time_from", 0))
     create_time_to       = int(q.get("create_time_to", 0))
 
-    # map run status (accept text or numeric) - align with API parameter
+    # map run status (text or numeric) - align with API parameter
     run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
     run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
 
@@ -835,6 +835,8 @@ async def stop_parsing(tenant_id, dataset_id):
             return get_error_data_result(message=f"You don't own the document {id}.")
         if int(doc[0].progress) == 1 or doc[0].progress == 0:
             return get_error_data_result("Can't stop parsing document with progress at 0 or 1")
+        # Send cancellation signal via Redis to stop background task
+        cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}
         DocumentService.update_by_id(id, info)
         settings.docStoreConn.delete({"doc_id": doc[0].id}, search.index_name(tenant_id), dataset_id)
@@ -888,7 +890,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
         type: string
         required: false
         default: ""
-        description: Chunk Id.
+        description: Chunk id.
       - in: header
         name: Authorization
         type: string

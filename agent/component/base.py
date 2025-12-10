@@ -24,7 +24,6 @@ import os
 import logging
 from typing import Any, List, Union
 import pandas as pd
-import trio
 from agent import settings
 from common.connection_utils import timeout
 
@@ -393,7 +392,7 @@ class ComponentParamBase(ABC):
 
 class ComponentBase(ABC):
     component_name: str
-    thread_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
+    thread_limiter = asyncio.Semaphore(int(os.environ.get("MAX_CONCURRENT_CHATS", 10)))
     variable_ref_patt = r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
 
     def __str__(self):
