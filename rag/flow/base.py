@@ -13,12 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import logging
 import os
 import time
 from functools import partial
 from typing import Any
-import trio
 from agent.component.base import ComponentBase, ComponentParamBase
 from common.connection_utils import timeout
 
@@ -43,9 +43,11 @@ class ProcessBase(ComponentBase):
         for k, v in kwargs.items():
             self.set_output(k, v)
         try:
-            with trio.fail_after(self._param.timeout):
-                await self._invoke(**kwargs)
-                self.callback(1, "Done")
+            await asyncio.wait_for(
+                self._invoke(**kwargs),
+                timeout=self._param.timeout
+            )
+            self.callback(1, "Done")
         except Exception as e:
             if self.get_exception_default_value():
                 self.set_exception_default_value()
