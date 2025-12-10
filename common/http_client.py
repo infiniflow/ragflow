@@ -16,6 +16,7 @@ import logging
 import os
 import time
 from typing import Any, Dict, Optional
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 
@@ -50,6 +51,27 @@ def _clean_headers(
 
 def _get_delay(backoff_factor: float, attempt: int) -> float:
     return backoff_factor * (2**attempt)
+
+
+# List of sensitive parameters to redact from URLs before logging
+_SENSITIVE_QUERY_KEYS = {"client_secret", "secret", "code", "access_token", "refresh_token", "password", "token", "app_secret"}
+
+def _redact_sensitive_url_params(url: str) -> str:
+    try:
+        parsed = urlparse(url)
+        if not parsed.query:
+            return url
+        clean_query = []
+        for k, v in parse_qsl(parsed.query, keep_blank_values=True):
+            if k.lower() in _SENSITIVE_QUERY_KEYS:
+                clean_query.append((k, "***REDACTED***"))
+            else:
+                clean_query.append((k, v))
+        new_query = urlencode(clean_query, doseq=True)
+        redacted_url = urlunparse(parsed._replace(query=new_query))
+        return redacted_url
+    except Exception:
+        return url
 
 
 async def async_request(
@@ -94,19 +116,19 @@ async def async_request(
                 )
                 duration = time.monotonic() - start
                 logger.debug(
-                    f"async_request {method} {url} -> {response.status_code} in {duration:.3f}s"
+                    f"async_request {method} {_redact_sensitive_url_params(url)} -> {response.status_code} in {duration:.3f}s"
                 )
                 return response
             except httpx.RequestError as exc:
                 last_exc = exc
                 if attempt >= retries:
                     logger.warning(
-                        f"async_request exhausted retries for {method} {url}: {exc}"
+                        f"async_request exhausted retries for {method} {_redact_sensitive_url_params(url)}: {exc}"
                     )
                     raise
                 delay = _get_delay(backoff_factor, attempt)
                 logger.warning(
-                    f"async_request attempt {attempt + 1}/{retries + 1} failed for {method} {url}: {exc}; retrying in {delay:.2f}s"
+                    f"async_request attempt {attempt + 1}/{retries + 1} failed for {method} {_redact_sensitive_url_params(url)}: {exc}; retrying in {delay:.2f}s"
                 )
                 await asyncio.sleep(delay)
         raise last_exc  # pragma: no cover
