@@ -101,7 +101,7 @@ export default {
       dataset: 'Dataset',
       Memories: 'Memory',
     },
-    memory: {
+    memories: {
       memory: 'Memory',
       createMemory: 'Create Memory',
       name: 'Name',
@@ -110,9 +110,15 @@ export default {
       embeddingModel: 'Embedding model',
       selectModel: 'Select model',
       llm: 'LLM',
+      delMemoryWarn: `After deletion, all messages in this memory will be deleted and cannot be retrieved by agents.`,
     },
-    memoryDetail: {
+    memory: {
       messages: {
+        copied: 'Copied!',
+        contentEmbed: 'Content embed',
+        content: 'Content',
+        delMessageWarn: `After forgetting, this message will not be retrieved by agents.`,
+        forgetMessage: 'Forget message',
         sessionId: 'Session ID',
         agent: 'Agent',
         type: 'Type',
@@ -121,6 +127,27 @@ export default {
         source: 'Source',
         enable: 'Enable',
         action: 'Action',
+      },
+      config: {
+        avatar: 'Avatar',
+        description: 'Description',
+        memorySize: 'Memory size',
+        advancedSettings: 'Advanced Settings',
+        permission: 'Permission',
+        onlyMe: 'Only Me',
+        team: 'Team',
+        storageType: 'Storage Type',
+        storageTypePlaceholder: 'Please select storage type',
+        forgetPolicy: 'Forget Policy',
+        temperature: 'Temperature',
+        systemPrompt: 'System Prompt',
+        systemPromptPlaceholder: 'Please enter system prompt',
+        userPrompt: 'User Prompt',
+        userPromptPlaceholder: 'Please enter user prompt',
+      },
+      sideBar: {
+        messages: 'Messages',
+        configuration: 'Configuration',
       },
     },
     knowledgeList: {
@@ -302,6 +329,7 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      overlappedPercent: 'Overlapped percent',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
       scopeDataset: 'Dataset',
