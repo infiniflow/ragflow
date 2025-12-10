@@ -350,24 +350,30 @@ class MinerUParser(RAGFlowPdfParser):
         3. 阈值控制（最多10张，总高<2000px）
         4. 保持高清（不缩放）
         """
+        # 从text中提取原始tags（保持1-based页码）
+        original_tags = re.findall(r"@@[0-9-]+\t[0-9.\t]+##", text)
         poss = self.extract_positions(text)
-        if not poss:
+        
+        if not poss or not original_tags:
             if need_position:
                 return None, None
             return
+        
+        # 确保tags和poss数量一致
+        if len(original_tags) != len(poss):
+            self.logger.warning(f"[MinerU] Tag count ({len(original_tags)}) != position count ({len(poss)}), using first {min(len(original_tags), len(poss))} items")
+            min_len = min(len(original_tags), len(poss))
+            original_tags = original_tags[:min_len]
+            poss = poss[:min_len]
         
         # Step 1: 收集所有tag对应的图片
         images_to_stitch = []
         seen_tags = set()  # 用于去重
         
-        for pos in poss:
-            # 构造tag用于查找
+        for tag, pos in zip(original_tags, poss):
             pns, left, right, top, bottom = pos
             if not pns:
                 continue
-            
-            page_num = pns[0] + 1  # 转为1-based
-            tag = f"@@{page_num}\t{left:.1f}\t{right:.1f}\t{top:.1f}\t{bottom:.1f}##"
             
             # ✅ 去重：如果tag已处理过，跳过
             if tag in seen_tags:
@@ -399,11 +405,11 @@ class MinerUParser(RAGFlowPdfParser):
             
             # 优先级3: 完整页兜底（如果page_images可用）
             if hasattr(self, "page_images") and self.page_images:
-                page_idx = pns[0]
+                page_idx = pns[0]  # pns[0]是0-based的页索引
                 if 0 <= page_idx < len(self.page_images):
                     img = self.page_images[page_idx]
                     images_to_stitch.append(("fullpage", img, pos, tag))
-                    self.logger.debug(f"[MinerU] Using full page fallback for tag: {tag}")
+                    self.logger.debug(f"[MinerU] Using full page fallback for tag: {tag}, page_idx={page_idx}")
         
         if not images_to_stitch:
             self.logger.warning("[MinerU] No images found for chunk")
