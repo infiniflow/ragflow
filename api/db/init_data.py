@@ -73,7 +73,7 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
     logging.info(
-        f"Super user initialized. email: {email}, password: {password}. Changing the password after login is strongly recommended.")
+        f"Super user initialized. email: {email},A default password has been set; changing the password after login is strongly recommended.")
 
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
     msg = chat_mdl.chat(system="", history=[
