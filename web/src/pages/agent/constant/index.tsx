@@ -25,6 +25,7 @@ export * from './pipeline';
 export enum AgentDialogueMode {
   Conversational = 'conversational',
   Task = 'task',
+  Webhook = 'Webhook',
 }
 
 import { ModelVariableType } from '@/constants/knowledge';
@@ -995,3 +996,36 @@ export const initialPDFGeneratorValues = {
     success: { type: 'boolean', value: false },
   },
 };
+export enum WebhookMethod {
+  Post = 'POST',
+  Get = 'GET',
+  Put = 'PUT',
+  Patch = 'PATCH',
+  Delete = 'DELETE',
+  Head = 'HEAD',
+}
+
+export enum WebhookContentType {
+  ApplicationJson = 'application/json',
+  MultipartFormData = 'multipart/form-data',
+  ApplicationXWwwFormUrlencoded = 'application/x-www-form-urlencoded',
+  TextPlain = 'text/plain',
+  ApplicationOctetStream = 'application/octet-stream',
+}
+
+export enum WebhookExecutionMode {
+  Immediately = 'Immediately',
+  Streaming = 'Streaming',
+}
+
+export enum WebhookSecurityAuthType {
+  None = 'none',
+  Token = 'token',
+  Basic = 'basic',
+  Jwt = 'jwt',
+  Hmac = 'hmac',
+}
+
+export const RateLimitPerList = ['minute', 'hour', 'day'];
+
+export const WebhookMaxBodySize = ['10MB', '50MB', '100MB', '1000MB'];

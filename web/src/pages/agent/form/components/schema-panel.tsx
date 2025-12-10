@@ -1,6 +1,6 @@
 import { JSONSchema, JsonSchemaVisualizer } from '@/components/jsonjoy-builder';
 
-export function StructuredOutputPanel({ value }: { value: JSONSchema }) {
+export function SchemaPanel({ value }: { value: JSONSchema }) {
   return (
     <section className="h-48">
       <JsonSchemaVisualizer
