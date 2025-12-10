@@ -2,7 +2,9 @@ import { getStructuredDatatype } from '@/utils/canvas-util';
 import { get, isPlainObject } from 'lodash';
 import { ReactNode, useCallback } from 'react';
 import {
+  AgentDialogueMode,
   AgentStructuredOutputField,
+  BeginId,
   JsonSchemaDataType,
   Operator,
 } from '../constant';
@@ -16,36 +18,94 @@ function getNodeId(value: string) {
 }
 
 export function useShowSecondaryMenu() {
-  const { getOperatorTypeFromId } = useGraphStore((state) => state);
+  const { getOperatorTypeFromId, getNode } = useGraphStore((state) => state);
 
   const showSecondaryMenu = useCallback(
     (value: string, outputLabel: string) => {
       const nodeId = getNodeId(value);
-      return (
-        getOperatorTypeFromId(nodeId) === Operator.Agent &&
+      const operatorType = getOperatorTypeFromId(nodeId);
+
+      // For Agent nodes, show secondary menu for 'structured' field
+      if (
+        operatorType === Operator.Agent &&
         outputLabel === AgentStructuredOutputField
-      );
+      ) {
+        return true;
+      }
+
+      // For Begin nodes in webhook mode, show secondary menu for schema properties (body, headers, query, etc.)
+      if (operatorType === Operator.Begin) {
+        const node = getNode(nodeId);
+        const mode = get(node, 'data.form.mode');
+        if (mode === AgentDialogueMode.Webhook) {
+          // Check if this output field is from the schema
+          const outputs = get(node, 'data.form.outputs', {});
+          const outputField = outputs[outputLabel];
+          // Show secondary menu if the field is an object or has properties
+          return (
+            outputField &&
+            (outputField.type === 'object' ||
+              (outputField.properties &&
+                Object.keys(outputField.properties).length > 0))
+          );
+        }
+      }
+
+      return false;
     },
-    [getOperatorTypeFromId],
+    [getOperatorTypeFromId, getNode],
   );
 
   return showSecondaryMenu;
 }
+function useGetBeginOutputsOrSchema() {
+  const { getNode } = useGraphStore((state) => state);
+
+  const getBeginOutputs = useCallback(() => {
+    const node = getNode(BeginId);
+    const outputs = get(node, 'data.form.outputs', {});
+    return outputs;
+  }, [getNode]);
+
+  const getBeginSchema = useCallback(() => {
+    const node = getNode(BeginId);
+    const outputs = get(node, 'data.form.schema', {});
+    return outputs;
+  }, [getNode]);
+
+  return { getBeginOutputs, getBeginSchema };
+}
 
 export function useGetStructuredOutputByValue() {
-  const { getNode } = useGraphStore((state) => state);
+  const { getNode, getOperatorTypeFromId } = useGraphStore((state) => state);
+
+  const { getBeginOutputs } = useGetBeginOutputsOrSchema();
 
   const getStructuredOutput = useCallback(
     (value: string) => {
-      const node = getNode(getNodeId(value));
-      const structuredOutput = get(
-        node,
-        `data.form.outputs.${AgentStructuredOutputField}`,
-      );
+      const nodeId = getNodeId(value);
+      const node = getNode(nodeId);
+      const operatorType = getOperatorTypeFromId(nodeId);
+      const fields = splitValue(value);
+      const outputLabel = fields.at(1);
+
+      let structuredOutput;
+      if (operatorType === Operator.Agent) {
+        structuredOutput = get(
+          node,
+          `data.form.outputs.${AgentStructuredOutputField}`,
+        );
+      } else if (operatorType === Operator.Begin) {
+        // For Begin nodes in webhook mode, get the specific schema property
+        const outputs = getBeginOutputs();
+        if (outputLabel) {
+          structuredOutput = outputs[outputLabel];
+        }
+      }
 
       return structuredOutput;
     },
-    [getNode],
+    [getBeginOutputs, getNode, getOperatorTypeFromId],
   );
 
   return getStructuredOutput;
@@ -66,13 +126,14 @@ export function useFindAgentStructuredOutputLabel() {
         icon?: ReactNode;
       }>,
     ) => {
-      // agent structured output
       const fields = splitValue(value);
+      const operatorType = getOperatorTypeFromId(fields.at(0));
+
+      // Handle Agent structured fields
       if (
-        getOperatorTypeFromId(fields.at(0)) === Operator.Agent &&
+        operatorType === Operator.Agent &&
         fields.at(1)?.startsWith(AgentStructuredOutputField)
       ) {
-        // is agent structured output
         const agentOption = options.find((x) => value.includes(x.value));
         const jsonSchemaFields = fields
           .at(1)
@@ -81,6 +142,19 @@ export function useFindAgentStructuredOutputLabel() {
         return {
           ...agentOption,
           label: (agentOption?.label ?? '') + jsonSchemaFields,
+          value: value,
+        };
+      }
+
+      // Handle Begin webhook fields
+      if (operatorType === Operator.Begin && fields.at(1)) {
+        const fieldOption = options
+          .filter((x) => x.parentLabel === BeginId)
+          .find((x) => value.startsWith(x.value));
+
+        return {
+          ...fieldOption,
+          label: fields.at(1),
           value: value,
         };
       }
@@ -94,6 +168,7 @@ export function useFindAgentStructuredOutputLabel() {
 export function useFindAgentStructuredOutputTypeByValue() {
   const { getOperatorTypeFromId } = useGraphStore((state) => state);
   const filterStructuredOutput = useGetStructuredOutputByValue();
+  const { getBeginSchema } = useGetBeginOutputsOrSchema();
 
   const findTypeByValue = useCallback(
     (
@@ -136,10 +211,12 @@ export function useFindAgentStructuredOutputTypeByValue() {
       }
       const fields = splitValue(value);
       const nodeId = fields.at(0);
+      const operatorType = getOperatorTypeFromId(nodeId);
       const jsonSchema = filterStructuredOutput(value);
 
+      // Handle Agent structured fields
       if (
-        getOperatorTypeFromId(nodeId) === Operator.Agent &&
+        operatorType === Operator.Agent &&
         fields.at(1)?.startsWith(AgentStructuredOutputField)
       ) {
         const jsonSchemaFields = fields
@@ -151,13 +228,32 @@ export function useFindAgentStructuredOutputTypeByValue() {
           return type;
         }
       }
+
+      // Handle Begin webhook fields (body, headers, query, etc.)
+      if (operatorType === Operator.Begin) {
+        const outputLabel = fields.at(1);
+        const schema = getBeginSchema();
+        if (outputLabel && schema) {
+          const jsonSchemaFields = fields.at(1);
+          if (jsonSchemaFields) {
+            const type = findTypeByValue(schema, jsonSchemaFields);
+            return type;
+          }
+        }
+      }
     },
-    [filterStructuredOutput, findTypeByValue, getOperatorTypeFromId],
+    [
+      filterStructuredOutput,
+      findTypeByValue,
+      getBeginSchema,
+      getOperatorTypeFromId,
+    ],
   );
 
   return findAgentStructuredOutputTypeByValue;
 }
 
+// TODO: Consider merging with useFindAgentStructuredOutputLabel
 export function useFindAgentStructuredOutputLabelByValue() {
   const { getNode } = useGraphStore((state) => state);
 
