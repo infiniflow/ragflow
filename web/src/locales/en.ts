@@ -737,11 +737,13 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       metadataTip:
         'Metadata filtering is the process of using metadata attributes (such as tags, categories, or access permissions) to refine and control the retrieval of relevant information within a system.',
       conditions: 'Conditions',
+      metadataKeys: 'Filterable items',
       addCondition: 'Add condition',
       meta: {
         disabled: 'Disabled',
         auto: 'Automatic',
         manual: 'Manual',
+        semi_auto: 'Semi-automatic',
       },
       cancel: 'Cancel',
       chatSetting: 'Chat setting',

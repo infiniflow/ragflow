@@ -426,6 +426,15 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             attachments.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
             if not attachments:
                 attachments = None
+        elif dialog.meta_data_filter.get("method") == "semi_auto":
+            selected_keys = dialog.meta_data_filter.get("semi_auto", [])
+            if selected_keys:
+                filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
+                if filtered_metas:
+                    filters: dict = gen_meta_filter(chat_mdl, filtered_metas, questions[-1])
+                    attachments.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
+                    if not attachments:
+                        attachments = None
         elif dialog.meta_data_filter.get("method") == "manual":
             conds = dialog.meta_data_filter["manual"]
             attachments.extend(meta_filter(metas, conds, dialog.meta_data_filter.get("logic", "and")))
@@ -835,6 +844,15 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
             doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
             if not doc_ids:
                 doc_ids = None
+        elif meta_data_filter.get("method") == "semi_auto":
+            selected_keys = meta_data_filter.get("semi_auto", [])
+            if selected_keys:
+                filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
+                if filtered_metas:
+                    filters: dict = gen_meta_filter(chat_mdl, filtered_metas, question)
+                    doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
+                    if not doc_ids:
+                        doc_ids = None
         elif meta_data_filter.get("method") == "manual":
             doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
             if meta_data_filter["manual"] and not doc_ids:
@@ -910,6 +928,15 @@ def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
             doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
             if not doc_ids:
                 doc_ids = None
+        elif meta_data_filter.get("method") == "semi_auto":
+            selected_keys = meta_data_filter.get("semi_auto", [])
+            if selected_keys:
+                filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
+                if filtered_metas:
+                    filters: dict = gen_meta_filter(chat_mdl, filtered_metas, question)
+                    doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
+                    if not doc_ids:
+                        doc_ids = None
         elif meta_data_filter.get("method") == "manual":
             doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
             if meta_data_filter["manual"] and not doc_ids:
