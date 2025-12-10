@@ -2,6 +2,7 @@ import message from '@/components/ui/message';
 import { Spin } from '@/components/ui/spin';
 import request from '@/utils/request';
 import classNames from 'classnames';
+import Papa from 'papaparse';
 import React, { useEffect, useRef, useState } from 'react';
 
 interface CSVData {
@@ -20,14 +21,17 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ url }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   // const url = useGetDocumentUrl();
   const parseCSV = (csvText: string): CSVData => {
-    console.log('Parsing CSV data:', csvText);
-    const lines = csvText.split('\n');
-    const headers = lines[0].split(',').map((header) => header.trim());
-    const rows = lines
-      .slice(1)
-      .map((line) => line.split(',').map((cell) => cell.trim()));
+    const result = Papa.parse<string[]>(csvText, {
+      header: false,
+      skipEmptyLines: false,
+    });
 
-    return { headers, rows };
+    const rows = result.data as string[][];
+
+    const headers = rows[0];
+    const dataRows = rows.slice(1);
+
+    return { headers, rows: dataRows };
   };
 
   useEffect(() => {
