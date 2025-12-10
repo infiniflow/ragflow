@@ -1,8 +1,4 @@
-import i18n from '@/locales/config';
-import { BeginId } from '@/pages/agent/constant';
 import { ReactNode } from 'react';
-
-const prefix = BeginId + '@';
 
 interface VariableDisplayProps {
   content: string;
@@ -10,22 +6,8 @@ interface VariableDisplayProps {
 }
 
 // This component mimics the VariableNode's decorate function from PromptEditor
-function VariableNodeDisplay({
-  value,
-  label,
-}: {
-  value: string;
-  label: ReactNode;
-}) {
+function VariableNodeDisplay({ label }: { label: ReactNode }) {
   let content: ReactNode = <span className="text-accent-primary">{label}</span>;
-
-  if (value.startsWith(prefix)) {
-    content = (
-      <div>
-        <span>{i18n.t(`flow.begin`)}</span> / {content}
-      </div>
-    );
-  }
 
   return <div className="inline-flex items-center mr-1">{content}</div>;
 }
@@ -63,11 +45,7 @@ export function VariableDisplay({ content, getLabel }: VariableDisplayProps) {
     if (label && label !== variableValue) {
       // If we found a valid label, render as variable node
       elements.push(
-        <VariableNodeDisplay
-          key={`variable-${index}`}
-          value={variableValue}
-          label={label}
-        />,
+        <VariableNodeDisplay key={`variable-${index}`} label={label} />,
       );
     } else {
       // If no label found, keep as original text
