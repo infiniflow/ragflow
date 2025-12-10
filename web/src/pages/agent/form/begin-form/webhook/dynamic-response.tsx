@@ -50,7 +50,7 @@ export function DynamicResponse({
   name,
   label,
   tooltip,
-  keyField = 'variable',
+  keyField = 'key',
   valueField = 'value',
   operatorField = 'type',
 }: SelectKeysProps) {

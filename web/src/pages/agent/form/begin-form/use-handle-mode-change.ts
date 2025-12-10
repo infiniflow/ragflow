@@ -1,6 +1,12 @@
 import { useCallback } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { AgentDialogueMode } from '../../constant';
+import {
+  AgentDialogueMode,
+  RateLimitPerList,
+  WebhookExecutionMode,
+  WebhookMaxBodySize,
+  WebhookSecurityAuthType,
+} from '../../constant';
 
 // const WebhookSchema = {
 //   query: {
@@ -47,11 +53,21 @@ const schema = {
   },
 };
 
+const initialFormValuesMap = {
+  schema: schema,
+  'security.auth_type': WebhookSecurityAuthType.Basic,
+  'security.rate_limit.per': RateLimitPerList[0],
+  'security.max_body_size': WebhookMaxBodySize[0],
+  execution_mode: WebhookExecutionMode.Immediately,
+};
+
 export function useHandleModeChange(form: UseFormReturn<any>) {
   const handleModeChange = useCallback(
     (mode: AgentDialogueMode) => {
       if (mode === AgentDialogueMode.Webhook) {
-        form.setValue('schema', schema, { shouldDirty: true });
+        Object.entries(initialFormValuesMap).forEach(([key, value]) => {
+          form.setValue(key, value, { shouldDirty: true });
+        });
       }
     },
     [form],

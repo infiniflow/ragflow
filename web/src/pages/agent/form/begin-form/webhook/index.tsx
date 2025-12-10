@@ -1,3 +1,4 @@
+import { Collapse } from '@/components/collapse';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
@@ -8,8 +9,10 @@ import { buildOptions } from '@/utils/form';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
+  RateLimitPerList,
   WebhookContentType,
   WebhookExecutionMode,
+  WebhookMaxBodySize,
   WebhookMethod,
   WebhookSecurityAuthType,
 } from '../../../constant';
@@ -20,7 +23,7 @@ import { useShowSchemaDialog } from '../use-show-schema-dialog';
 import { Auth } from './auth';
 import { WebhookResponse } from './response';
 
-const RateLimitPerOptions = buildOptions(['minute', 'hour', 'day']);
+const RateLimitPerOptions = buildOptions(RateLimitPerList);
 
 export function WebHook() {
   const { t } = useTranslation();
@@ -55,40 +58,43 @@ export function WebHook() {
           options={buildOptions(WebhookContentType)}
         ></SelectWithSearch>
       </RAGFlowFormItem>
-      <Separator></Separator>
-      <>
-        <RAGFlowFormItem
-          name="security.auth_type"
-          label={t('flow.webhook.authType')}
-        >
-          <SelectWithSearch
-            options={buildOptions(WebhookSecurityAuthType)}
-          ></SelectWithSearch>
-        </RAGFlowFormItem>
-        <Auth></Auth>
-        <RAGFlowFormItem
-          name="security.rate_limit.limit"
-          label={t('flow.webhook.limit')}
-        >
-          <Input type="number"></Input>
-        </RAGFlowFormItem>
-        <RAGFlowFormItem
-          name="security.rate_limit.per"
-          label={t('flow.webhook.per')}
-        >
-          <SelectWithSearch options={RateLimitPerOptions}></SelectWithSearch>
-        </RAGFlowFormItem>
-        <RAGFlowFormItem
-          name="security.max_body_size"
-          label={t('flow.webhook.maxBodySize')}
-        >
-          <Input></Input>
-        </RAGFlowFormItem>
-        <DynamicStringForm
-          name="security.ip_whitelist"
-          label={t('flow.webhook.ipWhitelist')}
-        ></DynamicStringForm>
-      </>
+      <Collapse title={<div>Security</div>}>
+        <section className="space-y-4">
+          <RAGFlowFormItem
+            name="security.auth_type"
+            label={t('flow.webhook.authType')}
+          >
+            <SelectWithSearch
+              options={buildOptions(WebhookSecurityAuthType)}
+            ></SelectWithSearch>
+          </RAGFlowFormItem>
+          <Auth></Auth>
+          <RAGFlowFormItem
+            name="security.rate_limit.limit"
+            label={t('flow.webhook.limit')}
+          >
+            <Input type="number"></Input>
+          </RAGFlowFormItem>
+          <RAGFlowFormItem
+            name="security.rate_limit.per"
+            label={t('flow.webhook.per')}
+          >
+            <SelectWithSearch options={RateLimitPerOptions}></SelectWithSearch>
+          </RAGFlowFormItem>
+          <RAGFlowFormItem
+            name="security.max_body_size"
+            label={t('flow.webhook.maxBodySize')}
+          >
+            <SelectWithSearch
+              options={buildOptions(WebhookMaxBodySize)}
+            ></SelectWithSearch>
+          </RAGFlowFormItem>
+          <DynamicStringForm
+            name="security.ip_whitelist"
+            label={t('flow.webhook.ipWhitelist')}
+          ></DynamicStringForm>
+        </section>
+      </Collapse>
       <RAGFlowFormItem
         name="schema"
         label={t('flow.webhook.schema')}
@@ -120,6 +126,7 @@ export function WebHook() {
           initialValues={schema}
           hideModal={hideSchemaDialog}
           onOk={handleSchemaDialogOk}
+          pattern={''}
         ></SchemaDialog>
       )}
     </>

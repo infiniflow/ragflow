@@ -12,6 +12,7 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { FormTooltip } from '@/components/ui/tooltip';
+import { WebhookAlgorithmList } from '@/constants/agent';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { Plus } from 'lucide-react';
@@ -35,52 +36,59 @@ const ModeOptions = [
   { value: AgentDialogueMode.Webhook, label: t('flow.webhook.name') },
 ];
 
+const FormSchema = z.object({
+  enablePrologue: z.boolean().optional(),
+  prologue: z.string().trim().optional(),
+  mode: z.string(),
+  inputs: z
+    .array(
+      z.object({
+        key: z.string(),
+        type: z.string(),
+        value: z.string(),
+        optional: z.boolean(),
+        name: z.string(),
+        options: z.array(z.union([z.number(), z.string(), z.boolean()])),
+      }),
+    )
+    .optional(),
+  methods: z.string().optional(),
+  content_types: z.string().optional(),
+  security: z
+    .object({
+      auth_type: z.string(),
+      ip_whitelist: z.array(z.object({ value: z.string() })),
+      rate_limit: z.object({
+        limit: z.number(),
+        per: z.string().optional(),
+      }),
+      max_body_size: z.string(),
+      jwt: z
+        .object({
+          algorithm: z.string().default(WebhookAlgorithmList[0]).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  schema: z.record(z.any()).optional(),
+  response: z
+    .object({
+      status: z.number(),
+      headers_template: z.array(
+        z.object({ key: z.string(), value: z.string() }),
+      ),
+      body_template: z.array(z.object({ key: z.string(), value: z.string() })),
+    })
+    .optional(),
+  execution_mode: z.string().optional(),
+});
+
+export type BeginFormSchemaType = z.infer<typeof FormSchema>;
+
 function BeginForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
 
   const values = useValues(node);
-
-  const FormSchema = z.object({
-    enablePrologue: z.boolean().optional(),
-    prologue: z.string().trim().optional(),
-    mode: z.string(),
-    inputs: z
-      .array(
-        z.object({
-          key: z.string(),
-          type: z.string(),
-          value: z.string(),
-          optional: z.boolean(),
-          name: z.string(),
-          options: z.array(z.union([z.number(), z.string(), z.boolean()])),
-        }),
-      )
-      .optional(),
-    methods: z.string().optional(),
-    content_types: z.string().optional(),
-    security: z
-      .object({
-        auth_type: z.string(),
-        ip_whitelist: z.array(z.object({ value: z.string() })),
-        rate_limit: z.object({
-          limit: z.number(),
-          per: z.string().optional(),
-        }),
-        max_body_size: z.string(),
-      })
-      .optional(),
-    schema: z.record(z.any()).optional(),
-    response: z
-      .object({
-        status: z.number(),
-        headers: z.array(z.object({ key: z.string(), value: z.string() })),
-        body_template: z.array(
-          z.object({ key: z.string(), value: z.string() }),
-        ),
-      })
-      .optional(),
-    execution_mode: z.string().optional(),
-  });
 
   const form = useForm({
     defaultValues: values,

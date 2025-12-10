@@ -961,3 +961,7 @@ export enum WebhookSecurityAuthType {
   Jwt = 'jwt',
   Hmac = 'hmac',
 }
+
+export const RateLimitPerList = ['minute', 'hour', 'day'];
+
+export const WebhookMaxBodySize = ['10MB', '50MB', '100MB', '1000MB'];

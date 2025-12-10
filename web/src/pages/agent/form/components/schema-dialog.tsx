@@ -3,6 +3,7 @@ import {
   JsonSchemaVisualizer,
   SchemaVisualEditor,
 } from '@/components/jsonjoy-builder';
+import { KeyInputProps } from '@/components/jsonjoy-builder/components/schema-editor/interface';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -20,7 +21,8 @@ export function SchemaDialog({
   hideModal,
   onOk,
   initialValues,
-}: IModalProps<any>) {
+  pattern,
+}: IModalProps<any> & KeyInputProps) {
   const { t } = useTranslation();
   const [schema, setSchema] = useState<JSONSchema>(initialValues);
 
@@ -36,7 +38,11 @@ export function SchemaDialog({
         </DialogHeader>
         <section className="flex overflow-auto">
           <div className="flex-1">
-            <SchemaVisualEditor schema={schema} onChange={setSchema} />
+            <SchemaVisualEditor
+              schema={schema}
+              onChange={setSchema}
+              pattern={pattern}
+            />
           </div>
           <div className="flex-1">
             <JsonSchemaVisualizer schema={schema} onChange={setSchema} />

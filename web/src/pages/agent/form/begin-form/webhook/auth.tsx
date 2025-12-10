@@ -1,27 +1,14 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Input } from '@/components/ui/input';
+import { WebhookAlgorithmList } from '@/constants/agent';
 import { WebhookSecurityAuthType } from '@/pages/agent/constant';
 import { buildOptions } from '@/utils/form';
 import { useCallback } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
-const AlgorithmOptions = buildOptions([
-  'hs256',
-  'hs384',
-  'hs512',
-  'rs256',
-  'rs384',
-  'rs512',
-  'es256',
-  'es384',
-  'es512',
-  'ps256',
-  'ps384',
-  'ps512',
-  'none',
-]);
+const AlgorithmOptions = buildOptions(WebhookAlgorithmList);
 
 const RequiredClaimsOptions = buildOptions(['exp', 'sub']);
 

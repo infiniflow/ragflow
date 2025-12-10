@@ -24,6 +24,7 @@ import {
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import {
+  AgentDialogueMode,
   CategorizeAnchorPointPositions,
   FileType,
   FileTypeSuffixMap,
@@ -34,6 +35,7 @@ import {
   Operator,
   TypesWithArray,
 } from './constant';
+import { BeginFormSchemaType } from './form/begin-form';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
 import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-form';
@@ -312,6 +314,39 @@ function transformDataOperationsParams(params: DataOperationsFormSchemaType) {
   };
 }
 
+export function transformArrayToObject(
+  list?: Array<{ key: string; value: string }>,
+) {
+  if (!Array.isArray(list)) return {};
+  return list?.reduce<Record<string, any>>((pre, cur) => {
+    pre[cur.key] = cur.value;
+    return pre;
+  }, {});
+}
+
+function transformBeginParams(params: BeginFormSchemaType) {
+  if (params.mode === AgentDialogueMode.Webhook) {
+    return {
+      ...params,
+      security: {
+        ...params.security,
+        ip_whitelist: params.security?.ip_whitelist.map((x) => x.value),
+      },
+      response: {
+        ...params.response,
+        headers_template: transformArrayToObject(
+          params.response?.headers_template,
+        ),
+        body_template: transformArrayToObject(params.response?.body_template),
+      },
+    };
+  }
+
+  return {
+    ...params,
+  };
+}
+
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
   nodes: RAGFlowNodeType[],
@@ -360,6 +395,9 @@ export const buildDslComponentsByGraph = (
           break;
         case Operator.DataOperations:
           params = transformDataOperationsParams(params);
+          break;
+        case Operator.Begin:
+          params = transformBeginParams(params);
           break;
         default:
           break;
