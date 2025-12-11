@@ -82,7 +82,8 @@ def _is_sensitive_url(url: str) -> bool:
     try:
         if settings.GITHUB_OAUTH is not None:
             url_val = settings.GITHUB_OAUTH.get("url")
-            if url_val: oauth_urls.add(url_val)
+            if url_val:
+                oauth_urls.add(url_val)
     except Exception:
         pass
     # Feishu OAuth endpoints
@@ -90,7 +91,8 @@ def _is_sensitive_url(url: str) -> bool:
         if settings.FEISHU_OAUTH is not None:
             for k in ("app_access_token_url", "user_access_token_url"):
                 url_val = settings.FEISHU_OAUTH.get(k)
-                if url_val: oauth_urls.add(url_val)
+                if url_val:
+                    oauth_urls.add(url_val)
     except Exception:
         pass
     # Defensive normalization: compare only scheme+netloc+path
