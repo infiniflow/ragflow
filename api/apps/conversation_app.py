@@ -435,7 +435,7 @@ async def mindmap():
     kb_ids.extend(req["kb_ids"])
     kb_ids = list(set(kb_ids))
 
-    mind_map = gen_mindmap(req["question"], kb_ids, search_app.get("tenant_id", current_user.id), search_config)
+    mind_map = await gen_mindmap(req["question"], kb_ids, search_app.get("tenant_id", current_user.id), search_config)
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)
