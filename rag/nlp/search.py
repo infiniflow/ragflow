@@ -430,6 +430,9 @@ class Dealer:
         sorted_idx = np.argsort(sim_np * -1)
 
         valid_idx = [int(i) for i in sorted_idx if sim_np[i] >= similarity_threshold]
+        # use top to limit the maximum number of returned results
+        top = min(len(valid_idx), top)
+        valid_idx = valid_idx[:top]
         filtered_count = len(valid_idx)
         ranks["total"] = int(filtered_count)
 
