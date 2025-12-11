@@ -136,6 +136,16 @@ class Retrieval(ToolBase, ABC):
                 doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
                     doc_ids = None
+            elif self._param.meta_data_filter.get("method") == "semi_auto":
+                selected_keys = self._param.meta_data_filter.get("semi_auto", [])
+                if selected_keys:
+                    filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
+                    if filtered_metas:
+                        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT)
+                        filters: dict = gen_meta_filter(chat_mdl, filtered_metas, query)
+                        doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
+                        if not doc_ids:
+                            doc_ids = None
             elif self._param.meta_data_filter.get("method") == "manual":
                 filters = self._param.meta_data_filter["manual"]
                 for flt in filters:

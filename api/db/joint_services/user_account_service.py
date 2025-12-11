@@ -273,7 +273,7 @@ def delete_user_data(user_id: str) -> dict:
 
     except Exception as e:
         logging.exception(e)
-        return {"success": False, "message": f"Error: {str(e)}. Already done:\n{done_msg}"}
+        return {"success": False, "message": "An internal error occurred during user deletion. Some operations may have completed.","details": done_msg}
 
 
 def delete_user_agents(user_id: str) -> dict:
