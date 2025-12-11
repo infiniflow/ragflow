@@ -33,7 +33,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from flask import json
-import trio
 
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService

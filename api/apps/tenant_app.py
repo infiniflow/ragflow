@@ -82,7 +82,6 @@ async def create(tenant_id):
         status=StatusEnum.VALID.value)
 
     try:
-        from threading import Thread
 
         user_name = ""
         _, user = UserService.get_by_id(current_user.id)

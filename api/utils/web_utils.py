@@ -21,10 +21,8 @@ import re
 import socket
 from urllib.parse import urlparse
 import aiosmtplib
-from api.apps import app
 from email.mime.text import MIMEText
 from email.header import Header
-from flask_mail import Message
 from common import settings
 from quart import render_template_string
 from api.utils.email_templates import EMAIL_TEMPLATES

@@ -28,7 +28,6 @@ from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
 from api.utils import commands
 
-from flask_mail import Mail
 from quart_auth import Unauthorized
 from common import settings
 from api.utils.api_utils import server_error_response

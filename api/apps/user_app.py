@@ -22,7 +22,7 @@ import secrets
 import time
 from datetime import datetime
 
-from quart import redirect, request, session, make_response
+from quart import redirect, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from api.apps.auth import get_auth_client
