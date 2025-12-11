@@ -7,6 +7,16 @@ export interface ITestRetrievalRequestBody {
   use_kg?: boolean;
   highlight?: boolean;
   kb_id?: string[];
+  meta_data_filter?: {
+    logic?: string;
+    method?: string;
+    manual?: Array<{
+      key: string;
+      op: string;
+      value: string;
+    }>;
+    semi_auto?: string[];
+  };
 }
 
 export interface IFetchKnowledgeListRequestBody {

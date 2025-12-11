@@ -673,11 +673,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       metadataTip:
         '元数据过滤是使用元数据属性（例如标签、类别或访问权限）来优化和控制系统内相关信息检索的过程。',
       conditions: '条件',
+      metadataKeys: '可选过滤项',
       addCondition: '增加条件',
       meta: {
         disabled: '禁用',
         auto: '自动',
         manual: '手动',
+        semi_auto: '半自动',
       },
       cancel: '取消',
       chatSetting: '聊天设置',
