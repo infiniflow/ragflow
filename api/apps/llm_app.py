@@ -17,7 +17,6 @@ import logging
 import json
 import os
 import subprocess
-import shlex
 import re
 from quart import request
 
