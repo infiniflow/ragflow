@@ -45,7 +45,7 @@ from api.utils.api_utils import (
 )
 from api.utils.crypt import decrypt
 from rag.utils.redis_conn import REDIS_CONN
-from api.apps import manager, login_required, current_user, login_user, logout_user
+from api.apps import login_required, current_user, login_user, logout_user
 from api.utils.web_utils import (
     send_email_html,
     OTP_LENGTH,
