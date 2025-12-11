@@ -323,12 +323,7 @@ async def build_chunks(task, progress_callback):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords", {"topn": topn})
             if not cached:
                 async with chat_limiter:
-                    cached = await asyncio.to_thread(
-                        keyword_extraction,
-                        chat_mdl,
-                        d["content_with_weight"],
-                        topn,
-                    )
+                    cached = await keyword_extraction(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
             if cached:
                 d["important_kwd"] = cached.split(",")
@@ -356,12 +351,7 @@ async def build_chunks(task, progress_callback):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question", {"topn": topn})
             if not cached:
                 async with chat_limiter:
-                    cached = await asyncio.to_thread(
-                        question_proposal,
-                        chat_mdl,
-                        d["content_with_weight"],
-                        topn,
-                    )
+                    cached = await question_proposal(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "question", {"topn": topn})
             if cached:
                 d["question_kwd"] = cached.split("\n")
@@ -414,8 +404,7 @@ async def build_chunks(task, progress_callback):
                 if not picked_examples:
                     picked_examples.append({"content": "This is an example", TAG_FLD: {'example': 1}})
                 async with chat_limiter:
-                    cached = await asyncio.to_thread(
-                        content_tagging,
+                    cached = await content_tagging(
                         chat_mdl,
                         d["content_with_weight"],
                         all_tags,

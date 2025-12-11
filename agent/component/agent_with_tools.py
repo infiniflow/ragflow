@@ -271,7 +271,7 @@ class Agent(LLM, ToolBase):
         last_calling = ""
         if len(hist) > 3:
             st = timer()
-            user_request = await asyncio.to_thread(full_question, messages=history, chat_mdl=self.chat_mdl)
+            user_request = await full_question(messages=history, chat_mdl=self.chat_mdl)
             self.callback("Multi-turn conversation optimization", {}, user_request, elapsed_time=timer()-st)
         else:
             user_request = history[-1]["content"]
@@ -309,7 +309,7 @@ class Agent(LLM, ToolBase):
             if len(hist) > 12:
                 _hist = [hist[0], hist[1], *hist[-10:]]
             entire_txt = ""
-            async for delta_ans in self._generate_streamly_async(_hist):
+            async for delta_ans in self._generate_streamly(_hist):
                 if not need2cite or cited:
                     yield delta_ans, 0
                 entire_txt += delta_ans
@@ -397,7 +397,7 @@ Respond immediately with your final comprehensive answer.
         retrievals = self._canvas.get_reference()
         retrievals = {"chunks": list(retrievals["chunks"].values()), "doc_aggs": list(retrievals["doc_aggs"].values())}
         formated_refer = kb_prompt(retrievals, self.chat_mdl.max_length, True)
-        async for delta_ans in self._generate_streamly_async([{"role": "system", "content": citation_plus("\n\n".join(formated_refer))},
+        async for delta_ans in self._generate_streamly([{"role": "system", "content": citation_plus("\n\n".join(formated_refer))},
                                                   {"role": "user", "content": text}
                                                   ]):
             yield delta_ans

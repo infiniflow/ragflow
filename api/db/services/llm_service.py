@@ -318,9 +318,6 @@ class LLMBundle(LLM4Tenant):
             return value
         raise value
 
-    def chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs) -> str:
-        return self._run_coroutine_sync(self.async_chat(system, history, gen_conf, **kwargs))
-
     def _sync_from_async_stream(self, async_gen_fn, *args, **kwargs):
         result_queue: queue.Queue = queue.Queue()
 
@@ -349,23 +346,6 @@ class LLMBundle(LLM4Tenant):
             if isinstance(item, Exception):
                 raise item
             yield item
-
-    def chat_streamly(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
-        ans = ""
-        for txt in self._sync_from_async_stream(self.async_chat_streamly, system, history, gen_conf, **kwargs):
-            if isinstance(txt, int):
-                break
-
-            if txt.endswith("</think>"):
-                ans = txt[: -len("</think>")]
-                continue
-
-            if not self.verbose_tool_use:
-                txt = re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)
-
-            # cancatination has beend done in async_chat_streamly
-            ans = txt
-            yield ans
 
     def _bridge_sync_stream(self, gen):
         loop = asyncio.get_running_loop()

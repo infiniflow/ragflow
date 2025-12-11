@@ -33,6 +33,7 @@ from api.utils.web_utils import CONTENT_TYPE_MAP
 from common import settings
 from common.constants import RetCode
 
+
 @manager.route('/file/upload', methods=['POST'])  # noqa: F821
 @token_required
 async def upload(tenant_id):

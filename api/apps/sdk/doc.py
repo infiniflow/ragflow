@@ -1549,11 +1549,11 @@ async def retrieval_test(tenant_id):
             rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
 
         if langs:
-            question = cross_languages(kb.tenant_id, None, question, langs)
+            question = await cross_languages(kb.tenant_id, None, question, langs)
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
-            question += keyword_extraction(chat_mdl, question)
+            question += await keyword_extraction(chat_mdl, question)
 
         ranks = settings.retriever.retrieval(
             question,

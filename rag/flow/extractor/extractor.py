@@ -98,7 +98,7 @@ class Extractor(ProcessBase, LLM):
                 args[chunks_key] = ck["text"]
                 msg, sys_prompt = self._sys_prompt_and_msg([], args)
                 msg.insert(0, {"role": "system", "content": sys_prompt})
-                ck[self._param.field_name] = self._generate(msg)
+                ck[self._param.field_name] = await self._generate_async(msg)
                 prog += 1./len(chunks)
                 if i % (len(chunks)//100+1) == 1:
                     self.callback(prog, f"{i+1} / {len(chunks)}")
@@ -106,6 +106,6 @@ class Extractor(ProcessBase, LLM):
         else:
             msg, sys_prompt = self._sys_prompt_and_msg([], args)
             msg.insert(0, {"role": "system", "content": sys_prompt})
-            self.set_output("chunks", [{self._param.field_name: self._generate(msg)}])
+            self.set_output("chunks", [{self._param.field_name: await self._generate_async(msg)}])
 
 

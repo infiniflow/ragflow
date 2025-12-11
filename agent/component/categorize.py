@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import logging
 import os
 import re
@@ -97,7 +98,7 @@ class Categorize(LLM, ABC):
     component_name = "Categorize"
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
-    def _invoke(self, **kwargs):
+    async def _invoke_async(self, **kwargs):
         if self.check_if_canceled("Categorize processing"):
             return
 
@@ -121,7 +122,7 @@ class Categorize(LLM, ABC):
         if self.check_if_canceled("Categorize processing"):
             return
 
-        ans = chat_mdl.chat(self._param.sys_prompt, [{"role": "user", "content": user_prompt}], self._param.gen_conf())
+        ans = await chat_mdl.async_chat(self._param.sys_prompt, [{"role": "user", "content": user_prompt}], self._param.gen_conf())
         logging.info(f"input: {user_prompt}, answer: {str(ans)}")
         if ERROR_PREFIX in ans:
             raise Exception(ans)
@@ -143,6 +144,10 @@ class Categorize(LLM, ABC):
 
         self.set_output("category_name", max_category)
         self.set_output("_next", cpn_ids)
+
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    def _invoke(self, **kwargs):
+        return asyncio.run(self._invoke_async(**kwargs))
 
     def thoughts(self) -> str:
         return "Which should it falls into {}? ...".format(",".join([f"`{c}`" for c, _ in self._param.category_description.items()]))

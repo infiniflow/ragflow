@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 from functools import partial
 import json
 import os
@@ -81,7 +82,7 @@ class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
-    def _invoke(self, **kwargs):
+    async def _invoke_async(self, **kwargs):
         if self.check_if_canceled("Retrieval processing"):
             return
 
@@ -132,7 +133,7 @@ class Retrieval(ToolBase, ABC):
             metas = DocumentService.get_meta_by_kbs(kb_ids)
             if self._param.meta_data_filter.get("method") == "auto":
                 chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT)
-                filters: dict = gen_meta_filter(chat_mdl, metas, query)
+                filters: dict = await gen_meta_filter(chat_mdl, metas, query)
                 doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
                     doc_ids = None
@@ -142,7 +143,7 @@ class Retrieval(ToolBase, ABC):
                     filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
                     if filtered_metas:
                         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT)
-                        filters: dict = gen_meta_filter(chat_mdl, filtered_metas, query)
+                        filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, query)
                         doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
                         if not doc_ids:
                             doc_ids = None
@@ -180,7 +181,7 @@ class Retrieval(ToolBase, ABC):
                     doc_ids = ["-999"]
 
         if self._param.cross_languages:
-            query = cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)
+            query = await cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
@@ -252,6 +253,10 @@ class Retrieval(ToolBase, ABC):
         self.set_output("json", json_output)
 
         return form_cnt
+
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
+    def _invoke(self, **kwargs):
+        return asyncio.run(self._invoke_async(**kwargs))
 
     def thoughts(self) -> str:
         return """
