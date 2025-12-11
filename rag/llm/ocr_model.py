@@ -22,7 +22,7 @@ from deepdoc.parser.mineru_parser import MinerUParser
 
 
 class Base:
-    def __init__(self, key: str, model_name: str, **kwargs):
+    def __init__(self, key: str | dict, model_name: str, **kwargs):
         self.model_name = model_name
 
     def parse_pdf(self, filepath: str, binary=None, **kwargs) -> Tuple[Any, Any]:
@@ -32,23 +32,23 @@ class Base:
 class MinerUOcrModel(Base, MinerUParser):
     _FACTORY_NAME = "MinerU"
 
-    def __init__(self, key: str, model_name: str, **kwargs):
+    def __init__(self, key: str | dict, model_name: str, **kwargs):
         Base.__init__(self, key, model_name, **kwargs)
-        cfg = {}
+        config = {}
         if key:
             try:
-                cfg = json.loads(key)
+                config = json.loads(key)
             except Exception:
-                cfg = {}
-
-        self.mineru_api = cfg.get("MINERU_APISERVER", os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987"))
-        self.mineru_output_dir = cfg.get("MINERU_OUTPUT_DIR", os.environ.get("MINERU_OUTPUT_DIR", ""))
-        self.mineru_backend = cfg.get("MINERU_BACKEND", os.environ.get("MINERU_BACKEND", "pipeline"))
-        self.mineru_server_url = cfg.get("MINERU_SERVER_URL", os.environ.get("MINERU_SERVER_URL", ""))
-        self.mineru_delete_output = bool(int(cfg.get("MINERU_DELETE_OUTPUT", os.environ.get("MINERU_DELETE_OUTPUT", 1))))
+                config = {}
+        config = config["api_key"]
+        self.mineru_api = config.get("mineru_apiserver", os.environ.get("MINERU_APISERVER", ""))
+        self.mineru_output_dir = config.get("mineru_output_dir", os.environ.get("MINERU_OUTPUT_DIR", ""))
+        self.mineru_backend = config.get("mineru_backend", os.environ.get("MINERU_BACKEND", "pipeline"))
+        self.mineru_server_url = config.get("mineru_server_url", os.environ.get("MINERU_SERVER_URL", ""))
+        self.mineru_delete_output = bool(int(config.get("mineru_delete_output", os.environ.get("MINERU_DELETE_OUTPUT", 1))))
         self.mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
 
-        logging.info(f"Parsered MinerU config: {cfg}")
+        logging.info(f"Parsed MinerU config: {config}")
 
         MinerUParser.__init__(self, mineru_path=self.mineru_executable, mineru_api=self.mineru_api, mineru_server_url=self.mineru_server_url)
 
