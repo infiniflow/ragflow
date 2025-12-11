@@ -18,9 +18,8 @@ import json
 import logging
 import os
 import re
-import threading
 from copy import deepcopy
-from typing import Any, Generator, AsyncGenerator
+from typing import Any, AsyncGenerator
 import json_repair
 from functools import partial
 from common.constants import LLMType

@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
 import json
 import re
 import time
@@ -43,6 +42,7 @@ from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, gen_meta_filter, keyword_extraction, chunks_format
 from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
+
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
