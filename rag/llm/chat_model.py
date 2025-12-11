@@ -191,7 +191,7 @@ class Base(ABC):
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
-                    yield e                    
+                    yield e
                     yield total_tokens
                     return
 
@@ -1223,6 +1223,7 @@ class LiteLLMBase(ABC):
         "GiteeAI",
         "302.AI",
         "Jiekou.AI",
+        "BurnCloud",
         "ZHIPU-AI",
         "MiniMax",
         "DeerAPI",

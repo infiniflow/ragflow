@@ -60,6 +60,7 @@ export enum LLMFactory {
   DeerAPI = 'DeerAPI',
   JiekouAI = 'Jiekou.AI',
   Builtin = 'Builtin',
+  BurnCloud = 'BurnCloud',
 }
 
 // Please lowercase the file name
@@ -125,6 +126,7 @@ export const IconMap = {
   [LLMFactory.DeerAPI]: 'deerapi',
   [LLMFactory.JiekouAI]: 'jiekouai',
   [LLMFactory.Builtin]: 'builtin',
+  [LLMFactory.BurnCloud]: 'burncloud',
 };
 
 export const APIMapUrl = {
