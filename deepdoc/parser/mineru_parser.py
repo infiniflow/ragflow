@@ -431,24 +431,24 @@ class MinerUParser(RAGFlowPdfParser):
         智能拼接：应用阈值控制
         
         Thresholds:
-        - MAX_COUNT: 最多10张图
-        - MAX_HEIGHT: 总高度不超过2000px
+        - MAX_COUNT: 最多20张图
+        - MAX_HEIGHT: 总高度不超过4000px
         
         Strategies:
         - 数量过多: 均匀采样（保留首尾）
-        - 高度过高: 截断到2000px
+        - 高度过高: 截断到4000px
         - 不缩放图片（保持高清）
         """
-        MAX_COUNT = 10
-        MAX_HEIGHT = 2000
+        MAX_COUNT = 20
+        MAX_HEIGHT = 4000
         GAP = 6
         
-        # 1. 数量控制：如果超过10张，均匀采样
+        # 1. 数量控制：如果超过20张，均匀采样
         if len(images_with_metadata) > MAX_COUNT:
             self.logger.info(f"[MinerU] Too many images ({len(images_with_metadata)}), sampling to {MAX_COUNT}")
             images_with_metadata = self._sample_images_uniformly(images_with_metadata, MAX_COUNT)
         
-        # 2. 高度控制：累加到2000px为止
+        # 2. 高度控制：累加到4000px为止
         trimmed_images = []
         current_height = 0
         
