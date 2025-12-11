@@ -68,7 +68,7 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
                 from api.db.services.tenant_llm_service import TenantLLMService
 
                 env_name = TenantLLMService.ensure_mineru_from_env(tenant_id)
-                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="MinerU", model_type=LLMType.OCR.value)
+                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="MinerU", model_type=LLMType.OCR)
                 if candidates:
                     mineru_llm_name = candidates[0].llm_name
                 elif env_name:
@@ -78,7 +78,7 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
 
         if mineru_llm_name:
             try:
-                ocr_model = LLMBundle(tenant_id, LLMType.OCR, llm_name=mineru_llm_name, lang=lang)
+                ocr_model = LLMBundle(tenant_id=tenant_id, llm_type=LLMType.OCR, llm_name=mineru_llm_name, lang=lang)
                 pdf_parser = ocr_model.mdl
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
@@ -711,8 +711,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         layout_recognizer = layout_recognizer_raw
         if isinstance(layout_recognizer_raw, str):
             lowered = layout_recognizer_raw.lower()
-            if lowered.startswith("mineru@"):
-                parser_model_name = layout_recognizer_raw.split("@", 1)[1]
+            if lowered.endswith("@mineru"):
+                parser_model_name = layout_recognizer_raw.split("@", 1)[0]
                 layout_recognizer = "MinerU"
 
         if parser_config.get("analyze_hyperlink", False) and is_root:

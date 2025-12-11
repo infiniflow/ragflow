@@ -240,10 +240,7 @@ class Parser(ProcessBase):
         parse_method = parse_method or ""
         if isinstance(raw_parse_method, str):
             lowered = raw_parse_method.lower()
-            if lowered.startswith("mineru@"):
-                parser_model_name = raw_parse_method.split("@", 1)[1]
-                parse_method = "MinerU"
-            elif lowered.endswith("@mineru"):
+            if lowered.endswith("@mineru"):
                 parser_model_name = raw_parse_method.rsplit("@", 1)[0]
                 parse_method = "MinerU"
 

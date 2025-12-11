@@ -192,6 +192,9 @@ async def add_llm():
     elif factory == "OpenRouter":
         api_key = apikey_json(["api_key", "provider_order"])
 
+    elif factory == "MinerU":
+        api_key = apikey_json(["api_key", "provider_order"])
+
     llm = {
         "tenant_id": current_user.id,
         "llm_factory": factory,
