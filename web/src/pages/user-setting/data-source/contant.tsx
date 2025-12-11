@@ -721,8 +721,7 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.BOX,
     config: {
       name: '',
-      folder_id: '',
-      index_recursively: false,
+      folder_id: '0',
       credentials: {
         box_tokens: '',
       },

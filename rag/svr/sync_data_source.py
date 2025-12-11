@@ -31,6 +31,7 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
+from flask import json
 import trio
 
 from api.db.services.connector_service import ConnectorService, SyncLogsService
@@ -48,7 +49,7 @@ from common.data_source.utils import load_all_docs_from_checkpoint_connector
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
-from box_sdk_gen import BoxClient, BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
+from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 task_limiter = trio.Semaphore(MAX_CONCURRENT_TASKS)
@@ -611,14 +612,20 @@ class BOX(SyncBase):
             use_marker=self.conf.get("use_marker", False)
         )
 
-        credential = self.conf['credentials']
+        credential = json.loads(self.conf['credentials']['box_tokens'])
+
         auth = BoxOAuth(
             OAuthConfig(
                 client_id=credential['client_id'],
                 client_secret=credential['client_secret'],
             )
         )
-        auth.get_tokens_authorization_code_grant(credential['code'])
+
+        token = AccessToken(
+            access_token=credential['access_token'],
+            refresh_token=credential['refresh_token'],
+        )    
+        auth.token_storage.store(token)
 
         self.connector.load_credentials(auth)
         if task["reindex"] == "1" or not task["poll_range_start"]:
