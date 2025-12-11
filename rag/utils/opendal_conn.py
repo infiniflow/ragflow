@@ -41,7 +41,9 @@ def get_opendal_config():
             scheme = opendal_config.get("scheme")
             config_data = opendal_config.get("config", {})
             kwargs = {"scheme": scheme, **config_data}
-        logging.info("Loaded OpenDAL configuration from yaml: %s", kwargs)
+        safe_log_keys=['scheme', 'host', 'port', 'database', 'table']
+        loggable_kwargs = {k: v for k, v in kwargs.items() if k in safe_log_keys}
+        logging.info("Loaded OpenDAL configuration(non sensitive): %s", loggable_kwargs)
         return kwargs
     except Exception as e:
         logging.error("Failed to load OpenDAL configuration from yaml: %s", str(e))
