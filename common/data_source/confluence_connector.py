@@ -1311,6 +1311,9 @@ class ConfluenceConnector(
         self._low_timeout_confluence_client: OnyxConfluence | None = None
         self._fetched_titles: set[str] = set()
         self.allow_images = False
+        # Track document names to detect duplicates
+        self._document_name_counts: dict[str, int] = {}
+        self._document_name_paths: dict[str, list[str]] = {}
 
         # Remove trailing slash from wiki_base if present
         self.wiki_base = wiki_base.rstrip("/")
@@ -1531,8 +1534,21 @@ class ConfluenceConnector(
             # Add current page title
             path_parts.append(page_title)
             
-            # Create full path identifier
-            semantic_identifier = " / ".join(path_parts) if len(path_parts) > 1 else page_title
+            # Track page names for duplicate detection
+            full_path = " / ".join(path_parts) if len(path_parts) > 1 else page_title
+            
+            # Count occurrences of this page title
+            if page_title not in self._document_name_counts:
+                self._document_name_counts[page_title] = 0
+                self._document_name_paths[page_title] = []
+            self._document_name_counts[page_title] += 1
+            self._document_name_paths[page_title].append(full_path)
+            
+            # Use simple name if no duplicates, otherwise use full path
+            if self._document_name_counts[page_title] == 1:
+                semantic_identifier = page_title
+            else:
+                semantic_identifier = full_path
 
             # Get the page content
             page_content = extract_text_from_confluence_html(
@@ -1694,7 +1710,7 @@ class ConfluenceConnector(
                 space_name = page.get("space", {}).get("name", "")
                 page_title = page.get("title", "")
                 
-                # Create hierarchical name: Space > Page > Attachment
+                # Create hierarchical name: Space / Page / Attachment
                 attachment_path_parts = []
                 if space_name:
                     attachment_path_parts.append(space_name)
@@ -1702,7 +1718,20 @@ class ConfluenceConnector(
                     attachment_path_parts.append(page_title)
                 attachment_path_parts.append(attachment_title)
                 
-                attachment_semantic_identifier = " / ".join(attachment_path_parts) if len(attachment_path_parts) > 1 else attachment_title
+                full_attachment_path = " / ".join(attachment_path_parts) if len(attachment_path_parts) > 1 else attachment_title
+                
+                # Track attachment names for duplicate detection
+                if attachment_title not in self._document_name_counts:
+                    self._document_name_counts[attachment_title] = 0
+                    self._document_name_paths[attachment_title] = []
+                self._document_name_counts[attachment_title] += 1
+                self._document_name_paths[attachment_title].append(full_attachment_path)
+                
+                # Use simple name if no duplicates, otherwise use full path
+                if self._document_name_counts[attachment_title] == 1:
+                    attachment_semantic_identifier = attachment_title
+                else:
+                    attachment_semantic_identifier = full_attachment_path
 
                 primary_owners: list[BasicExpertInfo] | None = None
                 if "version" in attachment and "by" in attachment["version"]:
