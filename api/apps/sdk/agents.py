@@ -159,7 +159,12 @@ async def webhook(agent_id: str):
         return get_data_error_result(message="Invalid DSL format.")
 
     # 4. Check webhook configuration in DSL
-    webhook_cfg = dsl.get("webhook", {})
+    components = dsl.get("components", {})
+    for k, _ in components.items():
+        cpn_obj = components[k]["obj"]
+        if cpn_obj["component_name"].lower() == "begin" and cpn_obj["params"]["mode"] == "Webhook":
+            webhook_cfg = cpn_obj["params"]
+
     if not webhook_cfg:
         return get_data_error_result(message="Webhook not configured for this agent.")
 
@@ -259,7 +264,7 @@ async def webhook(agent_id: str):
         limit = rl.get("limit", 60)
         per = rl.get("per", "minute")
 
-        window = {"second": 1, "minute": 60, "hour": 3600}.get(per, 60)
+        window = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}.get(per, 60)
         key = f"rl:{agent_id}"
 
         now = int(time.time())
@@ -277,8 +282,9 @@ async def webhook(agent_id: str):
 
     def _validate_token_auth(security_cfg):
         """Validate header-based token authentication."""
-        header = security_cfg.get("token_header")
-        token_value = security_cfg.get("token_value")
+        token_cfg = security_cfg.get("token",{})
+        header = token_cfg.get("token_header")
+        token_value = token_cfg.get("token_value")
 
         provided = request.headers.get(header)
         if provided != token_value:
@@ -344,7 +350,8 @@ async def webhook(agent_id: str):
             raise Exception("Invalid HMAC signature")
 
     try:
-        await validate_webhook_security(webhook_cfg.get("security", {}))
+        security_config=webhook_cfg.get("security", {})
+        await validate_webhook_security(security_config)
     except Exception as e:
         return get_data_error_result(message=str(e))
 
@@ -687,15 +694,25 @@ async def webhook(agent_id: str):
 
             return value
 
-        def render_template(text: str, clean_request: dict):
-            matches = placeholder_pattern.findall(text)
-            results = {}
+        def render_template(tpl, clean_request: dict):
+            if isinstance(tpl, dict):
+                return {k: render_template(v, clean_request) for k, v in tpl.items()}
+
+            if isinstance(tpl, list):
+                return [render_template(item, clean_request) for item in tpl]
+
+            if not isinstance(tpl, str):
+                return tpl
+
+            matches = placeholder_pattern.findall(tpl)
+            rendered = tpl
 
             for m in matches:
                 val = extract_placeholder_value(m, clean_request)
-                results[m] = val
+                rendered = rendered.replace(f"{{{m}}}", str(val))
 
-            return results
+            return rendered
+
         # Render "{xxx@query.xxx}" syntax
         headers = render_template(headers_tpl, clean_request)
         body = render_template(body_tpl, clean_request)
