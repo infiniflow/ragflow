@@ -232,39 +232,39 @@ class Message(ComponentBase):
             elif self._param.output_format == "xlsx":
                 import pandas as pd
                 from io import BytesIO
+                from datetime import datetime
 
-                if isinstance(content, str):
-                    try:
-                        # Convert markdown to HTML tables to help pandas parse it
-                        html_content = pypandoc.convert_text(content, to="html", format="markdown")
-                        dfs = pd.read_html(html_content)
-                    except Exception as e:
-                        dfs = []
-                    
-                    if not dfs:
-                        df = pd.DataFrame({"Content": [content]})
-                        dfs = [df]
+                # Get all conversation history from canvas
+                history = getattr(self._canvas, 'history', [])
+                
+                # Build rows from conversation history
+                rows = []
+                for role, msg in history:
+                    if isinstance(msg, dict):
+                        msg_content = msg.get("content", str(msg))
+                    else:
+                        msg_content = str(msg) if msg else ""
+                    rows.append({
+                        "Role": role,
+                        "Content": msg_content,
+                    })
+                
+                # Add current message if not already in history
+                if content and (not rows or rows[-1].get("Content") != content):
+                    rows.append({
+                        "Role": "assistant",
+                        "Content": content,
+                    })
+                
+                if rows:
+                    df = pd.DataFrame(rows)
                 else:
-                    # Should not accept file path for Excel generation from agent response usually, 
-                    # but if it does, read it as text
-                    with open(content, "r") as f:
-                        txt_content = f.read()
-                    try:
-                         html_content = pypandoc.convert_text(txt_content, to="html", format="markdown")
-                         dfs = pd.read_html(html_content)
-                    except Exception:
-                        dfs = []
-                    
-                    if not dfs:
-                        df = pd.DataFrame({"Content": [txt_content]})
-                        dfs = [df]
+                    df = pd.DataFrame({"Role": ["assistant"], "Content": [content if content else ""]})
 
                 # Write to Excel
                 excel_io = BytesIO()
                 with pd.ExcelWriter(excel_io, engine='openpyxl') as writer:
-                    for i, df in enumerate(dfs):
-                        sheet_name = f"Sheet{i+1}"
-                        df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    df.to_excel(writer, sheet_name="Conversation", index=False)
                 
                 excel_io.seek(0)
                 binary_content = excel_io.read()
