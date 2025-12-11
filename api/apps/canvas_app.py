@@ -342,7 +342,15 @@ async def test_db_connect():
                 f"UID={req['username']};"
                 f"PWD={req['password']};"
             )
-            logging.info(conn_str)
+            redacted_conn_str = (
+                f"DATABASE={req['database']};"
+                f"HOSTNAME={req['host']};"
+                f"PORT={req['port']};"
+                f"PROTOCOL=TCPIP;"
+                f"UID={req['username']};"
+                f"PWD=****;"
+            )
+            logging.info(redacted_conn_str)
             conn = ibm_db.connect(conn_str, "", "")
             stmt = ibm_db.exec_immediate(conn, "SELECT 1 FROM sysibm.sysdummy1")
             ibm_db.fetch_assoc(stmt)

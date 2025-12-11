@@ -121,6 +121,7 @@ EmbeddingModel = globals().get("EmbeddingModel", {})
 RerankModel = globals().get("RerankModel", {})
 Seq2txtModel = globals().get("Seq2txtModel", {})
 TTSModel = globals().get("TTSModel", {})
+OcrModel = globals().get("OcrModel", {})
 
 
 MODULE_MAPPING = {
@@ -130,6 +131,7 @@ MODULE_MAPPING = {
     "rerank_model": RerankModel,
     "sequence2txt_model": Seq2txtModel,
     "tts_model": TTSModel,
+    "ocr_model": OcrModel,
 }
 
 package_name = __name__
@@ -171,4 +173,5 @@ __all__ = [
     "RerankModel",
     "Seq2txtModel",
     "TTSModel",
+    "OcrModel",
 ]

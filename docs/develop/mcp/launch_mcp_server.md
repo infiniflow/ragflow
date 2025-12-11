@@ -176,7 +176,7 @@ This section is contributed by our community contributor [yiminghub2024](https:/
    iii. Copy [docker/entrypoint.sh](https://github.com/infiniflow/ragflow/blob/main/docker/entrypoint.sh) locally.  
    iv. Install the required dependencies using `uv`:  
        - Run `uv add mcp` or
-       - Copy [pyproject.toml](https://github.com/infiniflow/ragflow/blob/main/pyproject.toml) locally and run `uv sync --python 3.10`.
+       - Copy [pyproject.toml](https://github.com/infiniflow/ragflow/blob/main/pyproject.toml) locally and run `uv sync --python 3.12`.
 2. Edit **docker-compose.yml** to enable MCP (disabled by default).
 3. Launch the MCP server:
 
