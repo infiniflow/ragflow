@@ -155,6 +155,7 @@ dependencies = [
     "ffmpeg-python>=0.2.0",
     "imageio-ffmpeg>=0.6.0",
     "boxsdk>=10.1.0",
+    "aiosmtplib>=5.0.0",
 ]
 
 [dependency-groups]
