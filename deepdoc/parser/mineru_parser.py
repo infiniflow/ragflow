@@ -54,7 +54,7 @@ class MinerUContentType(StrEnum):
 
 
 class MinerUParser(RAGFlowPdfParser):
-    def __init__(self, mineru_path: str = "mineru", mineru_api: str = "http://host.docker.internal:9987", mineru_server_url: str = ""):
+    def __init__(self, mineru_path: str = "mineru", mineru_api: str = "", mineru_server_url: str = ""):
         self.mineru_path = Path(mineru_path)
         self.mineru_api = mineru_api.rstrip("/")
         self.mineru_server_url = mineru_server_url.rstrip("/")
@@ -106,7 +106,7 @@ class MinerUParser(RAGFlowPdfParser):
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
 
-        valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine"]
+        valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine"]
         if backend not in valid_backends:
             reason = "[MinerU] Invalid backend '{backend}'. Valid backends are: {valid_backends}"
             self.logger.warning(reason)
@@ -176,7 +176,9 @@ class MinerUParser(RAGFlowPdfParser):
                 self.using_api = openapi_exists
                 return openapi_exists, reason
             else:
-                self.logger.info("[MinerU] api not exists.")
+                reason = "[MinerU] api not exists. Setting MINERU_SERVER_URL if your backend is vlm-http-client."
+                self.logger.info(reason)
+                return False, reason
         except Exception as e:
             reason = f"[MinerU] Unexpected error during api check: {e}"
             self.logger.error(f"[MinerU] Unexpected error during api check: {e}")
