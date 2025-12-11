@@ -71,6 +71,10 @@ The font used throughout the document:
 - **Times-Roman**
 - **Courier**
 
+:::tip NOTE
+When the document contains CJK (Chinese, Japanese, Korean) or other non-Latin characters, the system automatically switches to a compatible Unicode font (STSong-Light) to ensure proper rendering. The selected font family is used for Latin-only content.
+:::
+
 ### Font size
 
 The base font size in points. Defaults to `12`.
@@ -132,3 +136,13 @@ To display a download button in the chat, add a **Message** component after the 
 1. Connect the **Docs Generator** output to a **Message** component.
 2. In the **Message** component's content field, type `/` and select `{Docs Generator_0@download}`.
 3. When the agent runs, a download button will appear in the chat, allowing users to download the generated document.
+
+## Multi-language support
+
+The **Docs Generator** automatically detects non-Latin characters (Chinese, Japanese, Korean, Arabic, Hebrew, Cyrillic, etc.) and uses appropriate Unicode fonts when available on the server.
+
+:::tip NOTE
+For full multi-language support, ensure Unicode fonts are installed on the RAGFlow server:
+- **Linux**: `fonts-freefont-ttf`, `fonts-noto-cjk`, or `fonts-droid-fallback`
+- **Docker**: Add font packages to the Dockerfile if needed
+:::

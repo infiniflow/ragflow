@@ -996,6 +996,7 @@ export const initialPDFGeneratorValues = {
     success: { type: 'boolean', value: false },
   },
 };
+
 export enum WebhookMethod {
   Post = 'POST',
   Get = 'GET',

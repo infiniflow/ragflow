@@ -3,6 +3,7 @@ import json
 import os
 import re
 import base64
+import unicodedata
 from datetime import datetime
 from abc import ABC
 from io import BytesIO
@@ -15,6 +16,9 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak, LongTable
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas as pdf_canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont, CIDFont
 from jinja2 import Template as Jinja2Template
 
 from agent.component.base import ComponentParamBase
@@ -97,6 +101,145 @@ class PDFGeneratorParam(ComponentParamBase):
 
 class PDFGenerator(Message, ABC):
     component_name = "PDFGenerator"
+    
+    # Track if Unicode fonts have been registered
+    _unicode_fonts_registered = False
+    _unicode_font_name = None
+    _unicode_font_bold_name = None
+
+    @classmethod
+    def _reset_font_cache(cls):
+        """Reset font registration cache - useful for testing"""
+        cls._unicode_fonts_registered = False
+        cls._unicode_font_name = None
+        cls._unicode_font_bold_name = None
+
+    @classmethod
+    def _register_unicode_fonts(cls):
+        """Register Unicode-compatible fonts for multi-language support.
+        
+        Uses CID fonts (STSong-Light) for reliable CJK rendering as TTF fonts
+        have issues with glyph mapping in some ReportLab versions.
+        """
+        # If already registered successfully, return True
+        if cls._unicode_fonts_registered and cls._unicode_font_name is not None:
+            return True
+        
+        # Reset and try again if previous registration failed
+        cls._unicode_fonts_registered = True
+        cls._unicode_font_name = None
+        cls._unicode_font_bold_name = None
+        
+        # Use CID fonts for reliable CJK support
+        # These are built into ReportLab and work reliably across all platforms
+        cid_fonts = [
+            'STSong-Light',      # Simplified Chinese
+            'HeiseiMin-W3',      # Japanese
+            'HYSMyeongJo-Medium', # Korean
+        ]
+        
+        for cid_font in cid_fonts:
+            try:
+                pdfmetrics.registerFont(UnicodeCIDFont(cid_font))
+                cls._unicode_font_name = cid_font
+                cls._unicode_font_bold_name = cid_font  # CID fonts don't have bold variants
+                print(f"Registered CID font: {cid_font}")
+                break
+            except Exception as e:
+                print(f"Failed to register CID font {cid_font}: {e}")
+                continue
+        
+        # If CID fonts fail, try TTF fonts as fallback
+        if not cls._unicode_font_name:
+            font_paths = [
+                '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
+                '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            ]
+            
+            for font_path in font_paths:
+                if os.path.exists(font_path):
+                    try:
+                        pdfmetrics.registerFont(TTFont('UnicodeFont', font_path))
+                        cls._unicode_font_name = 'UnicodeFont'
+                        cls._unicode_font_bold_name = 'UnicodeFont'
+                        print(f"Registered TTF font from: {font_path}")
+                        
+                        # Register font family
+                        from reportlab.pdfbase.pdfmetrics import registerFontFamily
+                        registerFontFamily('UnicodeFont', normal='UnicodeFont', bold='UnicodeFont')
+                        break
+                    except Exception as e:
+                        print(f"Failed to register TTF font {font_path}: {e}")
+                        continue
+        
+        return cls._unicode_font_name is not None
+
+    @staticmethod
+    def _needs_unicode_font(text: str) -> bool:
+        """Check if text contains CJK or other complex scripts that need special fonts.
+        
+        Standard PDF fonts (Helvetica, Times, Courier) support:
+        - Basic Latin, Extended Latin, Cyrillic, Greek
+        
+        CID fonts are needed for:
+        - CJK (Chinese, Japanese, Korean)
+        - Arabic, Hebrew (RTL scripts)
+        - Thai, Hindi, and other Indic scripts
+        """
+        if not text:
+            return False
+        
+        for char in text:
+            code = ord(char)
+            
+            # CJK Unified Ideographs and related ranges
+            if 0x4E00 <= code <= 0x9FFF:  # CJK Unified Ideographs
+                return True
+            if 0x3400 <= code <= 0x4DBF:  # CJK Extension A
+                return True
+            if 0x3000 <= code <= 0x303F:  # CJK Symbols and Punctuation
+                return True
+            if 0x3040 <= code <= 0x309F:  # Hiragana
+                return True
+            if 0x30A0 <= code <= 0x30FF:  # Katakana
+                return True
+            if 0xAC00 <= code <= 0xD7AF:  # Hangul Syllables
+                return True
+            if 0x1100 <= code <= 0x11FF:  # Hangul Jamo
+                return True
+            
+            # Arabic and Hebrew (RTL scripts)
+            if 0x0600 <= code <= 0x06FF:  # Arabic
+                return True
+            if 0x0590 <= code <= 0x05FF:  # Hebrew
+                return True
+            
+            # Indic scripts
+            if 0x0900 <= code <= 0x097F:  # Devanagari (Hindi)
+                return True
+            if 0x0E00 <= code <= 0x0E7F:  # Thai
+                return True
+        
+        return False
+
+    def _get_font_for_content(self, content: str) -> tuple:
+        """Get appropriate font based on content, returns (regular_font, bold_font)"""
+        if self._needs_unicode_font(content):
+            if self._register_unicode_fonts() and self._unicode_font_name:
+                return (self._unicode_font_name, self._unicode_font_bold_name or self._unicode_font_name)
+            else:
+                print("Warning: Content contains non-Latin characters but no Unicode font available")
+        
+        # Fall back to configured font
+        return (self._param.font_family, self._get_bold_font_name())
+
+    def _get_active_font(self) -> str:
+        """Get the currently active font (Unicode or configured)"""
+        return getattr(self, '_active_font', self._param.font_family)
+
+    def _get_active_bold_font(self) -> str:
+        """Get the currently active bold font (Unicode or configured)"""
+        return getattr(self, '_active_bold_font', self._get_bold_font_name())
 
     def _get_bold_font_name(self) -> str:
         """Get the correct bold variant of the current font family"""
@@ -136,8 +279,8 @@ class PDFGenerator(Message, ABC):
             title = self._param.title or ""
             subtitle = self._param.subtitle or ""
             
-            # Add debug logging
-            print(f"Starting PDF generation for title: {title}")
+            # Log PDF generation start
+            print(f"Starting PDF generation for title: {title}, content length: {len(content)} chars")
             
             # Resolve variable references in content using canvas
             if content and self._canvas.is_reff(content):
@@ -204,9 +347,6 @@ class PDFGenerator(Message, ABC):
             # If content is still empty, check if it was passed directly
             if not content:
                 content = kwargs.get("content", "")
-            
-            # Add debug logging
-            print(f"Starting PDF generation with content length: {len(content)} characters")
             
             # Generate document based on format
             try:
@@ -317,7 +457,15 @@ class PDFGenerator(Message, ABC):
             
             # Build story (content elements)
             story = []
-            styles = self._create_styles()
+            # Combine all text content for Unicode font detection
+            all_text = f"{title} {subtitle} {content}"
+            
+            # IMPORTANT: Register Unicode fonts BEFORE creating any styles or Paragraphs
+            # This ensures the font family is available for ReportLab's HTML parser
+            if self._needs_unicode_font(all_text):
+                self._register_unicode_fonts()
+            
+            styles = self._create_styles(all_text)
             
             # Add logo if provided
             if self._param.logo_image:
@@ -397,13 +545,41 @@ class PDFGenerator(Message, ABC):
                 except Exception as close_error:
                     print(f"Error closing buffer: {close_error}")
 
-    def _create_styles(self):
-        """Create custom paragraph styles"""
+    def _create_styles(self, content: str = ""):
+        """Create custom paragraph styles with Unicode font support if needed"""
+        # Check if content contains CJK characters that need special fonts
+        needs_cjk = self._needs_unicode_font(content)
+        
+        if needs_cjk:
+            # Use CID fonts for CJK content
+            if self._register_unicode_fonts() and self._unicode_font_name:
+                regular_font = self._unicode_font_name
+                bold_font = self._unicode_font_bold_name or self._unicode_font_name
+                print(f"Using CID font for CJK content: {regular_font}")
+            else:
+                # Fall back to configured font if CID fonts unavailable
+                regular_font = self._param.font_family
+                bold_font = self._get_bold_font_name()
+                print(f"Warning: CJK content detected but no CID font available, using {regular_font}")
+        else:
+            # Use user-selected font for Latin-only content
+            regular_font = self._param.font_family
+            bold_font = self._get_bold_font_name()
+            print(f"Using configured font: {regular_font}")
+        
+        # Store active fonts as instance variables for use in other methods
+        self._active_font = regular_font
+        self._active_bold_font = bold_font
+        
+        # Get fresh style sheet
         styles = getSampleStyleSheet()
         
         # Helper function to get the correct bold font name
         def get_bold_font(font_family):
             """Get the correct bold variant of a font family"""
+            # If using Unicode font, return the Unicode bold
+            if font_family in ('UnicodeFont', self._unicode_font_name):
+                return bold_font
             font_map = {
                 'Helvetica': 'Helvetica-Bold',
                 'Times-Roman': 'Times-Bold',
@@ -412,6 +588,10 @@ class PDFGenerator(Message, ABC):
             if 'Bold' in font_family:
                 return font_family
             return font_map.get(font_family, 'Helvetica-Bold')
+        
+        # Use detected font instead of configured font for non-Latin content
+        active_font = regular_font
+        active_bold_font = bold_font
         
         # Helper function to add or update style
         def add_or_update_style(name, **kwargs):
@@ -424,13 +604,23 @@ class PDFGenerator(Message, ABC):
                 # Add new style
                 styles.add(ParagraphStyle(name=name, **kwargs))
         
+        # IMPORTANT: Update base styles to use Unicode font for non-Latin content
+        # This ensures ALL text uses the correct font, not just our custom styles
+        add_or_update_style('Normal', fontName=active_font)
+        add_or_update_style('BodyText', fontName=active_font)
+        add_or_update_style('Bullet', fontName=active_font)
+        add_or_update_style('Heading1', fontName=active_bold_font)
+        add_or_update_style('Heading2', fontName=active_bold_font)
+        add_or_update_style('Heading3', fontName=active_bold_font)
+        add_or_update_style('Title', fontName=active_bold_font)
+        
         # Title style
         add_or_update_style(
             'PDFTitle',
             parent=styles['Heading1'],
             fontSize=self._param.title_font_size,
             textColor=colors.HexColor(self._param.title_color),
-            fontName=get_bold_font(self._param.font_family),
+            fontName=active_bold_font,
             alignment=TA_CENTER,
             spaceAfter=12
         )
@@ -441,7 +631,7 @@ class PDFGenerator(Message, ABC):
             parent=styles['Heading2'],
             fontSize=self._param.heading2_font_size,
             textColor=colors.HexColor(self._param.text_color),
-            fontName=self._param.font_family,
+            fontName=active_font,
             alignment=TA_CENTER,
             spaceAfter=12
         )
@@ -451,7 +641,7 @@ class PDFGenerator(Message, ABC):
             'CustomHeading1',
             parent=styles['Heading1'],
             fontSize=self._param.heading1_font_size,
-            fontName=get_bold_font(self._param.font_family),
+            fontName=active_bold_font,
             textColor=colors.HexColor(self._param.text_color),
             spaceAfter=12,
             spaceBefore=12
@@ -461,7 +651,7 @@ class PDFGenerator(Message, ABC):
             'CustomHeading2',
             parent=styles['Heading2'],
             fontSize=self._param.heading2_font_size,
-            fontName=get_bold_font(self._param.font_family),
+            fontName=active_bold_font,
             textColor=colors.HexColor(self._param.text_color),
             spaceAfter=10,
             spaceBefore=10
@@ -471,7 +661,7 @@ class PDFGenerator(Message, ABC):
             'CustomHeading3',
             parent=styles['Heading3'],
             fontSize=self._param.heading3_font_size,
-            fontName=get_bold_font(self._param.font_family),
+            fontName=active_bold_font,
             textColor=colors.HexColor(self._param.text_color),
             spaceAfter=8,
             spaceBefore=8
@@ -482,7 +672,7 @@ class PDFGenerator(Message, ABC):
             'CustomBody',
             parent=styles['BodyText'],
             fontSize=self._param.font_size,
-            fontName=self._param.font_family,
+            fontName=active_font,
             textColor=colors.HexColor(self._param.text_color),
             leading=self._param.font_size * self._param.line_spacing,
             alignment=TA_JUSTIFY
@@ -493,13 +683,13 @@ class PDFGenerator(Message, ABC):
             'CustomBullet',
             parent=styles['BodyText'],
             fontSize=self._param.font_size,
-            fontName=self._param.font_family,
+            fontName=active_font,
             textColor=colors.HexColor(self._param.text_color),
             leftIndent=20,
             bulletIndent=10
         )
         
-        # Code style
+        # Code style (keep Courier for code blocks)
         add_or_update_style(
             'PDFCode',
             parent=styles.get('Code', styles['Normal']),
@@ -516,7 +706,7 @@ class PDFGenerator(Message, ABC):
             'Italic',
             parent=styles['Normal'],
             fontSize=self._param.font_size,
-            fontName=self._param.font_family,
+            fontName=active_font,
             textColor=colors.HexColor(self._param.text_color)
         )
         
@@ -571,7 +761,8 @@ class PDFGenerator(Message, ABC):
                 bullet_items = []
                 while i < len(lines) and (lines[i].strip().startswith('- ') or lines[i].strip().startswith('* ')):
                     item_text = lines[i].strip()[2:].strip()
-                    bullet_items.append(f"• {self._format_inline(item_text)}")
+                    formatted = self._format_inline(item_text)
+                    bullet_items.append(f"• {formatted}")
                     i += 1
                 for item in bullet_items:
                     elements.append(Paragraph(item, styles['CustomBullet']))
@@ -754,7 +945,7 @@ class PDFGenerator(Message, ABC):
                 'TableHeader',
                 parent=styles['Normal'],
                 fontSize=self._param.font_size,
-                fontName=get_bold_font(self._param.font_family),
+                fontName=self._get_active_bold_font(),
                 textColor=colors.whitesmoke,
                 alignment=TA_CENTER,
                 leading=self._param.font_size * 1.2,
@@ -766,7 +957,7 @@ class PDFGenerator(Message, ABC):
                 'TableCell',
                 parent=styles['Normal'],
                 fontSize=font_size,
-                fontName=self._param.font_family,
+                fontName=self._get_active_font(),
                 textColor=colors.black,
                 alignment=TA_LEFT,
                 leading=font_size * 1.15,
@@ -795,7 +986,7 @@ class PDFGenerator(Message, ABC):
             'TableHeader',
             parent=styles['Normal'],
             fontSize=base_font_size + 1,
-            fontName=self._get_bold_font_name(),
+            fontName=self._get_active_bold_font(),
             textColor=colors.HexColor('#2c3e50'),
             spaceAfter=6,
             backColor=colors.HexColor('#f8f9fa'),
@@ -810,7 +1001,7 @@ class PDFGenerator(Message, ABC):
             'TableBody',
             parent=styles['Normal'],
             fontSize=base_font_size,
-            fontName=getattr(self._param, 'font_family', 'Helvetica'),
+            fontName=self._get_active_font(),
             textColor=colors.HexColor(getattr(self._param, 'text_color', '#000000')),
             spaceAfter=6,
             leading=base_font_size * 1.2
@@ -820,7 +1011,7 @@ class PDFGenerator(Message, ABC):
         label_style = ParagraphStyle(
             'LabelStyle',
             parent=body_style,
-            fontName=self._get_bold_font_name(),
+            fontName=self._get_active_bold_font(),
             textColor=colors.HexColor('#2c3e50'),
             fontSize=base_font_size,
             spaceAfter=4,
@@ -1121,7 +1312,8 @@ class PDFGenerator(Message, ABC):
                     font_size = self._param.font_size - 1 if row_idx > 0 else self._param.font_size
                     try:
                         style = self._get_cell_style(row_idx, is_header=(row_idx == 0), font_size=font_size)
-                        processed_row.append(Paragraph(self._escape_html(cell_text), style))
+                        escaped_text = self._escape_html(cell_text)
+                        processed_row.append(Paragraph(escaped_text, style))
                     except Exception as e:
                         processed_row.append(self._escape_html(cell_text))
                 
@@ -1146,7 +1338,7 @@ class PDFGenerator(Message, ABC):
                     ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),  # Darker header
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-                    ('FONTNAME', (0, 0), (-1, 0), self._get_bold_font_name()),
+                    ('FONTNAME', (0, 0), (-1, 0), self._get_active_bold_font()),
                     ('FONTSIZE', (0, 0), (-1, -1), self._param.font_size - 1),
                     ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
                     ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),  # Lighter background
@@ -1232,9 +1424,12 @@ class PDFGenerator(Message, ABC):
         """Add header, footer, page numbers, watermark"""
         canvas.saveState()
         
+        # Get active font for decorations
+        active_font = self._get_active_font()
+        
         # Add watermark
         if self._param.watermark_text:
-            canvas.setFont(self._param.font_family, 60)
+            canvas.setFont(active_font, 60)
             canvas.setFillColorRGB(0.9, 0.9, 0.9, alpha=0.3)
             canvas.saveState()
             canvas.translate(doc.pagesize[0] / 2, doc.pagesize[1] / 2)
@@ -1244,13 +1439,13 @@ class PDFGenerator(Message, ABC):
         
         # Add header
         if self._param.header_text:
-            canvas.setFont(self._param.font_family, 9)
+            canvas.setFont(active_font, 9)
             canvas.setFillColorRGB(0.5, 0.5, 0.5)
             canvas.drawString(doc.leftMargin, doc.pagesize[1] - 0.5 * inch, self._param.header_text)
         
         # Add footer
         if self._param.footer_text:
-            canvas.setFont(self._param.font_family, 9)
+            canvas.setFont(active_font, 9)
             canvas.setFillColorRGB(0.5, 0.5, 0.5)
             canvas.drawString(doc.leftMargin, 0.5 * inch, self._param.footer_text)
         
@@ -1258,7 +1453,7 @@ class PDFGenerator(Message, ABC):
         if self._param.add_page_numbers:
             page_num = canvas.getPageNumber()
             text = f"Page {page_num}"
-            canvas.setFont(self._param.font_family, 9)
+            canvas.setFont(active_font, 9)
             canvas.setFillColorRGB(0.5, 0.5, 0.5)
             canvas.drawRightString(doc.pagesize[0] - doc.rightMargin, 0.5 * inch, text)
         
