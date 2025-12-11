@@ -865,8 +865,6 @@ async def forget_get_captcha():
     captcha_text = "".join(secrets.choice(allowed) for _ in range(OTP_LENGTH))
     REDIS_CONN.set(captcha_key(email), captcha_text, 60) # Valid for 60 seconds
 
-    print("\n\nGenerated captcha:", captcha_text, "\n\n")
-
     from captcha.image import ImageCaptcha
     image = ImageCaptcha(width=300, height=120, font_sizes=[50, 60, 70])
     img_bytes = image.generate(captcha_text).read()
