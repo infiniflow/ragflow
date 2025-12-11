@@ -76,8 +76,6 @@ class PDFGeneratorParam(ComponentParamBase):
         
         self.outputs = {
             "file_path": {"value": "", "type": "string"},
-            "filename": {"value": "", "type": "string"},
-            "message": {"value": "", "type": "string"},
             "pdf_base64": {"value": "", "type": "string"},
             "download": {"value": "", "type": "string"},
             "success": {"value": False, "type": "boolean"}
@@ -375,7 +373,6 @@ class PDFGenerator(Message, ABC):
                 # Set outputs
                 self.set_output("file_path", file_path)
                 self.set_output("pdf_base64", doc_base64)  # Keep same output name for compatibility
-                self.set_output("filename", filename)
                 self.set_output("success", True)
                 
                 # Create download info object
@@ -389,10 +386,6 @@ class PDFGenerator(Message, ABC):
                 # Output download info as JSON string so it can be used in Message block
                 download_json = json.dumps(download_info)
                 self.set_output("download", download_json)
-                
-                # Create a user-friendly download message
-                download_message = f"✓ {output_format.upper()} generated successfully: {filename}\nFile saved to: {file_path}\nSize: {file_size} bytes"
-                self.set_output("message", download_message)
                 
                 return download_info
                 
