@@ -20,12 +20,7 @@ class BoxConnector(LoadConnector, PollConnector):
         self.folder_id = folder_id
         self.use_marker = use_marker
 
-
-    def load_credentials(self, credentials):
-        auth = credentials.get("auth")
-        if not auth:
-            raise ConnectorMissingCredentialError("Box auth is required")
-
+    def load_credentials(self, auth: Any):
         self.box_client = BoxClient(auth=auth)
         return None
 

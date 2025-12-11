@@ -1,6 +1,7 @@
 import { FormFieldType } from '@/components/dynamic-form';
 import SvgIcon from '@/components/svg-icon';
 import { t } from 'i18next';
+import BoxTokenField from './component/box-token-field';
 import { ConfluenceIndexingModeField } from './component/confluence-token-field';
 import GmailTokenField from './component/gmail-token-field';
 import GoogleDriveTokenField from './component/google-drive-token-field';
@@ -559,37 +560,24 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.BOX]: [
     {
-      label: 'Client ID',
-      name: 'config.credentials.box_client_id',
-      type: FormFieldType.Text,
+      label: 'Box OAuth JSON',
+      name: 'config.credentials.box_tokens',
+      type: FormFieldType.Textarea,
       required: true,
-    },
-    {
-      label: 'Client Secret',
-      name: 'config.credentials.box_client_secret',
-      type: FormFieldType.Password,
-      required: true,
-    },
-    {
-      label: 'Redirect URI',
-      name: 'config.credentials.box_redirect_uri',
-      type: FormFieldType.Text,
-      required: true,
-      placeholder: 'https://example.com/oauth2/callback',
+      render: (fieldProps: any) => (
+        <BoxTokenField
+          value={fieldProps.value}
+          onChange={fieldProps.onChange}
+          placeholder='{ "client_id": "...", "client_secret": "...", "redirect_uri": "..." }'
+        />
+      ),
     },
     {
       label: 'Folder ID',
       name: 'config.folder_id',
       type: FormFieldType.Text,
       required: false,
-      placeholder: 'Defaults to root (0)',
-    },
-    {
-      label: 'Index recursively',
-      name: 'config.index_recursively',
-      type: FormFieldType.Checkbox,
-      required: false,
-      defaultValue: false,
+      placeholder: 'Defaults root',
     },
   ],
 };
@@ -733,12 +721,10 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.BOX,
     config: {
       name: '',
-      folder_id: '0',
+      folder_id: '',
       index_recursively: false,
       credentials: {
-        box_client_id: '',
-        box_client_secret: '',
-        box_redirect_uri: '',
+        box_tokens: '',
       },
     },
   },
