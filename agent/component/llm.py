@@ -168,53 +168,12 @@ class LLM(ComponentBase):
             sys_prompt = re.sub(rf"<{tag}>(.*?)</{tag}>", "", sys_prompt, flags=re.DOTALL|re.IGNORECASE)
         return pts, sys_prompt
 
-    def _generate(self, msg:list[dict], **kwargs) -> str:
-        if not self.imgs:
-            return self.chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
-        return self.chat_mdl.chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
-
     async def _generate_async(self, msg: list[dict], **kwargs) -> str:
-        if not self.imgs and hasattr(self.chat_mdl, "async_chat"):
-            return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
-        if self.imgs and hasattr(self.chat_mdl, "async_chat"):
-            return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
-        return await asyncio.to_thread(self._generate, msg, **kwargs)
-
-    def _generate_streamly(self, msg:list[dict], **kwargs) -> Generator[str, None, None]:
-        ans = ""
-        last_idx = 0
-        endswith_think = False
-        def delta(txt):
-            nonlocal ans, last_idx, endswith_think
-            delta_ans = txt[last_idx:]
-            ans = txt
-
-            if delta_ans.find("<think>") == 0:
-                last_idx += len("<think>")
-                return "<think>"
-            elif delta_ans.find("<think>") > 0:
-                delta_ans = txt[last_idx:last_idx+delta_ans.find("<think>")]
-                last_idx += delta_ans.find("<think>")
-                return delta_ans
-            elif delta_ans.endswith("</think>"):
-                endswith_think = True
-            elif endswith_think:
-                endswith_think = False
-                return "</think>"
-
-            last_idx = len(ans)
-            if ans.endswith("</think>"):
-                last_idx -= len("</think>")
-            return re.sub(r"(<think>|</think>)", "", delta_ans)
-
         if not self.imgs:
-            for txt in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs):
-                yield delta(txt)
-        else:
-            for txt in self.chat_mdl.chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs):
-                yield delta(txt)
+            return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)
+        return await self.chat_mdl.async_chat(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)
 
-    async def _generate_streamly_async(self, msg: list[dict], **kwargs) -> AsyncGenerator[str, None]:
+    async def _generate_streamly(self, msg: list[dict], **kwargs) -> AsyncGenerator[str, None]:
         async def delta_wrapper(txt_iter):
             ans = ""
             last_idx = 0
@@ -246,36 +205,13 @@ class LLM(ComponentBase):
             async for t in txt_iter:
                 yield delta(t)
 
-        if not self.imgs and hasattr(self.chat_mdl, "async_chat_streamly"):
+        if not self.imgs:
             async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), **kwargs)):
                 yield t
             return
-        if self.imgs and hasattr(self.chat_mdl, "async_chat_streamly"):
-            async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)):
-                yield t
-            return
 
-        # fallback
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue = asyncio.Queue()
-
-        def worker():
-            try:
-                for item in self._generate_streamly(msg, **kwargs):
-                    loop.call_soon_threadsafe(queue.put_nowait, item)
-            except Exception as e:
-                loop.call_soon_threadsafe(queue.put_nowait, e)
-            finally:
-                loop.call_soon_threadsafe(queue.put_nowait, StopAsyncIteration)
-
-        threading.Thread(target=worker, daemon=True).start()
-        while True:
-            item = await queue.get()
-            if item is StopAsyncIteration:
-                break
-            if isinstance(item, Exception):
-                raise item
-            yield item
+        async for t in delta_wrapper(self.chat_mdl.async_chat_streamly(msg[0]["content"], msg[1:], self._param.gen_conf(), images=self.imgs, **kwargs)):
+            yield t
 
     async def _stream_output_async(self, prompt, msg):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
@@ -407,8 +343,8 @@ class LLM(ComponentBase):
     def _invoke(self, **kwargs):
         return asyncio.run(self._invoke_async(**kwargs))
 
-    def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str, user_defined_prompt:dict={}):
-        summ = tool_call_summary(self.chat_mdl, func_name, params, results, user_defined_prompt)
+    async def add_memory(self, user:str, assist:str, func_name: str, params: dict, results: str, user_defined_prompt:dict={}):
+        summ = await tool_call_summary(self.chat_mdl, func_name, params, results, user_defined_prompt)
         logging.info(f"[MEMORY]: {summ}")
         self._canvas.add_memory(user, assist, summ)
 

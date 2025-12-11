@@ -969,7 +969,7 @@ async def retrieval_test_embedded():
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
 
-    def _retrieval_sync():
+    async def _retrieval():
         local_doc_ids = list(doc_ids) if doc_ids else []
         tenant_ids = []
         _question = question
@@ -980,7 +980,7 @@ async def retrieval_test_embedded():
             metas = DocumentService.get_meta_by_kbs(kb_ids)
             if meta_data_filter.get("method") == "auto":
                 chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
-                filters: dict = gen_meta_filter(chat_mdl, metas, _question)
+                filters: dict = await gen_meta_filter(chat_mdl, metas, _question)
                 local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
                 if not local_doc_ids:
                     local_doc_ids = None
@@ -990,7 +990,7 @@ async def retrieval_test_embedded():
                     filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
                     if filtered_metas:
                         chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
-                        filters: dict = gen_meta_filter(chat_mdl, filtered_metas, _question)
+                        filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, _question)
                         local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
                         if not local_doc_ids:
                             local_doc_ids = None
@@ -1004,7 +1004,7 @@ async def retrieval_test_embedded():
                 metas = DocumentService.get_meta_by_kbs(kb_ids)
                 if meta_data_filter.get("method") == "auto":
                     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
-                    filters: dict = gen_meta_filter(chat_mdl, metas, question)
+                    filters: dict = await gen_meta_filter(chat_mdl, metas, question)
                     local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
                     if not local_doc_ids:
                         local_doc_ids = None
@@ -1014,7 +1014,7 @@ async def retrieval_test_embedded():
                         filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
                         if filtered_metas:
                             chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
-                            filters: dict = gen_meta_filter(chat_mdl, filtered_metas, question)
+                            filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question)
                             local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
                             if not local_doc_ids:
                                 local_doc_ids = None
@@ -1038,7 +1038,7 @@ async def retrieval_test_embedded():
             return get_error_data_result(message="Knowledgebase not found!")
 
         if langs:
-            _question = cross_languages(kb.tenant_id, None, _question, langs)
+            _question = await cross_languages(kb.tenant_id, None, _question, langs)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
@@ -1048,7 +1048,7 @@ async def retrieval_test_embedded():
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
-            _question += keyword_extraction(chat_mdl, _question)
+            _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
         ranks = settings.retriever.retrieval(
@@ -1068,7 +1068,7 @@ async def retrieval_test_embedded():
         return get_json_result(data=ranks)
 
     try:
-        return await asyncio.to_thread(_retrieval_sync)
+        return await _retrieval()
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message="No chunk found! Check the chunk status please!",
