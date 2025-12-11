@@ -27,7 +27,7 @@ from api.db import VALID_FILE_TYPES, FileType
 from api.db.db_models import Task
 from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
-from api.db.services.dialog_service import meta_filter, convert_conditions
+from common.metadata_utils import meta_filter, convert_conditions
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
