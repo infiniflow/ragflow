@@ -9,19 +9,21 @@ import {
 } from '@/components/ui/dialog';
 import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect, RAGFlowSelectOptionType } from '@/components/ui/select';
+import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { useTranslate } from '@/hooks/common-hooks';
+import { LLMFactory } from '@/constants/llm';
 import { IModalProps } from '@/interfaces/common';
+import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { t } from 'i18next';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { LLMHeader } from '../../components/llm-header';
 
 const FormSchema = z.object({
   llm_name: z.string().min(1, {
-    message: 'Model name is required',
+    message: t('setting.mineru.modelNameRequired'),
   }),
   mineru_apiserver: z.string().optional(),
   mineru_output_dir: z.string().optional(),
@@ -35,25 +37,22 @@ const FormSchema = z.object({
   mineru_delete_output: z.boolean(),
 });
 
-type MinerUFormValues = z.infer<typeof FormSchema>;
-
-const backendOptions: RAGFlowSelectOptionType[] = [
-  { value: 'pipeline', label: 'pipeline' },
-  { value: 'vlm-transformers', label: 'vlm-transformers' },
-  { value: 'vlm-vllm-engine', label: 'vlm-vllm-engine' },
-  { value: 'vlm-http-client', label: 'vlm-http-client' },
-];
+export type MinerUFormValues = z.infer<typeof FormSchema>;
 
 const MinerUModal = ({
   visible,
   hideModal,
   onOk,
   loading,
-  initialValues,
-}: IModalProps<MinerUFormValues> & {
-  initialValues?: Partial<MinerUFormValues>;
-}) => {
-  const { t } = useTranslate('setting');
+}: IModalProps<MinerUFormValues>) => {
+  const { t } = useTranslation();
+
+  const backendOptions = buildOptions([
+    'pipeline',
+    'vlm-transformers',
+    'vlm-vllm-engine',
+    'vlm-http-client',
+  ]);
 
   const form = useForm<MinerUFormValues>({
     resolver: zodResolver(FormSchema),
@@ -70,25 +69,12 @@ const MinerUModal = ({
     }
   };
 
-  useEffect(() => {
-    if (visible) {
-      form.reset();
-      if (initialValues) {
-        form.reset({
-          mineru_backend: 'pipeline',
-          mineru_delete_output: true,
-          ...initialValues,
-        });
-      }
-    }
-  }, [visible, initialValues, form]);
-
   return (
     <Dialog open={visible} onOpenChange={hideModal}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            <LLMHeader name="MinerU" />
+            <LLMHeader name={LLMFactory.MinerU} />
           </DialogTitle>
         </DialogHeader>
         <Form {...form}>
@@ -97,32 +83,47 @@ const MinerUModal = ({
             className="space-y-6"
             id="mineru-form"
           >
-            <RAGFlowFormItem name="llm_name" label={t('modelName')} required>
+            <RAGFlowFormItem
+              name="llm_name"
+              label={t('setting.modelName')}
+              required
+            >
               <Input placeholder="mineru-from-env-1" />
             </RAGFlowFormItem>
-            <RAGFlowFormItem name="mineru_apiserver" label="MINERU_APISERVER">
+            <RAGFlowFormItem
+              name="mineru_apiserver"
+              label={t('setting.mineru.apiserver')}
+            >
               <Input placeholder="http://host.docker.internal:9987" />
             </RAGFlowFormItem>
-            <RAGFlowFormItem name="mineru_output_dir" label="MINERU_OUTPUT_DIR">
+            <RAGFlowFormItem
+              name="mineru_output_dir"
+              label={t('setting.mineru.outputDir')}
+            >
               <Input placeholder="/tmp/mineru" />
             </RAGFlowFormItem>
-            <RAGFlowFormItem name="mineru_backend" label="MINERU_BACKEND">
+            <RAGFlowFormItem
+              name="mineru_backend"
+              label={t('setting.mineru.backend')}
+            >
               {(field) => (
                 <RAGFlowSelect
                   value={field.value}
                   onChange={field.onChange}
                   options={backendOptions}
-                  placeholder="Select backend"
+                  placeholder={t('setting.mineru.selectBackend')}
                 />
               )}
             </RAGFlowFormItem>
-            <RAGFlowFormItem name="mineru_server_url" label="MINERU_SERVER_URL">
+            <RAGFlowFormItem
+              name="mineru_server_url"
+              label={t('setting.mineru.serverUrl')}
+            >
               <Input placeholder="http://your-vllm-server:30000" />
             </RAGFlowFormItem>
             <RAGFlowFormItem
               name="mineru_delete_output"
-              label="MINERU_DELETE_OUTPUT"
-              className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm"
+              label={t('setting.mineru.deleteOutput')}
               labelClassName="!mb-0"
             >
               {(field) => (

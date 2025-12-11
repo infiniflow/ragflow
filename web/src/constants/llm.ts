@@ -126,7 +126,7 @@ export const IconMap = {
   [LLMFactory.DeerAPI]: 'deerapi',
   [LLMFactory.JiekouAI]: 'jiekouai',
   [LLMFactory.Builtin]: 'builtin',
-  [LLMFactory.MinerU]: 'openai',
+  [LLMFactory.MinerU]: 'mineru',
 };
 
 export const APIMapUrl = {

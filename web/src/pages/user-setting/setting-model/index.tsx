@@ -136,7 +136,6 @@ const ModelProviders = () => {
     showMineruModal,
     onMineruOk,
     mineruLoading,
-    mineruInitialValues,
   } = useSubmitMinerU();
 
   const ModalMap = useMemo(
@@ -156,12 +155,13 @@ const ModelProviders = () => {
       showBedrockAddingModal,
       showVolcAddingModal,
       showHunyuanAddingModal,
-      showTencentCloudAddingModal,
       showSparkAddingModal,
       showyiyanAddingModal,
       showFishAudioAddingModal,
+      showTencentCloudAddingModal,
       showGoogleAddingModal,
       showAzureAddingModal,
+      showMineruModal,
     ],
   );
 
@@ -306,7 +306,6 @@ const ModelProviders = () => {
         hideModal={hideMineruModal}
         onOk={onMineruOk}
         loading={mineruLoading}
-        initialValues={mineruInitialValues}
       ></MinerUModal>
     </div>
   );
