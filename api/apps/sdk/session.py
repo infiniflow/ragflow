@@ -1023,7 +1023,6 @@ async def retrieval_test_embedded():
                     if meta_data_filter["manual"] and not local_doc_ids:
                         local_doc_ids = ["-999"]
 
-
         tenants = UserTenantService.query(user_id=tenant_id)
         for kb_id in kb_ids:
             for tenant in tenants:

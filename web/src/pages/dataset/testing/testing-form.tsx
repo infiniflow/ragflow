@@ -50,8 +50,8 @@ export default function TestingForm({
   setValues,
 }: TestingFormProps) {
   const { t } = useTranslation();
-  const { id } = useParams(); // 正确解构出id参数
-  const knowledgeBaseId = id; // 现在knowledgeBaseId是字符串类型
+  const { id } = useParams();
+  const knowledgeBaseId = id;
 
   const formSchema = z.object({
     question: z.string().min(1, {
@@ -100,7 +100,6 @@ export default function TestingForm({
           <CrossLanguageFormField
             name={'cross_languages'}
           ></CrossLanguageFormField>
-          {/* 添加元数据过滤组件 */}
           <MetadataFilter prefix=""></MetadataFilter>
         </FormContainer>
         <FormField
