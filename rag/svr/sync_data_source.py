@@ -42,7 +42,6 @@ from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.gmail_connector import GmailConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
-from common.data_source.utils import load_all_docs_from_checkpoint_connector
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
