@@ -39,6 +39,52 @@ from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table, attach_media_context
 
 
+# MinerU OCR language mapping (RAGFlow language -> MinerU OCR code)
+# See: https://github.com/opendatalab/MinerU for supported languages
+MINERU_LANG_MAP = {
+    "chinese": "ch",
+    "english": "en",
+    "russian": "cyrillic",
+    "ukrainian": "cyrillic",
+    "belarusian": "cyrillic",
+    "bulgarian": "cyrillic",
+    "serbian": "cyrillic",
+    "korean": "korean",
+    "japanese": "japan",
+    "arabic": "arabic",
+    "thai": "th",
+    "greek": "el",
+    "hindi": "devanagari",
+    "tamil": "ta",
+    "telugu": "te",
+    "kannada": "ka",
+    "georgian": "ka",
+    "vietnamese": "latin",
+    "french": "latin",
+    "german": "latin",
+    "spanish": "latin",
+    "italian": "latin",
+    "portuguese": "latin",
+    "polish": "latin",
+    "dutch": "latin",
+    "turkish": "latin",
+}
+
+
+def _get_mineru_lang(lang: str) -> str:
+    """Convert RAGFlow language name to MinerU OCR language code.
+    
+    Args:
+        lang: RAGFlow language name (e.g., "Chinese", "Russian", "English")
+        
+    Returns:
+        MinerU OCR language code (e.g., "ch", "cyrillic", "en")
+    """
+    if not lang:
+        return "latin"
+    return MINERU_LANG_MAP.get(lang.lower(), "latin")
+
+
 def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     callback = callback
     binary = binary
@@ -60,6 +106,15 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
     parse_method = kwargs.get("parse_method", "raw")
     mineru_llm_name = kwargs.get("mineru_llm_name")
     tenant_id = kwargs.get("tenant_id")
+    
+    # Get MinerU-specific settings from parser_config
+    parser_config = kwargs.get("parser_config", {})
+    mineru_lang = parser_config.get("mineru_lang") or _get_mineru_lang(lang)
+    formula_enable = parser_config.get("mineru_formula_enable", True)
+    table_enable = parser_config.get("mineru_table_enable", True)
+    
+    logging.info(f"[MinerU] by_mineru called with lang={lang}, parser_config mineru_lang={parser_config.get('mineru_lang')}, resolved mineru_lang={mineru_lang}")
+    logging.info(f"[MinerU] formula_enable={formula_enable}, table_enable={table_enable}")
 
     pdf_parser = None
     if tenant_id:
@@ -85,6 +140,9 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
                     binary=binary,
                     callback=callback,
                     parse_method=parse_method,
+                    lang=mineru_lang,
+                    formula_enable=formula_enable,
+                    table_enable=table_enable,
                 )
                 return sections, tables, pdf_parser
             except Exception as e:

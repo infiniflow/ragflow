@@ -193,7 +193,14 @@ async def add_llm():
         api_key = apikey_json(["api_key", "provider_order"])
 
     elif factory == "MinerU":
-        api_key = apikey_json(["api_key", "provider_order"])
+        api_key = apikey_json([
+            "llm_name",
+            "mineru_apiserver",
+            "mineru_output_dir",
+            "mineru_backend",
+            "mineru_server_url",
+            "mineru_delete_output",
+        ])
 
     llm = {
         "tenant_id": current_user.id,

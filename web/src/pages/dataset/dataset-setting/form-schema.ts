@@ -30,6 +30,10 @@ export const formSchema = z
         topn_tags: z.number().optional(),
         toc_extraction: z.boolean().optional(),
         overlapped_percent: z.number().optional(),
+        // MinerU-specific settings
+        mineru_lang: z.string().optional(),
+        mineru_formula_enable: z.boolean().optional(),
+        mineru_table_enable: z.boolean().optional(),
         raptor: z
           .object({
             use_raptor: z.boolean().optional(),

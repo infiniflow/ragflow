@@ -13,10 +13,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import json
 import logging
 import os
-from typing import Any, Optional, Tuple
+from io import BytesIO
+from os import PathLike
+from typing import Callable, Optional
 
 from deepdoc.parser.mineru_parser import MinerUParser
 
@@ -25,7 +26,22 @@ class Base:
     def __init__(self, key: str | dict, model_name: str, **kwargs):
         self.model_name = model_name
 
-    def parse_pdf(self, filepath: str, binary=None, **kwargs) -> Tuple[Any, Any]:
+    def parse_pdf(
+        self,
+        filepath: str | PathLike[str],
+        binary: BytesIO | bytes,
+        callback: Optional[Callable] = None,
+        *,
+        output_dir: Optional[str] = None,
+        backend: str = "pipeline",
+        lang: Optional[str] = None,
+        method: str = "auto",
+        server_url: Optional[str] = None,
+        delete_output: bool = True,
+        parse_method: str = "raw",
+        formula_enable: bool = True,
+        table_enable: bool = True,
+    ) -> tuple:
         raise NotImplementedError("Please implement parse_pdf!")
 
 
@@ -34,30 +50,40 @@ class MinerUOcrModel(Base, MinerUParser):
 
     def __init__(self, key: str | dict, model_name: str, **kwargs):
         Base.__init__(self, key, model_name, **kwargs)
-        config = {}
-        if key:
-            try:
-                config = json.loads(key)
-            except Exception:
-                config = {}
-        config = config["api_key"]
-        self.mineru_api = config.get("mineru_apiserver", os.environ.get("MINERU_APISERVER", ""))
-        self.mineru_output_dir = config.get("mineru_output_dir", os.environ.get("MINERU_OUTPUT_DIR", ""))
-        self.mineru_backend = config.get("mineru_backend", os.environ.get("MINERU_BACKEND", "pipeline"))
-        self.mineru_server_url = config.get("mineru_server_url", os.environ.get("MINERU_SERVER_URL", ""))
-        self.mineru_delete_output = bool(int(config.get("mineru_delete_output", os.environ.get("MINERU_DELETE_OUTPUT", 1))))
+        
+        # Use environment variables directly - no database config needed
+        self.mineru_api = os.environ.get("MINERU_APISERVER", "")
+        self.mineru_output_dir = os.environ.get("MINERU_OUTPUT_DIR", "")
+        self.mineru_backend = os.environ.get("MINERU_BACKEND", "pipeline")
+        self.mineru_server_url = os.environ.get("MINERU_SERVER_URL", "")
+        self.mineru_delete_output = os.environ.get("MINERU_DELETE_OUTPUT", "1") == "1"
         self.mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
 
-        logging.info(f"Parsed MinerU config: {config}")
+        logging.info(f"MinerU config from env: api={self.mineru_api}, backend={self.mineru_backend}, server_url={self.mineru_server_url}")
 
         MinerUParser.__init__(self, mineru_path=self.mineru_executable, mineru_api=self.mineru_api, mineru_server_url=self.mineru_server_url)
 
-    def check_available(self, backend: Optional[str] = None, server_url: Optional[str] = None) -> Tuple[bool, str]:
+    def check_available(self, backend: Optional[str] = None, server_url: Optional[str] = None) -> tuple[bool, str]:
         backend = backend or self.mineru_backend
         server_url = server_url or self.mineru_server_url
         return self.check_installation(backend=backend, server_url=server_url)
 
-    def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs):
+    def parse_pdf(
+        self,
+        filepath: str | PathLike[str],
+        binary: BytesIO | bytes,
+        callback: Optional[Callable] = None,
+        *,
+        output_dir: Optional[str] = None,
+        backend: str = "pipeline",
+        lang: Optional[str] = None,
+        method: str = "auto",
+        server_url: Optional[str] = None,
+        delete_output: bool = True,
+        parse_method: str = "raw",
+        formula_enable: bool = True,
+        table_enable: bool = True,
+    ) -> tuple:
         ok, reason = self.check_available()
         if not ok:
             raise RuntimeError(f"MinerU not found or server not accessible: {reason}. Please install it via: pip install -U 'mineru[core]'.")
@@ -65,12 +91,16 @@ class MinerUOcrModel(Base, MinerUParser):
         sections, tables = MinerUParser.parse_pdf(
             self,
             filepath=filepath,
-            binary=binary,
+            binary=binary,  # type: ignore[arg-type]
             callback=callback,
-            output_dir=self.mineru_output_dir,
-            backend=self.mineru_backend,
-            server_url=self.mineru_server_url,
-            delete_output=self.mineru_delete_output,
+            output_dir=output_dir or self.mineru_output_dir,
+            backend=backend or self.mineru_backend,
+            lang=lang,
+            method=method,
+            server_url=server_url or self.mineru_server_url,
+            delete_output=delete_output if delete_output is not None else self.mineru_delete_output,
             parse_method=parse_method,
+            formula_enable=formula_enable,
+            table_enable=table_enable,
         )
         return sections, tables

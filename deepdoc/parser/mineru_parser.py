@@ -185,14 +185,16 @@ class MinerUParser(RAGFlowPdfParser):
         return False, reason
 
     def _run_mineru(
-        self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None, server_url: Optional[str] = None, callback: Optional[Callable] = None
+        self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None, server_url: Optional[str] = None, callback: Optional[Callable] = None,
+        formula_enable: bool = True, table_enable: bool = True
     ):
         if self.using_api:
-            self._run_mineru_api(input_path, output_dir, method, backend, lang, callback)
+            self._run_mineru_api(input_path, output_dir, method, backend, lang, callback, formula_enable, table_enable)
         else:
             self._run_mineru_executable(input_path, output_dir, method, backend, lang, server_url, callback)
 
-    def _run_mineru_api(self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None, callback: Optional[Callable] = None):
+    def _run_mineru_api(self, input_path: Path, output_dir: Path, method: str = "auto", backend: str = "pipeline", lang: Optional[str] = None, callback: Optional[Callable] = None,
+                        formula_enable: bool = True, table_enable: bool = True):
         output_zip_path = os.path.join(str(output_dir), "output.zip")
 
         pdf_file_path = str(input_path)
@@ -201,7 +203,9 @@ class MinerUParser(RAGFlowPdfParser):
             raise RuntimeError(f"[MinerU] PDF file not exists: {pdf_file_path}")
 
         pdf_file_name = Path(pdf_file_path).stem.strip()
-        output_path = os.path.join(str(output_dir), pdf_file_name, method)
+        # FIX: MinerU API outputs to 'vlm/' when using VLM backend, not 'auto/'
+        output_subfolder = "vlm" if backend.startswith("vlm") else method
+        output_path = os.path.join(str(output_dir), pdf_file_name, output_subfolder)
         os.makedirs(output_path, exist_ok=True)
 
         files = {"files": (pdf_file_name + ".pdf", open(pdf_file_path, "rb"), "application/pdf")}
@@ -211,8 +215,8 @@ class MinerUParser(RAGFlowPdfParser):
             "lang_list": lang,
             "backend": backend,
             "parse_method": method,
-            "formula_enable": True,
-            "table_enable": True,
+            "formula_enable": formula_enable,
+            "table_enable": table_enable,
             "server_url": None,
             "return_md": True,
             "return_middle_json": True,
@@ -223,6 +227,11 @@ class MinerUParser(RAGFlowPdfParser):
             "start_page_id": 0,
             "end_page_id": 99999,
         }
+
+        # DEBUG: Log the exact request data being sent to MinerU
+        self.logger.info(f"[MinerU DEBUG] Request URL: {self.mineru_api}/file_parse")
+        self.logger.info(f"[MinerU DEBUG] Request data: {json.dumps(data, indent=2)}")
+        self.logger.info(f"[MinerU DEBUG] File: {pdf_file_name}.pdf")
 
         headers = {"Accept": "application/json"}
         try:
@@ -581,6 +590,8 @@ class MinerUParser(RAGFlowPdfParser):
         server_url: Optional[str] = None,
         delete_output: bool = True,
         parse_method: str = "raw",
+        formula_enable: bool = True,
+        table_enable: bool = True,
     ) -> tuple:
         import shutil
 
@@ -625,7 +636,8 @@ class MinerUParser(RAGFlowPdfParser):
         self.__images__(pdf, zoomin=1)
 
         try:
-            self._run_mineru(pdf, out_dir, method=method, backend=backend, lang=lang, server_url=server_url, callback=callback)
+            self._run_mineru(pdf, out_dir, method=method, backend=backend, lang=lang, server_url=server_url, callback=callback,
+                           formula_enable=formula_enable, table_enable=table_enable)
             outputs = self._read_output(out_dir, pdf.stem, method=method, backend=backend)
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:

@@ -3,6 +3,7 @@ import {
   AutoQuestionsFormField,
 } from '@/components/auto-keywords-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
+import { MineruConfigFormField } from '@/components/mineru-config-form-field';
 import {
   ConfigurationFormContainer,
   MainContainer,
@@ -13,6 +14,7 @@ export function PaperConfiguration() {
     <MainContainer>
       <ConfigurationFormContainer>
         <LayoutRecognizeFormField></LayoutRecognizeFormField>
+        <MineruConfigFormField></MineruConfigFormField>
       </ConfigurationFormContainer>
 
       <ConfigurationFormContainer>

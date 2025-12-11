@@ -67,6 +67,11 @@ export interface ParserConfig {
   tag_kb_ids?: string[];
   topn_tags?: number;
   graphrag?: { use_graphrag?: boolean };
+  // MinerU-specific settings
+  mineru_lang?: string;
+  mineru_formula_enable?: boolean;
+  mineru_table_enable?: boolean;
+  mineru_parse_method?: string;
 }
 
 export interface IKnowledgeFileParserConfig {
