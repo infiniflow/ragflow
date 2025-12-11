@@ -12,6 +12,7 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { FormTooltip } from '@/components/ui/tooltip';
+import { WebhookAlgorithmList } from '@/constants/agent';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { Plus } from 'lucide-react';
@@ -24,36 +25,70 @@ import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
 import { QueryTable } from './query-table';
 import { useEditQueryRecord } from './use-edit-query';
+import { useHandleModeChange } from './use-handle-mode-change';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
+import { WebHook } from './webhook';
 
 const ModeOptions = [
   { value: AgentDialogueMode.Conversational, label: t('flow.conversational') },
   { value: AgentDialogueMode.Task, label: t('flow.task') },
+  { value: AgentDialogueMode.Webhook, label: t('flow.webhook.name') },
 ];
+
+const FormSchema = z.object({
+  enablePrologue: z.boolean().optional(),
+  prologue: z.string().trim().optional(),
+  mode: z.string(),
+  inputs: z
+    .array(
+      z.object({
+        key: z.string(),
+        type: z.string(),
+        value: z.string(),
+        optional: z.boolean(),
+        name: z.string(),
+        options: z.array(z.union([z.number(), z.string(), z.boolean()])),
+      }),
+    )
+    .optional(),
+  methods: z.string().optional(),
+  content_types: z.string().optional(),
+  security: z
+    .object({
+      auth_type: z.string(),
+      ip_whitelist: z.array(z.object({ value: z.string() })),
+      rate_limit: z.object({
+        limit: z.number(),
+        per: z.string().optional(),
+      }),
+      max_body_size: z.string(),
+      jwt: z
+        .object({
+          algorithm: z.string().default(WebhookAlgorithmList[0]).optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  schema: z.record(z.any()).optional(),
+  response: z
+    .object({
+      status: z.number(),
+      headers_template: z.array(
+        z.object({ key: z.string(), value: z.string() }),
+      ),
+      body_template: z.array(z.object({ key: z.string(), value: z.string() })),
+    })
+    .optional(),
+  execution_mode: z.string().optional(),
+});
+
+export type BeginFormSchemaType = z.infer<typeof FormSchema>;
 
 function BeginForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
 
   const values = useValues(node);
-
-  const FormSchema = z.object({
-    enablePrologue: z.boolean().optional(),
-    prologue: z.string().trim().optional(),
-    mode: z.string(),
-    inputs: z
-      .array(
-        z.object({
-          key: z.string(),
-          type: z.string(),
-          value: z.string(),
-          optional: z.boolean(),
-          name: z.string(),
-          options: z.array(z.union([z.number(), z.string(), z.boolean()])),
-        }),
-      )
-      .optional(),
-  });
 
   const form = useForm({
     defaultValues: values,
@@ -71,6 +106,8 @@ function BeginForm({ node }: INextOperatorForm) {
   });
 
   const previousModeRef = useRef(mode);
+
+  const { handleModeChange } = useHandleModeChange(form);
 
   useEffect(() => {
     if (
@@ -111,6 +148,10 @@ function BeginForm({ node }: INextOperatorForm) {
                   placeholder={t('common.pleaseSelect')}
                   options={ModeOptions}
                   {...field}
+                  onChange={(val) => {
+                    handleModeChange(val);
+                    field.onChange(val);
+                  }}
                 ></RAGFlowSelect>
               </FormControl>
               <FormMessage />
@@ -158,44 +199,49 @@ function BeginForm({ node }: INextOperatorForm) {
             )}
           />
         )}
-        {/* Create a hidden field to make Form instance record this */}
-        <FormField
-          control={form.control}
-          name={'inputs'}
-          render={() => <div></div>}
-        />
-        <Collapse
-          title={
-            <div>
-              {t('flow.input')}
-              <FormTooltip tooltip={t('flow.beginInputTip')}></FormTooltip>
-            </div>
-          }
-          rightContent={
-            <Button
-              variant={'ghost'}
-              onClick={(e) => {
-                e.preventDefault();
-                showModal();
-              }}
+        {mode === AgentDialogueMode.Webhook && <WebHook></WebHook>}
+        {mode !== AgentDialogueMode.Webhook && (
+          <>
+            {/* Create a hidden field to make Form instance record this */}
+            <FormField
+              control={form.control}
+              name={'inputs'}
+              render={() => <div></div>}
+            />
+            <Collapse
+              title={
+                <div>
+                  {t('flow.input')}
+                  <FormTooltip tooltip={t('flow.beginInputTip')}></FormTooltip>
+                </div>
+              }
+              rightContent={
+                <Button
+                  variant={'ghost'}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    showModal();
+                  }}
+                >
+                  <Plus />
+                </Button>
+              }
             >
-              <Plus />
-            </Button>
-          }
-        >
-          <QueryTable
-            data={inputs}
-            showModal={showModal}
-            deleteRecord={handleDeleteRecord}
-          ></QueryTable>
-        </Collapse>
-        {visible && (
-          <ParameterDialog
-            hideModal={hideModal}
-            initialValue={currentRecord}
-            otherThanCurrentQuery={otherThanCurrentQuery}
-            submit={ok}
-          ></ParameterDialog>
+              <QueryTable
+                data={inputs}
+                showModal={showModal}
+                deleteRecord={handleDeleteRecord}
+              ></QueryTable>
+            </Collapse>
+            {visible && (
+              <ParameterDialog
+                hideModal={hideModal}
+                initialValue={currentRecord}
+                otherThanCurrentQuery={otherThanCurrentQuery}
+                submit={ok}
+              ></ParameterDialog>
+            )}
+          </>
         )}
       </Form>
     </section>
