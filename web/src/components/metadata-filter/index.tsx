@@ -26,9 +26,7 @@ export const MetadataFilterSchema = {
           }),
         )
         .optional(),
-      semi_auto: z
-        .array(z.string()) // 修改为字符串数组
-        .optional(),
+      semi_auto: z.array(z.string()).optional(),
     })
     .optional(),
 };

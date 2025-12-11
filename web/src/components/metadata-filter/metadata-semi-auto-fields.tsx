@@ -38,7 +38,7 @@ export function MetadataSemiAutoFields({
 
   const add = useCallback(
     (key: string) => () => {
-      append(key); // 直接添加字符串而不是对象
+      append(key);
     },
     [append],
   );
@@ -66,7 +66,6 @@ export function MetadataSemiAutoFields({
       </div>
       <div className="space-y-5">
         {fields.map((field, index) => {
-          // 修改字段名称以直接引用数组元素
           const typeField = `${name}.${index}`;
           return (
             <section key={field.id} className="flex gap-2">
