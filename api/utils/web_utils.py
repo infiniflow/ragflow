@@ -39,10 +39,10 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 
 OTP_LENGTH = 8
-OTP_TTL_SECONDS = 5 * 60
-ATTEMPT_LIMIT = 5
-ATTEMPT_LOCK_SECONDS = 30 * 60
-RESEND_COOLDOWN_SECONDS = 60
+OTP_TTL_SECONDS = 5 * 60 # valid for 5 minutes
+ATTEMPT_LIMIT = 5 # maximum attempts
+ATTEMPT_LOCK_SECONDS = 30 * 60 # lock for 30 minutes
+RESEND_COOLDOWN_SECONDS = 60 # cooldown for 1 minute
 
 
 CONTENT_TYPE_MAP = {

@@ -45,7 +45,7 @@ from api.utils.api_utils import (
 )
 from api.utils.crypt import decrypt
 from rag.utils.redis_conn import REDIS_CONN
-from api.apps import login_required, current_user, login_user, logout_user
+from api.apps import manager, login_required, current_user, login_user, logout_user
 from api.utils.web_utils import (
     send_email_html,
     OTP_LENGTH,
@@ -942,32 +942,44 @@ async def forget_send_otp():
         return get_json_result(data=False, code=RetCode.SERVER_ERROR, message="failed to send email")
 
     return get_json_result(data=True, code=RetCode.SUCCESS, message="verification passed, email sent")
-
+ 
 
 @manager.route("/forget", methods=["POST"])  # noqa: F821
 async def forget():
     """
-    POST: Verify email + OTP and reset password, then log the user in.
-    Request JSON: { email, otp, new_password, confirm_new_password }
+    Deprecated single-step reset endpoint.
+    Use /forget/verify-otp then /forget/reset-password.
+    """
+    return get_json_result(
+        data=False,
+        code=RetCode.NOT_EFFECTIVE,
+        message="Use /forget/verify-otp then /forget/reset-password",
+    )
+
+
+def _verified_key(email: str) -> str:
+    return f"otp:verified:{email}"
+
+
+@manager.route("/forget/verify-otp", methods=["POST"])  # noqa: F821
+async def forget_verify_otp():
+    """
+    Verify email + OTP only. On success:
+    - consume the OTP and attempt counters
+    - set a short-lived verified flag in Redis for the email
+    Request JSON: { email, otp }
     """
     req = await get_request_json()
     email = req.get("email") or ""
     otp = (req.get("otp") or "").strip()
-    new_pwd = req.get("new_password")
-    new_pwd2 = req.get("confirm_new_password")
 
-    if not all([email, otp, new_pwd, new_pwd2]):
-        return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="email, otp and passwords are required")
-
-    # For reset, passwords are provided as-is (no decrypt needed)
-    if new_pwd != new_pwd2:
-        return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="passwords do not match")
+    if not all([email, otp]):
+        return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="email and otp are required")
 
     users = UserService.query(email=email)
     if not users:
         return get_json_result(data=False, code=RetCode.DATA_ERROR, message="invalid email")
 
-    user = users[0]
     # Verify OTP from Redis
     k_code, k_attempts, k_last, k_lock = otp_keys(email)
     if REDIS_CONN.get(k_lock):
@@ -983,7 +995,6 @@ async def forget():
     except Exception:
         return get_json_result(data=False, code=RetCode.EXCEPTION_ERROR, message="otp storage corrupted")
 
-    # Case-insensitive verification: OTP generated uppercase
     calc = hash_code(otp.upper(), salt)
     if calc != stored_hash:
         # bump attempts
@@ -996,23 +1007,72 @@ async def forget():
             REDIS_CONN.set(k_lock, int(time.time()), ATTEMPT_LOCK_SECONDS)
         return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="expired otp")
 
-    # Success: consume OTP and reset password
+    # Success: consume OTP and attempts; mark verified
     REDIS_CONN.delete(k_code)
     REDIS_CONN.delete(k_attempts)
     REDIS_CONN.delete(k_last)
     REDIS_CONN.delete(k_lock)
 
+    # set verified flag with limited TTL, reuse OTP_TTL_SECONDS or smaller window
+    try:
+        REDIS_CONN.set(_verified_key(email), "1", OTP_TTL_SECONDS)
+    except Exception:
+        return get_json_result(data=False, code=RetCode.SERVER_ERROR, message="failed to set verification state")
+
+    return get_json_result(data=True, code=RetCode.SUCCESS, message="otp verified")
+
+
+@manager.route("/forget/reset-password", methods=["POST"])  # noqa: F821
+async def forget_reset_password():
+    """
+    Reset password after successful OTP verification.
+    Requires: { email, new_password, confirm_new_password }
+    Steps:
+    - check verified flag in Redis
+    - update user password
+    - auto login
+    - clear verified flag
+    """
+    req = await get_request_json()
+    email = req.get("email") or ""
+    new_pwd = req.get("new_password")
+    new_pwd2 = req.get("confirm_new_password")
+
+    if not all([email, new_pwd, new_pwd2]):
+        return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="email and passwords are required")
+
+    if new_pwd != new_pwd2:
+        return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="passwords do not match")
+
+    users = UserService.query(email=email)
+    if not users:
+        return get_json_result(data=False, code=RetCode.DATA_ERROR, message="invalid email")
+    
+    user = users[0]
     try:
         UserService.update_user_password(user.id, new_pwd)
     except Exception as e:
         logging.exception(e)
         return get_json_result(data=False, code=RetCode.EXCEPTION_ERROR, message="failed to reset password")
 
-    # Auto login (reuse login flow)
-    user.access_token = get_uuid()
-    login_user(user)
-    user.update_time = current_timestamp()
-    user.update_date = datetime_format(datetime.now())
-    user.save()
+    # login
+    try:
+        user.access_token = get_uuid()
+        login_user(user)
+        user.update_time = current_timestamp()
+        user.update_date = datetime_format(datetime.now())
+        user.save()
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(data=False, code=RetCode.EXCEPTION_ERROR, message="failed to login after reset")
+
+    # clear verified flag
+    try:
+        REDIS_CONN.delete(_verified_key(email))
+    except Exception:
+        pass
+
     msg = "Password reset successful. Logged in."
     return await construct_response(data=user.to_json(), auth=user.get_id(), message=msg)
+
+
