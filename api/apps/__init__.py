@@ -42,7 +42,6 @@ __all__ = ["app"]
 
 app = Quart(__name__)
 app = cors(app, allow_origin="*")
-smtp_mail_server = Mail()
 
 # Add this at the beginning of your file to configure Swagger UI
 swagger_config = {

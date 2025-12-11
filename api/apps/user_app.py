@@ -45,7 +45,7 @@ from api.utils.api_utils import (
 )
 from api.utils.crypt import decrypt
 from rag.utils.redis_conn import REDIS_CONN
-from api.apps import smtp_mail_server, login_required, current_user, login_user, logout_user
+from api.apps import login_required, current_user, login_user, logout_user
 from api.utils.web_utils import (
     send_email_html,
     OTP_LENGTH,
@@ -865,12 +865,17 @@ async def forget_get_captcha():
     captcha_text = "".join(secrets.choice(allowed) for _ in range(OTP_LENGTH))
     REDIS_CONN.set(captcha_key(email), captcha_text, 60) # Valid for 60 seconds
 
+    print("\n\nGenerated captcha:", captcha_text, "\n\n")
+
     from captcha.image import ImageCaptcha
     image = ImageCaptcha(width=300, height=120, font_sizes=[50, 60, 70])
     img_bytes = image.generate(captcha_text).read()
-    response = await make_response(img_bytes)
-    response.headers.set("Content-Type", "image/JPEG")
-    return response
+
+    import base64
+    base64_img = base64.b64encode(img_bytes).decode('utf-8')
+    data_uri = f"data:image/jpeg;base64,{base64_img}"
+
+    return get_json_result(data=data_uri)
 
 
 @manager.route("/forget/otp", methods=["POST"])  # noqa: F821
@@ -923,19 +928,18 @@ async def forget_send_otp():
 
     ttl_min = OTP_TTL_SECONDS // 60
 
-    if not smtp_mail_server:
-        logging.warning("SMTP mail server not initialized; skip sending email.")
-    else:
-        try:
-            send_email_html(
-                subject="Your Password Reset Code",
-                to_email=email,
-                template_key="reset_code",
-                code=otp,
-                ttl_min=ttl_min,
-            )
-        except Exception:
-            return get_json_result(data=False, code=RetCode.SERVER_ERROR, message="failed to send email")
+    try:
+        await send_email_html(
+            subject="Your Password Reset Code",
+            to_email=email,
+            template_key="reset_code",
+            code=otp,
+            ttl_min=ttl_min,
+        )
+
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(data=False, code=RetCode.SERVER_ERROR, message="failed to send email")
 
     return get_json_result(data=True, code=RetCode.SUCCESS, message="verification passed, email sent")
 

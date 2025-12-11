@@ -13,7 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import logging
+import asyncio
 from api.db import UserTenantRole
 from api.db.db_models import UserTenant
 from api.db.services.user_service import UserTenantService, UserService
@@ -24,7 +25,7 @@ from common.time_utils import delta_seconds
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from api.utils.web_utils import send_invite_email
 from common import settings
-from api.apps import smtp_mail_server, login_required, current_user
+from api.apps import login_required, current_user
 
 
 @manager.route("/<tenant_id>/user/list", methods=["GET"])  # noqa: F821
@@ -80,7 +81,7 @@ async def create(tenant_id):
         role=UserTenantRole.INVITE,
         status=StatusEnum.VALID.value)
 
-    if smtp_mail_server and settings.SMTP_CONF:
+    try:
         from threading import Thread
 
         user_name = ""
@@ -88,12 +89,17 @@ async def create(tenant_id):
         if user:
             user_name = user.nickname
 
-        Thread(
-            target=send_invite_email,
-            args=(invite_user_email, settings.MAIL_FRONTEND_URL, tenant_id, user_name or current_user.email),
-            daemon=True
-        ).start()
-
+        asyncio.create_task(
+            send_invite_email(
+                to_email=invite_user_email,
+                invite_url=settings.MAIL_FRONTEND_URL,
+                tenant_id=tenant_id,
+                inviter=user_name or current_user.email
+            )
+        )
+    except Exception as e:
+        logging.exception(f"Failed to send invite email to {invite_user_email}: {e}")
+        return get_json_result(data=False, message="Failed to send invite email.", code=RetCode.SERVER_ERROR)
     usr = invite_users[0].to_dict()
     usr = {k: v for k, v in usr.items() if k in ["id", "avatar", "email", "nickname"]}
 
