@@ -1477,7 +1477,7 @@ Failure:
 
 ### List documents
 
-**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}`
+**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}&metadata_condition={json}`
 
 Lists documents in a specified dataset.
 
@@ -1492,6 +1492,7 @@ Lists documents in a specified dataset.
 ##### Request examples
 
 **A basic request with pagination:**
+
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents?page=1&page_size=10 \
@@ -1534,6 +1535,11 @@ curl --request GET \
     - `3` / `DONE`: Document processing completed successfully
     - `4` / `FAIL`: Document processing failed  
   Defaults to all statuses.
+- `metadata_condition`: (*Filter parameter*), `object` (JSON in query)
+  Optional metadata filter applied to documents when `document_ids` is not provided. Uses the same structure as retrieval:
+  - `logic`: `"and"` (default) or `"or"`
+  - `conditions`: array of `{ "name": string, "comparison_operator": string, "value": string }`
+    - `comparison_operator` supports: `is`, `not is`, `contains`, `not contains`, `in`, `not in`, `start with`, `end with`, `>`, `<`, `≥`, `≤`, `empty`, `not empty`
 
 ##### Usage examples
 
@@ -1543,6 +1549,15 @@ curl --request GET \
 curl --request GET \
      --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?suffix=pdf&run=DONE&page=1&page_size=10' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+**Filter by metadata (query JSON):**
+
+```bash
+curl -G \
+  --url "http://localhost:9222/api/v1/datasets/{{KB_ID}}/documents" \
+  --header 'Authorization: Bearer <YOUR_API_KEY>' \
+  --data-urlencode 'metadata_condition={"logic":"and","conditions":[{"name":"tags","comparison_operator":"is","value":"bar"},{"name":"author","comparison_operator":"is","value":"alice"}]}'
 ```
 
 #### Response
@@ -2088,6 +2103,108 @@ Failure:
 
 ---
 
+### Dataset metadata summary
+
+**GET** `/api/v1/datasets/{dataset_id}/metadata/summary`
+
+Aggregates metadata values across all documents in a dataset.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/metadata/summary`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Response
+
+Success:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "summary": {
+      "tags": [["bar", 2], ["foo", 1], ["baz", 1]],
+      "author": [["alice", 2], ["bob", 1]]
+    }
+  }
+}
+```
+
+---
+
+### Dataset metadata update
+
+**POST** `/api/v1/datasets/{dataset_id}/metadata/update`
+
+Batch update or delete document-level metadata in a dataset. If both `document_ids` and `metadata_condition` are omitted, all documents in the dataset are selected. When both are provided, the intersection is used.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/datasets/{dataset_id}/metadata/update`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `selector`: `object`, optional
+    - `document_ids`: `list[string]`, optional
+    - `metadata_condition`: `object`, optional
+      - `logic`: `"and"` (default) or `"or"`
+      - `conditions`: array of `{ "name": string, "comparison_operator": string, "value": string }`
+        - `comparison_operator` supports: `is`, `not is`, `contains`, `not contains`, `in`, `not in`, `start with`, `end with`, `>`, `<`, `≥`, `≤`, `empty`, `not empty`
+  - `updates`: `array`, optional
+    - items: `{ "key": string, "value": any, "match": any (optional) }`
+      - For lists: replace elements equal to `match` (or `value` when `match` omitted) with `value`.
+      - For scalars: replace when current value equals `match` (or `value` when `match` omitted).
+  - `deletes`: `array`, optional
+    - items: `{ "key": string, "value": any (optional) }`
+      - For lists: remove elements equal to `value`; if list becomes empty, remove the key.
+      - For scalars: remove the key when `value` matches or when `value` is omitted.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/datasets/{dataset_id}/metadata/update \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+       "selector": {
+         "metadata_condition": {
+           "logic": "and",
+           "conditions": [
+             {"name": "author", "comparison_operator": "is", "value": "alice"}
+           ]
+         }
+       },
+       "updates": [
+         {"key": "tags", "match": "foo", "value": "foo_new"}
+       ],
+       "deletes": [
+         {"key": "obsolete_key"},
+         {"key": "author", "value": "alice"}
+       ]
+     }'
+```
+
+##### Response
+
+Success:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "updated": 1,
+    "matched_docs": 2
+  }
+}
+```
+
+---
+
 ### Retrieve chunks
 
 **POST** `/api/v1/retrieval`
@@ -2117,6 +2234,7 @@ Retrieves chunks from specified datasets.
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
   - `"toc_enhance"`: `boolean`
+
 ##### Request example
 
 ```bash
@@ -2189,7 +2307,7 @@ curl --request POST \
   - `"conditions"`: (*Body parameter*), `array`  
     A list of metadata filter conditions.  
     - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
-    - `comparison_operator`: `string` - The comparison operator. Can be one of: 
+    - `comparison_operator`: `string` - The comparison operator. Can be one of:
       - `"contains"`
       - `"not contains"`
       - `"start with"`
@@ -2202,7 +2320,6 @@ curl --request POST \
       - `"≥"`
       - `"≤"`
     - `"value"`: `string` - The value to compare.
-
 
 #### Response
 
@@ -4450,7 +4567,9 @@ Failure:
 ---
 
 ### System
+
 ---
+
 ### Check system health
 
 **GET** `/v1/system/healthz`
@@ -4519,6 +4638,7 @@ Content-Type: application/json
 ```
 
 Explanation:  
+
 - Each service is reported as "ok" or "nok".  
 - The top-level `status` reflects overall health.  
 - If any service is "nok", detailed error info appears in `_meta`.  
