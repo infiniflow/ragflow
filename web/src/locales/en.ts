@@ -1064,6 +1064,21 @@ Example: Virtual Hosted Style`,
       modelsToBeAddedTooltip:
         'If your model provider is not listed but claims to be "OpenAI-compatible", select the OpenAI-API-compatible card to add the relevant model(s). ',
       mcp: 'MCP',
+      mineru: {
+        modelNameRequired: 'Model name is required',
+        apiserver: 'MinerU API Server Configuration',
+        outputDir: 'MinerU Output Directory Path',
+        backend: 'MinerU Processing Backend Type',
+        serverUrl: 'MinerU Server URL Address',
+        deleteOutput: 'Delete Output Files After Processing',
+        selectBackend: 'Select processing backend',
+        backendOptions: {
+          pipeline: 'Standard Pipeline Processing',
+          vlmTransformers: 'Vision Language Model with Transformers',
+          vlmVllmEngine: 'Vision Language Model with vLLM Engine',
+          vlmHttpClient: 'Vision Language Model via HTTP Client',
+        },
+      },
     },
     message: {
       registered: 'Registered!',

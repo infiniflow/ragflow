@@ -69,6 +69,7 @@ export const LlmIcon = ({
     LLMFactory.TogetherAI,
     LLMFactory.Meituan,
     LLMFactory.Longcat,
+    LLMFactory.MinerU,
   ];
   let icon = useMemo(() => {
     const icontemp = IconMap[name as keyof typeof IconMap];
@@ -88,6 +89,7 @@ export const LlmIcon = ({
     // LLMFactory.MiniMax,
     LLMFactory.Gemini,
     LLMFactory.StepFun,
+    LLMFactory.MinerU,
     // LLMFactory.DeerAPI,
   ];
   if (svgIcons.includes(name as LLMFactory)) {

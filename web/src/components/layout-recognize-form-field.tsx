@@ -17,7 +17,6 @@ import {
 export const enum ParseDocumentType {
   DeepDOC = 'DeepDOC',
   PlainText = 'Plain Text',
-  MinerU = 'MinerU',
   Docling = 'Docling',
   TCADPParser = 'TCADP Parser',
 }
@@ -44,7 +43,6 @@ export function LayoutRecognizeFormField({
       : [
           ParseDocumentType.DeepDOC,
           ParseDocumentType.PlainText,
-          ParseDocumentType.MinerU,
           ParseDocumentType.Docling,
           ParseDocumentType.TCADPParser,
         ].map((x) => ({
@@ -52,7 +50,10 @@ export function LayoutRecognizeFormField({
           value: x,
         }));
 
-    const image2TextList = allOptions[LlmModelType.Image2text].map((x) => {
+    const image2TextList = [
+      ...allOptions[LlmModelType.Image2text],
+      ...allOptions[LlmModelType.Ocr],
+    ].map((x) => {
       return {
         ...x,
         options: x.options.map((y) => {
