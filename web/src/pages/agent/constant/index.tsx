@@ -135,6 +135,31 @@ export const initialMessageValues = {
   content: [''],
 };
 
+export const initialExcelProcessorValues = {
+  input_files: [],
+  operation: 'read',
+  sheet_selection: 'all',
+  merge_strategy: 'concat',
+  join_on: '',
+  transform_data: '',
+  output_format: 'xlsx',
+  output_filename: 'output',
+  outputs: {
+    data: {
+      type: 'object',
+      value: {},
+    },
+    summary: {
+      type: 'string',
+      value: '',
+    },
+    markdown: {
+      type: 'string',
+      value: '',
+    },
+  },
+};
+
 export const initialDuckValues = {
   top_n: 10,
   channel: Channel.Text,
