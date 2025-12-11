@@ -1,9 +1,7 @@
-
 import json
 import os
 import re
 import base64
-import unicodedata
 from datetime import datetime
 from abc import ABC
 from io import BytesIO
@@ -12,14 +10,12 @@ from functools import partial
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak, LongTable
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, TableStyle, LongTable
 from reportlab.lib import colors
-from reportlab.pdfgen import canvas as pdf_canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont, CIDFont
-from jinja2 import Template as Jinja2Template
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 
 from agent.component.base import ComponentParamBase
 from api.utils.api_utils import timeout
@@ -324,7 +320,7 @@ class PDFGenerator(Message, ABC):
             if title:
                 try:
                     title, _ = self.get_kwargs(title, kwargs)
-                except:
+                except Exception:
                     pass
             
             # Process template variables in subtitle
@@ -341,7 +337,7 @@ class PDFGenerator(Message, ABC):
             if subtitle:
                 try:
                     subtitle, _ = self.get_kwargs(subtitle, kwargs)
-                except:
+                except Exception:
                     pass
             
             # If content is still empty, check if it was passed directly
@@ -973,28 +969,8 @@ class PDFGenerator(Message, ABC):
         elements = []
         styles = getSampleStyleSheet()
         
-        # Calculate available width for content
-        from reportlab.lib.pagesizes import A4
-        page_width = A4[0] if getattr(self._param, 'orientation', 'portrait') == 'portrait' else A4[1]
-        available_width = page_width - (getattr(self._param, 'margin_left', 1.0) + getattr(self._param, 'margin_right', 1.0)) * 72  # Convert inches to points
-        
         # Base styles
         base_font_size = getattr(self._param, 'font_size', 10)
-        
-        # Header style
-        header_style = ParagraphStyle(
-            'TableHeader',
-            parent=styles['Normal'],
-            fontSize=base_font_size + 1,
-            fontName=self._get_active_bold_font(),
-            textColor=colors.HexColor('#2c3e50'),
-            spaceAfter=6,
-            backColor=colors.HexColor('#f8f9fa'),
-            borderWidth=1,
-            borderColor=colors.HexColor('#dee2e6'),
-            borderPadding=5,
-            leading=base_font_size * 1.2
-        )
         
         # Body style
         body_style = ParagraphStyle(
@@ -1181,7 +1157,7 @@ class PDFGenerator(Message, ABC):
                     error_msg.append(Paragraph(" | ".join(str(cell) for cell in row), body_style))
                 if len(data) > 10:
                     error_msg.append(Paragraph(f"... and {len(data) - 10} more rows", body_style))
-            except:
+            except Exception:
                 pass
                 
             elements.extend(error_msg)
@@ -1314,7 +1290,7 @@ class PDFGenerator(Message, ABC):
                         style = self._get_cell_style(row_idx, is_header=(row_idx == 0), font_size=font_size)
                         escaped_text = self._escape_html(cell_text)
                         processed_row.append(Paragraph(escaped_text, style))
-                    except Exception as e:
+                    except Exception:
                         processed_row.append(self._escape_html(cell_text))
                 
                 processed_data.append(processed_row)
@@ -1372,7 +1348,7 @@ class PDFGenerator(Message, ABC):
                 for row in data:
                     text_content.append(" | ".join(str(cell) for cell in row))
                 return [Paragraph("<br/>".join(text_content), self._get_cell_style(0))]
-            except:
+            except Exception:
                 return None
 
     def _create_horizontal_line(self, width: float = 1, color: str = None):
@@ -1466,7 +1442,7 @@ class PDFGenerator(Message, ABC):
         """Generate DOCX from markdown-style content"""
         import uuid
         from docx import Document
-        from docx.shared import Pt, RGBColor, Inches
+        from docx.shared import Pt
         from docx.enum.text import WD_ALIGN_PARAGRAPH
         
         # Create output directory if it doesn't exist
