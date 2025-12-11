@@ -14,10 +14,11 @@ from common.data_source.models import Document, GenerateDocumentsOutput
 from common.data_source.utils import get_file_ext
 
 class BoxConnector(LoadConnector, PollConnector):
-    def __init__(self, folder_id: str, batch_size: int = INDEX_BATCH_SIZE, use_marker: bool = False) -> None:
+    def __init__(self, folder_id: str, batch_size: int = INDEX_BATCH_SIZE, use_marker: bool = True) -> None:
         self.batch_size = batch_size
         self.folder_id = "0" if not folder_id else folder_id
         self.use_marker = use_marker
+        
 
     def load_credentials(self, auth: Any):
         self.box_client = BoxClient(auth=auth)

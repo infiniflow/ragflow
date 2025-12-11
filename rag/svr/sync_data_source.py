@@ -634,9 +634,7 @@ class BOX(SyncBase):
 
     async def _generate(self, task: dict):
         self.connector = BoxConnector(
-            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
             folder_id=self.conf.get("folder_id", "0"),
-            use_marker=self.conf.get("use_marker", False)
         )
 
         credential = json.loads(self.conf['credentials']['box_tokens'])
