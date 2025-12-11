@@ -109,7 +109,7 @@ class LLMBundle(LLM4Tenant):
 
         llm_name = getattr(self, "llm_name", None)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, llm_name):
-            logging.error("LLMBundle.encode can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
+            logging.error("LLMBundle.encode can't update token usage for <tenant redacted>/EMBEDDING used_tokens: {}".format(used_tokens))
 
         if self.langfuse:
             generation.update(usage_details={"total_tokens": used_tokens})
@@ -124,7 +124,7 @@ class LLMBundle(LLM4Tenant):
         emd, used_tokens = self.mdl.encode_queries(query)
         llm_name = getattr(self, "llm_name", None)
         if not TenantLLMService.increase_usage(self.tenant_id, self.llm_type, used_tokens, llm_name):
-            logging.error("LLMBundle.encode_queries can't update token usage for {}/EMBEDDING used_tokens: {}".format(self.tenant_id, used_tokens))
+            logging.error("LLMBundle.encode_queries can't update token usage for <tenant redacted>/EMBEDDING used_tokens: {}".format(used_tokens))
 
         if self.langfuse:
             generation.update(usage_details={"total_tokens": used_tokens})

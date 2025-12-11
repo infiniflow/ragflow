@@ -327,10 +327,44 @@ async def retrieval_test():
                 local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
                 if not local_doc_ids:
                     local_doc_ids = None
+            elif meta_data_filter.get("method") == "semi_auto":
+                selected_keys = meta_data_filter.get("semi_auto", [])
+                if selected_keys:
+                    filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
+                    if filtered_metas:
+                        chat_mdl = LLMBundle(user_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
+                        filters: dict = gen_meta_filter(chat_mdl, filtered_metas, question)
+                        local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
+                        if not local_doc_ids:
+                            local_doc_ids = None
             elif meta_data_filter.get("method") == "manual":
                 local_doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
                 if meta_data_filter["manual"] and not local_doc_ids:
                     local_doc_ids = ["-999"]
+        else:
+            meta_data_filter = req.get("meta_data_filter")
+            if meta_data_filter:
+                metas = DocumentService.get_meta_by_kbs(kb_ids)
+                if meta_data_filter.get("method") == "auto":
+                    chat_mdl = LLMBundle(user_id, LLMType.CHAT)
+                    filters: dict = gen_meta_filter(chat_mdl, metas, question)
+                    local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
+                    if not local_doc_ids:
+                        local_doc_ids = None
+                elif meta_data_filter.get("method") == "semi_auto":
+                    selected_keys = meta_data_filter.get("semi_auto", [])
+                    if selected_keys:
+                        filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
+                        if filtered_metas:
+                            chat_mdl = LLMBundle(user_id, LLMType.CHAT)
+                            filters: dict = gen_meta_filter(chat_mdl, filtered_metas, question)
+                            local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
+                            if not local_doc_ids:
+                                local_doc_ids = None
+                elif meta_data_filter.get("method") == "manual":
+                    local_doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
+                    if meta_data_filter["manual"] and not local_doc_ids:
+                        local_doc_ids = ["-999"]
 
         tenants = UserTenantService.query(user_id=user_id)
         for kb_id in kb_ids:
