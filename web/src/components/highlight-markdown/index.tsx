@@ -16,7 +16,7 @@ import { preprocessLaTeX } from '@/utils/chat';
 import { useIsDarkTheme } from '../theme-provider';
 import styles from './index.less';
 
-const HightLightMarkdown = ({
+const HighLightMarkdown = ({
   children,
 }: {
   children: string | null | undefined;
@@ -56,4 +56,4 @@ const HightLightMarkdown = ({
   );
 };
 
-export default HightLightMarkdown;
+export default HighLightMarkdown;

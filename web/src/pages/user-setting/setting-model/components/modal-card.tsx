@@ -1,9 +1,13 @@
 // src/components/ModelProviderCard.tsx
+import {
+  ConfirmDeleteDialog,
+  ConfirmDeleteDialogNode,
+} from '@/components/confirm-delete-dialog';
 import { LlmIcon } from '@/components/svg-icon';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
-import { LlmItem } from '@/hooks/llm-hooks';
+import { LlmItem } from '@/hooks/use-llm-request';
 import { getRealModelName } from '@/utils/llm-util';
 import { EditOutlined, SettingOutlined } from '@ant-design/icons';
 import { ChevronsDown, ChevronsUp, Trash2 } from 'lucide-react';
@@ -54,7 +58,7 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
   const { visible, switchVisible } = useSetModalState();
   const { t } = useTranslate('setting');
   const { handleEnableLlm } = useHandleEnableLlm(item.name);
-  const { handleDeleteFactory } = useHandleDeleteFactory(item.name);
+  const { deleteFactory } = useHandleDeleteFactory(item.name);
 
   const handleApiKeyClick = () => {
     clickApiKey(item.name);
@@ -71,7 +75,9 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
         <div className="flex items-center space-x-3">
           <LlmIcon name={item.name} />
           <div>
-            <div className="font-medium text-xl">{item.name}</div>
+            <div className="font-medium text-xl text-text-primary">
+              {item.name}
+            </div>
           </div>
         </div>
 
@@ -102,16 +108,31 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
             {!visible ? <ChevronsDown /> : <ChevronsUp />}
           </Button>
 
-          <Button
-            variant={'ghost'}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDeleteFactory();
+          <ConfirmDeleteDialog
+            onOk={() => deleteFactory({ llm_factory: item.name })}
+            title={t('deleteModel')}
+            content={{
+              node: (
+                <ConfirmDeleteDialogNode>
+                  <div className="flex items-center gap-2">
+                    <LlmIcon name={item.name} />
+                    {item.name}
+                  </div>
+                </ConfirmDeleteDialogNode>
+              ),
             }}
-            className="  hover:text-state-error hover:bg-state-error-5 transition-colors border border-border-default"
           >
-            <Trash2 />
-          </Button>
+            <Button
+              variant={'ghost'}
+              // onClick={(e) => {
+              //   e.stopPropagation();
+              //   handleDeleteFactory(item);
+              // }}
+              className="  hover:text-state-error hover:bg-state-error-5 transition-colors border border-border-default"
+            >
+              <Trash2 />
+            </Button>
+          </ConfirmDeleteDialog>
         </div>
       </div>
 

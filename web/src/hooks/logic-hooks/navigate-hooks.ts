@@ -14,9 +14,27 @@ export const useNavigatePage = () => {
   const [searchParams] = useSearchParams();
   const { id } = useParams();
 
-  const navigateToDatasetList = useCallback(() => {
-    navigate(Routes.Datasets);
-  }, [navigate]);
+  const navigateToDatasetList = useCallback(
+    ({ isCreate = false }: { isCreate?: boolean }) => {
+      if (isCreate) {
+        navigate(Routes.Datasets + '?isCreate=true');
+      } else {
+        navigate(Routes.Datasets);
+      }
+    },
+    [navigate],
+  );
+
+  const navigateToMemoryList = useCallback(
+    ({ isCreate = false }: { isCreate?: boolean }) => {
+      if (isCreate) {
+        navigate(Routes.Memories + '?isCreate=true');
+      } else {
+        navigate(Routes.Memories);
+      }
+    },
+    [navigate],
+  );
 
   const navigateToDataset = useCallback(
     (id: string) => () => {
@@ -95,6 +113,12 @@ export const useNavigatePage = () => {
   const navigateToSearch = useCallback(
     (id: string) => () => {
       navigate(`${Routes.Search}/${id}`);
+    },
+    [navigate],
+  );
+  const navigateToMemory = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.Memory}${Routes.MemoryMessage}/${id}`);
     },
     [navigate],
   );
@@ -189,5 +213,7 @@ export const useNavigatePage = () => {
     navigateToDataflowResult,
     navigateToDataFile,
     navigateToDataSourceDetail,
+    navigateToMemory,
+    navigateToMemoryList,
   };
 };

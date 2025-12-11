@@ -11,6 +11,10 @@ export enum Routes {
   Agent = '/agent',
   AgentTemplates = '/agent-templates',
   Agents = '/agents',
+  Memories = '/memories',
+  Memory = '/memory',
+  MemoryMessage = '/memory-message',
+  MemorySetting = '/memory-setting',
   AgentList = '/agent-list',
   Searches = '/next-searches',
   Search = '/next-search',
@@ -70,11 +74,6 @@ const routes = [
     layout: false,
   },
   {
-    path: '/chat/share',
-    component: '@/pages/chat/share',
-    layout: false,
-  },
-  {
     path: Routes.ChatShare,
     component: `@/pages${Routes.ChatShare}`,
     layout: false,
@@ -89,65 +88,12 @@ const routes = [
     component: `@/pages${Routes.ChatWidget}`,
     layout: false,
   },
-  {
-    path: Routes.Home,
-    component: '@/layouts',
-    layout: false,
-    redirect: '/knowledge',
-  },
-  {
-    path: '/knowledge',
-    component: '@/pages/knowledge',
-  },
-  {
-    path: '/knowledge',
-    component: '@/pages/add-knowledge',
-    routes: [
-      {
-        path: 'dataset',
-        component: '@/pages/add-knowledge/components/knowledge-dataset',
-        routes: [
-          {
-            path: '',
-            component: '@/pages/add-knowledge/components/knowledge-file',
-          },
-          {
-            path: 'chunk',
-            component: '@/pages/add-knowledge/components/knowledge-chunk',
-          },
-        ],
-      },
-      {
-        path: 'configuration',
-        component: '@/pages/add-knowledge/components/knowledge-setting',
-      },
-      {
-        path: 'testing',
-        component: '@/pages/add-knowledge/components/knowledge-testing',
-      },
-      {
-        path: 'knowledgeGraph',
-        component: '@/pages/add-knowledge/components/knowledge-graph',
-      },
-    ],
-  },
 
-  {
-    path: '/chat',
-    component: '@/pages/chat',
-  },
-  {
-    path: '/file',
-    component: '@/pages/file-manager',
-  },
   {
     path: Routes.AgentList,
     component: `@/pages/${Routes.Agents}`,
   },
-  {
-    path: '/search',
-    component: '@/pages/search',
-  },
+
   {
     path: '/document/:id',
     component: '@/pages/document-viewer',
@@ -207,6 +153,41 @@ const routes = [
         component: `@/pages${Routes.Searches}`,
       },
     ],
+  },
+  {
+    path: Routes.Memories,
+    layout: false,
+    component: '@/layouts/next',
+    routes: [
+      {
+        path: Routes.Memories,
+        component: `@/pages${Routes.Memories}`,
+      },
+    ],
+  },
+  {
+    path: `${Routes.Memory}`,
+    layout: false,
+    component: '@/layouts/next',
+    routes: [
+      {
+        path: `${Routes.Memory}`,
+        layout: false,
+        component: `@/pages${Routes.Memory}`,
+        routes: [
+          {
+            path: `${Routes.Memory}/${Routes.MemoryMessage}/:id`,
+            component: `@/pages${Routes.Memory}${Routes.MemoryMessage}`,
+          },
+          {
+            path: `${Routes.Memory}/${Routes.MemorySetting}/:id`,
+            component: `@/pages${Routes.Memory}${Routes.MemorySetting}`,
+          },
+        ],
+      },
+    ],
+    // component: `@/pages${Routes.DatasetBase}`,
+    // component: `@/pages${Routes.Memory}`,
   },
   {
     path: `${Routes.Search}/:id`,
@@ -327,41 +308,41 @@ const routes = [
     layout: false,
     component: `@/pages${Routes.Chunk}`,
   },
-  {
-    path: Routes.ProfileSetting,
-    layout: false,
-    component: `@/pages${Routes.ProfileSetting}`,
-    routes: [
-      {
-        path: Routes.ProfileSetting,
-        redirect: `${Routes.ProfileProfile}`,
-      },
-      {
-        path: `${Routes.ProfileProfile}`,
-        component: `@/pages${Routes.ProfileProfile}`,
-      },
-      {
-        path: `${Routes.ProfileTeam}`,
-        component: `@/pages${Routes.ProfileTeam}`,
-      },
-      {
-        path: `${Routes.ProfilePlan}`,
-        component: `@/pages${Routes.ProfilePlan}`,
-      },
-      {
-        path: `${Routes.ProfileModel}`,
-        component: `@/pages${Routes.ProfileModel}`,
-      },
-      {
-        path: `${Routes.ProfilePrompt}`,
-        component: `@/pages${Routes.ProfilePrompt}`,
-      },
-      {
-        path: Routes.ProfileMcp,
-        component: `@/pages${Routes.ProfileMcp}`,
-      },
-    ],
-  },
+  // {
+  //   path: Routes.ProfileSetting,
+  //   layout: false,
+  //   component: `@/pages${Routes.ProfileSetting}`,
+  //   routes: [
+  //     {
+  //       path: Routes.ProfileSetting,
+  //       redirect: `${Routes.ProfileProfile}`,
+  //     },
+  //     {
+  //       path: `${Routes.ProfileProfile}`,
+  //       component: `@/pages${Routes.ProfileProfile}`,
+  //     },
+  //     {
+  //       path: `${Routes.ProfileTeam}`,
+  //       component: `@/pages${Routes.ProfileTeam}`,
+  //     },
+  //     {
+  //       path: `${Routes.ProfilePlan}`,
+  //       component: `@/pages${Routes.ProfilePlan}`,
+  //     },
+  //     {
+  //       path: `${Routes.ProfileModel}`,
+  //       component: `@/pages${Routes.ProfileModel}`,
+  //     },
+  //     {
+  //       path: `${Routes.ProfilePrompt}`,
+  //       component: `@/pages${Routes.ProfilePrompt}`,
+  //     },
+  //     {
+  //       path: Routes.ProfileMcp,
+  //       component: `@/pages${Routes.ProfileMcp}`,
+  //     },
+  //   ],
+  // },
   {
     path: '/user-setting',
     component: '@/pages/user-setting',

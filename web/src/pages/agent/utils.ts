@@ -8,7 +8,7 @@ import {
 } from '@/interfaces/database/agent';
 import { DSLComponents, RAGFlowNodeType } from '@/interfaces/database/flow';
 import { buildSelectOptions } from '@/utils/component-util';
-import { removeUselessFieldsFromValues } from '@/utils/form';
+import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
 import { humanId } from 'human-id';
@@ -24,15 +24,18 @@ import {
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import {
+  AgentDialogueMode,
   CategorizeAnchorPointPositions,
   FileType,
   FileTypeSuffixMap,
+  InputMode,
   NoCopyOperatorsList,
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
   TypesWithArray,
 } from './constant';
+import { BeginFormSchemaType } from './form/begin-form';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
 import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-form';
@@ -311,6 +314,41 @@ function transformDataOperationsParams(params: DataOperationsFormSchemaType) {
   };
 }
 
+export function transformArrayToObject(
+  list?: Array<{ key: string; value: string }>,
+) {
+  if (!Array.isArray(list)) return {};
+  return list?.reduce<Record<string, any>>((pre, cur) => {
+    if (cur.key) {
+      pre[cur.key] = cur.value;
+    }
+    return pre;
+  }, {});
+}
+
+function transformBeginParams(params: BeginFormSchemaType) {
+  if (params.mode === AgentDialogueMode.Webhook) {
+    return {
+      ...params,
+      security: {
+        ...params.security,
+        ip_whitelist: params.security?.ip_whitelist.map((x) => x.value),
+      },
+      response: {
+        ...params.response,
+        headers_template: transformArrayToObject(
+          params.response?.headers_template,
+        ),
+        body_template: transformArrayToObject(params.response?.body_template),
+      },
+    };
+  }
+
+  return {
+    ...params,
+  };
+}
+
 // construct a dsl based on the node information of the graph
 export const buildDslComponentsByGraph = (
   nodes: RAGFlowNodeType[],
@@ -359,6 +397,9 @@ export const buildDslComponentsByGraph = (
           break;
         case Operator.DataOperations:
           params = transformDataOperationsParams(params);
+          break;
+        case Operator.Begin:
+          params = transformBeginParams(params);
           break;
         default:
           break;
@@ -568,12 +609,6 @@ export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
     }, {});
   }
 
-  // Delete the downstream nodes corresponding to the yes and no fields of the Relevant operator
-  if (nodeData?.label === Operator.Relevant) {
-    form.yes = undefined;
-    form.no = undefined;
-  }
-
   return {
     ...(nodeData ?? { label: '' }),
     form,
@@ -772,3 +807,5 @@ export function getArrayElementType(type: string) {
 export function buildConversationVariableSelectOptions() {
   return buildSelectOptions(Object.values(TypesWithArray));
 }
+
+export const InputModeOptions = buildOptions(InputMode);

@@ -54,8 +54,8 @@ class ExternalAccess:
         A helper function that returns an *empty* set of external user-emails and group-ids, and sets `is_public` to `False`.
         This effectively makes the document in question "private" or inaccessible to anyone else.
 
-        This is especially helpful to use when you are performing permission-syncing, and some document's permissions aren't able
-        to be determined (for whatever reason). Setting its `ExternalAccess` to "private" is a feasible fallback.
+        This is especially helpful to use when you are performing permission-syncing, and some document's permissions can't
+        be determined (for whatever reason). Setting its `ExternalAccess` to "private" is a feasible fallback.
         """
 
         return cls(
@@ -94,6 +94,7 @@ class Document(BaseModel):
     blob: bytes
     doc_updated_at: datetime
     size_bytes: int
+    metadata: Optional[dict[str, Any]] = None
 
 
 class BasicExpertInfo(BaseModel):

@@ -1,6 +1,10 @@
 import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
-import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
+import {
+  IMessage,
+  IReferenceChunk,
+  IReferenceObject,
+} from '@/interfaces/database/chat';
 import classNames from 'classnames';
 import {
   PropsWithChildren,
@@ -17,11 +21,8 @@ import { INodeEvent, MessageEventType } from '@/hooks/use-send-message';
 import { cn } from '@/lib/utils';
 import { AgentChatContext } from '@/pages/agent/context';
 import { WorkFlowTimeline } from '@/pages/agent/log-sheet/workflow-timeline';
-import { IMessage } from '@/pages/chat/interface';
-import { downloadFile } from '@/services/file-manager-service';
-import { downloadFileFromBlob } from '@/utils/file-util';
 import { isEmpty } from 'lodash';
-import { Atom, ChevronDown, ChevronUp, Download } from 'lucide-react';
+import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
 import MarkdownContent from '../next-markdown-content';
 import { RAGFlowAvatar } from '../ragflow-avatar';
 import { useTheme } from '../theme-provider';
@@ -173,6 +174,7 @@ function MessageItem({
                         audioBinary={item.audio_binary}
                         showLoudspeaker={showLoudspeaker}
                         showLog={showLog}
+                        attachment={item.attachment}
                       ></AssistantGroupButton>
                     )}
                     {!isShare && (
@@ -184,6 +186,7 @@ function MessageItem({
                         audioBinary={item.audio_binary}
                         showLoudspeaker={showLoudspeaker}
                         showLog={showLog}
+                        attachment={item.attachment}
                       ></AssistantGroupButton>
                     )}
                   </>
@@ -247,7 +250,7 @@ function MessageItem({
             {isUser && (
               <UploadedMessageFiles files={item.files}></UploadedMessageFiles>
             )}
-            {isAssistant && item.attachment && item.attachment.doc_id && (
+            {/* {isAssistant && item.attachment && item.attachment.doc_id && (
               <div className="w-full flex items-center justify-end">
                 <Button
                   variant="link"
@@ -272,7 +275,7 @@ function MessageItem({
                   <Download size={16} />
                 </Button>
               </div>
-            )}
+            )} */}
           </section>
         </div>
       </section>

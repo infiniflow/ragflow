@@ -19,22 +19,20 @@ from pathlib import Path
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 
-from quart import request
 from api.apps import login_required, current_user
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.utils.api_utils import server_error_response, get_data_error_result, validate_request
+from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.misc_utils import get_uuid
 from common.constants import RetCode
 from api.db import FileType
 from api.db.services.document_service import DocumentService
-from api.utils.api_utils import get_json_result
 
 
 @manager.route('/convert', methods=['POST'])  # noqa: F821
 @login_required
 @validate_request("file_ids", "kb_ids")
 async def convert():
-    req = await request.json
+    req = await get_request_json()
     kb_ids = req["kb_ids"]
     file_ids = req["file_ids"]
     file2documents = []
@@ -79,7 +77,8 @@ async def convert():
                     doc = DocumentService.insert({
                         "id": get_uuid(),
                         "kb_id": kb.id,
-                        "parser_id": FileService.get_parser(file.type, file.name, kb.parser_id),
+                        "parser_id": kb.parser_id,
+                        "pipeline_id": kb.pipeline_id,
                         "parser_config": kb.parser_config,
                         "created_by": current_user.id,
                         "type": file.type,
@@ -104,7 +103,7 @@ async def convert():
 @login_required
 @validate_request("file_ids")
 async def rm():
-    req = await request.json
+    req = await get_request_json()
     file_ids = req["file_ids"]
     if not file_ids:
         return get_json_result(

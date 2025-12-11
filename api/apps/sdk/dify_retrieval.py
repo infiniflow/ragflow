@@ -15,12 +15,12 @@
 #
 import logging
 
-from quart import request, jsonify
+from quart import jsonify
 
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api.utils.api_utils import validate_request, build_error_result, apikey_required
+from api.utils.api_utils import apikey_required, build_error_result, get_request_json, validate_request
 from rag.app.tag import label_question
 from api.db.services.dialog_service import meta_filter, convert_conditions
 from common.constants import RetCode, LLMType
@@ -113,7 +113,7 @@ async def retrieval(tenant_id):
       404:
         description: Knowledge base or document not found
     """
-    req = await request.json
+    req = await get_request_json()
     question = req["query"]
     kb_id = req["knowledge_id"]
     use_kg = req.get("use_kg", False)

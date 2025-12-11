@@ -749,7 +749,7 @@ class Knowledgebase(DataBaseModel):
 
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID", default=ParserType.NAIVE.value, index=True)
     pipeline_id = CharField(max_length=32, null=True, help_text="Pipeline ID", index=True)
-    parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
+    parser_config = JSONField(null=False, default={"pages": [[1, 1000000]], "table_context_size": 0, "image_context_size": 0})
     pagerank = IntegerField(default=0, index=False)
 
     graphrag_task_id = CharField(max_length=32, null=True, help_text="Graph RAG task ID", index=True)
@@ -774,7 +774,7 @@ class Document(DataBaseModel):
     kb_id = CharField(max_length=256, null=False, index=True)
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID", index=True)
     pipeline_id = CharField(max_length=32, null=True, help_text="pipeline ID", index=True)
-    parser_config = JSONField(null=False, default={"pages": [[1, 1000000]]})
+    parser_config = JSONField(null=False, default={"pages": [[1, 1000000]], "table_context_size": 0, "image_context_size": 0})
     source_type = CharField(max_length=128, null=False, default="local", help_text="where dose this document come from", index=True)
     type = CharField(max_length=32, null=False, help_text="file extension", index=True)
     created_by = CharField(max_length=32, null=False, help_text="who created it", index=True)
@@ -1113,6 +1113,91 @@ class SyncLogs(DataBaseModel):
         db_table = "sync_logs"
 
 
+class EvaluationDataset(DataBaseModel):
+    """Ground truth dataset for RAG evaluation"""
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True, help_text="tenant ID")
+    name = CharField(max_length=255, null=False, index=True, help_text="dataset name")
+    description = TextField(null=True, help_text="dataset description")
+    kb_ids = JSONField(null=False, help_text="knowledge base IDs to evaluate against")
+    created_by = CharField(max_length=32, null=False, index=True, help_text="creator user ID")
+    create_time = BigIntegerField(null=False, index=True, help_text="creation timestamp")
+    update_time = BigIntegerField(null=False, help_text="last update timestamp")
+    status = IntegerField(null=False, default=1, help_text="1=valid, 0=invalid")
+
+    class Meta:
+        db_table = "evaluation_datasets"
+
+
+class EvaluationCase(DataBaseModel):
+    """Individual test case in an evaluation dataset"""
+    id = CharField(max_length=32, primary_key=True)
+    dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
+    question = TextField(null=False, help_text="test question")
+    reference_answer = TextField(null=True, help_text="optional ground truth answer")
+    relevant_doc_ids = JSONField(null=True, help_text="expected relevant document IDs")
+    relevant_chunk_ids = JSONField(null=True, help_text="expected relevant chunk IDs")
+    metadata = JSONField(null=True, help_text="additional context/tags")
+    create_time = BigIntegerField(null=False, help_text="creation timestamp")
+
+    class Meta:
+        db_table = "evaluation_cases"
+
+
+class EvaluationRun(DataBaseModel):
+    """A single evaluation run"""
+    id = CharField(max_length=32, primary_key=True)
+    dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
+    dialog_id = CharField(max_length=32, null=False, index=True, help_text="dialog configuration being evaluated")
+    name = CharField(max_length=255, null=False, help_text="run name")
+    config_snapshot = JSONField(null=False, help_text="dialog config at time of evaluation")
+    metrics_summary = JSONField(null=True, help_text="aggregated metrics")
+    status = CharField(max_length=32, null=False, default="PENDING", help_text="PENDING/RUNNING/COMPLETED/FAILED")
+    created_by = CharField(max_length=32, null=False, index=True, help_text="user who started the run")
+    create_time = BigIntegerField(null=False, index=True, help_text="creation timestamp")
+    complete_time = BigIntegerField(null=True, help_text="completion timestamp")
+
+    class Meta:
+        db_table = "evaluation_runs"
+
+
+class EvaluationResult(DataBaseModel):
+    """Result for a single test case in an evaluation run"""
+    id = CharField(max_length=32, primary_key=True)
+    run_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_runs")
+    case_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_cases")
+    generated_answer = TextField(null=False, help_text="generated answer")
+    retrieved_chunks = JSONField(null=False, help_text="chunks that were retrieved")
+    metrics = JSONField(null=False, help_text="all computed metrics")
+    execution_time = FloatField(null=False, help_text="response time in seconds")
+    token_usage = JSONField(null=True, help_text="prompt/completion tokens")
+    create_time = BigIntegerField(null=False, help_text="creation timestamp")
+
+    class Meta:
+        db_table = "evaluation_results"
+
+
+class Memory(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    name = CharField(max_length=128, null=False, index=False, help_text="Memory name")
+    avatar = TextField(null=True, help_text="avatar base64 string")
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    memory_type = IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=raw, 2=semantic, 4=episodic, 8=procedural. E.g., 5 enables raw + episodic.")
+    storage_type = CharField(max_length=32, default='table', null=False, index=True, help_text="table|graph")
+    embd_id = CharField(max_length=128, null=False, index=False, help_text="embedding model ID")
+    llm_id = CharField(max_length=128, null=False, index=False, help_text="chat model ID")
+    permissions = CharField(max_length=16, null=False, index=True, help_text="me|team", default="me")
+    description = TextField(null=True, help_text="description")
+    memory_size = IntegerField(default=5242880, null=False, index=False)
+    forgetting_policy = CharField(max_length=32, null=False, default="fifo", index=False, help_text="lru|fifo")
+    temperature = FloatField(default=0.5, index=False)
+    system_prompt = TextField(null=True, help_text="system prompt", index=False)
+    user_prompt = TextField(null=True, help_text="user prompt", index=False)
+
+    class Meta:
+        db_table = "memory"
+
+
 def migrate_db():
     logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
@@ -1293,4 +1378,43 @@ def migrate_db():
         migrate(migrator.add_column("llm_factories", "rank", IntegerField(default=0, index=False)))
     except Exception:
         pass
+
+    # RAG Evaluation tables
+    try:
+        migrate(migrator.add_column("evaluation_datasets", "id", CharField(max_length=32, primary_key=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("evaluation_datasets", "tenant_id", CharField(max_length=32, null=False, index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("evaluation_datasets", "name", CharField(max_length=255, null=False, index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("evaluation_datasets", "description", TextField(null=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("evaluation_datasets", "kb_ids", JSONField(null=False)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("evaluation_datasets", "created_by", CharField(max_length=32, null=False, index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("evaluation_datasets", "create_time", BigIntegerField(null=False, index=True)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("evaluation_datasets", "update_time", BigIntegerField(null=False)))
+    except Exception:
+        pass
+    try:
+        migrate(migrator.add_column("evaluation_datasets", "status", IntegerField(null=False, default=1)))
+    except Exception:
+        pass
+
     logging.disable(logging.NOTSET)

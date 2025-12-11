@@ -12,6 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import asyncio
 import io
 import json
 import os
@@ -19,25 +20,25 @@ import random
 import re
 from functools import partial
 
-import trio
+from litellm import logging
 import numpy as np
 from PIL import Image
 
-from common.constants import LLMType
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
+from common import settings
+from common.constants import LLMType
 from common.misc_utils import get_uuid
-from rag.utils.base64_image import image2id
 from deepdoc.parser import ExcelParser
-from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
-from common import settings
+from rag.nlp import attach_media_context
+from rag.utils.base64_image import image2id
 
 
 class ParserParam(ProcessParamBase):
@@ -61,15 +62,18 @@ class ParserParam(ProcessParamBase):
                 "json",
             ],
             "image": [
-                "text"
+                "text",
             ],
-            "email": ["text", "json"],
+            "email": [
+                "text",
+                "json",
+            ],
             "text&markdown": [
                 "text",
-                "json"
+                "json",
             ],
             "audio": [
-                "json"
+                "json",
             ],
             "video": [],
         }
@@ -82,6 +86,8 @@ class ParserParam(ProcessParamBase):
                     "pdf",
                 ],
                 "output_format": "json",
+                "table_context_size": 0,
+                "image_context_size": 0,
             },
             "spreadsheet": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
@@ -91,6 +97,8 @@ class ParserParam(ProcessParamBase):
                     "xlsx",
                     "csv",
                 ],
+                "table_context_size": 0,
+                "image_context_size": 0,
             },
             "word": {
                 "suffix": [
@@ -98,18 +106,24 @@ class ParserParam(ProcessParamBase):
                     "docx",
                 ],
                 "output_format": "json",
+                "table_context_size": 0,
+                "image_context_size": 0,
             },
             "text&markdown": {
                 "suffix": ["md", "markdown", "mdx", "txt"],
                 "output_format": "json",
+                "table_context_size": 0,
+                "image_context_size": 0,
             },
             "slides": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
                 "suffix": [
                     "pptx",
-                    "ppt"
+                    "ppt",
                 ],
                 "output_format": "json",
+                "table_context_size": 0,
+                "image_context_size": 0,
             },
             "image": {
                 "parse_method": "ocr",
@@ -121,13 +135,14 @@ class ParserParam(ProcessParamBase):
             },
             "email": {
                 "suffix": [
-                  "eml", "msg"
+                    "eml",
+                    "msg",
                 ],
                 "fields": ["from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"],
                 "output_format": "json",
             },
             "audio": {
-                "suffix":[
+                "suffix": [
                     "da",
                     "wave",
                     "wav",
@@ -142,15 +157,15 @@ class ParserParam(ProcessParamBase):
                     "realaudio",
                     "vqf",
                     "oggvorbis",
-                    "ape"
+                    "ape",
                 ],
                 "output_format": "text",
             },
             "video": {
-                "suffix":[
+                "suffix": [
                     "mp4",
                     "avi",
-                    "mkv"
+                    "mkv",
                 ],
                 "output_format": "text",
             },
@@ -219,25 +234,55 @@ class Parser(ProcessBase):
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
 
-        if conf.get("parse_method").lower() == "deepdoc":
+        raw_parse_method = conf.get("parse_method", "")
+        parser_model_name = None
+        parse_method = raw_parse_method
+        parse_method = parse_method or ""
+        if isinstance(raw_parse_method, str):
+            lowered = raw_parse_method.lower()
+            if lowered.startswith("mineru@"):
+                parser_model_name = raw_parse_method.split("@", 1)[1]
+                parse_method = "MinerU"
+            elif lowered.endswith("@mineru"):
+                parser_model_name = raw_parse_method.rsplit("@", 1)[0]
+                parse_method = "MinerU"
+
+        if parse_method.lower() == "deepdoc":
             bboxes = RAGFlowPdfParser().parse_into_bboxes(blob, callback=self.callback)
-        elif conf.get("parse_method").lower() == "plain_text":
+        elif parse_method.lower() == "plain_text":
             lines, _ = PlainParser()(blob)
             bboxes = [{"text": t} for t, _ in lines]
-        elif conf.get("parse_method").lower() == "mineru":
-            mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
-            mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
-            pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
-            ok, reason = pdf_parser.check_installation()
-            if not ok:
-                raise RuntimeError(f"MinerU not found or server not accessible: {reason}. Please install it via: pip install -U 'mineru[core]'.")
+        elif parse_method.lower() == "mineru":
+            def resolve_mineru_llm_name():
+                configured = parser_model_name or conf.get("mineru_llm_name")
+                if configured:
+                    return configured
+
+                tenant_id = self._canvas._tenant_id
+                if not tenant_id:
+                    return None
+
+                from api.db.services.tenant_llm_service import TenantLLMService
+
+                env_name = TenantLLMService.ensure_mineru_from_env(tenant_id)
+                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="MinerU", model_type=LLMType.OCR.value)
+                if candidates:
+                    return candidates[0].llm_name
+                return env_name
+
+            parser_model_name = resolve_mineru_llm_name()
+            if not parser_model_name:
+                raise RuntimeError("MinerU model not configured. Please add MinerU in Model Providers or set MINERU_* env.")
+
+            tenant_id = self._canvas._tenant_id
+            ocr_model = LLMBundle(tenant_id, LLMType.OCR, llm_name=parser_model_name, lang=conf.get("lang", "Chinese"))
+            pdf_parser = ocr_model.mdl
 
             lines, _ = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
-                output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
-                delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+                parse_method=conf.get("mineru_parse_method", "raw"),
             )
             bboxes = []
             for t, poss in lines:
@@ -247,13 +292,13 @@ class Parser(ProcessBase):
                     "text": t,
                 }
                 bboxes.append(box)
-        elif conf.get("parse_method").lower() == "tcadp parser":
+        elif parse_method.lower() == "tcadp parser":
             # ADP is a document parsing tool using Tencent Cloud API
             table_result_type = conf.get("table_result_type", "1")
             markdown_image_response_type = conf.get("markdown_image_response_type", "1")
             tcadp_parser = TCADPParser(
                 table_result_type=table_result_type,
-                markdown_image_response_type=markdown_image_response_type
+                markdown_image_response_type=markdown_image_response_type,
             )
             sections, _ = tcadp_parser.parse_pdf(
                 filepath=name,
@@ -261,7 +306,7 @@ class Parser(ProcessBase):
                 callback=self.callback,
                 file_type="PDF",
                 file_start_page=1,
-                file_end_page=1000
+                file_end_page=1000,
             )
             bboxes = []
             for section, position_tag in sections:
@@ -269,17 +314,20 @@ class Parser(ProcessBase):
                     # Extract position information from TCADP's position tag
                     # Format: @@{page_number}\t{x0}\t{x1}\t{top}\t{bottom}##
                     import re
+
                     match = re.match(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", position_tag)
                     if match:
                         pn, x0, x1, top, bott = match.groups()
-                        bboxes.append({
-                            "page_number": int(pn.split('-')[0]),  # Take the first page number
-                            "x0": float(x0),
-                            "x1": float(x1),
-                            "top": float(top),
-                            "bottom": float(bott),
-                            "text": section
-                        })
+                        bboxes.append(
+                            {
+                                "page_number": int(pn.split("-")[0]),  # Take the first page number
+                                "x0": float(x0),
+                                "x1": float(x1),
+                                "top": float(top),
+                                "bottom": float(bott),
+                                "text": section,
+                            }
+                        )
                     else:
                         # If no position info, add as text without position
                         bboxes.append({"text": section})
@@ -291,7 +339,30 @@ class Parser(ProcessBase):
             bboxes = []
             for t, poss in lines:
                 for pn, x0, x1, top, bott in RAGFlowPdfParser.extract_positions(poss):
-                    bboxes.append({"page_number": int(pn[0]), "x0": float(x0), "x1": float(x1), "top": float(top), "bottom": float(bott), "text": t})
+                    bboxes.append(
+                        {
+                            "page_number": int(pn[0]),
+                            "x0": float(x0),
+                            "x1": float(x1),
+                            "top": float(top),
+                            "bottom": float(bott),
+                            "text": t,
+                        }
+                    )
+
+        for b in bboxes:
+            text_val = b.get("text", "")
+            has_text = isinstance(text_val, str) and text_val.strip()
+            layout = b.get("layout_type")
+            if layout == "figure" or (b.get("image") and not has_text):
+                b["doc_type_kwd"] = "image"
+            elif layout == "table":
+                b["doc_type_kwd"] = "table"
+
+        table_ctx = conf.get("table_context_size", 0) or 0
+        image_ctx = conf.get("image_context_size", 0) or 0
+        if table_ctx or image_ctx:
+            bboxes = attach_media_context(bboxes, table_ctx, image_ctx)
 
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
@@ -319,7 +390,7 @@ class Parser(ProcessBase):
             markdown_image_response_type = conf.get("markdown_image_response_type", "1")
             tcadp_parser = TCADPParser(
                 table_result_type=table_result_type,
-                markdown_image_response_type=markdown_image_response_type
+                markdown_image_response_type=markdown_image_response_type,
             )
             if not tcadp_parser.check_installation():
                 raise RuntimeError("TCADP parser not available. Please check Tencent Cloud API configuration.")
@@ -337,7 +408,7 @@ class Parser(ProcessBase):
                 callback=self.callback,
                 file_type=file_type,
                 file_start_page=1,
-                file_end_page=1000
+                file_end_page=1000,
             )
 
             # Process TCADP parser output based on configured output_format
@@ -365,7 +436,12 @@ class Parser(ProcessBase):
                 # Add tables as text
                 for table in tables:
                     if table:
-                        result.append({"text": table})
+                        result.append({"text": table, "doc_type_kwd": "table"})
+
+                table_ctx = conf.get("table_context_size", 0) or 0
+                image_ctx = conf.get("image_context_size", 0) or 0
+                if table_ctx or image_ctx:
+                    result = attach_media_context(result, table_ctx, image_ctx)
 
                 self.set_output("json", result)
 
@@ -400,7 +476,13 @@ class Parser(ProcessBase):
         if conf.get("output_format") == "json":
             sections, tbls = docx_parser(name, binary=blob)
             sections = [{"text": section[0], "image": section[1]} for section in sections if section]
-            sections.extend([{"text": tb, "image": None} for ((_,tb), _) in tbls])
+            sections.extend([{"text": tb, "image": None, "doc_type_kwd": "table"} for ((_, tb), _) in tbls])
+
+            table_ctx = conf.get("table_context_size", 0) or 0
+            image_ctx = conf.get("image_context_size", 0) or 0
+            if table_ctx or image_ctx:
+                sections = attach_media_context(sections, table_ctx, image_ctx)
+
             self.set_output("json", sections)
         elif conf.get("output_format") == "markdown":
             markdown_text = docx_parser.to_markdown(name, binary=blob)
@@ -420,7 +502,7 @@ class Parser(ProcessBase):
             markdown_image_response_type = conf.get("markdown_image_response_type", "1")
             tcadp_parser = TCADPParser(
                 table_result_type=table_result_type,
-                markdown_image_response_type=markdown_image_response_type
+                markdown_image_response_type=markdown_image_response_type,
             )
             if not tcadp_parser.check_installation():
                 raise RuntimeError("TCADP parser not available. Please check Tencent Cloud API configuration.")
@@ -439,7 +521,7 @@ class Parser(ProcessBase):
                 callback=self.callback,
                 file_type=file_type,
                 file_start_page=1,
-                file_end_page=1000
+                file_end_page=1000,
             )
 
             # Process TCADP parser output - PPT only supports json format
@@ -454,7 +536,12 @@ class Parser(ProcessBase):
                 # Add tables as text
                 for table in tables:
                     if table:
-                        result.append({"text": table})
+                        result.append({"text": table, "doc_type_kwd": "table"})
+
+                table_ctx = conf.get("table_context_size", 0) or 0
+                image_ctx = conf.get("image_context_size", 0) or 0
+                if table_ctx or image_ctx:
+                    result = attach_media_context(result, table_ctx, image_ctx)
 
                 self.set_output("json", result)
         else:
@@ -469,6 +556,10 @@ class Parser(ProcessBase):
             # json
             assert conf.get("output_format") == "json", "have to be json for ppt"
             if conf.get("output_format") == "json":
+                table_ctx = conf.get("table_context_size", 0) or 0
+                image_ctx = conf.get("image_context_size", 0) or 0
+                if table_ctx or image_ctx:
+                    sections = attach_media_context(sections, table_ctx, image_ctx)
                 self.set_output("json", sections)
 
     def _markdown(self, name, blob):
@@ -482,17 +573,25 @@ class Parser(ProcessBase):
         self.set_output("output_format", conf["output_format"])
 
         markdown_parser = naive_markdown_parser()
-        sections, tables = markdown_parser(name, blob, separate_tables=False)
+        sections, tables, section_images = markdown_parser(
+            name,
+            blob,
+            separate_tables=False,
+            delimiter=conf.get("delimiter"),
+            return_section_images=True,
+        )
 
         if conf.get("output_format") == "json":
             json_results = []
 
-            for section_text, _ in sections:
+            for idx, (section_text, _) in enumerate(sections):
                 json_result = {
                     "text": section_text,
                 }
 
-                images = markdown_parser.get_pictures(section_text) if section_text else None
+                images = []
+                if section_images and len(section_images) > idx and section_images[idx] is not None:
+                    images.append(section_images[idx])
                 if images:
                     # If multiple images found, combine them using concat_img
                     combined_image = reduce(concat_img, images) if len(images) > 1 else images[0]
@@ -500,10 +599,14 @@ class Parser(ProcessBase):
 
                 json_results.append(json_result)
 
+            table_ctx = conf.get("table_context_size", 0) or 0
+            image_ctx = conf.get("image_context_size", 0) or 0
+            if table_ctx or image_ctx:
+                json_results = attach_media_context(json_results, table_ctx, image_ctx)
+
             self.set_output("json", json_results)
         else:
             self.set_output("text", "\n".join([section_text for section_text, _ in sections]))
-
 
     def _image(self, name, blob):
         from deepdoc.vision import OCR
@@ -561,7 +664,7 @@ class Parser(ProcessBase):
         self.set_output("output_format", conf["output_format"])
 
         cv_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.IMAGE2TEXT, llm_name=conf["llm_id"])
-        txt = cv_mdl.chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name)
+        txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name))
 
         self.set_output("text", txt)
 
@@ -580,7 +683,7 @@ class Parser(ProcessBase):
             from email.parser import BytesParser
 
             msg = BytesParser(policy=policy.default).parse(io.BytesIO(blob))
-            email_content['metadata'] = {}
+            email_content["metadata"] = {}
             # handle header info
             for header, value in msg.items():
                 # get fields like from, to, cc, bcc, date, subject
@@ -592,6 +695,7 @@ class Parser(ProcessBase):
             # get body
             if "body" in target_fields:
                 body_text, body_html = [], []
+
                 def _add_content(m, content_type):
                     def _decode_payload(payload, charset, target_list):
                         try:
@@ -633,14 +737,17 @@ class Parser(ProcessBase):
                         if dispositions[0].lower() == "attachment":
                             filename = part.get_filename()
                             payload = part.get_payload(decode=True).decode(part.get_content_charset())
-                            attachments.append({
-                                "filename": filename,
-                                "payload": payload,
-                            })
+                            attachments.append(
+                                {
+                                    "filename": filename,
+                                    "payload": payload,
+                                }
+                            )
                 email_content["attachments"] = attachments
         else:
             # handle msg file
             import extract_msg
+
             print("handle a msg file.")
             msg = extract_msg.Message(blob)
             # handle header info
@@ -654,9 +761,9 @@ class Parser(ProcessBase):
             }
             email_content.update({k: v for k, v in basic_content.items() if k in target_fields})
             # get metadata
-            email_content['metadata'] = {
-                'message_id': msg.messageId,
-                'in_reply_to': msg.inReplyTo,
+            email_content["metadata"] = {
+                "message_id": msg.messageId,
+                "in_reply_to": msg.inReplyTo,
             }
             # get body
             if "body" in target_fields:
@@ -667,29 +774,31 @@ class Parser(ProcessBase):
             if "attachments" in target_fields:
                 attachments = []
                 for t in msg.attachments:
-                    attachments.append({
-                        "filename": t.name,
-                        "payload": t.data.decode("utf-8")
-                    })
+                    attachments.append(
+                        {
+                            "filename": t.name,
+                            "payload": t.data.decode("utf-8"),
+                        }
+                    )
                 email_content["attachments"] = attachments
 
         if conf["output_format"] == "json":
             self.set_output("json", [email_content])
         else:
-            content_txt = ''
+            content_txt = ""
             for k, v in email_content.items():
                 if isinstance(v, str):
                     # basic info
-                    content_txt += f'{k}:{v}' + "\n"
+                    content_txt += f"{k}:{v}" + "\n"
                 elif isinstance(v, dict):
                     # metadata
-                    content_txt += f'{k}:{json.dumps(v)}' + "\n"
+                    content_txt += f"{k}:{json.dumps(v)}" + "\n"
                 elif isinstance(v, list):
                     # attachments or others
                     for fb in v:
                         if isinstance(fb, dict):
                             # attachments
-                            content_txt += f'{fb["filename"]}:{fb["payload"]}' + "\n"
+                            content_txt += f"{fb['filename']}:{fb['payload']}" + "\n"
                         else:
                             # str, usually plain text
                             content_txt += fb
@@ -725,7 +834,7 @@ class Parser(ProcessBase):
         for p_type, conf in self._param.setups.items():
             if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            await trio.to_thread.run_sync(function_map[p_type], name, blob)
+            await asyncio.to_thread(function_map[p_type], name, blob)
             done = True
             break
 
@@ -733,6 +842,15 @@ class Parser(ProcessBase):
             raise Exception("No suitable for file extension: `.%s`" % from_upstream.name.split(".")[-1].lower())
 
         outs = self.output()
-        async with trio.open_nursery() as nursery:
-            for d in outs.get("json", []):
-                nursery.start_soon(image2id, d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())
+        tasks = []
+        for d in outs.get("json", []):
+            tasks.append(asyncio.create_task(image2id(d,partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id),get_uuid())))
+
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error("Error while parsing: %s" % e)
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise

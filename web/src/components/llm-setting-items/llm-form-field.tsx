@@ -1,5 +1,5 @@
 import { LlmModelType } from '@/constants/knowledge';
-import { useComposeLlmOptionsByModelTypes } from '@/hooks/llm-hooks';
+import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { useTranslation } from 'react-i18next';
 import { SelectWithSearch } from '../originui/select-with-search';
 import { RAGFlowFormItem } from '../ragflow-form';
@@ -9,13 +9,19 @@ export type LLMFormFieldProps = {
   name?: string;
 };
 
-export function LLMFormField({ options, name }: LLMFormFieldProps) {
-  const { t } = useTranslation();
-
+export const useModelOptions = () => {
   const modelOptions = useComposeLlmOptionsByModelTypes([
     LlmModelType.Chat,
     LlmModelType.Image2text,
   ]);
+  return {
+    modelOptions,
+  };
+};
+
+export function LLMFormField({ options, name }: LLMFormFieldProps) {
+  const { t } = useTranslation();
+  const { modelOptions } = useModelOptions();
 
   return (
     <RAGFlowFormItem name={name || 'llm_id'} label={t('chat.model')}>

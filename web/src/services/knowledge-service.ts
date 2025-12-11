@@ -35,7 +35,6 @@ const {
   web_crawl,
   knowledge_graph,
   document_infos,
-  upload_and_parse,
   listTagByKnowledgeIds,
   setMeta,
   getMeta,
@@ -157,10 +156,6 @@ const methods = {
   document_delete: {
     url: document_delete,
     method: 'delete',
-  },
-  upload_and_parse: {
-    url: upload_and_parse,
-    method: 'post',
   },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,

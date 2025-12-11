@@ -1,11 +1,22 @@
 import { FileUploadProps } from '@/components/file-upload';
-import { useUploadAndParseFile } from '@/hooks/use-chat-request';
+import {
+  useGetChatSearchParams,
+  useUploadAndParseFile,
+} from '@/hooks/use-chat-request';
+import { generateConversationId } from '@/utils/chat';
 import { useCallback, useState } from 'react';
+import { useChatUrlParams } from './use-chat-url';
+import { useSetConversation } from './use-set-conversation';
 
 export function useUploadFile() {
   const { uploadAndParseFile, loading, cancel } = useUploadAndParseFile();
-  const [fileIds, setFileIds] = useState<string[]>([]);
-  const [fileMap, setFileMap] = useState<Map<File, string>>(new Map());
+  const [currentFiles, setCurrentFiles] = useState<Record<string, any>[]>([]);
+  const [fileMap, setFileMap] = useState<Map<File, Record<string, any>>>(
+    new Map(),
+  );
+  const { setConversation } = useSetConversation();
+  const { conversationId, isNew } = useGetChatSearchParams();
+  const { setIsNew, setConversationBoth } = useChatUrlParams();
 
   type FileUploadParameters = Parameters<
     NonNullable<FileUploadProps['onUpload']>
@@ -20,10 +31,11 @@ export function useUploadFile() {
       if (Array.isArray(files) && files.length) {
         const file = files[0];
         const ret = await uploadAndParseFile({ file, options, conversationId });
-        if (ret?.code === 0 && Array.isArray(ret?.data)) {
-          setFileIds((list) => [...list, ...ret.data]);
+        if (ret?.code === 0) {
+          const data = ret.data;
+          setCurrentFiles((list) => [...list, data]);
           setFileMap((map) => {
-            map.set(files[0], ret.data[0]);
+            map.set(files[0], data);
             return map;
           });
         }
@@ -32,8 +44,46 @@ export function useUploadFile() {
     [uploadAndParseFile],
   );
 
-  const clearFileIds = useCallback(() => {
-    setFileIds([]);
+  const createConversationBeforeUploadFile: NonNullable<
+    FileUploadProps['onUpload']
+  > = useCallback(
+    async (files, options) => {
+      if (
+        (conversationId === '' || isNew === 'true') &&
+        Array.isArray(files) &&
+        files.length
+      ) {
+        const currentConversationId = generateConversationId();
+
+        if (conversationId === '') {
+          setConversationBoth(currentConversationId, 'true');
+        }
+
+        const data = await setConversation(
+          files[0].name,
+          true,
+          conversationId || currentConversationId,
+        );
+        if (data.code === 0) {
+          setIsNew('');
+          handleUploadFile(files, options, data.data?.id);
+        }
+      } else {
+        handleUploadFile(files, options);
+      }
+    },
+    [
+      conversationId,
+      handleUploadFile,
+      isNew,
+      setConversation,
+      setConversationBoth,
+      setIsNew,
+    ],
+  );
+
+  const clearFiles = useCallback(() => {
+    setCurrentFiles([]);
     setFileMap(new Map());
   }, []);
 
@@ -45,17 +95,17 @@ export function useUploadFile() {
       }
       const id = fileMap.get(file);
       if (id) {
-        setFileIds((list) => list.filter((item) => item !== id));
+        setCurrentFiles((list) => list.filter((item) => item !== id));
       }
     },
     [cancel, fileMap, loading],
   );
 
   return {
-    handleUploadFile,
-    clearFileIds,
-    fileIds,
+    handleUploadFile: createConversationBeforeUploadFile,
+    files: currentFiles,
     isUploading: loading,
     removeFile,
+    clearFiles: clearFiles,
   };
 }

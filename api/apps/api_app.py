@@ -18,8 +18,7 @@ from quart import request
 from api.db.db_models import APIToken
 from api.db.services.api_service import APITokenService, API4ConversationService
 from api.db.services.user_service import UserTenantService
-from api.utils.api_utils import server_error_response, get_data_error_result, get_json_result, validate_request, \
-    generate_confirmation_token
+from api.utils.api_utils import generate_confirmation_token, get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from common.time_utils import current_timestamp, datetime_format
 from api.apps import login_required, current_user
 
@@ -27,7 +26,7 @@ from api.apps import login_required, current_user
 @manager.route('/new_token', methods=['POST'])  # noqa: F821
 @login_required
 async def new_token():
-    req = await request.json
+    req = await get_request_json()
     try:
         tenants = UserTenantService.query(user_id=current_user.id)
         if not tenants:
@@ -73,7 +72,7 @@ def token_list():
 @validate_request("tokens", "tenant_id")
 @login_required
 async def rm():
-    req = await request.json
+    req = await get_request_json()
     try:
         for token in req["tokens"]:
             APITokenService.filter_delete(
@@ -116,4 +115,3 @@ def stats():
         return get_json_result(data=res)
     except Exception as e:
         return server_error_response(e)
-

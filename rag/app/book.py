@@ -23,7 +23,7 @@ from rag.app import naive
 from rag.app.naive import by_plaintext, PARSERS
 from rag.nlp import bullets_category, is_english,remove_contents_table, \
     hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, \
-    tokenize_chunks
+    tokenize_chunks, attach_media_context
 from rag.nlp import rag_tokenizer
 from deepdoc.parser import PdfParser, HtmlParser
 from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper
@@ -70,7 +70,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     """
         Supported file formats are docx, pdf, txt.
         Since a book is long and not all the parts are useful, if it's a PDF,
-        please setup the page ranges for every book in order eliminate negative effects and save elapsed computing time.
+        please set up the page ranges for every book in order eliminate negative effects and save elapsed computing time.
     """
     parser_config = kwargs.get(
         "parser_config", {
@@ -143,13 +143,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        binary = BytesIO(binary)
-        doc_parsed = parser.from_buffer(binary)
-        sections = doc_parsed['content'].split('\n')
-        sections = [(line, "") for line in sections if line]
-        remove_contents_table(sections, eng=is_english(
-            random_choices([t for t, _ in sections], k=200)))
-        callback(0.8, "Finish parsing.")
+        with BytesIO(binary) as binary:
+            binary = BytesIO(binary)
+            doc_parsed = parser.from_buffer(binary)
+            sections = doc_parsed['content'].split('\n')
+            sections = [(line, "") for line in sections if line]
+            remove_contents_table(sections, eng=is_english(
+                random_choices([t for t, _ in sections], k=200)))
+            callback(0.8, "Finish parsing.")
 
     else:
         raise NotImplementedError(
@@ -175,6 +176,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     res = tokenize_table(tbls, doc, eng)
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
+    table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
+    image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
+    if table_ctx or image_ctx:
+        attach_media_context(res, table_ctx, image_ctx)
 
     return res
 

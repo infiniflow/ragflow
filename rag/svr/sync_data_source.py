@@ -19,6 +19,7 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
 
+import asyncio
 import copy
 import faulthandler
 import logging
@@ -31,16 +32,15 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
-import trio
-
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.config_utils import show_configs
-from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector
+from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector, DropboxConnector, WebDAVConnector
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
+from common.data_source.gmail_connector import GmailConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.data_source.utils import load_all_docs_from_checkpoint_connector
 from common.log_utils import init_root_logger
@@ -48,7 +48,7 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
 
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
-task_limiter = trio.Semaphore(MAX_CONCURRENT_TASKS)
+task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
 
 
 class SyncBase:
@@ -59,52 +59,104 @@ class SyncBase:
 
     async def __call__(self, task: dict):
         SyncLogsService.start(task["id"], task["connector_id"])
-        try:
-            async with task_limiter:
-                with trio.fail_after(task["timeout_secs"]):
-                    document_batch_generator = await self._generate(task)
-                    doc_num = 0
-                    next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
-                    if task["poll_range_start"]:
-                        next_update = task["poll_range_start"]
-                    for document_batch in document_batch_generator:
-                        if not document_batch:
-                            continue
-                        min_update = min([doc.doc_updated_at for doc in document_batch])
-                        max_update = max([doc.doc_updated_at for doc in document_batch])
-                        next_update = max([next_update, max_update])
-                        docs = [
-                            {
-                                "id": doc.id,
-                                "connector_id": task["connector_id"],
-                                "source": self.SOURCE_NAME,
-                                "semantic_identifier": doc.semantic_identifier,
-                                "extension": doc.extension,
-                                "size_bytes": doc.size_bytes,
-                                "doc_updated_at": doc.doc_updated_at,
-                                "blob": doc.blob,
-                            }
-                            for doc in document_batch
-                        ]
 
-                        e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
-                        err, dids = SyncLogsService.duplicate_and_parse(kb, docs, task["tenant_id"], f"{self.SOURCE_NAME}/{task['connector_id']}", task["auto_parse"])
-                        SyncLogsService.increase_docs(task["id"], min_update, max_update, len(docs), "\n".join(err), len(err))
-                        doc_num += len(docs)
+        async with task_limiter:
+            try:
+                await asyncio.wait_for(self._run_task_logic(task), timeout=task["timeout_secs"])
 
-                    prefix = "[Jira] " if self.SOURCE_NAME == FileSource.JIRA else ""
-                    logging.info(f"{prefix}{doc_num} docs synchronized till {next_update}")
-                    SyncLogsService.done(task["id"], task["connector_id"])
-                    task["poll_range_start"] = next_update
+            except asyncio.TimeoutError:
+                msg = f"Task timeout after {task['timeout_secs']} seconds"
+                SyncLogsService.update_by_id(task["id"], {"status": TaskStatus.FAIL, "error_msg": msg})
+                return
 
-        except Exception as ex:
-            msg = "\n".join(["".join(traceback.format_exception_only(None, ex)).strip(), "".join(traceback.format_exception(None, ex, ex.__traceback__)).strip()])
-            SyncLogsService.update_by_id(task["id"], {"status": TaskStatus.FAIL, "full_exception_trace": msg, "error_msg": str(ex)})
+            except Exception as ex:
+                msg = "\n".join([
+                    "".join(traceback.format_exception_only(None, ex)).strip(),
+                    "".join(traceback.format_exception(None, ex, ex.__traceback__)).strip(),
+                ])
+                SyncLogsService.update_by_id(task["id"], {
+                    "status": TaskStatus.FAIL,
+                    "full_exception_trace": msg,
+                    "error_msg": str(ex)
+                })
+                return
 
         SyncLogsService.schedule(task["connector_id"], task["kb_id"], task["poll_range_start"])
 
+    async def _run_task_logic(self, task: dict):
+        document_batch_generator = await self._generate(task)
+
+        doc_num = 0
+        failed_docs = 0
+        next_update = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+        if task["poll_range_start"]:
+            next_update = task["poll_range_start"]
+
+        async for document_batch in document_batch_generator:   # 如果是 async generator
+            if not document_batch:
+                continue
+
+            min_update = min(doc.doc_updated_at for doc in document_batch)
+            max_update = max(doc.doc_updated_at for doc in document_batch)
+            next_update = max(next_update, max_update)
+
+            docs = []
+            for doc in document_batch:
+                d = {
+                    "id": doc.id,
+                    "connector_id": task["connector_id"],
+                    "source": self.SOURCE_NAME,
+                    "semantic_identifier": doc.semantic_identifier,
+                    "extension": doc.extension,
+                    "size_bytes": doc.size_bytes,
+                    "doc_updated_at": doc.doc_updated_at,
+                    "blob": doc.blob,
+                }
+                if doc.metadata:
+                    d["metadata"] = doc.metadata
+                docs.append(d)
+
+            try:
+                e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
+                err, dids = SyncLogsService.duplicate_and_parse(
+                    kb, docs, task["tenant_id"],
+                    f"{self.SOURCE_NAME}/{task['connector_id']}",
+                    task["auto_parse"]
+                )
+                SyncLogsService.increase_docs(
+                    task["id"], min_update, max_update,
+                    len(docs), "\n".join(err), len(err)
+                )
+
+                doc_num += len(docs)
+
+            except Exception as batch_ex:
+                msg = str(batch_ex)
+                code = getattr(batch_ex, "args", [None])[0]
+
+                if code == 1267 or "collation" in msg.lower():
+                    logging.warning(f"Skipping {len(docs)} document(s) due to collation conflict")
+                else:
+                    logging.error(f"Error processing batch: {msg}")
+
+                failed_docs += len(docs)
+                continue
+
+        prefix = self._get_source_prefix()
+        if failed_docs > 0:
+            logging.info(f"{prefix}{doc_num} docs synchronized till {next_update} ({failed_docs} skipped)")
+        else:
+            logging.info(f"{prefix}{doc_num} docs synchronized till {next_update}")
+
+        SyncLogsService.done(task["id"], task["connector_id"])
+        task["poll_range_start"] = next_update
+
     async def _generate(self, task: dict):
         raise NotImplementedError
+
+    def _get_source_prefix(self):
+        return ""
 
 
 class S3(SyncBase):
@@ -131,11 +183,30 @@ class Confluence(SyncBase):
         from common.data_source.config import DocumentSource
         from common.data_source.interfaces import StaticCredentialsProvider
 
+        index_mode = (self.conf.get("index_mode") or "everything").lower()
+        if index_mode not in {"everything", "space", "page"}:
+            index_mode = "everything"
+
+        space = ""
+        page_id = ""
+
+        index_recursively = False
+        if index_mode == "space":
+            space = (self.conf.get("space") or "").strip()
+            if not space:
+                raise ValueError("Space Key is required when indexing a specific Confluence space.")
+        elif index_mode == "page":
+            page_id = (self.conf.get("page_id") or "").strip()
+            if not page_id:
+                raise ValueError("Page ID is required when indexing a specific Confluence page.")
+            index_recursively = bool(self.conf.get("index_recursively", False))
+
         self.connector = ConfluenceConnector(
             wiki_base=self.conf["wiki_base"],
-            space=self.conf.get("space", ""),
             is_cloud=self.conf.get("is_cloud", True),
-            # page_id=self.conf.get("page_id", ""),
+            space=space,
+            page_id=page_id,
+            index_recursively=index_recursively,
         )
 
         credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"], connector_name=DocumentSource.CONFLUENCE, credential_json=self.conf["credentials"])
@@ -208,7 +279,85 @@ class Gmail(SyncBase):
     SOURCE_NAME: str = FileSource.GMAIL
 
     async def _generate(self, task: dict):
-        pass
+        # Gmail sync reuses the generic LoadConnector/PollConnector interface
+        # implemented by common.data_source.gmail_connector.GmailConnector.
+        #
+        # Config expectations (self.conf):
+        #   credentials: Gmail / Workspace OAuth JSON (with primary admin email)
+        #   batch_size:  optional, defaults to INDEX_BATCH_SIZE
+        batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+
+        self.connector = GmailConnector(batch_size=batch_size)
+
+        credentials = self.conf.get("credentials")
+        if not credentials:
+            raise ValueError("Gmail connector is missing credentials.")
+
+        new_credentials = self.connector.load_credentials(credentials)
+        if new_credentials:
+            # Persist rotated / refreshed credentials back to connector config
+            try:
+                updated_conf = copy.deepcopy(self.conf)
+                updated_conf["credentials"] = new_credentials
+                ConnectorService.update_by_id(task["connector_id"], {"config": updated_conf})
+                self.conf = updated_conf
+                logging.info(
+                    "Persisted refreshed Gmail credentials for connector %s",
+                    task["connector_id"],
+                )
+            except Exception:
+                logging.exception(
+                    "Failed to persist refreshed Gmail credentials for connector %s",
+                    task["connector_id"],
+                )
+
+        # Decide between full reindex and incremental polling by time range.
+        if task["reindex"] == "1" or not task.get("poll_range_start"):
+            start_time = None
+            end_time = None
+            begin_info = "totally"
+            document_generator = self.connector.load_from_state()
+        else:
+            poll_start = task["poll_range_start"]
+            # Defensive: if poll_start is somehow None, fall back to full load
+            if poll_start is None:
+                start_time = None
+                end_time = None
+                begin_info = "totally"
+                document_generator = self.connector.load_from_state()
+            else:
+                start_time = poll_start.timestamp()
+                end_time = datetime.now(timezone.utc).timestamp()
+                begin_info = f"from {poll_start}"
+                document_generator = self.connector.poll_source(start_time, end_time)
+
+        try:
+            admin_email = self.connector.primary_admin_email
+        except RuntimeError:
+            admin_email = "unknown"
+        logging.info(f"Connect to Gmail as {admin_email} {begin_info}")
+        return document_generator
+
+
+class Dropbox(SyncBase):
+    SOURCE_NAME: str = FileSource.DROPBOX
+
+    async def _generate(self, task: dict):
+        self.connector = DropboxConnector(batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE))
+        self.connector.load_credentials(self.conf["credentials"])
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task["poll_range_start"]
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(), datetime.now(timezone.utc).timestamp()
+            )
+            begin_info = f"from {poll_start}"
+
+        logging.info(f"[Dropbox] Connect to Dropbox {begin_info}")
+        return document_generator
 
 
 class GoogleDrive(SyncBase):
@@ -300,6 +449,9 @@ class GoogleDrive(SyncBase):
 
 class Jira(SyncBase):
     SOURCE_NAME: str = FileSource.JIRA
+
+    def _get_source_prefix(self):
+        return "[Jira]"
 
     async def _generate(self, task: dict):
         connector_kwargs = {
@@ -412,6 +564,36 @@ class Teams(SyncBase):
         pass
 
 
+class WebDAV(SyncBase):
+    SOURCE_NAME: str = FileSource.WEBDAV
+
+    async def _generate(self, task: dict):
+        self.connector = WebDAVConnector(
+            base_url=self.conf["base_url"],
+            remote_path=self.conf.get("remote_path", "/")
+        )
+        self.connector.load_credentials(self.conf["credentials"])
+        
+        logging.info(f"Task info: reindex={task['reindex']}, poll_range_start={task['poll_range_start']}")
+        
+        if task["reindex"]=="1" or not task["poll_range_start"]:
+            logging.info("Using load_from_state (full sync)")
+            document_batch_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            start_ts = task["poll_range_start"].timestamp()
+            end_ts = datetime.now(timezone.utc).timestamp()
+            logging.info(f"Polling WebDAV from {task['poll_range_start']} (ts: {start_ts}) to now (ts: {end_ts})")
+            document_batch_generator = self.connector.poll_source(start_ts, end_ts)
+            begin_info = "from {}".format(task["poll_range_start"])
+            
+        logging.info("Connect to WebDAV: {}(path: {}) {}".format(
+            self.conf["base_url"],
+            self.conf.get("remote_path", "/"),
+            begin_info
+        ))
+        return document_batch_generator
+        
 class Moodle(SyncBase):
     SOURCE_NAME: str = FileSource.MOODLE
 
@@ -454,28 +636,40 @@ func_factory = {
     FileSource.SHAREPOINT: SharePoint,
     FileSource.SLACK: Slack,
     FileSource.TEAMS: Teams,
-    FileSource.MOODLE: Moodle
+    FileSource.MOODLE: Moodle,
+    FileSource.DROPBOX: Dropbox,
+    FileSource.WEBDAV: WebDAV,
 }
 
 
 async def dispatch_tasks():
-    async with trio.open_nursery() as nursery:
-        while True:
-            try:
-                list(SyncLogsService.list_sync_tasks()[0])
-                break
-            except Exception as e:
-                logging.warning(f"DB is not ready yet: {e}")
-                await trio.sleep(3)
+    while True:
+        try:
+            list(SyncLogsService.list_sync_tasks()[0])
+            break
+        except Exception as e:
+            logging.warning(f"DB is not ready yet: {e}")
+            await asyncio.sleep(3)
 
-        for task in SyncLogsService.list_sync_tasks()[0]:
-            if task["poll_range_start"]:
-                task["poll_range_start"] = task["poll_range_start"].astimezone(timezone.utc)
-            if task["poll_range_end"]:
-                task["poll_range_end"] = task["poll_range_end"].astimezone(timezone.utc)
-            func = func_factory[task["source"]](task["config"])
-            nursery.start_soon(func, task)
-    await trio.sleep(1)
+    tasks = []
+    for task in SyncLogsService.list_sync_tasks()[0]:
+        if task["poll_range_start"]:
+            task["poll_range_start"] = task["poll_range_start"].astimezone(timezone.utc)
+        if task["poll_range_end"]:
+            task["poll_range_end"] = task["poll_range_end"].astimezone(timezone.utc)
+
+        func = func_factory[task["source"]](task["config"])
+        tasks.append(asyncio.create_task(func(task)))
+
+    try:
+        await asyncio.gather(*tasks, return_exceptions=False)
+    except Exception as e:
+        logging.error(f"Error in dispatch_tasks: {e}")
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    await asyncio.sleep(1)
 
 
 stop_event = threading.Event()
@@ -520,4 +714,4 @@ async def main():
 if __name__ == "__main__":
     faulthandler.enable()
     init_root_logger(CONSUMER_NAME)
-    trio.run(main)
+    asyncio.run(main())

@@ -1,3 +1,7 @@
+import {
+  ConfirmDeleteDialog,
+  ConfirmDeleteDialogNode,
+} from '@/components/confirm-delete-dialog';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useListTenantUser } from '@/hooks/user-setting-hooks';
+import { useListTenantUser } from '@/hooks/use-user-setting-request';
 import { formatDate } from '@/utils/date';
 import { upperFirst } from 'lodash';
 import { ArrowDown, ArrowUp, ArrowUpDown, Trash2 } from 'lucide-react';
@@ -26,7 +30,7 @@ const ColorMap: Record<string, string> = {
 
 const UserTable = ({ searchUser }: { searchUser: string }) => {
   const { data, loading } = useListTenantUser();
-  const { handleDeleteTenantUser } = useHandleDeleteUser();
+  const { deleteTenantUser } = useHandleDeleteUser();
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
   const { t } = useTranslation();
   const sortedData = useMemo(() => {
@@ -134,14 +138,35 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
                   )}
                 </TableCell>
                 <TableCell className="p-4">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 p-0 hover:bg-state-error-5 hover:text-state-error"
-                    onClick={handleDeleteTenantUser(record.user_id)}
+                  <ConfirmDeleteDialog
+                    title={t('deleteModal.delMember')}
+                    onOk={async () => {
+                      await deleteTenantUser({
+                        userId: record.user_id,
+                      });
+                      return;
+                    }}
+                    content={{
+                      node: (
+                        <ConfirmDeleteDialogNode
+                          avatar={{
+                            avatar: record.avatar,
+                            name: record.nickname,
+                            isPerson: true,
+                          }}
+                          name={record.email}
+                        ></ConfirmDeleteDialogNode>
+                      ),
+                    }}
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 p-0 hover:bg-state-error-5 hover:text-state-error"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </ConfirmDeleteDialog>
                 </TableCell>
               </TableRow>
             ))

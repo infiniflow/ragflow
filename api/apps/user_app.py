@@ -39,6 +39,7 @@ from common.connection_utils import construct_response
 from api.utils.api_utils import (
     get_data_error_result,
     get_json_result,
+    get_request_json,
     server_error_response,
     validate_request,
 )
@@ -57,6 +58,7 @@ from api.utils.web_utils import (
     captcha_key,
 )
 from common import settings
+from common.http_client import async_request
 
 
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
@@ -90,7 +92,7 @@ async def login():
         schema:
           type: object
     """
-    json_body = await request.json
+    json_body = await get_request_json()
     if not json_body:
         return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="Unauthorized!")
 
@@ -121,8 +123,8 @@ async def login():
         response_data = user.to_json()
         user.access_token = get_uuid()
         login_user(user)
-        user.update_time = (current_timestamp(),)
-        user.update_date = (datetime_format(datetime.now()),)
+        user.update_time = current_timestamp()
+        user.update_date = datetime_format(datetime.now())
         user.save()
         msg = "Welcome back!"
 
@@ -136,7 +138,7 @@ async def login():
 
 
 @manager.route("/login/channels", methods=["GET"])  # noqa: F821
-def get_login_channels():
+async def get_login_channels():
     """
     Get all supported authentication channels.
     """
@@ -157,7 +159,7 @@ def get_login_channels():
 
 
 @manager.route("/login/<channel>", methods=["GET"])  # noqa: F821
-def oauth_login(channel):
+async def oauth_login(channel):
     channel_config = settings.OAUTH_CONFIG.get(channel)
     if not channel_config:
         raise ValueError(f"Invalid channel name: {channel}")
@@ -170,7 +172,7 @@ def oauth_login(channel):
 
 
 @manager.route("/oauth/callback/<channel>", methods=["GET"])  # noqa: F821
-def oauth_callback(channel):
+async def oauth_callback(channel):
     """
     Handle the OAuth/OIDC callback for various channels dynamically.
     """
@@ -192,7 +194,10 @@ def oauth_callback(channel):
             return redirect("/?error=missing_code")
 
         # Exchange authorization code for access token
-        token_info = auth_cli.exchange_code_for_token(code)
+        if hasattr(auth_cli, "async_exchange_code_for_token"):
+            token_info = await auth_cli.async_exchange_code_for_token(code)
+        else:
+            token_info = auth_cli.exchange_code_for_token(code)
         access_token = token_info.get("access_token")
         if not access_token:
             return redirect("/?error=token_failed")
@@ -200,7 +205,10 @@ def oauth_callback(channel):
         id_token = token_info.get("id_token")
 
         # Fetch user info
-        user_info = auth_cli.fetch_user_info(access_token, id_token=id_token)
+        if hasattr(auth_cli, "async_fetch_user_info"):
+            user_info = await auth_cli.async_fetch_user_info(access_token, id_token=id_token)
+        else:
+            user_info = auth_cli.fetch_user_info(access_token, id_token=id_token)
         if not user_info.email:
             return redirect("/?error=email_missing")
 
@@ -259,7 +267,7 @@ def oauth_callback(channel):
 
 
 @manager.route("/github_callback", methods=["GET"])  # noqa: F821
-def github_callback():
+async def github_callback():
     """
     **Deprecated**, Use `/oauth/callback/<channel>` instead.
 
@@ -279,9 +287,8 @@ def github_callback():
         schema:
           type: object
     """
-    import requests
-
-    res = requests.post(
+    res = await async_request(
+        "POST",
         settings.GITHUB_OAUTH.get("url"),
         data={
             "client_id": settings.GITHUB_OAUTH.get("client_id"),
@@ -299,7 +306,7 @@ def github_callback():
 
     session["access_token"] = res["access_token"]
     session["access_token_from"] = "github"
-    user_info = user_info_from_github(session["access_token"])
+    user_info = await user_info_from_github(session["access_token"])
     email_address = user_info["email"]
     users = UserService.query(email=email_address)
     user_id = get_uuid()
@@ -348,7 +355,7 @@ def github_callback():
 
 
 @manager.route("/feishu_callback", methods=["GET"])  # noqa: F821
-def feishu_callback():
+async def feishu_callback():
     """
     Feishu OAuth callback endpoint.
     ---
@@ -366,9 +373,8 @@ def feishu_callback():
         schema:
           type: object
     """
-    import requests
-
-    app_access_token_res = requests.post(
+    app_access_token_res = await async_request(
+        "POST",
         settings.FEISHU_OAUTH.get("app_access_token_url"),
         data=json.dumps(
             {
@@ -382,7 +388,8 @@ def feishu_callback():
     if app_access_token_res["code"] != 0:
         return redirect("/?error=%s" % app_access_token_res)
 
-    res = requests.post(
+    res = await async_request(
+        "POST",
         settings.FEISHU_OAUTH.get("user_access_token_url"),
         data=json.dumps(
             {
@@ -403,7 +410,7 @@ def feishu_callback():
         return redirect("/?error=contact:user.email:readonly not in scope")
     session["access_token"] = res["data"]["access_token"]
     session["access_token_from"] = "feishu"
-    user_info = user_info_from_feishu(session["access_token"])
+    user_info = await user_info_from_feishu(session["access_token"])
     email_address = user_info["email"]
     users = UserService.query(email=email_address)
     user_id = get_uuid()
@@ -451,36 +458,34 @@ def feishu_callback():
     return redirect("/?auth=%s" % user.get_id())
 
 
-def user_info_from_feishu(access_token):
-    import requests
-
+async def user_info_from_feishu(access_token):
     headers = {
         "Content-Type": "application/json; charset=utf-8",
         "Authorization": f"Bearer {access_token}",
     }
-    res = requests.get("https://open.feishu.cn/open-apis/authen/v1/user_info", headers=headers)
+    res = await async_request("GET", "https://open.feishu.cn/open-apis/authen/v1/user_info", headers=headers)
     user_info = res.json()["data"]
     user_info["email"] = None if user_info.get("email") == "" else user_info["email"]
     return user_info
 
 
-def user_info_from_github(access_token):
-    import requests
-
+async def user_info_from_github(access_token):
     headers = {"Accept": "application/json", "Authorization": f"token {access_token}"}
-    res = requests.get(f"https://api.github.com/user?access_token={access_token}", headers=headers)
+    res = await async_request("GET", f"https://api.github.com/user?access_token={access_token}", headers=headers)
     user_info = res.json()
-    email_info = requests.get(
+    email_info_response = await async_request(
+        "GET",
         f"https://api.github.com/user/emails?access_token={access_token}",
         headers=headers,
-    ).json()
+    )
+    email_info = email_info_response.json()
     user_info["email"] = next((email for email in email_info if email["primary"]), None)["email"]
     return user_info
 
 
 @manager.route("/logout", methods=["GET"])  # noqa: F821
 @login_required
-def log_out():
+async def log_out():
     """
     User logout endpoint.
     ---
@@ -531,7 +536,7 @@ async def setting_user():
           type: object
     """
     update_dict = {}
-    request_data = await request.json
+    request_data = await get_request_json()
     if request_data.get("password"):
         new_password = request_data.get("new_password")
         if not check_password_hash(current_user.password, decrypt(request_data["password"])):
@@ -570,7 +575,7 @@ async def setting_user():
 
 @manager.route("/info", methods=["GET"])  # noqa: F821
 @login_required
-def user_profile():
+async def user_profile():
     """
     Get user profile information.
     ---
@@ -698,7 +703,7 @@ async def user_add():
             code=RetCode.OPERATING_ERROR,
         )
 
-    req = await request.json
+    req = await get_request_json()
     email_address = req["email"]
 
     # Validate the email address
@@ -755,7 +760,7 @@ async def user_add():
 
 @manager.route("/tenant_info", methods=["GET"])  # noqa: F821
 @login_required
-def tenant_info():
+async def tenant_info():
     """
     Get tenant information.
     ---
@@ -831,14 +836,14 @@ async def set_tenant_info():
         schema:
           type: object
     """
-    req = await request.json
+    req = await get_request_json()
     try:
         tid = req.pop("tenant_id")
         TenantService.update_by_id(tid, req)
         return get_json_result(data=True)
     except Exception as e:
         return server_error_response(e)
-        
+
 
 @manager.route("/forget/captcha", methods=["GET"])  # noqa: F821
 async def forget_get_captcha():
@@ -875,7 +880,7 @@ async def forget_send_otp():
     - Verify the image captcha stored at captcha:{email} (case-insensitive).
     - On success, generate an email OTP (A–Z with length = OTP_LENGTH), store hash + salt (and timestamp) in Redis with TTL, reset attempts and cooldown, and send the OTP via email.
     """
-    req = await request.get_json()
+    req = await get_request_json()
     email = req.get("email") or ""
     captcha = (req.get("captcha") or "").strip()
 
@@ -931,7 +936,7 @@ async def forget_send_otp():
             )
         except Exception:
             return get_json_result(data=False, code=RetCode.SERVER_ERROR, message="failed to send email")
-        
+
     return get_json_result(data=True, code=RetCode.SUCCESS, message="verification passed, email sent")
 
 
@@ -941,7 +946,7 @@ async def forget():
     POST: Verify email + OTP and reset password, then log the user in.
     Request JSON: { email, otp, new_password, confirm_new_password }
     """
-    req = await request.get_json()
+    req = await get_request_json()
     email = req.get("email") or ""
     otp = (req.get("otp") or "").strip()
     new_pwd = req.get("new_password")
@@ -1002,8 +1007,8 @@ async def forget():
     # Auto login (reuse login flow)
     user.access_token = get_uuid()
     login_user(user)
-    user.update_time = (current_timestamp(),)
-    user.update_date = (datetime_format(datetime.now()),)
+    user.update_time = current_timestamp()
+    user.update_date = datetime_format(datetime.now())
     user.save()
     msg = "Password reset successful. Logged in."
-    return construct_response(data=user.to_json(), auth=user.get_id(), message=msg)
+    return await construct_response(data=user.to_json(), auth=user.get_id(), message=msg)

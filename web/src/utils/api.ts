@@ -42,11 +42,15 @@ export default {
   dataSourceRebuild: (id: string) => `${api_host}/connector/${id}/rebuild`,
   dataSourceLogs: (id: string) => `${api_host}/connector/${id}/logs`,
   dataSourceDetail: (id: string) => `${api_host}/connector/${id}`,
-  googleDriveWebAuthStart: `${api_host}/connector/google-drive/oauth/web/start`,
-  googleDriveWebAuthResult: `${api_host}/connector/google-drive/oauth/web/result`,
+  googleWebAuthStart: (type: 'google-drive' | 'gmail') =>
+    `${api_host}/connector/google/oauth/web/start?type=${type}`,
+  googleWebAuthResult: (type: 'google-drive' | 'gmail') =>
+    `${api_host}/connector/google/oauth/web/result?type=${type}`,
 
   // plugin
   llm_tools: `${api_host}/plugin/llm_tools`,
+
+  sequence2txt: `${api_host}/conversation/sequence2txt`,
 
   // knowledge base
 
@@ -105,7 +109,7 @@ export default {
   document_upload: `${api_host}/document/upload`,
   web_crawl: `${api_host}/document/web_crawl`,
   document_infos: `${api_host}/document/infos`,
-  upload_and_parse: `${api_host}/document/upload_and_parse`,
+  upload_and_parse: `${api_host}/document/upload_info`,
   parse: `${api_host}/document/parse`,
   setMeta: `${api_host}/document/set_meta`,
   get_dataset_filter: `${api_host}/document/filter`,
@@ -117,7 +121,8 @@ export default {
   listDialog: `${api_host}/dialog/list`,
   setConversation: `${api_host}/conversation/set`,
   getConversation: `${api_host}/conversation/get`,
-  getConversationSSE: `${api_host}/conversation/getsse`,
+  getConversationSSE: (dialogId: string) =>
+    `${api_host}/conversation/getsse/${dialogId}`,
   listConversation: `${api_host}/conversation/list`,
   removeConversation: `${api_host}/conversation/rm`,
   completeConversation: `${api_host}/conversation/completion`,
@@ -167,7 +172,7 @@ export default {
   listTemplates: `${api_host}/canvas/templates`,
   listCanvas: `${api_host}/canvas/list`,
   getCanvas: `${api_host}/canvas/get`,
-  getCanvasSSE: `${api_host}/canvas/getsse`,
+  getCanvasSSE: (canvasId: string) => `${api_host}/canvas/getsse/${canvasId}`,
   removeCanvas: `${api_host}/canvas/rm`,
   setCanvas: `${api_host}/canvas/set`,
   settingCanvas: `${api_host}/canvas/setting`,
@@ -220,6 +225,17 @@ export default {
   mindmapShare: `${ExternalApi}${api_host}/searchbots/mindmap`,
   getRelatedQuestionsShare: `${ExternalApi}${api_host}/searchbots/related_questions`,
   retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
+
+  // memory
+  createMemory: `${api_host}/memories`,
+  getMemoryList: `${api_host}/memories`,
+  getMemoryConfig: (id: string) => `${api_host}/memories/${id}/config`,
+  deleteMemory: (id: string) => `${api_host}/memory/rm/${id}`,
+  getMemoryDetail: (id: string) => `${api_host}/memories/${id}`,
+  updateMemorySetting: (id: string) => `${api_host}/memories/${id}`,
+  deleteMemoryMessage: (id: string) => `${api_host}/message/rm/${id}`,
+  getMessageContent: (message_id: string) =>
+    `${api_host}/messages/${message_id}/content`,
 
   // data pipeline
   fetchDataflow: (id: string) => `${api_host}/dataflow/get/${id}`,

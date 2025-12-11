@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import asyncio
 import re
 import time
 from abc import ABC
@@ -23,7 +24,6 @@ import os
 import logging
 from typing import Any, List, Union
 import pandas as pd
-import trio
 from agent import settings
 from common.connection_utils import timeout
 
@@ -392,7 +392,7 @@ class ComponentParamBase(ABC):
 
 class ComponentBase(ABC):
     component_name: str
-    thread_limiter = trio.CapacityLimiter(int(os.environ.get('MAX_CONCURRENT_CHATS', 10)))
+    thread_limiter = asyncio.Semaphore(int(os.environ.get("MAX_CONCURRENT_CHATS", 10)))
     variable_ref_patt = r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
 
     def __str__(self):
@@ -435,6 +435,34 @@ class ComponentBase(ABC):
         self.set_output("_created_time", time.perf_counter())
         try:
             self._invoke(**kwargs)
+        except Exception as e:
+            if self.get_exception_default_value():
+                self.set_exception_default_value()
+            else:
+                self.set_output("_ERROR", str(e))
+            logging.exception(e)
+        self._param.debug_inputs = {}
+        self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
+        return self.output()
+
+    async def invoke_async(self, **kwargs) -> dict[str, Any]:
+        """
+        Async wrapper for component invocation.
+        Prefers coroutine `_invoke_async` if present; otherwise falls back to `_invoke`.
+        Handles timing and error recording consistently with `invoke`.
+        """
+        self.set_output("_created_time", time.perf_counter())
+        try:
+            if self.check_if_canceled("Component processing"):
+                return
+
+            fn_async = getattr(self, "_invoke_async", None)
+            if fn_async and asyncio.iscoroutinefunction(fn_async):
+                await fn_async(**kwargs)
+            elif asyncio.iscoroutinefunction(self._invoke):
+                await self._invoke(**kwargs)
+            else:
+                await asyncio.to_thread(self._invoke, **kwargs)
         except Exception as e:
             if self.get_exception_default_value():
                 self.set_exception_default_value()

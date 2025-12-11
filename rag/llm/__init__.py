@@ -51,6 +51,10 @@ class SupportedLiteLLMProvider(StrEnum):
     AI_302 = "302.AI"
     JiekouAI = "Jiekou.AI"
     BurnCloud = "BurnCloud"
+    ZHIPU_AI = "ZHIPU-AI"
+    MiniMax = "MiniMax"
+    DeerAPI = "DeerAPI"
+    GPUStack = "GPUStack"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -73,6 +77,9 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Anthropic: "https://api.anthropic.com/",
     SupportedLiteLLMProvider.JiekouAI: "https://api.jiekou.ai/openai",
     SupportedLiteLLMProvider.BurnCloud: "https://ai.burncloud.com/v1",
+    SupportedLiteLLMProvider.ZHIPU_AI: "https://open.bigmodel.cn/api/paas/v4",
+    SupportedLiteLLMProvider.MiniMax: "https://api.minimaxi.com/v1",
+    SupportedLiteLLMProvider.DeerAPI: "https://api.deerapi.com/v1",
 }
 
 
@@ -105,6 +112,10 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.AI_302: "openai/",
     SupportedLiteLLMProvider.JiekouAI: "openai/",
     SupportedLiteLLMProvider.BurnCloud: "openai/",
+    SupportedLiteLLMProvider.ZHIPU_AI: "openai/",
+    SupportedLiteLLMProvider.MiniMax: "openai/",
+    SupportedLiteLLMProvider.DeerAPI: "openai/",
+    SupportedLiteLLMProvider.GPUStack: "openai/",
 }
 
 ChatModel = globals().get("ChatModel", {})
@@ -113,6 +124,7 @@ EmbeddingModel = globals().get("EmbeddingModel", {})
 RerankModel = globals().get("RerankModel", {})
 Seq2txtModel = globals().get("Seq2txtModel", {})
 TTSModel = globals().get("TTSModel", {})
+OcrModel = globals().get("OcrModel", {})
 
 
 MODULE_MAPPING = {
@@ -122,6 +134,7 @@ MODULE_MAPPING = {
     "rerank_model": RerankModel,
     "sequence2txt_model": Seq2txtModel,
     "tts_model": TTSModel,
+    "ocr_model": OcrModel,
 }
 
 package_name = __name__
@@ -163,4 +176,5 @@ __all__ = [
     "RerankModel",
     "Seq2txtModel",
     "TTSModel",
+    "OcrModel",
 ]

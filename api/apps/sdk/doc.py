@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import datetime
+import json
 import logging
 import pathlib
 import re
@@ -33,10 +34,10 @@ from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
-from api.db.services.task_service import TaskService, queue_tasks
+from api.db.services.task_service import TaskService, queue_tasks, cancel_all_task_of
 from api.db.services.dialog_service import meta_filter, convert_conditions
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, \
-    request_json
+    get_request_json
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
@@ -231,7 +232,7 @@ async def update_doc(tenant_id, dataset_id, document_id):
         schema:
           type: object
     """
-    req = await request_json()
+    req = await get_request_json()
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(message="You don't own the dataset.")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
@@ -321,9 +322,7 @@ async def update_doc(tenant_id, dataset_id, document_id):
             try:
                 if not DocumentService.update_by_id(doc.id, {"status": str(status)}):
                     return get_error_data_result(message="Database error (Document update)!")
-
                 settings.docStoreConn.update({"doc_id": doc.id}, {"available_int": status}, search.index_name(kb.tenant_id), doc.kb_id)
-                return get_result(data=True)
             except Exception as e:
                 return server_error_response(e)
 
@@ -350,12 +349,10 @@ async def update_doc(tenant_id, dataset_id, document_id):
     }
     renamed_doc = {}
     for key, value in doc.to_dict().items():
-        if key == "run":
-            renamed_doc["run"] = run_mapping.get(str(value))
         new_key = key_mapping.get(key, key)
         renamed_doc[new_key] = value
         if key == "run":
-            renamed_doc["run"] = run_mapping.get(value)
+            renamed_doc["run"] = run_mapping.get(str(value))
 
     return get_result(data=renamed_doc)
 
@@ -536,7 +533,7 @@ def list_docs(dataset_id, tenant_id):
       return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
     q = request.args
-    document_id = q.get("id")  
+    document_id = q.get("id")
     name        = q.get("name")
 
     if document_id and not DocumentService.query(id=document_id, kb_id=dataset_id):
@@ -545,23 +542,39 @@ def list_docs(dataset_id, tenant_id):
         return get_error_data_result(message=f"You don't own the document {name}.")
 
     page        = int(q.get("page", 1))
-    page_size   = int(q.get("page_size", 30))  
+    page_size   = int(q.get("page_size", 30))
     orderby     = q.get("orderby", "create_time")
     desc        = str(q.get("desc", "true")).strip().lower() != "false"
     keywords    = q.get("keywords", "")
 
     # filters - align with OpenAPI parameter names
-    suffix               = q.getlist("suffix") 
-    run_status           = q.getlist("run")   
-    create_time_from     = int(q.get("create_time_from", 0))  
-    create_time_to       = int(q.get("create_time_to", 0))    
+    suffix               = q.getlist("suffix")
+    run_status           = q.getlist("run")
+    create_time_from     = int(q.get("create_time_from", 0))
+    create_time_to       = int(q.get("create_time_to", 0))
+    metadata_condition_raw = q.get("metadata_condition")
+    metadata_condition = {}
+    if metadata_condition_raw:
+        try:
+            metadata_condition = json.loads(metadata_condition_raw)
+        except Exception:
+            return get_error_data_result(message="metadata_condition must be valid JSON.")
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_error_data_result(message="metadata_condition must be an object.")
 
-    # map run status (accept text or numeric) - align with API parameter
+    # map run status (text or numeric) - align with API parameter
     run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
     run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
 
+    doc_ids_filter = None
+    if metadata_condition:
+        metas = DocumentService.get_flatted_meta_by_kbs([dataset_id])
+        doc_ids_filter = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+        if metadata_condition.get("conditions") and not doc_ids_filter:
+            return get_result(data={"total": 0, "docs": []})
+
     docs, total = DocumentService.get_list(
-        dataset_id, page, page_size, orderby, desc, keywords, document_id, name, suffix, run_status_converted
+        dataset_id, page, page_size, orderby, desc, keywords, document_id, name, suffix, run_status_converted, doc_ids_filter
     )
 
     # time range filter (0 means no bound)
@@ -575,7 +588,7 @@ def list_docs(dataset_id, tenant_id):
     # rename keys + map run status back to text for output
     key_mapping = {
         "chunk_num": "chunk_count",
-        "kb_id": "dataset_id", 
+        "kb_id": "dataset_id",
         "token_num": "token_count",
         "parser_id": "chunk_method",
     }
@@ -589,6 +602,70 @@ def list_docs(dataset_id, tenant_id):
         output_docs.append(renamed_doc)
 
     return get_result(data={"total": total, "docs": output_docs})
+
+
+@manager.route("/datasets/<dataset_id>/metadata/summary", methods=["GET"])  # noqa: F821
+@token_required
+def metadata_summary(dataset_id, tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+
+    try:
+        summary = DocumentService.get_metadata_summary(dataset_id)
+        return get_result(data={"summary": summary})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/datasets/<dataset_id>/metadata/update", methods=["POST"])  # noqa: F821
+@token_required
+async def metadata_batch_update(dataset_id, tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+
+    req = await get_request_json()
+    selector = req.get("selector", {}) or {}
+    updates = req.get("updates", []) or []
+    deletes = req.get("deletes", []) or []
+
+    if not isinstance(selector, dict):
+        return get_error_data_result(message="selector must be an object.")
+    if not isinstance(updates, list) or not isinstance(deletes, list):
+        return get_error_data_result(message="updates and deletes must be lists.")
+
+    metadata_condition = selector.get("metadata_condition", {}) or {}
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_error_data_result(message="metadata_condition must be an object.")
+
+    document_ids = selector.get("document_ids", []) or []
+    if document_ids and not isinstance(document_ids, list):
+        return get_error_data_result(message="document_ids must be a list.")
+
+    for upd in updates:
+        if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
+            return get_error_data_result(message="Each update requires key and value.")
+    for d in deletes:
+        if not isinstance(d, dict) or not d.get("key"):
+            return get_error_data_result(message="Each delete requires key.")
+
+    kb_doc_ids = KnowledgebaseService.list_documents_by_ids([dataset_id])
+    target_doc_ids = set(kb_doc_ids)
+    if document_ids:
+        invalid_ids = set(document_ids) - set(kb_doc_ids)
+        if invalid_ids:
+            return get_error_data_result(message=f"These documents do not belong to dataset {dataset_id}: {', '.join(invalid_ids)}")
+        target_doc_ids = set(document_ids)
+
+    if metadata_condition:
+        metas = DocumentService.get_flatted_meta_by_kbs([dataset_id])
+        filtered_ids = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
+        target_doc_ids = target_doc_ids & filtered_ids
+        if metadata_condition.get("conditions") and not target_doc_ids:
+            return get_result(data={"updated": 0, "matched_docs": 0})
+
+    target_doc_ids = list(target_doc_ids)
+    updated = DocumentService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
+    return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
 @token_required
@@ -631,7 +708,7 @@ async def delete(tenant_id, dataset_id):
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
-    req = await request_json()
+    req = await get_request_json()
     if not req:
         doc_ids = None
     else:
@@ -741,7 +818,7 @@ async def parse(tenant_id, dataset_id):
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
-    req = await request_json()
+    req = await get_request_json()
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
     doc_list = req.get("document_ids")
@@ -824,7 +901,7 @@ async def stop_parsing(tenant_id, dataset_id):
     """
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
-    req = await request_json()
+    req = await get_request_json()
 
     if not req.get("document_ids"):
         return get_error_data_result("`document_ids` is required")
@@ -839,6 +916,8 @@ async def stop_parsing(tenant_id, dataset_id):
             return get_error_data_result(message=f"You don't own the document {id}.")
         if int(doc[0].progress) == 1 or doc[0].progress == 0:
             return get_error_data_result("Can't stop parsing document with progress at 0 or 1")
+        # Send cancellation signal via Redis to stop background task
+        cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}
         DocumentService.update_by_id(id, info)
         settings.docStoreConn.delete({"doc_id": doc[0].id}, search.index_name(tenant_id), dataset_id)
@@ -892,7 +971,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
         type: string
         required: false
         default: ""
-        description: Chunk Id.
+        description: Chunk id.
       - in: header
         name: Authorization
         type: string
@@ -1096,7 +1175,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     if not doc:
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
-    req = await request_json()
+    req = await get_request_json()
     if not str(req.get("content", "")).strip():
         return get_error_data_result(message="`content` is required")
     if "important_keywords" in req:
@@ -1202,7 +1281,7 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     docs = DocumentService.get_by_ids([document_id])
     if not docs:
         raise LookupError(f"Can't find the document with ID {document_id}!")
-    req = await request_json()
+    req = await get_request_json()
     condition = {"doc_id": document_id}
     if "chunk_ids" in req:
         unique_chunk_ids, duplicate_messages = check_duplicate_ids(req["chunk_ids"], "chunk")
@@ -1288,8 +1367,8 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     if not doc:
         return get_error_data_result(message=f"You don't own the document {document_id}.")
     doc = doc[0]
-    req = await request_json()
-    if "content" in req:
+    req = await get_request_json()
+    if "content" in req and req["content"] is not None:
         content = req["content"]
     else:
         content = chunk.get("content_with_weight", "")
@@ -1411,7 +1490,7 @@ async def retrieval_test(tenant_id):
                     format: float
                     description: Similarity score.
     """
-    req = await request_json()
+    req = await get_request_json()
     if not req.get("dataset_ids"):
         return get_error_data_result("`dataset_ids` is required.")
     kb_ids = req["dataset_ids"]
@@ -1446,6 +1525,9 @@ async def retrieval_test(tenant_id):
         metadata_condition = req.get("metadata_condition", {}) or {}
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+        # If metadata_condition has conditions but no docs match, return empty result
+        if not doc_ids and metadata_condition.get("conditions"):
+            return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
         if metadata_condition and not doc_ids:
             doc_ids = ["-999"]
     similarity_threshold = float(req.get("similarity_threshold", 0.2))

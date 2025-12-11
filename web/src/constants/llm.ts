@@ -128,3 +128,53 @@ export const IconMap = {
   [LLMFactory.Builtin]: 'builtin',
   [LLMFactory.BurnCloud]: 'burncloud',
 };
+
+export const APIMapUrl = {
+  [LLMFactory.OpenAI]: 'https://platform.openai.com/api-keys',
+  [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
+  [LLMFactory.Gemini]: 'https://aistudio.google.com/app/apikey',
+  [LLMFactory.DeepSeek]: 'https://platform.deepseek.com/api_keys',
+  [LLMFactory.Moonshot]: 'https://platform.moonshot.cn/console/api-keys',
+  [LLMFactory.TongYiQianWen]: 'https://dashscope.console.aliyun.com/apiKey',
+  [LLMFactory.ZhipuAI]: 'https://open.bigmodel.cn/usercenter/apikeys',
+  [LLMFactory.XAI]: 'https://x.ai/api/',
+  [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',
+  [LLMFactory.Mistral]: 'https://console.mistral.ai/api-keys/',
+  [LLMFactory.Cohere]: 'https://dashboard.cohere.com/api-keys',
+  [LLMFactory.BaiduYiYan]: 'https://wenxin.baidu.com/user/key',
+  [LLMFactory.Meituan]: 'https://longcat.chat/platform/api_keys',
+  [LLMFactory.Bedrock]:
+    'https://us-east-2.console.aws.amazon.com/bedrock/home#/api-keys',
+  [LLMFactory.AzureOpenAI]:
+    'https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI',
+  [LLMFactory.OpenRouter]: 'https://openrouter.ai/keys',
+  [LLMFactory.XunFeiSpark]: 'https://console.xfyun.cn/services/cbm',
+  [LLMFactory.MiniMax]:
+    'https://platform.minimaxi.com/user-center/basic-information',
+  [LLMFactory.Groq]: 'https://console.groq.com/keys',
+  [LLMFactory.NVIDIA]: 'https://build.nvidia.com/settings/api-keys',
+  [LLMFactory.SILICONFLOW]: 'https://cloud.siliconflow.cn/account/ak',
+  [LLMFactory.Replicate]: 'https://replicate.com/account/api-tokens',
+  [LLMFactory.VolcEngine]: 'https://console.volcengine.com/ark',
+  [LLMFactory.Jina]: 'https://jina.ai/embeddings/',
+  [LLMFactory.TencentHunYuan]:
+    'https://console.cloud.tencent.com/hunyuan/api-key',
+  [LLMFactory.TencentCloud]: 'https://console.cloud.tencent.com/cam/capi',
+  [LLMFactory.ModelScope]: 'https://modelscope.cn/my/myaccesstoken',
+  [LLMFactory.GoogleCloud]: 'https://console.cloud.google.com/apis/credentials',
+  [LLMFactory.FishAudio]: 'https://fish.audio/app/api-keys/',
+  [LLMFactory.GiteeAI]:
+    'https://ai.gitee.com/hhxzgrjn/dashboard/settings/tokens',
+  [LLMFactory.StepFun]: 'https://platform.stepfun.com/interface-key',
+  [LLMFactory.BaiChuan]: 'https://platform.baichuan-ai.com/console/apikey',
+  [LLMFactory.PPIO]: 'https://ppio.com/settings/key-management',
+  [LLMFactory.VoyageAI]: 'https://dash.voyageai.com/api-keys',
+  [LLMFactory.TogetherAI]: 'https://api.together.xyz/settings/api-keys',
+  [LLMFactory.NovitaAI]: 'https://novita.ai/dashboard/key',
+  [LLMFactory.Upstage]: 'https://console.upstage.ai/api-keys',
+  [LLMFactory.CometAPI]: 'https://api.cometapi.com/console/token',
+  [LLMFactory.Ai302]: 'https://302.ai/apis/list',
+  [LLMFactory.DeerAPI]: 'https://api.deerapi.com/token',
+  [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
+  [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
+};

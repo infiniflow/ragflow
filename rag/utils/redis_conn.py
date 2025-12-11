@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import asyncio
 import logging
 import json
 import uuid
@@ -22,7 +23,6 @@ import valkey as redis
 from common.decorator import singleton
 from common import settings
 from valkey.lock import Lock
-import trio
 
 REDIS = {}
 try:
@@ -86,6 +86,9 @@ class RedisDB:
                 "db": int(self.config.get("db", 1)),
                 "decode_responses": True,
             }
+            username = self.config.get("username")
+            if username:
+                conn_params["username"] = username
             password = self.config.get("password")
             if password:
                 conn_params["password"] = password
@@ -402,7 +405,7 @@ class RedisDistributedLock:
         while True:
             if self.lock.acquire(token=self.lock_value):
                 break
-            await trio.sleep(10)
+            await asyncio.sleep(10)
 
     def release(self):
         REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)

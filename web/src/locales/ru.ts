@@ -711,10 +711,14 @@ export default {
         'Отметьте, если это экземпляр Confluence Cloud, снимите для Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
         'Базовый URL вашего экземпляра Confluence (например, https://your-domain.atlassian.net/wiki)',
+      confluenceSpaceKeyTip:
+        'Необязательно: Укажите ключ пространства для синхронизации только определенного пространства. Оставьте пустым для синхронизации всех доступных пространств. Для нескольких пространств разделите запятыми (например, DEV,DOCS,HR)',
       s3PrefixTip: `Укажите путь к папке в вашем S3 бакете для получения файлов. 
 Пример: general/v2/`,
       S3CompatibleEndpointUrlTip: `Требуется для S3 совместимого Storage Box. Укажите URL конечной точки, совместимой с S3.
 Пример: https://fsn1.your-objectstorage.com`,
+      S3CompatibleAddressingStyleTip: `Требуется для S3 совместимого Storage Box. Укажите стиль адресации, совместимый с S3.
+Пример: Virtual Hosted Style`,
       addDataSourceModalTital: 'Создайте ваш коннектор {{name}}',
       deleteSourceModalTitle: 'Удалить источник данных',
       deleteSourceModalContent: `
@@ -734,6 +738,8 @@ export default {
         'Синхронизируйте страницы и базы данных из Notion для извлечения знаний.',
       google_driveDescription:
         'Подключите ваш Google Drive через OAuth и синхронизируйте определенные папки или диски.',
+      gmailDescription:
+        'Подключите ваш Gmail / Google Workspace аккаунт для синхронизации писем и их метаданных, чтобы построить корпоративную почтовую базу знаний и поиск с учетом прав доступа.',
       google_driveTokenTip:
         'Загрузите JSON токена OAuth, сгенерированный из помощника OAuth или Google Cloud Console. Вы также можете загрузить client_secret JSON из "установленного" или "веб" приложения. Если это ваша первая синхронизация, откроется окно браузера для завершения согласия OAuth. Если JSON уже содержит токен обновления, он будет автоматически повторно использован.',
       google_drivePrimaryAdminTip:
@@ -742,6 +748,10 @@ export default {
         'Электронные почты через запятую, чье содержимое "Мой диск" должно индексироваться (включите основного администратора).',
       google_driveSharedFoldersTip:
         'Ссылки на папки Google Drive через запятую для обхода.',
+      gmailPrimaryAdminTip:
+        'Основной административный email с доступом к Gmail / Workspace, используется для перечисления пользователей домена и как аккаунт синхронизации по умолчанию.',
+      gmailTokenTip:
+        'Загрузите OAuth JSON, сгенерированный в Google Console. Если он содержит только учетные данные клиента, выполните одноразовое подтверждение в браузере, чтобы получить долгоживущие токены обновления.',
       jiraDescription:
         'Подключите ваше рабочее пространство Jira для синхронизации задач, комментариев и вложений.',
       jiraBaseUrlTip:
@@ -838,6 +848,10 @@ export default {
         'Для китайских пользователей не нужно заполнять или используйте https://dashscope.aliyuncs.com/compatible-mode/v1. Для международных пользователей используйте https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       tongyiBaseUrlPlaceholder:
         '(Только для международных пользователей, см. подсказку)',
+      minimaxBaseUrlTip:
+        'Только для международных пользователей: используйте https://api.minimax.io/v1.',
+      minimaxBaseUrlPlaceholder:
+        '(Только для международных пользователей, введите https://api.minimax.io/v1)',
       modify: 'Изменить',
       systemModelSettings: 'Установить модели по умолчанию',
       chatModel: 'LLM',

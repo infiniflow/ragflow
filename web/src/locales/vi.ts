@@ -558,6 +558,10 @@ export default {
       baseUrl: 'Base-Url',
       baseUrlTip:
         'Nếu khóa API của bạn từ OpenAI, chỉ cần bỏ qua nó. Bất kỳ nhà cung cấp trung gian nào khác sẽ cung cấp URL cơ sở này với khóa API.',
+      minimaxBaseUrlTip:
+        'Chỉ người dùng quốc tế: dùng https://api.minimax.io/v1.',
+      minimaxBaseUrlPlaceholder:
+        '(Chỉ dành cho người dùng quốc tế, điền https://api.minimax.io/v1)',
       modify: 'Sửa đổi',
       systemModelSettings: 'Đặt mô hình mặc định',
       chatModel: 'Mô hình trò chuyện',

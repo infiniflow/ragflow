@@ -30,7 +30,6 @@ class LoadConnector(ABC):
         """Load documents from state"""
         pass
 
-    @abstractmethod
     def validate_connector_settings(self) -> None:
         """Validate connector settings"""
         pass
@@ -396,8 +395,7 @@ class AttachmentProcessingResult(BaseModel):
 
 
 class IndexingHeartbeatInterface(ABC):
-    """Defines a callback interface to be passed to
-    to run_indexing_entrypoint."""
+    """Defines a callback interface to be passed to run_indexing_entrypoint."""
 
     @abstractmethod
     def should_stop(self) -> bool:

@@ -27,7 +27,7 @@ const ConditionBlock = ({
   nodeId,
 }: { condition: ISwitchCondition } & { nodeId: string }) => {
   const items = condition?.items ?? [];
-  const { getLabel } = useGetVariableLabelOrTypeByValue(nodeId);
+  const { getLabel } = useGetVariableLabelOrTypeByValue({ nodeId });
 
   const renderOperatorIcon = useCallback((operator?: string) => {
     const item = SwitchOperatorOptions.find((x) => x.value === operator);
@@ -65,7 +65,7 @@ function InnerSwitchNode({ id, data, selected }: NodeProps<ISwitchNode>) {
   const { positions } = useBuildSwitchHandlePositions({ data, id });
   return (
     <ToolBar selected={selected} id={id} label={data.label} showRun={false}>
-      <NodeWrapper selected={selected}>
+      <NodeWrapper selected={selected} id={id}>
         <LeftEndHandle></LeftEndHandle>
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
         <section className="gap-2.5 flex flex-col">

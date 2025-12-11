@@ -41,7 +41,13 @@ def get_opendal_config():
             scheme = opendal_config.get("scheme")
             config_data = opendal_config.get("config", {})
             kwargs = {"scheme": scheme, **config_data}
-        logging.info("Loaded OpenDAL configuration from yaml: %s", kwargs)
+        redacted_kwargs = kwargs.copy()
+        if 'password' in redacted_kwargs:
+            redacted_kwargs['password'] = '***REDACTED***'
+        if 'connection_string' in redacted_kwargs and 'password' in redacted_kwargs:
+            import re
+            redacted_kwargs['connection_string'] = re.sub(r':[^@]+@', ':***REDACTED***@', redacted_kwargs['connection_string'])
+        logging.info("Loaded OpenDAL configuration from yaml: %s", redacted_kwargs)
         return kwargs
     except Exception as e:
         logging.error("Failed to load OpenDAL configuration from yaml: %s", str(e))

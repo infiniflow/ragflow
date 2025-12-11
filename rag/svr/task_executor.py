@@ -12,6 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import asyncio
 import socket
 import concurrent
 # from beartype import BeartypeConf
@@ -29,6 +30,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from common.connection_utils import timeout
 from rag.utils.base64_image import image2id
+from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from graphrag.general.index import run_graphrag_for_kb
@@ -45,7 +47,6 @@ from functools import partial
 from multiprocessing.context import TimeoutError
 from timeit import default_timer as timer
 import signal
-import trio
 import exceptiongroup
 import faulthandler
 import numpy as np
@@ -68,6 +69,7 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
+from common.misc_utils import check_and_install_mineru
 
 BATCH_SIZE = 64
 
@@ -112,11 +114,11 @@ CURRENT_TASKS = {}
 MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
 MAX_CONCURRENT_MINIO = int(os.environ.get('MAX_CONCURRENT_MINIO', '10'))
-task_limiter = trio.Semaphore(MAX_CONCURRENT_TASKS)
-chunk_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
-embed_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
-minio_limiter = trio.CapacityLimiter(MAX_CONCURRENT_MINIO)
-kg_limiter = trio.CapacityLimiter(2)
+task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
+chunk_limiter = asyncio.Semaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
+embed_limiter = asyncio.Semaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
+minio_limiter = asyncio.Semaphore(MAX_CONCURRENT_MINIO)
+kg_limiter = asyncio.Semaphore(2)
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get('WORKER_HEARTBEAT_TIMEOUT', '120'))
 stop_event = threading.Event()
 
@@ -126,9 +128,6 @@ def signal_handler(sig, frame):
     stop_event.set()
     time.sleep(1)
     sys.exit(0)
-
-
-
 
 
 def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing..."):
@@ -220,7 +219,7 @@ async def collect():
 
 
 async def get_storage_binary(bucket, name):
-    return await trio.to_thread.run_sync(lambda: settings.STORAGE_IMPL.get(bucket, name))
+    return await asyncio.to_thread(settings.STORAGE_IMPL.get, bucket, name)
 
 
 @timeout(60*80, 1)
@@ -251,9 +250,18 @@ async def build_chunks(task, progress_callback):
 
     try:
         async with chunk_limiter:
-            cks = await trio.to_thread.run_sync(lambda: chunker.chunk(task["name"], binary=binary, from_page=task["from_page"],
-                                to_page=task["to_page"], lang=task["language"], callback=progress_callback,
-                                kb_id=task["kb_id"], parser_config=task["parser_config"], tenant_id=task["tenant_id"]))
+            cks = await asyncio.to_thread(
+                chunker.chunk,
+                task["name"],
+                binary=binary,
+                from_page=task["from_page"],
+                to_page=task["to_page"],
+                lang=task["language"],
+                callback=progress_callback,
+                kb_id=task["kb_id"],
+                parser_config=task["parser_config"],
+                tenant_id=task["tenant_id"],
+            )
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
     except TaskCanceledException:
         raise
@@ -291,9 +299,17 @@ async def build_chunks(task, progress_callback):
                 "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
             raise
 
-    async with trio.open_nursery() as nursery:
-        for ck in cks:
-            nursery.start_soon(upload_to_minio, doc, ck)
+    tasks = []
+    for ck in cks:
+        tasks.append(asyncio.create_task(upload_to_minio(doc, ck)))
+    try:
+        await asyncio.gather(*tasks, return_exceptions=False)
+    except Exception as e:
+        logging.error(f"MINIO PUT({task['name']}) got exception: {e}")
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
     el = timer() - st
     logging.info("MINIO PUT({}) cost {:.3f} s".format(task["name"], el))
@@ -307,15 +323,28 @@ async def build_chunks(task, progress_callback):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords", {"topn": topn})
             if not cached:
                 async with chat_limiter:
-                    cached = await trio.to_thread.run_sync(lambda: keyword_extraction(chat_mdl, d["content_with_weight"], topn))
+                    cached = await asyncio.to_thread(
+                        keyword_extraction,
+                        chat_mdl,
+                        d["content_with_weight"],
+                        topn,
+                    )
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
             if cached:
                 d["important_kwd"] = cached.split(",")
                 d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
             return
-        async with trio.open_nursery() as nursery:
-            for d in docs:
-                nursery.start_soon(doc_keyword_extraction, chat_mdl, d, task["parser_config"]["auto_keywords"])
+        tasks = []
+        for d in docs:
+            tasks.append(asyncio.create_task(doc_keyword_extraction(chat_mdl, d, task["parser_config"]["auto_keywords"])))
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error("Error in doc_keyword_extraction: {}".format(e))
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
         progress_callback(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["parser_config"].get("auto_questions", 0):
@@ -327,14 +356,27 @@ async def build_chunks(task, progress_callback):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question", {"topn": topn})
             if not cached:
                 async with chat_limiter:
-                    cached = await trio.to_thread.run_sync(lambda: question_proposal(chat_mdl, d["content_with_weight"], topn))
+                    cached = await asyncio.to_thread(
+                        question_proposal,
+                        chat_mdl,
+                        d["content_with_weight"],
+                        topn,
+                    )
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "question", {"topn": topn})
             if cached:
                 d["question_kwd"] = cached.split("\n")
                 d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
-        async with trio.open_nursery() as nursery:
-            for d in docs:
-                nursery.start_soon(doc_question_proposal, chat_mdl, d, task["parser_config"]["auto_questions"])
+        tasks = []
+        for d in docs:
+            tasks.append(asyncio.create_task(doc_question_proposal(chat_mdl, d, task["parser_config"]["auto_questions"])))
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error("Error in doc_question_proposal", exc_info=e)
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["kb_parser_config"].get("tag_kb_ids", []):
@@ -372,15 +414,30 @@ async def build_chunks(task, progress_callback):
                 if not picked_examples:
                     picked_examples.append({"content": "This is an example", TAG_FLD: {'example': 1}})
                 async with chat_limiter:
-                    cached = await trio.to_thread.run_sync(lambda: content_tagging(chat_mdl, d["content_with_weight"], all_tags, picked_examples, topn=topn_tags))
+                    cached = await asyncio.to_thread(
+                        content_tagging,
+                        chat_mdl,
+                        d["content_with_weight"],
+                        all_tags,
+                        picked_examples,
+                        topn_tags,
+                    )
                 if cached:
                     cached = json.dumps(cached)
             if cached:
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, all_tags, {"topn": topn_tags})
                 d[TAG_FLD] = json.loads(cached)
-        async with trio.open_nursery() as nursery:
-            for d in docs_to_tag:
-                nursery.start_soon(doc_content_tagging, chat_mdl, d, topn_tags)
+        tasks = []
+        for d in docs_to_tag:
+            tasks.append(asyncio.create_task(doc_content_tagging(chat_mdl, d, topn_tags)))
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error("Error tagging docs: {}".format(e))
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
         progress_callback(msg="Tagging {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     return docs
@@ -393,7 +450,7 @@ def build_TOC(task, docs, progress_callback):
         d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
         d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
     ))
-    toc: list[dict] = trio.run(run_toc_from_text, [d["content_with_weight"] for d in docs], chat_mdl, progress_callback)
+    toc: list[dict] = asyncio.run(run_toc_from_text([d["content_with_weight"] for d in docs], chat_mdl, progress_callback))
     logging.info("------------ T O C -------------\n"+json.dumps(toc, ensure_ascii=False, indent='  '))
     ii = 0
     while ii < len(toc):
@@ -441,7 +498,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
 
     tk_count = 0
     if len(tts) == len(cnts):
-        vts, c = await trio.to_thread.run_sync(lambda: mdl.encode(tts[0: 1]))
+        vts, c = await asyncio.to_thread(mdl.encode, tts[0:1])
         tts = np.tile(vts[0], (len(cnts), 1))
         tk_count += c
 
@@ -453,7 +510,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     cnts_ = np.array([])
     for i in range(0, len(cnts), settings.EMBEDDING_BATCH_SIZE):
         async with embed_limiter:
-            vts, c = await trio.to_thread.run_sync(lambda: batch_encode(cnts[i: i + settings.EMBEDDING_BATCH_SIZE]))
+            vts, c = await asyncio.to_thread(batch_encode, cnts[i : i + settings.EMBEDDING_BATCH_SIZE])
         if len(cnts_) == 0:
             cnts_ = vts
         else:
@@ -536,7 +593,7 @@ async def run_dataflow(task: dict):
             prog = 0.8
             for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
                 async with embed_limiter:
-                    vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + settings.EMBEDDING_BATCH_SIZE]))
+                    vts, c = await asyncio.to_thread(batch_encode, texts[i : i + settings.EMBEDDING_BATCH_SIZE])
                 if len(vects) == 0:
                     vects = vts
                 else:
@@ -593,7 +650,8 @@ async def run_dataflow(task: dict):
         ck["docnm_kwd"] = task["name"]
         ck["create_time"] = str(datetime.now()).replace("T", " ")[:19]
         ck["create_timestamp_flt"] = datetime.now().timestamp()
-        ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
+        if not ck.get("id"):
+            ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
         if "questions" in ck:
             if "question_tks" not in ck:
                 ck["question_kwd"] = ck["questions"].split("\n")
@@ -720,8 +778,36 @@ async def delete_image(kb_id, chunk_id):
 
 
 async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback):
+    mothers = []
+    mother_ids = set([])
+    for ck in chunks:
+        mom = ck.get("mom") or ck.get("mom_with_weight") or ""
+        if not mom:
+            continue
+        id = xxhash.xxh64(mom.encode("utf-8")).hexdigest()
+        ck["mom_id"] = id
+        if id in mother_ids:
+            continue
+        mother_ids.add(id)
+        mom_ck = copy.deepcopy(ck)
+        mom_ck["id"] = id
+        mom_ck["content_with_weight"] = mom
+        mom_ck["available_int"] = 0
+        flds = list(mom_ck.keys())
+        for fld in flds:
+            if fld not in ["id", "content_with_weight", "doc_id", "docnm_kwd", "kb_id", "available_int", "position_int"]:
+                del mom_ck[fld]
+        mothers.append(mom_ck)
+
+    for b in range(0, len(mothers), settings.DOC_BULK_SIZE):
+        await asyncio.to_thread(settings.docStoreConn.insert,mothers[b:b + settings.DOC_BULK_SIZE],search.index_name(task_tenant_id),task_dataset_id,)
+        task_canceled = has_canceled(task_id)
+        if task_canceled:
+            progress_callback(-1, msg="Task has been canceled.")
+            return False
+
     for b in range(0, len(chunks), settings.DOC_BULK_SIZE):
-        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + settings.DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
+        doc_store_result = await asyncio.to_thread(settings.docStoreConn.insert,chunks[b:b + settings.DOC_BULK_SIZE],search.index_name(task_tenant_id),task_dataset_id,)
         task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
@@ -738,10 +824,18 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
             TaskService.update_chunk_ids(task_id, chunk_ids_str)
         except DoesNotExist:
             logging.warning(f"do_handle_task update_chunk_ids failed since task {task_id} is unknown.")
-            doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id))
-            async with trio.open_nursery() as nursery:
-                for chunk_id in chunk_ids:
-                    nursery.start_soon(delete_image, task_dataset_id, chunk_id)
+            doc_store_result = await asyncio.to_thread(settings.docStoreConn.delete,{"id": chunk_ids},search.index_name(task_tenant_id),task_dataset_id,)
+            tasks = []
+            for chunk_id in chunk_ids:
+                tasks.append(asyncio.create_task(delete_image(task_dataset_id, chunk_id)))
+            try:
+                await asyncio.gather(*tasks, return_exceptions=False)
+            except Exception as e:
+                logging.error(f"delete_image failed: {e}")
+                for t in tasks:
+                    t.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                raise
             progress_callback(-1, msg=f"Chunk updates failed since task {task_id} is unknown.")
             return False
     return True
@@ -826,6 +920,17 @@ async def do_handle_task(task):
             if not KnowledgebaseService.update_by_id(kb.id, {"parser_config":kb_parser_config}):
                 progress_callback(prog=-1.0, msg="Internal error: Invalid RAPTOR configuration")
                 return
+
+        # Check if Raptor should be skipped for structured data
+        file_type = task.get("type", "")
+        parser_id = task.get("parser_id", "")
+        raptor_config = kb_parser_config.get("raptor", {})
+
+        if should_skip_raptor(file_type, parser_id, task_parser_config, raptor_config):
+            skip_reason = get_skip_reason(file_type, parser_id, task_parser_config)
+            logging.info(f"Skipping Raptor for document {task_document_name}: {skip_reason}")
+            progress_callback(prog=1.0, msg=f"Raptor skipped: {skip_reason}")
+            return
 
         # bind LLM for raptor
         chat_model = LLMBundle(task_tenant_id, LLMType.CHAT, llm_name=task_llm_id, lang=task_language)
@@ -918,7 +1023,7 @@ async def do_handle_task(task):
         logging.info(progress_message)
         progress_callback(msg=progress_message)
         if task["parser_id"].lower() == "naive" and task["parser_config"].get("toc_extraction", False):
-            toc_thread = executor.submit(build_TOC,task, chunks, progress_callback)
+            toc_thread = executor.submit(build_TOC, task, chunks, progress_callback)
 
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
@@ -955,7 +1060,7 @@ async def handle_task():
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
-        await trio.sleep(5)
+        await asyncio.sleep(5)
         return
 
     task_type = task["task_type"]
@@ -1052,7 +1157,7 @@ async def report_status():
             logging.exception("report_status got exception")
         finally:
             redis_lock.release()
-        await trio.sleep(30)
+        await asyncio.sleep(30)
 
 
 async def task_manager():
@@ -1075,7 +1180,8 @@ async def main():
     show_configs()
     settings.init_settings()
     settings.check_and_install_torch()
-    logging.info(f'settings.EMBEDDING_CFG: {settings.EMBEDDING_CFG}')
+    check_and_install_mineru()
+    logging.info(f'default embedding config: {settings.EMBEDDING_CFG}')
     settings.print_rag_settings()
     if sys.platform != "win32":
         signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)
@@ -1087,14 +1193,22 @@ async def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    async with trio.open_nursery() as nursery:
-        nursery.start_soon(report_status)
+    report_task = asyncio.create_task(report_status())
+    tasks = []
+    try:
         while not stop_event.is_set():
             await task_limiter.acquire()
-            nursery.start_soon(task_manager)
+            t = asyncio.create_task(task_manager())
+            tasks.append(t)
+    finally:
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        report_task.cancel()
+        await asyncio.gather(report_task, return_exceptions=True)
     logging.error("BUG!!! You should not reach here!!!")
 
 if __name__ == "__main__":
     faulthandler.enable()
     init_root_logger(CONSUMER_NAME)
-    trio.run(main)
+    asyncio.run(main())

@@ -44,7 +44,7 @@ function InnerToolNode({
   );
 
   return (
-    <NodeWrapper selected={selected}>
+    <NodeWrapper selected={selected} id={id}>
       <Handle
         id={NodeHandleId.End}
         type="target"

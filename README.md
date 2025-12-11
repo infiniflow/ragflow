@@ -194,7 +194,7 @@ releases! 🌟
   
    # git checkout v0.22.1
    # Optional: use a stable tag (see releases: https://github.com/infiniflow/ragflow/releases)
-   # This steps ensures the **entrypoint.sh** file in the code matches the Docker image version.
+   # This step ensures the **entrypoint.sh** file in the code matches the Docker image version.
    
    # Use CPU for DeepDoc tasks:
    $ docker compose -f docker-compose.yml up -d
@@ -314,7 +314,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 # install RAGFlow dependent python modules
+   uv sync --python 3.12 # install RAGFlow dependent python modules
    uv run download_deps.py
    pre-commit install
    ```

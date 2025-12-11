@@ -1,12 +1,15 @@
 import MessageItem from '@/components/next-message-item';
 import { Modal } from '@/components/ui/modal/modal';
 import { useFetchAgent } from '@/hooks/use-agent-request';
-import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IAgentLogMessage } from '@/interfaces/database/agent';
-import { IReferenceObject, Message } from '@/interfaces/database/chat';
+import {
+  IMessage,
+  IReferenceObject,
+  Message,
+} from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import React, { useMemo } from 'react';
-import { IMessage } from '../chat/interface';
 
 interface CustomModalProps {
   isOpen: boolean;
