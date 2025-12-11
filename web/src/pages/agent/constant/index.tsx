@@ -832,6 +832,7 @@ export enum ExportFileType {
   HTML = 'html',
   Markdown = 'md',
   DOCX = 'docx',
+  Excel = 'xlsx',
 }
 
 export enum TypesWithArray {

@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 import asyncio
+import nest_asyncio
+nest_asyncio.apply()
 import inspect
 import json
 import os
@@ -207,7 +209,7 @@ class Message(ComponentBase):
         import pypandoc
         doc_id = get_uuid()
 
-        if self._param.output_format.lower() not in {"markdown", "html", "pdf", "docx"}:
+        if self._param.output_format.lower() not in {"markdown", "html", "pdf", "docx", "xlsx"}:
             self._param.output_format = "markdown"
 
         try:
@@ -226,6 +228,46 @@ class Message(ComponentBase):
                     )
 
                 binary_content = converted.encode("utf-8")
+
+            elif self._param.output_format == "xlsx":
+                import pandas as pd
+                from io import BytesIO
+
+                if isinstance(content, str):
+                    try:
+                        # Convert markdown to HTML tables to help pandas parse it
+                        html_content = pypandoc.convert_text(content, to="html", format="markdown")
+                        dfs = pd.read_html(html_content)
+                    except Exception as e:
+                        dfs = []
+                    
+                    if not dfs:
+                        df = pd.DataFrame({"Content": [content]})
+                        dfs = [df]
+                else:
+                    # Should not accept file path for Excel generation from agent response usually, 
+                    # but if it does, read it as text
+                    with open(content, "r") as f:
+                        txt_content = f.read()
+                    try:
+                         html_content = pypandoc.convert_text(txt_content, to="html", format="markdown")
+                         dfs = pd.read_html(html_content)
+                    except Exception:
+                        dfs = []
+                    
+                    if not dfs:
+                        df = pd.DataFrame({"Content": [txt_content]})
+                        dfs = [df]
+
+                # Write to Excel
+                excel_io = BytesIO()
+                with pd.ExcelWriter(excel_io, engine='openpyxl') as writer:
+                    for i, df in enumerate(dfs):
+                        sheet_name = f"Sheet{i+1}"
+                        df.to_excel(writer, sheet_name=sheet_name, index=False)
+                
+                excel_io.seek(0)
+                binary_content = excel_io.read()
 
             else:  # pdf, docx
                 with tempfile.NamedTemporaryFile(suffix=f".{self._param.output_format}", delete=False) as tmp:
