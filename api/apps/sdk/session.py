@@ -1170,7 +1170,7 @@ async def mindmap():
     search_id = req.get("search_id", "")
     search_app = SearchService.get_detail(search_id) if search_id else {}
 
-    mind_map = gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
+    mind_map =await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)

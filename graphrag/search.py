@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
 import json
 import logging
 from collections import defaultdict
@@ -44,7 +43,7 @@ class KGSearch(Dealer):
         return response
 
     def query_rewrite(self, llm, question, idxnms, kb_ids):
-        ty2ents = asyncio.run(get_entity_type2samples(idxnms, kb_ids))
+        ty2ents = get_entity_type2samples(idxnms, kb_ids)
         hint_prompt = PROMPTS["minirag_query2kwd"].format(query=question,
                                                           TYPE_POOL=json.dumps(ty2ents, ensure_ascii=False, indent=2))
         result = self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {})
