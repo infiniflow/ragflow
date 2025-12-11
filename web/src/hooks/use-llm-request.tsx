@@ -147,6 +147,7 @@ export const useSelectLlmOptionsByModelType = () => {
     ),
     [LlmModelType.Rerank]: groupOptionsByModelType(LlmModelType.Rerank),
     [LlmModelType.TTS]: groupOptionsByModelType(LlmModelType.TTS),
+    [LlmModelType.Ocr]: groupOptionsByModelType(LlmModelType.Ocr),
   };
 };
 
@@ -245,7 +246,7 @@ export const useSelectLlmList = () => {
       name: key,
       logo: factoryList.find((x) => x.name === key)?.logo ?? '',
       ...value,
-      llm: value.llm.map((x) => ({ ...x, name: x.name })),
+      llm: value.llm?.map((x) => ({ ...x, name: x.name })),
     }));
   }, [myLlmList, factoryList]);
 

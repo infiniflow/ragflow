@@ -1,3 +1,4 @@
+import { LLMFactory } from '@/constants/llm';
 import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import {
   IApiKeySavingParams,
@@ -458,4 +459,65 @@ export const useHandleDeleteFactory = (llmFactory: string) => {
   };
 
   return { handleDeleteFactory, deleteFactory };
+};
+
+type MinerUFormValues = {
+  llm_name: string;
+  mineru_apiserver?: string;
+  mineru_output_dir?: string;
+  mineru_backend?: string;
+  mineru_server_url?: string;
+  mineru_delete_output?: boolean;
+};
+
+export const useSubmitMinerU = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: mineruVisible,
+    hideModal: hideMineruModal,
+    showModal: showMineruModal,
+  } = useSetModalState();
+  const [initialValues, setInitialValues] = useState<
+    Partial<MinerUFormValues> | undefined
+  >();
+
+  const onMineruOk = useCallback(
+    async (payload: MinerUFormValues) => {
+      const cfg = {
+        MINERU_APISERVER: payload.mineru_apiserver || '',
+        MINERU_OUTPUT_DIR: payload.mineru_output_dir || '',
+        MINERU_BACKEND: payload.mineru_backend || 'pipeline',
+        MINERU_SERVER_URL: payload.mineru_server_url || '',
+        MINERU_DELETE_OUTPUT: payload.mineru_delete_output ?? true ? '1' : '0',
+      };
+      const req: IAddLlmRequestBody = {
+        llm_factory: LLMFactory.MinerU,
+        llm_name: payload.llm_name,
+        model_type: 'ocr',
+        api_key: cfg,
+        api_base: '',
+        max_tokens: 0,
+      };
+      const ret = await addLlm(req);
+      if (ret === 0) {
+        hideMineruModal();
+        setInitialValues(undefined);
+      }
+    },
+    [addLlm, hideMineruModal],
+  );
+
+  const handleShowMineruModal = (values?: Partial<MinerUFormValues>) => {
+    setInitialValues(values);
+    showMineruModal();
+  };
+
+  return {
+    mineruVisible,
+    hideMineruModal,
+    showMineruModal: handleShowMineruModal,
+    onMineruOk,
+    mineruLoading: loading,
+    mineruInitialValues: initialValues,
+  };
 };
