@@ -16,6 +16,9 @@
 import logging
 import json
 import os
+import subprocess
+import shlex
+import re
 from quart import request
 
 from api.apps import login_required, current_user
@@ -349,6 +352,39 @@ def my_llms():
                 res[o["llm_factory"]]["llm"].append({"type": o["model_type"], "name": o["llm_name"], "used_token": o["used_tokens"], "status": o["status"]})
 
         return get_json_result(data=res)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/load_model", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("model_type")
+async def load_model():
+    req = await get_request_json()
+    model_type = req.get("model_type", "").strip()
+    
+    # Validate model_type to prevent command injection
+    # Only allow alphanumeric characters, hyphens, and underscores
+    if not re.match(r"^[a-zA-Z0-9\-_]+$", model_type):
+        return get_data_error_result(message="Invalid model_type format")
+    
+    try:
+        # Use subprocess.run with shell=False for safe command execution
+        # This prevents shell injection as arguments are passed separately
+        result = subprocess.run(
+            ["/app/scripts/load_model.sh", model_type],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False
+        )
+        
+        if result.returncode != 0:
+            return get_data_error_result(message=f"Failed to load model: {result.stderr}")
+        
+        return get_json_result(data={"status": "success", "message": result.stdout})
+    except subprocess.TimeoutExpired:
+        return get_data_error_result(message="Model loading timed out")
     except Exception as e:
         return server_error_response(e)
 
