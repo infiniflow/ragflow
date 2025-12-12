@@ -122,6 +122,7 @@ export function AccordionOperators({
               Operator.Invoke,
               Operator.WenCai,
               Operator.SearXNG,
+              Operator.PDFGenerator,
             ]}
             isCustomDropdown={isCustomDropdown}
             mousePosition={mousePosition}
