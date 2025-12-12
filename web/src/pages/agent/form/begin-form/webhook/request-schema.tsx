@@ -18,6 +18,7 @@ export function WebhookRequestSchema() {
         ></DynamicRequest>
         <DynamicRequest
           name="schema.body"
+          isObject
           label={t('flow.webhook.requestBodyParameters')}
         ></DynamicRequest>
       </section>

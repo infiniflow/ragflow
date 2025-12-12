@@ -4,12 +4,13 @@ import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import { buildOptions } from '@/utils/form';
 import { loader } from '@monaco-editor/react';
+import { omit } from 'lodash';
 import { X } from 'lucide-react';
 import { ReactNode } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
-import { TypesWithArray } from '../../../constant';
-import { buildConversationVariableSelectOptions } from '../../../utils';
+import { TypesWithArray, WebhookRequestParameters } from '../../../constant';
 import { DynamicFormHeader } from '../../components/dynamic-fom-header';
 
 loader.config({ paths: { vs: '/vs' } });
@@ -22,9 +23,16 @@ type SelectKeysProps = {
   operatorField?: string;
   requiredField?: string;
   nodeId?: string;
+  isObject?: boolean;
 };
 
-const VariableTypeOptions = buildConversationVariableSelectOptions();
+function buildParametersOptions(isObject: boolean) {
+  const list = isObject
+    ? WebhookRequestParameters
+    : omit(WebhookRequestParameters, ['File']);
+
+  return buildOptions(list);
+}
 
 export function DynamicRequest({
   name,
@@ -33,6 +41,7 @@ export function DynamicRequest({
   keyField = 'key',
   operatorField = 'type',
   requiredField = 'required',
+  isObject = false,
 }: SelectKeysProps) {
   const form = useFormContext();
 
@@ -75,7 +84,7 @@ export function DynamicRequest({
                         onChange={(val) => {
                           field.onChange(val);
                         }}
-                        options={VariableTypeOptions}
+                        options={buildParametersOptions(isObject)}
                       ></SelectWithSearch>
                     )}
                   </RAGFlowFormItem>
