@@ -83,6 +83,7 @@ _PAGE_EXPANSION_FIELDS = [
     "space",
     "metadata.labels",
     "history.lastUpdated",
+    "ancestors",
 ]
 
 
