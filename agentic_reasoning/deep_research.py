@@ -51,7 +51,7 @@ class DeepResearcher:
         """Remove Result Tags"""
         return DeepResearcher._remove_tags(text, BEGIN_SEARCH_RESULT, END_SEARCH_RESULT)
 
-    def _generate_reasoning(self, msg_history):
+    async def _generate_reasoning(self, msg_history):
         """Generate reasoning steps"""
         query_think = ""
         if msg_history[-1]["role"] != "user":
@@ -59,13 +59,14 @@ class DeepResearcher:
         else:
             msg_history[-1]["content"] += "\n\nContinues reasoning with the new information.\n"
             
-        for ans in self.chat_mdl.chat_streamly(REASON_PROMPT, msg_history, {"temperature": 0.7}):
+        async for ans in self.chat_mdl.async_chat_streamly(REASON_PROMPT, msg_history, {"temperature": 0.7}):
             ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
             if not ans:
                 continue
             query_think = ans
             yield query_think
-        return query_think
+            query_think = ""
+        yield query_think
 
     def _extract_search_queries(self, query_think, question, step_index):
         """Extract search queries from thinking"""
@@ -143,10 +144,10 @@ class DeepResearcher:
                 if d["doc_id"] not in dids:
                     chunk_info["doc_aggs"].append(d)
 
-    def _extract_relevant_info(self, truncated_prev_reasoning, search_query, kbinfos):
+    async def _extract_relevant_info(self, truncated_prev_reasoning, search_query, kbinfos):
         """Extract and summarize relevant information"""
         summary_think = ""
-        for ans in self.chat_mdl.chat_streamly(
+        async for ans in self.chat_mdl.async_chat_streamly(
                 RELEVANT_EXTRACTION_PROMPT.format(
                     prev_reasoning=truncated_prev_reasoning,
                     search_query=search_query,
@@ -160,10 +161,11 @@ class DeepResearcher:
                 continue
             summary_think = ans
             yield summary_think
+            summary_think = ""
         
-        return summary_think
+        yield summary_think
 
-    def thinking(self, chunk_info: dict, question: str):
+    async def thinking(self, chunk_info: dict, question: str):
         executed_search_queries = []
         msg_history = [{"role": "user", "content": f'Question:\"{question}\"\n'}]
         all_reasoning_steps = []
@@ -180,7 +182,7 @@ class DeepResearcher:
 
             # Step 1: Generate reasoning
             query_think = ""
-            for ans in self._generate_reasoning(msg_history):
+            async for ans in self._generate_reasoning(msg_history):
                 query_think = ans
                 yield {"answer": think + self._remove_query_tags(query_think) + "</think>", "reference": {}, "audio_binary": None}
 
@@ -223,7 +225,7 @@ class DeepResearcher:
                 # Step 6: Extract relevant information
                 think += "\n\n"
                 summary_think = ""
-                for ans in self._extract_relevant_info(truncated_prev_reasoning, search_query, kbinfos):
+                async for ans in self._extract_relevant_info(truncated_prev_reasoning, search_query, kbinfos):
                     summary_think = ans
                     yield {"answer": think + self._remove_result_tags(summary_think) + "</think>", "reference": {}, "audio_binary": None}
 

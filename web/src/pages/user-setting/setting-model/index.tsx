@@ -13,6 +13,7 @@ import {
   useSubmitFishAudio,
   useSubmitGoogle,
   useSubmitHunyuan,
+  useSubmitMinerU,
   useSubmitOllama,
   useSubmitSpark,
   useSubmitSystemModelSetting,
@@ -26,6 +27,7 @@ import BedrockModal from './modal/bedrock-modal';
 import FishAudioModal from './modal/fish-audio-modal';
 import GoogleModal from './modal/google-modal';
 import HunyuanModal from './modal/hunyuan-modal';
+import MinerUModal from './modal/mineru-modal';
 import TencentCloudModal from './modal/next-tencent-modal';
 import OllamaModal from './modal/ollama-modal';
 import SparkModal from './modal/spark-modal';
@@ -128,6 +130,14 @@ const ModelProviders = () => {
     AzureAddingLoading,
   } = useSubmitAzure();
 
+  const {
+    mineruVisible,
+    hideMineruModal,
+    showMineruModal,
+    onMineruOk,
+    mineruLoading,
+  } = useSubmitMinerU();
+
   const ModalMap = useMemo(
     () => ({
       [LLMFactory.Bedrock]: showBedrockAddingModal,
@@ -139,17 +149,19 @@ const ModelProviders = () => {
       [LLMFactory.TencentCloud]: showTencentCloudAddingModal,
       [LLMFactory.GoogleCloud]: showGoogleAddingModal,
       [LLMFactory.AzureOpenAI]: showAzureAddingModal,
+      [LLMFactory.MinerU]: showMineruModal,
     }),
     [
       showBedrockAddingModal,
       showVolcAddingModal,
       showHunyuanAddingModal,
-      showTencentCloudAddingModal,
       showSparkAddingModal,
       showyiyanAddingModal,
       showFishAudioAddingModal,
+      showTencentCloudAddingModal,
       showGoogleAddingModal,
       showAzureAddingModal,
+      showMineruModal,
     ],
   );
 
@@ -289,6 +301,12 @@ const ModelProviders = () => {
         loading={AzureAddingLoading}
         llmFactory={LLMFactory.AzureOpenAI}
       ></AzureOpenAIModal>
+      <MinerUModal
+        visible={mineruVisible}
+        hideModal={hideMineruModal}
+        onOk={onMineruOk}
+        loading={mineruLoading}
+      ></MinerUModal>
     </div>
   );
 };
