@@ -989,7 +989,7 @@ async def retrieval_test_embedded():
 
         if meta_data_filter:
             metas = DocumentService.get_meta_by_kbs(kb_ids)
-            local_doc_ids = apply_meta_data_filter(meta_data_filter, metas, _question, chat_mdl, local_doc_ids)
+            local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, _question, chat_mdl, local_doc_ids)
 
         tenants = UserTenantService.query(user_id=tenant_id)
         for kb_id in kb_ids:

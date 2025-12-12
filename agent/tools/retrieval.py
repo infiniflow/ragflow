@@ -165,7 +165,7 @@ class Retrieval(ToolBase, ABC):
             if self._param.meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT)
 
-            doc_ids = apply_meta_data_filter(
+            doc_ids = await apply_meta_data_filter(
                 self._param.meta_data_filter,
                 metas,
                 query,

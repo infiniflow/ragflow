@@ -350,7 +350,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     if dialog.meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(dialog.kb_ids)
-        attachments = apply_meta_data_filter(
+        attachments = await apply_meta_data_filter(
             dialog.meta_data_filter,
             metas,
             questions[-1],
@@ -756,7 +756,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 
     if meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(kb_ids)
-        doc_ids = apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
+        doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
     kbinfos = retriever.retrieval(
         question=question,
@@ -823,7 +823,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
 
     if meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(kb_ids)
-        doc_ids = apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
+        doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
     ranks = settings.retriever.retrieval(
         question=question,

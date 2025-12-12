@@ -90,7 +90,7 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
     return list(doc_ids)
 
 
-def apply_meta_data_filter(
+async def apply_meta_data_filter(
     meta_data_filter: dict | None,
     metas: dict,
     question: str,
@@ -118,7 +118,7 @@ def apply_meta_data_filter(
     method = meta_data_filter.get("method")
 
     if method == "auto":
-        filters: dict = gen_meta_filter(chat_mdl, metas, question)
+        filters: dict = await gen_meta_filter(chat_mdl, metas, question)
         doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
         if not doc_ids:
             return None
@@ -127,7 +127,7 @@ def apply_meta_data_filter(
         if selected_keys:
             filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
             if filtered_metas:
-                filters: dict = gen_meta_filter(chat_mdl, filtered_metas, question)
+                filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question)
                 doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
                 if not doc_ids:
                     return None
