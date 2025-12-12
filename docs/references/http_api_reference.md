@@ -2103,7 +2103,7 @@ Failure:
 
 ---
 
-### Dataset metadata summary
+### Retrieve a metadata summary from a dataset
 
 **GET** `/api/v1/datasets/{dataset_id}/metadata/summary`
 
@@ -2134,11 +2134,11 @@ Success:
 
 ---
 
-### Dataset metadata update
+### Update or delete metadata
 
 **POST** `/api/v1/datasets/{dataset_id}/metadata/update`
 
-Batch update or delete document-level metadata in a dataset. If both `document_ids` and `metadata_condition` are omitted, all documents in the dataset are selected. When both are provided, the intersection is used.
+Batch update or delete document-level metadata within a specified dataset. If both `document_ids` and `metadata_condition` are omitted, all documents within that dataset are selected. When both are provided, the intersection is used.
 
 #### Request
 
@@ -2148,20 +2148,52 @@ Batch update or delete document-level metadata in a dataset. If both `document_i
   - `'content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `selector`: `object`, optional
-    - `document_ids`: `list[string]`, optional
-    - `metadata_condition`: `object`, optional
-      - `logic`: `"and"` (default) or `"or"`
-      - `conditions`: array of `{ "name": string, "comparison_operator": string, "value": string }`
-        - `comparison_operator` supports: `is`, `not is`, `contains`, `not contains`, `in`, `not in`, `start with`, `end with`, `>`, `<`, `≥`, `≤`, `empty`, `not empty`
-  - `updates`: `array`, optional
-    - items: `{ "key": string, "value": any, "match": any (optional) }`
-      - For lists: replace elements equal to `match` (or `value` when `match` omitted) with `value`.
-      - For scalars: replace when current value equals `match` (or `value` when `match` omitted).
-  - `deletes`: `array`, optional
-    - items: `{ "key": string, "value": any (optional) }`
-      - For lists: remove elements equal to `value`; if list becomes empty, remove the key.
-      - For scalars: remove the key when `value` matches or when `value` is omitted.
+  - `selector`: `object`
+  - `updates`: `list[object]`
+  - `deletes`: `list[object]`
+
+#### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `"selector"`: (*Body parameter*), `object`, *optional*  
+  A document selector:  
+  - `"document_ids"`: `list[string]` *optional*  
+    The associated document ID.  
+  - `"metadata_condition"`: `object`, *optional*  
+    - `"logic"`: Defines the logic relation between conditions if multiple conditions are provided. Options: 
+      - `"and"` (default)
+      - `"or"`
+    - `"conditions"`: `list[object]` *optional*  
+      Each object: `{ "name": string, "comparison_operator": string, "value": string }`  
+      - `"name"`: `string` The key name to search by.
+      - `"comparison_operator"`: `string` Available options:
+        - `"is"`
+        - `"not is"`
+        - `"contains"`
+        - `"not contains"`
+        - `"in"`
+        - `"not in"`
+        - `"start with"`
+        - `"end with"`
+        - `">"`
+        - `"<"`
+        - `"≥"`
+        - `"≤"`
+        - `"empty"`
+        - `"not empty"`
+      - `"value"`: `string` The key value to search by.  
+- `"updates"`: (*Body parameter*), `list[object]`, *optional*  
+  Replaces metadata of the retrieved documents. Each object: `{ "key": string, "match": string, "value": string }`.  
+  - `"key"`: `string` The name of the key to update.
+  - `"match"`: `string` *optional* The current value of the key to update. When omitted, the corresponding keys are updated to `"value"` regardless of their current values.
+  - `"value"`: `string` The new value to set for the specified keys.
+- `"deletes`: (*Body parameter*), `list[ojbect]`, *optional*  
+  Deletes metadata of the retrieved documents. Each object: `{ "key": string, "value": string }`.  
+  - `"key"`: `string` The name of the key to delete.
+  - `"value"`: `string` *Optional* The value of the key to delete. 
+    - When provided, only keys with a matching value are deleted.
+    - When omitted, all specified keys are deleted.
 
 ##### Request example
 
