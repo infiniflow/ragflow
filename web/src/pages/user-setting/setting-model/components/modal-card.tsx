@@ -73,7 +73,7 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
       {/* Header */}
       <div className="flex h-16  items-center justify-between p-4 cursor-pointer transition-colors text-text-secondary">
         <div className="flex items-center space-x-3">
-          <LlmIcon name={item.name} />
+          <LlmIcon name={item.name} width={32} />
           <div>
             <div className="font-medium text-xl text-text-primary">
               {item.name}

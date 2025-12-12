@@ -370,6 +370,13 @@
                     "is_tools": true
                 },
                 {
+                    "llm_name": "deepseek-v3.2",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "deepseek-r1",
                     "tags": "LLM,CHAT,64K",
                     "max_tokens": 65792,

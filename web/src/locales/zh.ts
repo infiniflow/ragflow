@@ -673,11 +673,13 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       metadataTip:
         '元数据过滤是使用元数据属性（例如标签、类别或访问权限）来优化和控制系统内相关信息检索的过程。',
       conditions: '条件',
+      metadataKeys: '可选过滤项',
       addCondition: '增加条件',
       meta: {
         disabled: '禁用',
         auto: '自动',
         manual: '手动',
+        semi_auto: '半自动',
       },
       cancel: '取消',
       chatSetting: '聊天设置',
@@ -934,6 +936,21 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       modelsToBeAddedTooltip:
         '如果你的模型供应商在这里没有列出，但是宣称 OpenAI-compatible，可以通过选择卡片 OpenAI-API-compatible 设置相关模型。',
       mcp: 'MCP',
+      mineru: {
+        modelNameRequired: '模型名称为必填项',
+        apiserver: 'MinerU API服务器配置',
+        outputDir: 'MinerU输出目录路径',
+        backend: 'MinerU处理后端类型',
+        serverUrl: 'MinerU服务器URL地址',
+        deleteOutput: '处理完成后删除输出文件',
+        selectBackend: '选择处理后端',
+        backendOptions: {
+          pipeline: '标准流水线处理',
+          vlmTransformers: '基于Transformers的视觉语言模型',
+          vlmVllmEngine: '基于vLLM引擎的视觉语言模型',
+          vlmHttpClient: '通过HTTP客户端连接的视觉语言模型',
+        },
+      },
     },
     message: {
       registered: '注册成功',
@@ -1806,6 +1823,9 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         basic: '基础认证',
         bearer: '承载令牌',
         apiKey: 'API密钥',
+        queryParameters: '查询参数',
+        headerParameters: '请求头参数',
+        requestBodyParameters: '请求体参数',
       },
     },
     footer: {
