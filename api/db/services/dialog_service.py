@@ -327,7 +327,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     # try to use sql if field mapping is good to go
     if field_map:
         logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
-        ans = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
+        ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
         if ans:
             yield ans
             return
@@ -341,12 +341,12 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             prompt_config["system"] = prompt_config["system"].replace("{%s}" % p["key"], " ")
 
     if len(questions) > 1 and prompt_config.get("refine_multiturn"):
-        questions = [full_question(dialog.tenant_id, dialog.llm_id, messages)]
+        questions = [await full_question(dialog.tenant_id, dialog.llm_id, messages)]
     else:
         questions = questions[-1:]
 
     if prompt_config.get("cross_languages"):
-        questions = [cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
+        questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
     if dialog.meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(dialog.kb_ids)
@@ -359,7 +359,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         )
 
     if prompt_config.get("keyword", False):
-        questions[-1] += keyword_extraction(chat_mdl, questions[-1])
+        questions[-1] += await keyword_extraction(chat_mdl, questions[-1])
 
     refine_question_ts = timer()
 
@@ -387,7 +387,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 ),
             )
 
-            for think in reasoner.thinking(kbinfos, attachments_ + " ".join(questions)):
+            async for think in reasoner.thinking(kbinfos, attachments_ + " ".join(questions)):
                 if isinstance(think, str):
                     thought = think
                     knowledges = [t for t in think.split("\n") if t]
@@ -564,7 +564,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     return
 
 
-def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
+async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
     sys_prompt = """
 You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question.
 Ensure that:
@@ -582,9 +582,9 @@ Please write the SQL, only SQL, without any other explanations or text.
 """.format(index_name(tenant_id), "\n".join([f"{k}: {v}" for k, v in field_map.items()]), question)
     tried_times = 0
 
-    def get_table():
+    async def get_table():
         nonlocal sys_prompt, user_prompt, question, tried_times
-        sql = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
+        sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
         sql = re.sub(r"^.*</think>", "", sql, flags=re.DOTALL)
         logging.debug(f"{question} ==> {user_prompt} get SQL: {sql}")
         sql = re.sub(r"[\r\n]+", " ", sql.lower())
@@ -623,7 +623,7 @@ Please write the SQL, only SQL, without any other explanations or text.
         return settings.retriever.sql_retrieval(sql, format="json"), sql
 
     try:
-        tbl, sql = get_table()
+        tbl, sql = await get_table()
     except Exception as e:
         user_prompt = """
         Table name: {};
@@ -641,7 +641,7 @@ Please write the SQL, only SQL, without any other explanations or text.
         Please correct the error and write SQL again, only SQL, without any other explanations or text.
         """.format(index_name(tenant_id), "\n".join([f"{k}: {v}" for k, v in field_map.items()]), question, e)
         try:
-            tbl, sql = get_table()
+            tbl, sql = await get_table()
         except Exception:
             return
 
