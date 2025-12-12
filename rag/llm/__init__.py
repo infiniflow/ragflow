@@ -54,6 +54,7 @@ class SupportedLiteLLMProvider(StrEnum):
     MiniMax = "MiniMax"
     DeerAPI = "DeerAPI"
     GPUStack = "GPUStack"
+    OpenAI = "OpenAI"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -78,6 +79,7 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.ZHIPU_AI: "https://open.bigmodel.cn/api/paas/v4",
     SupportedLiteLLMProvider.MiniMax: "https://api.minimaxi.com/v1",
     SupportedLiteLLMProvider.DeerAPI: "https://api.deerapi.com/v1",
+    SupportedLiteLLMProvider.OpenAI: "https://api.openai.com/v1",
 }
 
 
@@ -113,6 +115,8 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.MiniMax: "openai/",
     SupportedLiteLLMProvider.DeerAPI: "openai/",
     SupportedLiteLLMProvider.GPUStack: "openai/",
+    SupportedLiteLLMProvider.OpenAI: "openai/",
+
 }
 
 ChatModel = globals().get("ChatModel", {})
