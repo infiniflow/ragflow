@@ -385,9 +385,10 @@ class MinerUParser(RAGFlowPdfParser):
             native_img_path = self._find_native_image_path(tag)
             if native_img_path:
                 try:
-                    img = Image.open(native_img_path)
+                    # ✅ 使用页宽标准化版本（原生图保留入库MinIO）
+                    img = self._normalize_native_image_width(native_img_path, tag)
                     images_to_stitch.append(("native", img, pos, tag))
-                    self.logger.debug(f"[MinerU] Using native image for tag: {tag}")
+                    self.logger.debug(f"[MinerU] Using normalized native image for tag: {tag}")
                     continue
                 except Exception as e:
                     self.logger.debug(f"[MinerU] Failed to load native image {native_img_path}: {e}")
@@ -417,6 +418,12 @@ class MinerUParser(RAGFlowPdfParser):
                 return None, None
             return
         
+        # ✅ 兜底图≤3张时，拼接完整页（去重）
+        fallback_count = sum(1 for src, _, _, _ in images_to_stitch if src == "cached")
+        if fallback_count <= 3 and fallback_count > 0:
+            self.logger.debug(f"[MinerU] Fallback count = {fallback_count}, using full page strategy")
+            return self._handle_low_fallback_count(poss, need_position)
+        
         # Step 2: 智能拼接（带阈值控制）
         return self._smart_stitch_with_thresholds(images_to_stitch, need_position)
     
@@ -425,6 +432,116 @@ class MinerUParser(RAGFlowPdfParser):
         # 需要在_read_output时建立 tag → native_img_path 的映射
         native_map = getattr(self, "_native_img_map", {})
         return native_map.get(tag)
+    
+    def _normalize_native_image_width(self, native_img_path, tag):
+        """
+        将Native图标准化为页宽版本（仅用于拼接）
+        
+        原理：根据tag中的bbox，从页面重新裁剪页宽条带
+        - 横向：0 到 页宽
+        - 纵向：bbox的y范围
+        
+        Args:
+            native_img_path: MinerU原生图路径（保留入库MinIO）
+            tag: 包含page_idx和bbox信息的tag字符串
+            
+        Returns:
+            页宽标准化后的Image对象，失败则返回原生图
+        """
+        try:
+            # 解析tag获取page_idx和bbox
+            import re
+            match = re.match(r"@@(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)##", tag)
+            if not match:
+                # 解析失败，返回原生图
+                return Image.open(native_img_path)
+            
+            page_num, x0_str, x1_str, y0_str, y1_str = match.groups()
+            page_idx = int(page_num) - 1  # 转为0-based
+            bbox = [float(x0_str), float(y0_str), float(x1_str), float(y1_str)]
+            
+            # 检查page_images可用性
+            if not hasattr(self, "page_images") or not self.page_images:
+                return Image.open(native_img_path)
+            
+            if page_idx < 0 or page_idx >= len(self.page_images):
+                return Image.open(native_img_path)
+            
+            # 获取页面图片
+            page_img = self.page_images[page_idx]
+            page_width, page_height = page_img.size
+            
+            # bbox转像素
+            px0, py0, px1, py1 = self._bbox_to_pixels(bbox, (page_width, page_height))
+            
+            # 裁剪页宽条带（横向全宽，纵向bbox范围）
+            crop_y0 = max(0, min(py0, page_height))
+            crop_y1 = max(crop_y0 + 1, min(py1, page_height))
+            
+            if crop_y1 - crop_y0 < 2:
+                # bbox无效，返回原生图
+                return Image.open(native_img_path)
+            
+            page_width_img = page_img.crop((0, crop_y0, page_width, crop_y1))
+            self.logger.debug(f"[MinerU] Normalized native image to page-width: {page_width}x{crop_y1-crop_y0}px")
+            return page_width_img
+            
+        except Exception as e:
+            self.logger.debug(f"[MinerU] Failed to normalize native image, using original: {e}")
+            return Image.open(native_img_path)
+    
+    def _handle_low_fallback_count(self, poss, need_position):
+        """
+        兜底图≤3张时，拼接涉及页面截图（去重）
+        
+        策略：
+        - 提取所有涉及页码
+        - 去重并限制最多3页
+        - 拼接这些完整页
+        
+        Args:
+            poss: positions列表
+            need_position: 是否需要返回positions
+            
+        Returns:
+            拼接的完整页截图，或单页截图
+        """
+        if not hasattr(self, "page_images") or not self.page_images:
+            if need_position:
+                return None, None
+            return
+        
+        # 提取所有涉及页码（0-based），去重并排序
+        page_indices = sorted(set(
+            pns[0] for pns, _, _, _, _ in poss 
+            if pns and 0 <= pns[0] < len(self.page_images)
+        ))
+        
+        # 限制最多3页
+        page_indices = page_indices[:3]
+        
+        if not page_indices:
+            if need_position:
+                return None, None
+            return
+        
+        self.logger.info(f"[MinerU] Low fallback count, stitching {len(page_indices)} page(s): {[idx+1 for idx in page_indices]}")
+        
+        # 单页直接返回
+        if len(page_indices) == 1:
+            page_img = self.page_images[page_indices[0]]
+            if need_position:
+                return page_img, [[page_indices[0], 0, page_img.width, 0, page_img.height]]
+            return page_img
+        
+        # 多页垂直拼接
+        page_imgs_with_meta = [
+            ("fullpage", self.page_images[idx], ([idx], 0, 0, 0, 0), f"@@{idx+1}\t0\t0\t0\t0##")
+            for idx in page_indices
+        ]
+        
+        return self._stitch_images_vertically(page_imgs_with_meta, need_position, gap=10)
+    
     
     def _smart_stitch_with_thresholds(self, images_with_metadata, need_position):
         """
@@ -435,18 +552,19 @@ class MinerUParser(RAGFlowPdfParser):
         - MAX_HEIGHT: 总高度不超过4000px
         
         Strategies:
-        - 数量过多: 均匀采样（保留首尾）
+        - 数量过多: 均匀采样到12张（保留首尾）
         - 高度过高: 截断到4000px
         - 不缩放图片（保持高清）
         """
         MAX_COUNT = 20
+        SAMPLE_TARGET = 12  # 采样目标数量
         MAX_HEIGHT = 4000
         GAP = 6
         
-        # 1. 数量控制：如果超过20张，均匀采样
+        # 1. 数量控制：如果超过20张，均匀采样到12张
         if len(images_with_metadata) > MAX_COUNT:
-            self.logger.info(f"[MinerU] Too many images ({len(images_with_metadata)}), sampling to {MAX_COUNT}")
-            images_with_metadata = self._sample_images_uniformly(images_with_metadata, MAX_COUNT)
+            self.logger.info(f"[MinerU] Too many images ({len(images_with_metadata)}), sampling to {SAMPLE_TARGET}")
+            images_with_metadata = self._sample_images_uniformly(images_with_metadata, SAMPLE_TARGET)
         
         # 2. 高度控制：累加到4000px为止
         trimmed_images = []
