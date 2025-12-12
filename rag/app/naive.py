@@ -96,6 +96,9 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
         callback(-1, "MinerU not found.")
     return None, None, None
 
+
+
+
 def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     pdf_parser = DoclingParser()
     parse_method = kwargs.get("parse_method", "raw")
