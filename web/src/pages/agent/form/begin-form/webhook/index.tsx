@@ -1,9 +1,8 @@
 import { Collapse } from '@/components/collapse';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { Textarea } from '@/components/ui/textarea';
 import { buildOptions } from '@/utils/form';
 import { useFormContext, useWatch } from 'react-hook-form';
@@ -17,10 +16,8 @@ import {
   WebhookSecurityAuthType,
 } from '../../../constant';
 import { DynamicStringForm } from '../../components/dynamic-string-form';
-import { SchemaDialog } from '../../components/schema-dialog';
-import { SchemaPanel } from '../../components/schema-panel';
-import { useShowSchemaDialog } from '../use-show-schema-dialog';
 import { Auth } from './auth';
+import { WebhookRequestSchema } from './request-schema';
 import { WebhookResponse } from './response';
 
 const RateLimitPerOptions = buildOptions(RateLimitPerList);
@@ -34,21 +31,19 @@ export function WebHook() {
     name: 'execution_mode',
   });
 
-  const {
-    showSchemaDialog,
-    schemaDialogVisible,
-    hideSchemaDialog,
-    handleSchemaDialogOk,
-  } = useShowSchemaDialog(form);
-
-  const schema = form.getValues('schema');
-
   return (
     <>
       <RAGFlowFormItem name="methods" label={t('flow.webhook.methods')}>
-        <SelectWithSearch
-          options={buildOptions(WebhookMethod)}
-        ></SelectWithSearch>
+        {(field) => (
+          <MultiSelect
+            options={buildOptions(WebhookMethod)}
+            placeholder={t('fileManager.pleaseSelect')}
+            maxCount={100}
+            onValueChange={field.onChange}
+            defaultValue={field.value}
+            modalPopover
+          />
+        )}
       </RAGFlowFormItem>
       <RAGFlowFormItem
         name="content_types"
@@ -95,6 +90,7 @@ export function WebHook() {
           ></DynamicStringForm>
         </section>
       </Collapse>
+      <WebhookRequestSchema></WebhookRequestSchema>
       <RAGFlowFormItem
         name="schema"
         label={t('flow.webhook.schema')}
@@ -112,22 +108,6 @@ export function WebHook() {
       </RAGFlowFormItem>
       {executionMode === WebhookExecutionMode.Immediately && (
         <WebhookResponse></WebhookResponse>
-      )}
-      <Separator></Separator>
-      <section className="flex justify-between items-center">
-        Schema
-        <Button variant={'ghost'} onClick={showSchemaDialog}>
-          {t('flow.structuredOutput.configuration')}
-        </Button>
-      </section>
-      <SchemaPanel value={schema}></SchemaPanel>
-      {schemaDialogVisible && (
-        <SchemaDialog
-          initialValues={schema}
-          hideModal={hideSchemaDialog}
-          onOk={handleSchemaDialogOk}
-          pattern={''}
-        ></SchemaDialog>
       )}
     </>
   );
