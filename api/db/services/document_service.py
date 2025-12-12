@@ -761,26 +761,35 @@ class DocumentService(CommonService):
                 key = upd.get("key")
                 if not key or key not in meta:
                     continue
+
                 new_value = upd.get("value")
-                match_value = upd.get("match", new_value)
+                match_provided = "match" in upd
                 if isinstance(meta[key], list):
-                    replaced = False
-                    new_list = []
-                    for item in meta[key]:
-                        if match_value and _str_equal(item, match_value):
-                            new_list.append(new_value)
-                            replaced = True
-                        else:
-                            new_list.append(item)
-                    if replaced:
-                        meta[key] = new_list
-                        changed = True
-                else:
-                    if not match_value:
-                        continue
-                    if _str_equal(meta[key], match_value):
+                    if not match_provided:
                         meta[key] = new_value
                         changed = True
+                    else:
+                        match_value = upd.get("match")
+                        replaced = False
+                        new_list = []
+                        for item in meta[key]:
+                            if _str_equal(item, match_value):
+                                new_list.append(new_value)
+                                replaced = True
+                            else:
+                                new_list.append(item)
+                        if replaced:
+                            meta[key] = new_list
+                            changed = True
+                else:
+                    if not match_provided:
+                        meta[key] = new_value
+                        changed = True
+                    else:
+                        match_value = upd.get("match")
+                        if _str_equal(meta[key], match_value):
+                            meta[key] = new_value
+                            changed = True
             return changed
 
         def _apply_deletes(meta):
