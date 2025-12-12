@@ -22,13 +22,13 @@ from abc import ABC
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.constants import LLMType
 from api.db.services.document_service import DocumentService
-from api.db.services.dialog_service import meta_filter
+from common.metadata_utils import apply_meta_data_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from common import settings
 from common.connection_utils import timeout
 from rag.app.tag import label_question
-from rag.prompts.generator import cross_languages, kb_prompt, gen_meta_filter
+from rag.prompts.generator import cross_languages, kb_prompt
 
 
 class RetrievalParam(ToolParamBase):
@@ -131,54 +131,48 @@ class Retrieval(ToolBase, ABC):
         doc_ids=[]
         if self._param.meta_data_filter!={}:
             metas = DocumentService.get_meta_by_kbs(kb_ids)
-            if self._param.meta_data_filter.get("method") == "auto":
+
+            def _resolve_manual_filter(flt: dict) -> dict:
+                pat = re.compile(self.variable_ref_patt)
+                s = flt.get("value", "")
+                out_parts = []
+                last = 0
+
+                for m in pat.finditer(s):
+                    out_parts.append(s[last:m.start()])
+                    key = m.group(1)
+                    v = self._canvas.get_variable_value(key)
+                    if v is None:
+                        rep = ""
+                    elif isinstance(v, partial):
+                        buf = []
+                        for chunk in v():
+                            buf.append(chunk)
+                        rep = "".join(buf)
+                    elif isinstance(v, str):
+                        rep = v
+                    else:
+                        rep = json.dumps(v, ensure_ascii=False)
+
+                    out_parts.append(rep)
+                    last = m.end()
+
+                out_parts.append(s[last:])
+                flt["value"] = "".join(out_parts)
+                return flt
+
+            chat_mdl = None
+            if self._param.meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT)
-                filters: dict = await gen_meta_filter(chat_mdl, metas, query)
-                doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
-                if not doc_ids:
-                    doc_ids = None
-            elif self._param.meta_data_filter.get("method") == "semi_auto":
-                selected_keys = self._param.meta_data_filter.get("semi_auto", [])
-                if selected_keys:
-                    filtered_metas = {key: metas[key] for key in selected_keys if key in metas}
-                    if filtered_metas:
-                        chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT)
-                        filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, query)
-                        doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
-                        if not doc_ids:
-                            doc_ids = None
-            elif self._param.meta_data_filter.get("method") == "manual":
-                filters = self._param.meta_data_filter["manual"]
-                for flt in filters:
-                    pat = re.compile(self.variable_ref_patt)
-                    s = flt["value"]
-                    out_parts = []
-                    last = 0
 
-                    for m in pat.finditer(s):
-                        out_parts.append(s[last:m.start()])
-                        key = m.group(1)
-                        v = self._canvas.get_variable_value(key)
-                        if v is None:
-                            rep = ""
-                        elif isinstance(v, partial):
-                            buf = []
-                            for chunk in v():
-                                buf.append(chunk)
-                            rep = "".join(buf)
-                        elif isinstance(v, str):
-                            rep = v
-                        else:
-                            rep = json.dumps(v, ensure_ascii=False)
-
-                        out_parts.append(rep)
-                        last = m.end()
-
-                    out_parts.append(s[last:])
-                    flt["value"] = "".join(out_parts)
-                doc_ids.extend(meta_filter(metas, filters, self._param.meta_data_filter.get("logic", "and")))
-                if filters and not doc_ids:
-                    doc_ids = ["-999"]
+            doc_ids = await apply_meta_data_filter(
+                self._param.meta_data_filter,
+                metas,
+                query,
+                chat_mdl,
+                doc_ids,
+                _resolve_manual_filter if self._param.meta_data_filter.get("method") == "manual" else None,
+            )
 
         if self._param.cross_languages:
             query = await cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)

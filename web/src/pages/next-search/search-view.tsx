@@ -209,7 +209,11 @@ export default function SearchingView({
                                 <div
                                   dangerouslySetInnerHTML={{
                                     __html: DOMPurify.sanitize(
-                                      `${chunk.highlight}...`,
+                                      `${
+                                        chunk.highlight ??
+                                        chunk.content_with_weight ??
+                                        ''
+                                      }...`,
                                     ),
                                   }}
                                   className="text-sm text-text-primary mb-1"
