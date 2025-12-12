@@ -1,10 +1,11 @@
 import { FormFieldType } from '@/components/dynamic-form';
 import SvgIcon from '@/components/svg-icon';
 import { t } from 'i18next';
-import { ControllerRenderProps } from 'react-hook-form';
+import BoxTokenField from './component/box-token-field';
 import { ConfluenceIndexingModeField } from './component/confluence-token-field';
 import GmailTokenField from './component/gmail-token-field';
 import GoogleDriveTokenField from './component/google-drive-token-field';
+
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   S3 = 's3',
@@ -15,6 +16,7 @@ export enum DataSourceKey {
   GMAIL = 'gmail',
   JIRA = 'jira',
   WEBDAV = 'webdav',
+  BOX = 'box',
   DROPBOX = 'dropbox',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
@@ -71,6 +73,11 @@ export const DataSourceInfo = {
     name: 'Dropbox',
     description: t(`setting.${DataSourceKey.DROPBOX}Description`),
     icon: <SvgIcon name={'data-source/dropbox'} width={38} />,
+  },
+  [DataSourceKey.BOX]: {
+    name: 'Box',
+    description: t(`setting.${DataSourceKey.BOX}Description`),
+    icon: <SvgIcon name={'data-source/box'} width={38} />,
   },
 };
 
@@ -234,11 +241,11 @@ export const DataSourceFormFields = {
     {
       label: 'Index Method',
       name: 'config.index_mode',
-      type: FormFieldType.Text, // keep as text so RHF registers it
+      type: FormFieldType.Text,
       required: false,
       horizontal: true,
       labelClassName: 'self-start pt-4',
-      render: (fieldProps: ControllerRenderProps) => (
+      render: (fieldProps: any) => (
         <ConfluenceIndexingModeField {...fieldProps} />
       ),
     },
@@ -551,6 +558,28 @@ export const DataSourceFormFields = {
       placeholder: 'Defaults to 2',
     },
   ],
+  [DataSourceKey.BOX]: [
+    {
+      label: 'Box OAuth JSON',
+      name: 'config.credentials.box_tokens',
+      type: FormFieldType.Textarea,
+      required: true,
+      render: (fieldProps: any) => (
+        <BoxTokenField
+          value={fieldProps.value}
+          onChange={fieldProps.onChange}
+          placeholder='{ "client_id": "...", "client_secret": "...", "redirect_uri": "..." }'
+        />
+      ),
+    },
+    {
+      label: 'Folder ID',
+      name: 'config.folder_id',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'Defaults root',
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -684,6 +713,17 @@ export const DataSourceFormDefaultValues = {
       batch_size: 2,
       credentials: {
         dropbox_access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.BOX]: {
+    name: '',
+    source: DataSourceKey.BOX,
+    config: {
+      name: '',
+      folder_id: '0',
+      credentials: {
+        box_tokens: '',
       },
     },
   },
