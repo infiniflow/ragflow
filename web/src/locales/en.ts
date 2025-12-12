@@ -2008,6 +2008,9 @@ Important structured information may include: names, dates, locations, events, k
         basic: 'Basic',
         bearer: 'Bearer',
         apiKey: 'Api Key',
+        queryParameters: 'Query parameters',
+        headerParameters: 'Header parameters',
+        requestBodyParameters: 'Request body parameters',
       },
     },
     llmTools: {
