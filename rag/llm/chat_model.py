@@ -28,7 +28,6 @@ import json_repair
 import litellm
 import openai
 from openai import AsyncOpenAI, OpenAI
-from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 from strenum import StrEnum
 
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
