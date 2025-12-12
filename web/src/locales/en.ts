@@ -329,6 +329,15 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      mineruOptions: 'MinerU Options',
+      mineruParseMethod: 'Parse Method',
+      mineruParseMethodTip:
+        'Method for parsing PDF: auto (automatic detection), txt (text extraction), ocr (optical character recognition)',
+      mineruFormulaEnable: 'Formula Recognition',
+      mineruFormulaEnableTip:
+        'Enable formula recognition. Note: This may not work correctly for Cyrillic documents.',
+      mineruTableEnable: 'Table Recognition',
+      mineruTableEnableTip: 'Enable table recognition and extraction.',
       overlappedPercent: 'Overlapped percent',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',

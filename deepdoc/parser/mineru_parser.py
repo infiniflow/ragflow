@@ -53,6 +53,30 @@ class MinerUContentType(StrEnum):
     DISCARDED = "discarded"
 
 
+# Mapping from language names to MinerU language codes
+LANGUAGE_TO_MINERU_MAP = {
+    'English': 'en',
+    'Chinese': 'ch',
+    'Traditional Chinese': 'chinese_cht',
+    'Russian': 'east_slavic',
+    'Ukrainian': 'east_slavic',
+    'Indonesian': 'latin',
+    'Spanish': 'latin',
+    'Vietnamese': 'latin',
+    'Japanese': 'japan',
+    'Korean': 'korean',
+    'Portuguese BR': 'latin',
+    'German': 'latin',
+    'French': 'latin',
+    'Italian': 'latin',
+    'Tamil': 'ta',
+    'Telugu': 'te',
+    'Kannada': 'ka',
+    'Thai': 'th',
+    'Greek': 'el',
+    'Hindi': 'devanagari',
+}
+
 class MinerUParser(RAGFlowPdfParser):
     def __init__(self, mineru_path: str = "mineru", mineru_api: str = "", mineru_server_url: str = ""):
         self.mineru_path = Path(mineru_path)
@@ -576,16 +600,20 @@ class MinerUParser(RAGFlowPdfParser):
         *,
         output_dir: Optional[str] = None,
         backend: str = "pipeline",
-        lang: Optional[str] = None,
-        method: str = "auto",
         server_url: Optional[str] = None,
         delete_output: bool = True,
         parse_method: str = "raw",
+        **kwargs,
     ) -> tuple:
         import shutil
 
         temp_pdf = None
         created_tmp_dir = False
+
+        # Assuming the dict is defined as shown
+        lang = kwargs.get('lang', 'English')
+        mineru_lang_code = LANGUAGE_TO_MINERU_MAP.get(lang, 'ch')  # Returns 'ch' if lang not found
+        # Use .get() to avoid KeyError if the key doesn't exist
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
@@ -625,7 +653,7 @@ class MinerUParser(RAGFlowPdfParser):
         self.__images__(pdf, zoomin=1)
 
         try:
-            self._run_mineru(pdf, out_dir, method=method, backend=backend, lang=lang, server_url=server_url, callback=callback)
+            self._run_mineru(pdf, out_dir, method=method, backend=backend, lang=mineru_lang_code, server_url=server_url, callback=callback)
             outputs = self._read_output(out_dir, pdf.stem, method=method, backend=backend)
             self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
             if callback:

@@ -85,6 +85,8 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
                     binary=binary,
                     callback=callback,
                     parse_method=parse_method,
+                    lang=lang,
+                    **kwargs
                 )
                 return sections, tables, pdf_parser
             except Exception as e:

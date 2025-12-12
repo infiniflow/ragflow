@@ -57,7 +57,7 @@ class MinerUOcrModel(Base, MinerUParser):
         server_url = server_url or self.mineru_server_url
         return self.check_installation(backend=backend, server_url=server_url)
 
-    def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs):
+    def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw",**kwargs):
         ok, reason = self.check_available()
         if not ok:
             raise RuntimeError(f"MinerU not found or server not accessible: {reason}. Please install it via: pip install -U 'mineru[core]'.")
@@ -72,5 +72,6 @@ class MinerUOcrModel(Base, MinerUParser):
             server_url=self.mineru_server_url,
             delete_output=self.mineru_delete_output,
             parse_method=parse_method,
+            **kwargs
         )
         return sections, tables
