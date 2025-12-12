@@ -191,7 +191,7 @@ class Base(ABC):
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
-                    yield e                    
+                    yield e
                     yield total_tokens
                     return
 
@@ -1219,6 +1219,7 @@ class LiteLLMBase(ABC):
         "DeerAPI",
         "GPUStack",
         "OpenAI",
+        "Azure-OpenAI",
     ]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
@@ -1244,6 +1245,9 @@ class LiteLLMBase(ABC):
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
             self.api_key = json.loads(key).get("api_key", "")
             self.provider_order = json.loads(key).get("provider_order", "")
+        elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
+            self.api_key = json.loads(key).get("api_key", "")
+            self.api_version = json.loads(key).get("api_version", "2024-02-01")
 
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
@@ -1673,6 +1677,13 @@ class LiteLLMBase(ABC):
             completion_args.update(
                 {
                     "api_base": self.base_url,
+                }
+            )
+        elif self.provider == SupportedLiteLLMProvider.GPUStack:
+            completion_args.update(
+                {
+                    "api_base": self.base_url,
+                    "api_version": self.api_version,
                 }
             )
 
