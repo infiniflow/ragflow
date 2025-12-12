@@ -1660,8 +1660,11 @@ class LiteLLMBase(ABC):
                 }
             )
         elif self.provider == SupportedLiteLLMProvider.GPUStack:
+            completion_args.pop("api_key", None)
+            completion_args.pop("api_base", None)
             completion_args.update(
                 {
+                    "api_key": self.api_key,
                     "api_base": self.base_url,
                     "api_version": self.api_version,
                 }
