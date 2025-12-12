@@ -20,7 +20,7 @@ import re
 
 from common.constants import ParserType
 from io import BytesIO
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level, attach_media_context
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, bullets_category, title_frequency, tokenize_chunks, docx_question_level
 from common.token_utils import num_tokens_from_string
 from deepdoc.parser import PdfParser, DocxParser
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision_figure_parser_docx_wrapper
@@ -155,7 +155,7 @@ class Docx(DocxParser):
             sum_question = '\n'.join(question_stack)
             if sum_question:
                 ti_list.append((f'{sum_question}\n{last_answer}', last_image))
-
+                
         tbls = []
         for tb in self.doc.tables:
             html= "<table>"
@@ -213,39 +213,60 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             lang = lang,
             callback = callback,
             pdf_cls = Pdf,
-            layout_recognizer = layout_recognizer,
-            parse_method = "manual",
             **kwargs
         )
-
-        def _normalize_section(section):
-            # pad section to length 3: (txt, sec_id, poss)
-            if len(section) == 1:
-                section = (section[0], "", [])
-            elif len(section) == 2:
-                section = (section[0], "", section[1])
-            elif len(section) != 3:
-                raise ValueError(f"Unexpected section length: {len(section)} (value={section!r})")
-
-            txt, layoutno, poss = section
-            if isinstance(poss, str):
-                poss = pdf_parser.extract_positions(poss)
-                if poss:
-                    first = poss[0]          # tuple: ([pn], x1, x2, y1, y2)
-                    pn = first[0]           
-                    if isinstance(pn, list) and pn:
-                        pn = pn[0]           # [pn] -> pn
-                        poss[0] = (pn, *first[1:])
-
-            return (txt, layoutno, poss)
-
-        sections = [_normalize_section(sec) for sec in sections]
 
         if not sections and not tbls:
             return []
 
         if name in ["tcadp", "docling", "mineru"]:
             parser_config["chunk_token_num"] = 0
+
+        # Normalize sections to (text, layout, positions) even if parser only returns (text, tag)
+        def _extract_positions_from_tag(tag: str):
+            import re
+            poss = []
+            for t in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", tag or ""):
+                pn, left, right, top, bottom = t.strip("#").strip("@").split("\t")
+                poss.append((int(pn.split("-")[0]), float(left), float(right), float(top), float(bottom)))
+            return poss
+
+        normalized_sections = []
+        # 🎯 MinerU专用逻辑：直接使用已有的positions，不重新解析tag
+        is_mineru = name == "mineru"
+        
+        for item in sections:
+            if len(item) >= 3:
+                # 已经是(text, layout, positions)格式
+                normalized_sections.append(item)
+                continue
+            
+            txt, tag = item[0], item[1] if len(item) > 1 else ""
+            
+            # ✅ MinerU: 如果tag包含完整的bbox信息，直接解析并使用
+            if is_mineru and tag:
+                poss = _extract_positions_from_tag(tag)
+                if not poss:
+                    # 如果解析失败，尝试从tag字符串中手动提取（处理格式问题）
+                    try:
+                        # 更宽松的正则：允许空格或tab分隔
+                        matches = re.findall(r"@@([0-9-]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)##", tag)
+                        if matches:
+                            for match in matches:
+                                pn, left, right, top, bottom = match
+                                poss.append((int(pn.split("-")[0]), float(left), float(right), float(top), float(bottom)))
+                    except Exception as e:
+                        pass
+            else:
+                # 非MinerU：正常解析tag
+                poss = _extract_positions_from_tag(tag)
+            
+            # 如果还是没有positions，使用默认值
+            if not poss:
+                poss = [(max(from_page, 0) + 1, 0.0, 0.0, 0.0, 0.0)]
+            
+            normalized_sections.append((txt, "", poss))
+        sections = normalized_sections
 
         callback(0.8, "Finish parsing.")
 
@@ -309,10 +330,6 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
         res = tokenize_table(tbls, doc, eng)
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
-        table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
-        image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
-        if table_ctx or image_ctx:
-            attach_media_context(res, table_ctx, image_ctx)
         return res
 
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):
@@ -328,14 +345,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 d["doc_type_kwd"] = "image"
             tokenize(d, text, eng)
             res.append(d)
-        table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
-        image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
-        if table_ctx or image_ctx:
-            attach_media_context(res, table_ctx, image_ctx)
         return res
     else:
         raise NotImplementedError("file type not supported yet(pdf and docx supported)")
-
+    
 
 if __name__ == "__main__":
     import sys
