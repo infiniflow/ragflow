@@ -21,13 +21,10 @@ A component for reading, processing, and generating Excel files in RAGFlow agent
 Supports multiple Excel file inputs, data transformation, and Excel output generation.
 """
 
-import json
 import logging
 import os
 from abc import ABC
-from functools import partial
 from io import BytesIO
-from typing import Any
 
 import pandas as pd
 
@@ -319,7 +316,7 @@ class ExcelProcessor(ComponentBase, ABC):
             self.set_output("data", {"raw": str(data)})
             self.set_output("markdown", str(data))
         
-        self.set_output("summary", f"Transformed data ready for processing")
+        self.set_output("summary", "Transformed data ready for processing")
 
     def _output_excel(self):
         """Generate Excel file output from data."""

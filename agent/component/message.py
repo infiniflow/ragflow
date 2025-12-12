@@ -232,7 +232,7 @@ class Message(ComponentBase):
             elif self._param.output_format == "xlsx":
                 import pandas as pd
                 from io import BytesIO
-                import re
+
 
                 # Try to parse markdown table from the content
                 df = None
