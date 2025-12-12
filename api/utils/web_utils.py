@@ -36,7 +36,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
 
-OTP_LENGTH = 8
+OTP_LENGTH = 4
 OTP_TTL_SECONDS = 5 * 60 # valid for 5 minutes
 ATTEMPT_LIMIT = 5 # maximum attempts
 ATTEMPT_LOCK_SECONDS = 30 * 60 # lock for 30 minutes

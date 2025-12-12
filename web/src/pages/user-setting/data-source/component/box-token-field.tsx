@@ -346,7 +346,7 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
       )}
 
       <Button variant="outline" onClick={handleOpenDialog}>
-        {hasConfigured ? 'Edit Box credentials' : 'Configure Box credentials'}
+        {hasConfigured ? 'Get Box credentials' : 'Configure Box credentials'}
       </Button>
 
       <Dialog
