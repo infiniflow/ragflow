@@ -1659,7 +1659,7 @@ class LiteLLMBase(ABC):
                     "api_base": self.base_url,
                 }
             )
-        elif self.provider == SupportedLiteLLMProvider.GPUStack:
+        elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
             completion_args.pop("api_key", None)
             completion_args.pop("api_base", None)
             completion_args.update(
