@@ -2184,12 +2184,12 @@ Batch update or delete document-level metadata within a specified dataset. If bo
         - `"not empty"`
       - `"value"`: `string` The key value to search by.  
 - `"updates"`: `list[object]`, *optional*  Replaces metadata of the retrieved documents.
-  Each object: `{ "key": string, "match": any (optional), "value": any }`  
+  Each object: `{ "key": string, "match": string, "value": string }`  
   - `"key"`: `string` The name of the key to update.
   - `"match"`: `string` *optional* The current value of the key to update. When omitted, the corresponding keys are updated to `"value"` regardless of their current values.
   - `"value"`: `string` The new value to set for the specified keys.
 - `"deletes`: `list[ojbect]`, *optional* Deletes metadata of the retrieved documents.
-  Each object: `{ "key": string, "value": any (optional) }`  
+  Each object: `{ "key": string, "value": string }`  
   - `"key"`: `string` The name of the key to delete.
   - `"value"`: `string` *Optional* The value of the key to delete. 
     - When provided, only keys with a matching value are deleted.
