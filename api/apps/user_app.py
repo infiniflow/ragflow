@@ -21,8 +21,9 @@ import re
 import secrets
 import time
 from datetime import datetime
+import base64
 
-from quart import redirect, request, session
+from quart import make_response, redirect, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from api.apps.auth import get_auth_client
@@ -868,12 +869,9 @@ async def forget_get_captcha():
     from captcha.image import ImageCaptcha
     image = ImageCaptcha(width=300, height=120, font_sizes=[50, 60, 70])
     img_bytes = image.generate(captcha_text).read()
-
-    import base64
-    base64_img = base64.b64encode(img_bytes).decode('utf-8')
-    data_uri = f"data:image/jpeg;base64,{base64_img}"
-
-    return get_json_result(data=data_uri)
+    response = await make_response(img_bytes)
+    response.headers.set("Content-Type", "image/JPEG")
+    return response
 
 
 @manager.route("/forget/otp", methods=["POST"])  # noqa: F821
@@ -940,19 +938,6 @@ async def forget_send_otp():
         return get_json_result(data=False, code=RetCode.SERVER_ERROR, message="failed to send email")
 
     return get_json_result(data=True, code=RetCode.SUCCESS, message="verification passed, email sent")
- 
-
-@manager.route("/forget", methods=["POST"])  # noqa: F821
-async def forget():
-    """
-    Deprecated single-step reset endpoint.
-    Use /forget/verify-otp then /forget/reset-password.
-    """
-    return get_json_result(
-        data=False,
-        code=RetCode.NOT_EFFECTIVE,
-        message="Use /forget/verify-otp then /forget/reset-password",
-    )
 
 
 def _verified_key(email: str) -> str:
@@ -1031,38 +1016,36 @@ async def forget_reset_password():
     - auto login
     - clear verified flag
     """
+    
     req = await get_request_json()
     email = req.get("email") or ""
     new_pwd = req.get("new_password")
     new_pwd2 = req.get("confirm_new_password")
 
+    new_pwd_base64 = decrypt(new_pwd)
+    new_pwd_string = base64.b64decode(new_pwd_base64).decode('utf-8')
+    new_pwd2_string = base64.b64decode(decrypt(new_pwd2)).decode('utf-8')
+
+    REDIS_CONN.get(_verified_key(email))
+    if not REDIS_CONN.get(_verified_key(email)):
+        return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="email not verified")
+
     if not all([email, new_pwd, new_pwd2]):
         return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="email and passwords are required")
 
-    if new_pwd != new_pwd2:
+    if new_pwd_string != new_pwd2_string:
         return get_json_result(data=False, code=RetCode.ARGUMENT_ERROR, message="passwords do not match")
 
-    users = UserService.query(email=email)
+    users = UserService.query_user_by_email(email=email)
     if not users:
         return get_json_result(data=False, code=RetCode.DATA_ERROR, message="invalid email")
     
     user = users[0]
     try:
-        UserService.update_user_password(user.id, new_pwd)
+        UserService.update_user_password(user.id, new_pwd_base64)
     except Exception as e:
         logging.exception(e)
         return get_json_result(data=False, code=RetCode.EXCEPTION_ERROR, message="failed to reset password")
-
-    # login
-    try:
-        user.access_token = get_uuid()
-        login_user(user)
-        user.update_time = current_timestamp()
-        user.update_date = datetime_format(datetime.now())
-        user.save()
-    except Exception as e:
-        logging.exception(e)
-        return get_json_result(data=False, code=RetCode.EXCEPTION_ERROR, message="failed to login after reset")
 
     # clear verified flag
     try:
