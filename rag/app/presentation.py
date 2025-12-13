@@ -227,8 +227,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         for pn, (txt, img) in enumerate(sections):
             d = copy.deepcopy(doc)
             pn += from_page
-            if img:
-                d["image"] = img
+            if not isinstance(img, Image.Image):
+                img = None
+            d["image"] = img
             d["page_num_int"] = [pn + 1]
             d["top_int"] = [0]
             d["position_int"] = [(pn + 1, 0, img.size[0] if img else 0, 0,
