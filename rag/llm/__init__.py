@@ -55,6 +55,7 @@ class SupportedLiteLLMProvider(StrEnum):
     DeerAPI = "DeerAPI"
     GPUStack = "GPUStack"
     OpenAI = "OpenAI"
+    Azure_OpenAI = "Azure-OpenAI"
 
 
 FACTORY_DEFAULT_BASE_URL = {
@@ -116,7 +117,7 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.DeerAPI: "openai/",
     SupportedLiteLLMProvider.GPUStack: "openai/",
     SupportedLiteLLMProvider.OpenAI: "openai/",
-
+    SupportedLiteLLMProvider.Azure_OpenAI: "azure/",
 }
 
 ChatModel = globals().get("ChatModel", {})
