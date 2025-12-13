@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
 import json
 import re
 import time
@@ -29,10 +28,11 @@ from api.db.services.canvas_service import completion as agent_completion
 from api.db.services.conversation_service import ConversationService
 from api.db.services.conversation_service import async_iframe_completion as iframe_completion
 from api.db.services.conversation_service import async_completion as rag_completion
-from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap, meta_filter
+from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
+from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from common.misc_utils import get_uuid
@@ -40,9 +40,10 @@ from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_
     get_result, get_request_json, server_error_response, token_required, validate_request
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
-from rag.prompts.generator import cross_languages, gen_meta_filter, keyword_extraction, chunks_format
+from rag.prompts.generator import cross_languages, keyword_extraction, chunks_format
 from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
+
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
@@ -969,25 +970,26 @@ async def retrieval_test_embedded():
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
 
-    def _retrieval_sync():
+    async def _retrieval():
         local_doc_ids = list(doc_ids) if doc_ids else []
         tenant_ids = []
         _question = question
 
+        meta_data_filter = {}
+        chat_mdl = None
         if req.get("search_id", ""):
             search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
             meta_data_filter = search_config.get("meta_data_filter", {})
-            metas = DocumentService.get_meta_by_kbs(kb_ids)
-            if meta_data_filter.get("method") == "auto":
+            if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
-                filters: dict = gen_meta_filter(chat_mdl, metas, _question)
-                local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
-                if not local_doc_ids:
-                    local_doc_ids = None
-            elif meta_data_filter.get("method") == "manual":
-                local_doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
-                if meta_data_filter["manual"] and not local_doc_ids:
-                    local_doc_ids = ["-999"]
+        else:
+            meta_data_filter = req.get("meta_data_filter") or {}
+            if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+                chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
+
+        if meta_data_filter:
+            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, _question, chat_mdl, local_doc_ids)
 
         tenants = UserTenantService.query(user_id=tenant_id)
         for kb_id in kb_ids:
@@ -1004,7 +1006,7 @@ async def retrieval_test_embedded():
             return get_error_data_result(message="Knowledgebase not found!")
 
         if langs:
-            _question = cross_languages(kb.tenant_id, None, _question, langs)
+            _question = await cross_languages(kb.tenant_id, None, _question, langs)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
@@ -1014,7 +1016,7 @@ async def retrieval_test_embedded():
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
-            _question += keyword_extraction(chat_mdl, _question)
+            _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
         ranks = settings.retriever.retrieval(
@@ -1034,7 +1036,7 @@ async def retrieval_test_embedded():
         return get_json_result(data=ranks)
 
     try:
-        return await asyncio.to_thread(_retrieval_sync)
+        return await _retrieval()
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message="No chunk found! Check the chunk status please!",
@@ -1135,7 +1137,7 @@ async def mindmap():
     search_id = req.get("search_id", "")
     search_app = SearchService.get_detail(search_id) if search_id else {}
 
-    mind_map = gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
+    mind_map =await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)

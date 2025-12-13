@@ -202,14 +202,18 @@ export default function SearchingView({
                         <div className="w-full flex flex-col">
                           <div className="w-full highlightContent">
                             <ImageWithPopover
-                              id={chunk.img_id}
+                              id={chunk.image_id || chunk.img_id}
                             ></ImageWithPopover>
                             <Popover>
                               <PopoverTrigger asChild>
                                 <div
                                   dangerouslySetInnerHTML={{
                                     __html: DOMPurify.sanitize(
-                                      `${chunk.highlight}...`,
+                                      `${
+                                        chunk.highlight ??
+                                        chunk.content_with_weight ??
+                                        ''
+                                      }...`,
                                     ),
                                   }}
                                   className="text-sm text-text-primary mb-1"

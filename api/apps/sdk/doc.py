@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import datetime
+import json
 import logging
 import pathlib
 import re
@@ -34,7 +35,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.task_service import TaskService, queue_tasks, cancel_all_task_of
-from api.db.services.dialog_service import meta_filter, convert_conditions
+from common.metadata_utils import meta_filter, convert_conditions
 from api.utils.api_utils import check_duplicate_ids, construct_json_result, get_error_data_result, get_parser_config, get_result, server_error_response, token_required, \
     get_request_json
 from rag.app.qa import beAdoc, rmPrefix
@@ -551,13 +552,29 @@ def list_docs(dataset_id, tenant_id):
     run_status           = q.getlist("run")
     create_time_from     = int(q.get("create_time_from", 0))
     create_time_to       = int(q.get("create_time_to", 0))
+    metadata_condition_raw = q.get("metadata_condition")
+    metadata_condition = {}
+    if metadata_condition_raw:
+        try:
+            metadata_condition = json.loads(metadata_condition_raw)
+        except Exception:
+            return get_error_data_result(message="metadata_condition must be valid JSON.")
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_error_data_result(message="metadata_condition must be an object.")
 
     # map run status (text or numeric) - align with API parameter
     run_status_text_to_numeric = {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4"}
     run_status_converted = [run_status_text_to_numeric.get(v, v) for v in run_status]
 
+    doc_ids_filter = None
+    if metadata_condition:
+        metas = DocumentService.get_flatted_meta_by_kbs([dataset_id])
+        doc_ids_filter = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+        if metadata_condition.get("conditions") and not doc_ids_filter:
+            return get_result(data={"total": 0, "docs": []})
+
     docs, total = DocumentService.get_list(
-        dataset_id, page, page_size, orderby, desc, keywords, document_id, name, suffix, run_status_converted
+        dataset_id, page, page_size, orderby, desc, keywords, document_id, name, suffix, run_status_converted, doc_ids_filter
     )
 
     # time range filter (0 means no bound)
@@ -585,6 +602,70 @@ def list_docs(dataset_id, tenant_id):
         output_docs.append(renamed_doc)
 
     return get_result(data={"total": total, "docs": output_docs})
+
+
+@manager.route("/datasets/<dataset_id>/metadata/summary", methods=["GET"])  # noqa: F821
+@token_required
+def metadata_summary(dataset_id, tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+
+    try:
+        summary = DocumentService.get_metadata_summary(dataset_id)
+        return get_result(data={"summary": summary})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/datasets/<dataset_id>/metadata/update", methods=["POST"])  # noqa: F821
+@token_required
+async def metadata_batch_update(dataset_id, tenant_id):
+    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
+
+    req = await get_request_json()
+    selector = req.get("selector", {}) or {}
+    updates = req.get("updates", []) or []
+    deletes = req.get("deletes", []) or []
+
+    if not isinstance(selector, dict):
+        return get_error_data_result(message="selector must be an object.")
+    if not isinstance(updates, list) or not isinstance(deletes, list):
+        return get_error_data_result(message="updates and deletes must be lists.")
+
+    metadata_condition = selector.get("metadata_condition", {}) or {}
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_error_data_result(message="metadata_condition must be an object.")
+
+    document_ids = selector.get("document_ids", []) or []
+    if document_ids and not isinstance(document_ids, list):
+        return get_error_data_result(message="document_ids must be a list.")
+
+    for upd in updates:
+        if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
+            return get_error_data_result(message="Each update requires key and value.")
+    for d in deletes:
+        if not isinstance(d, dict) or not d.get("key"):
+            return get_error_data_result(message="Each delete requires key.")
+
+    kb_doc_ids = KnowledgebaseService.list_documents_by_ids([dataset_id])
+    target_doc_ids = set(kb_doc_ids)
+    if document_ids:
+        invalid_ids = set(document_ids) - set(kb_doc_ids)
+        if invalid_ids:
+            return get_error_data_result(message=f"These documents do not belong to dataset {dataset_id}: {', '.join(invalid_ids)}")
+        target_doc_ids = set(document_ids)
+
+    if metadata_condition:
+        metas = DocumentService.get_flatted_meta_by_kbs([dataset_id])
+        filtered_ids = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
+        target_doc_ids = target_doc_ids & filtered_ids
+        if metadata_condition.get("conditions") and not target_doc_ids:
+            return get_result(data={"updated": 0, "matched_docs": 0})
+
+    target_doc_ids = list(target_doc_ids)
+    updated = DocumentService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
+    return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
 @manager.route("/datasets/<dataset_id>/documents", methods=["DELETE"])  # noqa: F821
 @token_required
@@ -1468,11 +1549,11 @@ async def retrieval_test(tenant_id):
             rerank_mdl = LLMBundle(kb.tenant_id, LLMType.RERANK, llm_name=req["rerank_id"])
 
         if langs:
-            question = cross_languages(kb.tenant_id, None, question, langs)
+            question = await cross_languages(kb.tenant_id, None, question, langs)
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
-            question += keyword_extraction(chat_mdl, question)
+            question += await keyword_extraction(chat_mdl, question)
 
         ranks = settings.retriever.retrieval(
             question,

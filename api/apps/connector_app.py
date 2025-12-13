@@ -28,11 +28,12 @@ from api.db import InputType
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
 from common.constants import RetCode, TaskStatus
-from common.data_source.config import GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, GMAIL_WEB_OAUTH_REDIRECT_URI, DocumentSource
-from common.data_source.google_util.constant import GOOGLE_WEB_OAUTH_POPUP_TEMPLATE, GOOGLE_SCOPES
+from common.data_source.config import GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, GMAIL_WEB_OAUTH_REDIRECT_URI, BOX_WEB_OAUTH_REDIRECT_URI, DocumentSource
+from common.data_source.google_util.constant import WEB_OAUTH_POPUP_TEMPLATE, GOOGLE_SCOPES
 from common.misc_utils import get_uuid
 from rag.utils.redis_conn import REDIS_CONN
 from api.apps import login_required, current_user
+from box_sdk_gen import BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
 
 
 @manager.route("/set", methods=["POST"])  # noqa: F821
@@ -117,8 +118,6 @@ def rm_connector(connector_id):
     return get_json_result(data=True)
 
 
-GOOGLE_WEB_FLOW_STATE_PREFIX = "google_drive_web_flow_state"
-GOOGLE_WEB_FLOW_RESULT_PREFIX = "google_drive_web_flow_result"
 WEB_FLOW_TTL_SECS = 15 * 60
 
 
@@ -129,10 +128,7 @@ def _web_state_cache_key(flow_id: str, source_type: str | None = None) -> str:
     When source_type == "gmail", a different prefix is used so that
     Drive/Gmail flows don't clash in Redis.
     """
-    if source_type == "gmail":
-        prefix = "gmail_web_flow_state"
-    else:
-        prefix = GOOGLE_WEB_FLOW_STATE_PREFIX
+    prefix = f"{source_type}_web_flow_state"
     return f"{prefix}:{flow_id}"
 
 
@@ -141,10 +137,7 @@ def _web_result_cache_key(flow_id: str, source_type: str | None = None) -> str:
 
     Mirrors _web_state_cache_key logic for result storage.
     """
-    if source_type == "gmail":
-        prefix = "gmail_web_flow_result"
-    else:
-        prefix = GOOGLE_WEB_FLOW_RESULT_PREFIX
+    prefix = f"{source_type}_web_flow_result"
     return f"{prefix}:{flow_id}"
 
 
@@ -180,7 +173,7 @@ async def _render_web_oauth_popup(flow_id: str, success: bool, message: str, sou
         }
     )
     # TODO(google-oauth): title/heading/message may need to reflect drive/gmail based on cached type
-    html = GOOGLE_WEB_OAUTH_POPUP_TEMPLATE.format(
+    html = WEB_OAUTH_POPUP_TEMPLATE.format(
         title=f"Google {source.capitalize()} Authorization",
         heading="Authorization complete" if success else "Authorization failed",
         message=escaped_message,
@@ -204,8 +197,8 @@ async def start_google_web_oauth():
         redirect_uri = GMAIL_WEB_OAUTH_REDIRECT_URI
         scopes = GOOGLE_SCOPES[DocumentSource.GMAIL]
     else:
-        redirect_uri = GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI if source == "google-drive" else GMAIL_WEB_OAUTH_REDIRECT_URI
-        scopes = GOOGLE_SCOPES[DocumentSource.GOOGLE_DRIVE if source == "google-drive" else DocumentSource.GMAIL]
+        redirect_uri = GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI
+        scopes = GOOGLE_SCOPES[DocumentSource.GOOGLE_DRIVE]
 
     if not redirect_uri:
         return get_json_result(
@@ -271,8 +264,6 @@ async def google_gmail_web_oauth_callback():
     state_id = request.args.get("state")
     error = request.args.get("error")
     source = "gmail"
-    if source != 'gmail':
-        return await _render_web_oauth_popup("", False, "Invalid Google OAuth type.", source)
 
     error_description = request.args.get("error_description") or error
 
@@ -313,9 +304,6 @@ async def google_gmail_web_oauth_callback():
         "credentials": creds_json,
     }
     REDIS_CONN.set_obj(_web_result_cache_key(state_id, source), result_payload, WEB_FLOW_TTL_SECS)
-
-    print("\n\n", _web_result_cache_key(state_id, source), "\n\n")
-
     REDIS_CONN.delete(_web_state_cache_key(state_id, source))
 
     return await _render_web_oauth_popup(state_id, True, "Authorization completed successfully.", source)
@@ -326,8 +314,6 @@ async def google_drive_web_oauth_callback():
     state_id = request.args.get("state")
     error = request.args.get("error")
     source = "google-drive"
-    if source not in ("google-drive", "gmail"):
-        return await _render_web_oauth_popup("", False, "Invalid Google OAuth type.", source)
 
     error_description = request.args.get("error_description") or error
 
@@ -391,3 +377,107 @@ async def poll_google_web_result():
 
     REDIS_CONN.delete(_web_result_cache_key(flow_id, source))
     return get_json_result(data={"credentials": result.get("credentials")})
+
+@manager.route("/box/oauth/web/start", methods=["POST"])  # noqa: F821
+@login_required
+async def start_box_web_oauth():
+    req = await get_request_json()
+
+    client_id = req.get("client_id")
+    client_secret = req.get("client_secret")    
+    redirect_uri = req.get("redirect_uri", BOX_WEB_OAUTH_REDIRECT_URI)
+
+    if not client_id or not client_secret:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Box client_id and client_secret are required.")
+
+    flow_id = str(uuid.uuid4())
+
+    box_auth = BoxOAuth(
+        OAuthConfig(
+            client_id=client_id,
+            client_secret=client_secret,
+        )
+    )
+
+    auth_url = box_auth.get_authorize_url(
+        options=GetAuthorizeUrlOptions(
+            redirect_uri=redirect_uri,
+            state=flow_id,
+        )
+    )
+
+    cache_payload = {
+        "user_id": current_user.id,
+        "auth_url": auth_url,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "created_at": int(time.time()),
+    }
+    REDIS_CONN.set_obj(_web_state_cache_key(flow_id, "box"), cache_payload, WEB_FLOW_TTL_SECS)
+    return get_json_result(
+        data = {
+            "flow_id": flow_id,
+            "authorization_url": auth_url,
+            "expires_in": WEB_FLOW_TTL_SECS,}
+    )
+
+@manager.route("/box/oauth/web/callback", methods=["GET"])  # noqa: F821
+async def box_web_oauth_callback():
+    flow_id = request.args.get("state")
+    if not flow_id:
+        return await _render_web_oauth_popup("", False, "Missing OAuth parameters.", "box")
+    
+    code = request.args.get("code")
+    if not code:
+        return await _render_web_oauth_popup(flow_id, False, "Missing authorization code from Box.", "box")
+
+    cache_payload = json.loads(REDIS_CONN.get(_web_state_cache_key(flow_id, "box")))
+    if not cache_payload:
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Box OAuth session expired or invalid.")
+
+    error = request.args.get("error")
+    error_description = request.args.get("error_description") or error
+    if error:
+        REDIS_CONN.delete(_web_state_cache_key(flow_id, "box"))
+        return await _render_web_oauth_popup(flow_id, False, error_description or "Authorization failed.", "box")
+    
+    auth = BoxOAuth(
+        OAuthConfig(
+            client_id=cache_payload.get("client_id"),
+            client_secret=cache_payload.get("client_secret"),
+        )
+    )
+
+    auth.get_tokens_authorization_code_grant(code)
+    token = auth.retrieve_token()
+    result_payload = {
+        "user_id": cache_payload.get("user_id"),
+        "client_id": cache_payload.get("client_id"),
+        "client_secret": cache_payload.get("client_secret"),
+        "access_token": token.access_token,
+        "refresh_token": token.refresh_token,
+    }
+
+    REDIS_CONN.set_obj(_web_result_cache_key(flow_id, "box"), result_payload, WEB_FLOW_TTL_SECS)
+    REDIS_CONN.delete(_web_state_cache_key(flow_id, "box"))
+
+    return await _render_web_oauth_popup(flow_id, True, "Authorization completed successfully.", "box")
+
+@manager.route("/box/oauth/web/result", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("flow_id")
+async def poll_box_web_result():
+    req = await get_request_json()
+    flow_id = req.get("flow_id")
+
+    cache_blob = REDIS_CONN.get(_web_result_cache_key(flow_id, "box"))
+    if not cache_blob:
+        return get_json_result(code=RetCode.RUNNING, message="Authorization is still pending.")
+
+    cache_raw = json.loads(cache_blob)
+    if cache_raw.get("user_id") != current_user.id:
+        return get_json_result(code=RetCode.PERMISSION_ERROR, message="You are not allowed to access this authorization result.")
+    
+    REDIS_CONN.delete(_web_result_cache_key(flow_id, "box"))
+
+    return get_json_result(data={"credentials": cache_raw})

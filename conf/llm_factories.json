@@ -8,6 +8,20 @@
             "rank": "999",
             "llm": [
                 {
+                    "llm_name": "gpt-5.2-pro",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.2",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "gpt-5.1",
                     "tags": "LLM,CHAT,400k,IMAGE2TEXT",
                     "max_tokens": 400000,
@@ -366,6 +380,13 @@
                     "llm_name": "Moonshot-Kimi-K2-Instruct",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v3.2",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },

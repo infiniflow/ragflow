@@ -487,15 +487,6 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
 
-class GptTurbo(Base):
-    _FACTORY_NAME = "OpenAI"
-
-    def __init__(self, key, model_name="gpt-3.5-turbo", base_url="https://api.openai.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.openai.com/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class XinferenceChat(Base):
     _FACTORY_NAME = "Xinference"
 
@@ -1227,6 +1218,7 @@ class LiteLLMBase(ABC):
         "MiniMax",
         "DeerAPI",
         "GPUStack",
+        "OpenAI",
     ]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):

@@ -42,9 +42,9 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { QueryVariable } from '../components/query-variable';
+import { SchemaDialog } from '../components/schema-dialog';
+import { SchemaPanel } from '../components/schema-panel';
 import { AgentTools, Agents } from './agent-tools';
-import { StructuredOutputDialog } from './structured-output-dialog';
-import { StructuredOutputPanel } from './structured-output-panel';
 import { useBuildPromptExtraPromptOptions } from './use-build-prompt-options';
 import {
   useHandleShowStructuredOutput,
@@ -327,19 +327,17 @@ function AgentForm({ node }: INextOperatorForm) {
                 </Button>
               </div>
 
-              <StructuredOutputPanel
-                value={structuredOutput}
-              ></StructuredOutputPanel>
+              <SchemaPanel value={structuredOutput}></SchemaPanel>
             </section>
           )}
         </FormWrapper>
       </Form>
       {structuredOutputDialogVisible && (
-        <StructuredOutputDialog
+        <SchemaDialog
           hideModal={hideStructuredOutputDialog}
           onOk={handleStructuredOutputDialogOk}
           initialValues={structuredOutput}
-        ></StructuredOutputDialog>
+        ></SchemaDialog>
       )}
     </>
   );

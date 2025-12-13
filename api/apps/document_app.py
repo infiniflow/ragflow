@@ -27,6 +27,7 @@ from api.db import VALID_FILE_TYPES, FileType
 from api.db.db_models import Task
 from api.db.services import duplicate_name
 from api.db.services.document_service import DocumentService, doc_upload_and_parse
+from common.metadata_utils import meta_filter, convert_conditions
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -246,9 +247,19 @@ async def list_docs():
             return get_data_error_result(message=f"Invalid filter conditions: {', '.join(invalid_types)} type{'s' if len(invalid_types) > 1 else ''}")
 
     suffix = req.get("suffix", [])
+    metadata_condition = req.get("metadata_condition", {}) or {}
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_data_error_result(message="metadata_condition must be an object.")
+
+    doc_ids_filter = None
+    if metadata_condition:
+        metas = DocumentService.get_flatted_meta_by_kbs([kb_id])
+        doc_ids_filter = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+        if metadata_condition.get("conditions") and not doc_ids_filter:
+            return get_json_result(data={"total": 0, "docs": []})
 
     try:
-        docs, tol = DocumentService.get_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix)
+        docs, tol = DocumentService.get_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix, doc_ids_filter)
 
         if create_time_from or create_time_to:
             filtered_docs = []
@@ -317,6 +328,87 @@ async def doc_infos():
             return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
     docs = DocumentService.get_by_ids(doc_ids)
     return get_json_result(data=list(docs.dicts()))
+
+
+@manager.route("/metadata/summary", methods=["POST"])  # noqa: F821
+@login_required
+async def metadata_summary():
+    req = await get_request_json()
+    kb_id = req.get("kb_id")
+    if not kb_id:
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
+
+    tenants = UserTenantService.query(user_id=current_user.id)
+    for tenant in tenants:
+        if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
+            break
+    else:
+        return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.", code=RetCode.OPERATING_ERROR)
+
+    try:
+        summary = DocumentService.get_metadata_summary(kb_id)
+        return get_json_result(data={"summary": summary})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/metadata/update", methods=["POST"])  # noqa: F821
+@login_required
+async def metadata_update():
+    req = await get_request_json()
+    kb_id = req.get("kb_id")
+    if not kb_id:
+        return get_json_result(data=False, message='Lack of "KB ID"', code=RetCode.ARGUMENT_ERROR)
+
+    tenants = UserTenantService.query(user_id=current_user.id)
+    for tenant in tenants:
+        if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
+            break
+    else:
+        return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.", code=RetCode.OPERATING_ERROR)
+
+    selector = req.get("selector", {}) or {}
+    updates = req.get("updates", []) or []
+    deletes = req.get("deletes", []) or []
+
+    if not isinstance(selector, dict):
+        return get_json_result(data=False, message="selector must be an object.", code=RetCode.ARGUMENT_ERROR)
+    if not isinstance(updates, list) or not isinstance(deletes, list):
+        return get_json_result(data=False, message="updates and deletes must be lists.", code=RetCode.ARGUMENT_ERROR)
+
+    metadata_condition = selector.get("metadata_condition", {}) or {}
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_json_result(data=False, message="metadata_condition must be an object.", code=RetCode.ARGUMENT_ERROR)
+
+    document_ids = selector.get("document_ids", []) or []
+    if document_ids and not isinstance(document_ids, list):
+        return get_json_result(data=False, message="document_ids must be a list.", code=RetCode.ARGUMENT_ERROR)
+
+    for upd in updates:
+        if not isinstance(upd, dict) or not upd.get("key") or "value" not in upd:
+            return get_json_result(data=False, message="Each update requires key and value.", code=RetCode.ARGUMENT_ERROR)
+    for d in deletes:
+        if not isinstance(d, dict) or not d.get("key"):
+            return get_json_result(data=False, message="Each delete requires key.", code=RetCode.ARGUMENT_ERROR)
+
+    kb_doc_ids = KnowledgebaseService.list_documents_by_ids([kb_id])
+    target_doc_ids = set(kb_doc_ids)
+    if document_ids:
+        invalid_ids = set(document_ids) - set(kb_doc_ids)
+        if invalid_ids:
+            return get_json_result(data=False, message=f"These documents do not belong to dataset {kb_id}: {', '.join(invalid_ids)}", code=RetCode.ARGUMENT_ERROR)
+        target_doc_ids = set(document_ids)
+
+    if metadata_condition:
+        metas = DocumentService.get_flatted_meta_by_kbs([kb_id])
+        filtered_ids = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
+        target_doc_ids = target_doc_ids & filtered_ids
+        if metadata_condition.get("conditions") and not target_doc_ids:
+            return get_json_result(data={"updated": 0, "matched_docs": 0})
+
+    target_doc_ids = list(target_doc_ids)
+    updated = DocumentService.batch_update_metadata(kb_id, target_doc_ids, updates, deletes)
+    return get_json_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
 
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
@@ -698,7 +790,10 @@ async def set_meta():
         if not isinstance(meta, dict):
             return get_json_result(data=False, message="Only dictionary type supported.", code=RetCode.ARGUMENT_ERROR)
         for k, v in meta.items():
-            if not isinstance(v, str) and not isinstance(v, int) and not isinstance(v, float):
+            if isinstance(v, list):
+                if not all(isinstance(i, (str, int, float)) for i in v):
+                    return get_json_result(data=False, message=f"The type is not supported in list: {v}", code=RetCode.ARGUMENT_ERROR)
+            elif not isinstance(v, (str, int, float)):
                 return get_json_result(data=False, message=f"The type is not supported: {v}", code=RetCode.ARGUMENT_ERROR)
     except Exception as e:
         return get_json_result(data=False, message=f"Json syntax error: {e}", code=RetCode.ARGUMENT_ERROR)
