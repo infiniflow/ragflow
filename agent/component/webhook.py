@@ -23,6 +23,26 @@ class WebhookParam(ComponentParamBase):
     """
     def __init__(self):
         super().__init__()
+        self.security = {
+            "auth_type": "none",
+        }
+        self.schema = {}
+        self.execution_mode = "Immediately"
+        self.response = {}
+        self.outputs = {
+            "query": {
+                "value": {},
+                "type": "object"
+            },
+            "headers": {
+                "value": {},
+                "type": "object"
+            },
+            "body": {
+                "value": {},
+                "type": "object"
+            }
+        }
 
     def get_input_form(self) -> dict[str, dict]:
         return getattr(self, "inputs")

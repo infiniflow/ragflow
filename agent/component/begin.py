@@ -28,7 +28,7 @@ class BeginParam(UserFillUpParam):
         self.prologue = "Hi! I'm your smart assistant. What can I do for you?"
 
     def check(self):
-        self.check_valid_value(self.mode, "The 'mode' should be either `conversational` or `task`", ["conversational", "task"])
+        self.check_valid_value(self.mode, "The 'mode' should be either `conversational` or `task`", ["conversational", "task","Webhook"])
 
     def get_input_form(self) -> dict[str, dict]:
         return getattr(self, "inputs")
