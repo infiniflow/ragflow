@@ -85,6 +85,8 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
                     binary=binary,
                     callback=callback,
                     parse_method=parse_method,
+                    lang=lang,
+                    **kwargs
                 )
                 return sections, tables, pdf_parser
             except Exception as e:
@@ -93,6 +95,9 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
     if callback:
         callback(-1, "MinerU not found.")
     return None, None, None
+
+
+
 
 def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
     pdf_parser = DoclingParser()

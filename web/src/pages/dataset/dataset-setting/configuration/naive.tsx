@@ -6,6 +6,7 @@ import { DelimiterFormField } from '@/components/delimiter-form-field';
 import { ExcelToHtmlFormField } from '@/components/excel-to-html-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '@/components/max-token-number-from-field';
+import { MinerUOptionsFormField } from '@/components/mineru-options-form-field';
 import {
   ConfigurationFormContainer,
   MainContainer,
@@ -17,6 +18,7 @@ export function NaiveConfiguration() {
     <MainContainer>
       <ConfigurationFormContainer>
         <LayoutRecognizeFormField></LayoutRecognizeFormField>
+        <MinerUOptionsFormField></MinerUOptionsFormField>
         <MaxTokenNumberFormField initialValue={512}></MaxTokenNumberFormField>
         <DelimiterFormField></DelimiterFormField>
         <EnableTocToggle />
