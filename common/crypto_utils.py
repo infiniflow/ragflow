@@ -15,13 +15,11 @@
 #
 
 import os
-import logging
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
-import base64
 
 
 class BaseCrypto:
@@ -294,13 +292,12 @@ class CryptoUtil:
         Returns:
             Encrypted data (bytes)
         """
-        import time
-        start_time = time.time()
+        # import time
+        # start_time = time.time()
         encrypted = self.crypto.encrypt(data)
-        end_time = time.time()
+        # end_time = time.time()
         # logging.info(f"Encryption completed, data length: {len(data)} bytes, time: {(end_time - start_time)*1000:.2f} ms")
         return encrypted
-        # return self.crypto.encrypt(data)
     
     def decrypt(self, encrypted_data):
         """
@@ -312,13 +309,12 @@ class CryptoUtil:
         Returns:
             Decrypted data (bytes)
         """
-        import time
-        start_time = time.time()
+        # import time
+        # start_time = time.time()
         decrypted = self.crypto.decrypt(encrypted_data)
-        end_time = time.time()
+        # end_time = time.time()
         # logging.info(f"Decryption completed, data length: {len(encrypted_data)} bytes, time: {(end_time - start_time)*1000:.2f} ms")
         return decrypted
-        # return self.crypto.decrypt(encrypted_data)
 
 
 # Test code
@@ -330,7 +326,7 @@ if __name__ == "__main__":
     encrypted = crypto.encrypt(test_data)
     decrypted = crypto.decrypt(encrypted)
     
-    print(f"AES Test:")
+    print("AES Test:")
     print(f"Original: {test_data}")
     print(f"Encrypted: {encrypted}")
     print(f"Decrypted: {decrypted}")
@@ -343,7 +339,7 @@ if __name__ == "__main__":
         encrypted_sm4 = crypto_sm4.encrypt(test_data)
         decrypted_sm4 = crypto_sm4.decrypt(encrypted_sm4)
         
-        print(f"SM4 Test:")
+        print("SM4 Test:")
         print(f"Original: {test_data}")
         print(f"Encrypted: {encrypted_sm4}")
         print(f"Decrypted: {decrypted_sm4}")

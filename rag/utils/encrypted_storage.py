@@ -15,9 +15,8 @@
 #
 
 import logging
-import os
 from common.crypto_utils import CryptoUtil
-from common.decorator import singleton
+# from common.decorator import singleton
 
 class EncryptedStorageWrapper:
     """Encrypted storage wrapper that wraps existing storage implementations to provide transparent encryption"""
@@ -66,7 +65,7 @@ class EncryptedStorageWrapper:
             
             return self.storage_impl.put(bucket, fnm, encrypted_binary, tenant_id)
         except Exception as e:
-            logging.exception(f"Failed to encrypt and store data: {bucket}/{fnm}")
+            logging.exception(f"Failed to encrypt and store data: {bucket}/{fnm}, error: {str(e)}")
             raise
     
     def get(self, bucket, fnm, tenant_id=None):
@@ -96,7 +95,7 @@ class EncryptedStorageWrapper:
             return decrypted_binary
             
         except Exception as e:
-            logging.exception(f"Failed to get and decrypt data: {bucket}/{fnm}")
+            logging.exception(f"Failed to get and decrypt data: {bucket}/{fnm}, error: {str(e)}")
             raise
     
     def rm(self, bucket, fnm, tenant_id=None):
@@ -260,7 +259,7 @@ def create_encrypted_storage(storage_impl, algorithm=None, key=None, encryption_
     wrapper.encryption_enabled = encryption_enabled
     
     if encryption_enabled:
-        logging.info(f"Encryption enabled in storage wrapper")
+        logging.info("Encryption enabled in storage wrapper")
     else:
         logging.info("Encryption disabled in storage wrapper")
     
