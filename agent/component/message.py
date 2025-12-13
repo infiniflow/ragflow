@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 import asyncio
+import nest_asyncio
+nest_asyncio.apply()
 import inspect
 import json
 import os
@@ -207,7 +209,7 @@ class Message(ComponentBase):
         import pypandoc
         doc_id = get_uuid()
 
-        if self._param.output_format.lower() not in {"markdown", "html", "pdf", "docx"}:
+        if self._param.output_format.lower() not in {"markdown", "html", "pdf", "docx", "xlsx"}:
             self._param.output_format = "markdown"
 
         try:
@@ -226,6 +228,73 @@ class Message(ComponentBase):
                     )
 
                 binary_content = converted.encode("utf-8")
+
+            elif self._param.output_format == "xlsx":
+                import pandas as pd
+                from io import BytesIO
+
+
+                # Try to parse markdown table from the content
+                df = None
+                
+                if isinstance(content, str):
+                    # Extract markdown table from content
+                    # Pattern: lines starting with | and containing |
+                    lines = content.strip().split('\n')
+                    table_lines = []
+                    in_table = False
+                    
+                    for line in lines:
+                        line = line.strip()
+                        if line.startswith('|') and '|' in line[1:]:
+                            in_table = True
+                            # Skip separator line (|---|---| or |:---:|:---:| etc.)
+                            # Check if line only contains |, -, :, and whitespace
+                            cleaned = line.replace(' ', '').replace('|', '').replace('-', '').replace(':', '')
+                            if cleaned == '':
+                                continue  # Skip separator line
+                            table_lines.append(line)
+                        elif in_table and not line.startswith('|'):
+                            # End of table
+                            break
+                    
+                    if table_lines:
+                        # Parse the markdown table
+                        rows = []
+                        headers = None
+                        
+                        for line in table_lines:
+                            # Split by | and clean up
+                            cells = [cell.strip() for cell in line.split('|')]
+                            # Remove empty first and last elements from split
+                            cells = [c for c in cells if c]
+                            
+                            if headers is None:
+                                headers = cells
+                            else:
+                                rows.append(cells)
+                        
+                        if headers and rows:
+                            # Ensure all rows have same number of columns as headers
+                            normalized_rows = []
+                            for row in rows:
+                                while len(row) < len(headers):
+                                    row.append('')
+                                normalized_rows.append(row[:len(headers)])
+                            
+                            df = pd.DataFrame(normalized_rows, columns=headers)
+                
+                # Fallback: if no table found, create single column with content
+                if df is None or df.empty:
+                    df = pd.DataFrame({"Content": [content if content else ""]})
+
+                # Write to Excel
+                excel_io = BytesIO()
+                with pd.ExcelWriter(excel_io, engine='openpyxl') as writer:
+                    df.to_excel(writer, sheet_name="Data", index=False)
+                
+                excel_io.seek(0)
+                binary_content = excel_io.read()
 
             else:  # pdf, docx
                 with tempfile.NamedTemporaryFile(suffix=f".{self._param.output_format}", delete=False) as tmp:
