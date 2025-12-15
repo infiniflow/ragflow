@@ -202,7 +202,7 @@ class Message(ComponentBase):
     def thoughts(self) -> str:
         return ""
 
-    def _parse_markdown_table_lines(self, table_lines: list) -> "pd.DataFrame":
+    def _parse_markdown_table_lines(self, table_lines: list):
         """
         Parse a list of markdown table lines into a pandas DataFrame.
         
@@ -284,7 +284,7 @@ class Message(ComponentBase):
                 
                 if isinstance(content, str):
                     lines = content.strip().split('\n')
-                    logging.info(f"XLSX Parser: Total lines={len(lines)}, lines starting with '|': {sum(1 for l in lines if l.strip().startswith('|'))}")
+                    logging.info(f"XLSX Parser: Total lines={len(lines)}, lines starting with '|': {sum(1 for line in lines if line.strip().startswith('|'))}")
                     current_table_lines = []
                     current_table_title = None
                     pending_title = None
