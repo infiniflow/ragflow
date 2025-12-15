@@ -1,16 +1,15 @@
 import { Collapse } from '@/components/collapse';
+import CopyToClipboard from '@/components/copy-to-clipboard';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { Textarea } from '@/components/ui/textarea';
 import { buildOptions } from '@/utils/form';
-import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'umi';
 import {
   RateLimitPerList,
-  WebhookContentType,
-  WebhookExecutionMode,
   WebhookMaxBodySize,
   WebhookMethod,
   WebhookSecurityAuthType,
@@ -24,15 +23,16 @@ const RateLimitPerOptions = buildOptions(RateLimitPerList);
 
 export function WebHook() {
   const { t } = useTranslation();
-  const form = useFormContext();
+  const { id } = useParams();
 
-  const executionMode = useWatch({
-    control: form.control,
-    name: 'execution_mode',
-  });
+  const text = `${location.protocol}//${location.host}/api/v1/webhook/${id}`;
 
   return (
     <>
+      <div className="bg-bg-card p-1 rounded-md flex gap-2">
+        <span className="flex-1 truncate">{text}</span>
+        <CopyToClipboard text={text}></CopyToClipboard>
+      </div>
       <RAGFlowFormItem name="methods" label={t('flow.webhook.methods')}>
         {(field) => (
           <MultiSelect
@@ -45,14 +45,7 @@ export function WebHook() {
           />
         )}
       </RAGFlowFormItem>
-      <RAGFlowFormItem
-        name="content_types"
-        label={t('flow.webhook.contentTypes')}
-      >
-        <SelectWithSearch
-          options={buildOptions(WebhookContentType)}
-        ></SelectWithSearch>
-      </RAGFlowFormItem>
+
       <Collapse title={<div>Security</div>}>
         <section className="space-y-4">
           <RAGFlowFormItem
@@ -98,17 +91,8 @@ export function WebHook() {
       >
         <Textarea></Textarea>
       </RAGFlowFormItem>
-      <RAGFlowFormItem
-        name="execution_mode"
-        label={t('flow.webhook.executionMode')}
-      >
-        <SelectWithSearch
-          options={buildOptions(WebhookExecutionMode)}
-        ></SelectWithSearch>
-      </RAGFlowFormItem>
-      {executionMode === WebhookExecutionMode.Immediately && (
-        <WebhookResponse></WebhookResponse>
-      )}
+
+      <WebhookResponse></WebhookResponse>
     </>
   );
 }

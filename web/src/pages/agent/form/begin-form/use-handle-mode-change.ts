@@ -15,7 +15,9 @@ const initialFormValuesMap = {
   schema: {},
   'security.auth_type': WebhookSecurityAuthType.Basic,
   'security.rate_limit.per': RateLimitPerList[0],
+  'security.rate_limit.limit': 10,
   'security.max_body_size': WebhookMaxBodySize[0],
+  'response.status': 200,
   execution_mode: WebhookExecutionMode.Immediately,
   content_types: WebhookContentType.ApplicationJson,
 };

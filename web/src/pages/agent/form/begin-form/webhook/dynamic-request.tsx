@@ -9,8 +9,12 @@ import { loader } from '@monaco-editor/react';
 import { omit } from 'lodash';
 import { X } from 'lucide-react';
 import { ReactNode } from 'react';
-import { useFieldArray, useFormContext } from 'react-hook-form';
-import { TypesWithArray, WebhookRequestParameters } from '../../../constant';
+import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
+import {
+  TypesWithArray,
+  WebhookContentType,
+  WebhookRequestParameters,
+} from '../../../constant';
 import { DynamicFormHeader } from '../../components/dynamic-fom-header';
 
 loader.config({ paths: { vs: '/vs' } });
@@ -44,6 +48,12 @@ export function DynamicRequest({
   isObject = false,
 }: SelectKeysProps) {
   const form = useFormContext();
+  const contentType = useWatch({
+    name: 'content_types',
+    control: form.control,
+  });
+  const isFormDataContentType =
+    contentType === WebhookContentType.MultipartFormData;
 
   const { fields, remove, append } = useFieldArray({
     name: name,
@@ -84,7 +94,9 @@ export function DynamicRequest({
                         onChange={(val) => {
                           field.onChange(val);
                         }}
-                        options={buildParametersOptions(isObject)}
+                        options={buildParametersOptions(
+                          isObject && isFormDataContentType,
+                        )}
                       ></SelectWithSearch>
                     )}
                   </RAGFlowFormItem>
