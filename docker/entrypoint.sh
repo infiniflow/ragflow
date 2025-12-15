@@ -210,13 +210,32 @@ function ensure_mineru() {
     local venv_dir="${default_prefix}/.venv"
     local exe="${MINERU_EXECUTABLE:-${venv_dir}/bin/mineru}"
 
-    if [[ -x "${exe}" ]]; then
-      echo "[mineru] found: ${exe}"
-      export MINERU_EXECUTABLE="${exe}"
-      return 0
+    # Check if we need to install vllm
+    local need_vllm=0
+    if [[ "${MINERU_BACKEND}" == *"vllm"* ]]; then
+        need_vllm=1
     fi
 
-    echo "[mineru] not found, bootstrapping with uv ..."
+    local need_install=0
+    if [[ ! -x "${exe}" ]]; then
+        need_install=1
+    elif [[ "${need_vllm}" -eq 1 ]]; then
+         # Check if vllm is importable
+         if ! "${venv_dir}/bin/python" -c "import vllm" >/dev/null 2>&1; then
+             echo "[mineru] vllm backend requested but vllm not found. Installing..."
+             need_install=1
+         else
+             echo "[mineru] found: ${exe} with vllm"
+             export MINERU_EXECUTABLE="${exe}"
+             return 0
+         fi
+    else
+        echo "[mineru] found: ${exe}"
+        export MINERU_EXECUTABLE="${exe}"
+        return 0
+    fi
+
+    echo "[mineru] bootstrapping with uv ..."
 
     (
         set -e
@@ -225,7 +244,12 @@ function ensure_mineru() {
         [[ -d "${venv_dir}" ]] || uv venv "${venv_dir}"
 
         source "${venv_dir}/bin/activate"
-        uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple --extra-index-url https://pypi.org/simple
+        local pkg="mineru[core]"
+        if [[ "${need_vllm}" -eq 1 ]]; then
+             pkg="mineru[core,vllm]"
+        fi
+        echo "[mineru] installing ${pkg} ..."
+        uv pip install -U "${pkg}" -i https://mirrors.aliyun.com/pypi/simple --extra-index-url https://pypi.org/simple
         deactivate
     )
     export MINERU_EXECUTABLE="${exe}"
