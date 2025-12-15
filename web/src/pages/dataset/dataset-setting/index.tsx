@@ -252,22 +252,7 @@ export default function DatasetSettings() {
                   {t('knowledgeConfiguration.baseInfo')}
                 </div>
                 <GeneralForm></GeneralForm>
-                <Divider />
-                <div className="text-base font-medium text-text-primary">
-                  {t('knowledgeConfiguration.globalIndex')}
-                </div>
-                <GraphRagItems
-                  className="border-none p-0"
-                  data={graphRagGenerateData as IGenerateLogButtonProps}
-                  onDelete={() =>
-                    handleDeletePipelineTask(GenerateType.KnowledgeGraph)
-                  }
-                ></GraphRagItems>
-                <Divider />
-                <RaptorFormFields
-                  data={raptorGenerateData as IGenerateLogButtonProps}
-                  onDelete={() => handleDeletePipelineTask(GenerateType.Raptor)}
-                ></RaptorFormFields>
+
                 <Divider />
                 <div className="text-base font-medium text-text-primary">
                   {t('knowledgeConfiguration.dataPipeline')}
@@ -292,7 +277,6 @@ export default function DatasetSettings() {
                   data={pipelineData}
                   handleLinkOrEditSubmit={handleLinkOrEditSubmit}
                 /> */}
-
                 <Divider />
                 <LinkDataSource
                   data={sourceData}
@@ -300,6 +284,22 @@ export default function DatasetSettings() {
                   unbindFunc={unbindFunc}
                   handleAutoParse={handleAutoParse}
                 />
+                <Divider />
+                <div className="text-base font-medium text-text-primary">
+                  {t('knowledgeConfiguration.globalIndex')}
+                </div>
+                <GraphRagItems
+                  className="border-none p-0"
+                  data={graphRagGenerateData as IGenerateLogButtonProps}
+                  onDelete={() =>
+                    handleDeletePipelineTask(GenerateType.KnowledgeGraph)
+                  }
+                ></GraphRagItems>
+                <Divider />
+                <RaptorFormFields
+                  data={raptorGenerateData as IGenerateLogButtonProps}
+                  onDelete={() => handleDeletePipelineTask(GenerateType.Raptor)}
+                ></RaptorFormFields>
               </MainContainer>
             </div>
             <div className="text-right items-center flex justify-end gap-3 w-[768px]">
