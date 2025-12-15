@@ -22,7 +22,7 @@ from deepdoc.parser.mineru_parser import MinerUParser
 
 
 class Base:
-    def __init__(self, key: str, model_name: str, **kwargs):
+    def __init__(self, key: str | dict, model_name: str, **kwargs):
         self.model_name = model_name
 
     def parse_pdf(self, filepath: str, binary=None, **kwargs) -> Tuple[Any, Any]:
@@ -32,23 +32,33 @@ class Base:
 class MinerUOcrModel(Base, MinerUParser):
     _FACTORY_NAME = "MinerU"
 
-    def __init__(self, key: str, model_name: str, **kwargs):
+    def __init__(self, key: str | dict, model_name: str, **kwargs):
         Base.__init__(self, key, model_name, **kwargs)
-        cfg = {}
+        raw_config = {}
         if key:
             try:
-                cfg = json.loads(key)
+                raw_config = json.loads(key)
             except Exception:
-                cfg = {}
+                raw_config = {}
 
-        self.mineru_api = cfg.get("MINERU_APISERVER", os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987"))
-        self.mineru_output_dir = cfg.get("MINERU_OUTPUT_DIR", os.environ.get("MINERU_OUTPUT_DIR", ""))
-        self.mineru_backend = cfg.get("MINERU_BACKEND", os.environ.get("MINERU_BACKEND", "pipeline"))
-        self.mineru_server_url = cfg.get("MINERU_SERVER_URL", os.environ.get("MINERU_SERVER_URL", ""))
-        self.mineru_delete_output = bool(int(cfg.get("MINERU_DELETE_OUTPUT", os.environ.get("MINERU_DELETE_OUTPUT", 1))))
+        # nested {"api_key": {...}} from UI
+        # flat {"MINERU_*": "..."} payload auto-provisioned from env vars
+        config = raw_config.get("api_key", raw_config)
+        if not isinstance(config, dict):
+            config = {}
+
+        def _resolve_config(key: str, env_key: str, default=""):
+            # lower-case keys (UI), upper-case MINERU_* (env auto-provision), env vars
+            return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
+
+        self.mineru_api = _resolve_config("mineru_apiserver", "MINERU_APISERVER", "")
+        self.mineru_output_dir = _resolve_config("mineru_output_dir", "MINERU_OUTPUT_DIR", "")
+        self.mineru_backend = _resolve_config("mineru_backend", "MINERU_BACKEND", "pipeline")
+        self.mineru_server_url = _resolve_config("mineru_server_url", "MINERU_SERVER_URL", "")
+        self.mineru_delete_output = bool(int(_resolve_config("mineru_delete_output", "MINERU_DELETE_OUTPUT", 1)))
         self.mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
 
-        logging.info(f"Parsered MinerU config: {cfg}")
+        logging.info(f"Parsed MinerU config: {config}")
 
         MinerUParser.__init__(self, mineru_path=self.mineru_executable, mineru_api=self.mineru_api, mineru_server_url=self.mineru_server_url)
 
