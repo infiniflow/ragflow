@@ -527,7 +527,7 @@ async def webhook(agent_id: str):
             # float
             try:
                 return float(v)
-            except:
+            except Exception:
                 raise Exception(f"Cannot convert '{value}' to number")
 
         # Object
@@ -538,7 +538,7 @@ async def webhook(agent_id: str):
                     return parsed
                 else:
                     raise Exception("JSON is not an object")
-            except:
+            except Exception:
                 raise Exception(f"Cannot convert '{value}' to object")
 
         # Array <T>
@@ -549,7 +549,7 @@ async def webhook(agent_id: str):
                     return parsed
                 else:
                     raise Exception("JSON is not an array")
-            except:
+            except Exception:
                 raise Exception(f"Cannot convert '{value}' to array")
 
         # String (accept original)
