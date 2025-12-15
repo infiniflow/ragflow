@@ -144,16 +144,16 @@ async def webhook(agent_id: str):
     # 1. Fetch canvas by agent_id
     exists, cvs = UserCanvasService.get_by_id(agent_id)
     if not exists:
-        return get_data_error_result(message="Canvas not found.")
+        return get_data_error_result(code=RetCode.BAD_REQUEST,message="Canvas not found."),RetCode.BAD_REQUEST
 
     # 2. Check canvas category
     if cvs.canvas_category == CanvasCategory.DataFlow:
-        return get_data_error_result(message="Dataflow can not be triggered by webhook.")
+        return get_data_error_result(code=RetCode.BAD_REQUEST,message="Dataflow can not be triggered by webhook."),RetCode.BAD_REQUEST
 
     # 3. Load DSL from canvas
     dsl = getattr(cvs, "dsl", None)
     if not isinstance(dsl, dict):
-        return get_data_error_result(message="Invalid DSL format.")
+        return get_data_error_result(code=RetCode.BAD_REQUEST,message="Invalid DSL format."),RetCode.BAD_REQUEST
 
     # 4. Check webhook configuration in DSL
     components = dsl.get("components", {})
@@ -163,15 +163,15 @@ async def webhook(agent_id: str):
             webhook_cfg = cpn_obj["params"]
 
     if not webhook_cfg:
-        return get_data_error_result(message="Webhook not configured for this agent.")
+        return get_data_error_result(code=RetCode.BAD_REQUEST,message="Webhook not configured for this agent."),RetCode.BAD_REQUEST
 
     # 5. Validate request method against webhook_cfg.methods
     allowed_methods = webhook_cfg.get("methods", [])
     request_method = request.method.upper()
     if allowed_methods and request_method not in allowed_methods:
         return get_data_error_result(
-            message=f"HTTP method '{request_method}' not allowed for this webhook."
-        )
+            code=RetCode.BAD_REQUEST,message=f"HTTP method '{request_method}' not allowed for this webhook."
+        ),RetCode.BAD_REQUEST
 
     # 6. Validate webhook security
     async def validate_webhook_security(security_cfg: dict):
@@ -363,7 +363,7 @@ async def webhook(agent_id: str):
         security_config=webhook_cfg.get("security", {})
         await validate_webhook_security(security_config)
     except Exception as e:
-        return get_data_error_result(message=str(e))
+        return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e)),RetCode.BAD_REQUEST
     if not isinstance(cvs.dsl, str):
         dsl = json.dumps(cvs.dsl, ensure_ascii=False)
     try:
@@ -371,7 +371,7 @@ async def webhook(agent_id: str):
     except Exception as e:
         return get_json_result(
             data=False, message=str(e),
-            code=RetCode.EXCEPTION_ERROR)
+            code=RetCode.EXCEPTION_ERROR), RetCode.EXCEPTION_ERROR
 
     # 7. Parse request body
     async def parse_webhook_request(content_type):
@@ -601,9 +601,12 @@ async def webhook(agent_id: str):
     SCHEMA = webhook_cfg.get("schema", {"query": {}, "headers": {}, "body": {}})
 
     # Extract strictly by schema
-    query_clean  = extract_by_schema(parsed["query"],   SCHEMA.get("query", {}),  name="query")
-    header_clean = extract_by_schema(parsed["headers"], SCHEMA.get("headers", {}), name="headers")
-    body_clean   = extract_by_schema(parsed["body"],    SCHEMA.get("body", {}),    name="body")
+    try:
+        query_clean  = extract_by_schema(parsed["query"],   SCHEMA.get("query", {}),  name="query")
+        header_clean = extract_by_schema(parsed["headers"], SCHEMA.get("headers", {}), name="headers")
+        body_clean   = extract_by_schema(parsed["body"],    SCHEMA.get("body", {}),    name="body")
+    except Exception as e:
+        return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e)),RetCode.BAD_REQUEST
 
     clean_request = {
         "query": query_clean,
@@ -664,8 +667,12 @@ async def webhook(agent_id: str):
                     user_id=cvs.user_id,
                     webhook_payload=clean_request,
                 ):
-                    if ans.get("event") == "message":
-                        content = (ans.get("data") or {}).get("content")
+                    if ans["event"] == "message":
+                        content = ans["data"]["content"]
+                        if ans["data"].get("start_to_think", False):
+                            content = "<think>"
+                        elif ans["data"].get("end_to_think", False):
+                            content = "</think>"
                         if content:
                             contents.append(content)
 
