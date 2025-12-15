@@ -209,23 +209,42 @@ function ensure_mineru() {
     local default_prefix="/ragflow/uv_tools"
     local venv_dir="${default_prefix}/.venv"
     local exe="${MINERU_EXECUTABLE:-${venv_dir}/bin/mineru}"
+    local mineru_backend="${MINERU_BACKEND:-pipeline}"
+    local mineru_pkg="mineru[core]"
+
+    if [[ "${mineru_backend}" == vlm-* ]]; then
+      mineru_pkg="mineru[core,vlm]"
+    fi
 
     if [[ -x "${exe}" ]]; then
-      echo "[mineru] found: ${exe}"
+      echo "[mineru] found: ${exe} (MINERU_BACKEND=${mineru_backend})"
       export MINERU_EXECUTABLE="${exe}"
+
+      if [[ "${mineru_backend}" == vlm-* ]]; then
+        if ! "${venv_dir}/bin/python3" -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('vllm') else 1)" >/dev/null 2>&1; then
+          echo "[mineru] vllm not found for MINERU_BACKEND=${mineru_backend}, installing ${mineru_pkg} ..."
+          (
+            set -e
+            source "${venv_dir}/bin/activate"
+            uv pip install -U "${mineru_pkg}" -i https://mirrors.aliyun.com/pypi/simple --extra-index-url https://pypi.org/simple
+            deactivate
+          ) || return 1
+        fi
+      fi
       return 0
     fi
 
-    echo "[mineru] not found, bootstrapping with uv ..."
+    echo "[mineru] not found, bootstrapping with uv ... (MINERU_BACKEND=${mineru_backend}, pkg=${mineru_pkg})"
 
     (
         set -e
         mkdir -p "${default_prefix}"
         cd "${default_prefix}"
-        [[ -d "${venv_dir}" ]] || uv venv "${venv_dir}"
+        [[ -d "${venv_dir}" ]] || { echo "[mineru] creating venv at ${venv_dir} ..."; uv venv "${venv_dir}"; }
 
+        echo "[mineru] installing ${mineru_pkg} into ${venv_dir} ..."
         source "${venv_dir}/bin/activate"
-        uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple --extra-index-url https://pypi.org/simple
+        uv pip install -U "${mineru_pkg}" -i https://mirrors.aliyun.com/pypi/simple --extra-index-url https://pypi.org/simple
         deactivate
     )
     export MINERU_EXECUTABLE="${exe}"
