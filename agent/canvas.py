@@ -368,7 +368,7 @@ class Canvas(Graph):
 
         if kwargs.get("webhook_payload"):
             for k, cpn in self.components.items():
-                if self.components[k]["obj"].component_name.lower() == "webhook":
+                if self.components[k]["obj"].component_name.lower() == "begin"  and self.components[k]["obj"]._param.mode == "Webhook":
                     for kk, vv in kwargs["webhook_payload"].items():
                         self.components[k]["obj"].set_output(kk, vv)
 
