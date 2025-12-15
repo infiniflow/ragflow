@@ -69,10 +69,10 @@ export const BeginFormSchema = z.object({
   response: z
     .object({
       status: z.number(),
-      headers_template: z.array(
-        z.object({ key: z.string(), value: z.string() }),
-      ),
-      body_template: z.array(z.object({ key: z.string(), value: z.string() })),
+      // headers_template: z.array(
+      //   z.object({ key: z.string(), value: z.string() }),
+      // ),
+      body_template: z.string().optional(),
     })
     .optional(),
   execution_mode: z.string().optional(),
