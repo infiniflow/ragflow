@@ -202,6 +202,48 @@ class Message(ComponentBase):
     def thoughts(self) -> str:
         return ""
 
+    def _parse_markdown_table_lines(self, table_lines: list) -> "pd.DataFrame":
+        """
+        Parse a list of markdown table lines into a pandas DataFrame.
+        
+        Args:
+            table_lines: List of strings, each representing a row in the markdown table
+                        (excluding separator lines like |---|---|)
+        
+        Returns:
+            pandas DataFrame with the table data, or None if parsing fails
+        """
+        import pandas as pd
+        
+        if not table_lines:
+            return None
+        
+        rows = []
+        headers = None
+        
+        for line in table_lines:
+            # Split by | and clean up
+            cells = [cell.strip() for cell in line.split('|')]
+            # Remove empty first and last elements from split (caused by leading/trailing |)
+            cells = [c for c in cells if c]
+            
+            if headers is None:
+                headers = cells
+            else:
+                rows.append(cells)
+        
+        if headers and rows:
+            # Ensure all rows have same number of columns as headers
+            normalized_rows = []
+            for row in rows:
+                while len(row) < len(headers):
+                    row.append('')
+                normalized_rows.append(row[:len(headers)])
+            
+            return pd.DataFrame(normalized_rows, columns=headers)
+        
+        return None
+
     def _convert_content(self, content):
         if not self._param.output_format:
             return
@@ -233,68 +275,114 @@ class Message(ComponentBase):
                 import pandas as pd
                 from io import BytesIO
 
-
-                # Try to parse markdown table from the content
-                df = None
+                # Debug: log the content being parsed
+                logging.info(f"XLSX Parser: Content length={len(content) if content else 0}, first 500 chars: {content[:500] if content else 'None'}")
+                
+                # Try to parse ALL markdown tables from the content
+                # Each table will be written to a separate sheet
+                tables = []  # List of (sheet_name, dataframe)
                 
                 if isinstance(content, str):
-                    # Extract markdown table from content
-                    # Pattern: lines starting with | and containing |
                     lines = content.strip().split('\n')
-                    table_lines = []
+                    logging.info(f"XLSX Parser: Total lines={len(lines)}, lines starting with '|': {sum(1 for l in lines if l.strip().startswith('|'))}")
+                    current_table_lines = []
+                    current_table_title = None
+                    pending_title = None
                     in_table = False
+                    table_count = 0
                     
-                    for line in lines:
-                        line = line.strip()
-                        if line.startswith('|') and '|' in line[1:]:
-                            in_table = True
-                            # Skip separator line (|---|---| or |:---:|:---:| etc.)
-                            # Check if line only contains |, -, :, and whitespace
-                            cleaned = line.replace(' ', '').replace('|', '').replace('-', '').replace(':', '')
+                    for i, line in enumerate(lines):
+                        stripped = line.strip()
+                        
+                        # Check for potential table title (lines before a table)
+                        # Look for patterns like "Table 1:", "## Table", or markdown headers
+                        if not in_table and stripped and not stripped.startswith('|'):
+                            # Check if this could be a table title
+                            lower_stripped = stripped.lower()
+                            if (lower_stripped.startswith('table') or 
+                                stripped.startswith('#') or
+                                ':' in stripped):
+                                pending_title = stripped.lstrip('#').strip()
+                        
+                        if stripped.startswith('|') and '|' in stripped[1:]:
+                            # Check if this is a separator line (|---|---|)
+                            cleaned = stripped.replace(' ', '').replace('|', '').replace('-', '').replace(':', '')
                             if cleaned == '':
                                 continue  # Skip separator line
-                            table_lines.append(line)
-                        elif in_table and not line.startswith('|'):
-                            # End of table
-                            break
+                            
+                            if not in_table:
+                                # Starting a new table
+                                in_table = True
+                                current_table_lines = []
+                                current_table_title = pending_title
+                                pending_title = None
+                            
+                            current_table_lines.append(stripped)
+                        
+                        elif in_table and not stripped.startswith('|'):
+                            # End of current table - save it
+                            if current_table_lines:
+                                df = self._parse_markdown_table_lines(current_table_lines)
+                                if df is not None and not df.empty:
+                                    table_count += 1
+                                    # Generate sheet name
+                                    if current_table_title:
+                                        # Clean and truncate title for sheet name
+                                        sheet_name = current_table_title[:31]
+                                        sheet_name = sheet_name.replace('/', '_').replace('\\', '_').replace('*', '').replace('?', '').replace('[', '').replace(']', '')
+                                    else:
+                                        sheet_name = f"Table_{table_count}"
+                                    tables.append((sheet_name, df))
+                            
+                            # Reset for next table
+                            in_table = False
+                            current_table_lines = []
+                            current_table_title = None
+                            
+                            # Check if this line could be a title for the next table
+                            if stripped:
+                                lower_stripped = stripped.lower()
+                                if (lower_stripped.startswith('table') or 
+                                    stripped.startswith('#') or
+                                    ':' in stripped):
+                                    pending_title = stripped.lstrip('#').strip()
                     
-                    if table_lines:
-                        # Parse the markdown table
-                        rows = []
-                        headers = None
-                        
-                        for line in table_lines:
-                            # Split by | and clean up
-                            cells = [cell.strip() for cell in line.split('|')]
-                            # Remove empty first and last elements from split
-                            cells = [c for c in cells if c]
-                            
-                            if headers is None:
-                                headers = cells
+                    # Don't forget the last table if content ends with a table
+                    if in_table and current_table_lines:
+                        df = self._parse_markdown_table_lines(current_table_lines)
+                        if df is not None and not df.empty:
+                            table_count += 1
+                            if current_table_title:
+                                sheet_name = current_table_title[:31]
+                                sheet_name = sheet_name.replace('/', '_').replace('\\', '_').replace('*', '').replace('?', '').replace('[', '').replace(']', '')
                             else:
-                                rows.append(cells)
-                        
-                        if headers and rows:
-                            # Ensure all rows have same number of columns as headers
-                            normalized_rows = []
-                            for row in rows:
-                                while len(row) < len(headers):
-                                    row.append('')
-                                normalized_rows.append(row[:len(headers)])
-                            
-                            df = pd.DataFrame(normalized_rows, columns=headers)
+                                sheet_name = f"Table_{table_count}"
+                            tables.append((sheet_name, df))
                 
-                # Fallback: if no table found, create single column with content
-                if df is None or df.empty:
+                # Fallback: if no tables found, create single sheet with content
+                if not tables:
                     df = pd.DataFrame({"Content": [content if content else ""]})
+                    tables = [("Data", df)]
 
-                # Write to Excel
+                # Write all tables to Excel, each in a separate sheet
                 excel_io = BytesIO()
                 with pd.ExcelWriter(excel_io, engine='openpyxl') as writer:
-                    df.to_excel(writer, sheet_name="Data", index=False)
+                    used_names = set()
+                    for sheet_name, df in tables:
+                        # Ensure unique sheet names
+                        original_name = sheet_name
+                        counter = 1
+                        while sheet_name in used_names:
+                            suffix = f"_{counter}"
+                            sheet_name = original_name[:31-len(suffix)] + suffix
+                            counter += 1
+                        used_names.add(sheet_name)
+                        df.to_excel(writer, sheet_name=sheet_name, index=False)
                 
                 excel_io.seek(0)
                 binary_content = excel_io.read()
+                
+                logging.info(f"Generated Excel with {len(tables)} sheet(s): {[t[0] for t in tables]}")
 
             else:  # pdf, docx
                 with tempfile.NamedTemporaryFile(suffix=f".{self._param.output_format}", delete=False) as tmp:
