@@ -196,8 +196,8 @@ export default {
       learnMore: 'Built-in pipeline introduction',
       general: 'General',
       chunkMethodTab: 'Chunk method',
-      testResults: 'Test results',
-      testSetting: 'Test setting',
+      testResults: 'Results',
+      testSetting: 'Setting',
       retrievalTesting: 'Retrieval testing',
       retrievalTestingDescription:
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.',
@@ -338,7 +338,7 @@ export default {
       autoParse: 'Auto parse',
       rebuildTip:
         'Re-downloads files from the linked data source and parses them again.',
-      baseInfo: 'Basic info',
+      baseInfo: 'Basic',
       globalIndex: 'Global index',
       dataSource: 'Data source',
       linkSourceSetTip: 'Manage data source linkage with this dataset',
