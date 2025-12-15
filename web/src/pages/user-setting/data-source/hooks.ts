@@ -12,10 +12,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { useCallback, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'umi';
-import { DataSourceInfo, DataSourceKey } from './contant';
+import { DataSourceKey, useDataSourceInfo } from './contant';
 import { IDataSorceInfo, IDataSource, IDataSourceBase } from './interface';
 
 export const useListDataSource = () => {
+  const { dataSourceInfo } = useDataSourceInfo();
   const { data: list, isFetching } = useQuery<IDataSource[]>({
     queryKey: ['data-source'],
     queryFn: async () => {
@@ -49,12 +50,12 @@ export const useListDataSource = () => {
       [];
     Object.keys(categorizedData).forEach((key: string) => {
       const k = key as DataSourceKey;
-      if (DataSourceInfo[k]) {
+      if (dataSourceInfo[k]) {
         sourceList.push({
           id: k,
-          name: DataSourceInfo[k].name,
-          description: DataSourceInfo[k].description,
-          icon: DataSourceInfo[k].icon,
+          name: dataSourceInfo[k].name,
+          description: dataSourceInfo[k].description,
+          icon: dataSourceInfo[k].icon,
           list: categorizedData[k] || [],
         });
       }
