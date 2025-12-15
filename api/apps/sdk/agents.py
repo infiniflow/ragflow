@@ -348,14 +348,14 @@ async def webhook(agent_id: str):
             if isinstance(c, str) and c.strip()
         ]
 
-        # RESERVED_CLAIMS = {"exp", "sub", "aud", "iss", "nbf", "iat"}
-        # for claim in required_claims:
-        #     if claim in RESERVED_CLAIMS:
-        #         raise Exception(f"Reserved JWT claim cannot be required: {claim}")
+        RESERVED_CLAIMS = {"exp", "sub", "aud", "iss", "nbf", "iat"}
+        for claim in required_claims:
+            if claim in RESERVED_CLAIMS:
+                raise Exception(f"Reserved JWT claim cannot be required: {claim}")
 
-        # for claim in required_claims:
-        #     if claim not in decoded:
-        #         raise Exception(f"Missing JWT claim: {claim}")
+        for claim in required_claims:
+            if claim not in decoded:
+                raise Exception(f"Missing JWT claim: {claim}")
 
         return decoded
 
