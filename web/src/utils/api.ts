@@ -46,6 +46,8 @@ export default {
     `${api_host}/connector/google/oauth/web/start?type=${type}`,
   googleWebAuthResult: (type: 'google-drive' | 'gmail') =>
     `${api_host}/connector/google/oauth/web/result?type=${type}`,
+  boxWebAuthStart: () => `${api_host}/connector/box/oauth/web/start`,
+  boxWebAuthResult: () => `${api_host}/connector/box/oauth/web/result`,
 
   // plugin
   llm_tools: `${api_host}/plugin/llm_tools`,
@@ -227,11 +229,15 @@ export default {
   retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
 
   // memory
-  createMemory: `${api_host}/memory/create`,
-  getMemoryList: `${api_host}/memory/list`,
+  createMemory: `${api_host}/memories`,
+  getMemoryList: `${api_host}/memories`,
+  getMemoryConfig: (id: string) => `${api_host}/memories/${id}/config`,
   deleteMemory: (id: string) => `${api_host}/memory/rm/${id}`,
-  getMemoryDetail: (id: string) => `${api_host}/memory/detail/${id}`,
-  updateMemorySetting: (id: string) => `${api_host}/memory/update/${id}`,
+  getMemoryDetail: (id: string) => `${api_host}/memories/${id}`,
+  updateMemorySetting: (id: string) => `${api_host}/memories/${id}`,
+  deleteMemoryMessage: (id: string) => `${api_host}/message/rm/${id}`,
+  getMessageContent: (message_id: string) =>
+    `${api_host}/messages/${message_id}/content`,
 
   // data pipeline
   fetchDataflow: (id: string) => `${api_host}/dataflow/get/${id}`,

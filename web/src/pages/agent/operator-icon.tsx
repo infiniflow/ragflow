@@ -16,6 +16,7 @@ import { IconFontFill } from '@/components/icon-font';
 import { cn } from '@/lib/utils';
 import {
   FileCode,
+  FileText,
   HousePlus,
   Infinity as InfinityIcon,
   LogOut,
@@ -67,6 +68,7 @@ export const LucideIconMap = {
   [Operator.DataOperations]: FileCode,
   [Operator.Loop]: InfinityIcon,
   [Operator.ExitLoop]: LogOut,
+  [Operator.PDFGenerator]: FileText,
 };
 
 const Empty = () => {

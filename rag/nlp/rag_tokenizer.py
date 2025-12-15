@@ -33,6 +33,22 @@ class RagTokenizer(infinity.rag_tokenizer.RagTokenizer):
             return super().fine_grained_tokenize(tks)
 
 
+def is_chinese(s):
+    return infinity.rag_tokenizer.is_chinese(s)
+
+
+def is_number(s):
+    return infinity.rag_tokenizer.is_number(s)
+
+
+def is_alphabet(s):
+    return infinity.rag_tokenizer.is_alphabet(s)
+
+
+def naive_qie(txt):
+    return infinity.rag_tokenizer.naive_qie(txt)
+
+
 tokenizer = RagTokenizer()
 tokenize = tokenizer.tokenize
 fine_grained_tokenize = tokenizer.fine_grained_tokenize
