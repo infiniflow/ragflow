@@ -52,7 +52,7 @@ class DocumentSource(str, Enum):
     MOODLE = "moodle"
     S3_COMPATIBLE = "s3_compatible"
     DROPBOX = "dropbox"
-
+    BOX = "box"
 
 class FileOrigin(str, Enum):
     """File origins"""
@@ -227,6 +227,7 @@ _DEFAULT_PAGINATION_LIMIT = 1000
 _PROBLEMATIC_EXPANSIONS = "body.storage.value"
 _REPLACEMENT_EXPANSIONS = "body.view.value"
 
+BOX_WEB_OAUTH_REDIRECT_URI = os.environ.get("BOX_WEB_OAUTH_REDIRECT_URI", "http://localhost:9380/v1/connector/box/oauth/web/callback")
 
 class HtmlBasedConnectorTransformLinksStrategy(str, Enum):
     # remove links entirely
