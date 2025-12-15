@@ -310,22 +310,61 @@ async def webhook(agent_id: str):
         if not auth_header.startswith("Bearer "):
             raise Exception("Missing Bearer token")
 
-        token = auth_header.replace("Bearer ", "")
+        token = auth_header[len("Bearer "):].strip()
+        if not token:
+            raise Exception("Empty Bearer token")
 
+        alg = (jwt_cfg.get("algorithm") or "HS256").upper()
+
+        decode_kwargs = {
+            "key": secret,
+            "algorithms": [alg],
+        }
+        options = {}
+        if jwt_cfg.get("audience"):
+            decode_kwargs["audience"] = jwt_cfg["audience"]
+            options["verify_aud"] = True
+        else:
+            options["verify_aud"] = False
+
+        if jwt_cfg.get("issuer"):
+            decode_kwargs["issuer"] = jwt_cfg["issuer"]
+            options["verify_iss"] = True
+        else:
+            options["verify_iss"] = False
         try:
             decoded = jwt.decode(
                 token,
-                secret,
-                algorithms=[jwt_cfg.get("algorithm", "HS256")],
-                audience=jwt_cfg.get("audience"),
-                issuer=jwt_cfg.get("issuer"),
+                options=options,
+                **decode_kwargs,
             )
         except Exception as e:
             raise Exception(f"Invalid JWT: {str(e)}")
 
-        for claim in required_claims:
-            if claim not in decoded:
-                raise Exception(f"Missing JWT claim: {claim}")
+        raw_required_claims = jwt_cfg.get("required_claims", [])
+        if isinstance(raw_required_claims, str):
+            required_claims = [raw_required_claims]
+        elif isinstance(raw_required_claims, (list, tuple, set)):
+            required_claims = list(raw_required_claims)
+        else:
+            required_claims = []
+
+        required_claims = [
+            c for c in required_claims
+            if isinstance(c, str) and c.strip()
+        ]
+
+        # RESERVED_CLAIMS = {"exp", "sub", "aud", "iss", "nbf", "iat"}
+        # for claim in required_claims:
+        #     if claim in RESERVED_CLAIMS:
+        #         raise Exception(f"Reserved JWT claim cannot be required: {claim}")
+
+        # for claim in required_claims:
+        #     if claim not in decoded:
+        #         raise Exception(f"Missing JWT claim: {claim}")
+
+        return decoded
+
 
     async def _validate_hmac_auth(security_cfg):
         """Validate HMAC signature from header."""
@@ -645,87 +684,26 @@ async def webhook(agent_id: str):
 
     if execution_mode == "Immediately":
         status = response_cfg.get("status", 200)
-        headers_tpl = response_cfg.get("headers_template", {})
-        body_tpl = response_cfg.get("body_template", {})
+        body_tpl = response_cfg.get("body_template", "")
+
+        def parse_body(body: str):
+            if not body:
+                return None, "application/json"
+
+            try:
+                parsed = json.loads(body)
+                return parsed, "application/json"
+            except (json.JSONDecodeError, TypeError):
+                return body, "text/plain"
 
 
-        placeholder_pattern = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*")
-        def extract_placeholder_value(placeholder: str, clean_request: dict):
-            """
-            Extract values from clean_request using placeholders like:
-            {webhook@body.payload}
-            {webhook@query.event}
-            {webhook@headers.X-Trace-ID}
-            """
-
-            # Example placeholder: webhook@body.payload
-            if "@" in placeholder:
-                prefix, path = placeholder.split("@", 1)
-
-                return get_from_request_path(clean_request, path)
-
-            # sys.xxx / env.xxx handled by canvas, do not resolve here
-            return None
-
-        def get_from_request_path(clean_request: dict, path: str):
-            """
-            Resolve path like:
-            body.payload
-            query.event
-            headers.X-Token
-            """
-
-            parts = path.split(".")
-            if len(parts) == 0:
-                return None
-
-            root = parts[0]  # body / query / headers
-
-            if root not in clean_request:
-                return None
-
-            value = clean_request[root]
-
-            for p in parts[1:]:
-                if isinstance(value, dict) and p in value:
-                    value = value[p]
-                else:
-                    return None
-
-            return value
-
-        def render_template(tpl, clean_request: dict):
-            if isinstance(tpl, dict):
-                return {k: render_template(v, clean_request) for k, v in tpl.items()}
-
-            if isinstance(tpl, list):
-                return [render_template(item, clean_request) for item in tpl]
-
-            if not isinstance(tpl, str):
-                return tpl
-
-            matches = placeholder_pattern.findall(tpl)
-            rendered = tpl
-
-            for m in matches:
-                val = extract_placeholder_value(m, clean_request)
-                rendered = rendered.replace(f"{{{m}}}", str(val))
-
-            return rendered
-
-        # Render "{xxx@query.xxx}" syntax
-        headers = render_template(headers_tpl, clean_request)
-        body = render_template(body_tpl, clean_request)
-
+        body, content_type = parse_body(body_tpl)
         resp = Response(
-            json.dumps(body, ensure_ascii=False),
+            json.dumps(body, ensure_ascii=False) if content_type == "application/json" else body,
             status=status,
-            content_type="application/json"
+            content_type=content_type,
         )
 
-        # Add custom headers
-        for k, v in headers.items():
-            resp.headers[k] = v
         async def background_run():
             try:
                 async for _ in canvas.run(
