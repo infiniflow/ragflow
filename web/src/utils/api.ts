@@ -46,6 +46,8 @@ export default {
     `${api_host}/connector/google/oauth/web/start?type=${type}`,
   googleWebAuthResult: (type: 'google-drive' | 'gmail') =>
     `${api_host}/connector/google/oauth/web/result?type=${type}`,
+  boxWebAuthStart: () => `${api_host}/connector/box/oauth/web/start`,
+  boxWebAuthResult: () => `${api_host}/connector/box/oauth/web/result`,
 
   // plugin
   llm_tools: `${api_host}/plugin/llm_tools`,
