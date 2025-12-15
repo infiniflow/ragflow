@@ -329,7 +329,7 @@ class Message(ComponentBase):
                                     if current_table_title:
                                         # Clean and truncate title for sheet name
                                         sheet_name = current_table_title[:31]
-                                        sheet_name = sheet_name.replace('/', '_').replace('\\', '_').replace('*', '').replace('?', '').replace('[', '').replace(']', '')
+                                        sheet_name = sheet_name.replace('/', '_').replace('\\', '_').replace('*', '').replace('?', '').replace('[', '').replace(']', '').replace(':', '')
                                     else:
                                         sheet_name = f"Table_{table_count}"
                                     tables.append((sheet_name, df))
@@ -354,7 +354,7 @@ class Message(ComponentBase):
                             table_count += 1
                             if current_table_title:
                                 sheet_name = current_table_title[:31]
-                                sheet_name = sheet_name.replace('/', '_').replace('\\', '_').replace('*', '').replace('?', '').replace('[', '').replace(']', '')
+                                sheet_name = sheet_name.replace('/', '_').replace('\\', '_').replace('*', '').replace('?', '').replace('[', '').replace(']', '').replace(':', '')
                             else:
                                 sheet_name = f"Table_{table_count}"
                             tables.append((sheet_name, df))
