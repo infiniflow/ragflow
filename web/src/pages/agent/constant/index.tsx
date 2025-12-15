@@ -1037,3 +1037,9 @@ export enum WebhookRequestParameters {
   Number = TypesWithArray.Number,
   Boolean = TypesWithArray.Boolean,
 }
+
+export enum WebhookStatus {
+  Testing = 'testing',
+  Live = 'live',
+  Stopped = 'stopped',
+}
