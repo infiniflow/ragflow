@@ -291,9 +291,10 @@ export function EnableTocToggle() {
 export function OverlappedPercent() {
   return (
     <SliderInputFormField
+      percentage={true}
       name="parser_config.overlapped_percent"
       label={t('knowledgeConfiguration.overlappedPercent')}
-      max={0.5}
+      max={0.3}
       step={0.01}
     ></SliderInputFormField>
   );

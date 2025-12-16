@@ -355,13 +355,6 @@ function transformBeginParams(params: BeginFormSchemaType) {
         ...params.security,
         ip_whitelist: params.security?.ip_whitelist.map((x) => x.value),
       },
-      response: {
-        ...params.response,
-        headers_template: transformArrayToObject(
-          params.response?.headers_template,
-        ),
-        body_template: transformArrayToObject(params.response?.body_template),
-      },
     };
   }
 

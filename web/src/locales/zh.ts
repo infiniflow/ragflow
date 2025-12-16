@@ -101,6 +101,7 @@ export default {
       doc: '文档',
       searchKnowledgePlaceholder: '搜索',
       noMoreData: '没有更多数据了',
+      parserRequired: '分块方法必填',
     },
     knowledgeDetails: {
       localUpload: '本地上传',
