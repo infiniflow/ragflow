@@ -83,7 +83,7 @@ function BeginForm({ node }: INextOperatorForm) {
   });
 
   return (
-    <section className="px-5 space-y-5">
+    <section className="px-5 space-y-5 pb-4">
       <Form {...form}>
         <FormField
           control={form.control}

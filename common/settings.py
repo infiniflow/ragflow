@@ -269,7 +269,27 @@ def init_settings():
         GCS = get_base_config("gcs", {})
 
     global STORAGE_IMPL
-    STORAGE_IMPL = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
+    storage_impl = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
+    
+    # Define crypto settings
+    crypto_enabled = os.environ.get("RAGFLOW_CRYPTO_ENABLED", "false").lower() == "true"
+    
+    # Check if encryption is enabled
+    if crypto_enabled:
+        try:
+            from rag.utils.encrypted_storage import create_encrypted_storage
+            algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
+            crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
+            
+            STORAGE_IMPL = create_encrypted_storage(storage_impl, 
+                algorithm=algorithm, 
+                key=crypto_key, 
+                encryption_enabled=crypto_enabled)
+        except Exception as e:
+            logging.error(f"Failed to initialize encrypted storage: {e}")
+            STORAGE_IMPL = storage_impl
+    else:
+        STORAGE_IMPL = storage_impl
 
     global retriever, kg_retriever
     retriever = search.Dealer(docStoreConn)
