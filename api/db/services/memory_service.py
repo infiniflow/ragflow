@@ -53,7 +53,9 @@ class MemoryService(CommonService):
             cls.model.forgetting_policy,
             cls.model.temperature,
             cls.model.system_prompt,
-            cls.model.user_prompt
+            cls.model.user_prompt,
+            cls.model.create_date,
+            cls.model.create_time
         ]
         memory = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id)).where(
             cls.model.id == memory_id
@@ -72,7 +74,9 @@ class MemoryService(CommonService):
             cls.model.memory_type,
             cls.model.storage_type,
             cls.model.permissions,
-            cls.model.description
+            cls.model.description,
+            cls.model.create_time,
+            cls.model.create_date
         ]
         memories = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id))
         if filter_dict.get("tenant_id"):
