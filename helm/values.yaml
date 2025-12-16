@@ -13,6 +13,8 @@ env:
   DOC_ENGINE: infinity
   # DOC_ENGINE: opensearch
 
+  MEMORY_ENGINE: elasticsearch
+
   # The version of Elasticsearch.
   STACK_VERSION: "8.11.3"
 

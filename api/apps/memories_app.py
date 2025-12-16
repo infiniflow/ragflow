@@ -20,10 +20,12 @@ from api.apps import login_required, current_user
 from api.db import TenantPermission
 from api.db.services.memory_service import MemoryService
 from api.db.services.user_service import UserTenantService
+from api.db.services.canvas_service import UserCanvasService
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result, \
     not_allowed_parameters
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
+from memory.services.messages import MessageService
 from common.constants import MemoryType, RetCode, ForgettingPolicy
 
 
@@ -56,10 +58,18 @@ async def create_memory():
         )
 
         if res:
-            return get_json_result(message=True, data=format_ret_data_from_memory(memory))
-
+            try:
+                MessageService.create_index(current_user.id, memory.id)
+                return get_json_result(message=True, data=format_ret_data_from_memory(memory))
+            except Exception as e:
+                logging.error(f"Failed to create message index for memory '{memory.id}': {e}")
+                MemoryService.delete_memory(memory.id)
+                return get_json_result(
+                    message="Failed to create message index, memory creation rolled back.",
+                    code=RetCode.SERVER_ERROR
+                )
         else:
-            return get_json_result(message=memory, code=RetCode.SERVER_ERROR)
+            return get_json_result(message='Create memory db record failed.', code=RetCode.SERVER_ERROR)
 
     except Exception as e:
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
@@ -183,3 +193,29 @@ async def get_memory_config(memory_id):
     if not memory:
         return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
     return get_json_result(message=True, data=format_ret_data_from_memory(memory))
+
+
+@manager.route("/<memory_id>", methods=["GET"]) # noqa: F821
+@login_required
+async def get_memory_detail(memory_id):
+    args = request.args
+    try:
+        agent_ids = args.getlist("agent_id")
+        keywords = args.get("keywords", "")
+        page = int(args.get("page", 1))
+        page_size = int(args.get("page_size", 50))
+        memory = MemoryService.get_by_memory_id(memory_id)
+        if not memory:
+            return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
+        messages = MessageService.list_message(
+            current_user.id, memory_id, agent_ids, keywords, page, page_size)
+        agent_name_mapping = {}
+        if messages["message_list"]:
+            agent_list = UserCanvasService.get_basic_info_by_canvas_ids([message["agent_id"] for message in messages["message_list"]])
+            agent_name_mapping = {agent["id"]: agent["title"] for agent in agent_list}
+        for message in messages["message_list"]:
+            message["agent_name"] = agent_name_mapping.get(message["agent_id"], "Unknown")
+        return get_json_result(data={"messages": messages, "storage_type": memory.storage_type}, message=True)
+    except Exception as e:
+        logging.error(e)
+        return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
