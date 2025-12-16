@@ -500,7 +500,7 @@ class ComponentBase(ABC):
             res[exp] = {
                 "name": (self._canvas.get_component_name(cpn_id) + f"@{var_nm}") if cpn_id else exp,
                 "value": self._canvas.get_variable_value(exp),
-                "_retrival": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
+                "_retrieval": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
                 "_cpn_id": cpn_id
             }
         return res
