@@ -142,11 +142,9 @@ def delete_agent(tenant_id: str, agent_id: str):
 _rate_limit_cache = {}
 
 @manager.route("/webhook/<agent_id>", methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"])  # noqa: F821
-@manager.route("/webhook_test/<agent_id>",methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"],)
+@manager.route("/webhook_test/<agent_id>",methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"],)  # noqa: F821
 async def webhook(agent_id: str):
     is_test = request.path.startswith("/api/v1/webhook_test")
-    print("request.path",request.path)
-    print("is_test",is_test)
     start_ts = time.time()
 
     # 1. Fetch canvas by agent_id
@@ -756,7 +754,7 @@ async def webhook(agent_id: str):
         return resp
 
 
-@manager.route("/webhook_trace/<agent_id>", methods=["GET"])
+@manager.route("/webhook_trace/<agent_id>", methods=["GET"])  # noqa: F821
 async def webhook_trace(agent_id: str):
     since_ts = request.args.get("since_ts", type=float)
     webhook_id = request.args.get("webhook_id")
