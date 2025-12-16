@@ -33,6 +33,7 @@ from common.misc_utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_error_data_result, get_json_result, get_request_json, token_required
 from api.utils.api_utils import get_result
 from quart import request, Response
+from rag.utils.redis_conn import REDIS_CONN
 
 
 @manager.route('/agents', methods=['GET'])  # noqa: F821
@@ -137,10 +138,17 @@ def delete_agent(tenant_id: str, agent_id: str):
     UserCanvasService.delete_by_id(agent_id)
     return get_json_result(data=True)
 
+
 _rate_limit_cache = {}
 
-@manager.route('/webhook/<agent_id>', methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"])  # noqa: F821
+@manager.route("/webhook/<agent_id>", methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"])  # noqa: F821
+@manager.route("/webhook_test/<agent_id>",methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"],)
 async def webhook(agent_id: str):
+    is_test = request.path.startswith("/api/v1/webhook_test")
+    print("request.path",request.path)
+    print("is_test",is_test)
+    start_ts = time.time()
+
     # 1. Fetch canvas by agent_id
     exists, cvs = UserCanvasService.get_by_id(agent_id)
     if not exists:
@@ -617,6 +625,34 @@ async def webhook(agent_id: str):
     execution_mode = webhook_cfg.get("execution_mode", "Immediately")
     response_cfg = webhook_cfg.get("response", {})
 
+    def append_webhook_trace(agent_id: str, start_ts: float,event: dict, ttl=600):
+        key = f"webhook-trace-{agent_id}-logs"
+
+        raw = REDIS_CONN.get(key)
+        obj = json.loads(raw) if raw else {"webhooks": {}}
+
+        ws = obj["webhooks"].setdefault(
+            str(start_ts),
+            {"start_ts": start_ts, "events": []}
+        )
+
+        ws["events"].append({
+            "ts": time.time(),
+            **event
+        })
+
+        REDIS_CONN.set_obj(key, obj, ttl)
+
+
+    def normalize_ans(ans):
+        return {
+            "task_id": ans.get("task_id"),
+            "component_id": ans.get("data", {}).get("component_id"),
+            "content": ans.get("data", {}).get("content"),
+            "start_to_think": ans.get("data", {}).get("start_to_think"),
+            "end_to_think": ans.get("data", {}).get("end_to_think"),
+        }
+
     if execution_mode == "Immediately":
         status = response_cfg.get("status", 200)
         body_tpl = response_cfg.get("body_template", "")
@@ -641,12 +677,29 @@ async def webhook(agent_id: str):
 
         async def background_run():
             try:
-                async for _ in canvas.run(
+                async for ans in canvas.run(
                     query="",
                     user_id=cvs.user_id,
                     webhook_payload=clean_request
                 ):
-                    pass  # or log/save ans
+                    if is_test:
+                        append_webhook_trace(
+                            agent_id,
+                            start_ts,
+                            {
+                                "event": ans.get("event"),
+                                "data": normalize_ans(ans),
+                            }
+                        )
+                if is_test:
+                    append_webhook_trace(
+                        agent_id,
+                        start_ts,
+                        {
+                            "event": "finished",
+                            "elapsed_time": time.time() - start_ts,
+                        }
+                    )
 
                 cvs.dsl = json.loads(str(canvas))
                 UserCanvasService.update_by_id(cvs.user_id, cvs.to_dict())
@@ -675,7 +728,24 @@ async def webhook(agent_id: str):
                             content = "</think>"
                         if content:
                             contents.append(content)
-
+                    if is_test:
+                        append_webhook_trace(
+                            agent_id,
+                            start_ts,
+                            {
+                                "event": ans.get("event"),
+                                "data": normalize_ans(ans),
+                            }
+                        )
+                if is_test:
+                    append_webhook_trace(
+                        agent_id,
+                        start_ts,
+                        {
+                            "event": "finished",
+                            "elapsed_time": time.time() - start_ts,
+                        }
+                    )
                 final_content = "".join(contents)
                 yield json.dumps(final_content, ensure_ascii=False)
 
@@ -684,3 +754,116 @@ async def webhook(agent_id: str):
 
         resp = Response(sse(), mimetype="application/json")
         return resp
+
+
+@manager.route("/webhook_trace/<agent_id>", methods=["GET"])
+async def webhook_trace(agent_id: str):
+    since_ts = request.args.get("since_ts", type=float)
+    webhook_id = request.args.get("webhook_id")
+
+    key = f"webhook-trace-{agent_id}-logs"
+    raw = REDIS_CONN.get(key)
+
+    if since_ts is None:
+        now = time.time()
+        return Response(
+            json.dumps(
+                {
+                    "webhook_id": None,
+                    "events": [],
+                    "next_since_ts": now,
+                    "finished": False,
+                },
+                ensure_ascii=False,
+            ),
+            content_type="application/json; charset=utf-8",
+        )
+
+    if not raw:
+        return Response(
+            json.dumps(
+                {
+                    "webhook_id": None,
+                    "events": [],
+                    "next_since_ts": since_ts,
+                    "finished": False,
+                },
+                ensure_ascii=False,
+            ),
+            content_type="application/json; charset=utf-8",
+        )
+
+    obj = json.loads(raw)
+    webhooks = obj.get("webhooks", {})
+
+    if webhook_id is None:
+        candidates = [
+            float(k) for k in webhooks.keys() if float(k) > since_ts
+        ]
+
+        if not candidates:
+            return Response(
+                json.dumps(
+                    {
+                        "webhook_id": None,
+                        "events": [],
+                        "next_since_ts": since_ts,
+                        "finished": False,
+                    },
+                    ensure_ascii=False,
+                ),
+                content_type="application/json; charset=utf-8",
+            )
+
+        start_ts = min(candidates)
+        webhook_id = str(start_ts)
+
+        return Response(
+            json.dumps(
+                {
+                    "webhook_id": webhook_id,
+                    "events": [],
+                    "next_since_ts": start_ts,
+                    "finished": False,
+                },
+                ensure_ascii=False,
+            ),
+            content_type="application/json; charset=utf-8",
+        )
+
+    ws = webhooks.get(str(webhook_id))
+    if not ws:
+        return Response(
+            json.dumps(
+                {
+                    "webhook_id": webhook_id,
+                    "events": [],
+                    "next_since_ts": since_ts,
+                    "finished": True,
+                },
+                ensure_ascii=False,
+            ),
+            content_type="application/json; charset=utf-8",
+        )
+
+    events = ws.get("events", [])
+    new_events = [e for e in events if e.get("ts", 0) > since_ts]
+
+    next_ts = since_ts
+    for e in new_events:
+        next_ts = max(next_ts, e["ts"])
+
+    finished = any(e.get("event") == "finished" for e in new_events)
+
+    return Response(
+        json.dumps(
+            {
+                "webhook_id": webhook_id,
+                "events": new_events,
+                "next_since_ts": next_ts,
+                "finished": finished,
+            },
+            ensure_ascii=False,
+        ),
+        content_type="application/json; charset=utf-8",
+    )
