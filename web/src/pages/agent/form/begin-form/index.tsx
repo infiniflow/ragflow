@@ -12,18 +12,17 @@ import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { FormTooltip } from '@/components/ui/tooltip';
-import { WebhookAlgorithmList } from '@/constants/agent';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { Plus } from 'lucide-react';
 import { memo, useEffect, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { z } from 'zod';
 import { AgentDialogueMode } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import { ParameterDialog } from './parameter-dialog';
 import { QueryTable } from './query-table';
+import { BeginFormSchema } from './schema';
 import { useEditQueryRecord } from './use-edit-query';
 import { useHandleModeChange } from './use-handle-mode-change';
 import { useValues } from './use-values';
@@ -36,55 +35,6 @@ const ModeOptions = [
   { value: AgentDialogueMode.Webhook, label: t('flow.webhook.name') },
 ];
 
-const FormSchema = z.object({
-  enablePrologue: z.boolean().optional(),
-  prologue: z.string().trim().optional(),
-  mode: z.string(),
-  inputs: z
-    .array(
-      z.object({
-        key: z.string(),
-        type: z.string(),
-        value: z.string(),
-        optional: z.boolean(),
-        name: z.string(),
-        options: z.array(z.union([z.number(), z.string(), z.boolean()])),
-      }),
-    )
-    .optional(),
-  methods: z.string().optional(),
-  content_types: z.string().optional(),
-  security: z
-    .object({
-      auth_type: z.string(),
-      ip_whitelist: z.array(z.object({ value: z.string() })),
-      rate_limit: z.object({
-        limit: z.number(),
-        per: z.string().optional(),
-      }),
-      max_body_size: z.string(),
-      jwt: z
-        .object({
-          algorithm: z.string().default(WebhookAlgorithmList[0]).optional(),
-        })
-        .optional(),
-    })
-    .optional(),
-  schema: z.record(z.any()).optional(),
-  response: z
-    .object({
-      status: z.number(),
-      headers_template: z.array(
-        z.object({ key: z.string(), value: z.string() }),
-      ),
-      body_template: z.array(z.object({ key: z.string(), value: z.string() })),
-    })
-    .optional(),
-  execution_mode: z.string().optional(),
-});
-
-export type BeginFormSchemaType = z.infer<typeof FormSchema>;
-
 function BeginForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
 
@@ -92,7 +42,7 @@ function BeginForm({ node }: INextOperatorForm) {
 
   const form = useForm({
     defaultValues: values,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(BeginFormSchema),
   });
 
   useWatchFormChange(node?.id, form);
@@ -133,7 +83,7 @@ function BeginForm({ node }: INextOperatorForm) {
   });
 
   return (
-    <section className="px-5 space-y-5">
+    <section className="px-5 space-y-5 pb-4">
       <Form {...form}>
         <FormField
           control={form.control}

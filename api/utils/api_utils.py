@@ -774,12 +774,7 @@ async def is_strong_enough(chat_model, embedding_model):
 
         if chat_model:
             res = await asyncio.wait_for(
-                asyncio.to_thread(
-                    chat_model.chat,
-                    "Nothing special.",
-                    [{"role": "user", "content": "Are you strong enough!?"}],
-                    {}
-                ),
+                chat_model.async_chat("Nothing special.", [{"role": "user", "content": "Are you strong enough!?"}]),
                 timeout=30
             )
             if "**ERROR**" in res:

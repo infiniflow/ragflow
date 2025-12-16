@@ -35,7 +35,7 @@ import {
   Operator,
   TypesWithArray,
 } from './constant';
-import { BeginFormSchemaType } from './form/begin-form';
+import { BeginFormSchemaType } from './form/begin-form/schema';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
 import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-form';
@@ -326,20 +326,34 @@ export function transformArrayToObject(
   }, {});
 }
 
+function transformRequestSchemaToJsonschema(
+  schema: BeginFormSchemaType['schema'],
+) {
+  const jsonSchema: Record<string, any> = {};
+  Object.entries(schema || {}).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      jsonSchema[key] = {
+        type: 'object',
+        required: value.filter((x) => x.required).map((x) => x.key),
+        properties: value.reduce<Record<string, any>>((pre, cur) => {
+          pre[cur.key] = { type: cur.type };
+          return pre;
+        }, {}),
+      };
+    }
+  });
+
+  return jsonSchema;
+}
+
 function transformBeginParams(params: BeginFormSchemaType) {
   if (params.mode === AgentDialogueMode.Webhook) {
     return {
       ...params,
+      schema: transformRequestSchemaToJsonschema(params.schema),
       security: {
         ...params.security,
         ip_whitelist: params.security?.ip_whitelist.map((x) => x.value),
-      },
-      response: {
-        ...params.response,
-        headers_template: transformArrayToObject(
-          params.response?.headers_template,
-        ),
-        body_template: transformArrayToObject(params.response?.body_template),
       },
     };
   }

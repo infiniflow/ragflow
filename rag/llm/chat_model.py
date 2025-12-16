@@ -28,7 +28,6 @@ import json_repair
 import litellm
 import openai
 from openai import AsyncOpenAI, OpenAI
-from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 from strenum import StrEnum
 
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
@@ -191,7 +190,7 @@ class Base(ABC):
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
                 if e:
-                    yield e                    
+                    yield e
                     yield total_tokens
                     return
 
@@ -487,15 +486,6 @@ class Base(ABC):
         assert False, "Shouldn't be here."
 
 
-class GptTurbo(Base):
-    _FACTORY_NAME = "OpenAI"
-
-    def __init__(self, key, model_name="gpt-3.5-turbo", base_url="https://api.openai.com/v1", **kwargs):
-        if not base_url:
-            base_url = "https://api.openai.com/v1"
-        super().__init__(key, model_name, base_url, **kwargs)
-
-
 class XinferenceChat(Base):
     _FACTORY_NAME = "Xinference"
 
@@ -524,26 +514,6 @@ class ModelScopeChat(Base):
             raise ValueError("Local llm url cannot be None")
         base_url = urljoin(base_url, "v1")
         super().__init__(key, model_name.split("___")[0], base_url, **kwargs)
-
-
-class AzureChat(Base):
-    _FACTORY_NAME = "Azure-OpenAI"
-
-    def __init__(self, key, model_name, base_url, **kwargs):
-        api_key = json.loads(key).get("api_key", "")
-        api_version = json.loads(key).get("api_version", "2024-02-01")
-        super().__init__(key, model_name, base_url, **kwargs)
-        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=base_url, api_version=api_version)
-        self.async_client = AsyncAzureOpenAI(api_key=key, base_url=base_url, api_version=api_version)
-        self.model_name = model_name
-
-    @property
-    def _retryable_errors(self) -> set[str]:
-        return {
-            LLMErrorCode.ERROR_RATE_LIMIT,
-            LLMErrorCode.ERROR_SERVER,
-            LLMErrorCode.ERROR_QUOTA,
-        }
 
 
 class BaiChuanChat(Base):
@@ -1227,6 +1197,8 @@ class LiteLLMBase(ABC):
         "MiniMax",
         "DeerAPI",
         "GPUStack",
+        "OpenAI",
+        "Azure-OpenAI",
     ]
 
     def __init__(self, key, model_name, base_url=None, **kwargs):
@@ -1252,6 +1224,9 @@ class LiteLLMBase(ABC):
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
             self.api_key = json.loads(key).get("api_key", "")
             self.provider_order = json.loads(key).get("provider_order", "")
+        elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
+            self.api_key = json.loads(key).get("api_key", "")
+            self.api_version = json.loads(key).get("api_version", "2024-02-01")
 
     def _get_delay(self):
         return self.base_delay * random.uniform(10, 150)
@@ -1681,6 +1656,16 @@ class LiteLLMBase(ABC):
             completion_args.update(
                 {
                     "api_base": self.base_url,
+                }
+            )
+        elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
+            completion_args.pop("api_key", None)
+            completion_args.pop("api_base", None)
+            completion_args.update(
+                {
+                    "api_key": self.api_key,
+                    "api_base": self.base_url,
+                    "api_version": self.api_version,
                 }
             )
 

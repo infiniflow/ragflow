@@ -52,7 +52,8 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y nginx unzip curl wget git vim less && \
     apt install -y ghostscript && \
     apt install -y pandoc && \
-    apt install -y texlive
+    apt install -y texlive && \
+    apt install -y fonts-freefont-ttf fonts-noto-cjk
 
 # Install uv
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
@@ -104,10 +105,10 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt update && \
     arch="$(uname -m)"; \
     if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then \
-        # ARM64 (macOS/Apple Silicon or Linux aarch64)
+        # ARM64 (macOS/Apple Silicon or Linux aarch64) \
         ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql18; \
     else \
-        # x86_64 or others
+        # x86_64 or others \
         ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17; \
     fi || \
     { echo "Failed to install ODBC driver"; exit 1; }

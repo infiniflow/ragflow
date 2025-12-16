@@ -27,7 +27,6 @@ import pandas as pd
 from agent import settings
 from common.connection_utils import timeout
 
-
 _FEEDED_DEPRECATED_PARAMS = "_feeded_deprecated_params"
 _DEPRECATED_PARAMS = "_deprecated_params"
 _USER_FEEDED_PARAMS = "_user_feeded_params"
@@ -97,7 +96,7 @@ class ComponentParamBase(ABC):
         def _recursive_convert_obj_to_dict(obj):
             ret_dict = {}
             if isinstance(obj, dict):
-                for k,v in obj.items():
+                for k, v in obj.items():
                     if isinstance(v, dict) or (v and type(v).__name__ not in dir(builtins)):
                         ret_dict[k] = _recursive_convert_obj_to_dict(v)
                     else:
@@ -253,96 +252,65 @@ class ComponentParamBase(ABC):
                 self._validate_param(attr, validation_json)
 
     @staticmethod
-    def check_string(param, descr):
+    def check_string(param, description):
         if type(param).__name__ not in ["str"]:
-            raise ValueError(
-                descr + " {} not supported, should be string type".format(param)
-            )
+            raise ValueError(description + " {} not supported, should be string type".format(param))
 
     @staticmethod
-    def check_empty(param, descr):
+    def check_empty(param, description):
         if not param:
-            raise ValueError(
-                descr + " does not support empty value."
-            )
+            raise ValueError(description + " does not support empty value.")
 
     @staticmethod
-    def check_positive_integer(param, descr):
+    def check_positive_integer(param, description):
         if type(param).__name__ not in ["int", "long"] or param <= 0:
-            raise ValueError(
-                descr + " {} not supported, should be positive integer".format(param)
-            )
+            raise ValueError(description + " {} not supported, should be positive integer".format(param))
 
     @staticmethod
-    def check_positive_number(param, descr):
+    def check_positive_number(param, description):
         if type(param).__name__ not in ["float", "int", "long"] or param <= 0:
-            raise ValueError(
-                descr + " {} not supported, should be positive numeric".format(param)
-            )
+            raise ValueError(description + " {} not supported, should be positive numeric".format(param))
 
     @staticmethod
-    def check_nonnegative_number(param, descr):
+    def check_nonnegative_number(param, description):
         if type(param).__name__ not in ["float", "int", "long"] or param < 0:
-            raise ValueError(
-                descr
-                + " {} not supported, should be non-negative numeric".format(param)
-            )
+            raise ValueError(description + " {} not supported, should be non-negative numeric".format(param))
 
     @staticmethod
-    def check_decimal_float(param, descr):
+    def check_decimal_float(param, description):
         if type(param).__name__ not in ["float", "int"] or param < 0 or param > 1:
-            raise ValueError(
-                descr
-                + " {} not supported, should be a float number in range [0, 1]".format(
-                    param
-                )
-            )
+            raise ValueError(description + " {} not supported, should be a float number in range [0, 1]".format(param))
 
     @staticmethod
-    def check_boolean(param, descr):
+    def check_boolean(param, description):
         if type(param).__name__ != "bool":
-            raise ValueError(
-                descr + " {} not supported, should be bool type".format(param)
-            )
+            raise ValueError(description + " {} not supported, should be bool type".format(param))
 
     @staticmethod
-    def check_open_unit_interval(param, descr):
+    def check_open_unit_interval(param, description):
         if type(param).__name__ not in ["float"] or param <= 0 or param >= 1:
-            raise ValueError(
-                descr + " should be a numeric number between 0 and 1 exclusively"
-            )
+            raise ValueError(description + " should be a numeric number between 0 and 1 exclusively")
 
     @staticmethod
-    def check_valid_value(param, descr, valid_values):
+    def check_valid_value(param, description, valid_values):
         if param not in valid_values:
-            raise ValueError(
-                descr
-                + " {} is not supported, it should be in {}".format(param, valid_values)
-            )
+            raise ValueError(description + " {} is not supported, it should be in {}".format(param, valid_values))
 
     @staticmethod
-    def check_defined_type(param, descr, types):
+    def check_defined_type(param, description, types):
         if type(param).__name__ not in types:
-            raise ValueError(
-                descr + " {} not supported, should be one of {}".format(param, types)
-            )
+            raise ValueError(description + " {} not supported, should be one of {}".format(param, types))
 
     @staticmethod
-    def check_and_change_lower(param, valid_list, descr=""):
+    def check_and_change_lower(param, valid_list, description=""):
         if type(param).__name__ != "str":
-            raise ValueError(
-                descr
-                + " {} not supported, should be one of {}".format(param, valid_list)
-            )
+            raise ValueError(description + " {} not supported, should be one of {}".format(param, valid_list))
 
         lower_param = param.lower()
         if lower_param in valid_list:
             return lower_param
         else:
-            raise ValueError(
-                descr
-                + " {} not supported, should be one of {}".format(param, valid_list)
-            )
+            raise ValueError(description + " {} not supported, should be one of {}".format(param, valid_list))
 
     @staticmethod
     def _greater_equal_than(value, limit):
@@ -374,16 +342,16 @@ class ComponentParamBase(ABC):
     def _not_in(value, wrong_value_list):
         return value not in wrong_value_list
 
-    def _warn_deprecated_param(self, param_name, descr):
+    def _warn_deprecated_param(self, param_name, description):
         if self._deprecated_params_set.get(param_name):
             logging.warning(
-                f"{descr} {param_name} is deprecated and ignored in this version."
+                f"{description} {param_name} is deprecated and ignored in this version."
             )
 
-    def _warn_to_deprecate_param(self, param_name, descr, new_param):
+    def _warn_to_deprecate_param(self, param_name, description, new_param):
         if self._deprecated_params_set.get(param_name):
             logging.warning(
-                f"{descr} {param_name} will be deprecated in future release; "
+                f"{description} {param_name} will be deprecated in future release; "
                 f"please use {new_param} instead."
             )
             return True
@@ -393,7 +361,7 @@ class ComponentParamBase(ABC):
 class ComponentBase(ABC):
     component_name: str
     thread_limiter = asyncio.Semaphore(int(os.environ.get("MAX_CONCURRENT_CHATS", 10)))
-    variable_ref_patt = r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
+    variable_ref_patt = r"\{* *\{([a-zA-Z_:0-9]+@[A-Za-z0-9_.]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
 
     def __str__(self):
         """
@@ -407,7 +375,7 @@ class ComponentBase(ABC):
             "params": {}
         }}""".format(self.component_name,
                      self._param
-        )
+                     )
 
     def __init__(self, canvas, id, param: ComponentParamBase):
         from agent.canvas import Graph  # Local import to avoid cyclic dependency
@@ -473,14 +441,14 @@ class ComponentBase(ABC):
         self.set_output("_elapsed_time", time.perf_counter() - self.output("_created_time"))
         return self.output()
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
         raise NotImplementedError()
 
-    def output(self, var_nm: str=None) -> Union[dict[str, Any], Any]:
+    def output(self, var_nm: str = None) -> Union[dict[str, Any], Any]:
         if var_nm:
             return self._param.outputs.get(var_nm, {}).get("value", "")
-        return {k: o.get("value") for k,o in self._param.outputs.items()}
+        return {k: o.get("value") for k, o in self._param.outputs.items()}
 
     def set_output(self, key: str, value: Any):
         if key not in self._param.outputs:
@@ -491,18 +459,18 @@ class ComponentBase(ABC):
         return self._param.outputs.get("_ERROR", {}).get("value")
 
     def reset(self, only_output=False):
-        outputs: dict = self._param.outputs # for better performance
+        outputs: dict = self._param.outputs  # for better performance
         for k in outputs.keys():
             outputs[k]["value"] = None
         if only_output:
             return
 
-        inputs: dict = self._param.inputs # for better performance
+        inputs: dict = self._param.inputs  # for better performance
         for k in inputs.keys():
             inputs[k]["value"] = None
         self._param.debug_inputs = {}
 
-    def get_input(self, key: str=None) -> Union[Any, dict[str, Any]]:
+    def get_input(self, key: str = None) -> Union[Any, dict[str, Any]]:
         if key:
             return self._param.inputs.get(key, {}).get("value")
 
@@ -526,13 +494,13 @@ class ComponentBase(ABC):
 
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
         res = {}
-        for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE|re.DOTALL):
+        for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE | re.DOTALL):
             exp = r.group(1)
-            cpn_id, var_nm = exp.split("@") if exp.find("@")>0 else ("", exp)
+            cpn_id, var_nm = exp.split("@") if exp.find("@") > 0 else ("", exp)
             res[exp] = {
-                "name": (self._canvas.get_component_name(cpn_id) +f"@{var_nm}") if cpn_id else exp,
+                "name": (self._canvas.get_component_name(cpn_id) + f"@{var_nm}") if cpn_id else exp,
                 "value": self._canvas.get_variable_value(exp),
-                "_retrival": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
+                "_retrieval": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
                 "_cpn_id": cpn_id
             }
         return res
@@ -583,6 +551,7 @@ class ComponentBase(ABC):
         for n, v in kv.items():
             def repl(_match, val=v):
                 return str(val) if val is not None else ""
+
             content = re.sub(
                 r"\{%s\}" % re.escape(n),
                 repl,

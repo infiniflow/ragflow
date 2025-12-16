@@ -11,13 +11,9 @@ import { Editor, loader } from '@monaco-editor/react';
 import { X } from 'lucide-react';
 import { ReactNode, useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
-import { InputMode, TypesWithArray } from '../../../constant';
-import {
-  InputModeOptions,
-  buildConversationVariableSelectOptions,
-} from '../../../utils';
+import { TypesWithArray } from '../../../constant';
+import { buildConversationVariableSelectOptions } from '../../../utils';
 import { DynamicFormHeader } from '../../components/dynamic-fom-header';
-import { QueryVariable } from '../../components/query-variable';
 
 loader.config({ paths: { vs: '/vs' } });
 
@@ -32,8 +28,6 @@ type SelectKeysProps = {
 };
 
 const VariableTypeOptions = buildConversationVariableSelectOptions();
-
-const modeField = 'input_mode';
 
 const ConstantValueMap = {
   [TypesWithArray.Boolean]: true,
@@ -63,71 +57,46 @@ export function DynamicResponse({
   });
 
   const initializeValue = useCallback(
-    (mode: string, variableType: string, valueFieldAlias: string) => {
-      if (mode === InputMode.Variable) {
-        form.setValue(valueFieldAlias, '', { shouldDirty: true });
-      } else {
-        const val = ConstantValueMap[variableType as TypesWithArray];
-        form.setValue(valueFieldAlias, val, { shouldDirty: true });
-      }
+    (variableType: string, valueFieldAlias: string) => {
+      const val = ConstantValueMap[variableType as TypesWithArray];
+      form.setValue(valueFieldAlias, val, { shouldDirty: true });
     },
     [form],
   );
 
-  const handleModeChange = useCallback(
-    (mode: string, valueFieldAlias: string, operatorFieldAlias: string) => {
-      const variableType = form.getValues(operatorFieldAlias);
-      initializeValue(mode, variableType, valueFieldAlias);
-    },
-    [form, initializeValue],
-  );
-
   const handleVariableTypeChange = useCallback(
-    (variableType: string, valueFieldAlias: string, modeFieldAlias: string) => {
-      const mode = form.getValues(modeFieldAlias);
-
-      initializeValue(mode, variableType, valueFieldAlias);
+    (variableType: string, valueFieldAlias: string) => {
+      initializeValue(variableType, valueFieldAlias);
     },
-    [form, initializeValue],
+    [initializeValue],
   );
 
   const renderParameter = useCallback(
-    (operatorFieldName: string, modeFieldName: string) => {
-      const mode = form.getValues(modeFieldName);
+    (operatorFieldName: string) => {
       const logicalOperator = form.getValues(operatorFieldName);
 
-      if (mode === InputMode.Constant) {
-        if (logicalOperator === TypesWithArray.Boolean) {
-          return <BoolSegmented></BoolSegmented>;
-        }
+      if (logicalOperator === TypesWithArray.Boolean) {
+        return <BoolSegmented></BoolSegmented>;
+      }
 
-        if (logicalOperator === TypesWithArray.Number) {
-          return <Input className="w-full" type="number"></Input>;
-        }
+      if (logicalOperator === TypesWithArray.Number) {
+        return <Input className="w-full" type="number"></Input>;
+      }
 
-        if (logicalOperator === TypesWithArray.String) {
-          return <Textarea></Textarea>;
-        }
-
-        return (
-          <Editor
-            height={300}
-            theme={isDarkTheme ? 'vs-dark' : 'vs'}
-            language={'json'}
-            options={{
-              minimap: { enabled: false },
-              automaticLayout: true,
-            }}
-          />
-        );
+      if (logicalOperator === TypesWithArray.String) {
+        return <Textarea></Textarea>;
       }
 
       return (
-        <QueryVariable
-          types={[logicalOperator]}
-          hideLabel
-          pureQuery
-        ></QueryVariable>
+        <Editor
+          height={300}
+          theme={isDarkTheme ? 'vs-dark' : 'vs'}
+          language={'json'}
+          options={{
+            minimap: { enabled: false },
+            automaticLayout: true,
+          }}
+        />
       );
     },
     [form, isDarkTheme],
@@ -142,7 +111,6 @@ export function DynamicResponse({
           append({
             [keyField]: '',
             [valueField]: '',
-            [modeField]: InputMode.Constant,
             [operatorField]: TypesWithArray.String,
           })
         }
@@ -152,7 +120,6 @@ export function DynamicResponse({
           const keyFieldAlias = `${name}.${index}.${keyField}`;
           const valueFieldAlias = `${name}.${index}.${valueField}`;
           const operatorFieldAlias = `${name}.${index}.${operatorField}`;
-          const modeFieldAlias = `${name}.${index}.${modeField}`;
 
           return (
             <section key={field.id} className="flex gap-2">
@@ -167,11 +134,7 @@ export function DynamicResponse({
                       <SelectWithSearch
                         value={field.value}
                         onChange={(val) => {
-                          handleVariableTypeChange(
-                            val,
-                            valueFieldAlias,
-                            modeFieldAlias,
-                          );
+                          handleVariableTypeChange(val, valueFieldAlias);
                           field.onChange(val);
                         }}
                         options={VariableTypeOptions}
@@ -179,25 +142,9 @@ export function DynamicResponse({
                     )}
                   </RAGFlowFormItem>
                   <Separator className="w-2" />
-                  <RAGFlowFormItem name={modeFieldAlias} className="flex-1">
-                    {(field) => (
-                      <SelectWithSearch
-                        value={field.value}
-                        onChange={(val) => {
-                          handleModeChange(
-                            val,
-                            valueFieldAlias,
-                            operatorFieldAlias,
-                          );
-                          field.onChange(val);
-                        }}
-                        options={InputModeOptions}
-                      ></SelectWithSearch>
-                    )}
-                  </RAGFlowFormItem>
                 </div>
                 <RAGFlowFormItem name={valueFieldAlias} className="w-full">
-                  {renderParameter(operatorFieldAlias, modeFieldAlias)}
+                  {renderParameter(operatorFieldAlias)}
                 </RAGFlowFormItem>
               </div>
 
