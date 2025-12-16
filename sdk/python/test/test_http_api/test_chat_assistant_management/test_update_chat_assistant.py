@@ -217,12 +217,12 @@ class TestChatAssistantUpdate:
                 assert res["data"]["prompt"][0]["top_n"] == 6
                 assert res["data"]["prompt"][0]["variables"] == [{"key": "knowledge", "optional": False}]
                 assert res["data"]["prompt"][0]["rerank_model"] == ""
-                assert res["data"]["prompt"][0]["empty_response"] == "Sorry! No relevant content was found in the knowledge base!"
+                assert res["data"]["prompt"][0]["empty_response"] == "Sorry! No relevant content was found in the dataset!"
                 assert res["data"]["prompt"][0]["opener"] == "Hi! I'm your assistant. What can I do for you?"
                 assert res["data"]["prompt"][0]["show_quote"] is True
                 assert (
                     res["data"]["prompt"][0]["prompt"]
-                    == 'You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.'
+                    == 'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.\n      Here is the dataset:\n      {knowledge}\n      The above is the dataset.'
                 )
         else:
             assert expected_message in res["message"]

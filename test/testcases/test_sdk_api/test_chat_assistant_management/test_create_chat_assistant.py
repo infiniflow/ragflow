@@ -206,12 +206,12 @@ class TestChatAssistantCreate:
                 assert attrgetter("top_n")(chat_assistant.prompt) == 6
                 assert attrgetter("variables")(chat_assistant.prompt) == [{"key": "knowledge", "optional": False}]
                 assert attrgetter("rerank_model")(chat_assistant.prompt) == ""
-                assert attrgetter("empty_response")(chat_assistant.prompt) == "Sorry! No relevant content was found in the knowledge base!"
+                assert attrgetter("empty_response")(chat_assistant.prompt) == "Sorry! No relevant content was found in the dataset!"
                 assert attrgetter("opener")(chat_assistant.prompt) == "Hi! I'm your assistant. What can I do for you?"
                 assert attrgetter("show_quote")(chat_assistant.prompt) is True
                 assert (
                     attrgetter("prompt")(chat_assistant.prompt)
-                    == 'You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.'
+                    == 'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.\n      Here is the dataset:\n      {knowledge}\n      The above is the dataset.'
                 )
 
 
