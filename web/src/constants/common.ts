@@ -103,14 +103,22 @@ export const LanguageTranslationMap = {
   Chinese: 'zh',
   'Traditional Chinese': 'zh-TRADITIONAL',
   Russian: 'ru',
-  Indonesia: 'id',
+  Indonesian: 'id',
   Spanish: 'es',
   Vietnamese: 'vi',
   Japanese: 'ja',
+  Korean: 'ko',
   'Portuguese BR': 'pt-br',
   German: 'de',
   French: 'fr',
   Italian: 'it',
+  Tamil: 'ta',
+  Telugu: 'te',
+  Kannada: 'ka',
+  Thai: 'th',
+  Greek: 'el',
+  Hindi: 'hi',
+  Ukrainian: 'uk',
 };
 
 export enum FileMimeType {

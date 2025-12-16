@@ -1,5 +1,7 @@
 import { AvatarUpload } from '@/components/avatar-upload';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import PageRankFormField from '@/components/page-rank-form-field';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import {
   FormControl,
   FormField,
@@ -8,6 +10,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { LanguageTranslationMap } from '@/constants/common';
+import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { TagItems } from './components/tag-item';
@@ -17,6 +21,13 @@ import { PermissionFormField } from './permission-form-field';
 export function GeneralForm() {
   const form = useFormContext();
   const { t } = useTranslation();
+
+  const languageOptions = useMemo(() => {
+    return Object.keys(LanguageTranslationMap).map((x) => ({
+      label: x,
+      value: x,
+    }));
+  }, []);
 
   return (
     <>
@@ -41,6 +52,18 @@ export function GeneralForm() {
           </FormItem>
         )}
       />
+      <div className="items-center">
+        <RAGFlowFormItem
+          name="language"
+          label={t('common.language')}
+          horizontal={true}
+        >
+          <SelectWithSearch
+            options={languageOptions}
+            triggerClassName="w-full"
+          ></SelectWithSearch>
+        </RAGFlowFormItem>
+      </div>
       <FormField
         control={form.control}
         name="avatar"
