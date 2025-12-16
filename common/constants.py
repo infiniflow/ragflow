@@ -123,7 +123,7 @@ class FileSource(StrEnum):
     WEBDAV = "webdav"
     MOODLE = "moodle"
     DROPBOX = "dropbox"
-
+    BOX = "box"
 
 class PipelineTaskType(StrEnum):
     PARSE = "Parse"

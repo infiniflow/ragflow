@@ -101,6 +101,7 @@ export enum Operator {
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
+  PDFGenerator = 'PDFGenerator',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
   ListOperations = 'ListOperations',
@@ -115,6 +116,7 @@ export enum Operator {
   Loop = 'Loop',
   LoopStart = 'LoopItem',
   ExitLoop = 'ExitLoop',
+  ExcelProcessor = 'ExcelProcessor',
 }
 
 export enum ComparisonOperator {

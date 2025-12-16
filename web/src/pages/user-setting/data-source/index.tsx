@@ -10,21 +10,21 @@ import {
 } from '../components/user-setting-header';
 import AddDataSourceModal from './add-datasource-modal';
 import { AddedSourceCard } from './component/added-source-card';
-import { DataSourceInfo, DataSourceKey } from './contant';
+import { DataSourceKey, useDataSourceInfo } from './contant';
 import { useAddDataSource, useListDataSource } from './hooks';
 import { IDataSorceInfo } from './interface';
 
-const dataSourceTemplates = Object.values(DataSourceKey).map((id) => {
-  return {
-    id,
-    name: DataSourceInfo[id].name,
-    description: DataSourceInfo[id].description,
-    icon: DataSourceInfo[id].icon,
-  };
-});
-
 const DataSource = () => {
   const { t } = useTranslation();
+  const { dataSourceInfo } = useDataSourceInfo();
+  const dataSourceTemplates = Object.values(DataSourceKey).map((id) => {
+    return {
+      id,
+      name: dataSourceInfo[id].name,
+      description: dataSourceInfo[id].description,
+      icon: dataSourceInfo[id].icon,
+    };
+  });
 
   // useListTenantUser();
   const { categorizedList } = useListDataSource();

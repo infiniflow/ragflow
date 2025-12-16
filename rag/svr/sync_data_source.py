@@ -32,6 +32,8 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
+from flask import json
+
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
@@ -41,10 +43,12 @@ from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.gmail_connector import GmailConnector
+from common.data_source.box_connector import BoxConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
+from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
@@ -92,7 +96,7 @@ class SyncBase:
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
 
-        async for document_batch in document_batch_generator:   # 如果是 async generator
+        for document_batch in document_batch_generator: 
             if not document_batch:
                 continue
 
@@ -658,6 +662,47 @@ class Moodle(SyncBase):
         return document_generator
 
 
+class BOX(SyncBase):
+    SOURCE_NAME: str = FileSource.BOX
+
+    async def _generate(self, task: dict):
+        self.connector = BoxConnector(
+            folder_id=self.conf.get("folder_id", "0"),
+        )
+
+        credential = json.loads(self.conf['credentials']['box_tokens'])
+
+        auth = BoxOAuth(
+            OAuthConfig(
+                client_id=credential['client_id'],
+                client_secret=credential['client_secret'],
+            )
+        )
+
+        token = AccessToken(
+            access_token=credential['access_token'],
+            refresh_token=credential['refresh_token'],
+        )    
+        auth.token_storage.store(token)
+
+        self.connector.load_credentials(auth)
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task["poll_range_start"]
+            if poll_start is None:
+                document_generator = self.connector.load_from_state()
+                begin_info = "totally"
+            else:
+                document_generator = self.connector.poll_source(
+                    poll_start.timestamp(),
+                    datetime.now(timezone.utc).timestamp()
+                )
+                begin_info = "from {}".format(poll_start)
+        logging.info("Connect to Box: folder_id({}) {}".format(self.conf["folder_id"], begin_info))
+        return document_generator
+    
 func_factory = {
     FileSource.S3: S3,
     FileSource.NOTION: Notion,
@@ -672,6 +717,7 @@ func_factory = {
     FileSource.MOODLE: Moodle,
     FileSource.DROPBOX: Dropbox,
     FileSource.WEBDAV: WebDAV,
+    FileSource.BOX: BOX
 }
 
 
