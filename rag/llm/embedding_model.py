@@ -398,7 +398,7 @@ class JinaMultiVecEmbed(Base):
 
                     ress.append(chunk_emb)
 
-                token_count +=total_token_count_from_response(res)
+                token_count += total_token_count_from_response(res)
             except Exception as _e:
                 log_exception(_e, response)
                 raise Exception(f"Error: {response}")
