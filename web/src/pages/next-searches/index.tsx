@@ -1,7 +1,6 @@
 import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
-import { IconFont } from '@/components/icon-font';
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
@@ -149,7 +148,7 @@ export default function SearchList() {
           onOk={onSearchRenameConfirm}
           initialName={initialSearchName}
           loading={searchRenameLoading}
-          title={<IconFont name="search" className="size-6"></IconFont>}
+          title={initialSearchName || t('createSearch')}
         ></RenameDialog>
       )}
     </section>

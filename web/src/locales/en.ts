@@ -159,6 +159,7 @@ export default {
       doc: 'Docs',
       searchKnowledgePlaceholder: 'Search',
       noMoreData: `That's all. Nothing more.`,
+      parserRequired: 'Chunk method is required',
     },
     knowledgeDetails: {
       localUpload: 'Local upload',
@@ -329,7 +330,7 @@ export default {
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
-      overlappedPercent: 'Overlapped percent',
+      overlappedPercent: 'Overlapped percent(%)',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
       scopeDataset: 'Dataset',
