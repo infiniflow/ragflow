@@ -220,7 +220,7 @@ class TestChatAssistantCreate:
                 assert res["data"]["prompt"]["top_n"] == 6
                 assert res["data"]["prompt"]["variables"] == [{"key": "knowledge", "optional": False}]
                 assert res["data"]["prompt"]["rerank_model"] == ""
-                assert res["data"]["prompt"]["empty_response"] == "Sorry! No relevant content was found in the dataset!"
+                assert res["data"]["prompt"]["empty_response"] == "Sorry! No relevant content was found in the knowledge base!"
                 assert res["data"]["prompt"]["opener"] == "Hi! I'm your assistant. What can I do for you?"
                 assert res["data"]["prompt"]["show_quote"] is True
                 assert (

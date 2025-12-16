@@ -199,7 +199,7 @@ class TestChatAssistantUpdate:
                         "top_n": 6,
                         "variables": [{"key": "knowledge", "optional": False}],
                         "rerank_model": "",
-                        "empty_response": "Sorry! No relevant content was found in the dataset!",
+                        "empty_response": "Sorry! No relevant content was found in the knowledge base!",
                         "opener": "Hi! I'm your assistant. What can I do for you?",
                         "show_quote": True,
                         "prompt": 'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.\n      Here is the dataset:\n      {knowledge}\n      The above is the dataset.',

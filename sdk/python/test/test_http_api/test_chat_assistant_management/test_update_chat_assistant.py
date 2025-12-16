@@ -217,7 +217,7 @@ class TestChatAssistantUpdate:
                 assert res["data"]["prompt"][0]["top_n"] == 6
                 assert res["data"]["prompt"][0]["variables"] == [{"key": "knowledge", "optional": False}]
                 assert res["data"]["prompt"][0]["rerank_model"] == ""
-                assert res["data"]["prompt"][0]["empty_response"] == "Sorry! No relevant content was found in the dataset!"
+                assert res["data"]["prompt"][0]["empty_response"] == "Sorry! No relevant content was found in the knowledge base!"
                 assert res["data"]["prompt"][0]["opener"] == "Hi! I'm your assistant. What can I do for you?"
                 assert res["data"]["prompt"][0]["show_quote"] is True
                 assert (
