@@ -272,16 +272,27 @@
         <div class="config-section">
             <h2>Connection Settings</h2>
             <div class="form-group">
-                <label for="wsUrl">WebSocket URL</label>
-                <input type="text" id="wsUrl" placeholder="ws://localhost/v1/ws/chat" value="ws://localhost/v1/ws/chat">
+                <label for="wsHost">WebSocket Host</label>
+                <input type="text" id="wsHost" placeholder="ws://localhost or wss://your-domain.com" value="ws://localhost">
             </div>
             <div class="form-group">
                 <label for="apiToken">API Token</label>
                 <input type="password" id="apiToken" placeholder="ragflow-your-api-token">
             </div>
             <div class="form-group">
+                <label for="mode">Mode</label>
+                <select id="mode" style="width: 100%; padding: 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 14px;">
+                    <option value="chat">Chat</option>
+                    <option value="agent">Agent</option>
+                </select>
+            </div>
+            <div class="form-group" id="chatIdGroup">
                 <label for="chatId">Chat ID</label>
                 <input type="text" id="chatId" placeholder="your-chat-id">
+            </div>
+            <div class="form-group" id="agentIdGroup" style="display: none;">
+                <label for="agentId">Agent ID</label>
+                <input type="text" id="agentId" placeholder="your-agent-id">
             </div>
             <button id="connectBtn" class="primary" onclick="toggleConnection()">Connect</button>
             <span id="status" class="status disconnected">Disconnected</span>
@@ -336,13 +347,25 @@
          */
         function connect() {
             // Get configuration from form
-            const wsUrl = document.getElementById('wsUrl').value;
+            const wsHost = document.getElementById('wsHost').value;
             const apiToken = document.getElementById('apiToken').value;
+            const mode = document.getElementById('mode').value;
             const chatId = document.getElementById('chatId').value;
+            const agentId = document.getElementById('agentId').value;
 
             // Validate inputs
-            if (!wsUrl || !apiToken || !chatId) {
-                showError('Please fill in all connection settings');
+            if (!wsHost || !apiToken) {
+                showError('Please fill in WebSocket host and API token');
+                return;
+            }
+            
+            if (mode === 'chat' && !chatId) {
+                showError('Please fill in Chat ID for chat mode');
+                return;
+            }
+            
+            if (mode === 'agent' && !agentId) {
+                showError('Please fill in Agent ID for agent mode');
                 return;
             }
 
@@ -350,8 +373,14 @@
             updateStatus('connecting', 'Connecting...');
             document.getElementById('connectBtn').disabled = true;
 
-            // Construct WebSocket URL with token
-            const url = `${wsUrl}?token=${apiToken}`;
+            // Construct WebSocket URL based on mode
+            let wsPath;
+            if (mode === 'chat') {
+                wsPath = `/api/v1/ws/chats/${chatId}/completions`;
+            } else {
+                wsPath = `/api/v1/ws/agents/${agentId}/completions`;
+            }
+            const url = `${wsHost}${wsPath}?token=${apiToken}`;
 
             try {
                 // Create WebSocket connection
@@ -425,13 +454,8 @@
                 return;
             }
 
-            // Get chat ID
-            const chatId = document.getElementById('chatId').value;
-
-            // Construct message
+            // Construct message (new SDK-style format)
             const message = {
-                type: 'chat',
-                chat_id: chatId,
                 question: question,
                 stream: true
             };
@@ -567,21 +591,44 @@
             }
         });
 
+        // Handle mode switching
+        document.getElementById('mode').addEventListener('change', function() {
+            const mode = this.value;
+            const chatIdGroup = document.getElementById('chatIdGroup');
+            const agentIdGroup = document.getElementById('agentIdGroup');
+            
+            if (mode === 'chat') {
+                chatIdGroup.style.display = 'block';
+                agentIdGroup.style.display = 'none';
+            } else {
+                chatIdGroup.style.display = 'none';
+                agentIdGroup.style.display = 'block';
+            }
+        });
+
         // Load saved settings from localStorage
         window.addEventListener('load', function() {
-            const savedUrl = localStorage.getItem('ragflow_ws_url');
+            const savedHost = localStorage.getItem('ragflow_ws_host');
             const savedToken = localStorage.getItem('ragflow_api_token');
             const savedChatId = localStorage.getItem('ragflow_chat_id');
+            const savedAgentId = localStorage.getItem('ragflow_agent_id');
+            const savedMode = localStorage.getItem('ragflow_mode');
 
-            if (savedUrl) document.getElementById('wsUrl').value = savedUrl;
+            if (savedHost) document.getElementById('wsHost').value = savedHost;
             if (savedToken) document.getElementById('apiToken').value = savedToken;
             if (savedChatId) document.getElementById('chatId').value = savedChatId;
+            if (savedAgentId) document.getElementById('agentId').value = savedAgentId;
+            if (savedMode) {
+                document.getElementById('mode').value = savedMode;
+                document.getElementById('mode').dispatchEvent(new Event('change'));
+            }
         });
 
         // Save settings to localStorage on change
-        ['wsUrl', 'apiToken', 'chatId'].forEach(function(id) {
+        ['wsHost', 'apiToken', 'chatId', 'agentId', 'mode'].forEach(function(id) {
             document.getElementById(id).addEventListener('change', function() {
-                localStorage.setItem('ragflow_' + id.toLowerCase().replace('id', '_id'), this.value);
+                const key = 'ragflow_' + id.toLowerCase().replace('host', '_host');
+                localStorage.setItem(key, this.value);
             });
         });
     </script>

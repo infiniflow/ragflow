@@ -25,9 +25,17 @@ Requirements:
     pip install websocket-client
 
 Usage:
-    python python_client.py --url ws://localhost/v1/ws/chat \
+    # Chat mode
+    python python_client.py --host ws://localhost \
                           --token your-api-token \
                           --chat-id your-chat-id \
+                          --question "What is RAGFlow?"
+    
+    # Agent mode
+    python python_client.py --host ws://localhost \
+                          --token your-api-token \
+                          --agent-id your-agent-id \
+                          --mode agent \
                           --question "What is RAGFlow?"
 """
 
@@ -47,21 +55,32 @@ class RAGFlowWebSocketClient:
     - Receiving and displaying streaming responses
     - Error handling and reconnection
     - Multi-turn conversations
+    - Support for both Chat and Agent modes
     """
     
-    def __init__(self, url, token, chat_id, debug=False):
+    def __init__(self, host, token, chat_id=None, agent_id=None, mode='chat', debug=False):
         """
         Initialize the WebSocket client.
         
         Args:
-            url (str): WebSocket URL (e.g., ws://localhost/v1/ws/chat)
+            host (str): WebSocket host (e.g., ws://localhost or wss://your-domain.com)
             token (str): API token for authentication
-            chat_id (str): Dialog/Chat ID to use
+            chat_id (str, optional): Dialog/Chat ID for chat mode
+            agent_id (str, optional): Agent ID for agent mode
+            mode (str): 'chat' or 'agent' mode
             debug (bool): Enable debug output
         """
-        # Append token to URL for authentication
-        self.url = f"{url}?token={token}"
+        # Construct URL based on mode
+        if mode == 'chat' and chat_id:
+            self.url = f"{host}/api/v1/ws/chats/{chat_id}/completions?token={token}"
+        elif mode == 'agent' and agent_id:
+            self.url = f"{host}/api/v1/ws/agents/{agent_id}/completions?token={token}"
+        else:
+            raise ValueError("Must provide chat_id for chat mode or agent_id for agent mode")
+        
         self.chat_id = chat_id
+        self.agent_id = agent_id
+        self.mode = mode
         self.debug = debug
         self.ws = None
         self.session_id = None  # Track session for multi-turn conversations
@@ -179,10 +198,8 @@ class RAGFlowWebSocketClient:
             print("✗ Not connected")
             return False
         
-        # Construct chat request message
+        # Construct chat request message (new SDK-style format)
         message = {
-            'type': 'chat',
-            'chat_id': self.chat_id,
             'question': question,
             'stream': True
         }
@@ -302,14 +319,21 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Single question
-  python python_client.py --url ws://localhost/v1/ws/chat \\
+  # Single question (Chat mode)
+  python python_client.py --host ws://localhost \\
                          --token your-token \\
                          --chat-id your-chat-id \\
                          --question "What is RAGFlow?"
   
+  # Single question (Agent mode)
+  python python_client.py --host ws://localhost \\
+                         --token your-token \\
+                         --agent-id your-agent-id \\
+                         --mode agent \\
+                         --question "What is RAGFlow?"
+  
   # Interactive mode
-  python python_client.py --url ws://localhost/v1/ws/chat \\
+  python python_client.py --host ws://localhost \\
                          --token your-token \\
                          --chat-id your-chat-id \\
                          --interactive
@@ -317,9 +341,9 @@ Examples:
     )
     
     parser.add_argument(
-        '--url',
+        '--host',
         required=True,
-        help='WebSocket URL (e.g., ws://localhost/v1/ws/chat)'
+        help='WebSocket host (e.g., ws://localhost or wss://your-domain.com)'
     )
     
     parser.add_argument(
@@ -330,8 +354,19 @@ Examples:
     
     parser.add_argument(
         '--chat-id',
-        required=True,
-        help='Dialog/Chat ID to use'
+        help='Dialog/Chat ID to use (required for chat mode)'
+    )
+    
+    parser.add_argument(
+        '--agent-id',
+        help='Agent ID to use (required for agent mode)'
+    )
+    
+    parser.add_argument(
+        '--mode',
+        choices=['chat', 'agent'],
+        default='chat',
+        help='Mode: chat or agent (default: chat)'
     )
     
     parser.add_argument(
@@ -362,11 +397,18 @@ Examples:
     if not args.interactive and not args.question:
         parser.error("Either --question or --interactive must be specified")
     
+    if args.mode == 'chat' and not args.chat_id:
+        parser.error("--chat-id is required for chat mode")
+    if args.mode == 'agent' and not args.agent_id:
+        parser.error("--agent-id is required for agent mode")
+    
     # Create client
     client = RAGFlowWebSocketClient(
-        url=args.url,
+        host=args.host,
         token=args.token,
         chat_id=args.chat_id,
+        agent_id=args.agent_id,
+        mode=args.mode,
         debug=args.debug
     )
     
@@ -380,9 +422,12 @@ Examples:
         interactive_mode(client)
     else:
         # Single question mode
+        # Save original on_open method to avoid infinite recursion
+        original_on_open = client.on_open
+        
         def send_after_connect(ws):
             """Send question after connection is established."""
-            client.on_open(ws)
+            original_on_open(ws)  # Call original method
             client.send_message(args.question, session_id=args.session_id)
         
         # Override on_open to send question
