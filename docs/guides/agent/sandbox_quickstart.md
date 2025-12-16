@@ -23,12 +23,14 @@ The architecture consists of isolated Docker base images for each supported lang
 
 - Linux distribution compatible with gVisor.
 - gVisor installed and configured.
-- Docker version 25.0 or higher (API 1.44+). The executor manager image now ships Docker CLI `29.1.0` to stay compatible with newer Docker daemons.
+- Docker version 25.0 or higher (API 1.44+). Ensure your executor manager image ships with Docker CLI `29.1.0` or higher to stay compatible with the latest Docker daemons.
 - Docker Compose version 2.26.1 or higher (similar to RAGFlow requirements).
 - uv package and project manager installed.
 - (Optional) GNU Make for simplified command-line management.
 
-> **Note:** If you see `client version 1.43 is too old. Minimum supported API version is 1.44`, pull the latest `infiniflow/sandbox-executor-manager:latest` from Docker Hub (or rebuild `./sandbox/executor_manager`). Older images embedded Docker 24.x, which cannot talk to upgraded Docker daemons.
+:::tip NOTE
+The error message `client version 1.43 is too old. Minimum supported API version is 1.44` indicates that your executor manager image's built-in Docker CLI version is lower than `29.1.0` required by the Docker daemon in use. To solve this issue, pull the latest `infiniflow/sandbox-executor-manager:latest` from Docker Hub (or rebuild `./sandbox/executor_manager`).
+:::
 
 ## Build Docker base images
 
