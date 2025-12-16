@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { Settings, Trash2 } from 'lucide-react';
+import { useDataSourceInfo } from '../contant';
 import { useDeleteDataSource } from '../hooks';
 import { IDataSorceInfo, IDataSourceBase } from '../interface';
 import { delSourceModal } from './delete-source-modal';
@@ -13,6 +14,7 @@ export const AddedSourceCard = (props: IAddedSourceCardProps) => {
   const { list, name, icon } = props;
   const { handleDelete } = useDeleteDataSource();
   const { navigateToDataSourceDetail } = useNavigatePage();
+  const { dataSourceInfo } = useDataSourceInfo();
   const toDetail = (id: string) => {
     navigateToDataSourceDetail(id);
   };
@@ -49,6 +51,7 @@ export const AddedSourceCard = (props: IAddedSourceCardProps) => {
                 onClick={() =>
                   delSourceModal({
                     data: item,
+                    dataSourceInfo: dataSourceInfo,
                     onOk: () => {
                       handleDelete(item);
                     },

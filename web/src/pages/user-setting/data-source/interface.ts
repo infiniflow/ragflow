@@ -43,3 +43,11 @@ export interface IDataSourceLog {
   tenant_id: string;
   timeout_secs: number;
 }
+
+interface IDataSourceInfoItem {
+  name: string;
+  description: string;
+  icon: JSX.Element;
+}
+
+export type IDataSourceInfoMap = Record<DataSourceKey, IDataSourceInfoItem>;

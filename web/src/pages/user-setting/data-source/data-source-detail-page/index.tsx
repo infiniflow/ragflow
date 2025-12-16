@@ -18,7 +18,7 @@ import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
   DataSourceFormFields,
-  DataSourceInfo,
+  useDataSourceInfo,
 } from '../contant';
 import {
   useAddDataSource,
@@ -32,10 +32,10 @@ const SourceDetailPage = () => {
 
   const { data: detail } = useFetchDataSourceDetail();
   const { handleResume } = useDataSourceResume();
-
+  const { dataSourceInfo } = useDataSourceInfo();
   const detailInfo = useMemo(() => {
     if (detail) {
-      return DataSourceInfo[detail.source];
+      return dataSourceInfo[detail.source];
     }
   }, [detail]);
 
