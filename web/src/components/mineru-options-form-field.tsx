@@ -7,10 +7,38 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 const parseMethodOptions = buildOptions(['auto', 'txt', 'ocr']);
+const languageOptions = buildOptions([
+  'English',
+  'Chinese',
+  'Traditional Chinese',
+  'Russian',
+  'Ukrainian',
+  'Indonesian',
+  'Spanish',
+  'Vietnamese',
+  'Japanese',
+  'Korean',
+  'Portuguese BR',
+  'German',
+  'French',
+  'Italian',
+  'Tamil',
+  'Telugu',
+  'Kannada',
+  'Thai',
+  'Greek',
+  'Hindi',
+]);
 
-export function MinerUOptionsFormField() {
+export function MinerUOptionsFormField({
+  namePrefix = 'parser_config',
+}: {
+  namePrefix?: string;
+}) {
   const form = useFormContext();
   const { t } = useTranslation();
+  const buildName = (field: string) =>
+    namePrefix ? `${namePrefix}.${field}` : field;
 
   const layoutRecognize = useWatch({
     control: form.control,
@@ -33,7 +61,7 @@ export function MinerUOptionsFormField() {
       </div>
 
       <RAGFlowFormItem
-        name="parser_config.mineru_parse_method"
+        name={buildName('mineru_parse_method')}
         label={t('knowledgeConfiguration.mineruParseMethod', 'Parse Method')}
         tooltip={t(
           'knowledgeConfiguration.mineruParseMethodTip',
@@ -52,7 +80,26 @@ export function MinerUOptionsFormField() {
       </RAGFlowFormItem>
 
       <RAGFlowFormItem
-        name="parser_config.mineru_formula_enable"
+        name={buildName('mineru_lang')}
+        label={t('knowledgeConfiguration.mineruLanguage', 'Language')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruLanguageTip',
+          'Preferred OCR language for MinerU.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <RAGFlowSelect
+            value={field.value || 'English'}
+            onChange={field.onChange}
+            options={languageOptions}
+            placeholder={t('common.selectPlaceholder', 'Select value')}
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_formula_enable')}
         label={t(
           'knowledgeConfiguration.mineruFormulaEnable',
           'Formula Recognition',
@@ -73,7 +120,7 @@ export function MinerUOptionsFormField() {
       </RAGFlowFormItem>
 
       <RAGFlowFormItem
-        name="parser_config.mineru_table_enable"
+        name={buildName('mineru_table_enable')}
         label={t(
           'knowledgeConfiguration.mineruTableEnable',
           'Table Recognition',

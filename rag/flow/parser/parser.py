@@ -280,6 +280,7 @@ class Parser(ProcessBase):
                 binary=blob,
                 callback=self.callback,
                 parse_method=conf.get("mineru_parse_method", "raw"),
+                lang=conf.get("lang", "Chinese"),
             )
             bboxes = []
             for t, poss in lines:

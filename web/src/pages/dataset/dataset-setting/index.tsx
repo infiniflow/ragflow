@@ -73,6 +73,7 @@ export default function DatasetSettings() {
         mineru_parse_method: 'auto',
         mineru_formula_enable: true,
         mineru_table_enable: true,
+        mineru_lang: 'English',
         raptor: {
           use_raptor: true,
           max_token: 256,

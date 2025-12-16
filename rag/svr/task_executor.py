@@ -69,7 +69,6 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
-from common.misc_utils import check_and_install_mineru
 
 BATCH_SIZE = 64
 
@@ -1169,7 +1168,6 @@ async def main():
     show_configs()
     settings.init_settings()
     settings.check_and_install_torch()
-    check_and_install_mineru()
     logging.info(f'default embedding config: {settings.EMBEDDING_CFG}')
     settings.print_rag_settings()
     if sys.platform != "win32":
