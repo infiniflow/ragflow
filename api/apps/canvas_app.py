@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import asyncio
+import inspect
 import json
 import logging
 from functools import partial
@@ -299,8 +300,13 @@ async def debug():
         for k in outputs.keys():
             if isinstance(outputs[k], partial):
                 txt = ""
-                for c in outputs[k]():
-                    txt += c
+                iter_obj = outputs[k]()
+                if inspect.isasyncgen(iter_obj):
+                    async for c in iter_obj:
+                        txt += c
+                else:
+                    for c in iter_obj:
+                        txt += c
                 outputs[k] = txt
         return get_json_result(data=outputs)
     except Exception as e:
