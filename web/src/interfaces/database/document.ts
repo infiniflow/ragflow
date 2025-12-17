@@ -34,8 +34,13 @@ export interface IDocumentInfo {
 export interface IParserConfig {
   delimiter?: string;
   html4excel?: boolean;
-  layout_recognize?: boolean;
-  pages: any[];
+  layout_recognize?: string;
+  pages?: any[];
+  chunk_token_num?: number;
+  auto_keywords?: number;
+  auto_questions?: number;
+  toc_extraction?: boolean;
+  task_page_size?: number;
   raptor?: Raptor;
   graphrag?: GraphRag;
 }
