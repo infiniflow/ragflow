@@ -202,13 +202,14 @@ async def get_memory_detail(memory_id):
     try:
         agent_ids = args.getlist("agent_id")
         keywords = args.get("keywords", "")
+        keywords = keywords.strip()
         page = int(args.get("page", 1))
         page_size = int(args.get("page_size", 50))
         memory = MemoryService.get_by_memory_id(memory_id)
         if not memory:
             return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
         messages = MessageService.list_message(
-            current_user.id, memory_id, agent_ids, keywords, page, page_size)
+            memory.tenant_id, memory_id, agent_ids, keywords, page, page_size)
         agent_name_mapping = {}
         if messages["message_list"]:
             agent_list = UserCanvasService.get_basic_info_by_canvas_ids([message["agent_id"] for message in messages["message_list"]])

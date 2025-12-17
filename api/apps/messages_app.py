@@ -14,7 +14,8 @@
 #  limitations under the License.
 #
 
-from api.apps import login_required, current_user
+from api.apps import login_required
+from api.db.services.memory_service import MemoryService
 from common.time_utils import current_timestamp, timestamp_to_date
 
 from memory.services.messages import MessageService
@@ -63,11 +64,16 @@ async def add_message():
 @manager.route("/<memory_id>:<message_id>", methods=["DELETE"]) # noqa: F821
 @login_required
 async def forget_message(memory_id: str, message_id: int):
+
+    memory = MemoryService.get_by_memory_id(memory_id)
+    if not memory:
+        return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
+
     forget_time = timestamp_to_date(current_timestamp())
     update_succeed = MessageService.update_message(
         {"memory_id": memory_id, "message_id": message_id},
         {"forget_at": forget_time},
-        current_user.id, memory_id)
+        memory.tenant_id, memory_id)
     if update_succeed:
         return get_json_result(message=update_succeed)
     else:
@@ -83,7 +89,11 @@ async def update_message(memory_id: str, message_id: int):
     if not isinstance(status, bool):
         return get_error_argument_result("Status must be a boolean.")
 
-    update_succeed = MessageService.update_message({"memory_id": memory_id, "message_id": message_id}, {"status": status}, current_user.id, memory_id)
+    memory = MemoryService.get_by_memory_id(memory_id)
+    if not memory:
+        return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
+
+    update_succeed = MessageService.update_message({"memory_id": memory_id, "message_id": message_id}, {"status": status}, memory.tenant_id, memory_id)
     if update_succeed:
         return get_json_result(message=update_succeed)
     else:
@@ -105,7 +115,11 @@ async def get_messages():
 @manager.route("/<memory_id>:<message_id>/content", methods=["GET"]) # noqa: F821
 @login_required
 async def get_message_content(memory_id:str, message_id: int):
-    res = MessageService.get_by_message_id(memory_id, message_id, current_user.id)
+    memory = MemoryService.get_by_memory_id(memory_id)
+    if not memory:
+        return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
+
+    res = MessageService.get_by_message_id(memory_id, message_id, memory.tenant_id)
     if res:
         return get_json_result(message=True, data=res)
     else:
