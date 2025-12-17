@@ -233,8 +233,8 @@ class DiscordConnector(LoadConnector, PollConnector):
 
     def __init__(
         self,
-        server_ids: list[str] = [],
-        channel_names: list[str] = [],
+        server_ids: list[str] = None,
+        channel_names: list[str] = None,
         # YYYY-MM-DD
         start_date: str | None = None,
         batch_size: int = INDEX_BATCH_SIZE,
