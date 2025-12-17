@@ -192,6 +192,7 @@ COPY pyproject.toml uv.lock ./
 COPY mcp mcp
 COPY plugin plugin
 COPY common common
+COPY memory memory
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./
