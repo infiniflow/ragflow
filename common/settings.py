@@ -79,7 +79,7 @@ FEISHU_OAUTH = None
 OAUTH_CONFIG = None
 DOC_ENGINE = os.getenv('DOC_ENGINE', 'elasticsearch')
 DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
-MSG_ENGINE = os.getenv('MSG_ENGINE', 'elasticsearch')
+MSG_ENGINE = DOC_ENGINE
 
 
 docStoreConn = None
@@ -262,7 +262,7 @@ def init_settings():
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
     global MSG_ENGINE, msgStoreConn
-    MSG_ENGINE = os.environ.get("MSG_ENGINE", "elasticsearch").lower()
+    MSG_ENGINE = DOC_ENGINE  # use the same engine for message store
     if MSG_ENGINE == "elasticsearch":
         ES = get_base_config("es", {})
         msgStoreConn = memory_es_conn.ESConnection()
