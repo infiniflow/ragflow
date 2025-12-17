@@ -1925,6 +1925,7 @@ The Indexer will store the content in the corresponding data structures for the 
       keywords: 'Keywords',
       questions: 'Questions',
       metadata: 'Metadata',
+      toc: 'Table of contents',
       fieldName: 'Result destination',
       prompts: {
         system: {
