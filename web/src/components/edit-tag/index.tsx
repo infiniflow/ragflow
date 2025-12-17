@@ -12,10 +12,11 @@ import { Input } from '../ui/input';
 interface EditTagsProps {
   value?: string[];
   onChange?: (tags: string[]) => void;
+  disabled?: boolean;
 }
 
 const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
-  ({ value = [], onChange }: EditTagsProps) => {
+  ({ value = [], onChange, disabled }: EditTagsProps) => {
     const [inputVisible, setInputVisible] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
@@ -61,13 +62,15 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
                 <div className="max-w-80 overflow-hidden text-ellipsis">
                   {tag}
                 </div>
-                <X
-                  className="w-4 h-4 text-muted-foreground hover:text-primary"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleClose(tag);
-                  }}
-                />
+                {!disabled && (
+                  <X
+                    className="w-4 h-4 text-muted-foreground hover:text-primary"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleClose(tag);
+                    }}
+                  />
+                )}
               </div>
             </div>
           </HoverCardTrigger>
@@ -91,6 +94,7 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
             value={inputValue}
             onChange={handleInputChange}
             onBlur={handleInputConfirm}
+            disabled={disabled}
             onKeyDown={(e) => {
               if (e?.key === 'Enter') {
                 handleInputConfirm();
@@ -100,11 +104,12 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
         )}
         <div className="flex gap-2 py-1">
           {Array.isArray(tagChild) && tagChild.length > 0 && <>{tagChild}</>}
-          {!inputVisible && (
+          {!inputVisible && !disabled && (
             <Button
               variant="ghost"
               className="w-fit flex items-center justify-center gap-2 bg-bg-card border-dashed border"
               onClick={showInput}
+              disabled={disabled}
               style={tagPlusStyle}
             >
               <PlusOutlined />

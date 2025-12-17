@@ -17,6 +17,7 @@ export function MemoryCard({ data, showMemoryRenameModal }: IProps) {
         name: data?.name,
         avatar: data?.avatar,
         description: data?.description,
+        update_time: data?.create_time,
       }}
       moreDropdown={
         <MemoryDropdown
