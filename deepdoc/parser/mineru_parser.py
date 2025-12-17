@@ -262,10 +262,8 @@ class MinerUParser(RAGFlowPdfParser):
         elif self.mineru_server_url:
             data["server_url"] = self.mineru_server_url
 
-        print("--------------------------------", flush=True)
-        print(f"{data=}", flush=True)
-        print(f"{options=}", flush=True)
-        print("--------------------------------", flush=True)
+        self.logger.info(f"[MinerU] request {data=}")
+        self.logger.info(f"[MinerU] request {options=}")
 
         headers = {"Accept": "application/json"}
         try:
