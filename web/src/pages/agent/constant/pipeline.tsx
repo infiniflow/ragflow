@@ -85,6 +85,7 @@ export enum ContextGeneratorFieldName {
   Keywords = 'keywords',
   Questions = 'questions',
   Metadata = 'metadata',
+  TableOfContents = 'toc',
 }
 
 export const FileId = 'File'; // BeginId
