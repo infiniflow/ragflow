@@ -1836,14 +1836,15 @@ wheels = [
 
 [[package]]
 name = "flask-cors"
-version = "5.0.0"
+version = "6.0.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "flask" },
+    { name = "werkzeug" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4f/d0/d9e52b154e603b0faccc0b7c2ad36a764d8755ef4036acbf1582a67fb86b/flask_cors-5.0.0.tar.gz", hash = "sha256:5aadb4b950c4e93745034594d9f3ea6591f734bb3662e16e255ffbf5e89c88ef", size = 30954, upload-time = "2024-08-31T00:44:26.395Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/70/74/0fc0fa68d62f21daef41017dafab19ef4b36551521260987eb3a5394c7ba/flask_cors-6.0.2.tar.gz", hash = "sha256:6e118f3698249ae33e429760db98ce032a8bf9913638d085ca0f4c5534ad2423", size = 13472, upload-time = "2025-12-12T20:31:42.861Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/56/07/1afa0514c876282bebc1c9aee83c6bb98fe6415cf57b88d9b06e7e29bf9c/Flask_Cors-5.0.0-py2.py3-none-any.whl", hash = "sha256:b9e307d082a9261c100d8fb0ba909eec6a228ed1b60a8315fd85f783d61910bc", size = 14463, upload-time = "2024-08-31T00:44:24.394Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4f/af/72ad54402e599152de6d067324c46fe6a4f531c7c65baf7e96c63db55eaf/flask_cors-6.0.2-py3-none-any.whl", hash = "sha256:e57544d415dfd7da89a9564e1e3a9e515042df76e12130641ca6f3f2f03b699a", size = 13257, upload-time = "2025-12-12T20:31:41.3Z" },
 ]
 
 [[package]]
@@ -2140,8 +2141,7 @@ wheels = [
 grpc = [
     { name = "grpcio", version = "1.67.1", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.14' and sys_platform != 'darwin'" },
     { name = "grpcio", version = "1.76.0", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.14' and sys_platform == 'darwin'" },
-    { name = "grpcio-status", version = "1.67.1", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.14' and sys_platform != 'darwin'" },
-    { name = "grpcio-status", version = "1.71.2", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.14' and sys_platform == 'darwin'" },
+    { name = "grpcio-status", marker = "python_full_version >= '3.14'" },
 ]
 
 [[package]]
@@ -2171,7 +2171,7 @@ wheels = [
 [package.optional-dependencies]
 grpc = [
     { name = "grpcio", version = "1.67.1", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.14'" },
-    { name = "grpcio-status", version = "1.67.1", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "grpcio-status", marker = "python_full_version < '3.14'" },
 ]
 
 [[package]]
@@ -2701,41 +2701,15 @@ wheels = [
 name = "grpcio-status"
 version = "1.67.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-resolution-markers = [
-    "python_full_version == '3.13.*' and sys_platform == 'darwin'",
-    "python_full_version < '3.13' and sys_platform == 'darwin'",
-    "python_full_version >= '3.14' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version == '3.13.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '3.14' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.14' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
-]
 dependencies = [
-    { name = "googleapis-common-protos", marker = "python_full_version < '3.14' or sys_platform != 'darwin'" },
+    { name = "googleapis-common-protos" },
     { name = "grpcio", version = "1.67.1", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.14' or sys_platform != 'darwin'" },
-    { name = "protobuf", marker = "python_full_version < '3.14' or sys_platform != 'darwin'" },
+    { name = "grpcio", version = "1.76.0", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.14' and sys_platform == 'darwin'" },
+    { name = "protobuf" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/be/c7/fe0e79a80ac6346e0c6c0a24e9e3cbc3ae1c2a009acffb59eab484a6f69b/grpcio_status-1.67.1.tar.gz", hash = "sha256:2bf38395e028ceeecfd8866b081f61628114b384da7d51ae064ddc8d766a5d11", size = 13673, upload-time = "2024-10-29T06:30:21.787Z" }
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/05/18/56999a1da3577d8ccc8698a575d6638e15fe25650cc88b2ce0a087f180b9/grpcio_status-1.67.1-py3-none-any.whl", hash = "sha256:16e6c085950bdacac97c779e6a502ea671232385e6e37f258884d6883392c2bd", size = 14427, upload-time = "2024-10-29T06:27:38.228Z" },
-]
-
-[[package]]
-name = "grpcio-status"
-version = "1.71.2"
-source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'darwin'",
-]
-dependencies = [
-    { name = "googleapis-common-protos", marker = "python_full_version >= '3.14' and sys_platform == 'darwin'" },
-    { name = "grpcio", version = "1.76.0", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.14' and sys_platform == 'darwin'" },
-    { name = "protobuf", marker = "python_full_version >= '3.14' and sys_platform == 'darwin'" },
-]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/fd/d1/b6e9877fedae3add1afdeae1f89d1927d296da9cf977eca0eb08fb8a460e/grpcio_status-1.71.2.tar.gz", hash = "sha256:c7a97e176df71cdc2c179cd1847d7fc86cca5832ad12e9798d7fed6b7a1aab50", size = 13677, upload-time = "2025-06-28T04:24:05.426Z" }
-wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/67/58/317b0134129b556a93a3b0afe00ee675b5657f0155509e22fcb853bafe2d/grpcio_status-1.71.2-py3-none-any.whl", hash = "sha256:803c98cb6a8b7dc6dbb785b1111aed739f241ab5e9da0bba96888aa74704cfd3", size = 14424, upload-time = "2025-06-28T04:23:42.136Z" },
 ]
 
 [[package]]
@@ -2871,11 +2845,6 @@ dependencies = [
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b1/df/48c586a5fe32a0f01324ee087459e112ebb7224f646c0b5023f5e79e9956/httpx-0.28.1.tar.gz", hash = "sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc", size = 141406, upload-time = "2024-12-06T15:37:23.222Z" }
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl", hash = "sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad", size = 73517, upload-time = "2024-12-06T15:37:21.509Z" },
-]
-
-[package.optional-dependencies]
-socks = [
-    { name = "socksio" },
 ]
 
 [[package]]
@@ -3043,20 +3012,6 @@ wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/15/f3/6419d1d5795a16591233d3aa3747b084e82c0c1d7184bdad9be638174560/ijson-3.4.0.post0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:b982a3597b0439ce9c8f4cfc929d86c6ed43907908be1e8463a34dc35fe5b258", size = 204825, upload-time = "2025-10-10T05:29:04.242Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/1f/8d/a520e6902129c55fa94428ea0a22e8547540d5e7ca30f18b39594a5feea2/ijson-3.4.0.post0-cp314-cp314t-win32.whl", hash = "sha256:4e39bfdc36b0b460ef15a06550a6a385c64c81f7ac205ccff39bd45147918912", size = 55559, upload-time = "2025-10-10T05:29:05.681Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/20/67/0ac6dd0045957ba1270b7b1860864f7d8cea4062e70b1083134c587e5768/ijson-3.4.0.post0-cp314-cp314t-win_amd64.whl", hash = "sha256:17e45262a5ddef39894013fb1548ee7094e444c8389eb1a97f86708b19bea03e", size = 58238, upload-time = "2025-10-10T05:29:06.656Z" },
-]
-
-[[package]]
-name = "imageio-ffmpeg"
-version = "0.6.0"
-source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/44/bd/c3343c721f2a1b0c9fc71c1aebf1966a3b7f08c2eea8ed5437a2865611d6/imageio_ffmpeg-0.6.0.tar.gz", hash = "sha256:e2556bed8e005564a9f925bb7afa4002d82770d6b08825078b7697ab88ba1755", size = 25210, upload-time = "2025-01-16T21:34:32.747Z" }
-wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/da/58/87ef68ac83f4c7690961bce288fd8e382bc5f1513860fc7f90a9c1c1c6bf/imageio_ffmpeg-0.6.0-py3-none-macosx_10_9_intel.macosx_10_9_x86_64.whl", hash = "sha256:9d2baaf867088508d4a3458e61eeb30e945c4ad8016025545f66c4b5aaef0a61", size = 24932969, upload-time = "2025-01-16T21:34:20.464Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/40/5c/f3d8a657d362cc93b81aab8feda487317da5b5d31c0e1fdfd5e986e55d17/imageio_ffmpeg-0.6.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:b1ae3173414b5fc5f538a726c4e48ea97edc0d2cdc11f103afee655c463fa742", size = 21113891, upload-time = "2025-01-16T21:34:00.277Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/33/e7/1925bfbc563c39c1d2e82501d8372734a5c725e53ac3b31b4c2d081e895b/imageio_ffmpeg-0.6.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:1d47bebd83d2c5fc770720d211855f208af8a596c82d17730aa51e815cdee6dc", size = 25632706, upload-time = "2025-01-16T21:33:53.475Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a0/2d/43c8522a2038e9d0e7dbdf3a61195ecc31ca576fb1527a528c877e87d973/imageio_ffmpeg-0.6.0-py3-none-manylinux2014_x86_64.whl", hash = "sha256:c7e46fcec401dd990405049d2e2f475e2b397779df2519b544b8aab515195282", size = 29498237, upload-time = "2025-01-16T21:34:13.726Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a0/13/59da54728351883c3c1d9fca1710ab8eee82c7beba585df8f25ca925f08f/imageio_ffmpeg-0.6.0-py3-none-win32.whl", hash = "sha256:196faa79366b4a82f95c0f4053191d2013f4714a715780f0ad2a68ff37483cc2", size = 19652251, upload-time = "2025-01-16T21:34:06.812Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/2c/c6/fa760e12a2483469e2bf5058c5faff664acf66cadb4df2ad6205b016a73d/imageio_ffmpeg-0.6.0-py3-none-win_amd64.whl", hash = "sha256:02fa47c83703c37df6bfe4896aab339013f62bf02c5ebf2dce6da56af04ffc0a", size = 31246824, upload-time = "2025-01-16T21:34:28.6Z" },
 ]
 
 [[package]]
@@ -4411,12 +4366,12 @@ name = "onnxruntime-gpu"
 version = "1.23.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "coloredlogs" },
-    { name = "flatbuffers" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "protobuf" },
-    { name = "sympy" },
+    { name = "coloredlogs", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "flatbuffers", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "numpy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "packaging", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "protobuf", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "sympy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/6c/d9/b7140a4f1615195938c7e358c0804bb84271f0d6886b5cbf105c6cb58aae/onnxruntime_gpu-1.23.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:4f2d1f720685d729b5258ec1b36dee1de381b8898189908c98cbeecdb2f2b5c2", size = 300509596, upload-time = "2025-10-22T16:56:31.728Z" },
@@ -4848,15 +4803,6 @@ wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7b/f9/cfaa5082ca9bc4a6de66ffe1c12c2d90bf09c309a5f52b27759a596900e7/pillow-10.4.0-cp313-cp313-win32.whl", hash = "sha256:551d3fd6e9dc15e4c1eb6fc4ba2b39c0c7933fa113b220057a34f4bb3268a060", size = 2235603, upload-time = "2024-07-01T09:47:03.918Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/01/6a/30ff0eef6e0c0e71e55ded56a38d4859bf9d3634a94a88743897b5f96936/pillow-10.4.0-cp313-cp313-win_amd64.whl", hash = "sha256:030abdbe43ee02e0de642aee345efa443740aa4d828bfe8e2eb11922ea6a21ea", size = 2554972, upload-time = "2024-07-01T09:47:06.152Z" },
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/48/2c/2e0a52890f269435eee38b21c8218e102c621fe8d8df8b9dd06fabf879ba/pillow-10.4.0-cp313-cp313-win_arm64.whl", hash = "sha256:5b001114dd152cfd6b23befeb28d7aee43553e2402c9f159807bf55f33af8a8d", size = 2243375, upload-time = "2024-07-01T09:47:09.065Z" },
-]
-
-[[package]]
-name = "pip"
-version = "25.3"
-source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/fe/6e/74a3f0179a4a73a53d66ce57fdb4de0080a8baa1de0063de206d6167acc2/pip-25.3.tar.gz", hash = "sha256:8d0538dbbd7babbd207f261ed969c65de439f6bc9e5dbd3b3b9a77f25d95f343", size = 1803014, upload-time = "2025-10-25T00:55:41.394Z" }
-wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/44/3c/d717024885424591d5376220b5e836c2d5293ce2011523c9de23ff7bf068/pip-25.3-py3-none-any.whl", hash = "sha256:9655943313a94722b7774661c21049070f6bbb0a1516bf02f7c8d5d9201514cd", size = 1778622, upload-time = "2025-10-25T00:55:39.247Z" },
 ]
 
 [[package]]
@@ -6121,40 +6067,26 @@ dependencies = [
     { name = "aspose-slides", marker = "platform_machine == 'x86_64' or (platform_machine == 'arm64' and sys_platform == 'darwin')" },
     { name = "atlassian-python-api" },
     { name = "azure-identity" },
-    { name = "azure-storage-blob" },
     { name = "azure-storage-file-datalake" },
     { name = "beartype" },
     { name = "bio" },
-    { name = "blinker" },
-    { name = "boto3" },
-    { name = "botocore" },
     { name = "boxsdk" },
-    { name = "cachetools" },
     { name = "captcha" },
-    { name = "chardet" },
-    { name = "click" },
     { name = "cn2an" },
     { name = "cohere" },
     { name = "crawl4ai" },
-    { name = "cryptography" },
     { name = "dashscope" },
-    { name = "datrie" },
-    { name = "debugpy" },
     { name = "deepl" },
     { name = "demjson3" },
     { name = "discord-py" },
     { name = "dropbox" },
     { name = "duckduckgo-search" },
     { name = "editdistance" },
-    { name = "elastic-transport" },
-    { name = "elasticsearch" },
     { name = "elasticsearch-dsl" },
     { name = "exceptiongroup" },
     { name = "extract-msg" },
     { name = "ffmpeg-python" },
-    { name = "filelock" },
     { name = "flasgger" },
-    { name = "flask" },
     { name = "flask-cors" },
     { name = "flask-login" },
     { name = "flask-mail" },
@@ -6166,21 +6098,13 @@ dependencies = [
     { name = "google-search-results" },
     { name = "graspologic" },
     { name = "groq" },
-    { name = "hanziconv" },
+    { name = "grpcio-status" },
     { name = "html-text" },
-    { name = "httpx", extra = ["socks"] },
-    { name = "huggingface-hub" },
-    { name = "imageio-ffmpeg" },
     { name = "infinity-emb" },
     { name = "infinity-sdk" },
-    { name = "itsdangerous" },
-    { name = "jinja2" },
     { name = "jira" },
     { name = "json-repair" },
     { name = "langfuse" },
-    { name = "lark" },
-    { name = "litellm", version = "1.80.5", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version >= '3.14' and sys_platform == 'darwin'" },
-    { name = "litellm", version = "1.80.9", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }, marker = "python_full_version < '3.14' or sys_platform != 'darwin'" },
     { name = "mammoth" },
     { name = "markdown" },
     { name = "markdown-to-json" },
@@ -6191,81 +6115,58 @@ dependencies = [
     { name = "mistralai" },
     { name = "moodlepy" },
     { name = "mypy-boto3-s3" },
-    { name = "nltk" },
-    { name = "numpy" },
     { name = "office365-rest-python-client" },
     { name = "ollama" },
     { name = "onnxruntime", marker = "platform_machine != 'x86_64' or sys_platform == 'darwin'" },
     { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'" },
-    { name = "openai" },
     { name = "opencv-python" },
     { name = "opencv-python-headless" },
     { name = "opendal" },
-    { name = "openpyxl" },
     { name = "opensearch-py" },
     { name = "ormsgpack" },
-    { name = "pandas" },
     { name = "pdfplumber" },
-    { name = "peewee" },
-    { name = "pillow" },
-    { name = "pip" },
     { name = "pluginlib" },
-    { name = "protobuf" },
     { name = "psycopg2-binary" },
     { name = "pyclipper" },
     { name = "pycryptodomex" },
-    { name = "pymysql" },
     { name = "pyobvector" },
     { name = "pyodbc" },
     { name = "pypandoc" },
     { name = "pypdf" },
     { name = "pypdf2" },
     { name = "python-calamine" },
-    { name = "python-dateutil" },
     { name = "python-docx" },
-    { name = "python-dotenv" },
     { name = "python-pptx" },
     { name = "pywencai" },
     { name = "qianfan" },
-    { name = "quart" },
     { name = "quart-auth" },
     { name = "quart-cors" },
     { name = "ranx" },
     { name = "readability-lxml" },
     { name = "replicate" },
     { name = "reportlab" },
-    { name = "requests" },
     { name = "roman-numbers" },
     { name = "ruamel-base" },
     { name = "ruamel-yaml" },
     { name = "scholarly" },
-    { name = "scikit-learn" },
-    { name = "selenium" },
     { name = "selenium-wire" },
-    { name = "setuptools" },
-    { name = "shapely" },
-    { name = "six" },
     { name = "slack-sdk" },
+    { name = "socksio" },
+    { name = "sqlglotrs" },
     { name = "strenum" },
-    { name = "tabulate" },
     { name = "tavily-python" },
     { name = "tencentcloud-sdk-python" },
     { name = "tika" },
-    { name = "tiktoken" },
-    { name = "trio" },
-    { name = "umap-learn" },
     { name = "valkey" },
     { name = "vertexai" },
     { name = "volcengine" },
     { name = "voyageai" },
     { name = "webdav4" },
     { name = "webdriver-manager" },
-    { name = "werkzeug" },
     { name = "wikipedia" },
     { name = "word2number" },
     { name = "xgboost" },
     { name = "xpinyin" },
-    { name = "xxhash" },
     { name = "yfinance" },
     { name = "zhipuai" },
 ]
@@ -6295,41 +6196,27 @@ requires-dist = [
     { name = "aspose-slides", marker = "platform_machine == 'x86_64' or (platform_machine == 'arm64' and sys_platform == 'darwin')", specifier = "==24.7.0" },
     { name = "atlassian-python-api", specifier = "==4.0.7" },
     { name = "azure-identity", specifier = "==1.17.1" },
-    { name = "azure-storage-blob", specifier = "==12.22.0" },
     { name = "azure-storage-file-datalake", specifier = "==12.16.0" },
     { name = "beartype", specifier = ">=0.20.0,<1.0.0" },
     { name = "bio", specifier = "==1.7.1" },
-    { name = "blinker", specifier = "==1.7.0" },
-    { name = "boto3", specifier = "==1.34.140" },
-    { name = "botocore", specifier = "==1.34.140" },
     { name = "boxsdk", specifier = ">=10.1.0" },
-    { name = "cachetools", specifier = "==5.3.3" },
     { name = "captcha", specifier = ">=0.7.1" },
-    { name = "chardet", specifier = "==5.2.0" },
-    { name = "click", specifier = ">=8.1.8" },
     { name = "cn2an", specifier = "==0.5.22" },
     { name = "cohere", specifier = "==5.6.2" },
     { name = "crawl4ai", specifier = ">=0.4.0,<1.0.0" },
-    { name = "cryptography", specifier = "==46.0.3" },
     { name = "dashscope", specifier = "==1.20.11" },
-    { name = "datrie", specifier = ">=0.8.3,<0.9.0" },
-    { name = "debugpy", specifier = ">=1.8.13" },
     { name = "deepl", specifier = "==1.18.0" },
     { name = "demjson3", specifier = "==3.0.6" },
     { name = "discord-py", specifier = "==2.3.2" },
     { name = "dropbox", specifier = "==12.0.2" },
     { name = "duckduckgo-search", specifier = ">=7.2.0,<8.0.0" },
     { name = "editdistance", specifier = "==0.8.1" },
-    { name = "elastic-transport", specifier = "==8.12.0" },
-    { name = "elasticsearch", specifier = "==8.12.1" },
     { name = "elasticsearch-dsl", specifier = "==8.12.0" },
     { name = "exceptiongroup", specifier = ">=1.3.0,<2.0.0" },
     { name = "extract-msg", specifier = ">=0.39.0" },
     { name = "ffmpeg-python", specifier = ">=0.2.0" },
-    { name = "filelock", specifier = "==3.15.4" },
     { name = "flasgger", specifier = ">=0.9.7.1,<0.10.0" },
-    { name = "flask", specifier = "==3.0.3" },
-    { name = "flask-cors", specifier = "==5.0.0" },
+    { name = "flask-cors", specifier = "==6.0.2" },
     { name = "flask-login", specifier = "==0.6.3" },
     { name = "flask-mail", specifier = ">=0.10.0" },
     { name = "flask-session", specifier = "==0.8.0" },
@@ -6339,105 +6226,75 @@ requires-dist = [
     { name = "google-search-results", specifier = "==2.4.2" },
     { name = "graspologic", git = "https://github.com/yuzhichang/graspologic.git?rev=38e680cab72bc9fb68a7992c3bcc2d53b24e42fd" },
     { name = "groq", specifier = "==0.9.0" },
-    { name = "hanziconv", specifier = "==0.3.2" },
+    { name = "grpcio-status", specifier = "==1.67.1" },
     { name = "html-text", specifier = "==0.6.2" },
-    { name = "httpx", extras = ["socks"], specifier = ">=0.28.1,<0.29.0" },
-    { name = "huggingface-hub", specifier = ">=0.25.0,<0.26.0" },
-    { name = "imageio-ffmpeg", specifier = ">=0.6.0" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
     { name = "infinity-sdk", specifier = "==0.6.11" },
-    { name = "itsdangerous", specifier = "==2.1.2" },
-    { name = "jinja2", specifier = ">=3.1.0" },
     { name = "jira", specifier = "==3.10.5" },
     { name = "json-repair", specifier = "==0.35.0" },
     { name = "langfuse", specifier = ">=2.60.0" },
-    { name = "lark", specifier = ">=1.2.2" },
-    { name = "litellm", specifier = ">=1.74.15.post1" },
     { name = "mammoth", specifier = ">=1.11.0" },
     { name = "markdown", specifier = "==3.6" },
     { name = "markdown-to-json", specifier = "==2.1.1" },
     { name = "markdownify", specifier = ">=1.2.0" },
-    { name = "mcp", specifier = ">=1.9.4" },
+    { name = "mcp", specifier = ">=1.19.0" },
     { name = "mini-racer", specifier = ">=0.12.4,<0.13.0" },
     { name = "minio", specifier = "==7.2.4" },
     { name = "mistralai", specifier = "==0.4.2" },
     { name = "moodlepy", specifier = ">=0.23.0" },
     { name = "mypy-boto3-s3", specifier = "==1.40.26" },
-    { name = "nltk", specifier = "==3.9.1" },
-    { name = "numpy", specifier = ">=1.26.0,<2.0.0" },
     { name = "office365-rest-python-client", specifier = "==2.6.2" },
     { name = "ollama", specifier = ">=0.5.0" },
     { name = "onnxruntime", marker = "platform_machine != 'x86_64' or sys_platform == 'darwin'", specifier = "==1.23.2" },
     { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64' and sys_platform != 'darwin'", specifier = "==1.23.2" },
-    { name = "openai", specifier = ">=1.45.0" },
     { name = "opencv-python", specifier = "==4.10.0.84" },
     { name = "opencv-python-headless", specifier = "==4.10.0.84" },
     { name = "opendal", specifier = ">=0.45.0,<0.46.0" },
-    { name = "openpyxl", specifier = ">=3.1.0,<4.0.0" },
     { name = "opensearch-py", specifier = "==2.7.1" },
     { name = "ormsgpack", specifier = "==1.5.0" },
-    { name = "pandas", specifier = ">=2.2.0,<3.0.0" },
     { name = "pdfplumber", specifier = "==0.10.4" },
-    { name = "peewee", specifier = "==3.17.1" },
-    { name = "pillow", specifier = ">=10.4.0,<13.0.0" },
-    { name = "pip", specifier = ">=25.2" },
     { name = "pluginlib", specifier = "==0.9.4" },
-    { name = "protobuf", specifier = "==5.27.2" },
     { name = "psycopg2-binary", specifier = ">=2.9.11,<3.0.0" },
     { name = "pyclipper", specifier = ">=1.4.0,<2.0.0" },
     { name = "pycryptodomex", specifier = "==3.20.0" },
-    { name = "pymysql", specifier = ">=1.1.1,<2.0.0" },
     { name = "pyobvector", specifier = "==0.2.18" },
     { name = "pyodbc", specifier = ">=5.2.0,<6.0.0" },
     { name = "pypandoc", specifier = ">=1.16" },
     { name = "pypdf", specifier = "==6.4.0" },
     { name = "pypdf2", specifier = ">=3.0.1,<4.0.0" },
     { name = "python-calamine", specifier = ">=0.4.0" },
-    { name = "python-dateutil", specifier = "==2.8.2" },
     { name = "python-docx", specifier = ">=1.1.2,<2.0.0" },
-    { name = "python-dotenv", specifier = "==1.0.1" },
     { name = "python-pptx", specifier = ">=1.0.2,<2.0.0" },
     { name = "pywencai", specifier = ">=0.13.1,<1.0.0" },
     { name = "qianfan", specifier = "==0.4.6" },
-    { name = "quart", specifier = "==0.20.0" },
     { name = "quart-auth", specifier = "==0.11.0" },
     { name = "quart-cors", specifier = "==0.8.0" },
     { name = "ranx", specifier = "==0.3.20" },
     { name = "readability-lxml", specifier = ">=0.8.4,<1.0.0" },
     { name = "replicate", specifier = "==0.31.0" },
     { name = "reportlab", specifier = ">=4.4.1" },
-    { name = "requests", specifier = ">=2.32.3,<3.0.0" },
     { name = "roman-numbers", specifier = "==1.0.2" },
     { name = "ruamel-base", specifier = "==1.0.0" },
     { name = "ruamel-yaml", specifier = ">=0.18.6,<0.19.0" },
     { name = "scholarly", specifier = "==1.7.11" },
-    { name = "scikit-learn", specifier = "==1.5.0" },
-    { name = "selenium", specifier = "==4.22.0" },
     { name = "selenium-wire", specifier = "==5.1.0" },
-    { name = "setuptools", specifier = ">=78.1.1,<81.0.0" },
-    { name = "shapely", specifier = "==2.0.5" },
-    { name = "six", specifier = "==1.16.0" },
     { name = "slack-sdk", specifier = "==3.37.0" },
+    { name = "socksio", specifier = "==1.0.0" },
+    { name = "sqlglotrs", specifier = "==0.9.0" },
     { name = "strenum", specifier = "==0.4.15" },
-    { name = "tabulate", specifier = "==0.9.0" },
     { name = "tavily-python", specifier = "==0.5.1" },
     { name = "tencentcloud-sdk-python", specifier = "==3.0.1478" },
     { name = "tika", specifier = "==2.6.0" },
-    { name = "tiktoken", specifier = "==0.7.0" },
-    { name = "trio", specifier = ">=0.17.0,<0.29.0" },
-    { name = "umap-learn", specifier = "==0.5.6" },
     { name = "valkey", specifier = "==6.0.2" },
     { name = "vertexai", specifier = "==1.70.0" },
     { name = "volcengine", specifier = "==1.0.194" },
     { name = "voyageai", specifier = "==0.2.3" },
     { name = "webdav4", specifier = ">=0.10.0,<0.11.0" },
     { name = "webdriver-manager", specifier = "==4.0.1" },
-    { name = "werkzeug", specifier = "==3.0.6" },
     { name = "wikipedia", specifier = "==1.4.0" },
     { name = "word2number", specifier = "==1.1" },
     { name = "xgboost", specifier = "==1.6.0" },
     { name = "xpinyin", specifier = "==0.7.6" },
-    { name = "xxhash", specifier = ">=3.5.0,<4.0.0" },
     { name = "yfinance", specifier = "==0.2.65" },
     { name = "zhipuai", specifier = "==2.0.1" },
 ]
