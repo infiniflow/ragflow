@@ -58,18 +58,9 @@ async def create_memory():
         )
 
         if res:
-            try:
-                MessageService.create_index(current_user.id, memory.id)
-                return get_json_result(message=True, data=format_ret_data_from_memory(memory))
-            except Exception as e:
-                logging.error(f"Failed to create message index for memory '{memory.id}': {e}")
-                MemoryService.delete_memory(memory.id)
-                return get_json_result(
-                    message="Failed to create message index, memory creation rolled back.",
-                    code=RetCode.SERVER_ERROR
-                )
+            return get_json_result(message=True, data=format_ret_data_from_memory(memory))
         else:
-            return get_json_result(message='Create memory db record failed.', code=RetCode.SERVER_ERROR)
+            return get_json_result(message=memory, code=RetCode.SERVER_ERROR)
 
     except Exception as e:
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
@@ -151,6 +142,7 @@ async def delete_memory(memory_id):
         return get_json_result(message=True, code=RetCode.NOT_FOUND)
     try:
         MemoryService.delete_memory(memory_id)
+        MessageService.delete_message({"memory_id": memory_id}, memory.tenant_id, memory_id)
         return get_json_result(message=True)
     except Exception as e:
         logging.error(e)

@@ -18,7 +18,6 @@ from typing import List
 
 from common.time_utils import current_timestamp, timestamp_to_date, format_iso_8601_to_ymd_hms
 from common.constants import MemoryType, LLMType
-from api.constants import MEMORY_VECTOR_DIMENSION
 from api.db.services.memory_service import MemoryService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.llm_service import LLMBundle
@@ -45,10 +44,6 @@ async def save_to_memory(memory_id: str, message_dict: dict):
         return False, f"Memory '{memory_id}' not found."
 
     tenant_id = memory.tenant_id
-    if not MessageService.has_index(tenant_id):
-        created = MessageService.create_index(tenant_id, memory_id, vector_size=MEMORY_VECTOR_DIMENSION)
-        if not created:
-            return False, "Failed to create message index."
     extracted_content = await extract_by_llm(
         tenant_id,
         memory.llm_id,
@@ -89,6 +84,11 @@ async def save_to_memory(memory_id: str, message_dict: dict):
     vector_list, _ = embedding_model.encode([msg["content"] for msg in message_list])
     for idx, msg in enumerate(message_list):
         msg["content_embed"] = vector_list[idx]
+    vector_dimension = len(vector_list[0])
+    if not MessageService.has_index(tenant_id):
+        created = MessageService.create_index(tenant_id, memory_id, vector_size=vector_dimension)
+        if not created:
+            return False, "Failed to create message index."
 
     fail_cases = MessageService.insert_message(message_list, tenant_id, memory_id)
     if fail_cases:
@@ -113,7 +113,7 @@ async def extract_by_llm(tenant_id: str, llm_id: str, extract_conf: dict, memory
     else:
         user_prompts.append({"role": "user", "content": PromptAssembler.assemble_user_prompt(conversation_content, conversation_time, conversation_time)})
     llm = LLMBundle(tenant_id, llm_type, llm_id)
-    res = llm.chat(system_prompt, user_prompts, extract_conf)
+    res = await llm.async_chat(system_prompt, user_prompts, extract_conf)
     res_json = get_json_result_from_llm_response(res)
     return [{
         "content": extracted_content["content"],
