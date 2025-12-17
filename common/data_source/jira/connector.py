@@ -245,7 +245,7 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
         while True:
             attempt += 1
             jql = self._build_jql(attempt_start, end)
-            logger.info(f"[Jira] Executing Jira JQL attempt {attempt} (start={attempt_start}, end={end}, buffered_retry={retried_with_buffer})")
+            logger.info(f"[Jira] Executing Jira JQL attempt {attempt} (buffered_retry={retried_with_buffer})[start and end parameters redacted]")
             try:
                 return (yield from self._load_from_checkpoint_internal(jql, checkpoint, start_filter=start))
             except Exception as exc:

@@ -57,8 +57,18 @@ class MinerUOcrModel(Base, MinerUParser):
         self.mineru_server_url = _resolve_config("mineru_server_url", "MINERU_SERVER_URL", "")
         self.mineru_delete_output = bool(int(_resolve_config("mineru_delete_output", "MINERU_DELETE_OUTPUT", 1)))
 
+        # Redact sensitive config keys before logging
+        redacted_config = {}
+        for k, v in config.items():
+            if any(
+                sensitive_word in k.lower()
+                for sensitive_word in ("key", "password", "token", "secret")
+            ):
+                redacted_config[k] = "[REDACTED]"
+            else:
+                redacted_config[k] = v
         logging.info(
-            f"Parsed MinerU config: backend={self.mineru_backend} api={self.mineru_api} server_url={self.mineru_server_url} output_dir={self.mineru_output_dir} delete_output={self.mineru_delete_output}"
+            f"Parsed MinerU config (sensitive fields redacted): {redacted_config}"
         )
 
         MinerUParser.__init__(self, mineru_api=self.mineru_api, mineru_server_url=self.mineru_server_url)
