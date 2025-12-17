@@ -635,9 +635,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         "parser_config", {
             "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
 
-    child_deli = re.findall(r"`([^`]+)`", parser_config.get("children_delimiter", ""))
-    child_deli = sorted(set(child_deli), key=lambda x: -len(x))
-    child_deli = "|".join(re.escape(t) for t in child_deli if t)
+    child_deli = parser_config.get("children_delimiter", "").encode('utf-8').decode('unicode_escape').encode('latin1').decode('utf-8')
+    cust_child_deli = re.findall(r"`([^`]+)`", child_deli)
+    child_deli = "|".join(re.sub(r"`([^`]+)`", "", child_deli))
+    if cust_child_deli:
+        cust_child_deli = sorted(set(cust_child_deli), key=lambda x: -len(x))
+        cust_child_deli = "|".join(re.escape(t) for t in cust_child_deli if t)
+        child_deli += cust_child_deli
+
     is_markdown = False
     table_context_size = max(0, int(parser_config.get("table_context_size", 0) or 0))
     image_context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
