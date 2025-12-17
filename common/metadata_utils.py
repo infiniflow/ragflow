@@ -13,7 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from typing import Any, Callable
+import logging
+from typing import Any, Callable, Dict
+
+import json_repair
 
 from rag.prompts.generator import gen_meta_filter
 
@@ -140,3 +143,63 @@ async def apply_meta_data_filter(
             doc_ids = ["-999"]
 
     return doc_ids
+
+
+def update_metadata_to(metadata, meta):
+    if not meta:
+        return metadata
+    if isinstance(meta, str):
+        try:
+            meta = json_repair.loads(meta)
+        except Exception:
+            logging.error("Meta data format error.")
+            return metadata
+    if not isinstance(meta, dict):
+        return metadata
+    for k, v in meta.items():
+        if isinstance(v, list):
+            v = [vv for vv in v if isinstance(vv, str)]
+            if not v:
+                continue
+        if not isinstance(v, list) and not isinstance(v, str):
+            continue
+        if k not in metadata:
+            metadata[k] = v
+            continue
+        if isinstance(metadata[k], list):
+            if isinstance(v, list):
+                metadata[k].extend(v)
+            else:
+                metadata[k].append(v)
+        else:
+            metadata[k] = v
+
+    return metadata
+
+
+def metadata_schema(metadata: list|None) -> Dict[str, Any]:
+    if not metadata:
+        return {}
+    properties = {}
+
+    for item in metadata:
+        key = item.get("key")
+        if not key:
+            continue
+
+        prop_schema = {
+            "description": item.get("description", "")
+        }
+        if "enum" in item and item["enum"]:
+            prop_schema["enum"] = item["enum"]
+            prop_schema["type"] = "string"
+
+        properties[key] = prop_schema
+
+    json_schema = {
+        "type": "object",
+        "properties": properties,
+    }
+
+    json_schema["additionalProperties"] = False
+    return json_schema
