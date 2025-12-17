@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+from quart import request
 from api.apps import login_required
 from api.db.services.memory_service import MemoryService
 from common.time_utils import current_timestamp, timestamp_to_date
@@ -102,6 +102,7 @@ async def update_message(memory_id: str, message_id: int):
 
 @manager.route("/search", methods=["POST"]) # noqa: F821
 @login_required
+@validate_request("query", "memory_id", "similarity_threshold", "keywords_similarity_weight", "top_n")
 async def search_message():
     pass
 
@@ -109,7 +110,23 @@ async def search_message():
 @manager.route("", methods=["GET"]) # noqa: F821
 @login_required
 async def get_messages():
-    pass
+    args = request.args
+    memory_ids = args.get("memory_ids", [])
+    agent_id = args.get("agent_id", "")
+    session_id = args.get("session_id", "")
+    limit = int(args.get("limit", 10))
+    if not memory_ids:
+        return get_error_argument_result("memory_ids is required.")
+    memory_list = MemoryService.get_by_ids(memory_ids)
+    uids = [memory.tenant_id for memory in memory_list]
+    res = MessageService.get_recent_messages(
+        uids,
+        memory_ids,
+        agent_id,
+        session_id,
+        limit
+    )
+    return get_json_result(message=True, data=res)
 
 
 @manager.route("/<memory_id>:<message_id>/content", methods=["GET"]) # noqa: F821
