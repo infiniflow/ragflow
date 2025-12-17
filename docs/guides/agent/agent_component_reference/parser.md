@@ -18,7 +18,7 @@ Within the configuration panel, you can add multiple parsers and set the corresp
 The **Parser** component supports parsing the following file types:
 
 | File type     | File format              |
-| ------------- | ------------------------ |
+|---------------|--------------------------|
 | PDF           | PDF                      |
 | Spreadsheet   | XLSX, XLS, CSV           |
 | Image         | PNG, JPG, JPEG, GIF, TIF |
@@ -97,9 +97,9 @@ A Video parser transcribes video files to text. To use this parser, you must fir
 
 The global variable names for the output of the **Parser** component, which can be referenced by subsequent components in the ingestion pipeline.
 
-| Variable name | Type                     |
-| ------------- | ------------------------ |
-| `markdown`    | `string`                 |
-| `text`        | `string`                 |
-| `html`        | `string`                 |
-| `json`        | `Array<Object>`          |
+| Variable name | Type            |
+|---------------|-----------------|
+| `markdown`    | `string`        |
+| `text`        | `string`        |
+| `html`        | `string`        |
+| `json`        | `Array<Object>` |
