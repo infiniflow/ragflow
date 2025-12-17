@@ -2454,6 +2454,19 @@ curl --request POST \
   The LLM settings for the chat assistant to create. If it is not explicitly set, a JSON object with the following values will be generated as the default. An `llm` JSON object contains the following attributes:  
   - `"model_name"`, `string`  
     The chat model name. If not set, the user's default chat model will be used.  
+
+  :::caution WARNING
+  `model_type` is a **hidden** parameter and is only kept as a temporary workaround to mitigate current model-configuration design limitations.
+
+  It exists mainly to allow **multimodal** models to pass backend validation/dispatching, because multimodal models are stored in the database as `"image2text"`.
+
+  - Do **not** rely on it as a stable public API.
+  - It may be changed or removed in future releases.
+  :::
+
+  - `"model_type"`: `string`  
+    Hidden model category hint. Only `"chat"` and `"image2text"` are recognized; any other value will be treated as `"chat"`. When omitted, defaults to `"chat"`.
+  - `"model_name"`, `string`
   - `"temperature"`: `float`  
     Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
   - `"top_p"`: `float`  
