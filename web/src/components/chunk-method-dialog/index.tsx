@@ -118,6 +118,10 @@ export function ChunkMethodDialog({
         auto_questions: z.coerce.number().optional(),
         html4excel: z.boolean().optional(),
         toc_extraction: z.boolean().optional(),
+        mineru_parse_method: z.enum(['auto', 'txt', 'ocr']).optional(),
+        mineru_formula_enable: z.boolean().optional(),
+        mineru_table_enable: z.boolean().optional(),
+        mineru_lang: z.string().optional(),
         // raptor: z
         //   .object({
         //     use_raptor: z.boolean().optional(),
@@ -166,6 +170,9 @@ export function ChunkMethodDialog({
     name: 'parser_id',
     control: form.control,
   });
+  const isMineruSelected =
+    selectedTag?.toLowerCase().includes('mineru') ||
+    layoutRecognize?.toLowerCase?.()?.includes('mineru');
 
   const isPdf = documentExtension === 'pdf';
 
@@ -328,7 +335,7 @@ export function ChunkMethodDialog({
                   className="space-y-3"
                 >
                   {showOne && (
-                    <LayoutRecognizeFormField></LayoutRecognizeFormField>
+                    <LayoutRecognizeFormField showMineruOptions={false} />
                   )}
                   {showMaxTokenNumber && (
                     <>
@@ -345,9 +352,16 @@ export function ChunkMethodDialog({
                   )}
                 </FormContainer>
                 <FormContainer
-                  show={showAutoKeywords(selectedTag) || showExcelToHtml}
+                  show={
+                    isMineruSelected ||
+                    showAutoKeywords(selectedTag) ||
+                    showExcelToHtml
+                  }
                   className="space-y-3"
                 >
+                  {isMineruSelected && (
+                    <LayoutRecognizeFormField showMineruOptions />
+                  )}
                   {selectedTag === DocumentParserType.Naive && (
                     <EnableTocToggle />
                   )}
