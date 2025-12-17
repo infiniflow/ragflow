@@ -42,6 +42,7 @@ import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
 import { FormContainer } from '../form-container';
 import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
+import { MinerUOptionsFormField } from '../mineru-options-form-field';
 import { ButtonLoading } from '../ui/button';
 import { Input } from '../ui/input';
 import { DynamicPageRange } from './dynamic-page-range';
@@ -335,7 +336,10 @@ export function ChunkMethodDialog({
                   className="space-y-3"
                 >
                   {showOne && (
-                    <LayoutRecognizeFormField showMineruOptions={false} />
+                    <>
+                      <LayoutRecognizeFormField showMineruOptions={false} />
+                      {isMineruSelected && <MinerUOptionsFormField />}
+                    </>
                   )}
                   {showMaxTokenNumber && (
                     <>
@@ -359,9 +363,6 @@ export function ChunkMethodDialog({
                   }
                   className="space-y-3"
                 >
-                  {isMineruSelected && (
-                    <LayoutRecognizeFormField showMineruOptions />
-                  )}
                   {selectedTag === DocumentParserType.Naive && (
                     <EnableTocToggle />
                   )}
