@@ -24,6 +24,8 @@ export const formSchema = z
         layout_recognize: z.string(),
         chunk_token_num: z.number(),
         delimiter: z.string(),
+        enable_children: z.boolean(),
+        children_delimiter: z.string(),
         auto_keywords: z.number().optional(),
         auto_questions: z.number().optional(),
         html4excel: z.boolean(),
