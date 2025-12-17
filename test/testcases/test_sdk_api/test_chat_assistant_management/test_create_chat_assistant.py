@@ -211,7 +211,7 @@ class TestChatAssistantCreate:
                 assert attrgetter("show_quote")(chat_assistant.prompt) is True
                 assert (
                     attrgetter("prompt")(chat_assistant.prompt)
-                    == 'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.\n      Here is the dataset:\n      {knowledge}\n      The above is the dataset.'
+                    == 'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.'
                 )
 
 
