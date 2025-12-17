@@ -40,7 +40,7 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
 - A third-party visual model from a specific model provider.
 
 :::danger IMPORTANT
-MinerU PDF document parsing is available starting from v0.22.0. RAGFlow supports MinerU (>= 2.6.3) as an optional PDF parser with multiple backends. RAGFlow acts only as a **remote client** for MinerU, calling the MinerU API to parse documents, reading the returned output files, and ingesting the parsed content. To use this feature:
+MinerU PDF document parsing is available starting from v0.22.0. RAGFlow supports MinerU (&ge; 2.6.3) as an optional PDF parser with multiple backends. RAGFlow acts only as a *remote client* for MinerU, calling the MinerU API to parse documents, reading the returned output files, and ingesting the parsed content. To use this feature:
 
 1. Prepare a reachable MinerU API service (FastAPI server).
 2. Configure RAGFlow with the remote MinerU settings (env or UI model provider):

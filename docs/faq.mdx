@@ -493,7 +493,7 @@ See [here](./guides/agent/best_practices/accelerate_agent_question_answering.md)
 
 ### How to use MinerU to parse PDF documents?
 
-MinerU PDF document parsing is available starting from v0.22.0. RAGFlow works only as a remote client to MinerU (>= 2.6.3) and does not install or execute MinerU locally. To use this feature:
+RAGFlow implements MinerU PDF document parsing since v0.22.0, where RAGFlow connects to MinerU works only as a remote client to MinerU (>= 2.6.3) and does not install or execute MinerU locally. To use this feature:
 
 1. Prepare a reachable MinerU API service (for example, the FastAPI server provided by MinerU).
 2. Configure RAGFlow with remote MinerU settings (environment variables or UI model provider):
