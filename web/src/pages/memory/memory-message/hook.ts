@@ -30,7 +30,7 @@ export const useFetchMemoryMessageList = () => {
     queryFn: async () => {
       if (memoryBaseId) {
         const { data } = await getMemoryDetailById(memoryBaseId as string, {
-          keyword: searchString,
+          keywords: searchString,
           page: pagination.current,
           page_size: pagination.pageSize,
         });
@@ -53,26 +53,60 @@ export const useFetchMemoryMessageList = () => {
 
 export const useMessageAction = () => {
   const queryClient = useQueryClient();
+  const { id: memoryId } = useParams();
   const [selectedMessage, setSelectedMessage] = useState<IMessageInfo>(
     {} as IMessageInfo,
   );
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const handleClickDeleteMessage = useCallback((message: IMessageInfo) => {
-    console.log('handleClickDeleteMessage', message);
     setSelectedMessage(message);
     setShowDeleteDialog(true);
   }, []);
 
   const handleDeleteMessage = useCallback(() => {
     // delete message
-    memoryService.deleteMemoryMessage(selectedMessage.message_id).then(() => {
-      message.success(t('message.deleted'));
-      queryClient.invalidateQueries({
-        queryKey: [MemoryApiAction.FetchMemoryMessage],
+    memoryService
+      .deleteMemoryMessage({
+        memory_id: memoryId,
+        message_id: selectedMessage.message_id,
+      })
+      .then(() => {
+        message.success(t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: [MemoryApiAction.FetchMemoryMessage],
+        });
       });
-    });
     setShowDeleteDialog(false);
   }, [selectedMessage.message_id, queryClient]);
+
+  const handleUpdateMessageState = useCallback(
+    (messageInfo: IMessageInfo, enable: boolean) => {
+      // delete message
+      const selectedMessageInfo = messageInfo || selectedMessage;
+      memoryService
+        .updateMessageState({
+          memory_id: memoryId,
+          message_id: selectedMessageInfo.message_id,
+          status: enable || false,
+        })
+        .then(() => {
+          message.success(t('message.updated'));
+          queryClient.invalidateQueries({
+            queryKey: [MemoryApiAction.FetchMemoryMessage],
+          });
+        });
+      setShowDeleteDialog(false);
+    },
+    [selectedMessage, queryClient, memoryId],
+  );
+
+  const handleClickUpdateMessageState = useCallback(
+    (message: IMessageInfo, enable: boolean) => {
+      setSelectedMessage(message);
+      handleUpdateMessageState(message, enable);
+    },
+    [handleUpdateMessageState],
+  );
 
   const [showMessageContentDialog, setShowMessageContentDialog] =
     useState(false);
@@ -90,9 +124,10 @@ export const useMessageAction = () => {
     ],
     mutationFn: async () => {
       setShowMessageContentDialog(true);
-      const res = await memoryService.getMessageContent(
-        selectedMessage.message_id,
-      );
+      const res = await memoryService.getMessageContent({
+        memory_id: memoryId,
+        message_id: selectedMessage.message_id,
+      });
       if (res.data.code === 0) {
         setSelectedMessageContent(res.data.data);
       } else {
@@ -117,6 +152,7 @@ export const useMessageAction = () => {
     setShowDeleteDialog,
     handleClickDeleteMessage,
     handleDeleteMessage,
+    handleUpdateMessageState,
     messageContent,
     fetchMessageContentLoading,
     fetchMessageContent,
@@ -124,5 +160,6 @@ export const useMessageAction = () => {
     showMessageContentDialog,
     setShowMessageContentDialog,
     handleClickMessageContentDialog,
+    handleClickUpdateMessageState,
   };
 };

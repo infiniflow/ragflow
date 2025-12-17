@@ -74,12 +74,12 @@ export const useFetchMemoryList = () => {
     queryFn: async () => {
       const { data: response } = await memoryService.getMemoryList(
         {
-          data: {
+          params: {
             keywords: debouncedSearchString,
             page_size: pagination.pageSize,
             page: pagination.current,
           },
-          params: {},
+          data: {},
         },
         true,
       );
@@ -197,6 +197,7 @@ export const useUpdateMemory = () => {
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to update memory');
       }
+
       return response.data;
     },
     onSuccess: (data, variables) => {

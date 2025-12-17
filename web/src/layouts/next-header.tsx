@@ -70,7 +70,7 @@ export function Header() {
       { path: Routes.Chats, name: t('header.chat'), icon: MessageSquareText },
       { path: Routes.Searches, name: t('header.search'), icon: Search },
       { path: Routes.Agents, name: t('header.flow'), icon: Cpu },
-      // { path: Routes.Memories, name: t('header.Memories'), icon: Cpu },
+      { path: Routes.Memories, name: t('header.Memories'), icon: Cpu },
       { path: Routes.Files, name: t('header.fileManager'), icon: File },
     ],
     [t],

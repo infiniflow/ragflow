@@ -66,7 +66,7 @@ export function MemoryTable({
     selectedMessage,
     handleDeleteMessage,
 
-    fetchMessageContent,
+    handleClickUpdateMessageState,
     selectedMessageContent,
     showMessageContentDialog,
     setShowMessageContentDialog,
@@ -131,7 +131,12 @@ export function MemoryTable({
           const isEnabled = row.getValue('status') as boolean;
           return (
             <div className="flex items-center">
-              <Switch defaultChecked={isEnabled} onChange={() => {}} />
+              <Switch
+                defaultChecked={isEnabled}
+                onCheckedChange={(val) => {
+                  handleClickUpdateMessageState(row.original, val);
+                }}
+              />
             </div>
           );
         },
