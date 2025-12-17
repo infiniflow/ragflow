@@ -206,10 +206,10 @@
    
    > 注意：在 `v0.22.0` 之前的版本，我们会同时提供包含 embedding 模型的镜像和不含 embedding 模型的 slim 镜像。具体如下：
 
-   | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-   | ----------------- | --------------- | --------------------- | ------------------------ |
-   | v0.21.1           | &approx;9       | ✔️                    | Stable release           |
-   | v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
+   | RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
+   |-------------------|-----------------|-----------------------|----------------|
+   | v0.21.1           | &approx;9       | ✔️                    | Stable release |
+   | v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
 
    > 从 `v0.22.0` 开始，我们只发布 slim 版本，并且不再在镜像标签后附加 **-slim** 后缀。
 
