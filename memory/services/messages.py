@@ -92,8 +92,47 @@ class MessageService:
         }
 
     @classmethod
-    def search_message(cls, filter_dict: dict, params: dict):
+    def search_message(cls, filter_dict: dict, params: dict, uids: List[str]):
+        """
+        :param filter_dict: {
+            "memory_id": List[str],
+            "agent_id": optional
+            "session_id": optional
+        }
+        :param params: {
+            "query": question str,
+            "similarity_threshold": float,
+            "keywords_similarity_weight": float,
+        }
+        :param uids: List[str]
+        """
         pass
+
+    @classmethod
+    def get_recent_messages(cls, uids: List[str], memory_ids: List[str], agent_id: str, session_id: str, limit: int):
+        index_names = [index_name(uid) for uid in uids]
+        condition_dict = {
+            "agent_id": agent_id,
+            "session_id": session_id
+        }
+        order_by = OrderByExpr()
+        order_by.desc("valid_at")
+        res = settings.msgStoreConn.search(
+            selectFields=[
+                "message_id", "message_type_kwd", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at",
+                "invalid_at", "forget_at", "status_int", "content"
+            ],
+            highlightFields=[],
+            condition=condition_dict,
+            matchExprs=[], orderBy=order_by,
+            offset=0, limit=limit,
+            indexNames=index_names, memoryIds=memory_ids,
+        )
+        doc_mapping = settings.msgStoreConn.get_fields(res, [
+            "message_id", "message_type_kwd", "source_id", "memory_id","user_id", "agent_id", "session_id",
+            "valid_at", "invalid_at", "forget_at", "status_int", "content"
+        ])
+        return [get_message_from_storage_doc(d) for d in doc_mapping.values()]
 
     @classmethod
     def get_by_message_id(cls, memory_id: str, message_id: int, uid: str):
