@@ -153,7 +153,7 @@ def delete_user_data(user_id: str) -> dict:
             done_msg += "Start to delete owned tenant.\n"
             tenant_id = owned_tenant[0]["tenant_id"]
             kb_ids = KnowledgebaseService.get_kb_ids(usr.id)
-            # step1.1 delete knowledgebase related file and info
+            # step1.1 delete dataset related file and info
             if kb_ids:
                 # step1.1.1 delete files in storage, remove bucket
                 for kb_id in kb_ids:
@@ -182,7 +182,7 @@ def delete_user_data(user_id: str) -> dict:
                                          search.index_name(tenant_id), kb_ids)
                 done_msg += f"- Deleted {r} chunk records.\n"
                 kb_delete_res = KnowledgebaseService.delete_by_ids(kb_ids)
-                done_msg += f"- Deleted {kb_delete_res} knowledgebase records.\n"
+                done_msg += f"- Deleted {kb_delete_res} dataset records.\n"
                 # step1.1.4 delete agents
                 agent_delete_res = delete_user_agents(usr.id)
                 done_msg += f"- Deleted {agent_delete_res['agents_deleted_count']} agent, {agent_delete_res['version_deleted_count']} versions records.\n"
@@ -258,7 +258,7 @@ def delete_user_data(user_id: str) -> dict:
                     # step2.1.5 delete document record
                     doc_delete_res = DocumentService.delete_by_ids([d['id'] for d in created_documents])
                     done_msg += f"- Deleted {doc_delete_res} documents.\n"
-                    # step2.1.6 update knowledge base doc&chunk&token cnt
+                    # step2.1.6 update dataset doc&chunk&token cnt
                     for kb_id, doc_num in kb_doc_info.items():
                         KnowledgebaseService.decrease_document_num_in_delete(kb_id, doc_num)
 

@@ -237,7 +237,7 @@ async def update_doc(tenant_id, dataset_id, document_id):
         return get_error_data_result(message="You don't own the dataset.")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
-        return get_error_data_result(message="Can't find this knowledgebase!")
+        return get_error_data_result(message="Can't find this dataset!")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
         return get_error_data_result(message="The dataset doesn't own the document.")

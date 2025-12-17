@@ -744,7 +744,7 @@ async def convert(tenant_id):
                     e, kb = KnowledgebaseService.get_by_id(kb_id)
                     if not e:
                         return get_json_result(
-                            message="Can't find this knowledgebase!", code=RetCode.NOT_FOUND)
+                            message="Can't find this dataset!", code=RetCode.NOT_FOUND)
                     e, file = FileService.get_by_id(id)
                     if not e:
                         return get_json_result(

@@ -348,7 +348,7 @@ async def retrieval_test():
                     break
             else:
                 return get_json_result(
-                    data=False, message='Only owner of knowledgebase authorized for this operation.',
+                    data=False, message='Only owner of dataset authorized for this operation.',
                     code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
