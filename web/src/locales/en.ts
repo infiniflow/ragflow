@@ -102,8 +102,19 @@ export default {
       Memories: 'Memory',
     },
     memories: {
+      llmTooltip:
+        'Analyzes conversation content, extracts key information, and generates structured memory summaries.',
+      embeddingModelTooltip:
+        'Converts text into numerical vectors for meaning similarity search and memory retrieval.',
+      embeddingModelError:
+        'Memory type is required and "row" cannot be deleted.',
+      memoryTypeTooltip: `Raw: The raw dialogue content between the user and the agent (Required by default). 
+Semantic Memory: General knowledge and facts about the user and world.
+Episodic Memory: Time-stamped records of specific events and experiences.
+Procedural Memory: Learned skills, habits, and automated procedures.`,
+      editName: 'Edit name',
       memory: 'Memory',
-      createMemory: 'Create Memory',
+      createMemory: 'Create memory',
       name: 'Name',
       memoryNamePlaceholder: 'memory name',
       memoryType: 'Memory type',
@@ -114,6 +125,8 @@ export default {
     },
     memory: {
       messages: {
+        messageDescription:
+          'Memory retrieval is configured with Similarity threshold, Keyword similarity weight, and Top N from Advanced Settings.',
         copied: 'Copied!',
         contentEmbed: 'Content embed',
         content: 'Content',
