@@ -2458,7 +2458,7 @@ curl --request POST \
   :::caution WARNING
   `model_type` is an *internal* parameter, serving solely as a temporary workaround for the current model-configuration design limitations.
 
-  It exists mainly to allow **multimodal** models to pass backend validation/dispatching, because multimodal models are stored in the database as `"image2text"`.
+  Its main purpose is to let *multimodal* models (stored in the database as `"image2text"`) pass backend validation/dispatching. Be mindful that: 
 
   - Do **not** rely on it as a stable public API.
   - It may be changed or removed in future releases.
