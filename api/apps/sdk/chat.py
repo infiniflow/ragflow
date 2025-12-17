@@ -252,7 +252,6 @@ async def delete_chats(tenant_id):
             continue
         temp_dict = {"status": StatusEnum.INVALID.value}
         success_count += DialogService.update_by_id(id, temp_dict)
-        print(success_count, "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$", flush=True)
 
     if errors:
         if success_count > 0:
