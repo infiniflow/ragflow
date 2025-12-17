@@ -1,7 +1,12 @@
 import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import { EmbeddingSelect } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { TFunction } from 'i18next';
-
+export enum MemoryType {
+  Raw = 'raw',
+  Semantic = 'semantic',
+  Episodic = 'episodic',
+  Procedural = 'procedural',
+}
 export const createMemoryFields = (t: TFunction) =>
   [
     {
@@ -17,14 +22,14 @@ export const createMemoryFields = (t: TFunction) =>
       placeholder: t('memories.descriptionPlaceholder'),
       tooltip: t('memories.memoryTypeTooltip'),
       options: [
-        { label: 'Raw', value: 'raw' },
-        { label: 'Semantic', value: 'semantic' },
-        { label: 'Episodic', value: 'episodic' },
-        { label: 'Procedural', value: 'procedural' },
+        { label: 'Raw', value: MemoryType.Raw },
+        { label: 'Semantic', value: MemoryType.Semantic },
+        { label: 'Episodic', value: MemoryType.Episodic },
+        { label: 'Procedural', value: MemoryType.Procedural },
       ],
       required: true,
       customValidate: (value) => {
-        if (!value.includes('row') || !value.length) {
+        if (!value.includes(MemoryType.Raw) || !value.length) {
           return t('memories.embeddingModelError');
         }
         return true;
@@ -52,7 +57,7 @@ export const createMemoryFields = (t: TFunction) =>
 
 export const defaultMemoryFields = {
   name: '',
-  memory_type: ['raw'],
+  memory_type: [MemoryType.Raw],
   embd_id: '',
   llm_id: '',
 };

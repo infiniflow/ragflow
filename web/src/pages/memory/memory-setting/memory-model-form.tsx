@@ -1,6 +1,7 @@
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
 import { useModelOptions } from '@/components/llm-setting-items/llm-form-field';
 import { EmbeddingSelect } from '@/pages/dataset/dataset-setting/configuration/common-item';
+import { MemoryType } from '@/pages/memories/constants';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
@@ -13,7 +14,7 @@ export const memoryModelFormSchema = {
 export const defaultMemoryModelForm = {
   embd_id: '',
   llm_id: '',
-  memory_type: ['raw'],
+  memory_type: [MemoryType.Raw],
   memory_size: 0,
 };
 export const MemoryModelForm = () => {

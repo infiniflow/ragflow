@@ -107,7 +107,7 @@ export default {
       embeddingModelTooltip:
         'Converts text into numerical vectors for meaning similarity search and memory retrieval.',
       embeddingModelError:
-        'Memory type is required and "row" cannot be deleted.',
+        'Memory type is required and "raw" cannot be deleted.',
       memoryTypeTooltip: `Raw: The raw dialogue content between the user and the agent (Required by default). 
 Semantic Memory: General knowledge and facts about the user and world.
 Episodic Memory: Time-stamped records of specific events and experiences.
