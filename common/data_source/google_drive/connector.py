@@ -1210,7 +1210,7 @@ if __name__ == "__main__":
         creds = get_credentials_from_env(email, oauth=True)
         print("Credentials loaded successfully")
         print(f"{creds=}")
-        sys.exit(0)
+        # sys.exit(0)
         connector = GoogleDriveConnector(
             include_shared_drives=False,
             shared_drive_urls=None,

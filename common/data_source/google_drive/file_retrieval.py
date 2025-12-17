@@ -341,6 +341,6 @@ def get_all_files_for_oauth(
 
 # Just in case we need to get the root folder id
 def get_root_folder_id(service: Resource) -> str:
-    # we dont paginate here because there is only one root folder per user
+    # we don't paginate here because there is only one root folder per user
     # https://developers.google.com/drive/api/guides/v2-to-v3-reference
     return service.files().get(fileId="root", fields=GoogleFields.ID.value).execute()[GoogleFields.ID.value]

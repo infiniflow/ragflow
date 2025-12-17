@@ -40,7 +40,7 @@ In the **Message** component, reference the `download` output variable from the 
 
 ### Content
 
-The main text content to include in the document. Supports markdown formatting:
+The main text content to include in the document. Supports Markdown formatting:
 
 - **Bold**: `**text**` or `__text__`
 - **Italic**: `*text*` or `_text_`
