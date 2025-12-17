@@ -634,10 +634,13 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       knowledgeBasesTip:
         'Select the datasets to associate with this chat assistant. An empty knowledge base will not appear in the dropdown list.',
       system: 'System prompt',
-      systemInitialValue: `You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
-      Here is the knowledge base:
-      {knowledge}
-      The above is the knowledge base.`,
+      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+      
+      **Essential Rules:**
+        - Your answer must be derived **solely** from this knowledge base: \`{knowledge}\`.
+        - **When information is available**: Summarize the content to give a detailed answer.
+        - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the knowledge base!"
+        - **Always consider** the entire conversation history.`,
       systemMessage: 'Please input!',
       systemTip:
         'Your prompts or instructions for the LLM, including but not limited to its role, the desired length, tone, and language of its answers. If your model has native support for reasoning, you can add //no_thinking add the prompt to stop reasoning.',
