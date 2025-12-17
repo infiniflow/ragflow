@@ -17,7 +17,7 @@ import asyncio
 import datetime
 import json
 import re
-
+import base64
 import xxhash
 from quart import request
 
@@ -174,6 +174,12 @@ async def set():
             v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
             _d["q_%d_vec" % len(v)] = v.tolist()
             settings.docStoreConn.update({"id": req["chunk_id"]}, _d, search.index_name(tenant_id), doc.kb_id)
+
+            # update image
+            image_base64 = req.get("image_base64", None)
+            if image_base64:
+                image_binary = base64.b64decode(image_base64)
+                settings.STORAGE_IMPL.put(req["doc_id"], req["chunk_id"], image_binary)
             return get_json_result(data=True)
 
         return await asyncio.to_thread(_set_sync)
@@ -342,7 +348,7 @@ async def retrieval_test():
                     break
             else:
                 return get_json_result(
-                    data=False, message='Only owner of knowledgebase authorized for this operation.',
+                    data=False, message='Only owner of dataset authorized for this operation.',
                     code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])

@@ -58,16 +58,23 @@ export default function DatasetSettings() {
       name: '',
       parser_id: DocumentParserType.Naive,
       permission: PermissionRole.Me,
+      language: 'English',
       parser_config: {
         layout_recognize: DocumentType.DeepDOC,
         chunk_token_num: 512,
         delimiter: `\n`,
+        enable_children: false,
+        children_delimiter: `\n`,
         auto_keywords: 0,
         auto_questions: 0,
         html4excel: false,
         topn_tags: 3,
         toc_extraction: false,
         overlapped_percent: 0,
+        // MinerU-specific defaults
+        mineru_parse_method: 'auto',
+        mineru_formula_enable: true,
+        mineru_table_enable: true,
         raptor: {
           use_raptor: true,
           max_token: 256,
@@ -253,22 +260,7 @@ export default function DatasetSettings() {
                   {t('knowledgeConfiguration.baseInfo')}
                 </div>
                 <GeneralForm></GeneralForm>
-                <Divider />
-                <div className="text-base font-medium text-text-primary">
-                  {t('knowledgeConfiguration.globalIndex')}
-                </div>
-                <GraphRagItems
-                  className="border-none p-0"
-                  data={graphRagGenerateData as IGenerateLogButtonProps}
-                  onDelete={() =>
-                    handleDeletePipelineTask(GenerateType.KnowledgeGraph)
-                  }
-                ></GraphRagItems>
-                <Divider />
-                <RaptorFormFields
-                  data={raptorGenerateData as IGenerateLogButtonProps}
-                  onDelete={() => handleDeletePipelineTask(GenerateType.Raptor)}
-                ></RaptorFormFields>
+
                 <Divider />
                 <div className="text-base font-medium text-text-primary">
                   {t('knowledgeConfiguration.dataPipeline')}
@@ -293,7 +285,6 @@ export default function DatasetSettings() {
                   data={pipelineData}
                   handleLinkOrEditSubmit={handleLinkOrEditSubmit}
                 /> */}
-
                 <Divider />
                 <LinkDataSource
                   data={sourceData}
@@ -301,6 +292,22 @@ export default function DatasetSettings() {
                   unbindFunc={unbindFunc}
                   handleAutoParse={handleAutoParse}
                 />
+                <Divider />
+                <div className="text-base font-medium text-text-primary">
+                  {t('knowledgeConfiguration.globalIndex')}
+                </div>
+                <GraphRagItems
+                  className="border-none p-0"
+                  data={graphRagGenerateData as IGenerateLogButtonProps}
+                  onDelete={() =>
+                    handleDeletePipelineTask(GenerateType.KnowledgeGraph)
+                  }
+                ></GraphRagItems>
+                <Divider />
+                <RaptorFormFields
+                  data={raptorGenerateData as IGenerateLogButtonProps}
+                  onDelete={() => handleDeletePipelineTask(GenerateType.Raptor)}
+                ></RaptorFormFields>
               </MainContainer>
             </div>
             <div className="text-right items-center flex justify-end gap-3 w-[768px]">

@@ -130,11 +130,11 @@ docker pull infiniflow/sandbox-base-python:latest
 
 **Root cause**
 
-The executor manager image you are running includes Docker CLI 24.x (API 1.43) while the host Docker daemon now requires API 1.44+ (e.g., Docker 25+ / 29.x).
+Your executor manager image includes Docker CLI 24.x (API 1.43), but the host Docker daemon, e.g., Docker 25+ / 29.x, now requires API 1.44+.
 
 **Solution**
 
-Pull the refreshed image or rebuild locally so the embedded Docker client is new enough:
+Pull the latest executor manager image or rebuild it locally to upgrade the built-in Docker client:
 
 ```bash
 docker pull infiniflow/sandbox-executor-manager:latest

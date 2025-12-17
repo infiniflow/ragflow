@@ -5355,6 +5355,6 @@ or
 ```json
 {
     "code": 404,
-    "message": "Can't find this knowledgebase!"
+    "message": "Can't find this dataset!"
 }
 ```

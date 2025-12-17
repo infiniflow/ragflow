@@ -210,8 +210,8 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       learnMore: 'Built-in pipeline introduction',
       general: 'General',
       chunkMethodTab: 'Chunk method',
-      testResults: 'Test results',
-      testSetting: 'Test setting',
+      testResults: 'Results',
+      testSetting: 'Setting',
       retrievalTesting: 'Retrieval testing',
       retrievalTestingDescription:
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM.',
@@ -308,6 +308,11 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       delimiter: `Delimiter for text`,
       delimiterTip:
         'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
+      enableChildrenDelimiter: 'Child chunk are used for retrieval',
+      childrenDelimiter: 'Delimiter for text',
+      childrenDelimiterTip:
+        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
+
       html4excel: 'Excel to HTML',
       html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the knowledge base will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
       autoKeywords: 'Auto-keyword',
@@ -343,6 +348,15 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      mineruOptions: 'MinerU Options',
+      mineruParseMethod: 'Parse Method',
+      mineruParseMethodTip:
+        'Method for parsing PDF: auto (automatic detection), txt (text extraction), ocr (optical character recognition)',
+      mineruFormulaEnable: 'Formula Recognition',
+      mineruFormulaEnableTip:
+        'Enable formula recognition. Note: This may not work correctly for Cyrillic documents.',
+      mineruTableEnable: 'Table Recognition',
+      mineruTableEnableTip: 'Enable table recognition and extraction.',
       overlappedPercent: 'Overlapped percent(%)',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
@@ -352,7 +366,7 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       autoParse: 'Auto parse',
       rebuildTip:
         'Re-downloads files from the linked data source and parses them again.',
-      baseInfo: 'Basic info',
+      baseInfo: 'Basic',
       globalIndex: 'Global index',
       dataSource: 'Data source',
       linkSourceSetTip: 'Manage data source linkage with this dataset',
@@ -783,7 +797,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
       confluenceSpaceKeyTip:
         'Optional: Specify a space key to limit syncing to a specific space. Leave empty to sync all accessible spaces. For multiple spaces, separate with commas (e.g., DEV,DOCS,HR)',
-      s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from. 
+      s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from.
 Example: general/v2/`,
       S3CompatibleEndpointUrlTip: `Required for S3 compatible Storage Box. Specify the S3-compatible endpoint URL.
 Example: https://fsn1.your-objectstorage.com`,
@@ -943,7 +957,7 @@ Example: Virtual Hosted Style`,
         'The default VLM for each newly created knowledge base. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
-        'The default ASR model for each newly created knowledgebase. Use this model to translate voices to corresponding text.',
+        'The default ASR model for each newly created dataset. Use this model to translate voices to corresponding text.',
       rerankModel: 'Rerank',
       rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.`,
       ttsModel: 'TTS',
@@ -1203,6 +1217,7 @@ Example: Virtual Hosted Style`,
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
+      enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',
       script: 'Script',
