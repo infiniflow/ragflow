@@ -58,6 +58,7 @@ export default function MemoryMessage() {
       system_prompt: data?.system_prompt || '',
       user_prompt: data?.user_prompt || '',
       forgetting_policy: data?.forgetting_policy || 'fifo',
+      storage_type: data?.storage_type || 'table',
       permissions: data?.permissions || 'me',
     });
   }, [data, form]);
