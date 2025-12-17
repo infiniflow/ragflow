@@ -15,7 +15,6 @@
 #
 from typing import List
 
-from api.constants import MEMORY_VECTOR_DIMENSION
 from common import settings
 from memory.utils.msg_store_conn import OrderByExpr
 from memory.utils.msg_util import map_message_to_storage_fields, get_message_from_storage_doc
@@ -32,7 +31,7 @@ class MessageService:
         return settings.msgStoreConn.indexExist(index)
 
     @classmethod
-    def create_index(cls, uid: str, memory_id: str, vector_size: int=MEMORY_VECTOR_DIMENSION):
+    def create_index(cls, uid: str, memory_id: str, vector_size: int):
         index = index_name(uid)
         return settings.msgStoreConn.createIdx(index, memory_id, vector_size)
 

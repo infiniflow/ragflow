@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import re
 import json
 
 
@@ -57,7 +58,7 @@ def map_message_to_storage_fields(message: dict) -> dict:
         "forget_at": message["forget_at"],
         "status_int": 1 if message["status"] else 0,
         "content_ltks": message["content"],
-        "content_embed_1024_vec": message["content_embed"],
+        f"content_embed_{len(message['content_embed'])}_vec": message["content_embed"],
     }
     return storage_doc
 
@@ -69,6 +70,7 @@ def get_message_from_storage_doc(doc: dict) -> dict:
     :param doc: A dictionary representing the Elasticsearch/Infinity document.
     :return: A dictionary formatted as a message.
     """
+    embd_field_name = next((key for key in doc.keys() if re.match(r"content_embed_\d+_vec", key)), None)
     message = {
         "message_id": doc["message_id"],
         "message_type": doc["message_type_kwd"],
@@ -82,7 +84,7 @@ def get_message_from_storage_doc(doc: dict) -> dict:
         "forget_at": doc.get("forget_at", "-"),
         "status": bool(int(doc["status_int"])),
         "content": doc.get("content_ltks", ""),
-        "content_embed": doc.get("content_embed_1024_vec", []),
+        "content_embed": doc.get(embd_field_name, []) if embd_field_name else [],
     }
     if doc.get("id"):
         message["id"] = doc["id"]
