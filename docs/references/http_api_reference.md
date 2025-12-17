@@ -2456,7 +2456,7 @@ curl --request POST \
     The chat model name. If not set, the user's default chat model will be used.  
 
   :::caution WARNING
-  `model_type` is a **hidden** parameter and is only kept as a temporary workaround to mitigate current model-configuration design limitations.
+  `model_type` is an *internal* parameter, serving solely as a temporary workaround for the current model-configuration design limitations.
 
   It exists mainly to allow **multimodal** models to pass backend validation/dispatching, because multimodal models are stored in the database as `"image2text"`.
 
