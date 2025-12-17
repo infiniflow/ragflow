@@ -2461,7 +2461,7 @@ curl --request POST \
   Its main purpose is to let *multimodal* models (stored in the database as `"image2text"`) pass backend validation/dispatching. Be mindful that: 
 
   - Do *not* treat it as a stable public API.
-  - It may be changed or removed in future releases.
+  - It is subject to change or removal in future releases.
   :::
 
   - `"model_type"`: `string`  
