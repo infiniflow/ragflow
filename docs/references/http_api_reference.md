@@ -1410,8 +1410,83 @@ Success:
 
 ```json
 {
-    "code": 0
+  "code": 0,
+  "data": {
+    "id": "cd38dd72d4a611f0af9c71de94a988ef",
+    "name": "large.md",
+    "type": "doc",
+    "suffix": "md",
+    "size": 2306906,
+    "location": "large.md",
+    "source_type": "local",
+    "status": "1",
+    "run": "DONE",
+    "dataset_id": "5f546a1ad4a611f0af9c71de94a988ef",
+
+    "chunk_method": "naive",
+    "chunk_count": 2,
+    "token_count": 8126,
+
+    "created_by": "eab7f446cb5a11f0ab334fbc3aa38f35",
+    "create_date": "Tue, 09 Dec 2025 10:28:52 GMT",
+    "create_time": 1765247332122,
+    "update_date": "Wed, 17 Dec 2025 10:51:16 GMT",
+    "update_time": 1765939876819,
+
+    "process_begin_at": "Wed, 17 Dec 2025 10:33:55 GMT",
+    "process_duration": 14.8615,
+    "progress": 1.0,
+
+    "progress_msg": [
+      "10:33:58 Task has been received.",
+      "10:33:59 Page(1~100000001): Start to parse.",
+      "10:33:59 Page(1~100000001): Finish parsing.",
+      "10:34:07 Page(1~100000001): Generate 2 chunks",
+      "10:34:09 Page(1~100000001): Embedding chunks (2.13s)",
+      "10:34:09 Page(1~100000001): Indexing done (0.31s).",
+      "10:34:09 Page(1~100000001): Task done (11.68s)"
+    ],
+
+    "parser_config": {
+      "chunk_token_num": 512,
+      "delimiter": "\n",
+      "auto_keywords": 0,
+      "auto_questions": 0,
+      "topn_tags": 3,
+
+      "layout_recognize": "DeepDOC",
+      "html4excel": false,
+      "image_context_size": 0,
+      "table_context_size": 0,
+
+      "graphrag": {
+        "use_graphrag": true,
+        "method": "light",
+        "entity_types": [
+          "organization",
+          "person",
+          "geo",
+          "event",
+          "category"
+        ]
+      },
+
+      "raptor": {
+        "use_raptor": true,
+        "max_cluster": 64,
+        "max_token": 256,
+        "threshold": 0.1,
+        "random_seed": 0,
+        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize."
+      }
+    },
+
+    "meta_fields": {},
+    "pipeline_id": "",
+    "thumbnail": ""
+  }
 }
+
 ```
 
 Failure:
