@@ -76,7 +76,7 @@ class TaskService(CommonService):
         """Retrieve detailed task information by task ID.
 
         This method fetches comprehensive task details including associated document,
-        knowledge base, and tenant information. It also handles task retry logic and
+        dataset, and tenant information. It also handles task retry logic and
         progress updates.
 
         Args:

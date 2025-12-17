@@ -94,11 +94,11 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_kb_id_by_file_id(cls, file_id):
-        # Get knowledge base IDs associated with a file
+        # Get dataset IDs associated with a file
         # Args:
         #     file_id: File ID
         # Returns:
-        #     List of dictionaries containing knowledge base IDs and names
+        #     List of dictionaries containing dataset IDs and names
         kbs = (
             cls.model.select(*[Knowledgebase.id, Knowledgebase.name])
             .join(File2Document, on=(File2Document.file_id == file_id))
@@ -247,7 +247,7 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_kb_folder(cls, tenant_id):
-        # Get knowledge base folder for tenant
+        # Get dataset folder for tenant
         # Args:
         #     tenant_id: Tenant ID
         # Returns:
@@ -263,7 +263,7 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def new_a_file_from_kb(cls, tenant_id, name, parent_id, ty=FileType.FOLDER.value, size=0, location=""):
-        # Create a new file from knowledge base
+        # Create a new file from dataset
         # Args:
         #     tenant_id: Tenant ID
         #     name: File name
@@ -292,7 +292,7 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def init_knowledgebase_docs(cls, root_id, tenant_id):
-        # Initialize knowledge base documents
+        # Initialize dataset documents
         # Args:
         #     root_id: Root folder ID
         #     tenant_id: Tenant ID

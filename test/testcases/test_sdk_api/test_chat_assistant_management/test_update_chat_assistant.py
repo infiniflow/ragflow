@@ -202,7 +202,7 @@ class TestChatAssistantUpdate:
                         "empty_response": "Sorry! No relevant content was found in the knowledge base!",
                         "opener": "Hi! I'm your assistant. What can I do for you?",
                         "show_quote": True,
-                        "prompt": 'You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.',
+                        "prompt": 'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.',
                     },
                 )
                 assert str(updated_chat.prompt) == str(excepted_value), str(updated_chat)
