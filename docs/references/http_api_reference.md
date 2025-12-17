@@ -14,7 +14,7 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 ---
 
 | Code | Message               | Description                |
-| ---- | --------------------- | -------------------------- |
+|------|-----------------------|----------------------------|
 | 400  | Bad Request           | Invalid request parameters |
 | 401  | Unauthorized          | Unauthorized access        |
 | 403  | Forbidden             | Access denied              |
