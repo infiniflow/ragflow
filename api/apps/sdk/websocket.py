@@ -24,11 +24,6 @@ import logging
 import json
 from quart import websocket
 
-# Log WebSocket endpoints registration
-logging.info("WebSocket SDK endpoints registered:")
-logging.info("  - /api/v1/ws/chats/<chat_id>/completions")
-logging.info("  - /api/v1/ws/agents/<agent_id>/completions")
-
 from api.db.services.dialog_service import DialogService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.conversation_service import async_completion as rag_completion
