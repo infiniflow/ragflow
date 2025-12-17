@@ -527,7 +527,7 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.LIST:
                     section = "\n".join(output.get("list_items", []))
                 case MinerUContentType.DISCARDED:
-                    pass
+                    continue  # Skip discarded blocks entirely
 
             if section and parse_method == "manual":
                 sections.append((section, output["type"], self._line_tag(output)))
