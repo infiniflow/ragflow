@@ -73,7 +73,6 @@ export enum Operator {
   Retrieval = 'Retrieval',
   Categorize = 'Categorize',
   Message = 'Message',
-  Relevant = 'Relevant',
   RewriteQuestion = 'RewriteQuestion',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
@@ -102,6 +101,7 @@ export enum Operator {
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',
+  PDFGenerator = 'PDFGenerator',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
   ListOperations = 'ListOperations',
@@ -116,6 +116,7 @@ export enum Operator {
   Loop = 'Loop',
   LoopStart = 'LoopItem',
   ExitLoop = 'ExitLoop',
+  ExcelProcessor = 'ExcelProcessor',
 }
 
 export enum ComparisonOperator {
@@ -194,3 +195,19 @@ export enum SwitchLogicOperator {
   And = 'and',
   Or = 'or',
 }
+
+export const WebhookAlgorithmList = [
+  'hs256',
+  'hs384',
+  'hs512',
+  'rs256',
+  'rs384',
+  'rs512',
+  'es256',
+  'es384',
+  'es512',
+  'ps256',
+  'ps384',
+  'ps512',
+  'none',
+] as const;

@@ -34,6 +34,7 @@ import {
   AutoKeywordsFormField,
   AutoQuestionsFormField,
 } from '../auto-keywords-form-field';
+import { ChildrenDelimiterForm } from '../children-delimiter-form';
 import { DataFlowSelect } from '../data-pipeline-select';
 import { DelimiterFormField } from '../delimiter-form-field';
 import { EntityTypesFormField } from '../entity-types-form-field';
@@ -111,6 +112,8 @@ export function ChunkMethodDialog({
         layout_recognize: z.string().optional(),
         chunk_token_num: z.coerce.number().optional(),
         delimiter: z.string().optional(),
+        enable_children: z.boolean().optional(),
+        children_delimiter: z.string().optional(),
         auto_keywords: z.coerce.number().optional(),
         auto_questions: z.coerce.number().optional(),
         html4excel: z.boolean().optional(),
@@ -196,6 +199,10 @@ export function ChunkMethodDialog({
       ...data,
       parser_config: {
         ...data.parser_config,
+        // Unset children delimiter if this option is not enabled
+        children_delimiter: data.parser_config.enable_children
+          ? data.parser_config.children_delimiter
+          : null,
         pages: data.parser_config?.pages?.map((x: any) => [x.from, x.to]) ?? [],
       },
     };
@@ -333,6 +340,7 @@ export function ChunkMethodDialog({
                         }
                       ></MaxTokenNumberFormField>
                       <DelimiterFormField></DelimiterFormField>
+                      <ChildrenDelimiterForm />
                     </>
                   )}
                 </FormContainer>

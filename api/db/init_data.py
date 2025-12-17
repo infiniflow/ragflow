@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import logging
 import json
 import os
@@ -73,11 +74,10 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
     logging.info(
-        f"Super user initialized. email: {email}, password: {password}. Changing the password after login is strongly recommended.")
+        f"Super user initialized. email: {email},A default password has been set; changing the password after login is strongly recommended.")
 
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
-    msg = chat_mdl.chat(system="", history=[
-        {"role": "user", "content": "Hello!"}], gen_conf={})
+    msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
     if msg.find("ERROR: ") == 0:
         logging.error(
             "'{}' doesn't work. {}".format(

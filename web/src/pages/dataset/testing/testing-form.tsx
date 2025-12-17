@@ -7,14 +7,18 @@ import { z } from 'zod';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import {
-  initialTopKValue,
+  MetadataFilter,
+  MetadataFilterSchema,
+} from '@/components/metadata-filter';
+import {
   RerankFormFields,
+  initialTopKValue,
   topKSchema,
 } from '@/components/rerank';
 import {
+  SimilaritySliderFormField,
   initialSimilarityThresholdValue,
   initialVectorSimilarityWeightValue,
-  SimilaritySliderFormField,
   similarityThresholdSchema,
   vectorSimilarityWeightSchema,
 } from '@/components/similarity-slider';
@@ -33,6 +37,7 @@ import { trim } from 'lodash';
 import { Send } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'umi';
 
 type TestingFormProps = Pick<
   ReturnType<typeof useTestRetrieval>,
@@ -45,6 +50,8 @@ export default function TestingForm({
   setValues,
 }: TestingFormProps) {
   const { t } = useTranslation();
+  const { id } = useParams();
+  const knowledgeBaseId = id;
 
   const formSchema = z.object({
     question: z.string().min(1, {
@@ -54,6 +61,8 @@ export default function TestingForm({
     ...vectorSimilarityWeightSchema,
     ...topKSchema,
     use_kg: z.boolean().optional(),
+    kb_ids: z.array(z.string()).optional(),
+    ...MetadataFilterSchema,
   });
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -63,6 +72,7 @@ export default function TestingForm({
       ...initialVectorSimilarityWeightValue,
       ...initialTopKValue,
       use_kg: false,
+      kb_ids: [knowledgeBaseId],
     },
   });
 
@@ -90,6 +100,7 @@ export default function TestingForm({
           <CrossLanguageFormField
             name={'cross_languages'}
           ></CrossLanguageFormField>
+          <MetadataFilter prefix=""></MetadataFilter>
         </FormContainer>
         <FormField
           control={form.control}

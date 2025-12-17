@@ -351,7 +351,7 @@ class AdminCLI(Cmd):
     def verify_admin(self, arguments: dict, single_command: bool):
         self.host = arguments['host']
         self.port = arguments['port']
-        print(f"Attempt to access ip: {self.host}, port: {self.port}")
+        print("Attempt to access server for admin login")
         url = f"http://{self.host}:{self.port}/api/v1/admin/login"
 
         attempt_count = 3
@@ -390,7 +390,7 @@ class AdminCLI(Cmd):
                     print(f"Bad response，status: {response.status_code}, password is wrong")
             except Exception as e:
                 print(str(e))
-                print(f"Can't access {self.host}, port: {self.port}")
+                print("Can't access server for admin login (connection failed)")
 
     def _format_service_detail_table(self, data):
         if isinstance(data, list):
@@ -674,7 +674,7 @@ class AdminCLI(Cmd):
         user_name: str = user_name_tree.children[0].strip("'\"")
         password_tree: Tree = command['password']
         password: str = password_tree.children[0].strip("'\"")
-        print(f"Alter user: {user_name}, password: {password}")
+        print(f"Alter user: {user_name}, password: ******")
         url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/password'
         response = self.session.put(url, json={'new_password': encrypt(password)})
         res_json = response.json()
@@ -689,7 +689,7 @@ class AdminCLI(Cmd):
         password_tree: Tree = command['password']
         password: str = password_tree.children[0].strip("'\"")
         role: str = command['role']
-        print(f"Create user: {user_name}, password: {password}, role: {role}")
+        print(f"Create user: {user_name}, password: ******, role: {role}")
         url = f'http://{self.host}:{self.port}/api/v1/admin/users'
         response = self.session.post(
             url,
@@ -951,7 +951,7 @@ def main():
 
     args = cli.parse_connection_args(sys.argv)
     if 'error' in args:
-        print(f"Error: {args['error']}")
+        print("Error: Invalid connection arguments")
         return
 
     if 'command' in args:
@@ -960,7 +960,7 @@ def main():
             return
         if cli.verify_admin(args, single_command=True):
             command: str = args['command']
-            print(f"Run single command: {command}")
+            # print(f"Run single command: {command}")
             cli.run_single_command(command)
     else:
         if cli.verify_admin(args, single_command=False):

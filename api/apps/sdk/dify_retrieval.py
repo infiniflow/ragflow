@@ -20,9 +20,9 @@ from quart import jsonify
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
+from common.metadata_utils import meta_filter, convert_conditions
 from api.utils.api_utils import apikey_required, build_error_result, get_request_json, validate_request
 from rag.app.tag import label_question
-from api.db.services.dialog_service import meta_filter, convert_conditions
 from common.constants import RetCode, LLMType
 from common import settings
 

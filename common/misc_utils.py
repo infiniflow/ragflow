@@ -153,7 +153,7 @@ def parse_mineru_paths() -> Dict[str, Path]:
 
 
 @once
-def install_mineru() -> None:
+def check_and_install_mineru() -> None:
     """
     Ensure MinerU is installed.
 
@@ -173,8 +173,8 @@ def install_mineru() -> None:
         Logging is used to indicate status.
     """
     # Check if MinerU is enabled
-    use_mineru = os.getenv("USE_MINERU", "").strip().lower()
-    if use_mineru == "false":
+    use_mineru = os.getenv("USE_MINERU", "false").strip().lower()
+    if use_mineru != "true":
         logging.info("USE_MINERU=%r. Skipping MinerU installation.", use_mineru)
         return
 

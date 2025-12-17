@@ -155,7 +155,7 @@ class TableStructureRecognizer(Recognizer):
         while i < len(boxes):
             if TableStructureRecognizer.is_caption(boxes[i]):
                 if is_english:
-                    cap + " "
+                    cap += " "
                 cap += boxes[i]["text"]
                 boxes.pop(i)
                 i -= 1

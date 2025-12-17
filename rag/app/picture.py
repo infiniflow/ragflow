@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import asyncio
 import io
 import re
 
@@ -50,7 +51,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
                 }
             )
             cv_mdl = LLMBundle(tenant_id, llm_type=LLMType.IMAGE2TEXT, lang=lang)
-            ans = cv_mdl.chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename)
+            ans = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename))
             callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             ans += "\n" + ans
             tokenize(doc, ans, eng)

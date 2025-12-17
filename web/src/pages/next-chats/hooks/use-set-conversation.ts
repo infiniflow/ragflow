@@ -22,6 +22,7 @@ export const useSetConversation = () => {
           {
             role: MessageType.Assistant,
             content: message,
+            conversationId,
           },
         ],
       });

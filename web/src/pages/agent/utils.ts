@@ -24,6 +24,7 @@ import {
 import pipe from 'lodash/fp/pipe';
 import isObject from 'lodash/isObject';
 import {
+  AgentDialogueMode,
   CategorizeAnchorPointPositions,
   FileType,
   FileTypeSuffixMap,
@@ -34,6 +35,7 @@ import {
   Operator,
   TypesWithArray,
 } from './constant';
+import { BeginFormSchemaType } from './form/begin-form/schema';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
 import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-form';
@@ -286,6 +288,11 @@ function transformSplitterParams(params: SplitterFormSchemaType) {
     ...params,
     overlapped_percent: Number(params.overlapped_percent) / 100,
     delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
+
+    // Unset children delimiters if this option is not enabled
+    children_delimiters: params.enable_children
+      ? transformObjectArrayToPureArray(params.children_delimiters, 'value')
+      : [],
   };
 }
 
@@ -309,6 +316,55 @@ function transformDataOperationsParams(params: DataOperationsFormSchemaType) {
     select_keys: params?.select_keys?.map((x) => x.name),
     remove_keys: params?.remove_keys?.map((x) => x.name),
     query: params.query.map((x) => x.input),
+  };
+}
+
+export function transformArrayToObject(
+  list?: Array<{ key: string; value: string }>,
+) {
+  if (!Array.isArray(list)) return {};
+  return list?.reduce<Record<string, any>>((pre, cur) => {
+    if (cur.key) {
+      pre[cur.key] = cur.value;
+    }
+    return pre;
+  }, {});
+}
+
+function transformRequestSchemaToJsonschema(
+  schema: BeginFormSchemaType['schema'],
+) {
+  const jsonSchema: Record<string, any> = {};
+  Object.entries(schema || {}).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      jsonSchema[key] = {
+        type: 'object',
+        required: value.filter((x) => x.required).map((x) => x.key),
+        properties: value.reduce<Record<string, any>>((pre, cur) => {
+          pre[cur.key] = { type: cur.type };
+          return pre;
+        }, {}),
+      };
+    }
+  });
+
+  return jsonSchema;
+}
+
+function transformBeginParams(params: BeginFormSchemaType) {
+  if (params.mode === AgentDialogueMode.Webhook) {
+    return {
+      ...params,
+      schema: transformRequestSchemaToJsonschema(params.schema),
+      security: {
+        ...params.security,
+        ip_whitelist: params.security?.ip_whitelist.map((x) => x.value),
+      },
+    };
+  }
+
+  return {
+    ...params,
   };
 }
 
@@ -360,6 +416,9 @@ export const buildDslComponentsByGraph = (
           break;
         case Operator.DataOperations:
           params = transformDataOperationsParams(params);
+          break;
+        case Operator.Begin:
+          params = transformBeginParams(params);
           break;
         default:
           break;
@@ -569,12 +628,6 @@ export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
     }, {});
   }
 
-  // Delete the downstream nodes corresponding to the yes and no fields of the Relevant operator
-  if (nodeData?.label === Operator.Relevant) {
-    form.yes = undefined;
-    form.no = undefined;
-  }
-
   return {
     ...(nodeData ?? { label: '' }),
     form,
@@ -665,7 +718,7 @@ export function convertToObjectArray<T extends string | number | boolean>(
 
 /**
    * convert the following object into a list
-   * 
+   *
    * {
       "product_related": {
       "description": "The question is about product usage, appearance and how it works.",

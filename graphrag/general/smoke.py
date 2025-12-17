@@ -15,10 +15,10 @@
 #
 
 import argparse
+import asyncio
 import json
 import logging
 import networkx as nx
-import trio
 
 from common.constants import LLMType
 from api.db.services.document_service import DocumentService
@@ -107,4 +107,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    trio.run(main)
+    asyncio.run(main)

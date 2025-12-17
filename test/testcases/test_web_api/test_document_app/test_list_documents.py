@@ -51,7 +51,7 @@ class TestDocumentsList:
         "kb_id, expected_code, expected_message",
         [
             ("", 101, 'Lack of "KB ID"'),
-            ("invalid_dataset_id", 103, "Only owner of knowledgebase authorized for this operation."),
+            ("invalid_dataset_id", 103, "Only owner of dataset authorized for this operation."),
         ],
     )
     def test_invalid_dataset_id(self, WebApiAuth, kb_id, expected_code, expected_message):

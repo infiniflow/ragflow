@@ -1,4 +1,4 @@
-import HightLightMarkdown from '@/components/highlight-markdown';
+import HighLightMarkdown from '@/components/highlight-markdown';
 import {
   Timeline,
   TimelineContent,
@@ -327,9 +327,9 @@ export const WorkFlowTimeline = ({
                         <AccordionContent>
                           <div className="space-y-2">
                             <div className="w-full h-[200px] break-words overflow-auto scrollbar-auto p-2 bg-muted">
-                              <HightLightMarkdown>
+                              <HighLightMarkdown>
                                 {x.data.thoughts || ''}
-                              </HightLightMarkdown>
+                              </HighLightMarkdown>
                             </div>
                           </div>
                         </AccordionContent>

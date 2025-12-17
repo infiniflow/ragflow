@@ -2,6 +2,7 @@
 	"id": {"type": "varchar", "default": ""},
 	"doc_id": {"type": "varchar", "default": ""},
 	"kb_id": {"type": "varchar", "default": ""},
+	"mom_id": {"type": "varchar", "default": ""},
 	"create_time": {"type": "varchar", "default": ""},
 	"create_timestamp_flt": {"type": "float", "default": 0.0},
 	"img_id": {"type": "varchar", "default": ""},

@@ -57,7 +57,6 @@ JSON_RESPONSE = True
 
 class RAGFlowConnector:
     _MAX_DATASET_CACHE = 32
-    _MAX_DOCUMENT_CACHE = 128
     _CACHE_TTL = 300
 
     _dataset_metadata_cache: OrderedDict[str, tuple[dict, float | int]] = OrderedDict()  # "dataset_id" -> (metadata, expiry_ts)
@@ -116,8 +115,6 @@ class RAGFlowConnector:
     def _set_cached_document_metadata_by_dataset(self, dataset_id, doc_id_meta_list):
         self._document_metadata_cache[dataset_id] = (doc_id_meta_list, self._get_expiry_timestamp())
         self._document_metadata_cache.move_to_end(dataset_id)
-        if len(self._document_metadata_cache) > self._MAX_DOCUMENT_CACHE:
-            self._document_metadata_cache.popitem(last=False)
 
     def list_datasets(self, page: int = 1, page_size: int = 1000, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None):
         res = self._get("/datasets", {"page": page, "page_size": page_size, "orderby": orderby, "desc": desc, "id": id, "name": name})
@@ -240,46 +237,46 @@ class RAGFlowConnector:
 
                 docs = None if force_refresh else self._get_cached_document_metadata_by_dataset(dataset_id)
                 if docs is None:
-                    docs_res = self._get(f"/datasets/{dataset_id}/documents")
-                    docs_data = docs_res.json()
-                    if docs_data.get("code") == 0 and docs_data.get("data", {}).get("docs"):
-                        doc_id_meta_list = []
-                        docs = {}
-                        for doc in docs_data["data"]["docs"]:
-                            doc_id = doc.get("id")
-                            if not doc_id:
-                                continue
-                            doc_meta = {
-                                "document_id": doc_id,
-                                "name": doc.get("name", ""),
-                                "location": doc.get("location", ""),
-                                "type": doc.get("type", ""),
-                                "size": doc.get("size"),
-                                "chunk_count": doc.get("chunk_count"),
-                                # "chunk_method": doc.get("chunk_method", ""),
-                                "create_date": doc.get("create_date", ""),
-                                "update_date": doc.get("update_date", ""),
-                                # "process_begin_at": doc.get("process_begin_at", ""),
-                                # "process_duration": doc.get("process_duration"),
-                                # "progress": doc.get("progress"),
-                                # "progress_msg": doc.get("progress_msg", ""),
-                                # "status": doc.get("status", ""),
-                                # "run": doc.get("run", ""),
-                                "token_count": doc.get("token_count"),
-                                # "source_type": doc.get("source_type", ""),
-                                "thumbnail": doc.get("thumbnail", ""),
-                                "dataset_id": doc.get("dataset_id", dataset_id),
-                                "meta_fields": doc.get("meta_fields", {}),
-                                # "parser_config": doc.get("parser_config", {})
-                            }
-                            doc_id_meta_list.append((doc_id, doc_meta))
-                            docs[doc_id] = doc_meta
+                    page = 1
+                    page_size = 30
+                    doc_id_meta_list = []
+                    docs = {}
+                    while page:
+                        docs_res = self._get(f"/datasets/{dataset_id}/documents?page={page}")
+                        docs_data = docs_res.json()
+                        if docs_data.get("code") == 0 and docs_data.get("data", {}).get("docs"):
+                            for doc in docs_data["data"]["docs"]:
+                                doc_id = doc.get("id")
+                                if not doc_id:
+                                    continue
+                                doc_meta = {
+                                    "document_id": doc_id,
+                                    "name": doc.get("name", ""),
+                                    "location": doc.get("location", ""),
+                                    "type": doc.get("type", ""),
+                                    "size": doc.get("size"),
+                                    "chunk_count": doc.get("chunk_count"),
+                                    "create_date": doc.get("create_date", ""),
+                                    "update_date": doc.get("update_date", ""),
+                                    "token_count": doc.get("token_count"),
+                                    "thumbnail": doc.get("thumbnail", ""),
+                                    "dataset_id": doc.get("dataset_id", dataset_id),
+                                    "meta_fields": doc.get("meta_fields", {}),
+                                }
+                                doc_id_meta_list.append((doc_id, doc_meta))
+                                docs[doc_id] = doc_meta
+
+                            page += 1
+                            if docs_data.get("data", {}).get("total", 0) - page * page_size <= 0:
+                                page = None
+
                         self._set_cached_document_metadata_by_dataset(dataset_id, doc_id_meta_list)
                 if docs:
                     document_cache.update(docs)
 
-        except Exception:
+        except Exception as e:
             # Gracefully handle metadata cache failures
+            logging.error(f"Problem building the document metadata cache: {str(e)}")
             pass
 
         return document_cache, dataset_cache

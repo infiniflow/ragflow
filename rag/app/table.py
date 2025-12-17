@@ -15,6 +15,8 @@
 #
 
 import copy
+import csv
+import io
 import logging
 import re
 from io import BytesIO
@@ -323,7 +325,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
         dfs = excel_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
-    elif re.search(r"\.(txt|csv)$", filename, re.IGNORECASE):
+    elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
@@ -344,7 +346,33 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
         callback(0.3, ("Extract records: {}~{}".format(from_page, min(len(lines), to_page)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         dfs = [pd.DataFrame(np.array(rows), columns=headers)]
+    elif re.search(r"\.csv$", filename, re.IGNORECASE):
+        callback(0.1, "Start to parse.")
+        txt = get_text(filename, binary)
+        delimiter = kwargs.get("delimiter", ",")
 
+        reader = csv.reader(io.StringIO(txt), delimiter=delimiter)
+        all_rows = list(reader)
+        if not all_rows:
+            raise ValueError("Empty CSV file")
+
+        headers = all_rows[0]
+        fails = []
+        rows = []
+
+        for i, row in enumerate(all_rows[1 + from_page : 1 + to_page]):
+            if len(row) != len(headers):
+                fails.append(str(i + from_page))
+                continue
+            rows.append(row)
+
+        callback(
+            0.3,
+            (f"Extract records: {from_page}~{from_page + len(rows)}" +
+            (f"{len(fails)} failure, line: {','.join(fails[:3])}..." if fails else ""))
+        )
+
+        dfs = [pd.DataFrame(rows, columns=headers)]
     else:
         raise NotImplementedError("file type not supported yet(excel, text, csv supported)")
 

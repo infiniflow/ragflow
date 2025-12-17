@@ -1740,7 +1740,7 @@ for session in sessions:
 Agent.delete_sessions(ids: list[str] = None)
 ```
 
-Deletes sessions of a agent by ID.
+Deletes sessions of an agent by ID.
 
 #### Parameters
 

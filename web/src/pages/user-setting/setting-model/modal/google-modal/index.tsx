@@ -2,6 +2,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { Form, Input, InputNumber, Modal, Select } from 'antd';
+import { LLMHeader } from '../../components/llm-header';
 
 type FieldType = IAddLlmRequestBody & {
   google_project_id: string;
@@ -41,7 +42,7 @@ const GoogleModal = ({
 
   return (
     <Modal
-      title={t('addLlmTitle', { name: llmFactory })}
+      title={<LLMHeader name={llmFactory} />}
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}

@@ -28,7 +28,6 @@ from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
 from api.utils import commands
 
-from flask_mail import Mail
 from quart_auth import Unauthorized
 from common import settings
 from api.utils.api_utils import server_error_response
@@ -42,7 +41,6 @@ __all__ = ["app"]
 
 app = Quart(__name__)
 app = cors(app, allow_origin="*")
-smtp_mail_server = Mail()
 
 # Add this at the beginning of your file to configure Swagger UI
 swagger_config = {
@@ -180,7 +178,7 @@ def login_user(user, remember=False, duration=None, force=False, fresh=True):
     user's `is_active` property is ``False``, they will not be logged in
     unless `force` is ``True``.
 
-    This will return ``True`` if the log in attempt succeeds, and ``False`` if
+    This will return ``True`` if the login attempt succeeds, and ``False`` if
     it fails (i.e. because the user is inactive).
 
     :param user: The user object to log in.

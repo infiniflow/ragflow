@@ -5,7 +5,7 @@ description = "Python client sdk of [RAGFlow](https://github.com/infiniflow/ragf
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license = { text = "Apache License, Version 2.0" }
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.12,<3.15"
 dependencies = ["requests>=2.30.0,<3.0.0", "beartype>=0.20.0,<1.0.0"]
 
 

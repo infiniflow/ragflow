@@ -76,7 +76,7 @@ class TaskService(CommonService):
         """Retrieve detailed task information by task ID.
 
         This method fetches comprehensive task details including associated document,
-        knowledge base, and tenant information. It also handles task retry logic and
+        dataset, and tenant information. It also handles task retry logic and
         progress updates.
 
         Args:
@@ -121,6 +121,13 @@ class TaskService(CommonService):
                 .where(cls.model.id == task_id)
         )
         docs = list(docs.dicts())
+        # Assuming docs = list(docs.dicts())
+        if docs:
+            kb_config = docs[0]['kb_parser_config']  # Dict from Knowledgebase.parser_config
+            mineru_method = kb_config.get('mineru_parse_method', 'auto')
+            mineru_formula = kb_config.get('mineru_formula_enable', True)
+            mineru_table = kb_config.get('mineru_table_enable', True)
+            print(mineru_method, mineru_formula, mineru_table)
         if not docs:
             return None
 

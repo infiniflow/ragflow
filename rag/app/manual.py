@@ -230,15 +230,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             txt, layoutno, poss = section
             if isinstance(poss, str):
                 poss = pdf_parser.extract_positions(poss)
-                first = poss[0]          # tuple: ([pn], x1, x2, y1, y2)
-                pn = first[0]
-
-                if isinstance(pn, list):
-                    pn = pn[0]           # [pn] -> pn
-                    poss[0] = (pn, *first[1:])
+                if poss:
+                    first = poss[0]          # tuple: ([pn], x1, x2, y1, y2)
+                    pn = first[0]           
+                    if isinstance(pn, list) and pn:
+                        pn = pn[0]           # [pn] -> pn
+                        poss[0] = (pn, *first[1:])
 
             return (txt, layoutno, poss)
-
 
         sections = [_normalize_section(sec) for sec in sections]
 

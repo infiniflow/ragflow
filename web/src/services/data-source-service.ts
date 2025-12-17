@@ -47,4 +47,13 @@ export const startGmailWebAuth = (payload: { credentials: string }) =>
 export const pollGmailWebAuthResult = (payload: { flow_id: string }) =>
   request.post(api.googleWebAuthResult('gmail'), { data: payload });
 
+export const startBoxWebAuth = (payload: {
+  client_id: string;
+  client_secret: string;
+  redirect_uri?: string;
+}) => request.post(api.boxWebAuthStart(), { data: payload });
+
+export const pollBoxWebAuthResult = (payload: { flow_id: string }) =>
+  request.post(api.boxWebAuthResult(), { data: payload });
+
 export default dataSourceService;

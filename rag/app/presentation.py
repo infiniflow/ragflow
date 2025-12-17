@@ -86,9 +86,11 @@ class Pdf(PdfParser):
 
         # (A) Add text
         for b in self.boxes:
-            if not (from_page < b["page_number"] <= to_page + from_page):
+            # b["page_number"] is relative page number，must + from_page
+            global_page_num = b["page_number"] + from_page
+            if not (from_page < global_page_num <= to_page + from_page):
                 continue
-            page_items[b["page_number"]].append({
+            page_items[global_page_num].append({
                 "top": b["top"],
                 "x0": b["x0"],
                 "text": b["text"],
@@ -100,7 +102,6 @@ class Pdf(PdfParser):
             if not positions:
                 continue
 
-            # Handle content type (list vs str)
             if isinstance(content, list):
                 final_text = "\n".join(content)
             elif isinstance(content, str):
@@ -109,10 +110,11 @@ class Pdf(PdfParser):
                 final_text = str(content)
 
             try:
-                # Parse positions
                 pn_index = positions[0][0]
                 if isinstance(pn_index, list):
                     pn_index = pn_index[0]
+
+                # pn_index in tbls is absolute page number
                 current_page_num = int(pn_index) + 1
             except Exception as e:
                 print(f"Error parsing position: {e}")
@@ -225,8 +227,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         for pn, (txt, img) in enumerate(sections):
             d = copy.deepcopy(doc)
             pn += from_page
-            if img:
-                d["image"] = img
+            if not isinstance(img, Image.Image):
+                img = None
+            d["image"] = img
             d["page_num_int"] = [pn + 1]
             d["top_int"] = [0]
             d["position_int"] = [(pn + 1, 0, img.size[0] if img else 0, 0,

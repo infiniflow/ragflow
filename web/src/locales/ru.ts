@@ -711,6 +711,8 @@ export default {
         'Отметьте, если это экземпляр Confluence Cloud, снимите для Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
         'Базовый URL вашего экземпляра Confluence (например, https://your-domain.atlassian.net/wiki)',
+      confluenceSpaceKeyTip:
+        'Необязательно: Укажите ключ пространства для синхронизации только определенного пространства. Оставьте пустым для синхронизации всех доступных пространств. Для нескольких пространств разделите запятыми (например, DEV,DOCS,HR)',
       s3PrefixTip: `Укажите путь к папке в вашем S3 бакете для получения файлов. 
 Пример: general/v2/`,
       S3CompatibleEndpointUrlTip: `Требуется для S3 совместимого Storage Box. Укажите URL конечной точки, совместимой с S3.
@@ -1221,6 +1223,27 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Компонент, который выполняет поиск через ваш предоставленный URL экземпляра SearXNG. Укажите TopN и URL экземпляра.',
+      pdfGenerator: 'Генератор документов',
+      pDFGenerator: 'Генератор документов',
+      pdfGeneratorDescription: `Компонент, который генерирует документы (PDF, DOCX, TXT) из содержимого в формате markdown с настраиваемым стилем, изображениями и таблицами. Поддерживает: **жирный**, *курсив*, # заголовки, - списки, таблицы с синтаксисом |.`,
+      pDFGeneratorDescription: `Компонент, который генерирует документы (PDF, DOCX, TXT) из содержимого в формате markdown с настраиваемым стилем, изображениями и таблицами. Поддерживает: **жирный**, *курсив*, # заголовки, - списки, таблицы с синтаксисом |.`,
+      subtitle: 'Подзаголовок',
+      logoImage: 'Изображение логотипа',
+      logoPosition: 'Позиция логотипа',
+      logoWidth: 'Ширина логотипа',
+      logoHeight: 'Высота логотипа',
+      fontFamily: 'Семейство шрифтов',
+      fontSize: 'Размер шрифта',
+      titleFontSize: 'Размер шрифта заголовка',
+      pageSize: 'Размер страницы',
+      orientation: 'Ориентация',
+      marginTop: 'Верхний отступ',
+      marginBottom: 'Нижний отступ',
+      filename: 'Имя файла',
+      outputDirectory: 'Выходной каталог',
+      addPageNumbers: 'Добавить номера страниц',
+      addTimestamp: 'Добавить временную метку',
+      watermarkText: 'Текст водяного знака',
       channel: 'Канал',
       channelTip: `Выполняет текстовый поиск или поиск новостей на входе компонента`,
       text: 'Текст',
@@ -1602,7 +1625,6 @@ export default {
       datatype: 'MIME тип HTTP запроса',
       insertVariableTip: `Введите / Вставьте переменные`,
       historyversion: 'История версий',
-      filename: 'Имя файла',
       version: {
         created: 'Создано',
         details: 'Детали версии',

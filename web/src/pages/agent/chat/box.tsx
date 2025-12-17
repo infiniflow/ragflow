@@ -13,8 +13,9 @@ import {
 } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useContext } from 'react';
 import { useParams } from 'umi';
+import { AgentChatContext } from '../context';
 import DebugContent from '../debug-content';
 import { useAwaitCompentData } from '../hooks/use-chat-logic';
 import { useIsTaskMode } from '../hooks/use-get-begin-query';
@@ -48,6 +49,9 @@ function AgentChatBox() {
     sendFormMessage,
     canvasId: canvasId as string,
   });
+
+  const { setDerivedMessages } = useContext(AgentChatContext);
+  setDerivedMessages?.(derivedMessages);
 
   const isTaskMode = useIsTaskMode();
 

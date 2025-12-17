@@ -53,14 +53,21 @@ export function RAGFlowFormItem({
               {label}
             </FormLabel>
           )}
-          <FormControl>
-            {typeof children === 'function'
-              ? children(field)
-              : isValidElement(children)
-                ? cloneElement(children, { ...field })
-                : children}
-          </FormControl>
-          <FormMessage />
+          <div
+            className={cn('flex flex-col', {
+              'w-3/4': horizontal,
+              'w-full': !horizontal,
+            })}
+          >
+            <FormControl>
+              {typeof children === 'function'
+                ? children(field)
+                : isValidElement(children)
+                  ? cloneElement(children, { ...field })
+                  : children}
+            </FormControl>
+            <FormMessage />
+          </div>
         </FormItem>
       )}
     />

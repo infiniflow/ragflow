@@ -70,7 +70,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     """
         Supported file formats are docx, pdf, txt.
         Since a book is long and not all the parts are useful, if it's a PDF,
-        please setup the page ranges for every book in order eliminate negative effects and save elapsed computing time.
+        please set up the page ranges for every book in order eliminate negative effects and save elapsed computing time.
     """
     parser_config = kwargs.get(
         "parser_config", {
@@ -143,13 +143,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        binary = BytesIO(binary)
-        doc_parsed = parser.from_buffer(binary)
-        sections = doc_parsed['content'].split('\n')
-        sections = [(line, "") for line in sections if line]
-        remove_contents_table(sections, eng=is_english(
-            random_choices([t for t, _ in sections], k=200)))
-        callback(0.8, "Finish parsing.")
+        with BytesIO(binary) as binary:
+            binary = BytesIO(binary)
+            doc_parsed = parser.from_buffer(binary)
+            sections = doc_parsed['content'].split('\n')
+            sections = [(line, "") for line in sections if line]
+            remove_contents_table(sections, eng=is_english(
+                random_choices([t for t, _ in sections], k=200)))
+            callback(0.8, "Finish parsing.")
 
     else:
         raise NotImplementedError(
@@ -165,9 +166,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         sections = [s.split("@") for s, _ in sections]
         sections = [(pr[0], "@" + pr[1]) if len(pr) == 2 else (pr[0], '') for pr in sections ]
         chunks = naive_merge(
-            sections, kwargs.get(
-                "chunk_token_num", 256), kwargs.get(
-                "delimer", "\n。；！？"))
+            sections,
+            parser_config.get("chunk_token_num", 256),
+            parser_config.get("delimiter", "\n。；！？")
+        )
 
     # is it English
     # is_english(random_choices([t for t, _ in sections], k=218))

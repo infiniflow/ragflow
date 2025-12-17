@@ -443,6 +443,9 @@ class InfinityConnection(DocStoreConnection):
                     del matchExpr.extra_options["similarity"]
                 logger.debug(f"INFINITY search MatchDenseExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, FusionExpr):
+                if matchExpr.method == "weighted_sum":
+                    # The default is "minmax" which gives a zero score for the last doc.
+                    matchExpr.fusion_params["normalize"] = "atan"
                 logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
 
         order_by_expr_list = list()
@@ -518,7 +521,7 @@ class InfinityConnection(DocStoreConnection):
             try:
                 table_instance = db_instance.get_table(table_name)
             except Exception:
-                logger.warning(f"Table not found: {table_name}, this knowledge base isn't created in Infinity. Maybe it is created in other document engine.")
+                logger.warning(f"Table not found: {table_name}, this dataset isn't created in Infinity. Maybe it is created in other document engine.")
                 continue
             kb_res, _ = table_instance.output(["*"]).filter(f"id = '{chunkId}'").to_df()
             logger.debug(f"INFINITY get table: {str(table_list)}, result: {str(kb_res)}")

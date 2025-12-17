@@ -11,12 +11,13 @@ import {
 } from '@/hooks/use-user-setting-request';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
-import { t } from 'i18next';
+import { TFunction } from 'i18next';
 import { Banknote, Box, Server, Unplug, User, Users } from 'lucide-react';
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
 
-const menuItems = [
+const menuItems = (t: TFunction) => [
   { icon: Server, label: t('setting.dataSources'), key: Routes.DataSource },
   { icon: Box, label: t('setting.model'), key: Routes.Model },
   { icon: Banknote, label: 'MCP', key: Routes.Mcp },
@@ -32,12 +33,12 @@ const menuItems = [
   // { icon: Cog, label: t('setting.system'), key: Routes.System },
   // { icon: Banknote, label: 'Plan', key: Routes.Plan },
 ];
-
 export function SideBar() {
   const pathName = useSecondPathName();
   const { data: userInfo } = useFetchUserInfo();
   const { handleMenuClick, active } = useHandleMenuClick();
   const { version, fetchSystemVersion } = useFetchSystemVersion();
+  const { t } = useTranslation();
   useEffect(() => {
     if (location.host !== Domain) {
       fetchSystemVersion();
@@ -56,7 +57,7 @@ export function SideBar() {
         <p className="text-sm text-text-primary">{userInfo?.email}</p>
       </div>
       <div className="flex-1 overflow-auto">
-        {menuItems.map((item, idx) => {
+        {menuItems(t).map((item, idx) => {
           const hoverKey = pathName === item.key;
           return (
             <div key={idx}>

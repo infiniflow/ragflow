@@ -21,7 +21,6 @@ from copy import deepcopy
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
-import trio
 from langfuse import Langfuse
 from peewee import fn
 from agentic_reasoning import DeepResearcher
@@ -33,6 +32,7 @@ from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
+from common.metadata_utils import apply_meta_data_filter
 from api.db.services.tenant_llm_service import TenantLLMService
 from common.time_utils import current_timestamp, datetime_format
 from graphrag.general.mind_map_extractor import MindMapExtractor
@@ -40,7 +40,7 @@ from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
 from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, \
-    gen_meta_filter, PROMPT_JINJA_ENV, ASK_SUMMARY
+    PROMPT_JINJA_ENV, ASK_SUMMARY
 from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
 from common.string_utils import remove_redundant_spaces
@@ -178,7 +178,8 @@ class DialogService(CommonService):
             offset += limit
         return res
 
-def chat_solo(dialog, messages, stream=True):
+
+async def async_chat_solo(dialog, messages, stream=True):
     attachments = ""
     if "files" in messages[-1]:
         attachments = "\n\n".join(FileService.get_files(messages[-1]["files"]))
@@ -197,7 +198,8 @@ def chat_solo(dialog, messages, stream=True):
     if stream:
         last_ans = ""
         delta_ans = ""
-        for ans in chat_mdl.chat_streamly(prompt_config.get("system", ""), msg, dialog.llm_setting):
+        answer = ""
+        async for ans in chat_mdl.async_chat_streamly(prompt_config.get("system", ""), msg, dialog.llm_setting):
             answer = ans
             delta_ans = ans[len(last_ans):]
             if num_tokens_from_string(delta_ans) < 16:
@@ -208,7 +210,7 @@ def chat_solo(dialog, messages, stream=True):
         if delta_ans:
             yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans), "prompt": "", "created_at": time.time()}
     else:
-        answer = chat_mdl.chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
+        answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
@@ -276,84 +278,12 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
     return answer, idx
 
 
-def convert_conditions(metadata_condition):
-    if metadata_condition is None:
-        metadata_condition = {}
-    op_mapping = {
-        "is": "=",
-        "not is": "≠"
-    }
-    return [
-        {
-            "op": op_mapping.get(cond["comparison_operator"], cond["comparison_operator"]),
-            "key": cond["name"],
-            "value": cond["value"]
-        }
-        for cond in metadata_condition.get("conditions", [])
-    ]
-
-
-def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
-    doc_ids = set([])
-
-    def filter_out(v2docs, operator, value):
-        ids = []
-        for input, docids in v2docs.items():
-            if operator in ["=", "≠", ">", "<", "≥", "≤"]:
-                try:
-                    input = float(input)
-                    value = float(value)
-                except Exception:
-                    input = str(input)
-                    value = str(value)
-
-            for conds in [
-                (operator == "contains", str(value).lower() in str(input).lower()),
-                (operator == "not contains", str(value).lower() not in str(input).lower()),
-                (operator == "in", str(input).lower() in str(value).lower()),
-                (operator == "not in", str(input).lower() not in str(value).lower()),
-                (operator == "start with", str(input).lower().startswith(str(value).lower())),
-                (operator == "end with", str(input).lower().endswith(str(value).lower())),
-                (operator == "empty", not input),
-                (operator == "not empty", input),
-                (operator == "=", input == value),
-                (operator == "≠", input != value),
-                (operator == ">", input > value),
-                (operator == "<", input < value),
-                (operator == "≥", input >= value),
-                (operator == "≤", input <= value),
-            ]:
-                try:
-                    if all(conds):
-                        ids.extend(docids)
-                        break
-                except Exception:
-                    pass
-        return ids
-
-    for k, v2docs in metas.items():
-        for f in filters:
-            if k != f["key"]:
-                continue
-            ids = filter_out(v2docs, f["op"], f["value"])
-            if not doc_ids:
-                doc_ids = set(ids)
-            else:
-                if logic == "and":
-                    doc_ids = doc_ids & set(ids)
-                else:
-                    doc_ids = doc_ids | set(ids)
-            if not doc_ids:
-                return []
-    return list(doc_ids)
-
-
-def chat(dialog, messages, stream=True, **kwargs):
+async def async_chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
-        for ans in chat_solo(dialog, messages, stream):
+        async for ans in async_chat_solo(dialog, messages, stream):
             yield ans
-        return None
+        return
 
     chat_start_ts = timer()
 
@@ -397,10 +327,10 @@ def chat(dialog, messages, stream=True, **kwargs):
     # try to use sql if field mapping is good to go
     if field_map:
         logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
-        ans = use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
+        ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
         if ans:
             yield ans
-            return None
+            return
 
     for p in prompt_config["parameters"]:
         if p["key"] == "knowledge":
@@ -411,28 +341,25 @@ def chat(dialog, messages, stream=True, **kwargs):
             prompt_config["system"] = prompt_config["system"].replace("{%s}" % p["key"], " ")
 
     if len(questions) > 1 and prompt_config.get("refine_multiturn"):
-        questions = [full_question(dialog.tenant_id, dialog.llm_id, messages)]
+        questions = [await full_question(dialog.tenant_id, dialog.llm_id, messages)]
     else:
         questions = questions[-1:]
 
     if prompt_config.get("cross_languages"):
-        questions = [cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
+        questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
 
     if dialog.meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(dialog.kb_ids)
-        if dialog.meta_data_filter.get("method") == "auto":
-            filters: dict = gen_meta_filter(chat_mdl, metas, questions[-1])
-            attachments.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
-            if not attachments:
-                attachments = None
-        elif dialog.meta_data_filter.get("method") == "manual":
-            conds = dialog.meta_data_filter["manual"]
-            attachments.extend(meta_filter(metas, conds, dialog.meta_data_filter.get("logic", "and")))
-            if conds and not attachments:
-                attachments = ["-999"]
+        attachments = await apply_meta_data_filter(
+            dialog.meta_data_filter,
+            metas,
+            questions[-1],
+            chat_mdl,
+            attachments,
+        )
 
     if prompt_config.get("keyword", False):
-        questions[-1] += keyword_extraction(chat_mdl, questions[-1])
+        questions[-1] += await keyword_extraction(chat_mdl, questions[-1])
 
     refine_question_ts = timer()
 
@@ -460,7 +387,7 @@ def chat(dialog, messages, stream=True, **kwargs):
                 ),
             )
 
-            for think in reasoner.thinking(kbinfos, attachments_ + " ".join(questions)):
+            async for think in reasoner.thinking(kbinfos, attachments_ + " ".join(questions)):
                 if isinstance(think, str):
                     thought = think
                     knowledges = [t for t in think.split("\n") if t]
@@ -508,7 +435,8 @@ def chat(dialog, messages, stream=True, **kwargs):
         empty_res = prompt_config["empty_response"]
         yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions),
                "audio_binary": tts(tts_mdl, empty_res)}
-        return {"answer": prompt_config["empty_response"], "reference": kbinfos}
+        yield {"answer": prompt_config["empty_response"], "reference": kbinfos}
+        return
 
     kwargs["knowledge"] = "\n------\n" + "\n\n------\n\n".join(knowledges)
     gen_conf = dialog.llm_setting
@@ -612,7 +540,7 @@ def chat(dialog, messages, stream=True, **kwargs):
     if stream:
         last_ans = ""
         answer = ""
-        for ans in chat_mdl.chat_streamly(prompt + prompt4citation, msg[1:], gen_conf):
+        async for ans in chat_mdl.async_chat_streamly(prompt + prompt4citation, msg[1:], gen_conf):
             if thought:
                 ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
             answer = ans
@@ -626,19 +554,19 @@ def chat(dialog, messages, stream=True, **kwargs):
             yield {"answer": thought + answer, "reference": {}, "audio_binary": tts(tts_mdl, delta_ans)}
         yield decorate_answer(thought + answer)
     else:
-        answer = chat_mdl.chat(prompt + prompt4citation, msg[1:], gen_conf)
+        answer = await chat_mdl.async_chat(prompt + prompt4citation, msg[1:], gen_conf)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         res = decorate_answer(answer)
         res["audio_binary"] = tts(tts_mdl, answer)
         yield res
 
-    return None
+    return
 
 
-def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
+async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
     sys_prompt = """
-You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question. 
+You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question.
 Ensure that:
 1. Field names should not start with a digit. If any field name starts with a digit, use double quotes around it.
 2. Write only the SQL, no explanations or additional text.
@@ -654,9 +582,9 @@ Please write the SQL, only SQL, without any other explanations or text.
 """.format(index_name(tenant_id), "\n".join([f"{k}: {v}" for k, v in field_map.items()]), question)
     tried_times = 0
 
-    def get_table():
+    async def get_table():
         nonlocal sys_prompt, user_prompt, question, tried_times
-        sql = chat_mdl.chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
+        sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
         sql = re.sub(r"^.*</think>", "", sql, flags=re.DOTALL)
         logging.debug(f"{question} ==> {user_prompt} get SQL: {sql}")
         sql = re.sub(r"[\r\n]+", " ", sql.lower())
@@ -695,7 +623,7 @@ Please write the SQL, only SQL, without any other explanations or text.
         return settings.retriever.sql_retrieval(sql, format="json"), sql
 
     try:
-        tbl, sql = get_table()
+        tbl, sql = await get_table()
     except Exception as e:
         user_prompt = """
         Table name: {};
@@ -713,7 +641,7 @@ Please write the SQL, only SQL, without any other explanations or text.
         Please correct the error and write SQL again, only SQL, without any other explanations or text.
         """.format(index_name(tenant_id), "\n".join([f"{k}: {v}" for k, v in field_map.items()]), question, e)
         try:
-            tbl, sql = get_table()
+            tbl, sql = await get_table()
         except Exception:
             return
 
@@ -761,17 +689,51 @@ Please write the SQL, only SQL, without any other explanations or text.
         "prompt": sys_prompt,
     }
 
+def clean_tts_text(text: str) -> str:
+    if not text:
+        return ""
+
+    text = text.encode("utf-8", "ignore").decode("utf-8", "ignore")
+
+    text = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
+
+    emoji_pattern = re.compile(
+        "[\U0001F600-\U0001F64F"
+        "\U0001F300-\U0001F5FF"
+        "\U0001F680-\U0001F6FF"
+        "\U0001F1E0-\U0001F1FF"
+        "\U00002700-\U000027BF"
+        "\U0001F900-\U0001F9FF"
+        "\U0001FA70-\U0001FAFF"
+        "\U0001FAD0-\U0001FAFF]+",
+        flags=re.UNICODE
+    )
+    text = emoji_pattern.sub("", text)
+
+    text = re.sub(r"\s+", " ", text).strip()
+
+    MAX_LEN = 500
+    if len(text) > MAX_LEN:
+        text = text[:MAX_LEN]
+
+    return text
 
 def tts(tts_mdl, text):
     if not tts_mdl or not text:
         return None
+    text = clean_tts_text(text)
+    if not text:
+        return None
     bin = b""
-    for chunk in tts_mdl.tts(text):
-        bin += chunk
+    try:
+        for chunk in tts_mdl.tts(text):
+            bin += chunk
+    except Exception as e:
+        logging.error(f"TTS failed: {e}, text={text!r}")
+        return None
     return binascii.hexlify(bin).decode("utf-8")
 
-
-def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
+async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
     doc_ids = search_config.get("doc_ids", [])
     rerank_mdl = None
     kb_ids = search_config.get("kb_ids", kb_ids)
@@ -794,15 +756,7 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
 
     if meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(kb_ids)
-        if meta_data_filter.get("method") == "auto":
-            filters: dict = gen_meta_filter(chat_mdl, metas, question)
-            doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
-            if not doc_ids:
-                doc_ids = None
-        elif meta_data_filter.get("method") == "manual":
-            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
-            if meta_data_filter["manual"] and not doc_ids:
-                doc_ids = ["-999"]
+        doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
     kbinfos = retriever.retrieval(
         question=question,
@@ -845,13 +799,13 @@ def ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}):
         return {"answer": answer, "reference": refs}
 
     answer = ""
-    for ans in chat_mdl.chat_streamly(sys_prompt, msg, {"temperature": 0.1}):
+    async for ans in chat_mdl.async_chat_streamly(sys_prompt, msg, {"temperature": 0.1}):
         answer = ans
         yield {"answer": answer, "reference": {}}
     yield decorate_answer(answer)
 
 
-def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
+async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     meta_data_filter = search_config.get("meta_data_filter", {})
     doc_ids = search_config.get("doc_ids", [])
     rerank_id = search_config.get("rerank_id", "")
@@ -869,15 +823,7 @@ def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
 
     if meta_data_filter:
         metas = DocumentService.get_meta_by_kbs(kb_ids)
-        if meta_data_filter.get("method") == "auto":
-            filters: dict = gen_meta_filter(chat_mdl, metas, question)
-            doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
-            if not doc_ids:
-                doc_ids = None
-        elif meta_data_filter.get("method") == "manual":
-            doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
-            if meta_data_filter["manual"] and not doc_ids:
-                doc_ids = ["-999"]
+        doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
     ranks = settings.retriever.retrieval(
         question=question,
@@ -895,5 +841,5 @@ def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         rank_feature=label_question(question, kbs),
     )
     mindmap = MindMapExtractor(chat_mdl)
-    mind_map = trio.run(mindmap, [c["content_with_weight"] for c in ranks["chunks"]])
+    mind_map = await mindmap([c["content_with_weight"] for c in ranks["chunks"]])
     return mind_map.output

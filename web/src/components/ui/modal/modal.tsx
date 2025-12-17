@@ -174,20 +174,23 @@ const Modal: ModalType = ({
           onClick={() => maskClosable && onOpenChange?.(false)}
         >
           <DialogPrimitive.Content
-            className={`relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-bg-base rounded-lg shadow-lg border border-border-default transition-all focus-visible:!outline-none`}
+            className={cn(
+              `relative w-[700px] ${full ? 'max-w-full' : sizeClasses[size]} ${className} bg-bg-base rounded-lg shadow-lg border border-border-default transition-all focus-visible:!outline-none`,
+              { 'pt-10': closable && !title },
+            )}
             style={style}
             onClick={(e) => e.stopPropagation()}
           >
             {/* title */}
-            {(title || closable) && (
+            {title && (
               <div
                 className={cn(
-                  'flex items-start px-6 py-4',
-                  {
-                    'justify-end': closable && !title,
-                    'justify-between': closable && title,
-                    'justify-start': !closable,
-                  },
+                  'flex items-start px-6 py-4 justify-start',
+                  // {
+                  //   'justify-end': closable && !title,
+                  //   'justify-between': closable && title,
+                  //   'justify-start': !closable,
+                  // },
                   titleClassName,
                 )}
               >
@@ -196,18 +199,18 @@ const Modal: ModalType = ({
                     {title}
                   </DialogPrimitive.Title>
                 )}
-                {closable && (
-                  <DialogPrimitive.Close asChild>
-                    <button
-                      type="button"
-                      className="flex h-7 w-7 items-center justify-center text-text-secondary rounded-full hover:text-text-primary focus-visible:outline-none"
-                      onClick={handleCancel}
-                    >
-                      {closeIcon}
-                    </button>
-                  </DialogPrimitive.Close>
-                )}
               </div>
+            )}
+            {closable && (
+              <DialogPrimitive.Close asChild>
+                <button
+                  type="button"
+                  className="flex absolute right-5 top-5 h-7 w-7 items-center justify-center text-text-secondary rounded-full hover:text-text-primary focus-visible:outline-none"
+                  onClick={handleCancel}
+                >
+                  {closeIcon}
+                </button>
+              </DialogPrimitive.Close>
             )}
 
             {/* content */}

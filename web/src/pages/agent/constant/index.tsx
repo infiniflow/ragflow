@@ -25,6 +25,7 @@ export * from './pipeline';
 export enum AgentDialogueMode {
   Conversational = 'conversational',
   Task = 'task',
+  Webhook = 'Webhook',
 }
 
 import { ModelVariableType } from '@/constants/knowledge';
@@ -132,6 +133,31 @@ export const initialCategorizeValues = {
 
 export const initialMessageValues = {
   content: [''],
+};
+
+export const initialExcelProcessorValues = {
+  input_files: [],
+  operation: 'read',
+  sheet_selection: 'all',
+  merge_strategy: 'concat',
+  join_on: '',
+  transform_data: '',
+  output_format: 'xlsx',
+  output_filename: 'output',
+  outputs: {
+    data: {
+      type: 'object',
+      value: {},
+    },
+    summary: {
+      type: 'string',
+      value: '',
+    },
+    markdown: {
+      type: 'string',
+      value: '',
+    },
+  },
 };
 
 export const initialDuckValues = {
@@ -613,7 +639,7 @@ export const CategorizeAnchorPointPositions = [
 // key is the source of the edge, value is the target of the edge
 // no connection lines are allowed between key and value
 export const RestrictedUpstreamMap = {
-  [Operator.Begin]: [Operator.Relevant],
+  [Operator.Begin]: [Operator.Begin],
   [Operator.Categorize]: [Operator.Begin, Operator.Categorize],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
   [Operator.Message]: [
@@ -623,12 +649,10 @@ export const RestrictedUpstreamMap = {
     Operator.RewriteQuestion,
     Operator.Categorize,
   ],
-  [Operator.Relevant]: [Operator.Begin],
   [Operator.RewriteQuestion]: [
     Operator.Begin,
     Operator.Message,
     Operator.RewriteQuestion,
-    Operator.Relevant,
   ],
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
@@ -678,7 +702,6 @@ export const NodeMap = {
   [Operator.Categorize]: 'categorizeNode',
   [Operator.Retrieval]: 'retrievalNode',
   [Operator.Message]: 'messageNode',
-  [Operator.Relevant]: 'relevantNode',
   [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
@@ -834,6 +857,7 @@ export enum ExportFileType {
   HTML = 'html',
   Markdown = 'md',
   DOCX = 'docx',
+  Excel = 'xlsx',
 }
 
 export enum TypesWithArray {
@@ -932,4 +956,116 @@ export const LoopTerminationStringComparisonOperatorMap = {
 export enum AgentVariableType {
   Begin = 'begin',
   Conversation = 'conversation',
+}
+
+// PDF Generator enums
+export enum PDFGeneratorFontFamily {
+  Helvetica = 'Helvetica',
+  TimesRoman = 'Times-Roman',
+  Courier = 'Courier',
+  HelveticaBold = 'Helvetica-Bold',
+  TimesBold = 'Times-Bold',
+}
+
+export enum PDFGeneratorLogoPosition {
+  Left = 'left',
+  Center = 'center',
+  Right = 'right',
+}
+
+export enum PDFGeneratorPageSize {
+  A4 = 'A4',
+  Letter = 'Letter',
+}
+
+export enum PDFGeneratorOrientation {
+  Portrait = 'portrait',
+  Landscape = 'landscape',
+}
+
+export const initialPDFGeneratorValues = {
+  output_format: 'pdf',
+  content: '',
+  title: '',
+  subtitle: '',
+  header_text: '',
+  footer_text: '',
+  logo_image: '',
+  logo_position: PDFGeneratorLogoPosition.Left,
+  logo_width: 2.0,
+  logo_height: 1.0,
+  font_family: PDFGeneratorFontFamily.Helvetica,
+  font_size: 12,
+  title_font_size: 24,
+  heading1_font_size: 18,
+  heading2_font_size: 16,
+  heading3_font_size: 14,
+  text_color: '#000000',
+  title_color: '#000000',
+  page_size: PDFGeneratorPageSize.A4,
+  orientation: PDFGeneratorOrientation.Portrait,
+  margin_top: 1.0,
+  margin_bottom: 1.0,
+  margin_left: 1.0,
+  margin_right: 1.0,
+  line_spacing: 1.2,
+  filename: '',
+  output_directory: '/tmp/pdf_outputs',
+  add_page_numbers: true,
+  add_timestamp: true,
+  watermark_text: '',
+  enable_toc: false,
+  outputs: {
+    file_path: { type: 'string', value: '' },
+    pdf_base64: { type: 'string', value: '' },
+    download: { type: 'string', value: '' },
+    success: { type: 'boolean', value: false },
+  },
+};
+
+export enum WebhookMethod {
+  Post = 'POST',
+  Get = 'GET',
+  Put = 'PUT',
+  Patch = 'PATCH',
+  Delete = 'DELETE',
+  Head = 'HEAD',
+}
+
+export enum WebhookContentType {
+  ApplicationJson = 'application/json',
+  MultipartFormData = 'multipart/form-data',
+  ApplicationXWwwFormUrlencoded = 'application/x-www-form-urlencoded',
+  TextPlain = 'text/plain',
+  ApplicationOctetStream = 'application/octet-stream',
+}
+
+export enum WebhookExecutionMode {
+  Immediately = 'Immediately',
+  Streaming = 'Streaming',
+}
+
+export enum WebhookSecurityAuthType {
+  None = 'none',
+  Token = 'token',
+  Basic = 'basic',
+  Jwt = 'jwt',
+  Hmac = 'hmac',
+}
+
+export const RateLimitPerList = ['minute', 'hour', 'day'];
+
+export const WebhookMaxBodySize = ['10MB', '50MB', '100MB', '1000MB'];
+
+export enum WebhookRequestParameters {
+  File = VariableType.File,
+  String = TypesWithArray.String,
+  Number = TypesWithArray.Number,
+  Boolean = TypesWithArray.Boolean,
+}
+
+export enum WebhookStatus {
+  Testing = 'testing',
+  Live = 'live',
+  Stopped = 'stopped',
 }

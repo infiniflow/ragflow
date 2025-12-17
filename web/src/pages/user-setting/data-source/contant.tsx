@@ -1,9 +1,13 @@
 import { FormFieldType } from '@/components/dynamic-form';
 import SvgIcon from '@/components/svg-icon';
-import { t } from 'i18next';
+import { t, TFunction } from 'i18next';
+import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import BoxTokenField from './component/box-token-field';
+import { ConfluenceIndexingModeField } from './component/confluence-token-field';
 import GmailTokenField from './component/gmail-token-field';
 import GoogleDriveTokenField from './component/google-drive-token-field';
-
+import { IDataSourceInfoMap } from './interface';
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   S3 = 's3',
@@ -14,63 +18,82 @@ export enum DataSourceKey {
   GMAIL = 'gmail',
   JIRA = 'jira',
   WEBDAV = 'webdav',
+  BOX = 'box',
   DROPBOX = 'dropbox',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
 }
 
-export const DataSourceInfo = {
-  [DataSourceKey.S3]: {
-    name: 'S3',
-    description: t(`setting.${DataSourceKey.S3}Description`),
-    icon: <SvgIcon name={'data-source/s3'} width={38} />,
-  },
-  [DataSourceKey.NOTION]: {
-    name: 'Notion',
-    description: t(`setting.${DataSourceKey.NOTION}Description`),
-    icon: <SvgIcon name={'data-source/notion'} width={38} />,
-  },
-  [DataSourceKey.DISCORD]: {
-    name: 'Discord',
-    description: t(`setting.${DataSourceKey.DISCORD}Description`),
-    icon: <SvgIcon name={'data-source/discord'} width={38} />,
-  },
-  [DataSourceKey.CONFLUENCE]: {
-    name: 'Confluence',
-    description: t(`setting.${DataSourceKey.CONFLUENCE}Description`),
-    icon: <SvgIcon name={'data-source/confluence'} width={38} />,
-  },
-  [DataSourceKey.GOOGLE_DRIVE]: {
-    name: 'Google Drive',
-    description: t(`setting.${DataSourceKey.GOOGLE_DRIVE}Description`),
-    icon: <SvgIcon name={'data-source/google-drive'} width={38} />,
-  },
-  [DataSourceKey.GMAIL]: {
-    name: 'Gmail',
-    description: t(`setting.${DataSourceKey.GMAIL}Description`),
-    icon: <SvgIcon name={'data-source/gmail'} width={38} />,
-  },
-  [DataSourceKey.MOODLE]: {
-    name: 'Moodle',
-    description: t(`setting.${DataSourceKey.MOODLE}Description`),
-    icon: <SvgIcon name={'data-source/moodle'} width={38} />,
-  },
-  [DataSourceKey.JIRA]: {
-    name: 'Jira',
-    description: t(`setting.${DataSourceKey.JIRA}Description`),
-    icon: <SvgIcon name={'data-source/jira'} width={38} />,
-  },
-  [DataSourceKey.WEBDAV]: {
-    name: 'WebDAV',
-    description: t(`setting.${DataSourceKey.WEBDAV}Description`),
-    icon: <SvgIcon name={'data-source/webdav'} width={38} />,
-  },
-  [DataSourceKey.DROPBOX]: {
-    name: 'Dropbox',
-    description: t(`setting.${DataSourceKey.DROPBOX}Description`),
-    icon: <SvgIcon name={'data-source/dropbox'} width={38} />,
-  },
+export const generateDataSourceInfo = (t: TFunction) => {
+  return {
+    [DataSourceKey.S3]: {
+      name: 'S3',
+      description: t(`setting.${DataSourceKey.S3}Description`),
+      icon: <SvgIcon name={'data-source/s3'} width={38} />,
+    },
+    [DataSourceKey.NOTION]: {
+      name: 'Notion',
+      description: t(`setting.${DataSourceKey.NOTION}Description`),
+      icon: <SvgIcon name={'data-source/notion'} width={38} />,
+    },
+    [DataSourceKey.DISCORD]: {
+      name: 'Discord',
+      description: t(`setting.${DataSourceKey.DISCORD}Description`),
+      icon: <SvgIcon name={'data-source/discord'} width={38} />,
+    },
+    [DataSourceKey.CONFLUENCE]: {
+      name: 'Confluence',
+      description: t(`setting.${DataSourceKey.CONFLUENCE}Description`),
+      icon: <SvgIcon name={'data-source/confluence'} width={38} />,
+    },
+    [DataSourceKey.GOOGLE_DRIVE]: {
+      name: 'Google Drive',
+      description: t(`setting.${DataSourceKey.GOOGLE_DRIVE}Description`),
+      icon: <SvgIcon name={'data-source/google-drive'} width={38} />,
+    },
+    [DataSourceKey.GMAIL]: {
+      name: 'Gmail',
+      description: t(`setting.${DataSourceKey.GMAIL}Description`),
+      icon: <SvgIcon name={'data-source/gmail'} width={38} />,
+    },
+    [DataSourceKey.MOODLE]: {
+      name: 'Moodle',
+      description: t(`setting.${DataSourceKey.MOODLE}Description`),
+      icon: <SvgIcon name={'data-source/moodle'} width={38} />,
+    },
+    [DataSourceKey.JIRA]: {
+      name: 'Jira',
+      description: t(`setting.${DataSourceKey.JIRA}Description`),
+      icon: <SvgIcon name={'data-source/jira'} width={38} />,
+    },
+    [DataSourceKey.WEBDAV]: {
+      name: 'WebDAV',
+      description: t(`setting.${DataSourceKey.WEBDAV}Description`),
+      icon: <SvgIcon name={'data-source/webdav'} width={38} />,
+    },
+    [DataSourceKey.DROPBOX]: {
+      name: 'Dropbox',
+      description: t(`setting.${DataSourceKey.DROPBOX}Description`),
+      icon: <SvgIcon name={'data-source/dropbox'} width={38} />,
+    },
+    [DataSourceKey.BOX]: {
+      name: 'Box',
+      description: t(`setting.${DataSourceKey.BOX}Description`),
+      icon: <SvgIcon name={'data-source/box'} width={38} />,
+    },
+  };
+};
+
+export const useDataSourceInfo = () => {
+  const { t } = useTranslation();
+  const [dataSourceInfo, setDataSourceInfo] = useState<IDataSourceInfoMap>(
+    generateDataSourceInfo(t) as IDataSourceInfoMap,
+  );
+  useEffect(() => {
+    setDataSourceInfo(generateDataSourceInfo(t));
+  }, [t]);
+  return { dataSourceInfo };
 };
 
 export const DataSourceFormBaseFields = [
@@ -229,6 +252,38 @@ export const DataSourceFormFields = {
       type: FormFieldType.Checkbox,
       required: false,
       tooltip: t('setting.confluenceIsCloudTip'),
+    },
+    {
+      label: 'Index Method',
+      name: 'config.index_mode',
+      type: FormFieldType.Text,
+      required: false,
+      horizontal: true,
+      labelClassName: 'self-start pt-4',
+      render: (fieldProps: any) => (
+        <ConfluenceIndexingModeField {...fieldProps} />
+      ),
+    },
+    {
+      label: 'Space Key',
+      name: 'config.space',
+      type: FormFieldType.Text,
+      required: false,
+      hidden: true,
+    },
+    {
+      label: 'Page ID',
+      name: 'config.page_id',
+      type: FormFieldType.Text,
+      required: false,
+      hidden: true,
+    },
+    {
+      label: 'Index Recursively',
+      name: 'config.index_recursively',
+      type: FormFieldType.Checkbox,
+      required: false,
+      hidden: true,
     },
   ],
   [DataSourceKey.GOOGLE_DRIVE]: [
@@ -518,6 +573,28 @@ export const DataSourceFormFields = {
       placeholder: 'Defaults to 2',
     },
   ],
+  [DataSourceKey.BOX]: [
+    {
+      label: 'Box OAuth JSON',
+      name: 'config.credentials.box_tokens',
+      type: FormFieldType.Textarea,
+      required: true,
+      render: (fieldProps: any) => (
+        <BoxTokenField
+          value={fieldProps.value}
+          onChange={fieldProps.onChange}
+          placeholder='{ "client_id": "...", "client_secret": "...", "redirect_uri": "..." }'
+        />
+      ),
+    },
+    {
+      label: 'Folder ID',
+      name: 'config.folder_id',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'Defaults root',
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -563,10 +640,12 @@ export const DataSourceFormDefaultValues = {
     config: {
       wiki_base: '',
       is_cloud: true,
+      space: '',
       credentials: {
         confluence_username: '',
         confluence_access_token: '',
       },
+      index_mode: 'everything',
     },
   },
   [DataSourceKey.GOOGLE_DRIVE]: {
@@ -649,6 +728,17 @@ export const DataSourceFormDefaultValues = {
       batch_size: 2,
       credentials: {
         dropbox_access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.BOX]: {
+    name: '',
+    source: DataSourceKey.BOX,
+    config: {
+      name: '',
+      folder_id: '0',
+      credentials: {
+        box_tokens: '',
       },
     },
   },

@@ -305,7 +305,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 # instala os módulos Python dependentes do RAGFlow
+   uv sync --python 3.12 # instala os módulos Python dependentes do RAGFlow
    uv run download_deps.py
    pre-commit install
    ```

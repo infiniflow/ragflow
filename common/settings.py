@@ -31,6 +31,7 @@ import rag.utils.ob_conn
 import rag.utils.opensearch_conn
 from rag.utils.azure_sas_conn import RAGFlowAzureSasBlob
 from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
+from rag.utils.gcs_conn import RAGFlowGCS
 from rag.utils.minio_conn import RAGFlowMinio
 from rag.utils.opendal_conn import OpenDALStorage
 from rag.utils.s3_conn import RAGFlowS3
@@ -109,6 +110,7 @@ MINIO = {}
 OB = {}
 OSS = {}
 OS = {}
+GCS = {}
 
 DOC_MAXIMUM_SIZE: int = 128 * 1024 * 1024
 DOC_BULK_SIZE: int = 4
@@ -151,7 +153,8 @@ class StorageFactory:
         Storage.AZURE_SAS: RAGFlowAzureSasBlob,
         Storage.AWS_S3: RAGFlowS3,
         Storage.OSS: RAGFlowOSS,
-        Storage.OPENDAL: OpenDALStorage
+        Storage.OPENDAL: OpenDALStorage,
+        Storage.GCS: RAGFlowGCS,
     }
 
     @classmethod
@@ -207,7 +210,10 @@ def init_settings():
     IMAGE2TEXT_CFG = _resolve_per_model_config(image2text_entry, LLM_FACTORY, API_KEY, LLM_BASE_URL)
 
     CHAT_MDL = CHAT_CFG.get("model", "") or ""
-    EMBEDDING_MDL = os.getenv("TEI_MODEL", "BAAI/bge-small-en-v1.5") if "tei-" in os.getenv("COMPOSE_PROFILES", "") else ""
+    EMBEDDING_MDL = EMBEDDING_CFG.get("model", "") or ""
+    compose_profiles = os.getenv("COMPOSE_PROFILES", "")
+    if "tei-" in compose_profiles:
+        EMBEDDING_MDL = os.getenv("TEI_MODEL", EMBEDDING_MDL or "BAAI/bge-small-en-v1.5")
     RERANK_MDL = RERANK_CFG.get("model", "") or ""
     ASR_MDL = ASR_CFG.get("model", "") or ""
     IMAGE2TEXT_MDL = IMAGE2TEXT_CFG.get("model", "") or ""
@@ -250,7 +256,7 @@ def init_settings():
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
-    global AZURE, S3, MINIO, OSS
+    global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
         AZURE = get_base_config("azure", {})
     elif STORAGE_IMPL_TYPE == 'AWS_S3':
@@ -259,9 +265,31 @@ def init_settings():
         MINIO = decrypt_database_config(name="minio")
     elif STORAGE_IMPL_TYPE == 'OSS':
         OSS = get_base_config("oss", {})
+    elif STORAGE_IMPL_TYPE == 'GCS':
+        GCS = get_base_config("gcs", {})
 
     global STORAGE_IMPL
-    STORAGE_IMPL = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
+    storage_impl = StorageFactory.create(Storage[STORAGE_IMPL_TYPE])
+    
+    # Define crypto settings
+    crypto_enabled = os.environ.get("RAGFLOW_CRYPTO_ENABLED", "false").lower() == "true"
+    
+    # Check if encryption is enabled
+    if crypto_enabled:
+        try:
+            from rag.utils.encrypted_storage import create_encrypted_storage
+            algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
+            crypto_key = os.environ.get("RAGFLOW_CRYPTO_KEY")
+            
+            STORAGE_IMPL = create_encrypted_storage(storage_impl, 
+                algorithm=algorithm, 
+                key=crypto_key, 
+                encryption_enabled=crypto_enabled)
+        except Exception as e:
+            logging.error(f"Failed to initialize encrypted storage: {e}")
+            STORAGE_IMPL = storage_impl
+    else:
+        STORAGE_IMPL = storage_impl
 
     global retriever, kg_retriever
     retriever = search.Dealer(docStoreConn)

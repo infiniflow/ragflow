@@ -5,7 +5,7 @@ RUN grep -rl 'deb.debian.org' /etc/apt/ | xargs sed -i 's|http[s]*://deb.debian.
     apt-get install -y curl gcc && \
     rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/static/stable/x86_64/docker-24.0.7.tgz -o docker.tgz && \
+RUN curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/static/stable/x86_64/docker-29.1.0.tgz -o docker.tgz && \
     tar -xzf docker.tgz && \
     mv docker/docker /usr/bin/docker && \
     rm -rf docker docker.tgz

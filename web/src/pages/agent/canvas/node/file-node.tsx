@@ -23,7 +23,7 @@ function InnerFileNode({ data, id, selected }: NodeProps<IBeginNode>) {
   const inputs: Record<string, BeginQuery> = get(data, 'form.inputs', {});
 
   return (
-    <NodeWrapper selected={selected}>
+    <NodeWrapper selected={selected} id={id}>
       <CommonHandle
         type="source"
         position={Position.Right}

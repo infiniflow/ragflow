@@ -141,7 +141,7 @@ def crawl_folders_for_files(
             # Only mark a folder as done if it was fully traversed without errors
             # This usually indicates that the owner of the folder was impersonated.
             # In cases where this never happens, most likely the folder owner is
-            # not part of the google workspace in question (or for oauth, the authenticated
+            # not part of the Google Workspace in question (or for oauth, the authenticated
             # user doesn't own the folder)
             if found_files:
                 update_traversed_ids_func(parent_id)
@@ -232,7 +232,7 @@ def get_files_in_shared_drive(
         **kwargs,
     ):
         # If we found any files, mark this drive as traversed. When a user has access to a drive,
-        # they have access to all the files in the drive. Also not a huge deal if we re-traverse
+        # they have access to all the files in the drive. Also, not a huge deal if we re-traverse
         # empty drives.
         # NOTE: ^^ the above is not actually true due to folder restrictions:
         # https://support.google.com/a/users/answer/12380484?hl=en

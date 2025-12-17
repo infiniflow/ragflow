@@ -24,7 +24,8 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { cn } from '@/lib/utils';
 import { PipelineResultSearchParams } from '@/pages/dataflow-result/constant';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
-import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
+import { useDataSourceInfo } from '@/pages/user-setting/data-source/contant';
+import { IDataSourceInfoMap } from '@/pages/user-setting/data-source/interface';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import {
   ColumnDef,
@@ -54,6 +55,7 @@ export const getFileLogsTableColumns = (
   navigateToDataflowResult: (
     props: NavigateToDataflowResultProps,
   ) => () => void,
+  dataSourceInfo: IDataSourceInfoMap,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
   const columns: ColumnDef<IFileLogItem & DocumentLog>[] = [
@@ -117,8 +119,8 @@ export const getFileLogsTableColumns = (
           ) : (
             <div className="w-6 h-6 flex items-center justify-center">
               {
-                DataSourceInfo[
-                  row.original.source_from as keyof typeof DataSourceInfo
+                dataSourceInfo[
+                  row.original.source_from as keyof typeof dataSourceInfo
                 ].icon
               }
             </div>
@@ -368,7 +370,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
     setLogInfo(logDetail);
     setIsModalVisible(true);
   };
-
+  const { dataSourceInfo } = useDataSourceInfo();
   const columns = useMemo(() => {
     return active === LogTabs.FILE_LOGS
       ? getFileLogsTableColumns(
@@ -376,6 +378,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           showLog,
           kowledgeId || '',
           navigateToDataflowResult,
+          dataSourceInfo,
         )
       : getDatasetLogsTableColumns(t, showLog);
   }, [active, t]);

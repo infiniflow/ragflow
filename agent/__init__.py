@@ -13,6 +13,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-from beartype.claw import beartype_this_package
-beartype_this_package()

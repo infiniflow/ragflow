@@ -3,6 +3,7 @@ import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { Form, Input, Modal } from 'antd';
 import omit from 'lodash/omit';
+import { LLMHeader } from '../../components/llm-header';
 
 type FieldType = IAddLlmRequestBody & {
   vision: boolean;
@@ -46,7 +47,7 @@ const HunyuanModal = ({
 
   return (
     <Modal
-      title={t('addLlmTitle', { name: llmFactory })}
+      title={<LLMHeader name={llmFactory} />}
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}

@@ -395,8 +395,7 @@ class AttachmentProcessingResult(BaseModel):
 
 
 class IndexingHeartbeatInterface(ABC):
-    """Defines a callback interface to be passed to
-    to run_indexing_entrypoint."""
+    """Defines a callback interface to be passed to run_indexing_entrypoint."""
 
     @abstractmethod
     def should_stop(self) -> bool:

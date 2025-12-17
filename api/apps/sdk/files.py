@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 
-
+import asyncio
 import pathlib
 import re
 from quart import request, make_response
@@ -29,8 +29,10 @@ from api.db import FileType
 from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
 from api.utils.file_utils import filename_type
+from api.utils.web_utils import CONTENT_TYPE_MAP
 from common import settings
 from common.constants import RetCode
+
 
 @manager.route('/file/upload', methods=['POST'])  # noqa: F821
 @token_required
@@ -39,7 +41,7 @@ async def upload(tenant_id):
     Upload a file to the system.
     ---
     tags:
-      - File Management
+      - File
     security:
       - ApiKeyAuth: []
     parameters:
@@ -155,7 +157,7 @@ async def create(tenant_id):
     Create a new file or folder.
     ---
     tags:
-      - File Management
+      - File
     security:
       - ApiKeyAuth: []
     parameters:
@@ -233,7 +235,7 @@ async def list_files(tenant_id):
     List files under a specific folder.
     ---
     tags:
-      - File Management
+      - File
     security:
       - ApiKeyAuth: []
     parameters:
@@ -325,7 +327,7 @@ async def get_root_folder(tenant_id):
     Get user's root folder.
     ---
     tags:
-      - File Management
+      - File
     security:
       - ApiKeyAuth: []
     responses:
@@ -361,7 +363,7 @@ async def get_parent_folder():
     Get parent folder info of a file.
     ---
     tags:
-      - File Management
+      - File
     security:
       - ApiKeyAuth: []
     parameters:
@@ -406,7 +408,7 @@ async def get_all_parent_folders(tenant_id):
     Get all parent folders of a file.
     ---
     tags:
-      - File Management
+      - File
     security:
       - ApiKeyAuth: []
     parameters:
@@ -454,7 +456,7 @@ async def rm(tenant_id):
     Delete one or multiple files/folders.
     ---
     tags:
-      - File Management
+      - File
     security:
       - ApiKeyAuth: []
     parameters:
@@ -528,7 +530,7 @@ async def rename(tenant_id):
     Rename a file.
     ---
     tags:
-      - File Management
+      - File
     security:
       - ApiKeyAuth: []
     parameters:
@@ -589,7 +591,7 @@ async def get(tenant_id, file_id):
     Download a file.
     ---
     tags:
-      - File Management
+      - File
     security:
       - ApiKeyAuth: []
     produces:
@@ -629,6 +631,19 @@ async def get(tenant_id, file_id):
     except Exception as e:
         return server_error_response(e)
 
+@manager.route("/file/download/<attachment_id>", methods=["GET"])  # noqa: F821
+@token_required
+async def download_attachment(tenant_id,attachment_id):
+    try:
+        ext = request.args.get("ext", "markdown")
+        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        response = await make_response(data)
+        response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
+
+        return response
+
+    except Exception as e:
+        return server_error_response(e)
 
 @manager.route('/file/mv', methods=['POST'])  # noqa: F821
 @token_required
@@ -637,7 +652,7 @@ async def move(tenant_id):
     Move one or multiple files to another folder.
     ---
     tags:
-      - File Management
+      - File
     security:
       - ApiKeyAuth: []
     parameters:
@@ -729,7 +744,7 @@ async def convert(tenant_id):
                     e, kb = KnowledgebaseService.get_by_id(kb_id)
                     if not e:
                         return get_json_result(
-                            message="Can't find this knowledgebase!", code=RetCode.NOT_FOUND)
+                            message="Can't find this dataset!", code=RetCode.NOT_FOUND)
                     e, file = FileService.get_by_id(id)
                     if not e:
                         return get_json_result(

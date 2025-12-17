@@ -1,5 +1,6 @@
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
+import HighLightMarkdown from '@/components/highlight-markdown';
 import { FileIcon } from '@/components/icon-font';
 import { ImageWithPopover } from '@/components/image';
 import { Input } from '@/components/originui/input';
@@ -20,7 +21,6 @@ import { Dispatch, SetStateAction, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ISearchAppDetailProps } from '../next-searches/hooks';
 import PdfDrawer from './document-preview-modal';
-import HightLightMarkdown from './highlight-markdown';
 import { ISearchReturnProps } from './hooks';
 import './index.less';
 import MarkdownContent from './markdown-content';
@@ -202,14 +202,18 @@ export default function SearchingView({
                         <div className="w-full flex flex-col">
                           <div className="w-full highlightContent">
                             <ImageWithPopover
-                              id={chunk.img_id}
+                              id={chunk.image_id || chunk.img_id}
                             ></ImageWithPopover>
                             <Popover>
                               <PopoverTrigger asChild>
                                 <div
                                   dangerouslySetInnerHTML={{
                                     __html: DOMPurify.sanitize(
-                                      `${chunk.highlight}...`,
+                                      `${
+                                        chunk.highlight ??
+                                        chunk.content_with_weight ??
+                                        ''
+                                      }...`,
                                     ),
                                   }}
                                   className="text-sm text-text-primary mb-1"
@@ -217,9 +221,9 @@ export default function SearchingView({
                               </PopoverTrigger>
                               <PopoverContent className="text-text-primary !w-full max-w-lg ">
                                 <div className="max-h-96 overflow-auto scrollbar-thin">
-                                  <HightLightMarkdown>
+                                  <HighLightMarkdown>
                                     {chunk.content_with_weight}
-                                  </HightLightMarkdown>
+                                  </HighLightMarkdown>
                                 </div>
                               </PopoverContent>
                             </Popover>

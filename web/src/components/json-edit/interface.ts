@@ -244,7 +244,7 @@ export interface JsonEditorOptions {
   timestampFormat?: string;
 
   /**
-   * If true, unicode characters are escaped. false by default.
+   * If true, Unicode characters are escaped. false by default.
    */
   escapeUnicode?: boolean;
 
