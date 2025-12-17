@@ -39,7 +39,7 @@ function FilePreview({ file }: FilePreviewProps) {
         width={48}
         height={48}
         loading="lazy"
-        className="aspect-square shrink-0 rounded-md object-cover"
+        className="size-full aspect-square shrink-0 rounded-md object-cover"
       />
     );
   }
@@ -84,7 +84,8 @@ function FileCard({ file, progress, onRemove }: FileCardProps) {
   );
 }
 
-interface FileUploaderProps extends React.HTMLAttributes<HTMLDivElement> {
+interface FileUploaderProps
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {
   /**
    * Value of the uploader.
    * @type File[]
@@ -160,7 +161,8 @@ interface FileUploaderProps extends React.HTMLAttributes<HTMLDivElement> {
    */
   disabled?: boolean;
 
-  description?: string;
+  title?: React.ReactNode;
+  description?: React.ReactNode;
 }
 
 export function FileUploader(props: FileUploaderProps) {
@@ -177,6 +179,7 @@ export function FileUploader(props: FileUploaderProps) {
     multiple = false,
     disabled = false,
     className,
+    title,
     description,
     ...dropzoneProps
   } = props;
@@ -285,7 +288,7 @@ export function FileUploader(props: FileUploaderProps) {
               <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
                 <div className="rounded-full border border-dashed p-3">
                   <Upload
-                    className="size-7 text-text-secondary hover:text-text-primary"
+                    className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
                     aria-hidden="true"
                   />
                 </div>
@@ -297,13 +300,13 @@ export function FileUploader(props: FileUploaderProps) {
               <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
                 <div className="rounded-full border border-dashed p-3">
                   <Upload
-                    className="size-7 text-text-secondary hover:text-text-primary"
+                    className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
                     aria-hidden="true"
                   />
                 </div>
                 <div className="flex flex-col gap-px">
                   <p className="font-medium text-text-secondary">
-                    {t('knowledgeDetails.uploadTitle')}
+                    {title || t('knowledgeDetails.uploadTitle')}
                   </p>
                   <p className="text-sm text-text-disabled">
                     {description || t('knowledgeDetails.uploadDescription')}

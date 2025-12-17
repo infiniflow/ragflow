@@ -108,7 +108,7 @@ export default {
         'Converts text into numerical vectors for meaning similarity search and memory retrieval.',
       embeddingModelError:
         'Memory type is required and "raw" cannot be deleted.',
-      memoryTypeTooltip: `Raw: The raw dialogue content between the user and the agent (Required by default). 
+      memoryTypeTooltip: `Raw: The raw dialogue content between the user and the agent (Required by default).
 Semantic Memory: General knowledge and facts about the user and world.
 Episodic Memory: Time-stamped records of specific events and experiences.
 Procedural Memory: Learned skills, habits, and automated procedures.`,
@@ -598,6 +598,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       enabled: 'Enabled',
       disabled: 'Disabled',
       keyword: 'Keyword',
+      image: 'Image',
+      imageUploaderTitle: 'Upload a new image to update this image chunk',
       function: 'Function',
       chunkMessage: 'Please input value!',
       full: 'Full text',
@@ -648,7 +650,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Select the datasets to associate with this chat assistant. An empty knowledge base will not appear in the dropdown list.',
       system: 'System prompt',
       systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
-      
+
       **Essential Rules:**
         - Your answer must be derived **solely** from this knowledge base: \`{knowledge}\`.
         - **When information is available**: Summarize the content to give a detailed answer.
