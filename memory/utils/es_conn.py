@@ -150,7 +150,8 @@ class ESConnection(MsgStoreConnection):
             indexNames: str | list[str],
             memoryIds: list[str],
             aggFields: list[str] = [],
-            rank_feature: dict | None = None
+            rank_feature: dict | None = None,
+            hide_forgotten: bool = True
     ):
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
@@ -159,8 +160,11 @@ class ESConnection(MsgStoreConnection):
             indexNames = indexNames.split(",")
         assert isinstance(indexNames, list) and len(indexNames) > 0
         assert "_id" not in condition
-
         bqry = Q("bool", must=[])
+        if hide_forgotten:
+            # filter not forget
+            bqry.must.append(Q("term", forget_at=None))
+
         condition["memory_id"] = memoryIds
         for k, v in condition.items():
             if k == "session_id" and v:
