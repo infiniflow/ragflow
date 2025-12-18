@@ -70,7 +70,7 @@ async def upload():
 
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
-        raise LookupError("Can't find this knowledgebase!")
+        raise LookupError("Can't find this dataset!")
     if not check_kb_team_permission(kb, current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
@@ -99,7 +99,7 @@ async def web_crawl():
         return get_json_result(data=False, message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
     e, kb = KnowledgebaseService.get_by_id(kb_id)
     if not e:
-        raise LookupError("Can't find this knowledgebase!")
+        raise LookupError("Can't find this dataset!")
     if check_kb_team_permission(kb, current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
@@ -169,10 +169,10 @@ async def create():
     try:
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:
-            return get_data_error_result(message="Can't find this knowledgebase!")
+            return get_data_error_result(message="Can't find this dataset!")
 
         if DocumentService.query(name=req["name"], kb_id=kb_id):
-            return get_data_error_result(message="Duplicated document name in the same knowledgebase.")
+            return get_data_error_result(message="Duplicated document name in the same dataset.")
 
         kb_root_folder = FileService.get_kb_folder(kb.tenant_id)
         if not kb_root_folder:
@@ -219,7 +219,7 @@ async def list_docs():
         if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
             break
     else:
-        return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.", code=RetCode.OPERATING_ERROR)
+        return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
     keywords = request.args.get("keywords", "")
 
     page_number = int(request.args.get("page", 0))
@@ -293,7 +293,7 @@ async def get_filter():
         if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
             break
     else:
-        return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.", code=RetCode.OPERATING_ERROR)
+        return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
 
     keywords = req.get("keywords", "")
 
@@ -343,7 +343,7 @@ async def metadata_summary():
         if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
             break
     else:
-        return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.", code=RetCode.OPERATING_ERROR)
+        return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
 
     try:
         summary = DocumentService.get_metadata_summary(kb_id)
@@ -365,7 +365,7 @@ async def metadata_update():
         if KnowledgebaseService.query(tenant_id=tenant.tenant_id, id=kb_id):
             break
     else:
-        return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.", code=RetCode.OPERATING_ERROR)
+        return get_json_result(data=False, message="Only owner of dataset authorized for this operation.", code=RetCode.OPERATING_ERROR)
 
     selector = req.get("selector", {}) or {}
     updates = req.get("updates", []) or []
@@ -454,7 +454,7 @@ async def change_status():
                 continue
             e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
             if not e:
-                result[doc_id] = {"error": "Can't find this knowledgebase!"}
+                result[doc_id] = {"error": "Can't find this dataset!"}
                 continue
             if not DocumentService.update_by_id(doc_id, {"status": str(status)}):
                 result[doc_id] = {"error": "Database error (Document update)!"}
@@ -562,7 +562,7 @@ async def rename():
 
             for d in DocumentService.query(name=req["name"], kb_id=doc.kb_id):
                 if d.name == req["name"]:
-                    return get_data_error_result(message="Duplicated document name in the same knowledgebase.")
+                    return get_data_error_result(message="Duplicated document name in the same dataset.")
 
             if not DocumentService.update_by_id(req["doc_id"], {"name": req["name"]}):
                 return get_data_error_result(message="Database error (Document rename)!")

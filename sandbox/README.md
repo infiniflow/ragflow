@@ -121,7 +121,7 @@ make logs                                 # With Make
 ### 🧰 Makefile Toolbox
 
 | Command           | Description                                      |
-| ----------------- | ------------------------------------------------ |
+|-------------------|--------------------------------------------------|
 | `make`            | Setup, build, launch and test all at once        |
 | `make setup`      | Initialize environment and install uv            |
 | `make ensure_env` | Auto-create `.env` if missing                    |
@@ -183,7 +183,7 @@ This security model strikes a balance between **robust isolation** and **develop
 Currently, the following languages are officially supported:
 
 | Language | Priority |
-| -------- | -------- |
+|----------|----------|
 | Python   | High     |
 | Node.js  | Medium   |
 

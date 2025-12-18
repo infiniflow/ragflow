@@ -36,12 +36,14 @@ export interface IMemory extends ICreateMemoryProps {
   temperature: string;
   system_prompt: string;
   user_prompt: string;
+  create_date: string;
+  create_time: number;
 }
 export interface MemoryListResponse {
   code: number;
   data: {
     memory_list: Array<IMemory>;
-    total: number;
+    total_count: number;
   };
   message: string;
 }

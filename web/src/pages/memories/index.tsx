@@ -10,8 +10,9 @@ import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'umi';
 import { AddOrEditModal } from './add-or-edit-modal';
+import { defaultMemoryFields } from './constants';
 import { useFetchMemoryList, useRenameMemory } from './hooks';
-import { ICreateMemoryProps } from './interface';
+import { ICreateMemoryProps, IMemory } from './interface';
 import { MemoryCard } from './memory-card';
 
 export default function MemoryList() {
@@ -45,7 +46,7 @@ export default function MemoryList() {
   const openCreateModalFun = useCallback(() => {
     // setIsEdit(false);
     setAddOrEditType('add');
-    showMemoryRenameModal();
+    showMemoryRenameModal(defaultMemoryFields as unknown as IMemory);
   }, [showMemoryRenameModal]);
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
@@ -131,12 +132,12 @@ export default function MemoryList() {
               })}
             </CardContainer>
           </div>
-          {list?.data.total && list?.data.total > 0 && (
+          {list?.data.total_count && list?.data.total_count > 0 && (
             <div className="px-8 mb-4">
               <RAGFlowPagination
                 {...pick(pagination, 'current', 'pageSize')}
                 // total={pagination.total}
-                total={list?.data.total}
+                total={list?.data.total_count}
                 onChange={handlePageChange}
               />
             </div>
