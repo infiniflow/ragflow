@@ -79,17 +79,17 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*
+- `model` (*Body parameter*) `string`, *Required*  
   The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
-- `messages` (*Body parameter*) `list[object]`, *Required*
+- `messages` (*Body parameter*) `list[object]`, *Required*  
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
 
-- `stream` (*Body parameter*) `boolean`
+- `stream` (*Body parameter*) `boolean`  
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
 
-- `extra_body` (*Body parameter*) `object`
-  Extra request parameters:
+- `extra_body` (*Body parameter*) `object`  
+  Extra request parameters:  
   - `reference`: `boolean` - include reference in the final chunk (stream) or in the final message (non-stream).
   - `metadata_condition`: `object` - metadata filter conditions applied to retrieval results.
 
@@ -209,16 +209,16 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*
+- `model` (*Body parameter*) `string`, *Required*  
   The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
-- `messages` (*Body parameter*) `list[object]`, *Required*
+- `messages` (*Body parameter*) `list[object]`, *Required*  
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
 
-- `stream` (*Body parameter*) `boolean`
+- `stream` (*Body parameter*) `boolean`  
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
 
-- `session_id` (*Body parameter*) `string`
+- `session_id` (*Body parameter*) `string`  
   Agent session id.
 
 #### Response
@@ -3243,20 +3243,20 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `chat_id`: (*Path parameter*)
+- `chat_id`: (*Path parameter*)  
   The ID of the associated chat assistant.
-- `"question"`: (*Body Parameter*), `string`, *Required*
+- `"question"`: (*Body Parameter*), `string`, *Required*  
   The question to start an AI-powered conversation.
-- `"stream"`: (*Body Parameter*), `boolean`
+- `"stream"`: (*Body Parameter*), `boolean`  
   Indicates whether to output responses in a streaming way:
   - `true`: Enable streaming (default).
   - `false`: Disable streaming.
-- `"session_id"`: (*Body Parameter*)
+- `"session_id"`: (*Body Parameter*)  
   The ID of session. If it is not provided, a new session will be generated.
-- `"user_id"`: (*Body parameter*), `string`
+- `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
-- `"metadata_condition"`: (*Body parameter*), `object`
-  Optional metadata filter conditions applied to retrieval results.
+- `"metadata_condition"`: (*Body parameter*), `object`  
+  Optional metadata filter conditions applied to retrieval results.  
   - `logic`: `string`, one of `and` / `or`
   - `conditions`: `list[object]` where each condition contains:
     - `name`: `string` metadata key
