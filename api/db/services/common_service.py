@@ -170,11 +170,11 @@ class CommonService:
         if "id" not in kwargs:
             kwargs["id"] = get_uuid()
         timestamp = current_timestamp()
-        datetime = datetime_format(datetime.now())
+        cur_datetime = datetime_format(datetime.now())
         kwargs["create_time"] = timestamp
-        kwargs["create_date"] = datetime
+        kwargs["create_date"] = cur_datetime
         kwargs["update_time"] = timestamp
-        kwargs["update_date"] = datetime
+        kwargs["update_date"] = cur_datetime
         sample_obj = cls.model(**kwargs).save(force_insert=True)
         return sample_obj
 
@@ -211,10 +211,10 @@ class CommonService:
         """
 
         timestamp = current_timestamp()
-        datetime = datetime_format(datetime.now())
+        cur_datetime = datetime_format(datetime.now())
         for data in data_list:
             data["update_time"] = timestamp
-            data["update_date"] = datetime
+            data["update_date"] = cur_datetime
         with DB.atomic():
             for data in data_list:
                 cls.model.update(data).where(cls.model.id == data["id"]).execute()
