@@ -471,9 +471,10 @@ class BedrockEmbed(Base):
         self.is_amazon = self.model_name.split(".")[0] == "amazon"
         self.is_cohere = self.model_name.split(".")[0] == "cohere"
 
-        if self.bedrock_ak == "" or self.bedrock_sk == "" or self.bedrock_region == "":
-            # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
-            self.client = boto3.client("bedrock-runtime")
+        if self.bedrock_ak == "" or self.bedrock_sk == "":
+            # Try to create a client using the default credentials if ak/sk are not provided.
+            # Must provide a region.
+            self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
         else:
             self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
 

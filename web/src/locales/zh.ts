@@ -51,6 +51,8 @@ export default {
       search: '搜索',
       noDataFound: '没有找到数据。',
       noData: '暂无数据',
+      bedrockCredentialsHint:
+        '提示：Access Key / Secret Key 可留空，以启用 AWS IAM 自动验证。',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
       selected: '已选择',
     },

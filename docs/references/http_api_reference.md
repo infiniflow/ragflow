@@ -2236,7 +2236,7 @@ Batch update or delete document-level metadata within a specified dataset. If bo
   - `"document_ids"`: `list[string]` *optional*  
     The associated document ID.  
   - `"metadata_condition"`: `object`, *optional*  
-    - `"logic"`: Defines the logic relation between conditions if multiple conditions are provided. Options: 
+    - `"logic"`: Defines the logic relation between conditions if multiple conditions are provided. Options:
       - `"and"` (default)
       - `"or"`
     - `"conditions"`: `list[object]` *optional*  
@@ -2266,7 +2266,7 @@ Batch update or delete document-level metadata within a specified dataset. If bo
 - `"deletes`: (*Body parameter*), `list[ojbect]`, *optional*  
   Deletes metadata of the retrieved documents. Each object: `{ "key": string, "value": string }`.  
   - `"key"`: `string` The name of the key to delete.
-  - `"value"`: `string` *Optional* The value of the key to delete. 
+  - `"value"`: `string` *Optional* The value of the key to delete.
     - When provided, only keys with a matching value are deleted.
     - When omitted, all specified keys are deleted.
 
@@ -2533,7 +2533,7 @@ curl --request POST \
   :::caution WARNING
   `model_type` is an *internal* parameter, serving solely as a temporary workaround for the current model-configuration design limitations.
 
-  Its main purpose is to let *multimodal* models (stored in the database as `"image2text"`) pass backend validation/dispatching. Be mindful that: 
+  Its main purpose is to let *multimodal* models (stored in the database as `"image2text"`) pass backend validation/dispatching. Be mindful that:
 
   - Do *not* treat it as a stable public API.
   - It is subject to change or removal in future releases.
@@ -3601,6 +3601,8 @@ Asks a specified agent a question to start an AI-powered conversation.
   [DONE]
   ```
 
+- You can optionally return step-by-step trace logs (see `return_trace` below).
+
 :::
 
 #### Request
@@ -3616,6 +3618,17 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"session_id"`: `string` (optional)
   - `"inputs"`: `object` (optional)
   - `"user_id"`: `string` (optional)
+  - `"return_trace"`: `boolean` (optional, default `false`) — include execution trace logs.
+
+#### Streaming events to handle
+
+When `stream=true`, the server sends Server-Sent Events (SSE). Clients should handle these `event` types:
+
+- `message`: streaming content from Message components.
+- `message_end`: end of a Message component; may include `reference`/`attachment`.
+- `node_finished`: a component finishes; `data.inputs/outputs/error/elapsed_time` describe the node result. If `return_trace=true`, the trace is attached inside the same `node_finished` event (`data.trace`).
+
+The stream terminates with `[DONE]`.
 
 :::info IMPORTANT
 You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) component.
@@ -3800,6 +3813,92 @@ data: {
     "session_id": "cd097ca083dc11f0858253708ecb6573"
 }
 
+data: {
+    "event": "node_finished",
+    "message_id": "cecdcb0e83dc11f0858253708ecb6573",
+    "created_at": 1756364483,
+    "task_id": "d1f79142831f11f09cc51795b9eb07c0",
+    "data": {
+        "inputs": {
+            "sys.query": "how to install neovim?"
+        },
+        "outputs": {
+            "content": "xxxxxxx",
+            "_created_time": 15294.0382,
+            "_elapsed_time": 0.00017
+        },
+        "component_id": "Agent:EveryHairsChew",
+        "component_name": "Agent_1",
+        "component_type": "Agent",
+        "error": null,
+        "elapsed_time": 11.2091,
+        "created_at": 15294.0382,
+        "trace": [
+            {
+                "component_id": "begin",
+                "trace": [
+                    {
+                        "inputs": {},
+                        "outputs": {
+                            "_created_time": 15257.7949,
+                            "_elapsed_time": 0.00070
+                        },
+                        "component_id": "begin",
+                        "component_name": "begin",
+                        "component_type": "Begin",
+                        "error": null,
+                        "elapsed_time": 0.00085,
+                        "created_at": 15257.7949
+                    }
+                ]
+            },
+            {
+                "component_id": "Agent:WeakDragonsRead",
+                "trace": [
+                    {
+                        "inputs": {
+                            "sys.query": "how to install neovim?"
+                        },
+                        "outputs": {
+                            "content": "xxxxxxx",
+                            "_created_time": 15257.7982,
+                            "_elapsed_time": 36.2382
+                        },
+                        "component_id": "Agent:WeakDragonsRead",
+                        "component_name": "Agent_0",
+                        "component_type": "Agent",
+                        "error": null,
+                        "elapsed_time": 36.2385,
+                        "created_at": 15257.7982
+                    }
+                ]
+            },
+            {
+                "component_id": "Agent:EveryHairsChew",
+                "trace": [
+                    {
+                        "inputs": {
+                            "sys.query": "how to install neovim?"
+                        },
+                        "outputs": {
+                            "content": "xxxxxxxxxxxxxxxxx",
+                            "_created_time": 15294.0382,
+                            "_elapsed_time": 0.00017
+                        },
+                        "component_id": "Agent:EveryHairsChew",
+                        "component_name": "Agent_1",
+                        "component_type": "Agent",
+                        "error": null,
+                        "elapsed_time": 11.2091,
+                        "created_at": 15294.0382
+                    }
+                ]
+            }
+        ]
+    },
+    "session_id": "cd097ca083dc11f0858253708ecb6573"
+}
+
 data:[DONE]
 ```
 
@@ -3874,7 +3973,100 @@ Non-stream:
                         "doc_name": "INSTALL3.md"
                     }
                 }
-            }
+            },
+            "trace": [
+                {
+                    "component_id": "begin",
+                    "trace": [
+                        {
+                            "component_id": "begin",
+                            "component_name": "begin",
+                            "component_type": "Begin",
+                            "created_at": 15926.567517862,
+                            "elapsed_time": 0.0008189299987861887,
+                            "error": null,
+                            "inputs": {},
+                            "outputs": {
+                                "_created_time": 15926.567517862,
+                                "_elapsed_time": 0.0006958619997021742
+                            }
+                        }
+                    ]
+                },
+                {
+                    "component_id": "Agent:WeakDragonsRead",
+                    "trace": [
+                        {
+                            "component_id": "Agent:WeakDragonsRead",
+                            "component_name": "Agent_0",
+                            "component_type": "Agent",
+                            "created_at": 15926.569121755,
+                            "elapsed_time": 53.49016142000073,
+                            "error": null,
+                            "inputs": {
+                                "sys.query": "how to install neovim?"
+                            },
+                            "outputs": {
+                                "_created_time": 15926.569121755,
+                                "_elapsed_time": 53.489981256001556,
+                                "content": "xxxxxxxxxxxxxx",
+                                "use_tools": [
+                                    {
+                                        "arguments": {
+                                            "query": "xxxx"
+                                        },
+                                        "name": "search_my_dateset",
+                                        "results": "xxxxxxxxxxx"
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "component_id": "Agent:EveryHairsChew",
+                    "trace": [
+                        {
+                            "component_id": "Agent:EveryHairsChew",
+                            "component_name": "Agent_1",
+                            "component_type": "Agent",
+                            "created_at": 15980.060569101,
+                            "elapsed_time": 23.61718057500002,
+                            "error": null,
+                            "inputs": {
+                                "sys.query": "how to install neovim?"
+                            },
+                            "outputs": {
+                                "_created_time": 15980.060569101,
+                                "_elapsed_time": 0.0003451630000199657,
+                                "content": "xxxxxxxxxxxx"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "component_id": "Message:SlickDingosHappen",
+                    "trace": [
+                        {
+                            "component_id": "Message:SlickDingosHappen",
+                            "component_name": "Message_0",
+                            "component_type": "Message",
+                            "created_at": 15980.061302513,
+                            "elapsed_time": 23.61655923699982,
+                            "error": null,
+                            "inputs": {
+                                "Agent:EveryHairsChew@content": "xxxxxxxxx",
+                                "Agent:WeakDragonsRead@content": "xxxxxxxxxxx"
+                            },
+                            "outputs": {
+                                "_created_time": 15980.061302513,
+                                "_elapsed_time": 0.0006695749998471001,
+                                "content": "xxxxxxxxxxx"
+                            }
+                        }
+                    ]
+                }
+            ]
         },
         "event": "workflow_finished",
         "message_id": "c4692a2683d911f0858253708ecb6573",

@@ -131,6 +131,7 @@ def get_tenant_info(auth):
 
 @pytest.fixture(scope="session", autouse=True)
 def set_tenant_info(auth):
+    tenant_id = None
     try:
         add_models(auth)
         tenant_id = get_tenant_info(auth)

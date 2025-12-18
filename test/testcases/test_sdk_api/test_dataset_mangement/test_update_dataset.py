@@ -30,9 +30,9 @@ class TestRquest:
     @pytest.mark.p2
     def test_payload_empty(self, add_dataset_func):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({})
-        assert "No properties were modified" in str(excinfo.value), str(excinfo.value)
+        assert "No properties were modified" in str(exception_info.value), str(exception_info.value)
 
 
 class TestCapability:
@@ -74,25 +74,25 @@ class TestDatasetUpdate:
     )
     def test_name_invalid(self, add_dataset_func, name, expected_message):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"name": name})
-        assert expected_message in str(excinfo.value), str(excinfo.value)
+        assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_name_duplicated(self, add_datasets_func):
         datasets = add_datasets_func
         name = "dataset_1"
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             datasets[0].update({"name": name})
-        assert f"Dataset name '{name}' already exists" in str(excinfo.value), str(excinfo.value)
+        assert f"Dataset name '{name}' already exists" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_name_case_insensitive(self, add_datasets_func):
         dataset = add_datasets_func[0]
         name = "DATASET_1"
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"name": name})
-        assert f"Dataset name '{name}' already exists" in str(excinfo.value), str(excinfo.value)
+        assert f"Dataset name '{name}' already exists" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_avatar(self, client, add_dataset_func, tmp_path):
@@ -108,9 +108,9 @@ class TestDatasetUpdate:
     @pytest.mark.p2
     def test_avatar_exceeds_limit_length(self, add_dataset_func):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"avatar": "a" * 65536})
-        assert "String should have at most 65535 characters" in str(excinfo.value), str(excinfo.value)
+        assert "String should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -126,9 +126,9 @@ class TestDatasetUpdate:
     def test_avatar_invalid_prefix(self, add_dataset_func, tmp_path, avatar_prefix, expected_message):
         dataset = add_dataset_func
         fn = create_image_file(tmp_path / "ragflow_test.png")
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"avatar": f"{avatar_prefix}{encode_avatar(fn)}"})
-        assert expected_message in str(excinfo.value), str(excinfo.value)
+        assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_avatar_none(self, client, add_dataset_func):
@@ -151,9 +151,9 @@ class TestDatasetUpdate:
     @pytest.mark.p2
     def test_description_exceeds_limit_length(self, add_dataset_func):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"description": "a" * 65536})
-        assert "String should have at most 65535 characters" in str(excinfo.value), str(excinfo.value)
+        assert "String should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_description_none(self, client, add_dataset_func):
@@ -194,9 +194,9 @@ class TestDatasetUpdate:
     )
     def test_embedding_model_invalid(self, add_dataset_func, name, embedding_model):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"name": name, "embedding_model": embedding_model})
-        error_msg = str(excinfo.value)
+        error_msg = str(exception_info.value)
         if "tenant_no_auth" in name:
             assert error_msg == f"Unauthorized model: <{embedding_model}>", error_msg
         else:
@@ -218,9 +218,9 @@ class TestDatasetUpdate:
     )
     def test_embedding_model_format(self, add_dataset_func, name, embedding_model):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"name": name, "embedding_model": embedding_model})
-        error_msg = str(excinfo.value)
+        error_msg = str(exception_info.value)
         if name in ["empty", "space", "missing_at"]:
             assert "Embedding model identifier must follow <model_name>@<provider> format" in error_msg, error_msg
         else:
@@ -267,16 +267,16 @@ class TestDatasetUpdate:
     )
     def test_permission_invalid(self, add_dataset_func, permission):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"permission": permission})
-        assert "Input should be 'me' or 'team'" in str(excinfo.value), str(excinfo.value)
+        assert "Input should be 'me' or 'team'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_permission_none(self, add_dataset_func):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"permission": None})
-        assert "Input should be 'me' or 'team'" in str(excinfo.value), str(excinfo.value)
+        assert "Input should be 'me' or 'team'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -317,16 +317,16 @@ class TestDatasetUpdate:
     )
     def test_chunk_method_invalid(self, add_dataset_func, chunk_method):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"chunk_method": chunk_method})
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(excinfo.value), str(excinfo.value)
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_chunk_method_none(self, add_dataset_func):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"chunk_method": None})
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(excinfo.value), str(excinfo.value)
+        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="#8208")
     @pytest.mark.p2
@@ -359,9 +359,9 @@ class TestDatasetUpdate:
     @pytest.mark.p2
     def test_pagerank_infinity(self, client, add_dataset_func):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"pagerank": 50})
-        assert "'pagerank' can only be set when doc_engine is elasticsearch" in str(excinfo.value), str(excinfo.value)
+        assert "'pagerank' can only be set when doc_engine is elasticsearch" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -374,16 +374,16 @@ class TestDatasetUpdate:
     )
     def test_pagerank_invalid(self, add_dataset_func, pagerank, expected_message):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"pagerank": pagerank})
-        assert expected_message in str(excinfo.value), str(excinfo.value)
+        assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_pagerank_none(self, add_dataset_func):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"pagerank": None})
-        assert "Input should be a valid integer" in str(excinfo.value), str(excinfo.value)
+        assert "Input should be a valid integer" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -625,9 +625,9 @@ class TestDatasetUpdate:
     )
     def test_parser_config_invalid(self, add_dataset_func, parser_config, expected_message):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update({"parser_config": parser_config})
-        assert expected_message in str(excinfo.value), str(excinfo.value)
+        assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_parser_config_empty(self, client, add_dataset_func):
@@ -723,9 +723,9 @@ class TestDatasetUpdate:
     )
     def test_field_unsupported(self, add_dataset_func, payload):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.update(payload)
-        assert "Extra inputs are not permitted" in str(excinfo.value), str(excinfo.value)
+        assert "Extra inputs are not permitted" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_field_unset(self, client, add_dataset_func):

@@ -1,7 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { Flex, Form, Input, InputNumber, Modal, Select, Space } from 'antd';
+import { Form, Input, InputNumber, Modal, Select, Typography } from 'antd';
 import { useMemo } from 'react';
 import { LLMHeader } from '../../components/llm-header';
 import { BedrockRegionList } from '../../constant';
@@ -13,6 +13,7 @@ type FieldType = IAddLlmRequestBody & {
 };
 
 const { Option } = Select;
+const { Text } = Typography;
 
 const BedrockModal = ({
   visible,
@@ -43,25 +44,18 @@ const BedrockModal = ({
 
   return (
     <Modal
-      title={<LLMHeader name={llmFactory} />}
+      title={
+        <div>
+          <LLMHeader name={llmFactory} />
+          <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+            {t('bedrockCredentialsHint')}
+          </Text>
+        </div>
+      }
       open={visible}
       onOk={handleOk}
       onCancel={hideModal}
       okButtonProps={{ loading }}
-      footer={(originNode: React.ReactNode) => {
-        return (
-          <Flex justify={'space-between'}>
-            <a
-              href="https://console.aws.amazon.com/"
-              target="_blank"
-              rel="noreferrer"
-            >
-              {t('ollamaLink', { name: llmFactory })}
-            </a>
-            <Space>{originNode}</Space>
-          </Flex>
-        );
-      }}
     >
       <Form
         name="basic"
@@ -91,14 +85,14 @@ const BedrockModal = ({
         <Form.Item<FieldType>
           label={t('addBedrockEngineAK')}
           name="bedrock_ak"
-          rules={[{ required: true, message: t('bedrockAKMessage') }]}
+          rules={[{ message: t('bedrockAKMessage') }]}
         >
           <Input placeholder={t('bedrockAKMessage')} />
         </Form.Item>
         <Form.Item<FieldType>
           label={t('addBedrockSK')}
           name="bedrock_sk"
-          rules={[{ required: true, message: t('bedrockSKMessage') }]}
+          rules={[{ message: t('bedrockSKMessage') }]}
         >
           <Input placeholder={t('bedrockSKMessage')} />
         </Form.Item>

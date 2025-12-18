@@ -37,9 +37,9 @@ class TestChatAssistantsDelete:
             payload = payload([chat_assistant.id for chat_assistant in chat_assistants])
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 client.delete_chats(**payload)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             if payload is None:
                 client.delete_chats(payload)
@@ -71,9 +71,9 @@ class TestChatAssistantsDelete:
         chat_ids = [chat.id for chat in chat_assistants]
         client.delete_chats(ids=chat_ids)
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.delete_chats(ids=chat_ids)
-        assert "not found" in str(excinfo.value)
+        assert "not found" in str(exception_info.value)
 
     @pytest.mark.p3
     def test_duplicate_deletion(self, client, add_chat_assistants_func):

@@ -176,10 +176,12 @@ async def set():
             settings.docStoreConn.update({"id": req["chunk_id"]}, _d, search.index_name(tenant_id), doc.kb_id)
 
             # update image
+            image_id = req.get("img_id")
+            bkt, name = image_id.split("-")
             image_base64 = req.get("image_base64", None)
             if image_base64:
                 image_binary = base64.b64decode(image_base64)
-                settings.STORAGE_IMPL.put(req["doc_id"], req["chunk_id"], image_binary)
+                settings.STORAGE_IMPL.put(bkt, name, image_binary)
             return get_json_result(data=True)
 
         return await asyncio.to_thread(_set_sync)
