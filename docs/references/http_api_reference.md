@@ -48,6 +48,7 @@ This API follows the same request and response format as OpenAI's API. It allows
   - `"model"`: `string`
   - `"messages"`: `object list`
   - `"stream"`: `boolean`
+  - `"extra_body"`: `object` (optional)
 
 ##### Request example
 
@@ -59,20 +60,38 @@ curl --request POST \
      --data '{
         "model": "model",
         "messages": [{"role": "user", "content": "Say this is a test!"}],
-        "stream": true
+        "stream": true,
+        "extra_body": {
+          "reference": true,
+          "metadata_condition": {
+            "logic": "and",
+            "conditions": [
+              {
+                "name": "author",
+                "comparison_operator": "is",
+                "value": "bob"
+              }
+            ]
+          }
+        }
       }'
 ```
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*  
+- `model` (*Body parameter*) `string`, *Required*
   The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
-- `messages` (*Body parameter*) `list[object]`, *Required*  
+- `messages` (*Body parameter*) `list[object]`, *Required*
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
 
-- `stream` (*Body parameter*) `boolean`  
+- `stream` (*Body parameter*) `boolean`
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
+
+- `extra_body` (*Body parameter*) `object`
+  Extra request parameters:
+  - `reference`: `boolean` - include reference in the final chunk (stream) or in the final message (non-stream).
+  - `metadata_condition`: `object` - metadata filter conditions applied to retrieval results.
 
 #### Response
 
@@ -190,16 +209,16 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `model` (*Body parameter*) `string`, *Required*  
+- `model` (*Body parameter*) `string`, *Required*
   The model used to generate the response. The server will parse this automatically, so you can set it to any value for now.
 
-- `messages` (*Body parameter*) `list[object]`, *Required*  
+- `messages` (*Body parameter*) `list[object]`, *Required*
   A list of historical chat messages used to generate the response. This must contain at least one message with the `user` role.
 
-- `stream` (*Body parameter*) `boolean`  
+- `stream` (*Body parameter*) `boolean`
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
 
-- `session_id` (*Body parameter*) `string`  
+- `session_id` (*Body parameter*) `string`
   Agent session id.
 
 #### Response
@@ -2236,7 +2255,7 @@ Batch update or delete document-level metadata within a specified dataset. If bo
   - `"document_ids"`: `list[string]` *optional*  
     The associated document ID.  
   - `"metadata_condition"`: `object`, *optional*  
-    - `"logic"`: Defines the logic relation between conditions if multiple conditions are provided. Options: 
+    - `"logic"`: Defines the logic relation between conditions if multiple conditions are provided. Options:
       - `"and"` (default)
       - `"or"`
     - `"conditions"`: `list[object]` *optional*  
@@ -2266,7 +2285,7 @@ Batch update or delete document-level metadata within a specified dataset. If bo
 - `"deletes`: (*Body parameter*), `list[ojbect]`, *optional*  
   Deletes metadata of the retrieved documents. Each object: `{ "key": string, "value": string }`.  
   - `"key"`: `string` The name of the key to delete.
-  - `"value"`: `string` *Optional* The value of the key to delete. 
+  - `"value"`: `string` *Optional* The value of the key to delete.
     - When provided, only keys with a matching value are deleted.
     - When omitted, all specified keys are deleted.
 
@@ -2533,7 +2552,7 @@ curl --request POST \
   :::caution WARNING
   `model_type` is an *internal* parameter, serving solely as a temporary workaround for the current model-configuration design limitations.
 
-  Its main purpose is to let *multimodal* models (stored in the database as `"image2text"`) pass backend validation/dispatching. Be mindful that: 
+  Its main purpose is to let *multimodal* models (stored in the database as `"image2text"`) pass backend validation/dispatching. Be mindful that:
 
   - Do *not* treat it as a stable public API.
   - It is subject to change or removal in future releases.
@@ -3185,6 +3204,7 @@ Asks a specified chat assistant a question to start an AI-powered conversation.
   - `"stream"`: `boolean`
   - `"session_id"`: `string` (optional)
   - `"user_id`: `string` (optional)
+  - `"metadata_condition"`: `object` (optional)
 
 ##### Request example
 
@@ -3207,24 +3227,41 @@ curl --request POST \
      {
           "question": "Who are you",
           "stream": true,
-          "session_id":"9fa7691cb85c11ef9c5f0242ac120005"
+          "session_id":"9fa7691cb85c11ef9c5f0242ac120005",
+          "metadata_condition": {
+            "logic": "and",
+            "conditions": [
+              {
+                "name": "author",
+                "comparison_operator": "is",
+                "value": "bob"
+              }
+            ]
+          }
      }'
 ```
 
 ##### Request Parameters
 
-- `chat_id`: (*Path parameter*)  
+- `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `"question"`: (*Body Parameter*), `string`, *Required*  
+- `"question"`: (*Body Parameter*), `string`, *Required*
   The question to start an AI-powered conversation.
-- `"stream"`: (*Body Parameter*), `boolean`  
+- `"stream"`: (*Body Parameter*), `boolean`
   Indicates whether to output responses in a streaming way:
   - `true`: Enable streaming (default).
   - `false`: Disable streaming.
-- `"session_id"`: (*Body Parameter*)  
+- `"session_id"`: (*Body Parameter*)
   The ID of session. If it is not provided, a new session will be generated.
-- `"user_id"`: (*Body parameter*), `string`  
+- `"user_id"`: (*Body parameter*), `string`
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
+- `"metadata_condition"`: (*Body parameter*), `object`
+  Optional metadata filter conditions applied to retrieval results.
+  - `logic`: `string`, one of `and` / `or`
+  - `conditions`: `list[object]` where each condition contains:
+    - `name`: `string` metadata key
+    - `comparison_operator`: `string` (e.g. `is`, `not is`, `contains`, `not contains`, `start with`, `end with`, `empty`, `not empty`, `>`, `<`, `≥`, `≤`)
+    - `value`: `string|number|boolean` (optional for `empty`/`not empty`)
 
 #### Response
 
