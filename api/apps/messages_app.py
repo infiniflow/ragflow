@@ -137,7 +137,7 @@ async def search_message():
 @login_required
 async def get_messages():
     args = request.args
-    memory_ids = args.get("memory_ids", [])
+    memory_ids = args.getlist("memory_id")
     agent_id = args.get("agent_id", "")
     session_id = args.get("session_id", "")
     limit = int(args.get("limit", 10))
