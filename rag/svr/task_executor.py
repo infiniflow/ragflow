@@ -23,19 +23,19 @@ import sys
 import threading
 import time
 
-import json_repair
-
 from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from common.connection_utils import timeout
+from common.metadata_utils import update_metadata_to, metadata_schema
 from rag.utils.base64_image import image2id
 from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from graphrag.general.index import run_graphrag_for_kb
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
-from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text
+from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text, \
+    gen_metadata
 import logging
 import os
 from datetime import datetime
@@ -69,7 +69,6 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
-from common.misc_utils import check_and_install_mineru
 
 BATCH_SIZE = 64
 
@@ -369,6 +368,45 @@ async def build_chunks(task, progress_callback):
             raise
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
+    if task["parser_config"].get("enable_metadata", False) and task["parser_config"].get("metadata"):
+        st = timer()
+        progress_callback(msg="Start to generate meta-data for every chunk ...")
+        chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
+
+        async def gen_metadata_task(chat_mdl, d):
+            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata")
+            if not cached:
+                async with chat_limiter:
+                    cached = await gen_metadata(chat_mdl,
+                                                metadata_schema(task["parser_config"]["metadata"]),
+                                                d["content_with_weight"])
+                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata")
+            if cached:
+                d["metadata_obj"] = cached
+        tasks = []
+        for d in docs:
+            tasks.append(asyncio.create_task(gen_metadata_task(chat_mdl, d)))
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error("Error in doc_question_proposal", exc_info=e)
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+        metadata = {}
+        for ck in cks:
+            metadata = update_metadata_to(metadata, ck["metadata_obj"])
+            del ck["metadata_obj"]
+        if metadata:
+            e, doc = DocumentService.get_by_id(task["doc_id"])
+            if e:
+                if isinstance(doc.meta_fields, str):
+                    doc.meta_fields = json.loads(doc.meta_fields)
+                metadata = update_metadata_to(metadata, doc.meta_fields)
+                DocumentService.update_by_id(task["doc_id"], {"meta_fields": metadata})
+        progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+
     if task["kb_parser_config"].get("tag_kb_ids", []):
         progress_callback(msg="Start to tag for every chunk ...")
         kb_ids = task["kb_parser_config"]["tag_kb_ids"]
@@ -603,36 +641,6 @@ async def run_dataflow(task: dict):
 
 
     metadata = {}
-    def dict_update(meta):
-        nonlocal metadata
-        if not meta:
-            return
-        if isinstance(meta, str):
-            try:
-                meta = json_repair.loads(meta)
-            except Exception:
-                logging.error("Meta data format error.")
-                return
-        if not isinstance(meta, dict):
-            return
-        for k, v in meta.items():
-            if isinstance(v, list):
-                v = [vv for vv in v if isinstance(vv, str)]
-                if not v:
-                    continue
-            if not isinstance(v, list) and not isinstance(v, str):
-                continue
-            if k not in metadata:
-                metadata[k] = v
-                continue
-            if isinstance(metadata[k], list):
-                if isinstance(v, list):
-                    metadata[k].extend(v)
-                else:
-                    metadata[k].append(v)
-            else:
-                metadata[k] = v
-
     for ck in chunks:
         ck["doc_id"] = doc_id
         ck["kb_id"] = [str(task["kb_id"])]
@@ -657,7 +665,7 @@ async def run_dataflow(task: dict):
                 ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
             del ck["summary"]
         if "metadata" in ck:
-            dict_update(ck["metadata"])
+            metadata = update_metadata_to(metadata, ck["metadata"])
             del ck["metadata"]
         if "content_with_weight" not in ck:
             ck["content_with_weight"] = ck["text"]
@@ -671,7 +679,7 @@ async def run_dataflow(task: dict):
         if e:
             if isinstance(doc.meta_fields, str):
                 doc.meta_fields = json.loads(doc.meta_fields)
-            dict_update(doc.meta_fields)
+            metadata = update_metadata_to(metadata, doc.meta_fields)
             DocumentService.update_by_id(doc_id, {"meta_fields": metadata})
 
     start_ts = timer()
@@ -888,7 +896,7 @@ async def do_handle_task(task):
     if task_type == "raptor":
         ok, kb = KnowledgebaseService.get_by_id(task_dataset_id)
         if not ok:
-            progress_callback(prog=-1.0, msg="Cannot found valid knowledgebase for RAPTOR task")
+            progress_callback(prog=-1.0, msg="Cannot found valid dataset for RAPTOR task")
             return
 
         kb_parser_config = kb.parser_config
@@ -940,7 +948,7 @@ async def do_handle_task(task):
     elif task_type == "graphrag":
         ok, kb = KnowledgebaseService.get_by_id(task_dataset_id)
         if not ok:
-            progress_callback(prog=-1.0, msg="Cannot found valid knowledgebase for GraphRAG task")
+            progress_callback(prog=-1.0, msg="Cannot found valid dataset for GraphRAG task")
             return
 
         kb_parser_config = kb.parser_config
@@ -1169,7 +1177,6 @@ async def main():
     show_configs()
     settings.init_settings()
     settings.check_and_install_torch()
-    check_and_install_mineru()
     logging.info(f'default embedding config: {settings.EMBEDDING_CFG}')
     settings.print_rag_settings()
     if sys.platform != "win32":

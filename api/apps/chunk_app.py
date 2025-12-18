@@ -348,7 +348,7 @@ async def retrieval_test():
                     break
             else:
                 return get_json_result(
-                    data=False, message='Only owner of knowledgebase authorized for this operation.',
+                    data=False, message='Only owner of dataset authorized for this operation.',
                     code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
@@ -386,6 +386,7 @@ async def retrieval_test():
                                                    LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
+        ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
 
         for c in ranks["chunks"]:
             c.pop("vector", None)

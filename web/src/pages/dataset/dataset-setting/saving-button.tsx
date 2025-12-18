@@ -67,6 +67,13 @@ export function SavingButton() {
                 await saveKnowledgeConfiguration({
                   kb_id,
                   ...values,
+                  parser_config: {
+                    ...values.parser_config,
+                    // Unset children delimiter if this option is not enabled
+                    children_delimiter: values.parser_config.enable_children
+                      ? values.parser_config.children_delimiter
+                      : '',
+                  },
                 });
               })();
             }

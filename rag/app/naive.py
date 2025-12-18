@@ -36,10 +36,11 @@ from deepdoc.parser.figure_parser import VisionFigureParser,vision_figure_parser
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
+from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table, attach_media_context
 
 
-def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
+def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None, **kwargs):
     callback = callback
     binary = binary
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
@@ -56,11 +57,19 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
     return sections, tables, pdf_parser
 
 
-def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
-    parse_method = kwargs.get("parse_method", "raw")
-    mineru_llm_name = kwargs.get("mineru_llm_name")
-    tenant_id = kwargs.get("tenant_id")
-
+def by_mineru(
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=100000,
+    lang="Chinese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    mineru_llm_name: str | None = None,
+    tenant_id: str | None = None,
+    **kwargs,
+):
     pdf_parser = None
     if tenant_id:
         if not mineru_llm_name:
@@ -86,7 +95,7 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
                     callback=callback,
                     parse_method=parse_method,
                     lang=lang,
-                    **kwargs
+                    **kwargs,
                 )
                 return sections, tables, pdf_parser
             except Exception as e:
@@ -97,9 +106,7 @@ def by_mineru(filename, binary=None, from_page=0, to_page=100000, lang="Chinese"
     return None, None, None
 
 
-
-
-def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
+def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None, **kwargs):
     pdf_parser = DoclingParser()
     parse_method = kwargs.get("parse_method", "raw")
 
@@ -118,7 +125,7 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
     return sections, tables, pdf_parser
 
 
-def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None ,**kwargs):
+def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None, **kwargs):
     tcadp_parser = TCADPParser()
 
     if not tcadp_parser.check_installation():
@@ -136,10 +143,19 @@ def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese",
 
 
 def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=None, **kwargs):
-    if kwargs.get("layout_recognizer", "") == "Plain Text":
+    layout_recognizer = (kwargs.get("layout_recognizer") or "").strip()
+    if (not layout_recognizer) or (layout_recognizer == "Plain Text"):
         pdf_parser = PlainParser()
     else:
-        vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT, llm_name=kwargs.get("layout_recognizer", ""), lang=kwargs.get("lang", "Chinese"))
+        tenant_id = kwargs.get("tenant_id")
+        if not tenant_id:
+            raise ValueError("tenant_id is required when using vision layout recognizer")
+        vision_model = LLMBundle(
+            tenant_id,
+            LLMType.IMAGE2TEXT,
+            llm_name=layout_recognizer,
+            lang=kwargs.get("lang", "Chinese"),
+        )
         pdf_parser = VisionParser(vision_model=vision_model, **kwargs)
 
     sections, tables = pdf_parser(
@@ -635,9 +651,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         "parser_config", {
             "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
 
-    child_deli = re.findall(r"`([^`]+)`", parser_config.get("children_delimiter", ""))
-    child_deli = sorted(set(child_deli), key=lambda x: -len(x))
-    child_deli = "|".join(re.escape(t) for t in child_deli if t)
+    child_deli = parser_config.get("children_delimiter", "").encode('utf-8').decode('unicode_escape').encode('latin1').decode('utf-8')
+    cust_child_deli = re.findall(r"`([^`]+)`", child_deli)
+    child_deli = "|".join(re.sub(r"`([^`]+)`", "", child_deli))
+    if cust_child_deli:
+        cust_child_deli = sorted(set(cust_child_deli), key=lambda x: -len(x))
+        cust_child_deli = "|".join(re.escape(t) for t in cust_child_deli if t)
+        child_deli += cust_child_deli
+
     is_markdown = False
     table_context_size = max(0, int(parser_config.get("table_context_size", 0) or 0))
     image_context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
@@ -711,14 +732,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer_raw = parser_config.get("layout_recognize", "DeepDOC")
-        parser_model_name = None
-        layout_recognizer = layout_recognizer_raw
-        if isinstance(layout_recognizer_raw, str):
-            lowered = layout_recognizer_raw.lower()
-            if lowered.endswith("@mineru"):
-                parser_model_name = layout_recognizer_raw.split("@", 1)[0]
-                layout_recognizer = "MinerU"
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(
+            parser_config.get("layout_recognize", "DeepDOC")
+        )
 
         if parser_config.get("analyze_hyperlink", False) and is_root:
             urls = extract_links_from_pdf(binary)

@@ -24,6 +24,7 @@ from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bull
 from deepdoc.parser import PdfParser
 import numpy as np
 from rag.app.naive import by_plaintext, PARSERS
+from common.parser_config_utils import normalize_layout_recognizer
 
 
 class Pdf(PdfParser):
@@ -149,7 +150,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         "parser_config", {
             "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC"})
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(
+            parser_config.get("layout_recognize", "DeepDOC")
+        )
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
@@ -163,6 +166,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             paper = pdf_parser(filename if not binary else binary,
                                from_page=from_page, to_page=to_page, callback=callback)
         else:
+            kwargs.pop("parse_method", None)
+            kwargs.pop("mineru_llm_name", None)
             sections, tables, pdf_parser = pdf_parser(
                 filename=filename,
                 binary=binary,
@@ -171,6 +176,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 lang=lang,
                 callback=callback,
                 pdf_cls=Pdf,
+                layout_recognizer=layout_recognizer,
+                mineru_llm_name=parser_model_name,
                 parse_method="paper",
                 **kwargs
             )

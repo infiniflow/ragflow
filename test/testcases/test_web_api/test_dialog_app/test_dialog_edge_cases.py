@@ -21,7 +21,7 @@ from common import create_dialog, delete_dialog, get_dialog, update_dialog
 class TestDialogEdgeCases:
     @pytest.mark.p2
     def test_create_dialog_with_tavily_api_key(self, WebApiAuth):
-        """Test creating dialog with Tavily API key instead of knowledge base"""
+        """Test creating dialog with Tavily API key instead of dataset"""
         payload = {
             "name": "tavily_dialog",
             "prompt_config": {"system": "You are a helpful assistant. Use this knowledge: {knowledge}", "parameters": [{"key": "knowledge", "optional": True}], "tavily_api_key": "test_tavily_key"},

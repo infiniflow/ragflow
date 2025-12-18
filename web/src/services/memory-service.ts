@@ -11,6 +11,7 @@ const {
   getMemoryConfig,
   deleteMemoryMessage,
   getMessageContent,
+  updateMessageState,
   // getMemoryDetailShare,
 } = api;
 const methods = {
@@ -29,6 +30,7 @@ const methods = {
   },
   deleteMemoryMessage: { url: deleteMemoryMessage, method: 'delete' },
   getMessageContent: { url: getMessageContent, method: 'get' },
+  updateMessageState: { url: updateMessageState, method: 'put' },
 } as const;
 const memoryService = registerNextServer<keyof typeof methods>(methods);
 export const updateMemoryById = (id: string, data: any) => {
