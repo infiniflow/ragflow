@@ -39,9 +39,9 @@ class TestChatAssistantUpdate:
         chat_assistant = chat_assistants[0]
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.update(payload)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             chat_assistant.update(payload)
             updated_chat = client.list_chats(id=chat_assistant.id)[0]
@@ -101,9 +101,9 @@ class TestChatAssistantUpdate:
         payload = {"name": "llm_test", "llm": llm, "dataset_ids": [dataset.id]}
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.update(payload)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             chat_assistant.update(payload)
             updated_chat = client.list_chats(id=chat_assistant.id)[0]
@@ -178,9 +178,9 @@ class TestChatAssistantUpdate:
         payload = {"name": "prompt_test", "prompt": prompt, "dataset_ids": [dataset.id]}
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.update(payload)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             chat_assistant.update(payload)
             updated_chat = client.list_chats(id=chat_assistant.id)[0]
@@ -202,7 +202,7 @@ class TestChatAssistantUpdate:
                         "empty_response": "Sorry! No relevant content was found in the knowledge base!",
                         "opener": "Hi! I'm your assistant. What can I do for you?",
                         "show_quote": True,
-                        "prompt": 'You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.',
+                        "prompt": 'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.',
                     },
                 )
                 assert str(updated_chat.prompt) == str(excepted_value), str(updated_chat)

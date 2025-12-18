@@ -235,9 +235,12 @@ export default {
   deleteMemory: (id: string) => `${api_host}/memory/rm/${id}`,
   getMemoryDetail: (id: string) => `${api_host}/memories/${id}`,
   updateMemorySetting: (id: string) => `${api_host}/memories/${id}`,
-  deleteMemoryMessage: (id: string) => `${api_host}/message/rm/${id}`,
-  getMessageContent: (message_id: string) =>
-    `${api_host}/messages/${message_id}/content`,
+  deleteMemoryMessage: (data: { memory_id: string; message_id: string }) =>
+    `${api_host}/messages/${data.memory_id}:${data.message_id}`,
+  getMessageContent: (data: { memory_id: string; message_id: string }) =>
+    `${api_host}/messages/${data.memory_id}:${data.message_id}/content`,
+  updateMessageState: (data: { memory_id: string; message_id: string }) =>
+    `${api_host}/messages/${data.memory_id}:${data.message_id}`,
 
   // data pipeline
   fetchDataflow: (id: string) => `${api_host}/dataflow/get/${id}`,

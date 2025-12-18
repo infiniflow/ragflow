@@ -76,16 +76,16 @@ class TestDocumentsUpload:
         with fp.open("rb") as f:
             blob = f.read()
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.upload_documents([{"display_name": fp.name, "blob": blob}])
-        assert str(excinfo.value) == f"ragflow_test.{file_type}: This type of file has not been supported yet!", str(excinfo.value)
+        assert str(exception_info.value) == f"ragflow_test.{file_type}: This type of file has not been supported yet!", str(exception_info.value)
 
     @pytest.mark.p2
     def test_missing_file(self, add_dataset_func):
         dataset = add_dataset_func
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.upload_documents([])
-        assert str(excinfo.value) == "No file part!", str(excinfo.value)
+        assert str(exception_info.value) == "No file part!", str(exception_info.value)
 
     @pytest.mark.p3
     def test_empty_file(self, add_dataset_func, tmp_path):
@@ -108,9 +108,9 @@ class TestDocumentsUpload:
         with fp.open("rb") as f:
             blob = f.read()
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.upload_documents([{"display_name": "", "blob": blob}])
-        assert str(excinfo.value) == "No file selected!", str(excinfo.value)
+        assert str(exception_info.value) == "No file selected!", str(exception_info.value)
 
     @pytest.mark.p2
     def test_filename_max_length(self, add_dataset_func, tmp_path):

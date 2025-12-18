@@ -135,6 +135,31 @@ export const initialMessageValues = {
   content: [''],
 };
 
+export const initialExcelProcessorValues = {
+  input_files: [],
+  operation: 'read',
+  sheet_selection: 'all',
+  merge_strategy: 'concat',
+  join_on: '',
+  transform_data: '',
+  output_format: 'xlsx',
+  output_filename: 'output',
+  outputs: {
+    data: {
+      type: 'object',
+      value: {},
+    },
+    summary: {
+      type: 'string',
+      value: '',
+    },
+    markdown: {
+      type: 'string',
+      value: '',
+    },
+  },
+};
+
 export const initialDuckValues = {
   top_n: 10,
   channel: Channel.Text,
@@ -832,6 +857,7 @@ export enum ExportFileType {
   HTML = 'html',
   Markdown = 'md',
   DOCX = 'docx',
+  Excel = 'xlsx',
 }
 
 export enum TypesWithArray {
@@ -1036,4 +1062,10 @@ export enum WebhookRequestParameters {
   String = TypesWithArray.String,
   Number = TypesWithArray.Number,
   Boolean = TypesWithArray.Boolean,
+}
+
+export enum WebhookStatus {
+  Testing = 'testing',
+  Live = 'live',
+  Stopped = 'stopped',
 }

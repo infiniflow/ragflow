@@ -14,7 +14,7 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 ---
 
 | Code | Message               | Description                |
-| ---- | --------------------- | -------------------------- |
+|------|-----------------------|----------------------------|
 | 400  | Bad Request           | Invalid request parameters |
 | 401  | Unauthorized          | Unauthorized access        |
 | 403  | Forbidden             | Access denied              |
@@ -1410,8 +1410,83 @@ Success:
 
 ```json
 {
-    "code": 0
+  "code": 0,
+  "data": {
+    "id": "cd38dd72d4a611f0af9c71de94a988ef",
+    "name": "large.md",
+    "type": "doc",
+    "suffix": "md",
+    "size": 2306906,
+    "location": "large.md",
+    "source_type": "local",
+    "status": "1",
+    "run": "DONE",
+    "dataset_id": "5f546a1ad4a611f0af9c71de94a988ef",
+
+    "chunk_method": "naive",
+    "chunk_count": 2,
+    "token_count": 8126,
+
+    "created_by": "eab7f446cb5a11f0ab334fbc3aa38f35",
+    "create_date": "Tue, 09 Dec 2025 10:28:52 GMT",
+    "create_time": 1765247332122,
+    "update_date": "Wed, 17 Dec 2025 10:51:16 GMT",
+    "update_time": 1765939876819,
+
+    "process_begin_at": "Wed, 17 Dec 2025 10:33:55 GMT",
+    "process_duration": 14.8615,
+    "progress": 1.0,
+
+    "progress_msg": [
+      "10:33:58 Task has been received.",
+      "10:33:59 Page(1~100000001): Start to parse.",
+      "10:33:59 Page(1~100000001): Finish parsing.",
+      "10:34:07 Page(1~100000001): Generate 2 chunks",
+      "10:34:09 Page(1~100000001): Embedding chunks (2.13s)",
+      "10:34:09 Page(1~100000001): Indexing done (0.31s).",
+      "10:34:09 Page(1~100000001): Task done (11.68s)"
+    ],
+
+    "parser_config": {
+      "chunk_token_num": 512,
+      "delimiter": "\n",
+      "auto_keywords": 0,
+      "auto_questions": 0,
+      "topn_tags": 3,
+
+      "layout_recognize": "DeepDOC",
+      "html4excel": false,
+      "image_context_size": 0,
+      "table_context_size": 0,
+
+      "graphrag": {
+        "use_graphrag": true,
+        "method": "light",
+        "entity_types": [
+          "organization",
+          "person",
+          "geo",
+          "event",
+          "category"
+        ]
+      },
+
+      "raptor": {
+        "use_raptor": true,
+        "max_cluster": 64,
+        "max_token": 256,
+        "threshold": 0.1,
+        "random_seed": 0,
+        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize."
+      }
+    },
+
+    "meta_fields": {},
+    "pipeline_id": "",
+    "thumbnail": ""
+  }
 }
+
 ```
 
 Failure:
@@ -2454,6 +2529,19 @@ curl --request POST \
   The LLM settings for the chat assistant to create. If it is not explicitly set, a JSON object with the following values will be generated as the default. An `llm` JSON object contains the following attributes:  
   - `"model_name"`, `string`  
     The chat model name. If not set, the user's default chat model will be used.  
+
+  :::caution WARNING
+  `model_type` is an *internal* parameter, serving solely as a temporary workaround for the current model-configuration design limitations.
+
+  Its main purpose is to let *multimodal* models (stored in the database as `"image2text"`) pass backend validation/dispatching. Be mindful that: 
+
+  - Do *not* treat it as a stable public API.
+  - It is subject to change or removal in future releases.
+  :::
+
+  - `"model_type"`: `string`  
+    A model type specifier. Only `"chat"` and `"image2text"` are recognized; any other inputs, or when omitted, are treated as `"chat"`.
+  - `"model_name"`, `string`
   - `"temperature"`: `float`  
     Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
   - `"top_p"`: `float`  
@@ -5355,6 +5443,6 @@ or
 ```json
 {
     "code": 404,
-    "message": "Can't find this knowledgebase!"
+    "message": "Can't find this dataset!"
 }
 ```

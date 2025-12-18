@@ -717,7 +717,7 @@ class OnyxConfluence:
         """
         The search/user endpoint can be used to fetch users.
         It's a separate endpoint from the content/search endpoint used only for users.
-        Otherwise it's very similar to the content/search endpoint.
+        It's very similar to the content/search endpoint.
         """
 
         # this is needed since there is a live bug with Confluence Server/Data Center

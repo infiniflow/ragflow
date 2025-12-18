@@ -11,6 +11,7 @@ import {
   DefaultValues,
   FieldValues,
   SubmitHandler,
+  UseFormTrigger,
   useForm,
   useFormContext,
 } from 'react-hook-form';
@@ -80,6 +81,7 @@ export interface FormFieldConfig {
   schema?: ZodSchema;
   shouldRender?: (formValues: any) => boolean;
   labelClassName?: string;
+  disabled?: boolean;
 }
 
 // Component props interface
@@ -99,8 +101,9 @@ interface DynamicFormProps<T extends FieldValues> {
 // Form ref interface
 export interface DynamicFormRef {
   submit: () => void;
-  getValues: () => any;
+  getValues: (name?: string) => any;
   reset: (values?: any) => void;
+  trigger: UseFormTrigger<any>;
   watch: (field: string, callback: (value: any) => void) => () => void;
   updateFieldType: (fieldName: string, newType: FormFieldType) => void;
   onFieldUpdate: (
@@ -326,11 +329,7 @@ export const RenderField = ({
     }
     return (
       <RAGFlowFormItem
-        name={field.name}
-        label={field.label}
-        required={field.required}
-        horizontal={field.horizontal}
-        tooltip={field.tooltip}
+        {...field}
         labelClassName={labelClassName || field.labelClassName}
       >
         {(fieldProps) => {
@@ -352,11 +351,7 @@ export const RenderField = ({
     case FormFieldType.Textarea:
       return (
         <RAGFlowFormItem
-          name={field.name}
-          label={field.label}
-          required={field.required}
-          horizontal={field.horizontal}
-          tooltip={field.tooltip}
+          {...field}
           labelClassName={labelClassName || field.labelClassName}
         >
           {(fieldProps) => {
@@ -373,6 +368,7 @@ export const RenderField = ({
               <Textarea
                 {...finalFieldProps}
                 placeholder={field.placeholder}
+                disabled={field.disabled}
                 // className="resize-none"
               />
             );
@@ -383,11 +379,7 @@ export const RenderField = ({
     case FormFieldType.Select:
       return (
         <RAGFlowFormItem
-          name={field.name}
-          label={field.label}
-          required={field.required}
-          horizontal={field.horizontal}
-          tooltip={field.tooltip}
+          {...field}
           labelClassName={labelClassName || field.labelClassName}
         >
           {(fieldProps) => {
@@ -408,6 +400,7 @@ export const RenderField = ({
                 triggerClassName="!shrink"
                 {...finalFieldProps}
                 options={field.options}
+                disabled={field.disabled}
               />
             );
           }}
@@ -417,11 +410,7 @@ export const RenderField = ({
     case FormFieldType.MultiSelect:
       return (
         <RAGFlowFormItem
-          name={field.name}
-          label={field.label}
-          required={field.required}
-          horizontal={field.horizontal}
-          tooltip={field.tooltip}
+          {...field}
           labelClassName={labelClassName || field.labelClassName}
         >
           {(fieldProps) => {
@@ -445,6 +434,7 @@ export const RenderField = ({
                 //   field.onChange?.(data);
                 // }}
                 options={field.options as MultiSelectOptionType[]}
+                disabled={field.disabled}
               />
             );
           }}
@@ -502,6 +492,7 @@ export const RenderField = ({
                       formField.onChange(checked);
                       field.onChange?.(checked);
                     }}
+                    disabled={field.disabled}
                   />
                 </div>
               </FormControl>
@@ -515,11 +506,7 @@ export const RenderField = ({
     case FormFieldType.Tag:
       return (
         <RAGFlowFormItem
-          name={field.name}
-          label={field.label}
-          required={field.required}
-          horizontal={field.horizontal}
-          tooltip={field.tooltip}
+          {...field}
           labelClassName={labelClassName || field.labelClassName}
         >
           {(fieldProps) => {
@@ -535,7 +522,10 @@ export const RenderField = ({
             return (
               //   <TagInput {...fieldProps} placeholder={field.placeholder} />
               <div className="w-full">
-                <EditTag {...finalFieldProps}></EditTag>
+                <EditTag
+                  {...finalFieldProps}
+                  disabled={field.disabled}
+                ></EditTag>
               </div>
             );
           }}
@@ -545,11 +535,7 @@ export const RenderField = ({
     default:
       return (
         <RAGFlowFormItem
-          name={field.name}
-          label={field.label}
-          required={field.required}
-          horizontal={field.horizontal}
-          tooltip={field.tooltip}
+          {...field}
           labelClassName={labelClassName || field.labelClassName}
         >
           {(fieldProps) => {
@@ -568,6 +554,7 @@ export const RenderField = ({
                   {...finalFieldProps}
                   type={field.type}
                   placeholder={field.placeholder}
+                  disabled={field.disabled}
                 />
               </div>
             );
@@ -704,8 +691,8 @@ const DynamicForm = {
       useImperativeHandle(
         ref,
         () => ({
-          submit: () => form.handleSubmit(onSubmit)(),
-          getValues: () => form.getValues(),
+          submit: form.handleSubmit,
+          getValues: form.getValues,
           reset: (values?: T) => {
             if (values) {
               form.reset(values);

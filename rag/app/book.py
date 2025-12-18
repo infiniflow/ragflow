@@ -21,6 +21,7 @@ from io import BytesIO
 from deepdoc.parser.utils import get_text
 from rag.app import naive
 from rag.app.naive import by_plaintext, PARSERS
+from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import bullets_category, is_english,remove_contents_table, \
     hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, \
     tokenize_chunks, attach_media_context
@@ -96,7 +97,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(
+            parser_config.get("layout_recognize", "DeepDOC")
+        )
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
@@ -114,6 +117,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             callback = callback,
             pdf_cls = Pdf,
             layout_recognizer = layout_recognizer,
+            mineru_llm_name=parser_model_name,
             **kwargs
         )
 
@@ -166,9 +170,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         sections = [s.split("@") for s, _ in sections]
         sections = [(pr[0], "@" + pr[1]) if len(pr) == 2 else (pr[0], '') for pr in sections ]
         chunks = naive_merge(
-            sections, kwargs.get(
-                "chunk_token_num", 256), kwargs.get(
-                "delimer", "\n。；！？"))
+            sections,
+            parser_config.get("chunk_token_num", 256),
+            parser_config.get("delimiter", "\n。；！？")
+        )
 
     # is it English
     # is_english(random_choices([t for t, _ in sections], k=218))

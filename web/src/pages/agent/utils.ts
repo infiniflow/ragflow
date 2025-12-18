@@ -288,6 +288,11 @@ function transformSplitterParams(params: SplitterFormSchemaType) {
     ...params,
     overlapped_percent: Number(params.overlapped_percent) / 100,
     delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
+
+    // Unset children delimiters if this option is not enabled
+    children_delimiters: params.enable_children
+      ? transformObjectArrayToPureArray(params.children_delimiters, 'value')
+      : [],
   };
 }
 
@@ -354,13 +359,6 @@ function transformBeginParams(params: BeginFormSchemaType) {
       security: {
         ...params.security,
         ip_whitelist: params.security?.ip_whitelist.map((x) => x.value),
-      },
-      response: {
-        ...params.response,
-        headers_template: transformArrayToObject(
-          params.response?.headers_template,
-        ),
-        body_template: transformArrayToObject(params.response?.body_template),
       },
     };
   }
@@ -720,7 +718,7 @@ export function convertToObjectArray<T extends string | number | boolean>(
 
 /**
    * convert the following object into a list
-   * 
+   *
    * {
       "product_related": {
       "description": "The question is about product usage, appearance and how it works.",
