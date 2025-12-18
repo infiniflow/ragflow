@@ -37,9 +37,9 @@ from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.decorator import singleton
 from common.float_utils import get_float
+from common.vector_store_base import MatchExpr, OrderByExpr, FusionExpr, MatchTextExpr, MatchDenseExpr
 from rag.nlp import rag_tokenizer
-from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, FusionExpr, MatchTextExpr, \
-    MatchDenseExpr
+from rag.utils.doc_store_conn import DocStoreConnection
 
 ATTEMPT_TIME = 2
 OB_QUERY_TIMEOUT = int(os.environ.get("OB_QUERY_TIMEOUT", "100_000_000"))

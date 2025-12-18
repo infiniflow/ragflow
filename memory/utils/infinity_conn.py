@@ -31,8 +31,8 @@ from common.file_utils import get_project_base_directory
 from rag.nlp import is_english
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
-from rag.utils.doc_store_conn import (
-    DocStoreConnection,
+from memory.utils.msg_store_conn import (
+    MsgStoreConnection,
     MatchExpr,
     MatchTextExpr,
     MatchDenseExpr,
@@ -172,7 +172,7 @@ def concat_dataframes(df_list: list[pd.DataFrame], selectFields: list[str]) -> p
 
 
 @singleton
-class InfinityConnection(DocStoreConnection):
+class InfinityConnection(MsgStoreConnection):
     def __init__(self):
         self.dbName = settings.INFINITY.get("db_name", "default_db")
         infinity_uri = settings.INFINITY["uri"]
@@ -205,7 +205,7 @@ class InfinityConnection(DocStoreConnection):
 
     def _migrate_db(self, inf_conn):
         inf_db = inf_conn.create_database(self.dbName, ConflictType.Ignore)
-        fp_mapping = os.path.join(get_project_base_directory(), "conf", "infinity_mapping.json")
+        fp_mapping = os.path.join(get_project_base_directory(), "conf", "message_infinity_mapping.json")
         if not os.path.exists(fp_mapping):
             raise Exception(f"Mapping file not found at {fp_mapping}")
         schema = json.load(open(fp_mapping))
@@ -266,7 +266,7 @@ class InfinityConnection(DocStoreConnection):
         inf_conn = self.connPool.get_conn()
         inf_db = inf_conn.create_database(self.dbName, ConflictType.Ignore)
 
-        fp_mapping = os.path.join(get_project_base_directory(), "conf", "infinity_mapping.json")
+        fp_mapping = os.path.join(get_project_base_directory(), "conf", "message_infinity_mapping.json")
         if not os.path.exists(fp_mapping):
             raise Exception(f"Mapping file not found at {fp_mapping}")
         schema = json.load(open(fp_mapping))
@@ -770,7 +770,7 @@ class InfinityConnection(DocStoreConnection):
             return res[1]
         return len(res)
 
-    def get_chunk_ids(self, res: tuple[pd.DataFrame, int] | pd.DataFrame) -> list[str]:
+    def get_message_ids(self, res: tuple[pd.DataFrame, int] | pd.DataFrame) -> list[str]:
         if isinstance(res, tuple):
             res = res[0]
         return list(res["id"])

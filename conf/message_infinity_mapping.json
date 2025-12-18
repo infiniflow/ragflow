@@ -8,7 +8,6 @@
   "session_id": {"type": "varchar", "default": ""},
   "zone_id": {"type": "integer", "default": 0},
   "content": {"type": "varchar", "default": ""},
-  "content_embed": {"type": "vector, 1024, float", "default": []},
   "valid_at_timestamp": {"type":  "varchar", "default": ""},
   "invalid_at_timestamp": {"type":  "varchar", "default": ""},
   "forget_at_timestamp": {"type":  "varchar", "default": ""},

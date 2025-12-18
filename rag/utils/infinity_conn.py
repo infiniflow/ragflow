@@ -31,14 +31,8 @@ from common.file_utils import get_project_base_directory
 from rag.nlp import is_english
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
-from rag.utils.doc_store_conn import (
-    DocStoreConnection,
-    MatchExpr,
-    MatchTextExpr,
-    MatchDenseExpr,
-    FusionExpr,
-    OrderByExpr,
-)
+from common.vector_store_base import MatchExpr, MatchTextExpr, MatchDenseExpr, FusionExpr, OrderByExpr
+from rag.utils.doc_store_conn import DocStoreConnection
 
 logger = logging.getLogger("ragflow.infinity_conn")
 
