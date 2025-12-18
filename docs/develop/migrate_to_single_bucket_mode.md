@@ -1,6 +1,10 @@
-# Single Bucket Mode for MinIO/S3
 
-## Overview
+---
+sidebar_position: 20
+slug: /migrate_to_single_bucket_mode
+---
+
+# Migrate from multi-Bucket to single-bucket mode
 
 By default, RAGFlow creates one bucket per Knowledge Base (dataset) and one bucket per user folder. This can be problematic when:
 
@@ -9,6 +13,10 @@ By default, RAGFlow creates one bucket per Knowledge Base (dataset) and one buck
 - You want all data organized in a single bucket with directory structure
 
 The **Single Bucket Mode** allows you to configure RAGFlow to use a single bucket with a directory structure instead of multiple buckets.
+
+:::info KUDOS
+This document is contributed by our community contributor [arogan178](https://github.com/arogan178). We may not actively maintain this document.
+:::
 
 ## How It Works
 

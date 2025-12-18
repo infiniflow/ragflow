@@ -72,16 +72,18 @@ export const EmbeddingSelect = ({
   isEdit,
   field,
   name,
+  disabled = false,
 }: {
   isEdit: boolean;
   field: FieldValues;
   name?: string;
+  disabled?: boolean;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   const embeddingModelOptions = useSelectEmbeddingModelOptions();
   const { handleChange } = useHandleKbEmbedding();
-  const disabled = useHasParsedDocument(isEdit);
+
   const oldValue = useMemo(() => {
     const embdStr = form.getValues(name || 'embd_id');
     return embdStr || '';
@@ -101,7 +103,7 @@ export const EmbeddingSelect = ({
             setLoading(true);
             const res = await handleChange({
               embed_id: value,
-              callback: field.onChange,
+              // callback: field.onChange,
             });
             if (res.code !== 0) {
               field.onChange(oldValue);
@@ -109,6 +111,7 @@ export const EmbeddingSelect = ({
             setLoading(false);
           }
         }}
+        disabled={disabled && !isEdit}
         value={field.value}
         options={embeddingModelOptions}
         placeholder={t('embeddingModelPlaceholder')}
@@ -120,6 +123,7 @@ export const EmbeddingSelect = ({
 export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
+  const disabled = useHasParsedDocument(isEdit);
   return (
     <>
       <FormField
@@ -149,6 +153,7 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
                   <EmbeddingSelect
                     isEdit={!!isEdit}
                     field={field}
+                    disabled={disabled}
                   ></EmbeddingSelect>
                 </FormControl>
               </div>
@@ -291,9 +296,10 @@ export function EnableTocToggle() {
 export function OverlappedPercent() {
   return (
     <SliderInputFormField
+      percentage={true}
       name="parser_config.overlapped_percent"
       label={t('knowledgeConfiguration.overlappedPercent')}
-      max={0.5}
+      max={0.3}
       step={0.01}
     ></SliderInputFormField>
   );

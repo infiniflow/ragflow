@@ -327,7 +327,7 @@ export const useSendAgentMessage = ({
     async (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
-          .map(([key, val]) => `${key}: ${val.value}`)
+          .map(([, val]) => `${val.name}: ${val.value}`)
           .join('<br/>'),
         role: MessageType.User,
       });

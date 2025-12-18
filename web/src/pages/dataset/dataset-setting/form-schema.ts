@@ -13,6 +13,7 @@ export const formSchema = z
     // avatar: z.instanceof(File),
     avatar: z.any().nullish(),
     permission: z.string().optional(),
+    language: z.string().optional(),
     parser_id: z.string(),
     pipeline_id: z.string().optional(),
     pipeline_name: z.string().optional(),
@@ -23,6 +24,8 @@ export const formSchema = z
         layout_recognize: z.string(),
         chunk_token_num: z.number(),
         delimiter: z.string(),
+        enable_children: z.boolean(),
+        children_delimiter: z.string(),
         auto_keywords: z.number().optional(),
         auto_questions: z.number().optional(),
         html4excel: z.boolean(),
@@ -30,6 +33,11 @@ export const formSchema = z
         topn_tags: z.number().optional(),
         toc_extraction: z.boolean().optional(),
         overlapped_percent: z.number().optional(),
+        // MinerU-specific options
+        mineru_parse_method: z.enum(['auto', 'txt', 'ocr']).optional(),
+        mineru_formula_enable: z.boolean().optional(),
+        mineru_table_enable: z.boolean().optional(),
+        mineru_lang: z.string().optional(),
         raptor: z
           .object({
             use_raptor: z.boolean().optional(),
