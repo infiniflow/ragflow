@@ -56,6 +56,12 @@ def total_token_count_from_response(resp):
         except Exception:
             pass
 
+    if hasattr(resp, "meta") and hasattr(resp.meta, "billed_units") and hasattr(resp.meta.billed_units, "input_tokens"):
+        try:
+            return resp.meta.billed_units.input_tokens 
+        except Exception:
+            pass
+
     if isinstance(resp, dict) and 'usage' in resp and 'total_tokens' in resp['usage']:
         try:
             return resp["usage"]["total_tokens"]
