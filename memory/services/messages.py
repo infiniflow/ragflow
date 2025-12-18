@@ -79,7 +79,7 @@ class MessageService:
             condition=filter_dict,
             matchExprs=[], orderBy=order_by,
             offset=(page-1)*page_size, limit=page_size,
-            indexNames=index, memoryIds=[memory_id],
+            indexNames=index, memoryIds=[memory_id], hide_forgotten=False
         )
         total_count = settings.msgStoreConn.get_total(res)
         doc_mapping = settings.msgStoreConn.get_fields(res, [
@@ -103,7 +103,7 @@ class MessageService:
         res = settings.msgStoreConn.search(
             selectFields=[
                 "message_id", "message_type_kwd", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at",
-                "invalid_at", "forget_at", "status_int", "content"
+                "invalid_at", "forget_at", "status_int", "content_ltks"
             ],
             highlightFields=[],
             condition=condition_dict,
@@ -113,7 +113,7 @@ class MessageService:
         )
         doc_mapping = settings.msgStoreConn.get_fields(res, [
             "message_id", "message_type_kwd", "source_id", "memory_id","user_id", "agent_id", "session_id",
-            "valid_at", "invalid_at", "forget_at", "status_int", "content"
+            "valid_at", "invalid_at", "forget_at", "status_int", "content_ltks"
         ])
         return [get_message_from_storage_doc(d) for d in doc_mapping.values()]
 
@@ -131,7 +131,7 @@ class MessageService:
             selectFields=[
                 "message_id", "message_type_kwd", "source_id", "memory_id", "user_id", "agent_id", "session_id",
                 "valid_at",
-                "invalid_at", "forget_at", "status_int", "content"
+                "invalid_at", "forget_at", "status_int", "content_ltks"
             ],
             highlightFields=[],
             condition=condition_dict,
@@ -142,7 +142,7 @@ class MessageService:
         )
         docs = settings.msgStoreConn.get_fields(res, [
             "message_id", "message_type_kwd", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at",
-            "invalid_at", "forget_at", "status_int", "content"
+            "invalid_at", "forget_at", "status_int", "content_ltks"
         ])
         return [get_message_from_storage_doc(d) for d in docs.values()]
 
