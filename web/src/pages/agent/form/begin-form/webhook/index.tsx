@@ -1,5 +1,5 @@
 import { Collapse } from '@/components/collapse';
-import CopyToClipboard from '@/components/copy-to-clipboard';
+import { CopyToClipboardWithText } from '@/components/copy-to-clipboard';
 import NumberInput from '@/components/originui/number-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
@@ -49,10 +49,7 @@ export function WebHook() {
 
   return (
     <>
-      <div className="bg-bg-card p-1 rounded-md flex gap-2">
-        <span className="flex-1 truncate">{text}</span>
-        <CopyToClipboard text={text}></CopyToClipboard>
-      </div>
+      <CopyToClipboardWithText text={text}></CopyToClipboardWithText>
       <RAGFlowFormItem name="methods" label={t('flow.webhook.methods')}>
         {(field) => (
           <MultiSelect
