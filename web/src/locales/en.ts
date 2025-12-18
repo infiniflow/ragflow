@@ -785,6 +785,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
     },
     setting: {
       deleteModel: 'Delete model',
+      bedrockCredentialsHint:
+        'Tip: Leave Access Key / Secret Key blank to use AWS IAM authentication.',
       modelEmptyTip:
         'No models available. <br>Please add models from the panel on the right.',
       sourceEmptyTip: 'No data sources added yet. Select one below to connect.',
