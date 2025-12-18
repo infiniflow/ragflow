@@ -183,7 +183,7 @@ class InfinityConnection(DocStoreConnection):
         logger.info(f"Use Infinity {infinity_uri} as the doc engine.")
         for _ in range(24):
             try:
-                connPool = ConnectionPool(infinity_uri, max_size=32)
+                connPool = ConnectionPool(infinity_uri, max_size=4)
                 inf_conn = connPool.get_conn()
                 res = inf_conn.show_current_node()
                 if res.error_code == ErrorCode.OK and res.server_status in ["started", "alive"]:
