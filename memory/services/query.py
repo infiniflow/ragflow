@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,41 +13,52 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import re
 import logging
 import json
-import re
-from collections import defaultdict
-
+import numpy as np
 from common.query_base import QueryBase
-from common.vector_store_base import MatchTextExpr
+from common.vector_store_base import MatchDenseExpr, MatchTextExpr
+from common.float_utils import get_float
 from rag.nlp import rag_tokenizer, term_weight, synonym
 
 
-class FulltextQueryer(QueryBase):
+def get_vector(txt, emb_mdl, topk=10, similarity=0.1):
+    if isinstance(similarity, str) and len(similarity) > 0:
+        try:
+            similarity = float(similarity)
+        except Exception as e:
+            logging.warning(f"Convert similarity '{similarity}' to float failed: {e}. Using default 0.1")
+            similarity = 0.1
+    qv, _ = emb_mdl.encode_queries(txt)
+    shape = np.array(qv).shape
+    if len(shape) > 1:
+        raise Exception(
+            f"Dealer.get_vector returned array's shape {shape} doesn't match expectation(exact one dimension).")
+    embedding_data = [get_float(v) for v in qv]
+    vector_column_name = f"content_embed_{len(embedding_data)}_vec"
+    return MatchDenseExpr(vector_column_name, embedding_data, 'float', 'cosine', topk, {"similarity": similarity})
+
+
+class MsgTextQueryer(QueryBase):
+
     def __init__(self):
         self.tw = term_weight.Dealer()
         self.syn = synonym.Dealer()
         self.query_fields = [
-            "title_tks^10",
-            "title_sm_tks^5",
-            "important_kwd^30",
-            "important_tks^20",
-            "question_tks^20",
-            "content_ltks^2",
-            "content_sm_ltks",
+            "content_ltks"
         ]
 
-    def question(self, txt, tbl="qa", min_match: float = 0.6):
+    def question(self, txt, tbl="messages", min_match: float=0.6):
         original_query = txt
-        txt = self.add_space_between_eng_zh(txt)
+        txt = MsgTextQueryer.add_space_between_eng_zh(txt)
         txt = re.sub(
             r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>]+",
             " ",
             rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(txt.lower())),
         ).strip()
         otxt = txt
-        txt = self.rmWWW(txt)
+        txt = MsgTextQueryer.rmWWW(txt)
 
         if not self.is_chinese(txt):
             txt = self.rmWWW(txt)
@@ -172,64 +183,3 @@ class FulltextQueryer(QueryBase):
                 self.query_fields, query, 100, {"minimum_should_match": min_match, "original_query": original_query}
             ), keywords
         return None, keywords
-
-    def hybrid_similarity(self, avec, bvecs, atks, btkss, tkweight=0.3, vtweight=0.7):
-        from sklearn.metrics.pairwise import cosine_similarity
-        import numpy as np
-
-        sims = cosine_similarity([avec], bvecs)
-        tksim = self.token_similarity(atks, btkss)
-        if np.sum(sims[0]) == 0:
-            return np.array(tksim), tksim, sims[0]
-        return np.array(sims[0]) * vtweight + np.array(tksim) * tkweight, tksim, sims[0]
-
-    def token_similarity(self, atks, btkss):
-        def to_dict(tks):
-            if isinstance(tks, str):
-                tks = tks.split()
-            d = defaultdict(int)
-            wts = self.tw.weights(tks, preprocess=False)
-            for i, (t, c) in enumerate(wts):
-                d[t] += c
-            return d
-
-        atks = to_dict(atks)
-        btkss = [to_dict(tks) for tks in btkss]
-        return [self.similarity(atks, btks) for btks in btkss]
-
-    def similarity(self, qtwt, dtwt):
-        if isinstance(dtwt, type("")):
-            dtwt = {t: w for t, w in self.tw.weights(self.tw.split(dtwt), preprocess=False)}
-        if isinstance(qtwt, type("")):
-            qtwt = {t: w for t, w in self.tw.weights(self.tw.split(qtwt), preprocess=False)}
-        s = 1e-9
-        for k, v in qtwt.items():
-            if k in dtwt:
-                s += v #* dtwt[k]
-        q = 1e-9
-        for k, v in qtwt.items():
-            q += v #* v
-        return s/q #math.sqrt(3. * (s / q / math.log10( len(dtwt.keys()) + 512 )))
-
-    def paragraph(self, content_tks: str, keywords: list = [], keywords_topn=30):
-        if isinstance(content_tks, str):
-            content_tks = [c.strip() for c in content_tks.strip() if c.strip()]
-        tks_w = self.tw.weights(content_tks, preprocess=False)
-
-        origin_keywords = keywords.copy()
-        keywords = [f'"{k.strip()}"' for k in keywords]
-        for tk, w in sorted(tks_w, key=lambda x: x[1] * -1)[:keywords_topn]:
-            tk_syns = self.syn.lookup(tk)
-            tk_syns = [self.sub_special_char(s) for s in tk_syns]
-            tk_syns = [rag_tokenizer.fine_grained_tokenize(s) for s in tk_syns if s]
-            tk_syns = [f"\"{s}\"" if s.find(" ") > 0 else s for s in tk_syns]
-            tk = self.sub_special_char(tk)
-            if tk.find(" ") > 0:
-                tk = '"%s"' % tk
-            if tk_syns:
-                tk = f"({tk} OR (%s)^0.2)" % " ".join(tk_syns)
-            if tk:
-                keywords.append(f"{tk}^{w}")
-
-        return MatchTextExpr(self.query_fields, " ".join(keywords), 100,
-                             {"minimum_should_match": min(3, len(keywords) / 10), "original_query": " ".join(origin_keywords)})

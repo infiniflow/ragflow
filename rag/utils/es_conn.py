@@ -27,8 +27,8 @@ from elastic_transport import ConnectionTimeout
 from common.decorator import singleton
 from common.file_utils import get_project_base_directory
 from common.misc_utils import convert_bytes
-from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
-    FusionExpr
+from common.vector_store_base import MatchTextExpr, OrderByExpr, MatchExpr, MatchDenseExpr, FusionExpr
+from rag.utils.doc_store_conn import DocStoreConnection
 from rag.nlp import is_english, rag_tokenizer
 from common.float_utils import get_float
 from common import settings

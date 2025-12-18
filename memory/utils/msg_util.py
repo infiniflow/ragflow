@@ -57,6 +57,7 @@ def map_message_to_storage_fields(message: dict) -> dict:
         "invalid_at": message["invalid_at"],
         "forget_at": message["forget_at"],
         "status_int": 1 if message["status"] else 0,
+        "zone_id": 0,
         "content_ltks": message["content"],
         f"content_embed_{len(message['content_embed'])}_vec": message["content_embed"],
     }
@@ -79,6 +80,7 @@ def get_message_from_storage_doc(doc: dict) -> dict:
         "user_id": doc.get("user_id", ""),
         "agent_id": doc["agent_id"],
         "session_id": doc["session_id"],
+        "zone_id": doc.get("zone_id", 0),
         "valid_at": doc["valid_at"],
         "invalid_at": doc.get("invalid_at", "-"),
         "forget_at": doc.get("forget_at", "-"),
