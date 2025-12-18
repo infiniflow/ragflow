@@ -51,7 +51,6 @@ const orderFactoryList = [
   LLMFactory.Xinference,
   LLMFactory.Ai302,
   LLMFactory.CometAPI,
-  LLMFactory.AIBadgr,
   LLMFactory.DeerAPI,
   LLMFactory.JiekouAI,
 ];

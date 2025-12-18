@@ -926,13 +926,6 @@ class CometAPIEmbed(OpenAIEmbed):
             base_url = "https://api.cometapi.com/v1"
         super().__init__(key, model_name, base_url)
 
-class AIBadgrEmbed(OpenAIEmbed):
-    _FACTORY_NAME = "AIBadgr"
-
-    def __init__(self, key, model_name, base_url="https://aibadgr.com/api/v1"):
-        if not base_url:
-            base_url = "https://aibadgr.com/api/v1"
-        super().__init__(key, model_name, base_url)
 
 class DeerAPIEmbed(OpenAIEmbed):
     _FACTORY_NAME = "DeerAPI"

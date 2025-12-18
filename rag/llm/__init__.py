@@ -39,7 +39,6 @@ class SupportedLiteLLMProvider(StrEnum):
     Ollama = "Ollama"
     LongCat = "LongCat"
     CometAPI = "CometAPI"
-    AIBadgr = "AIBadgr"
     SILICONFLOW = "SILICONFLOW"
     OpenRouter = "OpenRouter"
     StepFun = "StepFun"
@@ -66,7 +65,6 @@ FACTORY_DEFAULT_BASE_URL = {
     SupportedLiteLLMProvider.Ollama: "",
     SupportedLiteLLMProvider.LongCat: "https://api.longcat.chat/openai",
     SupportedLiteLLMProvider.CometAPI: "https://api.cometapi.com/v1",
-    SupportedLiteLLMProvider.AIBadgr: "https://aibadgr.com/api/v1",
     SupportedLiteLLMProvider.SILICONFLOW: "https://api.siliconflow.cn/v1",
     SupportedLiteLLMProvider.OpenRouter: "https://openrouter.ai/api/v1",
     SupportedLiteLLMProvider.StepFun: "https://api.stepfun.com/v1",
@@ -103,7 +101,6 @@ LITELLM_PROVIDER_PREFIX = {
     SupportedLiteLLMProvider.Ollama: "ollama_chat/",
     SupportedLiteLLMProvider.LongCat: "openai/",
     SupportedLiteLLMProvider.CometAPI: "openai/",
-    SupportedLiteLLMProvider.AIBadgr: "openai/",
     SupportedLiteLLMProvider.SILICONFLOW: "openai/",
     SupportedLiteLLMProvider.OpenRouter: "openai/",
     SupportedLiteLLMProvider.StepFun: "openai/",

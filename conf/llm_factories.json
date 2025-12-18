@@ -4612,13 +4612,6 @@
             ]
         },
         {
-            "name": "AIBadgr",
-            "logo": "",
-            "tags": "LLM,TEXT EMBEDDING",
-            "status": "1",
-            "llm": []
-        },
-        {
             "name": "DeerAPI",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
