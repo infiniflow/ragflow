@@ -78,7 +78,8 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt purge -y nodejs npm cargo && \
     apt autoremove -y && \
     apt update && \
-    apt install -y nodejs
+    apt install -y nodejs npm && \
+    node --version && npm --version
 
 # A modern version of cargo is needed for the latest version of the Rust compiler.
 RUN apt update && apt install -y curl build-essential \
