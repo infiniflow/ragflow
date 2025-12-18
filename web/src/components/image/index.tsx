@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 
 interface IImage {
   id: string;
-  className: string;
+  className?: string;
   onClick?(): void;
 }
 
