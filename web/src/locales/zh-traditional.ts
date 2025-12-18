@@ -546,6 +546,15 @@ export default {
       profileDescription: '在此更新您的照片和個人詳細信息。',
       bedrockCredentialsHint:
         '提示：Access Key / Secret Key 可留空，以啟用 AWS IAM 自動驗證。',
+      awsAuthModeAccessKeySecret: 'Access Key 和 Secret',
+      awsAuthModeIamRole: 'IAM Role',
+      awsAuthModeAssumeRole: 'Assume Role',
+      awsAccessKeyId: 'AWS Access Key ID',
+      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsRoleArn: 'AWS Role ARN',
+      awsRoleArnMessage: '請輸入 AWS Role ARN',
+      awsAssumeRoleTip:
+        '選擇此模式後，EC2 執行個體將使用其既有的 IAM Role 存取 AWS 服務，無需額外憑證。',
       maxTokens: '最大token數',
       maxTokensMessage: '最大token數是必填項',
       maxTokensTip:
