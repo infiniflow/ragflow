@@ -144,24 +144,23 @@ async def async_request(
                     method=method, url=url, headers=headers, **kwargs
                 )
                 duration = time.monotonic() - start
-                log_url = "<SENSITIVE ENDPOINT>" if _is_sensitive_url(url) else _redact_sensitive_url_params(url)
-                logger.debug(
-                    f"async_request {method} {log_url} -> {response.status_code} in {duration:.3f}s"
-                )
+                if not _is_sensitive_url(url):
+                    log_url = _redact_sensitive_url_params(url)
+                    logger.debug(f"async_request {method} {log_url} -> {response.status_code} in {duration:.3f}s")
                 return response
             except httpx.RequestError as exc:
                 last_exc = exc
                 if attempt >= retries:
-                    log_url = "<SENSITIVE ENDPOINT>" if _is_sensitive_url(url) else _redact_sensitive_url_params(url)
-                    logger.warning(
-                        f"async_request exhausted retries for {method} {log_url}"
-                    )
+                    if not _is_sensitive_url(url):
+                        log_url = _redact_sensitive_url_params(url)
+                        logger.warning(f"async_request exhausted retries for {method} {log_url}")
                     raise
                 delay = _get_delay(backoff_factor, attempt)
-                log_url = "<SENSITIVE ENDPOINT>" if _is_sensitive_url(url) else _redact_sensitive_url_params(url)
-                logger.warning(
-                    f"async_request attempt {attempt + 1}/{retries + 1} failed for {method} {log_url}; retrying in {delay:.2f}s"
-                )
+                if not _is_sensitive_url(url):
+                    log_url = _redact_sensitive_url_params(url)
+                    logger.warning(
+                        f"async_request attempt {attempt + 1}/{retries + 1} failed for {method} {log_url}; retrying in {delay:.2f}s"
+                    )
                 await asyncio.sleep(delay)
         raise last_exc  # pragma: no cover
 
