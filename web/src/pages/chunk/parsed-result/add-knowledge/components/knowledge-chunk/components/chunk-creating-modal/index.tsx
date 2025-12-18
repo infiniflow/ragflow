@@ -1,4 +1,6 @@
 import EditTag from '@/components/edit-tag';
+import { FileUploader } from '@/components/file-uploader';
+import Image from '@/components/image';
 import Divider from '@/components/ui/divider';
 import {
   Form,
@@ -35,6 +37,21 @@ interface kFProps {
   parserId: string;
 }
 
+async function fileToBase64(file: File) {
+  if (!file) {
+    return;
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const fr = new FileReader();
+    fr.addEventListener('load', () => {
+      resolve((fr.result?.toString() ?? '').replace(/^.*,/, ''));
+    });
+    fr.onerror = reject;
+    fr.readAsDataURL(file);
+  });
+}
+
 const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
   doc_id,
   chunkId,
@@ -52,6 +69,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
       question_kwd: [],
       important_kwd: [],
       tag_feas: [],
+      image: [],
     },
   });
   const [checked, setChecked] = useState(false);
@@ -61,12 +79,17 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
 
   const isTagParser = parserId === 'tag';
   const onSubmit = useCallback(
-    (values: FieldValues) => {
-      onOk?.({
+    async (values: FieldValues) => {
+      const prunedValues = {
         ...values,
+        image_base64: await fileToBase64(values.image?.[0] as File),
         tag_feas: transformTagFeaturesArrayToObject(values.tag_feas),
         available_int: checked ? 1 : 0,
-      });
+      } as FieldValues;
+
+      Reflect.deleteProperty(prunedValues, 'image');
+
+      onOk?.(prunedValues);
     },
     [checked, onOk],
   );
@@ -86,6 +109,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
   useEffect(() => {
     if (data?.code === 0) {
       const { available_int, tag_feas } = data.data;
+
       form.reset({
         ...data.data,
         tag_feas: transformTagFeaturesObjectToArray(tag_feas),
@@ -119,6 +143,44 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               </FormItem>
             )}
           />
+
+          <FormField
+            control={form.control}
+            name="image"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="gap-1">{t('chunk.image')}</FormLabel>
+
+                <div className="grid grid-cols-2 gap-4 items-start">
+                  {data?.data?.img_id && (
+                    <Image
+                      id={data?.data?.img_id}
+                      className="w-full object-contain"
+                    />
+                  )}
+
+                  <div className="col-start-2 col-end-3 only:col-span-2">
+                    <FormControl>
+                      <FileUploader
+                        className="h-48"
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        accept={{
+                          'image/png': [],
+                          'image/jpeg': [],
+                          'image/webp': [],
+                        }}
+                        maxFileCount={1}
+                        title={t('chunk.imageUploaderTitle')}
+                        description={<></>}
+                      />
+                    </FormControl>
+                  </div>
+                </div>
+              </FormItem>
+            )}
+          />
+
           <FormField
             control={form.control}
             name="important_kwd"
