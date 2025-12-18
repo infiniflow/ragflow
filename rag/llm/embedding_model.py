@@ -639,7 +639,7 @@ class CoHereEmbed(Base):
             )
             try:
                 ress.extend([d for d in res.embeddings.float])
-                token_count += res.meta.billed_units.input_tokens
+                token_count += total_token_count_from_response(res)
             except Exception as _e:
                 log_exception(_e, res)
                 raise Exception(f"Error: {res}")
@@ -653,7 +653,7 @@ class CoHereEmbed(Base):
             embedding_types=["float"],
         )
         try:
-            return np.array(res.embeddings.float[0]), int(res.meta.billed_units.input_tokens)
+            return np.array(res.embeddings.float[0]), int(total_token_count_from_response(res))
         except Exception as _e:
             log_exception(_e, res)
             raise Exception(f"Error: {res}")
