@@ -1626,11 +1626,13 @@ class LiteLLMBase(ABC):
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
             completion_args.pop("api_key", None)
             completion_args.pop("api_base", None)
+            bedrock_credentials = { "aws_region_name": self.bedrock_region }
+            if self.bedrock_ak and self.bedrock_sk:
+                bedrock_credentials["aws_access_key_id"] = self.bedrock_ak
+                bedrock_credentials["aws_secret_access_key"] = self.bedrock_sk
             completion_args.update(
                 {
-                    "aws_access_key_id": self.bedrock_ak,
-                    "aws_secret_access_key": self.bedrock_sk,
-                    "aws_region_name": self.bedrock_region,
+                    "bedrock_credentials": bedrock_credentials,
                 }
             )
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:

@@ -544,6 +544,8 @@ export default {
       avatar: '头像',
       avatarTip: '這會在你的個人主頁展示',
       profileDescription: '在此更新您的照片和個人詳細信息。',
+      bedrockCredentialsHint:
+        '提示：Access Key / Secret Key 可留空，以啟用 AWS IAM 自動驗證。',
       maxTokens: '最大token數',
       maxTokensMessage: '最大token數是必填項',
       maxTokensTip:
