@@ -1165,6 +1165,19 @@ async def task_manager():
 
 
 async def main():
+    # Stagger executor startup to prevent connection storm to Infinity
+    # Extract worker number from CONSUMER_NAME (e.g., "task_executor_abc123_5" -> 5)
+    try:
+        worker_num = int(CONSUMER_NAME.rsplit("_", 1)[-1])
+        # Add random delay: base delay + worker_num * 2.0s + random jitter
+        # This spreads out connection attempts over several seconds
+        startup_delay = worker_num * 2.0 + random.uniform(0, 0.5)
+        if startup_delay > 0:
+            logging.info(f"Staggering startup by {startup_delay:.2f}s to prevent connection storm")
+            await asyncio.sleep(startup_delay)
+    except (ValueError, IndexError):
+        pass  # Non-standard consumer name, skip delay
+
     logging.info(r"""
     ____                      __  _
    /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____
