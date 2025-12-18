@@ -27,6 +27,7 @@ from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper,vision
 from docx import Document
 from PIL import Image
 from rag.app.naive import by_plaintext, PARSERS
+from common.parser_config_utils import normalize_layout_recognizer
 
 class Pdf(PdfParser):
     def __init__(self):
@@ -196,7 +197,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     # is it English
     eng = lang.lower() == "english"  # pdf_parser.is_english
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(
+            parser_config.get("layout_recognize", "DeepDOC")
+        )
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
@@ -205,6 +208,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         pdf_parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
 
+        kwargs.pop("parse_method", None)
+        kwargs.pop("mineru_llm_name", None)
         sections, tbls, pdf_parser = pdf_parser(
             filename = filename,
             binary = binary,
@@ -214,6 +219,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             callback = callback,
             pdf_cls = Pdf,
             layout_recognizer = layout_recognizer,
+            mineru_llm_name=parser_model_name,
             parse_method = "manual",
             **kwargs
         )
@@ -232,7 +238,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 poss = pdf_parser.extract_positions(poss)
                 if poss:
                     first = poss[0]          # tuple: ([pn], x1, x2, y1, y2)
-                    pn = first[0]           
+                    pn = first[0]
                     if isinstance(pn, list) and pn:
                         pn = pn[0]           # [pn] -> pn
                         poss[0] = (pn, *first[1:])

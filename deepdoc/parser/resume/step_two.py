@@ -147,15 +147,11 @@ def forEdu(cv):
         edu_nst.append(e)
 
     cv["sch_rank_kwd"] = []
-    if cv["school_rank_int"] <= 20 \
-            or ("海外名校" in fea and cv["school_rank_int"] <= 200):
+    if cv["school_rank_int"] <= 20 or ("海外名校" in fea and cv["school_rank_int"] <= 200):
         cv["sch_rank_kwd"].append("顶尖学校")
-    elif cv["school_rank_int"] <= 50 and cv["school_rank_int"] > 20 \
-            or ("海外名校" in fea and cv["school_rank_int"] <= 500 and \
-                cv["school_rank_int"] > 200):
+    elif 50 >= cv["school_rank_int"] > 20 or ("海外名校" in fea and 500 >= cv["school_rank_int"] > 200):
         cv["sch_rank_kwd"].append("精英学校")
-    elif cv["school_rank_int"] > 50 and ("985" in fea or "211" in fea) \
-            or ("海外名校" in fea and cv["school_rank_int"] > 500):
+    elif cv["school_rank_int"] > 50 and ("985" in fea or "211" in fea) or ("海外名校" in fea and cv["school_rank_int"] > 500):
         cv["sch_rank_kwd"].append("优质学校")
     else:
         cv["sch_rank_kwd"].append("一般学校")
@@ -208,8 +204,7 @@ def forEdu(cv):
                     cv["tag_kwd"].append("好学校")
                     cv["tag_kwd"].append("好学历")
                     break
-        if (len(cv.get("degree_kwd", [])) >= 1 and \
-            "本科" in cv["degree_kwd"] and \
+        if (len(cv.get("degree_kwd", [])) >= 1 and "本科" in cv["degree_kwd"] and
             any([d.lower() in ["硕士", "博士", "mba", "博士"] for d in cv.get("degree_kwd", [])])) \
                 or all([d.lower() in ["硕士", "博士", "mba", "博士后"] for d in cv.get("degree_kwd", [])]) \
                 or any([d in ["mba", "emba", "博士后"] for d in cv.get("degree_kwd", [])]):
@@ -406,7 +401,7 @@ def forWork(cv):
 
 def turnTm2Dt(b):
     if not b:
-        return
+        return None
     b = str(b).strip()
     if re.match(r"[0-9]{10,}", b):
         b = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(int(b[:10])))
@@ -416,7 +411,7 @@ def turnTm2Dt(b):
 def getYMD(b):
     y, m, d = "", "", "01"
     if not b:
-        return (y, m, d)
+        return y, m, d
     b = turnTm2Dt(b)
     if re.match(r"[0-9]{4}", b):
         y = int(b[:4])
@@ -430,7 +425,7 @@ def getYMD(b):
         d = "1"
     if not m or int(m) > 12 or int(m) < 1:
         m = "1"
-    return (y, m, d)
+    return y, m, d
 
 
 def birth(cv):
@@ -480,22 +475,22 @@ def parse(cv):
     for k in rmkeys:
         del cv[k]
 
-    integerity = 0.
+    integrity = 0.
     flds_num = 0.
 
     def hasValues(flds):
-        nonlocal integerity, flds_num
+        nonlocal integrity, flds_num
         flds_num += len(flds)
         for f in flds:
             v = str(cv.get(f, ""))
             if len(v) > 0 and v != '0' and v != '[]':
-                integerity += 1
+                integrity += 1
 
     hasValues(tks_fld)
     hasValues(small_tks_fld)
     hasValues(kwd_fld)
     hasValues(num_fld)
-    cv["integerity_flt"] = integerity / flds_num
+    cv["integerity_flt"] = integrity / flds_num
 
     if cv.get("corporation_type"):
         for p, r in [(r"(公司|企业|其它|其他|Others*|\n|未填写|Enterprises|Company|companies)", ""),

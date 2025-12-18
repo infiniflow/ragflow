@@ -60,14 +60,7 @@ class Splitter(ProcessBase):
                 deli += f"`{d}`"
             else:
                 deli += d
-        child_deli = ""
-        for d in self._param.children_delimiters:
-            if len(d) > 1:
-                child_deli += f"`{d}`"
-            else:
-                child_deli += d
-        child_deli = [m.group(1) for m in re.finditer(r"`([^`]+)`", child_deli)]
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(child_deli), key=len, reverse=True))
+        custom_pattern = "|".join(re.escape(t) for t in sorted(set(self._param.children_delimiters), key=len, reverse=True))
 
         self.set_output("output_format", "chunks")
         self.callback(random.randint(1, 5) / 100.0, "Start to split into chunks.")

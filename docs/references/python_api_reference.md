@@ -22,15 +22,15 @@ pip install ragflow-sdk
 
 ---
 
-| Code | Message              | Description                 |
-|------|----------------------|-----------------------------|
-| 400  | Bad Request          | Invalid request parameters  |
-| 401  | Unauthorized         | Unauthorized access         |
-| 403  | Forbidden            | Access denied               |
-| 404  | Not Found            | Resource not found          |
-| 500  | Internal Server Error| Server internal error       |
-| 1001 | Invalid Chunk ID     | Invalid Chunk ID            |
-| 1002 | Chunk Update Failed  | Chunk update failed         |
+| Code | Message               | Description                |
+|------|-----------------------|----------------------------|
+| 400  | Bad Request           | Invalid request parameters |
+| 401  | Unauthorized          | Unauthorized access        |
+| 403  | Forbidden             | Access denied              |
+| 404  | Not Found             | Resource not found         |
+| 500  | Internal Server Error | Server internal error      |
+| 1001 | Invalid Chunk ID      | Invalid Chunk ID           |
+| 1002 | Chunk Update Failed   | Chunk update failed        |
 
 ---
 

@@ -206,10 +206,10 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
 
 > Catatan: Sebelum `v0.22.0`, kami menyediakan image dengan model embedding dan image slim tanpa model embedding. Detailnya sebagai berikut:
 
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-| ----------------- | --------------- | --------------------- | ------------------------ |
-| v0.21.1           | &approx;9       | ✔️                    | Stable release           |
-| v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
+|-------------------|-----------------|-----------------------|----------------|
+| v0.21.1           | &approx;9       | ✔️                    | Stable release |
+| v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
 
 > Mulai dari `v0.22.0`, kami hanya menyediakan edisi slim dan tidak lagi menambahkan akhiran **-slim** pada tag image.
 

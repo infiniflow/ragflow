@@ -273,6 +273,21 @@ def tokenize(d, txt, eng):
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
 
 
+def split_with_pattern(d, pattern:str, content:str, eng) -> list:
+    docs = []
+    txts = [txt for txt in re.split(r"(%s)" % pattern, content, flags=re.DOTALL)]
+    for j in range(0, len(txts), 2):
+        txt = txts[j]
+        if not txt:
+            continue
+        if j + 1 < len(txts):
+            txt += txts[j+1]
+        dd = copy.deepcopy(d)
+        tokenize(dd, txt, eng)
+        docs.append(dd)
+    return docs
+
+
 def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=None):
     res = []
     # wrap up as es documents
@@ -293,10 +308,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
 
         if child_delimiters_pattern:
             d["mom_with_weight"] = ck
-            for txt in re.split(r"(%s)" % child_delimiters_pattern, ck, flags=re.DOTALL):
-                dd = copy.deepcopy(d)
-                tokenize(dd, txt, eng)
-                res.append(dd)
+            res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng))
             continue
 
         tokenize(d, ck, eng)
@@ -316,10 +328,7 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
         add_positions(d, [[ii]*5])
         if child_delimiters_pattern:
             d["mom_with_weight"] = ck
-            for txt in re.split(r"(%s)" % child_delimiters_pattern, ck, flags=re.DOTALL):
-                dd = copy.deepcopy(d)
-                tokenize(dd, txt, eng)
-                res.append(dd)
+            res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng))
             continue
         tokenize(d, ck, eng)
         res.append(d)

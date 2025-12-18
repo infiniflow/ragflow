@@ -40,7 +40,7 @@ In the **Message** component, reference the `download` output variable from the 
 
 ### Content
 
-The main text content to include in the document. Supports markdown formatting:
+The main text content to include in the document. Supports Markdown formatting:
 
 - **Bold**: `**text**` or `__text__`
 - **Italic**: `*text*` or `_text_`
@@ -157,12 +157,12 @@ Optional. Text to display as a diagonal watermark across each page. Useful for m
 
 The **Docs Generator** component provides the following output variables:
 
-| Variable name | Type      | Description                                                                 |
-| ------------- | --------- | --------------------------------------------------------------------------- |
-| `file_path`   | `string`  | The server path where the generated document is saved.                      |
-| `pdf_base64`  | `string`  | The document content encoded in base64 format.                              |
-| `download`    | `string`  | JSON containing download information for the chat interface.                |
-| `success`     | `boolean` | Indicates whether the document was generated successfully.                  |
+| Variable name | Type      | Description                                                  |
+|---------------|-----------|--------------------------------------------------------------|
+| `file_path`   | `string`  | The server path where the generated document is saved.       |
+| `pdf_base64`  | `string`  | The document content encoded in base64 format.               |
+| `download`    | `string`  | JSON containing download information for the chat interface. |
+| `success`     | `boolean` | Indicates whether the document was generated successfully.   |
 
 ### Displaying the download button
 
@@ -189,15 +189,15 @@ The **Docs Generator** includes intelligent font handling for international cont
 
 ### Supported scripts
 
-| Script | Unicode Range | Font Used |
-| ------ | ------------- | --------- |
-| Chinese (CJK) | U+4E00–U+9FFF | STSong-Light |
-| Japanese (Hiragana/Katakana) | U+3040–U+30FF | HeiseiMin-W3 |
-| Korean (Hangul) | U+AC00–U+D7AF | HYSMyeongJo-Medium |
-| Arabic | U+0600–U+06FF | CID font fallback |
-| Hebrew | U+0590–U+05FF | CID font fallback |
-| Devanagari (Hindi) | U+0900–U+097F | CID font fallback |
-| Thai | U+0E00–U+0E7F | CID font fallback |
+| Script                       | Unicode Range | Font Used          |
+|------------------------------|---------------|--------------------|
+| Chinese (CJK)                | U+4E00–U+9FFF | STSong-Light       |
+| Japanese (Hiragana/Katakana) | U+3040–U+30FF | HeiseiMin-W3       |
+| Korean (Hangul)              | U+AC00–U+D7AF | HYSMyeongJo-Medium |
+| Arabic                       | U+0600–U+06FF | CID font fallback  |
+| Hebrew                       | U+0590–U+05FF | CID font fallback  |
+| Devanagari (Hindi)           | U+0900–U+097F | CID font fallback  |
+| Thai                         | U+0E00–U+0E7F | CID font fallback  |
 
 ### Font installation
 

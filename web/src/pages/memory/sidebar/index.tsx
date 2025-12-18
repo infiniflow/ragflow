@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
-import { Banknote, Logs } from 'lucide-react';
+import { formatPureDate } from '@/utils/date';
+import { MemoryStick, Settings } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFetchMemoryBaseConfiguration } from '../hooks/use-memory-setting';
@@ -19,12 +20,12 @@ export function SideBar() {
   const items = useMemo(() => {
     const list = [
       {
-        icon: <Logs className="size-4" />,
+        icon: <MemoryStick className="size-4" />,
         label: t(`memory.sideBar.messages`),
         key: Routes.MemoryMessage,
       },
       {
-        icon: <Banknote className="size-4" />,
+        icon: <Settings className="size-4" />,
         label: t(`memory.sideBar.configuration`),
         key: Routes.MemorySetting,
       },
@@ -44,15 +45,13 @@ export function SideBar() {
           <h3 className="text-lg font-semibold line-clamp-1 text-text-primary text-ellipsis overflow-hidden">
             {data.name}
           </h3>
-          {/* <div className="flex justify-between">
-            <span>
-              {data.doc_num} {t('knowledgeDetails.files')}
-            </span>
-            <span>{formatBytes(data.size)}</span>
+          <div className="flex justify-between">
+            <span className="truncate ">{data.description}</span>
+            {/* <span>{formatBytes(data.size)}</span> */}
           </div>
           <div>
-            {t('knowledgeDetails.created')} {formatPureDate(data.)}
-          </div> */}
+            {t('knowledgeDetails.created')} {formatPureDate(data.create_time)}
+          </div>
         </div>
       </div>
 

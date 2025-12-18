@@ -24,6 +24,7 @@ from PyPDF2 import PdfReader as pdf2_read
 
 from deepdoc.parser import PdfParser, PptParser, PlainParser
 from rag.app.naive import by_plaintext, PARSERS
+from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import rag_tokenizer
 from rag.nlp import tokenize, is_english
 
@@ -195,7 +196,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             res.append(d)
         return res
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer = parser_config.get("layout_recognize", "DeepDOC")
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(
+            parser_config.get("layout_recognize", "DeepDOC")
+        )
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"
@@ -213,6 +216,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             callback=callback,
             pdf_cls=Pdf,
             layout_recognizer=layout_recognizer,
+            mineru_llm_name=parser_model_name,
             **kwargs
         )
 

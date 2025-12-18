@@ -169,10 +169,12 @@ class CommonService:
         """
         if "id" not in kwargs:
             kwargs["id"] = get_uuid()
-        kwargs["create_time"] = current_timestamp()
-        kwargs["create_date"] = datetime_format(datetime.now())
-        kwargs["update_time"] = current_timestamp()
-        kwargs["update_date"] = datetime_format(datetime.now())
+        timestamp = current_timestamp()
+        cur_datetime = datetime_format(datetime.now())
+        kwargs["create_time"] = timestamp
+        kwargs["create_date"] = cur_datetime
+        kwargs["update_time"] = timestamp
+        kwargs["update_date"] = cur_datetime
         sample_obj = cls.model(**kwargs).save(force_insert=True)
         return sample_obj
 
@@ -207,10 +209,14 @@ class CommonService:
             data_list (list): List of dictionaries containing record data to update.
                              Each dictionary must include an 'id' field.
         """
+
+        timestamp = current_timestamp()
+        cur_datetime = datetime_format(datetime.now())
+        for data in data_list:
+            data["update_time"] = timestamp
+            data["update_date"] = cur_datetime
         with DB.atomic():
             for data in data_list:
-                data["update_time"] = current_timestamp()
-                data["update_date"] = datetime_format(datetime.now())
                 cls.model.update(data).where(cls.model.id == data["id"]).execute()
 
     @classmethod

@@ -7,10 +7,16 @@ export const isFormData = (data: unknown): data is FormData => {
   return data instanceof FormData;
 };
 
-const excludedFields = ['img2txt_id', 'mcpServers'];
+const excludedFields: Array<string | RegExp> = [
+  'img2txt_id',
+  'mcpServers',
+  'image_base64',
+];
 
 const isExcludedField = (key: string) => {
-  return excludedFields.includes(key);
+  return excludedFields.some((excl) =>
+    excl instanceof RegExp ? excl.test(key) : excl === key,
+  );
 };
 
 export const convertTheKeysOfTheObjectToSnake = (data: unknown) => {

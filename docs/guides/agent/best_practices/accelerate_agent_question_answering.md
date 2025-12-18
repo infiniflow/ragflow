@@ -45,7 +45,7 @@ Click the light bulb icon above the *current* dialogue and scroll down the popup
 
 
 | Item name         | Description                                                                                   |
-| ----------------- |-----------------------------------------------------------------------------------------------|
+|-------------------|-----------------------------------------------------------------------------------------------|
 | Total             | Total time spent on this conversation round, including chunk retrieval and answer generation. |
 | Check LLM         | Time to validate the specified LLM.                                                           |
 | Create retriever  | Time to create a chunk retriever.                                                             |

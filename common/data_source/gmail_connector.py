@@ -1,5 +1,4 @@
 import logging
-import os
 from typing import Any
 from google.oauth2.credentials import Credentials as OAuthCredentials
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
