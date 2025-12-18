@@ -144,7 +144,7 @@ export const APIMapUrl = {
   [LLMFactory.BaiduYiYan]: 'https://wenxin.baidu.com/user/key',
   [LLMFactory.Meituan]: 'https://longcat.chat/platform/api_keys',
   [LLMFactory.Bedrock]:
-    'https://us-east-2.console.aws.amazon.com/bedrock/home#/api-keys',
+    'https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-2#/users',
   [LLMFactory.AzureOpenAI]:
     'https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/keys',
