@@ -1182,6 +1182,7 @@ class LiteLLMBase(ABC):
         "Ollama",
         "LongCat",
         "CometAPI",
+        "AIBadgr",
         "SILICONFLOW",
         "OpenRouter",
         "StepFun",
