@@ -15,6 +15,9 @@
 #
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import ipaddress
 import json
 import logging
@@ -138,9 +141,6 @@ def delete_agent(tenant_id: str, agent_id: str):
     UserCanvasService.delete_by_id(agent_id)
     return get_json_result(data=True)
 
-
-_rate_limit_cache = {}
-
 @manager.route("/webhook/<agent_id>", methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"])  # noqa: F821
 @manager.route("/webhook_test/<agent_id>",methods=["POST", "GET", "PUT", "PATCH", "DELETE", "HEAD"],)  # noqa: F821
 async def webhook(agent_id: str):
@@ -220,7 +220,7 @@ async def webhook(agent_id: str):
             return
 
         # Convert "10MB" → bytes
-        units = {"kb": 1024, "mb": 1024**2, "gb": 1024**3}
+        units = {"kb": 1024, "mb": 1024**2}
         size_str = max_size.lower()
 
         for suffix, factor in units.items():
@@ -229,6 +229,9 @@ async def webhook(agent_id: str):
                 break
         else:
             raise Exception("Invalid max_body_size format")
+        MAX_LIMIT = 10 * 1024 * 1024  # 10MB
+        if limit > MAX_LIMIT:
+            raise Exception("max_body_size exceeds maximum allowed size (10MB)")
 
         content_length = request.content_length or 0
         if content_length > limit:
@@ -261,24 +264,41 @@ async def webhook(agent_id: str):
         if not rl:
             return
 
-        limit = rl.get("limit", 60)
+        limit = int(rl.get("limit", 60))
+        if limit <= 0:
+            raise Exception("rate_limit.limit must be > 0")
         per = rl.get("per", "minute")
 
-        window = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}.get(per, 60)
-        key = f"rl:{agent_id}"
+        window = {
+            "second": 1,
+            "minute": 60,
+            "hour": 3600,
+            "day": 86400,
+        }.get(per)
 
-        now = int(time.time())
-        bucket = _rate_limit_cache.get(key, {"ts": now, "count": 0})
+        if not window:
+            raise Exception(f"Invalid rate_limit.per: {per}")
 
-        # Reset window
-        if now - bucket["ts"] > window:
-            bucket = {"ts": now, "count": 0}
+        capacity = limit
+        rate = limit / window
+        cost = 1
 
-        bucket["count"] += 1
-        _rate_limit_cache[key] = bucket
+        key = f"rl:tb:{agent_id}"
+        now = time.time()
 
-        if bucket["count"] > limit:
-            raise Exception("Too many requests (rate limit exceeded)")
+        try:
+            res = REDIS_CONN.lua_token_bucket(
+                keys=[key],
+                args=[capacity, rate, now, cost],
+                client=REDIS_CONN.REDIS,
+            )
+
+            allowed = int(res[0])
+            if allowed != 1:
+                raise Exception("Too many requests (rate limit exceeded)")
+
+        except Exception as e:
+            raise Exception(f"Rate limit error: {e}")
 
     def _validate_token_auth(security_cfg):
         """Validate header-based token authentication."""
@@ -304,6 +324,8 @@ async def webhook(agent_id: str):
         """Validate JWT token in Authorization header."""
         jwt_cfg = security_cfg.get("jwt", {})
         secret = jwt_cfg.get("secret")
+        if not secret:
+            raise Exception("JWT secret not configured")
         required_claims = jwt_cfg.get("required_claims", [])
 
         auth_header = request.headers.get("Authorization", "")
@@ -391,9 +413,9 @@ async def webhook(agent_id: str):
 
         # 3. Body
         ctype = request.headers.get("Content-Type", "").split(";")[0].strip()
-        if ctype != content_type:
+        if ctype and ctype != content_type:
             raise ValueError(
-                f"Invalid Content-Type: expect '{content_type}', got '{ctype or 'empty'}'"
+                f"Invalid Content-Type: expect '{content_type}', got '{ctype}'"
             )
 
         body_data: dict = {}
@@ -412,6 +434,8 @@ async def webhook(agent_id: str):
                 for key, value in form.items():
                     body_data[key] = value
 
+                if len(files) > 10:
+                    raise Exception("Too many uploaded files")
                 for key, file in files.items():
                     desc = FileService.upload_info(
                         cvs.user_id,           # user
@@ -617,7 +641,8 @@ async def webhook(agent_id: str):
     clean_request = {
         "query": query_clean,
         "headers": header_clean,
-        "body": body_clean
+        "body": body_clean,
+        "input": parsed
     }
 
     execution_mode = webhook_cfg.get("execution_mode", "Immediately")
@@ -641,18 +666,16 @@ async def webhook(agent_id: str):
 
         REDIS_CONN.set_obj(key, obj, ttl)
 
-
-    def normalize_ans(ans):
-        return {
-            "task_id": ans.get("task_id"),
-            "component_id": ans.get("data", {}).get("component_id"),
-            "content": ans.get("data", {}).get("content"),
-            "start_to_think": ans.get("data", {}).get("start_to_think"),
-            "end_to_think": ans.get("data", {}).get("end_to_think"),
-        }
-
     if execution_mode == "Immediately":
         status = response_cfg.get("status", 200)
+        try:
+            status = int(status)
+        except (TypeError, ValueError):
+            return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(f"Invalid response status code: {status}")),RetCode.BAD_REQUEST
+
+        if not (200 <= status <= 399):
+            return get_data_error_result(code=RetCode.BAD_REQUEST,message=str(f"Invalid response status code: {status}, must be between 200 and 399")),RetCode.BAD_REQUEST
+
         body_tpl = response_cfg.get("body_template", "")
 
         def parse_body(body: str):
@@ -684,10 +707,7 @@ async def webhook(agent_id: str):
                         append_webhook_trace(
                             agent_id,
                             start_ts,
-                            {
-                                "event": ans.get("event"),
-                                "data": normalize_ans(ans),
-                            }
+                            ans
                         )
                 if is_test:
                     append_webhook_trace(
@@ -730,10 +750,7 @@ async def webhook(agent_id: str):
                         append_webhook_trace(
                             agent_id,
                             start_ts,
-                            {
-                                "event": ans.get("event"),
-                                "data": normalize_ans(ans),
-                            }
+                            ans
                         )
                 if is_test:
                     append_webhook_trace(
@@ -756,6 +773,20 @@ async def webhook(agent_id: str):
 
 @manager.route("/webhook_trace/<agent_id>", methods=["GET"])  # noqa: F821
 async def webhook_trace(agent_id: str):
+    def encode_webhook_id(start_ts: str) -> str:
+        WEBHOOK_ID_SECRET = "webhook_id_secret"
+        sig = hmac.new(
+            WEBHOOK_ID_SECRET.encode("utf-8"),
+            start_ts.encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+        return base64.urlsafe_b64encode(sig).decode("utf-8").rstrip("=")
+
+    def decode_webhook_id(enc_id: str, webhooks: dict) -> str | None:
+        for ts in webhooks.keys():
+            if encode_webhook_id(ts) == enc_id:
+                return ts
+        return None
     since_ts = request.args.get("since_ts", type=float)
     webhook_id = request.args.get("webhook_id")
 
@@ -764,31 +795,23 @@ async def webhook_trace(agent_id: str):
 
     if since_ts is None:
         now = time.time()
-        return Response(
-            json.dumps(
-                {
-                    "webhook_id": None,
-                    "events": [],
-                    "next_since_ts": now,
-                    "finished": False,
-                },
-                ensure_ascii=False,
-            ),
-            content_type="application/json; charset=utf-8",
+        return get_json_result(
+            data={
+                "webhook_id": None,
+                "events": [],
+                "next_since_ts": now,
+                "finished": False,
+            }
         )
 
     if not raw:
-        return Response(
-            json.dumps(
-                {
-                    "webhook_id": None,
-                    "events": [],
-                    "next_since_ts": since_ts,
-                    "finished": False,
-                },
-                ensure_ascii=False,
-            ),
-            content_type="application/json; charset=utf-8",
+        return get_json_result(
+            data={
+                "webhook_id": None,
+                "events": [],
+                "next_since_ts": since_ts,
+                "finished": False,
+            }
         )
 
     obj = json.loads(raw)
@@ -800,50 +823,41 @@ async def webhook_trace(agent_id: str):
         ]
 
         if not candidates:
-            return Response(
-                json.dumps(
-                    {
-                        "webhook_id": None,
-                        "events": [],
-                        "next_since_ts": since_ts,
-                        "finished": False,
-                    },
-                    ensure_ascii=False,
-                ),
-                content_type="application/json; charset=utf-8",
+            return get_json_result(
+                data={
+                    "webhook_id": None,
+                    "events": [],
+                    "next_since_ts": since_ts,
+                    "finished": False,
+                }
             )
 
         start_ts = min(candidates)
-        webhook_id = str(start_ts)
+        real_id = str(start_ts)
+        webhook_id = encode_webhook_id(real_id)
 
-        return Response(
-            json.dumps(
-                {
-                    "webhook_id": webhook_id,
-                    "events": [],
-                    "next_since_ts": start_ts,
-                    "finished": False,
-                },
-                ensure_ascii=False,
-            ),
-            content_type="application/json; charset=utf-8",
+        return get_json_result(
+            data={
+                "webhook_id": webhook_id,
+                "events": [],
+                "next_since_ts": start_ts,
+                "finished": False,
+            }
         )
 
-    ws = webhooks.get(str(webhook_id))
-    if not ws:
-        return Response(
-            json.dumps(
-                {
-                    "webhook_id": webhook_id,
-                    "events": [],
-                    "next_since_ts": since_ts,
-                    "finished": True,
-                },
-                ensure_ascii=False,
-            ),
-            content_type="application/json; charset=utf-8",
+    real_id = decode_webhook_id(webhook_id, webhooks)
+
+    if not real_id:
+        return get_json_result(
+            data={
+                "webhook_id": webhook_id,
+                "events": [],
+                "next_since_ts": since_ts,
+                "finished": True,
+            }
         )
 
+    ws = webhooks.get(str(real_id))
     events = ws.get("events", [])
     new_events = [e for e in events if e.get("ts", 0) > since_ts]
 
@@ -853,15 +867,11 @@ async def webhook_trace(agent_id: str):
 
     finished = any(e.get("event") == "finished" for e in new_events)
 
-    return Response(
-        json.dumps(
-            {
-                "webhook_id": webhook_id,
-                "events": new_events,
-                "next_since_ts": next_ts,
-                "finished": finished,
-            },
-            ensure_ascii=False,
-        ),
-        content_type="application/json; charset=utf-8",
+    return get_json_result(
+        data={
+            "webhook_id": webhook_id,
+            "events": new_events,
+            "next_since_ts": next_ts,
+            "finished": finished,
+        }
     )
