@@ -396,11 +396,8 @@ async def webhook(agent_id: str):
         dsl = json.dumps(cvs.dsl, ensure_ascii=False)
     try:
         canvas = Canvas(dsl, cvs.user_id, agent_id)
-    except Exception as e:
-        return get_json_result(
-            data=False, message=str(e),
-            code=RetCode.EXCEPTION_ERROR), RetCode.EXCEPTION_ERROR
-
+    except Exception:
+        raise
     # 7. Parse request body
     async def parse_webhook_request(content_type):
         """Parse request based on content-type and return structured data."""
@@ -626,7 +623,6 @@ async def webhook(agent_id: str):
             return True
 
         return True
-
     parsed = await parse_webhook_request(webhook_cfg.get("content_types"))
     SCHEMA = webhook_cfg.get("schema", {"query": {}, "headers": {}, "body": {}})
 
@@ -704,11 +700,8 @@ async def webhook(agent_id: str):
                     webhook_payload=clean_request
                 ):
                     if is_test:
-                        append_webhook_trace(
-                            agent_id,
-                            start_ts,
-                            ans
-                        )
+                        append_webhook_trace(agent_id, start_ts, ans)
+
                 if is_test:
                     append_webhook_trace(
                         agent_id,
@@ -716,6 +709,7 @@ async def webhook(agent_id: str):
                         {
                             "event": "finished",
                             "elapsed_time": time.time() - start_ts,
+                            "success": True,
                         }
                     )
 
@@ -723,7 +717,29 @@ async def webhook(agent_id: str):
                 UserCanvasService.update_by_id(cvs.user_id, cvs.to_dict())
 
             except Exception as e:
-                logging.exception(f"Webhook background run failed: {e}")
+                logging.exception("Webhook background run failed")
+                if is_test:
+                    try:
+                        append_webhook_trace(
+                            agent_id,
+                            start_ts,
+                            {
+                                "event": "error",
+                                "message": str(e),
+                                "error_type": type(e).__name__,
+                            }
+                        )
+                        append_webhook_trace(
+                            agent_id,
+                            start_ts,
+                            {
+                                "event": "finished",
+                                "elapsed_time": time.time() - start_ts,
+                                "success": False,
+                            }
+                        )
+                    except Exception:
+                        logging.exception("Failed to append webhook trace")
 
         asyncio.create_task(background_run())
         return resp
@@ -759,12 +775,32 @@ async def webhook(agent_id: str):
                         {
                             "event": "finished",
                             "elapsed_time": time.time() - start_ts,
+                            "success": True,
                         }
                     )
                 final_content = "".join(contents)
                 yield json.dumps(final_content, ensure_ascii=False)
 
             except Exception as e:
+                if is_test:
+                    append_webhook_trace(
+                        agent_id,
+                        start_ts,
+                        {
+                            "event": "error",
+                            "message": str(e),
+                            "error_type": type(e).__name__,
+                        }
+                    )
+                    append_webhook_trace(
+                        agent_id,
+                        start_ts,
+                        {
+                            "event": "finished",
+                            "elapsed_time": time.time() - start_ts,
+                            "success": False,
+                        }
+                    )
                 yield json.dumps({"code": 500, "message": str(e)}, ensure_ascii=False)
 
         resp = Response(sse(), mimetype="application/json")
