@@ -18,11 +18,13 @@ from typing import List
 
 from common.time_utils import current_timestamp, timestamp_to_date, format_iso_8601_to_ymd_hms
 from common.constants import MemoryType, LLMType
+from common.vector_store_base import FusionExpr
 from api.db.services.memory_service import MemoryService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.llm_service import LLMBundle
 from api.utils.memory_utils import get_memory_type_human
 from memory.services.messages import MessageService
+from memory.services.query import MsgTextQueryer, get_vector
 from memory.utils.prompt_util import PromptAssembler
 from memory.utils.msg_util import get_json_result_from_llm_response
 from rag.utils.redis_conn import REDIS_CONN
@@ -121,3 +123,37 @@ async def extract_by_llm(tenant_id: str, llm_id: str, extract_conf: dict, memory
         "invalid_at": format_iso_8601_to_ymd_hms(extracted_content["invalid_at"]) if extracted_content.get("invalid_at") else "",
         "message_type": message_type
     } for message_type, extracted_content_list in res_json.items() for extracted_content in extracted_content_list]
+
+
+def query_message(filter_dict: dict, params: dict):
+    """
+    :param filter_dict: {
+        "memory_id": List[str],
+        "agent_id": optional
+        "session_id": optional
+    }
+    :param params: {
+        "query": question str,
+        "similarity_threshold": float,
+        "keywords_similarity_weight": float,
+        "top_n": int
+    }
+    """
+    memory_ids = filter_dict["memory_id"]
+    memory_list = MemoryService.get_by_ids(memory_ids)
+    if not memory_list:
+        return []
+
+    condition_dict = {k: v for k, v in filter_dict.items() if v}
+    uids = [memory.tenant_id for memory in memory_list]
+
+    question = params["query"]
+    question = question.strip()
+    memory = memory_list[0]
+    embd_model = LLMBundle(memory.tenant_id, llm_type=LLMType.EMBEDDING, llm_name=memory.embd_id)
+    match_dense = get_vector(question, embd_model, similarity=params["similarity_threshold"])
+    match_text, _ = MsgTextQueryer().question(question, min_match=0.3)
+    keywords_similarity_weight = params.get("keywords_similarity_weight", 0.7)
+    fusion_expr = FusionExpr("weighted_sum", params["top_n"], {"weights": ",".join([str(keywords_similarity_weight), str(1 - keywords_similarity_weight)])})
+
+    return MessageService.search_message(memory_ids, condition_dict, uids, [match_text, match_dense, fusion_expr], 1, params["top_n"])

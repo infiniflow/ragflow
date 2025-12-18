@@ -16,7 +16,7 @@
 from typing import List
 
 from common import settings
-from memory.utils.msg_store_conn import OrderByExpr
+from memory.utils.msg_store_conn import OrderByExpr, MatchExpr
 from memory.utils.msg_util import map_message_to_storage_fields, get_message_from_storage_doc
 
 
@@ -78,7 +78,7 @@ class MessageService:
             highlightFields=[],
             condition=filter_dict,
             matchExprs=[], orderBy=order_by,
-            offset=(page-1)*page_size, limit=50,
+            offset=(page-1)*page_size, limit=page_size,
             indexNames=index, memoryIds=[memory_id],
         )
         total_count = settings.msgStoreConn.get_total(res)
@@ -90,23 +90,6 @@ class MessageService:
             "message_list": [get_message_from_storage_doc(d) for d in doc_mapping.values()],
             "total_count": total_count
         }
-
-    @classmethod
-    def search_message(cls, filter_dict: dict, params: dict, uids: List[str]):
-        """
-        :param filter_dict: {
-            "memory_id": List[str],
-            "agent_id": optional
-            "session_id": optional
-        }
-        :param params: {
-            "query": question str,
-            "similarity_threshold": float,
-            "keywords_similarity_weight": float,
-        }
-        :param uids: List[str]
-        """
-        pass
 
     @classmethod
     def get_recent_messages(cls, uids: List[str], memory_ids: List[str], agent_id: str, session_id: str, limit: int):
@@ -133,6 +116,33 @@ class MessageService:
             "valid_at", "invalid_at", "forget_at", "status_int", "content"
         ])
         return [get_message_from_storage_doc(d) for d in doc_mapping.values()]
+
+
+    @classmethod
+    def search_message(cls, memory_ids: List[str], condition_dict: dict, uids: List[str], match_expressions:list[MatchExpr], page: int, page_size: int):
+        index_names = [index_name(uid) for uid in uids]
+
+        order_by = OrderByExpr()
+        order_by.desc("valid_at")
+        res = settings.msgStoreConn.search(
+            selectFields=[
+                "message_id", "message_type_kwd", "source_id", "memory_id", "user_id", "agent_id", "session_id",
+                "valid_at",
+                "invalid_at", "forget_at", "status_int", "content"
+            ],
+            highlightFields=[],
+            condition=condition_dict,
+            matchExprs=match_expressions,
+            orderBy=order_by,
+            offset=(page-1)*page_size, limit=page_size,
+            indexNames=index_names, memoryIds=memory_ids,
+        )
+        docs = settings.msgStoreConn.get_fields(res, [
+            "message_id", "message_type_kwd", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at",
+            "invalid_at", "forget_at", "status_int", "content"
+        ])
+        return [get_message_from_storage_doc(d) for d in docs.values()]
+
 
     @classmethod
     def get_by_message_id(cls, memory_id: str, message_id: int, uid: str):

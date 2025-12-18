@@ -20,6 +20,7 @@ from common.time_utils import current_timestamp, timestamp_to_date
 
 from memory.services.messages import MessageService
 from api.db.joint_services import memory_message_service
+from api.db.joint_services.memory_message_service import query_message
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from common.constants import RetCode
 
@@ -100,11 +101,36 @@ async def update_message(memory_id: str, message_id: int):
         return get_json_result(code=RetCode.SERVER_ERROR, message=f"Failed to set status for message '{message_id}' in memory '{memory_id}'.")
 
 
-@manager.route("/search", methods=["POST"]) # noqa: F821
+@manager.route("/search", methods=["GET"]) # noqa: F821
 @login_required
-@validate_request("query", "memory_id", "similarity_threshold", "keywords_similarity_weight", "top_n")
 async def search_message():
-    pass
+    args = request.args
+    print(args, flush=True)
+    empty_fields = [f for f in ["memory_id", "query"] if not args.get(f)]
+    if empty_fields:
+        return get_error_argument_result(f"{', '.join(empty_fields)} can't be empty.")
+
+    memory_ids = args.getlist("memory_id")
+    query = args.get("query")
+    similarity_threshold = float(args.get("similarity_threshold", 0.2))
+    keywords_similarity_weight = float(args.get("keywords_similarity_weight", 0.7))
+    top_n = int(args.get("top_n", 5))
+    agent_id = args.get("agent_id", "")
+    session_id = args.get("session_id", "")
+
+    filter_dict = {
+        "memory_id": memory_ids,
+        "agent_id": agent_id,
+        "session_id": session_id
+    }
+    params = {
+        "query": query,
+        "similarity_threshold": similarity_threshold,
+        "keywords_similarity_weight": keywords_similarity_weight,
+        "top_n": top_n
+    }
+    res = query_message(filter_dict, params)
+    return get_json_result(message=True, data=res)
 
 
 @manager.route("", methods=["GET"]) # noqa: F821
