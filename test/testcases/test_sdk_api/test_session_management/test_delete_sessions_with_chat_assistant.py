@@ -46,9 +46,9 @@ class TestSessionWithChatAssistantDelete:
 
         chat_assistant.delete_sessions(**session_ids)
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             chat_assistant.delete_sessions(**session_ids)
-        assert "The chat doesn't own the session" in str(excinfo.value)
+        assert "The chat doesn't own the session" in str(exception_info.value)
 
     @pytest.mark.p3
     def test_duplicate_deletion(self, add_sessions_with_chat_assistant_func):
@@ -98,9 +98,9 @@ class TestSessionWithChatAssistantDelete:
             payload = payload([session.id for session in sessions])
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.delete_sessions(**payload)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             chat_assistant.delete_sessions(**payload)
 

@@ -32,9 +32,9 @@ class TestAuthorization:
     )
     def test_auth_invalid(self, invalid_auth, expected_message):
         client = RAGFlow(invalid_auth, HOST_ADDRESS)
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets()
-        assert expected_message in str(excinfo.value)
+        assert expected_message in str(exception_info.value)
 
 
 class TestCapability:
@@ -46,7 +46,7 @@ class TestCapability:
                 executor.submit(
                     client.list_datasets,
                 )
-                for i in range(count)
+                for _ in range(count)
             ]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
@@ -89,16 +89,16 @@ class TestDatasetsList:
         ids=["page_0", "page_a"],
     )
     def test_page_invalid(self, client, params, expected_message):
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert expected_message in str(excinfo.value), str(excinfo.value)
+        assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_page_none(self, client):
         params = {"page": None}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "not instance of" in str(excinfo.value), str(excinfo.value)
+        assert "not instance of" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -124,16 +124,16 @@ class TestDatasetsList:
         ],
     )
     def test_page_size_invalid(self, client, params, expected_message):
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert expected_message in str(excinfo.value), str(excinfo.value)
+        assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_page_size_none(self, client):
         params = {"page_size": None}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "not instance of" in str(excinfo.value), str(excinfo.value)
+        assert "not instance of" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -160,16 +160,16 @@ class TestDatasetsList:
         ids=["empty", "unknown", "orderby_create_time_upper", "orderby_update_time_upper", "whitespace"],
     )
     def test_orderby_invalid(self, client, params):
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Input should be 'create_time' or 'update_time'" in str(excinfo.value), str(excinfo.value)
+        assert "Input should be 'create_time' or 'update_time'" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_orderby_none(self, client):
         params = {"orderby": None}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "not instance of" in str(excinfo.value), str(excinfo.value)
+        assert "not instance of" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -193,16 +193,16 @@ class TestDatasetsList:
         ids=["float_value", "invalid_string"],
     )
     def test_desc_invalid(self, client, params):
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "not instance of" in str(excinfo.value), str(excinfo.value)
+        assert "not instance of" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_desc_none(self, client):
         params = {"desc": None}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "not instance of" in str(excinfo.value), str(excinfo.value)
+        assert "not instance of" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p1
     def test_name(self, client):
@@ -214,9 +214,9 @@ class TestDatasetsList:
     @pytest.mark.p2
     def test_name_wrong(self, client):
         params = {"name": "wrong name"}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "lacks permission for dataset" in str(excinfo.value), str(excinfo.value)
+        assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_name_empty(self, client):
@@ -241,30 +241,30 @@ class TestDatasetsList:
     @pytest.mark.p2
     def test_id_not_uuid(self, client):
         params = {"id": "not_uuid"}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Invalid UUID1 format" in str(excinfo.value), str(excinfo.value)
+        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_not_uuid1(self, client):
         params = {"id": uuid.uuid4().hex}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Invalid UUID1 format" in str(excinfo.value), str(excinfo.value)
+        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_wrong_uuid(self, client):
         params = {"id": "d94a8dc02c9711f0930f7fbc369eab6d"}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "lacks permission for dataset" in str(excinfo.value), str(excinfo.value)
+        assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_empty(self, client):
         params = {"id": ""}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "Invalid UUID1 format" in str(excinfo.value), str(excinfo.value)
+        assert "Invalid UUID1 format" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_id_none(self, client):
@@ -282,6 +282,7 @@ class TestDatasetsList:
         ids=["name_and_id_match", "name_and_id_mismatch"],
     )
     def test_name_and_id(self, client, add_datasets, func, name, expected_num):
+        params = None
         if callable(func):
             params = {"id": func(add_datasets), "name": name}
         datasets = client.list_datasets(**params)
@@ -301,13 +302,13 @@ class TestDatasetsList:
             params = {"id": dataset_id(add_datasets), "name": name}
         else:
             params = {"id": dataset_id, "name": name}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "lacks permission for dataset" in str(excinfo.value), str(excinfo.value)
+        assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_field_unsupported(self, client):
         params = {"unknown_field": "unknown_field"}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.list_datasets(**params)
-        assert "got an unexpected keyword argument" in str(excinfo.value), str(excinfo.value)
+        assert "got an unexpected keyword argument" in str(exception_info.value), str(exception_info.value)

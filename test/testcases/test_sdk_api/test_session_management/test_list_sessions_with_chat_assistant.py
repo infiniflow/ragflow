@@ -34,9 +34,9 @@ class TestSessionsWithChatAssistantList:
     def test_page(self, add_sessions_with_chat_assistant, params, expected_page_size, expected_message):
         chat_assistant, _ = add_sessions_with_chat_assistant
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.list_sessions(**params)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             sessions = chat_assistant.list_sessions(**params)
             assert len(sessions) == expected_page_size
@@ -57,9 +57,9 @@ class TestSessionsWithChatAssistantList:
     def test_page_size(self, add_sessions_with_chat_assistant, params, expected_page_size, expected_message):
         chat_assistant, _ = add_sessions_with_chat_assistant
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.list_sessions(**params)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             sessions = chat_assistant.list_sessions(**params)
             assert len(sessions) == expected_page_size
@@ -78,9 +78,9 @@ class TestSessionsWithChatAssistantList:
     def test_orderby(self, add_sessions_with_chat_assistant, params, expected_message):
         chat_assistant, _ = add_sessions_with_chat_assistant
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.list_sessions(**params)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             chat_assistant.list_sessions(**params)
 
@@ -102,9 +102,9 @@ class TestSessionsWithChatAssistantList:
     def test_desc(self, add_sessions_with_chat_assistant, params, expected_message):
         chat_assistant, _ = add_sessions_with_chat_assistant
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.list_sessions(**params)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             chat_assistant.list_sessions(**params)
 
@@ -121,9 +121,9 @@ class TestSessionsWithChatAssistantList:
     def test_name(self, add_sessions_with_chat_assistant, params, expected_num, expected_message):
         chat_assistant, _ = add_sessions_with_chat_assistant
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.list_sessions(**params)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             sessions = chat_assistant.list_sessions(**params)
             if params["name"] == "session_with_chat_assistant_1":
@@ -149,9 +149,9 @@ class TestSessionsWithChatAssistantList:
             params = {"id": session_id}
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.list_sessions(**params)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             list_sessions = chat_assistant.list_sessions(**params)
             if "id" in params and params["id"] == sessions[0].id:
@@ -177,9 +177,9 @@ class TestSessionsWithChatAssistantList:
             params = {"id": session_id, "name": name}
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.list_sessions(**params)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             list_sessions = chat_assistant.list_sessions(**params)
             assert len(list_sessions) == expected_num
@@ -189,7 +189,7 @@ class TestSessionsWithChatAssistantList:
         count = 100
         chat_assistant, _ = add_sessions_with_chat_assistant
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(chat_assistant.list_sessions) for i in range(count)]
+            futures = [executor.submit(chat_assistant.list_sessions) for _ in range(count)]
         responses = list(as_completed(futures))
         assert len(responses) == count, responses
 
@@ -198,6 +198,6 @@ class TestSessionsWithChatAssistantList:
         chat_assistant, _ = add_sessions_with_chat_assistant
         client.delete_chats(ids=[chat_assistant.id])
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             chat_assistant.list_sessions()
-        assert "You don't own the assistant" in str(excinfo.value)
+        assert "You don't own the assistant" in str(exception_info.value)

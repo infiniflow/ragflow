@@ -69,9 +69,9 @@ class TestDocumentsParse:
             payload = payload([doc.id for doc in documents])
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 dataset.async_parse_documents(**payload)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             dataset.async_parse_documents(**payload)
             condition(dataset, payload["document_ids"])
@@ -90,9 +90,9 @@ class TestDocumentsParse:
         document_ids = [doc.id for doc in documents]
         payload = payload(document_ids)
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             dataset.async_parse_documents(**payload)
-        assert "Documents not found: ['invalid_id']" in str(excinfo.value), str(excinfo.value)
+        assert "Documents not found: ['invalid_id']" in str(exception_info.value), str(exception_info.value)
 
         condition(dataset, document_ids)
         validate_document_details(dataset, document_ids)
@@ -117,9 +117,9 @@ class TestDocumentsParse:
 @pytest.mark.p3
 def test_parse_100_files(add_dataset_func, tmp_path):
     @wait_for(200, 1, "Document parsing timeout")
-    def condition(_dataset: DataSet, _count: int):
-        documents = _dataset.list_documents(page_size=_count * 2)
-        for document in documents:
+    def condition_inner(_dataset: DataSet, _count: int):
+        docs = _dataset.list_documents(page_size=_count * 2)
+        for document in docs:
             if document.run != "DONE":
                 return False
         return True
@@ -130,16 +130,16 @@ def test_parse_100_files(add_dataset_func, tmp_path):
     document_ids = [doc.id for doc in documents]
 
     dataset.async_parse_documents(document_ids=document_ids)
-    condition(dataset, count)
+    condition_inner(dataset, count)
     validate_document_details(dataset, document_ids)
 
 
 @pytest.mark.p3
 def test_concurrent_parse(add_dataset_func, tmp_path):
     @wait_for(200, 1, "Document parsing timeout")
-    def condition(_dataset: DataSet, _count: int):
-        documents = _dataset.list_documents(page_size=_count * 2)
-        for document in documents:
+    def condition_inner(_dataset: DataSet, _count: int):
+        docs = _dataset.list_documents(page_size=_count * 2)
+        for document in docs:
             if document.run != "DONE":
                 return False
         return True
@@ -158,5 +158,5 @@ def test_concurrent_parse(add_dataset_func, tmp_path):
     responses = list(as_completed(futures))
     assert len(responses) == count, responses
 
-    condition(dataset, count)
+    condition_inner(dataset, count)
     validate_document_details(dataset, document_ids)

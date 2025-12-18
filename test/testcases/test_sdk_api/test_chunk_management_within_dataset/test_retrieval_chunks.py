@@ -38,9 +38,9 @@ class TestChunksRetrieval:
             payload["document_ids"] = [document.id]
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 client.retrieve(**payload)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = client.retrieve(**payload)
             assert len(chunks) == expected_page_size, str(chunks)
@@ -83,9 +83,9 @@ class TestChunksRetrieval:
         payload.update({"question": "chunk", "dataset_ids": [dataset.id]})
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 client.retrieve(**payload)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = client.retrieve(**payload)
             assert len(chunks) == expected_page_size, str(chunks)
@@ -116,9 +116,9 @@ class TestChunksRetrieval:
         payload.update({"question": "chunk", "dataset_ids": [dataset.id]})
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 client.retrieve(**payload)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = client.retrieve(**payload)
             assert len(chunks) == expected_page_size, str(chunks)
@@ -143,9 +143,9 @@ class TestChunksRetrieval:
         payload.update({"question": "chunk", "dataset_ids": [dataset.id]})
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 client.retrieve(**payload)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = client.retrieve(**payload)
             assert len(chunks) == expected_page_size, str(chunks)
@@ -192,9 +192,9 @@ class TestChunksRetrieval:
         payload.update({"question": "chunk", "dataset_ids": [dataset.id]})
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 client.retrieve(**payload)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = client.retrieve(**payload)
             assert len(chunks) == expected_page_size, str(chunks)
@@ -212,9 +212,9 @@ class TestChunksRetrieval:
         payload.update({"question": "chunk", "dataset_ids": [dataset.id]})
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 client.retrieve(**payload)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = client.retrieve(**payload)
             assert len(chunks) > 0, str(chunks)
@@ -235,9 +235,9 @@ class TestChunksRetrieval:
         payload.update({"question": "chunk test", "dataset_ids": [dataset.id]})
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 client.retrieve(**payload)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = client.retrieve(**payload)
             assert len(chunks) == expected_page_size, str(chunks)

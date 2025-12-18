@@ -43,9 +43,9 @@ class TestSessionWithChatAssistantCreate:
             chat_assistant.create_session(name=name.upper())
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.create_session(name=name)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             session = chat_assistant.create_session(name=name)
             assert session.name == name, str(session)
@@ -71,6 +71,6 @@ class TestSessionWithChatAssistantCreate:
         chat_assistant = chat_assistants[0]
 
         client.delete_chats(ids=[chat_assistant.id])
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             chat_assistant.create_session(name="valid_name")
-        assert "You do not own the assistant" in str(excinfo.value)
+        assert "You do not own the assistant" in str(exception_info.value)

@@ -38,9 +38,9 @@ class TestChunksList:
         _, document, _ = add_chunks
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.list_chunks(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = document.list_chunks(**params)
             assert len(chunks) == expected_page_size, str(chunks)
@@ -62,9 +62,9 @@ class TestChunksList:
         _, document, _ = add_chunks
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.list_chunks(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = document.list_chunks(**params)
             assert len(chunks) == expected_page_size, str(chunks)
@@ -106,9 +106,9 @@ class TestChunksList:
             params = {"id": chunk_id}
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.list_chunks(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunks = document.list_chunks(**params)
             if params["id"] in [None, ""]:

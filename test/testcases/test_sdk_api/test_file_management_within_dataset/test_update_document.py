@@ -39,9 +39,9 @@ class TestDocumentsUpdated:
         document = documents[0]
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.update({"name": name})
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             document.update({"name": name})
             updated_doc = dataset.list_documents(id=document.id)[0]
@@ -60,9 +60,9 @@ class TestDocumentsUpdated:
         document = documents[0]
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.update({"meta_fields": meta_fields})
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             document.update({"meta_fields": meta_fields})
 
@@ -92,9 +92,9 @@ class TestDocumentsUpdated:
         document = documents[0]
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.update({"chunk_method": chunk_method})
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             document.update({"chunk_method": chunk_method})
             updated_doc = dataset.list_documents(id=document.id)[0]
@@ -193,9 +193,9 @@ class TestDocumentsUpdated:
         _, documents = add_documents
         document = documents[0]
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             document.update(payload)
-        assert expected_message in str(excinfo.value), str(excinfo.value)
+        assert expected_message in str(exception_info.value), str(exception_info.value)
 
 
 class TestUpdateDocumentParserConfig:
@@ -382,9 +382,9 @@ class TestUpdateDocumentParserConfig:
         update_data = {"chunk_method": chunk_method, "parser_config": parser_config}
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.update(update_data)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             document.update(update_data)
             updated_doc = dataset.list_documents(id=document.id)[0]
