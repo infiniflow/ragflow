@@ -156,4 +156,4 @@ def query_message(filter_dict: dict, params: dict):
     keywords_similarity_weight = params.get("keywords_similarity_weight", 0.7)
     fusion_expr = FusionExpr("weighted_sum", params["top_n"], {"weights": ",".join([str(keywords_similarity_weight), str(1 - keywords_similarity_weight)])})
 
-    return MessageService.search_message(memory_ids, condition_dict, uids, [match_text, match_dense, fusion_expr], 1, params["top_n"])
+    return MessageService.search_message(memory_ids, condition_dict, uids, [match_text, match_dense, fusion_expr], params["top_n"])
