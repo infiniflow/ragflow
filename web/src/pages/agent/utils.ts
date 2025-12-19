@@ -11,7 +11,7 @@ import { buildSelectOptions } from '@/utils/component-util';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
 import { FormInstance, FormListFieldData } from 'antd';
-import { humanId } from 'human-id';
+import { humanId, type Options as HumanIdOptions } from 'human-id';
 import {
   curry,
   get,
@@ -43,6 +43,44 @@ import { HierarchicalMergerFormSchemaType } from './form/hierarchical-merger-for
 import { ParserFormSchemaType } from './form/parser-form';
 import { SplitterFormSchemaType } from './form/splitter-form';
 import { BeginQuery, IPosition } from './interface';
+
+export function randomId(
+  type: 'human',
+  options?: HumanIdOptions | string,
+): string;
+export function randomId(length?: number, pattern?: string): string;
+export function randomId(
+  lengthOrType?: 'human' | number,
+  patternOrOptions?: HumanIdOptions | string,
+) {
+  if (lengthOrType === 'human') {
+    return humanId(patternOrOptions);
+  }
+
+  // eslint-disable-next-line eqeqeq
+  const len =
+    lengthOrType != null
+      ? Math.max(Number.isFinite(lengthOrType) ? lengthOrType : 32, 1)
+      : 32;
+
+  let result = '';
+
+  while (result.length < len) {
+    result += Math.random()
+      .toString(16)
+      .slice(2, len - result.length + 2);
+  }
+
+  let pattern =
+    { uuid: '8-4-4-4-12' }[patternOrOptions as string] ||
+    (patternOrOptions as string) ||
+    '8-4-4-4-12';
+
+  let pos = 0;
+  return pattern.replaceAll(/\d+/g, (str) =>
+    result.slice(pos, (pos += Number(str))),
+  );
+}
 
 function buildAgentExceptionGoto(edges: Edge[], nodeId: string) {
   const exceptionEdges = edges.filter(
@@ -120,13 +158,17 @@ function buildAgentTools(edges: Edge[], nodes: Node[], nodeId: string) {
         return {
           component_name: Operator.Agent,
           id,
-          name: name as string, // Cast name to string and provide fallback
+          name,
           params: { ...formData },
         };
       }),
     );
   }
-  return { params, name: node?.data.name, id: node?.id };
+  return { params, name: node?.data.name, id: node?.id } as {
+    params: IAgentForm;
+    name: string;
+    id: string;
+  };
 }
 
 function filterTargetsBySourceHandleId(edges: Edge[], handleId: string) {
