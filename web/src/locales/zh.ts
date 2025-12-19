@@ -730,8 +730,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       log: '日志',
       confluenceDescription: '连接你的 Confluence 工作区以搜索文档内容。',
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
+      google_cloud_storageDescription:
+        '连接你的 Google Cloud Storage 存储桶以导入和同步文件。',
       discordDescription: ' 连接你的 Discord 服务器以访问和分析聊天数据。',
       notionDescription: ' 同步 Notion 页面与数据库，用于知识检索。',
+      oci_storageDescription:
+        '连接你的 Oracle Cloud Object Storage 存储桶以导入和同步文件。',
       google_driveDescription:
         '通过 OAuth 连接 Google Drive，并同步指定的文件夹或云端硬盘。',
       gmailDescription: '通过 OAuth 连接 Gmail，用于同步邮件。',
@@ -747,6 +751,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       gmailTokenTip:
         '请上传由 Google Console 生成的 OAuth JSON。如果仅包含 client credentials，请通过浏览器授权一次以获取长期有效的刷新 Token。',
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
+      boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
+      r2Description: '连接你的 Cloudflare R2 存储桶以导入和同步文件。',
       dropboxAccessTokenTip:
         '请在 Dropbox App Console 生成 Access Token，并勾选 files.metadata.read、files.content.read、sharing.read 等必要权限。',
       jiraDescription: '接入 Jira 工作区，持续同步Issues、评论与附件。',
