@@ -950,6 +950,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       mcp: 'MCP',
       mineru: {
         modelNameRequired: '模型名称为必填项',
+        apiServerRequired: 'MinerU API服务器配置为必填项',
+        serverUrlBackendLimit:
+          '仅在处理后端为 HTTP 客户端时可填写 MinerU 服务器地址',
         apiserver: 'MinerU API服务器配置',
         outputDir: 'MinerU输出目录路径',
         backend: 'MinerU处理后端类型',
@@ -961,6 +964,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
           vlmTransformers: '基于Transformers的视觉语言模型',
           vlmVllmEngine: '基于vLLM引擎的视觉语言模型',
           vlmHttpClient: '通过HTTP客户端连接的视觉语言模型',
+          vlmMlxEngine: '基于MLX引擎的视觉语言模型',
+          vlmVllmAsyncEngine: '基于vLLM异步引擎的视觉语言模型（实验性）',
+          vlmLmdeployEngine: '基于LMDeploy引擎的视觉语言模型（实验性）',
         },
       },
     },

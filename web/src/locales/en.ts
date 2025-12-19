@@ -1101,6 +1101,9 @@ Example: Virtual Hosted Style`,
       mcp: 'MCP',
       mineru: {
         modelNameRequired: 'Model name is required',
+        apiServerRequired: 'MinerU API Server Configuration is required',
+        serverUrlBackendLimit:
+          'MinerU Server URL Address is only available for the HTTP client backend',
         apiserver: 'MinerU API Server Configuration',
         outputDir: 'MinerU Output Directory Path',
         backend: 'MinerU Processing Backend Type',
@@ -1112,6 +1115,11 @@ Example: Virtual Hosted Style`,
           vlmTransformers: 'Vision Language Model with Transformers',
           vlmVllmEngine: 'Vision Language Model with vLLM Engine',
           vlmHttpClient: 'Vision Language Model via HTTP Client',
+          vlmMlxEngine: 'Vision Language Model with MLX Engine',
+          vlmVllmAsyncEngine:
+            'Vision Language Model with vLLM Async Engine (Experimental)',
+          vlmLmdeployEngine:
+            'Vision Language Model with LMDeploy Engine (Experimental)',
         },
       },
     },
