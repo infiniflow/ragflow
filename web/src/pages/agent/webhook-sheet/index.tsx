@@ -10,6 +10,8 @@ import { useFetchWebhookTrace } from '@/hooks/use-agent-request';
 import { MessageEventType } from '@/hooks/use-send-message';
 import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
+import { upperFirst } from 'lodash';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import { BeginId } from '../constant';
@@ -42,6 +44,23 @@ const WebhookSheet = ({ hideModal }: RunSheetProps) => {
       event.data.component_id !== BeginId,
   )?.data.outputs;
 
+  const statusInfo = useMemo(() => {
+    if (data?.finished === false) {
+      return { status: 'running' };
+    }
+
+    let errorItem = data?.events.find(
+      (x) => x.event === 'error' || x.data?.error,
+    );
+    if (errorItem) {
+      return {
+        status: 'fail',
+        message: errorItem.data?.error || errorItem.message,
+      };
+    }
+    return { status: 'success' };
+  }, [data?.events, data?.finished]);
+
   return (
     <Sheet onOpenChange={hideModal} open modal={false}>
       <SheetContent className={cn('top-20 p-2 space-y-5 flex flex-col pb-20')}>
@@ -55,9 +74,15 @@ const WebhookSheet = ({ hideModal }: RunSheetProps) => {
         </div>
 
         <section>
-          <div className="text-state-success">
-            {data?.finished ? 'SUCCESS' : 'RUNNING'}
+          <div
+            className={cn({
+              'text-state-error': statusInfo.status === 'fail',
+              'text-state-success': statusInfo.status === 'success',
+            })}
+          >
+            {upperFirst(statusInfo.status)}
           </div>
+          <div>{statusInfo?.message}</div>
         </section>
 
         <Tabs
