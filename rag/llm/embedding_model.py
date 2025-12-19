@@ -463,20 +463,44 @@ class BedrockEmbed(Base):
 
     def __init__(self, key, model_name, **kwargs):
         import boto3
+        # `key` protocol (backend stores as JSON string in `api_key`):
+        # - Must decode into a dict.
+        # - Required: `auth_mode`, `bedrock_region`.
+        # - Supported auth modes:
+        #   - "access_key_secret": requires `bedrock_ak` + `bedrock_sk`.
+        #   - "iam_role": requires `aws_role_arn` and assumes role via STS.
+        #   - else: treated as "assume_role" (default AWS credential chain).
+        key = json.loads(key)
+        mode = key.get("auth_mode")
+        if not mode:
+            logging.error("Bedrock auth_mode is not provided in the key")
+            raise ValueError("Bedrock auth_mode must be provided in the key")
 
-        self.bedrock_ak = json.loads(key).get("bedrock_ak", "")
-        self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
-        self.bedrock_region = json.loads(key).get("bedrock_region", "")
+        self.bedrock_region = key.get("bedrock_region")
+
         self.model_name = model_name
         self.is_amazon = self.model_name.split(".")[0] == "amazon"
         self.is_cohere = self.model_name.split(".")[0] == "cohere"
-
-        if self.bedrock_ak == "" or self.bedrock_sk == "":
-            # Try to create a client using the default credentials if ak/sk are not provided.
-            # Must provide a region.
-            self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
-        else:
+        
+        if mode == "access_key_secret":
+            self.bedrock_ak = key.get("bedrock_ak")
+            self.bedrock_sk = key.get("bedrock_sk")
             self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
+        elif mode == "iam_role":
+            self.aws_role_arn = key.get("aws_role_arn")
+            sts_client = boto3.client("sts", region_name=self.bedrock_region)
+            resp = sts_client.assume_role(RoleArn=self.aws_role_arn, RoleSessionName="BedrockSession")
+            creds = resp["Credentials"]
+
+            self.client = boto3.client(
+                service_name="bedrock-runtime",
+                aws_access_key_id=creds["AccessKeyId"],
+                aws_secret_access_key=creds["SecretAccessKey"],
+                aws_session_token=creds["SessionToken"],
+            )
+        else: # assume_role
+            self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
+
 
     def encode(self, texts: list):
         texts = [truncate(t, 8196) for t in texts]

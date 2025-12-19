@@ -1217,11 +1217,7 @@ class LiteLLMBase(ABC):
         self.toolcall_sessions = {}
 
         # Factory specific fields
-        if self.provider == SupportedLiteLLMProvider.Bedrock:
-            self.bedrock_ak = json.loads(key).get("bedrock_ak", "")
-            self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
-            self.bedrock_region = json.loads(key).get("bedrock_region", "")
-        elif self.provider == SupportedLiteLLMProvider.OpenRouter:
+        if self.provider == SupportedLiteLLMProvider.OpenRouter:
             self.api_key = json.loads(key).get("api_key", "")
             self.provider_order = json.loads(key).get("provider_order", "")
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
@@ -1624,17 +1620,38 @@ class LiteLLMBase(ABC):
         if self.provider in FACTORY_DEFAULT_BASE_URL:
             completion_args.update({"api_base": self.base_url})
         elif self.provider == SupportedLiteLLMProvider.Bedrock:
+            import boto3
+
             completion_args.pop("api_key", None)
             completion_args.pop("api_base", None)
-            bedrock_credentials = { "aws_region_name": self.bedrock_region }
-            if self.bedrock_ak and self.bedrock_sk:
-                bedrock_credentials["aws_access_key_id"] = self.bedrock_ak
-                bedrock_credentials["aws_secret_access_key"] = self.bedrock_sk
+
+            bedrock_key = json.loads(self.api_key)
+            mode = bedrock_key.get("auth_mode")
+            if not mode:
+                logging.error("Bedrock auth_mode is not provided in the key")
+                raise ValueError("Bedrock auth_mode must be provided in the key")
+
+            bedrock_region = bedrock_key.get("bedrock_region")
+            bedrock_credentials = {"bedrock_region": bedrock_region}
+
+            if mode == "access_key_secret":
+                bedrock_credentials["aws_access_key_id"] = bedrock_key.get("bedrock_ak")
+                bedrock_credentials["aws_secret_access_key"] = bedrock_key.get("bedrock_sk")
+            elif mode == "iam_role":
+                aws_role_arn = bedrock_key.get("aws_role_arn")
+                sts_client = boto3.client("sts", region_name=bedrock_region)
+                resp = sts_client.assume_role(RoleArn=aws_role_arn, RoleSessionName="BedrockSession")
+                creds = resp["Credentials"]
+                bedrock_credentials["aws_access_key_id"] = creds["AccessKeyId"]
+                bedrock_credentials["aws_secret_access_key"] = creds["SecretAccessKey"]
+                bedrock_credentials["aws_session_token"] = creds["SessionToken"]
+
             completion_args.update(
                 {
                     "bedrock_credentials": bedrock_credentials,
                 }
             )
+
         elif self.provider == SupportedLiteLLMProvider.OpenRouter:
             if self.provider_order:
 
