@@ -48,9 +48,9 @@ class TestAddChunk:
         chunks_count = len(document.list_chunks())
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.add_chunk(**payload)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunk = document.add_chunk(**payload)
             validate_chunk_details(dataset.id, document.id, payload, chunk)
@@ -76,9 +76,9 @@ class TestAddChunk:
         chunks_count = len(document.list_chunks())
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.add_chunk(**payload)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunk = document.add_chunk(**payload)
             validate_chunk_details(dataset.id, document.id, payload, chunk)
@@ -104,9 +104,9 @@ class TestAddChunk:
         chunks_count = len(document.list_chunks())
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 document.add_chunk(**payload)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             chunk = document.add_chunk(**payload)
             validate_chunk_details(dataset.id, document.id, payload, chunk)
@@ -138,9 +138,9 @@ class TestAddChunk:
         dataset, document = add_document
         dataset.delete_documents(ids=[document.id])
 
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             document.add_chunk(content="chunk test")
-        assert f"You don't own the document {document.id}" in str(excinfo.value), str(excinfo.value)
+        assert f"You don't own the document {document.id}" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.skip(reason="issues/6411")
     @pytest.mark.p3
