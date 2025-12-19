@@ -951,8 +951,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       mineru: {
         modelNameRequired: '模型名称为必填项',
         apiServerRequired: 'MinerU API服务器配置为必填项',
-        serverUrlBackendLimit:
-          '仅在处理后端为 HTTP 客户端时可填写 MinerU 服务器地址',
+        serverUrlBackendLimit: '仅在backend 为vlm-http-client 时可填写',
         apiserver: 'MinerU API服务器配置',
         outputDir: 'MinerU输出目录路径',
         backend: 'MinerU处理后端类型',
