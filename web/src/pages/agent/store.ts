@@ -15,6 +15,7 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
 } from '@xyflow/react';
+import humanId from 'human-id';
 import {
   cloneDeep,
   differenceWith,
@@ -35,7 +36,6 @@ import {
   getOperatorIndex,
   isEdgeEqual,
   mapEdgeMouseEvent,
-  randomId,
 } from './utils';
 import { deleteAllDownstreamAgentsAndTool } from './utils/delete-node';
 
@@ -559,7 +559,7 @@ const useGraphStore = create<RFState>()(
 
         // Loop for avoiding id collisions
         do {
-          id = `${prefix}:${randomId('human')}`;
+          id = `${prefix}:${humanId()}`;
         } while (allAgentToolIds.includes(id));
 
         return id;
