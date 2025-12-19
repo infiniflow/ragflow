@@ -472,10 +472,13 @@ export const useSubmitMinerU = () => {
 
   const onMineruOk = useCallback(
     async (payload: MinerUFormValues) => {
-      const cfg = {
+      const cfg: any = {
         ...payload,
         mineru_delete_output: payload.mineru_delete_output ?? true ? '1' : '0',
       };
+      if (payload.mineru_backend !== 'vlm-http-client') {
+        delete cfg.mineru_server_url;
+      }
       const req: IAddLlmRequestBody = {
         llm_factory: LLMFactory.MinerU,
         llm_name: payload.llm_name,
