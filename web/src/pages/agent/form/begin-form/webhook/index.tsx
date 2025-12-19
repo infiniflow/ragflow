@@ -1,17 +1,20 @@
 import { Collapse } from '@/components/collapse';
-import CopyToClipboard from '@/components/copy-to-clipboard';
+import { CopyToClipboardWithText } from '@/components/copy-to-clipboard';
+import NumberInput from '@/components/originui/number-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { Textarea } from '@/components/ui/textarea';
 import { buildOptions } from '@/utils/form';
+import { useCallback } from 'react';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
 import {
   RateLimitPerList,
   WebhookMaxBodySize,
   WebhookMethod,
+  WebhookRateLimitPer,
   WebhookSecurityAuthType,
 } from '../../../constant';
 import { DynamicStringForm } from '../../components/dynamic-string-form';
@@ -21,18 +24,32 @@ import { WebhookResponse } from './response';
 
 const RateLimitPerOptions = buildOptions(RateLimitPerList);
 
+const RequestLimitMap = {
+  [WebhookRateLimitPer.Second]: 100,
+  [WebhookRateLimitPer.Minute]: 1000,
+  [WebhookRateLimitPer.Hour]: 10000,
+  [WebhookRateLimitPer.Day]: 100000,
+};
+
 export function WebHook() {
   const { t } = useTranslation();
   const { id } = useParams();
+  const form = useFormContext();
+
+  const rateLimitPer = useWatch({
+    name: 'security.rate_limit.per',
+    control: form.control,
+  });
+
+  const getLimitRateLimitPerMax = useCallback((rateLimitPer: string) => {
+    return RequestLimitMap[rateLimitPer as keyof typeof RequestLimitMap] ?? 100;
+  }, []);
 
   const text = `${location.protocol}//${location.host}/api/v1/webhook/${id}`;
 
   return (
     <>
-      <div className="bg-bg-card p-1 rounded-md flex gap-2">
-        <span className="flex-1 truncate">{text}</span>
-        <CopyToClipboard text={text}></CopyToClipboard>
-      </div>
+      <CopyToClipboardWithText text={text}></CopyToClipboardWithText>
       <RAGFlowFormItem name="methods" label={t('flow.webhook.methods')}>
         {(field) => (
           <MultiSelect
@@ -61,13 +78,28 @@ export function WebHook() {
             name="security.rate_limit.limit"
             label={t('flow.webhook.limit')}
           >
-            <Input type="number"></Input>
+            <NumberInput
+              max={getLimitRateLimitPerMax(rateLimitPer)}
+              className="w-full"
+            ></NumberInput>
           </RAGFlowFormItem>
           <RAGFlowFormItem
             name="security.rate_limit.per"
             label={t('flow.webhook.per')}
           >
-            <SelectWithSearch options={RateLimitPerOptions}></SelectWithSearch>
+            {(field) => (
+              <SelectWithSearch
+                options={RateLimitPerOptions}
+                value={field.value}
+                onChange={(val) => {
+                  field.onChange(val);
+                  form.setValue(
+                    'security.rate_limit.limit',
+                    getLimitRateLimitPerMax(val),
+                  );
+                }}
+              ></SelectWithSearch>
+            )}
           </RAGFlowFormItem>
           <RAGFlowFormItem
             name="security.max_body_size"

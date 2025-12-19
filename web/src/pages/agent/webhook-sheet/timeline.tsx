@@ -27,8 +27,8 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { Operator } from '../constant';
 import { JsonViewer } from '../form/components/json-viewer';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
+import ToolTimelineItem from '../log-sheet/tool-timeline-item';
 import OperatorIcon from '../operator-icon';
-import ToolTimelineItem from './tool-timeline-item';
 type LogFlowTimelineProps = Pick<
   ReturnType<typeof useCacheChatLog>,
   'currentEventListWithoutMessage' | 'currentMessageId'
@@ -141,7 +141,7 @@ export const WorkFlowTimeline = ({
     }
     const data = currentEventListWithoutMessage?.find((x) => {
       return (
-        x.data.component_id === nodeId &&
+        x.data?.component_id === nodeId &&
         x.event === MessageEventType.NodeFinished
       );
     });

@@ -291,3 +291,10 @@ export interface GlobalVariableType {
   description: string;
   type: string;
 }
+
+export interface IWebhookTrace {
+  webhook_id: null;
+  events: any[];
+  next_since_ts: number;
+  finished: boolean;
+}

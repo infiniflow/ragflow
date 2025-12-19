@@ -7,7 +7,11 @@ import {
 } from '@/components/ui/form';
 import { cn } from '@/lib/utils';
 import { ReactNode, cloneElement, isValidElement } from 'react';
-import { ControllerRenderProps, useFormContext } from 'react-hook-form';
+import {
+  ControllerRenderProps,
+  UseControllerProps,
+  useFormContext,
+} from 'react-hook-form';
 
 type RAGFlowFormItemProps = {
   name: string;
@@ -18,7 +22,7 @@ type RAGFlowFormItemProps = {
   required?: boolean;
   labelClassName?: string;
   className?: string;
-};
+} & Pick<UseControllerProps<any>, 'rules'>;
 
 export function RAGFlowFormItem({
   name,
@@ -29,11 +33,13 @@ export function RAGFlowFormItem({
   required = false,
   labelClassName,
   className,
+  rules,
 }: RAGFlowFormItemProps) {
   const form = useFormContext();
   return (
     <FormField
       control={form.control}
+      rules={rules}
       name={name}
       render={({ field }) => (
         <FormItem

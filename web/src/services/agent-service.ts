@@ -2,6 +2,7 @@ import {
   IAgentLogsRequest,
   IPipeLineListRequest,
 } from '@/interfaces/database/agent';
+import { IAgentWebhookTraceRequest } from '@/interfaces/request/agent';
 import api from '@/utils/api';
 import { registerNextServer } from '@/utils/register-server';
 import request from '@/utils/request';
@@ -141,6 +142,13 @@ export const fetchAgentLogsByCanvasId = (
 
 export const fetchPipeLineList = (params: IPipeLineListRequest) => {
   return request.get(api.listCanvas, { params: params });
+};
+
+export const fetchWebhookTrace = (
+  id: string,
+  params: IAgentWebhookTraceRequest,
+) => {
+  return request.get(api.fetchWebhookTrace(id), { params: params });
 };
 
 export default agentService;

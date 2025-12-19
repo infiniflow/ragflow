@@ -1050,12 +1050,18 @@ export enum WebhookSecurityAuthType {
   Token = 'token',
   Basic = 'basic',
   Jwt = 'jwt',
-  Hmac = 'hmac',
 }
 
-export const RateLimitPerList = ['minute', 'hour', 'day'];
+export enum WebhookRateLimitPer {
+  Second = 'second',
+  Minute = 'minute',
+  Hour = 'hour',
+  Day = 'day',
+}
 
-export const WebhookMaxBodySize = ['10MB', '50MB', '100MB', '1000MB'];
+export const RateLimitPerList = Object.values(WebhookRateLimitPer);
+
+export const WebhookMaxBodySize = ['1MB', '5MB', '10MB'];
 
 export enum WebhookRequestParameters {
   File = VariableType.File,
