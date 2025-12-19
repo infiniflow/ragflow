@@ -705,6 +705,18 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  [DataSourceKey.R2]: {
+    name: '',
+    source: DataSourceKey.R2,
+    config: {
+      bucket_name: '',
+      credentials: {
+        account_id: '',
+        r2_access_key_id: '',
+        r2_secret_access_key: '',
+      },
+    },
+  },
   [DataSourceKey.NOTION]: {
     name: '',
     source: DataSourceKey.NOTION,
@@ -767,6 +779,30 @@ export const DataSourceFormDefaultValues = {
         google_primary_admin: '',
         google_tokens: '',
         authentication_method: 'uploaded',
+      },
+    },
+  },
+  [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
+    name: '',
+    source: DataSourceKey.GOOGLE_CLOUD_STORAGE,
+    config: {
+      bucket_name: '',
+      credentials: {
+        access_key_id: '',
+        secret_access_key: '',
+      },
+    },
+  },
+  [DataSourceKey.OCI_STORAGE]: {
+    name: '',
+    source: DataSourceKey.OCI_STORAGE,
+    config: {
+      bucket_name: '',
+      credentials: {
+        namespace: '',
+        region: '',
+        access_key_id: '',
+        secret_access_key: '',
       },
     },
   },

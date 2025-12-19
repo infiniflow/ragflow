@@ -741,6 +741,9 @@ class BOX(SyncBase):
     
 func_factory = {
     FileSource.S3: S3,
+    FileSource.R2: R2,
+    FileSource.OCI_STORAGE: OCI_STORAGE,
+    FileSource.GOOGLE_CLOUD_STORAGE: GOOGLE_CLOUD_STORAGE,
     FileSource.NOTION: Notion,
     FileSource.DISCORD: Discord,
     FileSource.CONFLUENCE: Confluence,
