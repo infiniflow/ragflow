@@ -493,18 +493,35 @@ See [here](./guides/agent/best_practices/accelerate_agent_question_answering.md)
 
 ### How to use MinerU to parse PDF documents?
 
-MinerU PDF document parsing is available starting from v0.22.0. RAGFlow works only as a remote client to MinerU (>= 2.6.3) and does not install or execute MinerU locally. To use this feature:
+From v0.22.0 onwards, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF parser of multiple backends. Please note that RAGFlow acts only as a *remote client* for MinerU, calling the MinerU API to parse PDFs and reading the returned files. To use this feature:
 
-1. Prepare a reachable MinerU API service (for example, the FastAPI server provided by MinerU).
-2. Configure RAGFlow with remote MinerU settings (environment variables or UI model provider):
-   - `MINERU_APISERVER`: MinerU API endpoint, for example `http://mineru-host:8886`.
-   - `MINERU_BACKEND`: MinerU backend, defaults to `pipeline` (supports `vlm-http-client`, `vlm-transformers`, `vlm-vllm-engine`, `vlm-mlx-engine`, `vlm-vllm-async-engine`, `vlm-lmdeploy-engine`).
-   - `MINERU_SERVER_URL`: (optional) For `vlm-http-client`, the downstream vLLM HTTP server, for example `http://vllm-host:30000`.
-   - `MINERU_OUTPUT_DIR`: (optional) Local directory to store MinerU API outputs (zip/JSON) before ingestion.
-   - `MINERU_DELETE_OUTPUT`: Whether to delete temporary output when a temp dir is used (`1` deletes temp outputs; set `0` to keep).
-3. In the web UI, navigate to the **Configuration** page of your dataset. Click **Built-in** in the **Ingestion pipeline** section, select a chunking method from the **Built-in** dropdown (which supports PDF parsing), and select **MinerU** in **PDF parser**.
-4. If you use a custom ingestion pipeline instead, provide the same MinerU settings and select **MinerU** in the **Parsing method** section of the **Parser** component.
+1. Prepare a reachable MinerU API service (FastAPI server).
+2. In the **.env** file or from the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
+   - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
+   - `MINERU_BACKEND`: The MinerU backend:
+      - `"pipeline"` (default)
+      - `"vlm-http-client"`
+      - `"vlm-transformers"`
+      - `"vlm-vllm-engine"`
+      - `"vlm-mlx-engine"`
+      - `"vlm-vllm-async-engine"`
+      - `"vlm-lmdeploy-engine"`.
+   - `MINERU_SERVER_URL`: (optional) The downstream vLLM HTTP server (e.g., `http://vllm-host:30000`). Applicable when `MINERU_BACKEND` is set to `"vlm-http-client"`. 
+   - `MINERU_OUTPUT_DIR`: (optional) The local directory for holding the outputs of the MinerU API service (zip/JSON) before ingestion.
+   - `MINERU_DELETE_OUTPUT`: Whether to delete temporary output when a temporary directory is used:
+     - `1`: Delete.
+     - `0`: Retain.
+3. In the web UI, navigate to your dataset's **Configuration** page and find the **Ingestion pipeline** section:  
+   - If you decide to use a chunking method from the **Built-in** dropdown, ensure it supports PDF parsing, then select **MinerU** from the **PDF parser** dropdown.
+   - If you use a custom ingestion pipeline instead, select **MinerU** in the **PDF parser** section of the **Parser** component.
 
+:::note
+All MinerU environment variables are optional. When set, these values are used to auto-provision a MinerU OCR model for the tenant on first use. To avoid auto-provisioning, skip the environment variable settings and only configure MinerU from the **Model providers** page in the UI.
+:::
+
+:::caution WARNING
+Third-party visual models are marked **Experimental**, because we have not fully tested these models for the aforementioned data extraction tasks.
+:::
 ---
 
 ### How to configure MinerU-specific settings?

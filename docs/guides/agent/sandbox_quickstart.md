@@ -29,7 +29,7 @@ The architecture consists of isolated Docker base images for each supported lang
 - (Optional) GNU Make for simplified command-line management.
 
 :::tip NOTE
-The error message `client version 1.43 is too old. Minimum supported API version is 1.44` indicates that your executor manager image's built-in Docker CLI version is lower than `29.1.0` required by the Docker daemon in use. To solve this issue, pull the latest `infiniflow/sandbox-executor-manager:latest` from Docker Hub (or rebuild `./sandbox/executor_manager`).
+The error message `client version 1.43 is too old. Minimum supported API version is 1.44` indicates that your executor manager image's built-in Docker CLI version is lower than `29.1.0` required by the Docker daemon in use. To solve this issue, pull the latest `infiniflow/sandbox-executor-manager:latest` from Docker Hub or rebuild it in `./sandbox/executor_manager`.
 :::
 
 ## Build Docker base images
