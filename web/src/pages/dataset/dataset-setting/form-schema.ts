@@ -83,6 +83,18 @@ export const formSchema = z
               path: ['entity_types'],
             },
           ),
+        metadata: z
+          .array(
+            z
+              .object({
+                key: z.string().optional(),
+                description: z.string().optional(),
+                enum: z.array(z.string().optional()).optional(),
+              })
+              .optional(),
+          )
+          .optional(),
+        enable_metadata: z.boolean().optional(),
       })
       .optional(),
     pagerank: z.number(),
