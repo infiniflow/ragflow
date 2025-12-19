@@ -89,6 +89,8 @@ export default function DatasetSettings() {
           entity_types: initialEntityTypes,
           method: MethodValue.Light,
         },
+        metadata: [],
+        enable_metadata: false,
       },
       pipeline_id: '',
       parseType: 1,
@@ -237,11 +239,8 @@ export default function DatasetSettings() {
         }
         return connector;
       });
-      console.log('🚀 ~ DatasetSettings ~ connectors:', connectors);
       setSourceData(connectors as IDataSourceNodeProps[]);
       form.setValue('connectors', connectors || []);
-      // form.setValue('pipeline_name', data.name || '');
-      // form.setValue('pipeline_avatar', data.avatar || '');
     }
   };
 

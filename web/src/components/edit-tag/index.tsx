@@ -1,7 +1,7 @@
 import { PlusOutlined } from '@ant-design/icons';
 import React, { useEffect, useRef, useState } from 'react';
 
-import { X } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import {
   HoverCard,
@@ -57,14 +57,15 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
         <HoverCard key={tag}>
           <HoverCardContent side="top">{tag}</HoverCardContent>
           <HoverCardTrigger asChild>
-            <div className="w-fit flex items-center justify-center gap-2 border-dashed border px-2 py-1 rounded-sm bg-bg-card">
+            <div className="w-fit flex items-center justify-center gap-2 border border-border-button px-2 py-1 rounded-sm bg-bg-card">
               <div className="flex gap-2 items-center">
                 <div className="max-w-80 overflow-hidden text-ellipsis">
                   {tag}
                 </div>
                 {!disabled && (
-                  <X
-                    className="w-4 h-4 text-muted-foreground hover:text-primary"
+                  <Trash2
+                    size={14}
+                    className="text-text-secondary hover:text-state-error"
                     onClick={(e) => {
                       e.preventDefault();
                       handleClose(tag);
@@ -79,10 +80,6 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
     };
 
     const tagChild = value?.map(forMap);
-
-    const tagPlusStyle: React.CSSProperties = {
-      borderStyle: 'dashed',
-    };
 
     return (
       <div>
@@ -102,15 +99,14 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
             }}
           />
         )}
-        <div className="flex gap-2 py-1">
+        <div className="flex gap-2 py-1 flex-wrap">
           {Array.isArray(tagChild) && tagChild.length > 0 && <>{tagChild}</>}
           {!inputVisible && !disabled && (
             <Button
               variant="ghost"
-              className="w-fit flex items-center justify-center gap-2 bg-bg-card border-dashed border"
+              className="w-fit flex items-center justify-center gap-2 bg-bg-card border-border-button border"
               onClick={showInput}
               disabled={disabled}
-              style={tagPlusStyle}
             >
               <PlusOutlined />
             </Button>
