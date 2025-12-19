@@ -20,7 +20,7 @@ import re
 from collections import defaultdict
 
 from common.query_base import QueryBase
-from common.vector_store_base import MatchTextExpr
+from common.doc_store.doc_store_base import MatchTextExpr
 from rag.nlp import rag_tokenizer, term_weight, synonym
 
 
