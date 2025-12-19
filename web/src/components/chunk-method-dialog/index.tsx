@@ -34,6 +34,7 @@ import {
   AutoKeywordsFormField,
   AutoQuestionsFormField,
 } from '../auto-keywords-form-field';
+import { ChildrenDelimiterForm } from '../children-delimiter-form';
 import { DataFlowSelect } from '../data-pipeline-select';
 import { DelimiterFormField } from '../delimiter-form-field';
 import { EntityTypesFormField } from '../entity-types-form-field';
@@ -41,6 +42,7 @@ import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
 import { FormContainer } from '../form-container';
 import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
+import { MinerUOptionsFormField } from '../mineru-options-form-field';
 import { ButtonLoading } from '../ui/button';
 import { Input } from '../ui/input';
 import { DynamicPageRange } from './dynamic-page-range';
@@ -111,10 +113,16 @@ export function ChunkMethodDialog({
         layout_recognize: z.string().optional(),
         chunk_token_num: z.coerce.number().optional(),
         delimiter: z.string().optional(),
+        enable_children: z.boolean().optional(),
+        children_delimiter: z.string().optional(),
         auto_keywords: z.coerce.number().optional(),
         auto_questions: z.coerce.number().optional(),
         html4excel: z.boolean().optional(),
         toc_extraction: z.boolean().optional(),
+        mineru_parse_method: z.enum(['auto', 'txt', 'ocr']).optional(),
+        mineru_formula_enable: z.boolean().optional(),
+        mineru_table_enable: z.boolean().optional(),
+        mineru_lang: z.string().optional(),
         // raptor: z
         //   .object({
         //     use_raptor: z.boolean().optional(),
@@ -163,6 +171,9 @@ export function ChunkMethodDialog({
     name: 'parser_id',
     control: form.control,
   });
+  const isMineruSelected =
+    selectedTag?.toLowerCase().includes('mineru') ||
+    layoutRecognize?.toLowerCase?.()?.includes('mineru');
 
   const isPdf = documentExtension === 'pdf';
 
@@ -196,6 +207,10 @@ export function ChunkMethodDialog({
       ...data,
       parser_config: {
         ...data.parser_config,
+        // Unset children delimiter if this option is not enabled
+        children_delimiter: data.parser_config.enable_children
+          ? data.parser_config.children_delimiter
+          : '',
         pages: data.parser_config?.pages?.map((x: any) => [x.from, x.to]) ?? [],
       },
     };
@@ -321,7 +336,10 @@ export function ChunkMethodDialog({
                   className="space-y-3"
                 >
                   {showOne && (
-                    <LayoutRecognizeFormField></LayoutRecognizeFormField>
+                    <>
+                      <LayoutRecognizeFormField showMineruOptions={false} />
+                      {isMineruSelected && <MinerUOptionsFormField />}
+                    </>
                   )}
                   {showMaxTokenNumber && (
                     <>
@@ -333,11 +351,16 @@ export function ChunkMethodDialog({
                         }
                       ></MaxTokenNumberFormField>
                       <DelimiterFormField></DelimiterFormField>
+                      <ChildrenDelimiterForm />
                     </>
                   )}
                 </FormContainer>
                 <FormContainer
-                  show={showAutoKeywords(selectedTag) || showExcelToHtml}
+                  show={
+                    isMineruSelected ||
+                    showAutoKeywords(selectedTag) ||
+                    showExcelToHtml
+                  }
                   className="space-y-3"
                 >
                   {selectedTag === DocumentParserType.Naive && (

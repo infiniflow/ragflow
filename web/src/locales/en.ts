@@ -102,8 +102,19 @@ export default {
       Memories: 'Memory',
     },
     memories: {
+      llmTooltip:
+        'Analyzes conversation content, extracts key information, and generates structured memory summaries.',
+      embeddingModelTooltip:
+        'Converts text into numerical vectors for meaning similarity search and memory retrieval.',
+      embeddingModelError:
+        'Memory type is required and "raw" cannot be deleted.',
+      memoryTypeTooltip: `Raw: The raw dialogue content between the user and the agent (Required by default).
+Semantic Memory: General knowledge and facts about the user and world.
+Episodic Memory: Time-stamped records of specific events and experiences.
+Procedural Memory: Learned skills, habits, and automated procedures.`,
+      editName: 'Edit name',
       memory: 'Memory',
-      createMemory: 'Create Memory',
+      createMemory: 'Create memory',
       name: 'Name',
       memoryNamePlaceholder: 'memory name',
       memoryType: 'Memory type',
@@ -114,6 +125,8 @@ export default {
     },
     memory: {
       messages: {
+        messageDescription:
+          'Memory retrieval is configured with Similarity threshold, Keyword similarity weight, and Top N from Advanced Settings.',
         copied: 'Copied!',
         contentEmbed: 'Content embed',
         content: 'Content',
@@ -295,6 +308,11 @@ export default {
       delimiter: `Delimiter for text`,
       delimiterTip:
         'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
+      enableChildrenDelimiter: 'Child chunk are used for retrieval',
+      childrenDelimiter: 'Delimiter for text',
+      childrenDelimiterTip:
+        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
+
       html4excel: 'Excel to HTML',
       html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the knowledge base will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
       autoKeywords: 'Auto-keyword',
@@ -580,6 +598,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       enabled: 'Enabled',
       disabled: 'Disabled',
       keyword: 'Keyword',
+      image: 'Image',
+      imageUploaderTitle: 'Upload a new image to update this image chunk',
       function: 'Function',
       chunkMessage: 'Please input value!',
       full: 'Full text',
@@ -629,10 +649,13 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       knowledgeBasesTip:
         'Select the datasets to associate with this chat assistant. An empty knowledge base will not appear in the dropdown list.',
       system: 'System prompt',
-      systemInitialValue: `You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the knowledge base!" Answers need to consider chat history.
-      Here is the knowledge base:
-      {knowledge}
-      The above is the knowledge base.`,
+      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+
+      **Essential Rules:**
+        - Your answer must be derived **solely** from this knowledge base: \`{knowledge}\`.
+        - **When information is available**: Summarize the content to give a detailed answer.
+        - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the knowledge base!"
+        - **Always consider** the entire conversation history.`,
       systemMessage: 'Please input!',
       systemTip:
         'Your prompts or instructions for the LLM, including but not limited to its role, the desired length, tone, and language of its answers. If your model has native support for reasoning, you can add //no_thinking add the prompt to stop reasoning.',
@@ -762,6 +785,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
     },
     setting: {
       deleteModel: 'Delete model',
+      bedrockCredentialsHint:
+        'Tip: Leave Access Key / Secret Key blank to use AWS IAM authentication.',
       modelEmptyTip:
         'No models available. <br>Please add models from the panel on the right.',
       sourceEmptyTip: 'No data sources added yet. Select one below to connect.',
@@ -779,7 +804,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'The base URL of your Confluence instance (e.g., https://your-domain.atlassian.net/wiki)',
       confluenceSpaceKeyTip:
         'Optional: Specify a space key to limit syncing to a specific space. Leave empty to sync all accessible spaces. For multiple spaces, separate with commas (e.g., DEV,DOCS,HR)',
-      s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from. 
+      s3PrefixTip: `Specify the folder path within your S3 bucket to fetch files from.
 Example: general/v2/`,
       S3CompatibleEndpointUrlTip: `Required for S3 compatible Storage Box. Specify the S3-compatible endpoint URL.
 Example: https://fsn1.your-objectstorage.com`,
@@ -939,7 +964,7 @@ Example: Virtual Hosted Style`,
         'The default VLM for each newly created knowledge base. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
-        'The default ASR model for each newly created knowledgebase. Use this model to translate voices to corresponding text.',
+        'The default ASR model for each newly created dataset. Use this model to translate voices to corresponding text.',
       rerankModel: 'Rerank',
       rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.`,
       ttsModel: 'TTS',
@@ -1199,6 +1224,7 @@ Example: Virtual Hosted Style`,
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
+      enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',
       script: 'Script',
@@ -1903,6 +1929,7 @@ The Indexer will store the content in the corresponding data structures for the 
       keywords: 'Keywords',
       questions: 'Questions',
       metadata: 'Metadata',
+      toc: 'Table of contents',
       fieldName: 'Result destination',
       prompts: {
         system: {

@@ -51,9 +51,9 @@ Your answers should follow a professional and {style} style.
 
 ...
 
-Here is the dataset:
+Here is the knowledge base:
 {knowledge}
-The above is the dataset.
+The above is the knowledge base.
 ```
 
 :::tip NOTE

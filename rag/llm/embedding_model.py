@@ -398,7 +398,7 @@ class JinaMultiVecEmbed(Base):
 
                     ress.append(chunk_emb)
 
-                token_count +=total_token_count_from_response(res)
+                token_count += total_token_count_from_response(res)
             except Exception as _e:
                 log_exception(_e, response)
                 raise Exception(f"Error: {response}")
@@ -471,9 +471,10 @@ class BedrockEmbed(Base):
         self.is_amazon = self.model_name.split(".")[0] == "amazon"
         self.is_cohere = self.model_name.split(".")[0] == "cohere"
 
-        if self.bedrock_ak == "" or self.bedrock_sk == "" or self.bedrock_region == "":
-            # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
-            self.client = boto3.client("bedrock-runtime")
+        if self.bedrock_ak == "" or self.bedrock_sk == "":
+            # Try to create a client using the default credentials if ak/sk are not provided.
+            # Must provide a region.
+            self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
         else:
             self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
 
@@ -639,7 +640,7 @@ class CoHereEmbed(Base):
             )
             try:
                 ress.extend([d for d in res.embeddings.float])
-                token_count += res.meta.billed_units.input_tokens
+                token_count += total_token_count_from_response(res)
             except Exception as _e:
                 log_exception(_e, res)
                 raise Exception(f"Error: {res}")
@@ -653,7 +654,7 @@ class CoHereEmbed(Base):
             embedding_types=["float"],
         )
         try:
-            return np.array(res.embeddings.float[0]), int(res.meta.billed_units.input_tokens)
+            return np.array(res.embeddings.float[0]), int(total_token_count_from_response(res))
         except Exception as _e:
             log_exception(_e, res)
             raise Exception(f"Error: {res}")
