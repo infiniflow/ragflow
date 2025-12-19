@@ -100,7 +100,7 @@ class FileService(CommonService):
         # Returns:
         #     List of dictionaries containing dataset IDs and names
         kbs = (
-            cls.model.select(*[Knowledgebase.id, Knowledgebase.name])
+            cls.model.select(*[Knowledgebase.id, Knowledgebase.name, File2Document.document_id])
             .join(File2Document, on=(File2Document.file_id == file_id))
             .join(Document, on=(File2Document.document_id == Document.id))
             .join(Knowledgebase, on=(Knowledgebase.id == Document.kb_id))
@@ -110,7 +110,7 @@ class FileService(CommonService):
             return []
         kbs_info_list = []
         for kb in list(kbs.dicts()):
-            kbs_info_list.append({"kb_id": kb["id"], "kb_name": kb["name"]})
+            kbs_info_list.append({"kb_id": kb["id"], "kb_name": kb["name"], "document_id": kb["document_id"]})
         return kbs_info_list
 
     @classmethod
