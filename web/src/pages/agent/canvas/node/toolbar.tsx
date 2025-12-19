@@ -7,7 +7,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Position } from '@xyflow/react';
 import { Copy, Play, Trash2 } from 'lucide-react';
-import { PropsWithChildren } from 'react';
+import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { Operator } from '../../constant';
 import { useDuplicateNode } from '../../hooks';
 import useGraphStore from '../../store';
@@ -49,7 +49,27 @@ export function ToolBar({
     (store) => store.deleteIterationNodeById,
   );
 
+  const deleteNode: MouseEventHandler<HTMLButtonElement> = useCallback(
+    (e) => {
+      e.stopPropagation();
+      if ([Operator.Iteration, Operator.Loop].includes(label as Operator)) {
+        deleteIterationNodeById(id);
+      } else {
+        deleteNodeById(id);
+      }
+    },
+    [deleteIterationNodeById, deleteNodeById, id, label],
+  );
+
   const duplicateNode = useDuplicateNode();
+
+  const handleDuplicate: MouseEventHandler<HTMLButtonElement> = useCallback(
+    (e) => {
+      e.stopPropagation();
+      duplicateNode(id, label);
+    },
+    [duplicateNode, id, label],
+  );
 
   return (
     <TooltipNode selected={selected}>
@@ -63,28 +83,13 @@ export function ToolBar({
             </IconWrapper>
           )}
           {showCopy && (
-            <IconWrapper
-              onClick={(e) => {
-                e.stopPropagation();
-                duplicateNode(id, label);
-              }}
-            >
+            <IconWrapper onClick={handleDuplicate}>
               <Copy className="size-3.5" />
             </IconWrapper>
           )}
           <IconWrapper
             className="hover:text-state-error hover:border-state-error"
-            onClick={(e) => {
-              e.stopPropagation();
-
-              if (
-                [Operator.Iteration, Operator.Loop].includes(label as Operator)
-              ) {
-                deleteIterationNodeById(id);
-              } else {
-                deleteNodeById(id);
-              }
-            }}
+            onClick={deleteNode}
           >
             <Trash2 className="size-3.5" />
           </IconWrapper>
