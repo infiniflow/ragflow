@@ -51,6 +51,8 @@ export default {
       search: '搜索',
       noDataFound: '没有找到数据。',
       noData: '暂无数据',
+      bedrockCredentialsHint:
+        '提示：Access Key / Secret Key 可留空，以启用 AWS IAM 自动验证。',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
       selected: '已选择',
     },
@@ -265,6 +267,8 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      settings: '设置',
+      autoMetadata: '自动元数据',
       mineruOptions: 'MinerU 选项',
       mineruParseMethod: '解析方法',
       mineruParseMethodTip:
@@ -874,6 +878,15 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       bedrockAKMessage: '请输入 ACCESS KEY',
       addBedrockSK: 'SECRET KEY',
       bedrockSKMessage: '请输入 SECRET KEY',
+      awsAuthModeAccessKeySecret: 'Access Key 和 Secret',
+      awsAuthModeIamRole: 'IAM Role',
+      awsAuthModeAssumeRole: 'Assume Role',
+      awsAccessKeyId: 'AWS Access Key ID',
+      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsRoleArn: 'AWS Role ARN',
+      awsRoleArnMessage: '请输入 AWS Role ARN',
+      awsAssumeRoleTip:
+        '选择此模式后，EC2 实例将使用其已有的 IAM Role 访问 AWS 服务，无需额外的凭证。',
       bedrockRegion: 'AWS Region',
       bedrockRegionMessage: '请选择！',
       'us-east-1': '美国东部 (弗吉尼亚北部)',
@@ -948,6 +961,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       mcp: 'MCP',
       mineru: {
         modelNameRequired: '模型名称为必填项',
+        apiServerRequired: 'MinerU API服务器配置为必填项',
+        serverUrlBackendLimit: '仅在backend 为vlm-http-client 时可填写',
         apiserver: 'MinerU API服务器配置',
         outputDir: 'MinerU输出目录路径',
         backend: 'MinerU处理后端类型',
@@ -959,6 +974,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
           vlmTransformers: '基于Transformers的视觉语言模型',
           vlmVllmEngine: '基于vLLM引擎的视觉语言模型',
           vlmHttpClient: '通过HTTP客户端连接的视觉语言模型',
+          vlmMlxEngine: '基于MLX引擎的视觉语言模型',
+          vlmVllmAsyncEngine: '基于vLLM异步引擎的视觉语言模型（实验性）',
+          vlmLmdeployEngine: '基于LMDeploy引擎的视觉语言模型（实验性）',
         },
       },
     },

@@ -181,6 +181,7 @@ class NotionPage(BaseModel):
     archived: bool
     properties: dict[str, Any]
     url: str
+    parent: Optional[dict[str, Any]] = None  # Parent reference for path reconstruction
     database_name: Optional[str] = None  # Only applicable to database type pages
 
 

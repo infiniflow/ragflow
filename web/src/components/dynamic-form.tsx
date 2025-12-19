@@ -691,7 +691,7 @@ const DynamicForm = {
       useImperativeHandle(
         ref,
         () => ({
-          submit: form.handleSubmit,
+          submit: form.handleSubmit(onSubmit),
           getValues: form.getValues,
           reset: (values?: T) => {
             if (values) {
