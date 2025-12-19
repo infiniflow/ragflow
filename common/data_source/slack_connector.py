@@ -167,7 +167,6 @@ def get_latest_message_time(thread: ThreadType) -> datetime:
 
 
 def _build_doc_id(channel_id: str, thread_ts: str) -> str:
-    """构建文档ID"""
     return f"{channel_id}__{thread_ts}"
 
 
@@ -179,7 +178,6 @@ def thread_to_doc(
     user_cache: dict[str, BasicExpertInfo | None],
     channel_access: Any | None,
 ) -> Document:
-    """将线程转换为文档"""
     channel_id = channel["id"]
 
     initial_sender_expert_info = expert_info_from_slack_id(
@@ -237,7 +235,6 @@ def filter_channels(
     channels_to_connect: list[str] | None,
     regex_enabled: bool,
 ) -> list[ChannelType]:
-    """过滤频道"""
     if not channels_to_connect:
         return all_channels
 
@@ -381,7 +378,6 @@ def _process_message(
         [MessageType], SlackMessageFilterReason | None
     ] = default_msg_filter,
 ) -> ProcessedSlackMessage:
-    """处理消息"""
     thread_ts = message.get("thread_ts")
     thread_or_message_ts = thread_ts or message["ts"]
     try:
@@ -536,7 +532,6 @@ class SlackConnector(
         end: SecondsSinceUnixEpoch | None = None,
         callback: Any = None,
     ) -> GenerateSlimDocumentOutput:
-        """获取所有简化文档（带权限同步）"""
         if self.client is None:
             raise ConnectorMissingCredentialError("Slack")
 
