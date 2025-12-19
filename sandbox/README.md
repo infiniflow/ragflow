@@ -36,7 +36,7 @@ A secure, pluggable code execution backend for RAGFlow and beyond.
 
 > ⚠️ **New Docker CLI requirement**
 >
-> If you see `client version 1.43 is too old. Minimum supported API version is 1.44`, pull the latest `infiniflow/sandbox-executor-manager:latest` (rebuilt with Docker CLI `29.1.0`) or rebuild `./sandbox/executor_manager` locally. Older images shipped Docker 24.x, which cannot talk to newer Docker daemons.
+> If you see `client version 1.43 is too old. Minimum supported API version is 1.44`, pull the latest `infiniflow/sandbox-executor-manager:latest` (rebuilt with Docker CLI `29.1.0`) or rebuild it in `./sandbox/executor_manager`. Older images shipped Docker 24.x, which cannot talk to newer Docker daemons.
 
 ### 🐳 Build Docker Base Images
 
@@ -121,7 +121,7 @@ make logs                                 # With Make
 ### 🧰 Makefile Toolbox
 
 | Command           | Description                                      |
-| ----------------- | ------------------------------------------------ |
+|-------------------|--------------------------------------------------|
 | `make`            | Setup, build, launch and test all at once        |
 | `make setup`      | Initialize environment and install uv            |
 | `make ensure_env` | Auto-create `.env` if missing                    |
@@ -183,7 +183,7 @@ This security model strikes a balance between **robust isolation** and **develop
 Currently, the following languages are officially supported:
 
 | Language | Priority |
-| -------- | -------- |
+|----------|----------|
 | Python   | High     |
 | Node.js  | Medium   |
 
@@ -304,7 +304,7 @@ Follow this checklist to troubleshoot:
 
   **Fix:**
 
-  Pull the refreshed image that bundles Docker CLI `29.1.0`, or rebuild locally:
+  Pull the refreshed image that bundles Docker CLI `29.1.0`, or rebuild it in `./sandbox/executor_manager`:
 
   ```bash
   docker pull infiniflow/sandbox-executor-manager:latest

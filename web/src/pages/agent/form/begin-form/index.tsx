@@ -43,6 +43,7 @@ function BeginForm({ node }: INextOperatorForm) {
   const form = useForm({
     defaultValues: values,
     resolver: zodResolver(BeginFormSchema),
+    mode: 'onChange',
   });
 
   useWatchFormChange(node?.id, form);

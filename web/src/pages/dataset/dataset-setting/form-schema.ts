@@ -37,6 +37,7 @@ export const formSchema = z
         mineru_parse_method: z.enum(['auto', 'txt', 'ocr']).optional(),
         mineru_formula_enable: z.boolean().optional(),
         mineru_table_enable: z.boolean().optional(),
+        mineru_lang: z.string().optional(),
         raptor: z
           .object({
             use_raptor: z.boolean().optional(),
