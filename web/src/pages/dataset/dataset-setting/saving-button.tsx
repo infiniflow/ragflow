@@ -58,7 +58,11 @@ export function SavingButton() {
       onClick={() => {
         (async () => {
           try {
-            let beValid = await form.formControl.trigger();
+            let beValid = await form.trigger();
+            if (!beValid) {
+              const errors = form.formState.errors;
+              console.error('Validation errors:', errors);
+            }
             if (beValid) {
               form.handleSubmit(async (values) => {
                 console.log('saveKnowledgeConfiguration: ', values);

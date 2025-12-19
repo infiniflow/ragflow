@@ -13,9 +13,11 @@ import {
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import { Upload } from 'lucide-react';
+import { Pen, Upload } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useManageMetadata } from '../components/metedata/hook';
+import { ManageMetadataModal } from '../components/metedata/manage-modal';
 import { DatasetTable } from './dataset-table';
 import Generate from './generate-button/generate';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
@@ -61,6 +63,14 @@ export default function Dataset() {
     showCreateModal,
   } = useCreateEmptyDocument();
 
+  const {
+    manageMetadataVisible,
+    showManageMetadataModal,
+    hideManageMetadataModal,
+    tableData,
+    config: metadataConfig,
+  } = useManageMetadata();
+
   const { rowSelection, rowSelectionIsEmpty, setRowSelection, selectedCount } =
     useRowSelection();
 
@@ -91,6 +101,18 @@ export default function Dataset() {
               </div>
             </div>
           }
+          preChildren={
+            <Button
+              variant={'ghost'}
+              className="border border-border-button"
+              onClick={() => showManageMetadataModal()}
+            >
+              <div className="flex gap-1 items-center">
+                <Pen size={14} />
+                {t('knowledgeDetails.metadata.metadata')}
+              </div>
+            </Button>
+          }
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -119,6 +141,7 @@ export default function Dataset() {
           setPagination={setPagination}
           rowSelection={rowSelection}
           setRowSelection={setRowSelection}
+          showManageMetadataModal={showManageMetadataModal}
           loading={loading}
         ></DatasetTable>
         {documentUploadVisible && (
@@ -136,6 +159,30 @@ export default function Dataset() {
             loading={createLoading}
             title={'File Name'}
           ></RenameDialog>
+        )}
+        {manageMetadataVisible && (
+          <ManageMetadataModal
+            title={
+              metadataConfig.title || (
+                <div className="flex flex-col gap-2">
+                  <div className="text-base font-normal">
+                    {t('knowledgeDetails.metadata.manageMetadata')}
+                  </div>
+                  <div className="text-sm text-text-secondary">
+                    {t('knowledgeDetails.metadata.manageMetadataForDataset')}
+                  </div>
+                </div>
+              )
+            }
+            visible={manageMetadataVisible}
+            hideModal={hideManageMetadataModal}
+            // selectedRowKeys={selectedRowKeys}
+            tableData={tableData}
+            isCanAdd={metadataConfig.isCanAdd}
+            isDeleteSingleValue={metadataConfig.isDeleteSingleValue}
+            type={metadataConfig.type}
+            otherData={metadataConfig.record}
+          />
         )}
       </section>
     </>

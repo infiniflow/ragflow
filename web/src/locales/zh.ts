@@ -267,6 +267,8 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      settings: '设置',
+      autoMetadata: '自动元数据',
       mineruOptions: 'MinerU 选项',
       mineruParseMethod: '解析方法',
       mineruParseMethodTip:

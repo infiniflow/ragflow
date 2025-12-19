@@ -77,6 +77,8 @@ export default {
   unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
     `${api_host}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
   pipelineRerun: `${api_host}/canvas/rerun`,
+  getMetaData: `${api_host}/document/metadata/summary`,
+  updateMetaData: `${api_host}/document/metadata/update`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
