@@ -6185,6 +6185,7 @@ test = [
     { name = "reportlab" },
     { name = "requests" },
     { name = "requests-toolbelt" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -6313,6 +6314,7 @@ test = [
     { name = "reportlab", specifier = ">=4.4.1" },
     { name = "requests", specifier = ">=2.32.2" },
     { name = "requests-toolbelt", specifier = ">=1.0.0" },
+    { name = "websockets", specifier = ">=14.0" },
 ]
 
 [[package]]
