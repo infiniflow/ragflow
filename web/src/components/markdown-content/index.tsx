@@ -217,14 +217,11 @@ const MarkdownContent = ({
       let lastIndex = 0;
 
       groups.forEach((group, groupIndex) => {
-        // Add text before this group
         if (group[0].start > lastIndex) {
           elements.push(text.substring(lastIndex, group[0].start));
         }
 
-        // Check if this group should show as carousel
         if (shouldShowCarousel(group, reference)) {
-          // Render carousel for consecutive images
           elements.push(
             <ImageCarousel
               key={`carousel-${groupIndex}`}
@@ -235,7 +232,6 @@ const MarkdownContent = ({
             />,
           );
         } else {
-          // Render each reference individually
           group.forEach((ref) => {
             const chunkIndex = getChunkIndex(ref.id);
             const {
@@ -285,7 +281,6 @@ const MarkdownContent = ({
         lastIndex = group[group.length - 1].end;
       });
 
-      // Add any remaining text after the last group
       if (lastIndex < text.length) {
         elements.push(text.substring(lastIndex));
       }

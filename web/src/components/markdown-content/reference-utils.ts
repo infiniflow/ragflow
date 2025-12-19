@@ -1,9 +1,6 @@
 import { IReference } from '@/interfaces/database/chat';
 import { currentReg, showImage } from '@/utils/chat';
 
-/**
- * Reference match data structure
- */
 export interface ReferenceMatch {
   id: string;
   fullMatch: string;
@@ -11,14 +8,8 @@ export interface ReferenceMatch {
   end: number;
 }
 
-/**
- * Grouped reference matches
- */
 export type ReferenceGroup = ReferenceMatch[];
 
-/**
- * Helper to find all reference matches with their positions
- */
 export const findAllReferenceMatches = (text: string): ReferenceMatch[] => {
   const matches: ReferenceMatch[] = [];
   let match;
@@ -38,14 +29,17 @@ export const findAllReferenceMatches = (text: string): ReferenceMatch[] => {
  */
 export const groupConsecutiveReferences = (text: string): ReferenceGroup[] => {
   const matches = findAllReferenceMatches(text);
+  // Construct a two-dimensional array to distinguish whether images are continuous.
   const groups: ReferenceGroup[] = [];
 
   if (matches.length === 0) return groups;
 
   let currentGroup: ReferenceGroup = [matches[0]];
-
+  // A group with only one element contains non-contiguous images,
+  // while a group with multiple elements contains contiguous images.
   for (let i = 1; i < matches.length; i++) {
-    // If this match starts right after the previous one ended
+    // If the end of the previous element equals the start of the current element,
+    // it means that they are consecutive images.
     if (matches[i].start === currentGroup[currentGroup.length - 1].end) {
       currentGroup.push(matches[i]);
     } else {
@@ -59,9 +53,6 @@ export const groupConsecutiveReferences = (text: string): ReferenceGroup[] => {
   return groups;
 };
 
-/**
- * Helper to check if all references in a group are images
- */
 export const shouldShowCarousel = (
   group: ReferenceGroup,
   reference: IReference,

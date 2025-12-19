@@ -26,9 +26,6 @@ interface ImageCarouselProps {
   ) => void;
 }
 
-/**
- * Reference info extracted from chunk
- */
 interface ReferenceInfo {
   documentUrl?: string;
   fileThumbnail?: string;
@@ -39,9 +36,6 @@ interface ReferenceInfo {
   document?: any;
 }
 
-/**
- * Helper function to get reference information for a given chunk index
- */
 const getReferenceInfo = (
   chunkIndex: number,
   reference: IReference,
