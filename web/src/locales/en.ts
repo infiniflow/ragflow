@@ -787,6 +787,15 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       deleteModel: 'Delete model',
       bedrockCredentialsHint:
         'Tip: Leave Access Key / Secret Key blank to use AWS IAM authentication.',
+      awsAuthModeAccessKeySecret: 'Access Key',
+      awsAuthModeIamRole: 'IAM Role',
+      awsAuthModeAssumeRole: 'Assume Role',
+      awsAccessKeyId: 'AWS Access Key ID',
+      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsRoleArn: 'AWS Role ARN',
+      awsRoleArnMessage: 'Please enter AWS Role ARN',
+      awsAssumeRoleTip:
+        'If you select this mode, the Amazon EC2 instance will assume its existing role to access AWS services. No additional credentials are required.',
       modelEmptyTip:
         'No models available. <br>Please add models from the panel on the right.',
       sourceEmptyTip: 'No data sources added yet. Select one below to connect.',
