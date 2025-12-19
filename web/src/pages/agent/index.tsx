@@ -46,6 +46,7 @@ import { useFetchDataOnMount } from './hooks/use-fetch-data';
 import { useFetchPipelineLog } from './hooks/use-fetch-pipeline-log';
 import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
 import { useIsPipeline } from './hooks/use-is-pipeline';
+import { useIsWebhookMode } from './hooks/use-is-webhook';
 import { useRunDataflow } from './hooks/use-run-dataflow';
 import {
   useSaveGraph,
@@ -58,6 +59,7 @@ import { SettingDialog } from './setting-dialog';
 import useGraphStore from './store';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
+import WebhookSheet from './webhook-sheet';
 
 function AgentDropdownMenuItem({
   children,
@@ -110,6 +112,7 @@ export default function Agent() {
     useShowEmbedModal();
   const { navigateToAgentLogs } = useNavigatePage();
   const time = useWatchAgentChange(chatDrawerVisible);
+  const isWebhookMode = useIsWebhookMode();
 
   // pipeline
 
@@ -117,6 +120,12 @@ export default function Agent() {
     visible: pipelineRunSheetVisible,
     hideModal: hidePipelineRunSheet,
     showModal: showPipelineRunSheet,
+  } = useSetModalState();
+
+  const {
+    visible: webhookTestSheetVisible,
+    hideModal: hideWebhookTestSheet,
+    showModal: showWebhookTestSheet,
   } = useSetModalState();
 
   const {
@@ -172,12 +181,20 @@ export default function Agent() {
   });
 
   const handleButtonRunClick = useCallback(() => {
-    if (isPipeline) {
+    if (isWebhookMode) {
+      showWebhookTestSheet();
+    } else if (isPipeline) {
       handleRunPipeline();
     } else {
       handleRunAgent();
     }
-  }, [handleRunAgent, handleRunPipeline, isPipeline]);
+  }, [
+    handleRunAgent,
+    handleRunPipeline,
+    isPipeline,
+    isWebhookMode,
+    showWebhookTestSheet,
+  ]);
 
   const {
     run: runPipeline,
@@ -319,6 +336,9 @@ export default function Agent() {
           data={{}}
           hideModal={hideGlobalParamSheet}
         ></GlobalParamSheet>
+      )}
+      {webhookTestSheetVisible && (
+        <WebhookSheet hideModal={hideWebhookTestSheet}></WebhookSheet>
       )}
     </section>
   );
