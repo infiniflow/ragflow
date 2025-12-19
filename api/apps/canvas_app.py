@@ -192,7 +192,7 @@ async def rerun():
     if 0 < doc["progress"] < 1:
         return get_data_error_result(message=f"`{doc['name']}` is processing...")
 
-    if settings.docStoreConn.indexExist(search.index_name(current_user.id), doc["kb_id"]):
+    if settings.docStoreConn.index_exist(search.index_name(current_user.id), doc["kb_id"]):
         settings.docStoreConn.delete({"doc_id": doc["id"]}, search.index_name(current_user.id), doc["kb_id"])
     doc["progress_msg"] = ""
     doc["chunk_num"] = 0

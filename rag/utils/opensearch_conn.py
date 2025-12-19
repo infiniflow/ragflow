@@ -26,8 +26,7 @@ from opensearchpy import UpdateByQuery, Q, Search, Index
 from opensearchpy import ConnectionTimeout
 from common.decorator import singleton
 from common.file_utils import get_project_base_directory
-from common.vector_store_base import MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, FusionExpr
-from rag.utils.doc_store_conn import DocStoreConnection
+from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, FusionExpr
 from rag.nlp import is_english, rag_tokenizer
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
@@ -79,7 +78,7 @@ class OSConnection(DocStoreConnection):
     Database operations
     """
 
-    def dbType(self) -> str:
+    def db_type(self) -> str:
         return "opensearch"
 
     def health(self) -> dict:
@@ -91,8 +90,8 @@ class OSConnection(DocStoreConnection):
     Table operations
     """
 
-    def createIdx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
-        if self.indexExist(indexName, knowledgebaseId):
+    def create_idx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
+        if self.index_exist(indexName, knowledgebaseId):
             return True
         try:
             from opensearchpy.client import IndicesClient
@@ -101,7 +100,7 @@ class OSConnection(DocStoreConnection):
         except Exception:
             logger.exception("OSConnection.createIndex error %s" % (indexName))
 
-    def deleteIdx(self, indexName: str, knowledgebaseId: str):
+    def delete_idx(self, indexName: str, knowledgebaseId: str):
         if len(knowledgebaseId) > 0:
             # The index need to be alive after any kb deletion since all kb under this tenant are in one index.
             return
@@ -112,7 +111,7 @@ class OSConnection(DocStoreConnection):
         except Exception:
             logger.exception("OSConnection.deleteIdx error %s" % (indexName))
 
-    def indexExist(self, indexName: str, knowledgebaseId: str = None) -> bool:
+    def index_exist(self, indexName: str, knowledgebaseId: str = None) -> bool:
         s = Index(indexName, self.os)
         for i in range(ATTEMPT_TIME):
             try:
@@ -460,7 +459,7 @@ class OSConnection(DocStoreConnection):
             return res["hits"]["total"]["value"]
         return res["hits"]["total"]
 
-    def get_chunk_ids(self, res):
+    def get_doc_ids(self, res):
         return [d["_id"] for d in res["hits"]["hits"]]
 
     def __getSource(self, res):

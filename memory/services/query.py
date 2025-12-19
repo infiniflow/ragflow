@@ -18,7 +18,7 @@ import logging
 import json
 import numpy as np
 from common.query_base import QueryBase
-from common.vector_store_base import MatchDenseExpr, MatchTextExpr
+from common.doc_store.doc_store_base import MatchDenseExpr, MatchTextExpr
 from common.float_utils import get_float
 from rag.nlp import rag_tokenizer, term_weight, synonym
 
@@ -36,11 +36,11 @@ def get_vector(txt, emb_mdl, topk=10, similarity=0.1):
         raise Exception(
             f"Dealer.get_vector returned array's shape {shape} doesn't match expectation(exact one dimension).")
     embedding_data = [get_float(v) for v in qv]
-    vector_column_name = f"content_embed_{len(embedding_data)}_vec"
+    vector_column_name = f"q_{len(embedding_data)}_vec"
     return MatchDenseExpr(vector_column_name, embedding_data, 'float', 'cosine', topk, {"similarity": similarity})
 
 
-class MsgTextQueryer(QueryBase):
+class MsgTextQuery(QueryBase):
 
     def __init__(self):
         self.tw = term_weight.Dealer()
@@ -51,14 +51,14 @@ class MsgTextQueryer(QueryBase):
 
     def question(self, txt, tbl="messages", min_match: float=0.6):
         original_query = txt
-        txt = MsgTextQueryer.add_space_between_eng_zh(txt)
+        txt = MsgTextQuery.add_space_between_eng_zh(txt)
         txt = re.sub(
             r"[ :|\r\n\t,，。？?/`!！&^%%()\[\]{}<>]+",
             " ",
             rag_tokenizer.tradi2simp(rag_tokenizer.strQ2B(txt.lower())),
         ).strip()
         otxt = txt
-        txt = MsgTextQueryer.rmWWW(txt)
+        txt = MsgTextQuery.rmWWW(txt)
 
         if not self.is_chinese(txt):
             txt = self.rmWWW(txt)
