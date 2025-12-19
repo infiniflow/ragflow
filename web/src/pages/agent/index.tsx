@@ -182,6 +182,7 @@ export default function Agent() {
 
   const handleButtonRunClick = useCallback(() => {
     if (isWebhookMode) {
+      saveGraph();
       showWebhookTestSheet();
     } else if (isPipeline) {
       handleRunPipeline();
@@ -193,6 +194,7 @@ export default function Agent() {
     handleRunPipeline,
     isPipeline,
     isWebhookMode,
+    saveGraph,
     showWebhookTestSheet,
   ]);
 
