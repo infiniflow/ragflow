@@ -39,9 +39,9 @@ from api.utils.api_utils import get_json_result
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
 from rag.utils.redis_conn import REDIS_CONN
-from rag.utils.doc_store_conn import OrderByExpr
 from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType, PAGERANK_FLD
 from common import settings
+from common.doc_store.doc_store_base import OrderByExpr
 from api.apps import login_required, current_user
 
 
@@ -251,7 +251,7 @@ async def rm():
                     message="Database error (Knowledgebase removal)!")
             for kb in kbs:
                 settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
-                settings.docStoreConn.deleteIdx(search.index_name(kb.tenant_id), kb.id)
+                settings.docStoreConn.delete_idx(search.index_name(kb.tenant_id), kb.id)
                 if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
                     settings.STORAGE_IMPL.remove_bucket(kb.id)
             return get_json_result(data=True)
@@ -352,7 +352,7 @@ def knowledge_graph(kb_id):
     }
 
     obj = {"graph": {}, "mind_map": {}}
-    if not settings.docStoreConn.indexExist(search.index_name(kb.tenant_id), kb_id):
+    if not settings.docStoreConn.index_exist(search.index_name(kb.tenant_id), kb_id):
         return get_json_result(data=obj)
     sres = settings.retriever.search(req, search.index_name(kb.tenant_id), [kb_id])
     if not len(sres.ids):
@@ -824,11 +824,11 @@ async def check_embedding():
         index_nm = search.index_name(tenant_id)
 
         res0 = docStoreConn.search(
-            selectFields=[], highlightFields=[],
+            select_fields=[], highlight_fields=[],
             condition={"kb_id": kb_id, "available_int": 1},
-            matchExprs=[], orderBy=OrderByExpr(),
+            match_expressions=[], order_by=OrderByExpr(),
             offset=0, limit=1,
-            indexNames=index_nm, knowledgebaseIds=[kb_id]
+            index_names=index_nm, knowledgebase_ids=[kb_id]
         )
         total = docStoreConn.get_total(res0)
         if total <= 0:
@@ -840,14 +840,14 @@ async def check_embedding():
 
         for off in offsets:
             res1 = docStoreConn.search(
-                selectFields=list(base_fields),
-                highlightFields=[],
+                select_fields=list(base_fields),
+                highlight_fields=[],
                 condition={"kb_id": kb_id, "available_int": 1},
-                matchExprs=[], orderBy=OrderByExpr(),
+                match_expressions=[], order_by=OrderByExpr(),
                 offset=off, limit=1,
-                indexNames=index_nm, knowledgebaseIds=[kb_id]
+                index_names=index_nm, knowledgebase_ids=[kb_id]
             )
-            ids = docStoreConn.get_chunk_ids(res1)
+            ids = docStoreConn.get_doc_ids(res1)
             if not ids:
                 continue
 

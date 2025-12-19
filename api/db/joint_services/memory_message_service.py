@@ -18,13 +18,13 @@ from typing import List
 
 from common.time_utils import current_timestamp, timestamp_to_date, format_iso_8601_to_ymd_hms
 from common.constants import MemoryType, LLMType
-from common.vector_store_base import FusionExpr
+from common.doc_store.doc_store_base import FusionExpr
 from api.db.services.memory_service import MemoryService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.llm_service import LLMBundle
 from api.utils.memory_utils import get_memory_type_human
 from memory.services.messages import MessageService
-from memory.services.query import MsgTextQueryer, get_vector
+from memory.services.query import MsgTextQuery, get_vector
 from memory.utils.prompt_util import PromptAssembler
 from memory.utils.msg_util import get_json_result_from_llm_response
 from rag.utils.redis_conn import REDIS_CONN
@@ -152,7 +152,7 @@ def query_message(filter_dict: dict, params: dict):
     memory = memory_list[0]
     embd_model = LLMBundle(memory.tenant_id, llm_type=LLMType.EMBEDDING, llm_name=memory.embd_id)
     match_dense = get_vector(question, embd_model, similarity=params["similarity_threshold"])
-    match_text, _ = MsgTextQueryer().question(question, min_match=0.3)
+    match_text, _ = MsgTextQuery().question(question, min_match=0.3)
     keywords_similarity_weight = params.get("keywords_similarity_weight", 0.7)
     fusion_expr = FusionExpr("weighted_sum", params["top_n"], {"weights": ",".join([str(keywords_similarity_weight), str(1 - keywords_similarity_weight)])})
 
