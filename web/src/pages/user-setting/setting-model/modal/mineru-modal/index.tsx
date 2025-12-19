@@ -16,7 +16,7 @@ import { IModalProps } from '@/interfaces/common';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { LLMHeader } from '../../components/llm-header';
@@ -68,7 +68,10 @@ const MinerUModal = ({
     },
   });
 
-  const backend = form.watch('mineru_backend');
+  const backend = useWatch({
+    control: form.control,
+    name: 'mineru_backend',
+  });
 
   const handleOk = async (values: MinerUFormValues) => {
     const ret = await onOk?.(values as any);
