@@ -72,6 +72,7 @@
     "cmdk": "^1.0.4",
     "dayjs": "^1.11.10",
     "dompurify": "^3.1.6",
+    "embla-carousel-react": "^8.6.0",
     "eventsource-parser": "^1.1.2",
     "human-id": "^4.1.1",
     "i18next": "^23.7.16",
