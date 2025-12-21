@@ -23,6 +23,7 @@ from api.utils.memory_utils import calculate_memory_type
 from api.constants import MEMORY_NAME_LIMIT
 from common.misc_utils import get_uuid
 from common.time_utils import get_format_time, current_timestamp
+from memory.utils.prompt_util import PromptAssembler
 
 
 class MemoryService(CommonService):
@@ -125,6 +126,7 @@ class MemoryService(CommonService):
             "tenant_id": tenant_id,
             "embd_id": embd_id,
             "llm_id": llm_id,
+            "system_prompt": PromptAssembler.assemble_system_prompt({"memory_type": memory_type}),
             "create_time": current_timestamp(),
             "create_date": get_format_time(),
             "update_time": current_timestamp(),
