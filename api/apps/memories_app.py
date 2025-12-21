@@ -134,7 +134,7 @@ async def update_memory(memory_id):
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 
-@manager.route("/<memory_id>", methods=["DELETE"]) # noqa: F821
+@manager.route("/<memory_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 async def delete_memory(memory_id):
     memory = MemoryService.get_by_memory_id(memory_id)
@@ -149,7 +149,7 @@ async def delete_memory(memory_id):
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 
-@manager.route("", methods=["GET"]) # noqa: F821
+@manager.route("", methods=["GET"])  # noqa: F821
 @login_required
 async def list_memory():
     args = request.args
@@ -187,7 +187,7 @@ async def get_memory_config(memory_id):
     return get_json_result(message=True, data=format_ret_data_from_memory(memory))
 
 
-@manager.route("/<memory_id>", methods=["GET"]) # noqa: F821
+@manager.route("/<memory_id>", methods=["GET"])  # noqa: F821
 @login_required
 async def get_memory_detail(memory_id):
     args = request.args
