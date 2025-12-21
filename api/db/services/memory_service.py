@@ -41,6 +41,12 @@ class MemoryService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_all_memory(cls):
+        memory_list = cls.model.select()
+        return list(memory_list)
+
+    @classmethod
+    @DB.connection_context()
     def get_with_owner_name_by_id(cls, memory_id: str):
         fields = [
             cls.model.id,

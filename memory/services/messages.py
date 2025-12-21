@@ -89,8 +89,8 @@ class MessageService:
         }
 
     @classmethod
-    def get_recent_messages(cls, uids: List[str], memory_ids: List[str], agent_id: str, session_id: str, limit: int):
-        index_names = [index_name(uid) for uid in uids]
+    def get_recent_messages(cls, uid_list: List[str], memory_ids: List[str], agent_id: str, session_id: str, limit: int):
+        index_names = [index_name(uid) for uid in uid_list]
         condition_dict = {
             "agent_id": agent_id,
             "session_id": session_id
@@ -114,10 +114,9 @@ class MessageService:
         ])
         return list(doc_mapping.values())
 
-
     @classmethod
-    def search_message(cls, memory_ids: List[str], condition_dict: dict, uids: List[str], match_expressions:list[MatchExpr], top_n: int):
-        index_names = [index_name(uid) for uid in uids]
+    def search_message(cls, memory_ids: List[str], condition_dict: dict, uid_list: List[str], match_expressions:list[MatchExpr], top_n: int):
+        index_names = [index_name(uid) for uid in uid_list]
         # filter only valid messages by default
         if "status" not in condition_dict:
             condition_dict["status"] = 1
@@ -143,9 +142,30 @@ class MessageService:
         ])
         return list(docs.values())
 
-
     @classmethod
     def get_by_message_id(cls, memory_id: str, message_id: int, uid: str):
         index = index_name(uid)
         doc_id = f'{memory_id}_{message_id}'
         return settings.msgStoreConn.get(doc_id, index, [memory_id])
+
+    @classmethod
+    def get_max_message_id(cls, uid_list: List[str], memory_ids: List[str]):
+        order_by = OrderByExpr()
+        order_by.desc("message_id")
+        index_names = [index_name(uid) for uid in uid_list]
+        res = settings.msgStoreConn.search(
+            select_fields=["message_id"],
+            highlight_fields=[],
+            condition={},
+            match_expressions=[],
+            order_by=order_by,
+            offset=0, limit=1,
+            index_names=index_names, memory_ids=memory_ids,
+            hide_forgotten=False
+        )
+        docs = settings.msgStoreConn.get_fields(res, ["message_id"])
+        if not docs:
+            return 1
+        else:
+            latest_msg = list(docs.values())[0]
+            return int(latest_msg["message_id"])

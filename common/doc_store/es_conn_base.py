@@ -211,7 +211,7 @@ class ESConnectionBase(DocStoreConnection):
             offset: int,
             limit: int,
             index_names: str | list[str],
-            knowledgebase_ids: list[str],
+            dataset_ids: list[str],
             agg_fields: list[str] | None = None,
             rank_feature: dict | None = None
     ):
