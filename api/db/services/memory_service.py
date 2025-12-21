@@ -36,6 +36,11 @@ class MemoryService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_by_tenant_id(cls, tenant_id: str):
+        return cls.model.select().where(cls.model.tenant_id == tenant_id)
+
+    @classmethod
+    @DB.connection_context()
     def get_with_owner_name_by_id(cls, memory_id: str):
         fields = [
             cls.model.id,
