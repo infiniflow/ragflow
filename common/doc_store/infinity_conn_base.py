@@ -111,9 +111,8 @@ class InfinityConnectionBase(DocStoreConnection):
         # judge keyword or not, such as "*_kwd" tag-like columns.
         raise NotImplementedError("Not implemented")
 
-    @staticmethod
     @abstractmethod
-    def convert_select_fields(output_fields: list[str]) -> list[str]:
+    def convert_select_fields(self, output_fields: list[str]) -> list[str]:
         # rm _kwd, _tks, _sm_tks, _with_weight suffix in field name.
         raise NotImplementedError("Not implemented")
 
