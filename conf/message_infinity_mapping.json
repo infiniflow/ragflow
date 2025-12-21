@@ -15,5 +15,5 @@
   "forget_at_flt": {"type": "float", "default": 0.0},
   "status_int": {"type": "integer", "default": 1},
   "zone_id": {"type": "integer", "default": 0},
-  "content": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"]}
+  "content": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"], "comment": "content_ltks"}
 }

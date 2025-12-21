@@ -24,6 +24,7 @@ import pandas as pd
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.doc_store.doc_store_base import MatchExpr, MatchTextExpr, MatchDenseExpr, FusionExpr, OrderByExpr
 from common.doc_store.infinity_conn_base import InfinityConnectionBase
+from common.time_utils import date_string_to_timestamp
 
 
 @singleton
@@ -42,40 +43,42 @@ class InfinityConnection(InfinityConnectionBase):
         return False
 
     @staticmethod
-    def convert_select_fields(output_fields: list[str]) -> list[str]:
-        for i, field in enumerate(output_fields):
-            if field in ["message_type"]:
-                output_fields[i] = "message_type_kwd"
-            elif field in ["status"]:
-                output_fields[i] = "status_int"
-        return list(set(output_fields))
+    def convert_message_field_to_infinity(field_name: str):
+        match field_name:
+            case "message_type":
+                return "message_type_kwd"
+            case "status":
+                return "status_int"
+            case _:
+                return field_name
+
+    def convert_select_fields(self, output_fields: list[str]) -> list[str]:
+        return list({self.convert_message_field_to_infinity(f) for f in output_fields})
 
     @staticmethod
     def convert_matching_field(field_weight_str: str) -> str:
         tokens = field_weight_str.split("^")
         field = tokens[0]
-        if field == "docnm_kwd" or field == "title_tks":
-            field = "docnm@ft_docnm_rag_coarse"
-        elif field == "title_sm_tks":
-            field = "docnm@ft_docnm_rag_fine"
-        elif field == "important_kwd":
-            field = "important_keywords@ft_important_keywords_rag_coarse"
-        elif field == "important_tks":
-            field = "important_keywords@ft_important_keywords_rag_fine"
-        elif field == "question_kwd":
-            field = "questions@ft_questions_rag_coarse"
-        elif field == "question_tks":
-            field = "questions@ft_questions_rag_fine"
-        elif field == "content_with_weight" or field == "content_ltks":
-            field = "content@ft_content_rag_coarse"
-        elif field == "content_sm_ltks":
-            field = "content@ft_content_rag_fine"
-        elif field == "authors_tks":
-            field = "authors@ft_authors_rag_coarse"
-        elif field == "authors_sm_tks":
-            field = "authors@ft_authors_rag_fine"
+        if field == "content":
+            field = "content@ft_contentm_rag_fine"
         tokens[0] = field
         return "^".join(tokens)
+
+    @staticmethod
+    def convert_condition_and_order_field(field_name: str):
+        match field_name:
+            case "message_type":
+                return "message_type_kwd"
+            case "status":
+                return "status_int"
+            case "valid_at":
+                return "valid_at_flt"
+            case "invalid_at":
+                return "invalid_at_flt"
+            case "forget_at":
+                return "forget_at_flt"
+            case _:
+                return field_name
 
     """
     CRUD operations
@@ -106,6 +109,8 @@ class InfinityConnection(InfinityConnectionBase):
         db_instance = inf_conn.get_database(self.dbName)
         df_list = list()
         table_list = list()
+        if hide_forgotten:
+            condition.update({"forget_at_flt": 0})
         output = select_fields.copy()
         output = self.convert_select_fields(output)
         for essential_field in ["id"] + agg_fields:
@@ -138,12 +143,13 @@ class InfinityConnection(InfinityConnectionBase):
         filter_cond = None
         filter_fulltext = ""
         if condition:
+            condition_dict = {self.convert_condition_and_order_field(k): v for k, v in condition.items()}
             table_found = False
             for indexName in index_names:
                 for mem_id in memory_ids:
                     table_name = f"{indexName}_{mem_id}"
                     try:
-                        filter_cond = self.equivalent_condition_to_str(condition, db_instance.get_table(table_name))
+                        filter_cond = self.equivalent_condition_to_str(condition_dict, db_instance.get_table(table_name))
                         table_found = True
                         break
                     except Exception:
@@ -200,10 +206,11 @@ class InfinityConnection(InfinityConnectionBase):
         order_by_expr_list = list()
         if order_by.fields:
             for order_field in order_by.fields:
+                order_field_name = self.convert_condition_and_order_field(order_field[0])
                 if order_field[1] == 0:
-                    order_by_expr_list.append((order_field[0], SortType.Asc))
+                    order_by_expr_list.append((order_field_name, SortType.Asc))
                 else:
-                    order_by_expr_list.append((order_field[0], SortType.Desc))
+                    order_by_expr_list.append((order_field_name, SortType.Desc))
 
         total_hits_count = 0
         # Scatter search tables and gather the results
@@ -266,7 +273,6 @@ class InfinityConnection(InfinityConnectionBase):
         for memoryId in memory_ids:
             table_name = f"{index_name}_{memoryId}"
             table_list.append(table_name)
-            table_instance = None
             try:
                 table_instance = db_instance.get_table(table_name)
             except Exception:
@@ -278,8 +284,6 @@ class InfinityConnection(InfinityConnectionBase):
         self.connPool.release_conn(inf_conn)
         res = self.concat_dataframes(df_list, ["id"])
         fields = set(res.columns.tolist())
-        for field in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "question_kwd", "question_tks","content_with_weight", "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks"]:
-            fields.add(field)
         res_fields = self.get_fields(res, list(fields))
         return res_fields.get(message_id, None)
 
@@ -319,33 +323,19 @@ class InfinityConnection(InfinityConnectionBase):
             assert "_id" not in d
             assert "id" in d
             for k, v in list(d.items()):
-                if k == "content_with_weight":
-                    d["content"] = v
-                elif k == "content_ltks":
-                    if not d.get("content_with_weight"):
-                        d["content"] = v
+                field_name = self.convert_message_field_to_infinity(k)
+                if field_name in ["valid_at", "invalid_at", "forget_at"]:
+                    d[f"{field_name}_flt"] = date_string_to_timestamp(v)
                 elif self.field_keyword(k):
                     if isinstance(v, list):
                         d[k] = "###".join(v)
                     else:
                         d[k] = v
-                elif re.search(r"_feas$", k):
-                    d[k] = json.dumps(v)
                 elif k == "memory_id":
                     if isinstance(d[k], list):
                         d[k] = d[k][0]  # since d[k] is a list, but we need a str
-                elif k == "position_int":
-                    assert isinstance(v, list)
-                    arr = [num for row in v for num in row]
-                    d[k] = "_".join(f"{num:08x}" for num in arr)
-                elif k in ["page_num_int", "top_int"]:
-                    assert isinstance(v, list)
-                    d[k] = "_".join(f"{num:08x}" for num in v)
                 else:
                     d[k] = v
-            for k in ["content_ltks"]:
-                if k in d:
-                    del d[k]
 
             for n, vs in embedding_clmns:
                 if n in d:
@@ -363,77 +353,38 @@ class InfinityConnection(InfinityConnectionBase):
         self.logger.debug(f"INFINITY inserted into {table_name} {str_ids}.")
         return []
 
-    def update(self, condition: dict, newValue: dict, indexName: str, memoryId: str) -> bool:
-        # if 'position_int' in newValue:
-        #     logger.info(f"update position_int: {newValue['position_int']}")
+    def update(self, condition: dict, new_value: dict, index_name: str, memory_id: str) -> bool:
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
-        table_name = f"{indexName}_{memoryId}"
+        table_name = f"{index_name}_{memory_id}"
         table_instance = db_instance.get_table(table_name)
         # if "exists" in condition:
         #    del condition["exists"]
 
-        clmns = {}
+        columns = {}
         if table_instance:
             for n, ty, de, _ in table_instance.show_columns().rows():
-                clmns[n] = (ty, de)
-        filter = self.equivalent_condition_to_str(condition, table_instance)
-        removeValue = {}
-        for k, v in list(newValue.items()):
-            if k == "content_ltks":
-                if not newValue.get("content_with_weight"):
-                    newValue["content"] = v
+                columns[n] = (ty, de)
+        condition_dict = {self.convert_condition_and_order_field(k): v for k, v in condition.items()}
+        filter = self.equivalent_condition_to_str(condition_dict, table_instance)
+        remove_value = {}
+        update_dict = {self.convert_message_field_to_infinity(k): v for k, v in new_value.items()}
+        for k, v in update_dict.items():
+            if k in ["valid_at", "invalid_at", "forget_at"]:
+                update_dict[f"{k}_flt"] = date_string_to_timestamp(v)
             elif self.field_keyword(k):
                 if isinstance(v, list):
-                    newValue[k] = "###".join(v)
+                    new_value[k] = "###".join(v)
                 else:
-                    newValue[k] = v
-            elif re.search(r"_feas$", k):
-                newValue[k] = json.dumps(v)
+                    new_value[k] = v
             elif k == "memory_id":
-                if isinstance(newValue[k], list):
-                    newValue[k] = newValue[k][0]  # since d[k] is a list, but we need a str
-            elif k == "remove":
-                if isinstance(v, str):
-                    assert v in clmns, f"'{v}' should be in '{clmns}'."
-                    ty, de = clmns[v]
-                    if ty.lower().find("cha"):
-                        if not de:
-                            de = ""
-                    newValue[v] = de
-                else:
-                    for kk, vv in v.items():
-                        removeValue[kk] = vv
-                    del newValue[k]
+                if isinstance(new_value[k], list):
+                    new_value[k] = new_value[k][0]  # since d[k] is a list, but we need a str
             else:
-                newValue[k] = v
-        for k in ["content_ltks"]:
-            if k in newValue:
-                del newValue[k]
+                new_value[k] = v
 
-        remove_opt = {}  # "[k,new_value]": [id_to_update, ...]
-        if removeValue:
-            col_to_remove = list(removeValue.keys())
-            row_to_opt = table_instance.output(col_to_remove + ["id"]).filter(filter).to_df()
-            self.logger.debug(f"INFINITY search table {str(table_name)}, filter {filter}, result: {str(row_to_opt[0])}")
-            row_to_opt = self.get_fields(row_to_opt, col_to_remove)
-            for id, old_v in row_to_opt.items():
-                for k, remove_v in removeValue.items():
-                    if remove_v in old_v[k]:
-                        new_v = old_v[k].copy()
-                        new_v.remove(remove_v)
-                        kv_key = json.dumps([k, new_v])
-                        if kv_key not in remove_opt:
-                            remove_opt[kv_key] = [id]
-                        else:
-                            remove_opt[kv_key].append(id)
-
-        self.logger.debug(f"INFINITY update table {table_name}, filter {filter}, newValue {newValue}.")
-        for update_kv, ids in remove_opt.items():
-            k, v = json.loads(update_kv)
-            table_instance.update(filter + " AND id in ({0})".format(",".join([f"'{id}'" for id in ids])), {k: "###".join(v)})
-
-        table_instance.update(filter, newValue)
+        self.logger.debug(f"INFINITY update table {table_name}, filter {filter}, newValue {new_value}.")
+        table_instance.update(filter, new_value)
         self.connPool.release_conn(inf_conn)
         return True
 
@@ -446,17 +397,13 @@ class InfinityConnection(InfinityConnectionBase):
             res = res[0]
         if not fields:
             return {}
-        fieldsAll = fields.copy()
-        fieldsAll.append("id")
-        fieldsAll = set(fieldsAll)
-        if "content" in res.columns:
-            for field in ["content_ltks"]:
-                if field in fieldsAll:
-                    res[field] = res["content"]
+        fields_all = fields.copy()
+        fields_all.append("id")
+        fields_all = set(fields_all)
 
         column_map = {col.lower(): col for col in res.columns}
-        matched_columns = {column_map[col.lower()]: col for col in fieldsAll if col.lower() in column_map}
-        none_columns = [col for col in fieldsAll if col.lower() not in column_map]
+        matched_columns = {column_map[col.lower()]: col for col in fields_all if col.lower() in column_map}
+        none_columns = [col for col in fields_all if col.lower() not in column_map]
 
         res2 = res[matched_columns.keys()]
         res2 = res2.rename(columns=matched_columns)
@@ -466,8 +413,6 @@ class InfinityConnection(InfinityConnectionBase):
             k = column.lower()
             if self.field_keyword(k):
                 res2[column] = res2[column].apply(lambda v: [kwd for kwd in v.split("###") if kwd])
-            elif re.search(r"_feas$", k):
-                res2[column] = res2[column].apply(lambda v: json.loads(v) if v else {})
             else:
                 pass
         for column in ["content"]:

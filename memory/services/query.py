@@ -46,7 +46,7 @@ class MsgTextQuery(QueryBase):
         self.tw = term_weight.Dealer()
         self.syn = synonym.Dealer()
         self.query_fields = [
-            "content_ltks"
+            "content"
         ]
 
     def question(self, txt, tbl="messages", min_match: float=0.6):

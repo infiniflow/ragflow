@@ -80,7 +80,7 @@ class MessageService:
         )
         total_count = settings.msgStoreConn.get_total(res)
         doc_mapping = settings.msgStoreConn.get_fields(res, [
-            "message_id", "message_type", "source_id", "memory_id","user_id", "agent_id", "session_id",
+            "message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id",
             "valid_at", "invalid_at", "forget_at", "status"
         ])
         return {

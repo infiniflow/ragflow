@@ -134,7 +134,7 @@ class ESConnection(ESConnectionBase):
         condition["memory_id"] = memory_ids
         for k, v in condition.items():
             if k == "session_id" and v:
-                bool_query.filter.append(Q("query_string", **{"query": f"*{v}*","fields": ["session_id"], "analyze_wildcard": True}))
+                bool_query.filter.append(Q("query_string", **{"query": f"*{v}*", "fields": ["session_id"], "analyze_wildcard": True}))
                 continue
             if not v:
                 continue
@@ -159,7 +159,7 @@ class ESConnection(ESConnectionBase):
                 minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
                     minimum_should_match = str(int(minimum_should_match * 100)) + "%"
-                bool_query.must.append(Q("query_string", fields=m.fields,
+                bool_query.must.append(Q("query_string", fields=[self.convert_field_name(f) for f in m.fields],
                                    type="best_fields", query=m.matching_text,
                                    minimum_should_match=minimum_should_match,
                                    boost=1))
@@ -170,7 +170,7 @@ class ESConnection(ESConnectionBase):
                 similarity = 0.0
                 if "similarity" in m.extra_options:
                     similarity = m.extra_options["similarity"]
-                s = s.knn(m.vector_column_name,
+                s = s.knn(self.convert_field_name(m.vector_column_name),
                           m.topn,
                           m.topn * 2,
                           query_vector=list(m.embedding_data),
@@ -193,10 +193,7 @@ class ESConnection(ESConnectionBase):
             orders = list()
             for field, order in order_by.fields:
                 order = "asc" if order == 0 else "desc"
-                if field in ["page_num_int", "top_int"]:
-                    order_info = {"order": order, "unmapped_type": "float",
-                                  "mode": "avg", "numeric_type": "double"}
-                elif field.endswith("_int") or field.endswith("_flt"):
+                if field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
                 else:
                     order_info = {"order": order, "unmapped_type": "text"}
@@ -223,7 +220,7 @@ class ESConnection(ESConnectionBase):
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
                 self.logger.debug(f"ESConnection.search {str(index_names)} res: " + str(res))
-                return {k: self.get_message_from_es_doc(v) for k, v in res.items()}
+                return res
             except ConnectionTimeout:
                 self.logger.exception("ES request timeout")
                 self._connect()
@@ -293,14 +290,15 @@ class ESConnection(ESConnectionBase):
 
     def update(self, condition: dict, new_value: dict, index_name: str, memory_id: str) -> bool:
         doc = copy.deepcopy(new_value)
-        doc.pop("id", None)
+        update_dict = {self.convert_field_name(k): v for k, v in doc.items()}
+        update_dict.pop("id", None)
         condition_dict = {self.convert_field_name(k): v for k, v in condition.items()}
         condition_dict["memory_id"] = memory_id
         if "id" in condition_dict and isinstance(condition_dict["id"], str):
             # update specific single document
             message_id = condition_dict["id"]
             for i in range(ATTEMPT_TIME):
-                for k in doc.keys():
+                for k in update_dict.keys():
                     if "feas" != k.split("_")[-1]:
                         continue
                     try:
@@ -308,7 +306,7 @@ class ESConnection(ESConnectionBase):
                     except Exception:
                         self.logger.exception(f"ESConnection.update(index={index_name}, id={message_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                 try:
-                    self.es.update(index=index_name, id=message_id, doc=doc)
+                    self.es.update(index=index_name, id=message_id, doc=update_dict)
                     return True
                 except Exception as e:
                     self.logger.exception(
