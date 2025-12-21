@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import logging
 from typing import List
 
 from common.time_utils import current_timestamp, timestamp_to_date, format_iso_8601_to_ymd_hms
@@ -157,3 +157,18 @@ def query_message(filter_dict: dict, params: dict):
     fusion_expr = FusionExpr("weighted_sum", params["top_n"], {"weights": ",".join([str(keywords_similarity_weight), str(1 - keywords_similarity_weight)])})
 
     return MessageService.search_message(memory_ids, condition_dict, uids, [match_text, match_dense, fusion_expr], params["top_n"])
+
+
+def init_message_id_sequence():
+    message_id_redis_key = "id_generator:memory"
+    if REDIS_CONN.exist(message_id_redis_key):
+        current_max_id = REDIS_CONN.get(message_id_redis_key)
+        logging.info(f"No need to init message_id sequence, current max id is {current_max_id}.")
+    else:
+        exist_memory_list = MemoryService.get_all_memory()
+        max_id = MessageService.get_max_message_id(
+            uid_list=[m.tenant_id for m in exist_memory_list],
+            memory_ids=[m.id for m in exist_memory_list]
+        )
+        REDIS_CONN.set(message_id_redis_key, max_id)
+        logging.info(f"Init message_id sequence done, current max id is {max_id}")
