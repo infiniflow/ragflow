@@ -42,8 +42,7 @@ class InfinityConnection(InfinityConnectionBase):
             return True
         return False
 
-    @staticmethod
-    def convert_select_fields(output_fields: list[str]) -> list[str]:
+    def convert_select_fields(self, output_fields: list[str]) -> list[str]:
         for i, field in enumerate(output_fields):
             if field in ["docnm_kwd", "title_tks", "title_sm_tks"]:
                 output_fields[i] = "docnm"
