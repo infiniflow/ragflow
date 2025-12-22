@@ -72,7 +72,7 @@ async def forget_message(memory_id: str, message_id: int):
 
     forget_time = timestamp_to_date(current_timestamp())
     update_succeed = MessageService.update_message(
-        {"memory_id": memory_id, "message_id": message_id},
+        {"memory_id": memory_id, "message_id": int(message_id)},
         {"forget_at": forget_time},
         memory.tenant_id, memory_id)
     if update_succeed:
@@ -94,7 +94,7 @@ async def update_message(memory_id: str, message_id: int):
     if not memory:
         return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
 
-    update_succeed = MessageService.update_message({"memory_id": memory_id, "message_id": message_id}, {"status": status}, memory.tenant_id, memory_id)
+    update_succeed = MessageService.update_message({"memory_id": memory_id, "message_id": int(message_id)}, {"status": status}, memory.tenant_id, memory_id)
     if update_succeed:
         return get_json_result(message=update_succeed)
     else:
