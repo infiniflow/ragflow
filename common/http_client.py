@@ -174,6 +174,12 @@ async def async_request(
                     logger.warning(
                         f"async_request attempt {attempt + 1}/{retries + 1} failed for {method}; retrying in {delay:.2f}s"
                     )
+                    raise
+                delay = _get_delay(backoff_factor, attempt)
+                # Avoid including the (potentially sensitive) URL in retry logs.
+                logger.warning(
+                    f"async_request attempt {attempt + 1}/{retries + 1} failed for {method}; retrying in {delay:.2f}s"
+                )
                 await asyncio.sleep(delay)
         raise last_exc  # pragma: no cover
 
