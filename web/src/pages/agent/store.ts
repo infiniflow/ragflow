@@ -1,4 +1,5 @@
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import type { IAgentForm } from '@/interfaces/database/agent';
+import { IAgentNode, RAGFlowNodeType } from '@/interfaces/database/flow';
 import type {} from '@redux-devtools/extension';
 import {
   Connection,
@@ -14,10 +15,15 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
 } from '@xyflow/react';
-import { cloneDeep, omit } from 'lodash';
-import differenceWith from 'lodash/differenceWith';
-import intersectionWith from 'lodash/intersectionWith';
-import lodashSet from 'lodash/set';
+import humanId from 'human-id';
+import {
+  cloneDeep,
+  differenceWith,
+  intersectionWith,
+  get as lodashGet,
+  set as lodashSet,
+  omit,
+} from 'lodash';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
@@ -26,11 +32,25 @@ import {
   duplicateNodeForm,
   generateDuplicateNode,
   generateNodeNamesWithIncreasingIndex,
+  getAgentNodeTools,
   getOperatorIndex,
   isEdgeEqual,
   mapEdgeMouseEvent,
 } from './utils';
 import { deleteAllDownstreamAgentsAndTool } from './utils/delete-node';
+
+type IAgentTool = IAgentForm['tools'][number];
+
+interface GetAgentToolByIdFunc {
+  (id: string): IAgentTool | undefined;
+  (id: string, agentNode: RAGFlowNodeType): IAgentTool | undefined;
+  (id: string, agentNodeId: string): IAgentTool | undefined;
+}
+
+interface UpdateAgentToolByIdFunc {
+  (agentNode: RAGFlowNodeType, id: string, value?: Partial<IAgentTool>): void;
+  (agentNodeId: string, id: string, value?: Partial<IAgentTool>): void;
+}
 
 export type RFState = {
   nodes: RAGFlowNodeType[];
@@ -81,6 +101,11 @@ export type RFState = {
   getParentIdById: (id?: string | null) => string | undefined;
   updateNodeName: (id: string, name: string) => void;
   generateNodeName: (name: string) => string;
+  generateAgentToolName: (id: string, name: string) => string;
+  generateAgentToolId: (prefix: string) => string;
+  getAllAgentTools: () => IAgentTool[];
+  getAgentToolById: GetAgentToolByIdFunc;
+  updateAgentToolById: UpdateAgentToolByIdFunc;
   setClickedNodeId: (id?: string) => void;
   setClickedToolId: (id?: string) => void;
   findUpstreamNodeById: (id?: string | null) => RAGFlowNodeType | undefined;
@@ -500,6 +525,95 @@ const useGraphStore = create<RFState>()(
         const { nodes } = get();
 
         return generateNodeNamesWithIncreasingIndex(name, nodes);
+      },
+      generateAgentToolName: (id: string, name: string) => {
+        const node = get().nodes.find(
+          (x) => x.id === id,
+        ) as IAgentNode<IAgentForm>;
+
+        if (!node) {
+          return '';
+        }
+
+        const tools = (node.data.form!.tools as any[]).filter(
+          (x) => x.component_name === name,
+        );
+        const lastIndex = tools.length
+          ? tools
+              .map((x) => {
+                const idx = x.name.match(/(\d+)$/)?.[1];
+                return idx && isNaN(idx) ? -1 : Number(idx);
+              })
+              .sort((a, b) => a - b)
+              .at(-1) ?? -1
+          : -1;
+
+        return `${name}_${lastIndex + 1}`;
+      },
+      generateAgentToolId: (prefix: string) => {
+        const allAgentToolIds = get()
+          .getAllAgentTools()
+          .map((t) => t.id || t.component_name);
+
+        let id: string;
+
+        // Loop for avoiding id collisions
+        do {
+          id = `${prefix}:${humanId()}`;
+        } while (allAgentToolIds.includes(id));
+
+        return id;
+      },
+      getAllAgentTools: () => {
+        return get()
+          .nodes.filter((n) => n?.data?.label === Operator.Agent)
+          .flatMap((n) => n?.data?.form?.tools);
+      },
+      getAgentToolById: (
+        id: string,
+        nodeOrNodeId?: RAGFlowNodeType | string,
+      ) => {
+        // eslint-disable-next-line eqeqeq
+        const tools =
+          nodeOrNodeId != null
+            ? getAgentNodeTools(
+                typeof nodeOrNodeId === 'string'
+                  ? get().getNode(nodeOrNodeId)
+                  : nodeOrNodeId,
+              )
+            : get().getAllAgentTools();
+
+        // For backward compatibility
+        return tools.find((t) => (t.id || t.component_name) === id);
+      },
+      updateAgentToolById: (
+        nodeOrNodeId: RAGFlowNodeType | string,
+        id: string,
+        value?: Partial<IAgentTool>,
+      ) => {
+        const { getNode, updateNodeForm } = get();
+
+        const agentNode =
+          typeof nodeOrNodeId === 'string'
+            ? getNode(nodeOrNodeId)
+            : nodeOrNodeId;
+
+        if (!agentNode) {
+          return;
+        }
+
+        const toolIndex = getAgentNodeTools(agentNode).findIndex(
+          (t) => (t.id || t.component_name) === id,
+        );
+
+        updateNodeForm(
+          agentNode.id,
+          {
+            ...lodashGet(agentNode.data.form, ['tools', toolIndex], {}),
+            ...(value ?? {}),
+          },
+          ['tools', toolIndex],
+        );
       },
       setClickedToolId: (id?: string) => {
         set({ clickedToolId: id });

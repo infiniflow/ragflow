@@ -778,6 +778,7 @@ export const NoDebugOperatorsList = [
   Operator.Splitter,
   Operator.HierarchicalMerger,
   Operator.Extractor,
+  Operator.Tool,
 ];
 
 export const NoCopyOperatorsList = [

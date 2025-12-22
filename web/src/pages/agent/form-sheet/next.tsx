@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import {
   Sheet,
   SheetContent,
@@ -41,49 +42,69 @@ const FormSheet = ({
   showSingleDebugDrawer,
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label as Operator;
-  const clickedToolId = useGraphStore((state) => state.clickedToolId);
+  const { clickedToolId, getAgentToolById } = useGraphStore();
 
   const currentFormMap = FormConfigMap[operatorName];
-
   const OperatorForm = currentFormMap?.component ?? EmptyContent;
-
   const isMcp = useIsMcp(operatorName);
-
   const { t } = useTranslate('flow');
+  const { component_name: toolComponentName } = (getAgentToolById(
+    clickedToolId,
+  ) ?? {}) as {
+    component_name: Operator;
+    name: string;
+    id: string;
+  };
 
   return (
     <Sheet open={visible} modal={false}>
       <SheetContent
-        className={cn('top-20 p-0 flex flex-col pb-20', {
+        className={cn('top-20 p-0 flex flex-col pb-20 gap-0', {
           'right-[clamp(0px,34%,620px)]': chatVisible,
         })}
         closeIcon={false}
       >
         <SheetHeader>
           <SheetTitle className="hidden"></SheetTitle>
-          <section className="flex-col border-b py-2 px-5">
+          <section className="flex-col border-b pt-2 pb-4 px-5">
             <div className="flex items-center gap-2 pb-3">
-              <OperatorIcon name={operatorName}></OperatorIcon>
+              <OperatorIcon
+                name={toolComponentName || operatorName}
+              ></OperatorIcon>
               <TitleInput node={node}></TitleInput>
               {needsSingleStepDebugging(operatorName) && (
                 <RunTooltip>
-                  <CirclePlay
-                    className="size-3.5 cursor-pointer"
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6 !p-0 bg-transparent"
                     onClick={showSingleDebugDrawer}
-                  />
+                  >
+                    <CirclePlay className="size-3.5 cursor-pointer" />
+                  </Button>
                 </RunTooltip>
               )}
-              <X onClick={hideModal} className="size-3.5 cursor-pointer" />
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 !p-0 bg-transparent"
+                onClick={hideModal}
+              >
+                <X className="size-3.5 cursor-pointer" />
+              </Button>
             </div>
-            {isMcp || (
-              <span className="text-text-secondary">
+
+            {!isMcp && (
+              <p className="text-text-secondary">
                 {t(
-                  `${lowerFirst(operatorName === Operator.Tool ? clickedToolId : operatorName)}Description`,
+                  `${lowerFirst(operatorName === Operator.Tool ? toolComponentName : operatorName)}Description`,
                 )}
-              </span>
+              </p>
             )}
           </section>
         </SheetHeader>
+
         <section className="pt-4 overflow-auto flex-1">
           {visible && (
             <AgentFormContext.Provider value={node}>
