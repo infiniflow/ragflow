@@ -254,18 +254,21 @@ def create_s3_client(bucket_type: BlobType, credentials: dict[str, Any], europea
     elif bucket_type == BlobType.S3:
         authentication_method = credentials.get("authentication_method", "access_key")
 
+        region_name = credentials.get("region") or None
+
         if authentication_method == "access_key":
             session = boto3.Session(
                 aws_access_key_id=credentials["aws_access_key_id"],
                 aws_secret_access_key=credentials["aws_secret_access_key"],
+                region_name=region_name,
             )
-            return session.client("s3")
+            return session.client("s3", region_name=region_name)
 
         elif authentication_method == "iam_role":
             role_arn = credentials["aws_role_arn"]
 
             def _refresh_credentials() -> dict[str, str]:
-                sts_client = boto3.client("sts")
+                sts_client = boto3.client("sts", region_name=credentials.get("region") or None)
                 assumed_role_object = sts_client.assume_role(
                     RoleArn=role_arn,
                     RoleSessionName=f"onyx_blob_storage_{int(datetime.now().timestamp())}",
@@ -285,11 +288,11 @@ def create_s3_client(bucket_type: BlobType, credentials: dict[str, Any], europea
             )
             botocore_session = get_session()
             botocore_session._credentials = refreshable
-            session = boto3.Session(botocore_session=botocore_session)
-            return session.client("s3")
+            session = boto3.Session(botocore_session=botocore_session, region_name=region_name)
+            return session.client("s3", region_name=region_name)
 
         elif authentication_method == "assume_role":
-            return boto3.client("s3")
+            return boto3.client("s3", region_name=region_name)
 
         else:
             raise ValueError("Invalid authentication method for S3.")
