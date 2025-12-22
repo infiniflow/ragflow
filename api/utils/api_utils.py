@@ -291,6 +291,7 @@ def ws_token_required(func):
     from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
     from api.db.services.user_service import UserService
     from common.constants import StatusEnum
+    from api.db.db_models import APIToken
     
     async def get_tenant_id_from_websocket(**kwargs):
         """Extract tenant_id from WebSocket authentication."""
@@ -801,85 +802,3 @@ def get_allowed_llm_factories() -> list:
         return factories
 
     return [factory for factory in factories if factory.name in settings.ALLOWED_LLM_FACTORIES]
-
-def ws_token_required(func):
-    """
-    WebSocket authentication decorator for SDK endpoints.
-    Follows the same pattern as token_required but for WebSocket connections.
-    """
-    from quart import websocket
-    from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
-    from api.db.services.user_service import UserService
-    from common.constants import StatusEnum
-    from api.db.db_models import APIToken
-    
-    async def get_tenant_id_from_websocket(**kwargs):
-        """Extract tenant_id from WebSocket authentication."""
-        # Method 1: Try API Token authentication from Authorization header
-        authorization = websocket.headers.get("Authorization", "")
-        
-        if authorization:
-            try:
-                authorization_parts = authorization.split()
-                if len(authorization_parts) >= 2:
-                    token = authorization_parts[1]
-                    objs = APIToken.query(token=token)
-                    if objs:
-                        kwargs["tenant_id"] = objs[0].tenant_id
-                        logging.info("WebSocket authenticated via API token")
-                        return True, kwargs
-            except Exception as e:
-                logging.error(f"WebSocket API token auth error: {str(e)}")
-        
-        # Method 2: Try User Session authentication (JWT)
-        try:
-            jwt = Serializer(secret_key=settings.SECRET_KEY)
-            auth_token = websocket.headers.get("Authorization") or \
-                         websocket.args.get("authorization") or \
-                         websocket.args.get("token")
-            
-            if auth_token:
-                try:
-                    if auth_token.startswith("Bearer "):
-                        auth_token = auth_token[7:]
-                    access_token = str(jwt.loads(auth_token))
-                    if access_token and len(access_token.strip()) >= 32:
-                        user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
-                        if user and user[0]:
-                            kwargs["tenant_id"] = user[0].id
-                            logging.info("WebSocket authenticated via user session")
-                            return True, kwargs
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        
-        # Method 3: Try query parameter authentication
-        token_param = websocket.args.get("token")
-        if token_param:
-            try:
-                objs = APIToken.query(token=token_param)
-                if objs:
-                    kwargs["tenant_id"] = objs[0].tenant_id
-                    logging.info("WebSocket authenticated via query parameter")
-                    return True, kwargs
-            except Exception as e:
-                logging.error(f"WebSocket query param auth error: {str(e)}")
-        
-        return False, kwargs
-    
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        success, kwargs = await get_tenant_id_from_websocket(**kwargs)
-        if not success:
-            await websocket.send(json.dumps({
-                "code": 401,
-                "message": "Unauthorized",
-                "data": None
-            }, ensure_ascii=False))
-            await websocket.close(1008)
-            return
-        
-        return await func(*args, **kwargs)
-    
-    return wrapper
