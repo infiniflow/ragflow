@@ -167,8 +167,8 @@ class DropboxConnector(LoadConnector, PollConnector):
                     try:
                         downloaded_file = self._download_file(entry.path_display)
                         all_files.append((entry, downloaded_file))
-                    except Exception:
-                        logger.exception(f"[Dropbox]: Error downloading file {entry.path_display}")
+                    except Exception as e:
+                        logger.exception(f"[Dropbox]: Error downloading file {entry.path_display}, error: {e}")
                         continue
 
                 elif isinstance(entry, FolderMetadata):

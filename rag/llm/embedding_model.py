@@ -30,6 +30,7 @@ from zhipuai import ZhipuAI
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from common import settings
+from common.constants import BCE_RERANKER_BASE_V1
 import logging
 import base64
 
@@ -332,7 +333,7 @@ class YoudaoEmbed(Base):
     _FACTORY_NAME = "Youdao"
     _client = None
 
-    def __init__(self, key=None, model_name="maidalun1020/bce-embedding-base_v1", **kwargs):
+    def __init__(self, key=None, model_name=BCE_RERANKER_BASE_V1, **kwargs):
         pass
 
     def encode(self, texts: list):

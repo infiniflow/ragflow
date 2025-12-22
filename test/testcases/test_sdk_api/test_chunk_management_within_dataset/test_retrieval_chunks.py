@@ -15,7 +15,7 @@
 #
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+from common.constants import BGE_RERANKER_V2_M3
 import pytest
 
 
@@ -203,7 +203,7 @@ class TestChunksRetrieval:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"rerank_id": "BAAI/bge-reranker-v2-m3"}, ""),
+            ({"rerank_id": BGE_RERANKER_V2_M3}, ""),
             pytest.param({"rerank_id": "unknown"}, "LookupError('Model(unknown) not authorized')", marks=pytest.mark.skip),
         ],
     )

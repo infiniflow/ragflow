@@ -20,7 +20,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService
 from common.misc_utils import get_uuid
-from common.constants import RetCode, StatusEnum
+from common.constants import RetCode, StatusEnum, BGE_RERANKER_V2_M3, BCE_RERANKER_BASE_V1
 from api.utils.api_utils import check_duplicate_ids, get_error_data_result, get_result, token_required, get_request_json
 
 
@@ -77,7 +77,7 @@ async def create(tenant_id):
     req["top_k"] = req.get("top_k", 1024)
     req["rerank_id"] = req.get("rerank_id", "")
     if req.get("rerank_id"):
-        value_rerank_model = ["BAAI/bge-reranker-v2-m3", "maidalun1020/bce-reranker-base_v1"]
+        value_rerank_model = [BGE_RERANKER_V2_M3, BCE_RERANKER_BASE_V1]
         if req["rerank_id"] not in value_rerank_model and not TenantLLMService.query(tenant_id=tenant_id, llm_name=req.get("rerank_id"), model_type="rerank"):
             return get_error_data_result(f"`rerank_model` {req.get('rerank_id')} doesn't exist")
     if not req.get("llm_id"):
@@ -197,7 +197,7 @@ async def update(tenant_id, chat_id):
     e, res = DialogService.get_by_id(chat_id)
     res = res.to_json()
     if req.get("rerank_id"):
-        value_rerank_model = ["BAAI/bge-reranker-v2-m3", "maidalun1020/bce-reranker-base_v1"]
+        value_rerank_model = [BGE_RERANKER_V2_M3, BCE_RERANKER_BASE_V1]
         if req["rerank_id"] not in value_rerank_model and not TenantLLMService.query(tenant_id=tenant_id, llm_name=req.get("rerank_id"), model_type="rerank"):
             return get_error_data_result(f"`rerank_model` {req.get('rerank_id')} doesn't exist")
     if "name" in req:
@@ -287,7 +287,7 @@ def list_chat(tenant_id):
     chats = DialogService.get_list(tenant_id, page_number, items_per_page, orderby, desc, id, name)
     if not chats:
         return get_result(data=[])
-    list_assts = []
+    list_assistants = []
     key_mapping = {
         "parameters": "variables",
         "prologue": "opener",
@@ -321,5 +321,5 @@ def list_chat(tenant_id):
         del res["kb_ids"]
         res["datasets"] = kb_list
         res["avatar"] = res.pop("icon")
-        list_assts.append(res)
-    return get_result(data=list_assts)
+        list_assistants.append(res)
+    return get_result(data=list_assistants)

@@ -20,6 +20,7 @@ from common import (
     INVALID_API_TOKEN,
     retrieval_chunks,
 )
+from common.constants import BGE_RERANKER_V2_M3
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -231,7 +232,7 @@ class TestChunksRetrieval:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"rerank_id": "BAAI/bge-reranker-v2-m3"}, 0, ""),
+            ({"rerank_id": BGE_RERANKER_V2_M3}, 0, ""),
             pytest.param({"rerank_id": "unknown"}, 100, "LookupError('Model(unknown) not authorized')", marks=pytest.mark.skip),
         ],
     )

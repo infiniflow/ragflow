@@ -38,7 +38,7 @@ from api.utils.configs import deserialize_b64, serialize_b64
 
 from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
 from common.decorator import singleton
-from common.constants import ParserType
+from common.constants import ParserType, BGE_RERANKER_V2_M3
 from common import settings
 
 
@@ -1206,7 +1206,7 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("tenant", "rerank_id", CharField(max_length=128, null=False, default="BAAI/bge-reranker-v2-m3", help_text="default rerank model ID")))
+        migrate(migrator.add_column("tenant", "rerank_id", CharField(max_length=128, null=False, default=BGE_RERANKER_V2_M3, help_text="default rerank model ID")))
     except Exception:
         pass
     try:

@@ -54,6 +54,7 @@ class RetCode(IntEnum, CustomEnum):
     SERVER_ERROR = 500
     FORBIDDEN = 403
     NOT_FOUND = 404
+    CONFLICT = 409
 
 
 class StatusEnum(Enum):
@@ -231,3 +232,7 @@ MINERU_DEFAULT_CONFIG = {
     "MINERU_SERVER_URL": "",
     "MINERU_DELETE_OUTPUT": 1,
 }
+
+# model name
+BGE_RERANKER_V2_M3 = "BAAI/bge-reranker-v2-m3"
+BCE_RERANKER_BASE_V1 = "maidalun1020/bce-reranker-base_v1"

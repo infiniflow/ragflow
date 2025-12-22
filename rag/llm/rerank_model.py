@@ -24,6 +24,7 @@ from yarl import URL
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
+from common.constants import BGE_RERANKER_V2_M3
 
 class Base(ABC):
     def __init__(self, key, model_name, **kwargs):
@@ -407,7 +408,7 @@ class HuggingfaceRerank(Base):
             raise exc
         return np.array(scores)
 
-    def __init__(self, key, model_name="BAAI/bge-reranker-v2-m3", base_url="http://127.0.0.1"):
+    def __init__(self, key, model_name=BGE_RERANKER_V2_M3, base_url="http://127.0.0.1"):
         self.model_name = model_name.split("___")[0]
         self.base_url = base_url
 
