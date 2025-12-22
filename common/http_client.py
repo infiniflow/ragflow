@@ -16,7 +16,7 @@ import logging
 import os
 import time
 from typing import Any, Dict, Optional
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse
 
 from common import settings
 import httpx
