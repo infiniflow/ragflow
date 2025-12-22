@@ -175,6 +175,21 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       parserRequired: 'Chunk method is required',
     },
     knowledgeDetails: {
+      metadata: {
+        changesAffectNewParses: 'Changes affect new parses only.',
+        editMetadataForDataset: 'View and edit metadata for ',
+        restrictDefinedValues: 'Restrict to defined values',
+        metadataGenerationSettings: 'Metadata generation settings',
+        manageMetadataForDataset: 'Manage metadata for this dataset',
+        manageMetadata: 'Manage metadata',
+        metadata: 'Metadata',
+        values: 'Values',
+        action: 'Action',
+        field: 'Field',
+        description: 'Description',
+        fieldName: 'Field name',
+        editMetadata: 'Edit metadata',
+      },
       localUpload: 'Local upload',
       fileSize: 'File size',
       fileType: 'File type',
@@ -348,6 +363,8 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      settings: 'Settings',
+      autoMetadata: 'Auto metadata',
       mineruOptions: 'MinerU Options',
       mineruParseMethod: 'Parse Method',
       mineruParseMethodTip:
@@ -832,6 +849,12 @@ Example: Virtual Hosted Style`,
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
         'Connect to your AWS S3 bucket to import and sync stored files.',
+      google_cloud_storageDescription:
+        'Connect your Google Cloud Storage bucket to import and sync files.',
+      r2Description:
+        'Connect your Cloudflare R2 bucket to import and sync files.',
+      oci_storageDescription:
+        'Connect your Oracle Cloud Object Storage bucket to import and sync files.',
       discordDescription:
         'Link your Discord server to access and analyze chat data.',
       notionDescription:
@@ -856,6 +879,7 @@ Example: Virtual Hosted Style`,
         'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
+      boxDescription: 'Connect your Box drive to sync files and folders.',
       dropboxAccessTokenTip:
         'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
       moodleDescription:

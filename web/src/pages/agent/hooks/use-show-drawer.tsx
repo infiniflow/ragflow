@@ -24,7 +24,9 @@ export const useShowFormDrawer = () => {
 
   const handleShow = useCallback(
     (e: React.MouseEvent<Element>, nodeId: string) => {
-      const tool = get(e.target, 'dataset.tool');
+      const toolId = (e.target as HTMLElement).dataset.toolId;
+      const tool = (e.target as HTMLElement).dataset.tool;
+
       // TODO: Operator type judgment should be used
       const operatorType = getOperatorTypeFromId(nodeId);
       if (
@@ -36,7 +38,8 @@ export const useShowFormDrawer = () => {
         return;
       }
       setClickedNodeId(nodeId);
-      setClickedToolId(tool);
+      // Guess this could gracefully handle the case where the tool id is not provided?
+      setClickedToolId(toolId || tool);
       showFormDrawer();
     },
     [getOperatorTypeFromId, setClickedNodeId, setClickedToolId, showFormDrawer],
