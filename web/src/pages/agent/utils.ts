@@ -120,13 +120,17 @@ function buildAgentTools(edges: Edge[], nodes: Node[], nodeId: string) {
         return {
           component_name: Operator.Agent,
           id,
-          name: name as string, // Cast name to string and provide fallback
+          name,
           params: { ...formData },
         };
       }),
     );
   }
-  return { params, name: node?.data.name, id: node?.id };
+  return { params, name: node?.data.name, id: node?.id } as {
+    params: IAgentForm;
+    name: string;
+    id: string;
+  };
 }
 
 function filterTargetsBySourceHandleId(edges: Edge[], handleId: string) {
