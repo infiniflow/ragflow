@@ -732,10 +732,18 @@ export default {
         'Интегрируйте ваше рабочее пространство Confluence для поиска документации.',
       s3Description:
         'Подключитесь к вашему AWS S3 бакету для импорта и синхронизации хранимых файлов.',
+      oci_storageDescription:
+        'Подключите бакет Oracle Cloud Object Storage для импорта и синхронизации файлов.',
+      r2Description:
+        'Подключите ваш бакет Cloudflare R2 для импорта и синхронизации файлов.',
+      google_cloud_storageDescription:
+        'Подключите бакет Google Cloud Storage для импорта и синхронизации файлов.',
       discordDescription:
         'Свяжите ваш Discord сервер для доступа и анализа данных чата.',
       notionDescription:
         'Синхронизируйте страницы и базы данных из Notion для извлечения знаний.',
+      boxDescription:
+        'Подключите ваш диск Box для синхронизации файлов и папок.',
       google_driveDescription:
         'Подключите ваш Google Drive через OAuth и синхронизируйте определенные папки или диски.',
       gmailDescription:

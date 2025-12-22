@@ -20,6 +20,9 @@ export enum DataSourceKey {
   WEBDAV = 'webdav',
   BOX = 'box',
   DROPBOX = 'dropbox',
+  R2 = 'r2',
+  OCI_STORAGE = 'oci_storage',
+  GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -27,6 +30,23 @@ export enum DataSourceKey {
 
 export const generateDataSourceInfo = (t: TFunction) => {
   return {
+    [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
+      name: 'Google Cloud Storage',
+      description: t(
+        `setting.${DataSourceKey.GOOGLE_CLOUD_STORAGE}Description`,
+      ),
+      icon: <SvgIcon name={'data-source/google-cloud-storage'} width={38} />,
+    },
+    [DataSourceKey.OCI_STORAGE]: {
+      name: 'Oracle Storage',
+      description: t(`setting.${DataSourceKey.OCI_STORAGE}Description`),
+      icon: <SvgIcon name={'data-source/oracle-storage'} width={38} />,
+    },
+    [DataSourceKey.R2]: {
+      name: 'R2',
+      description: t(`setting.${DataSourceKey.R2}Description`),
+      icon: <SvgIcon name={'data-source/r2'} width={38} />,
+    },
     [DataSourceKey.S3]: {
       name: 'S3',
       description: t(`setting.${DataSourceKey.S3}Description`),
@@ -122,8 +142,85 @@ export const DataSourceFormBaseFields = [
     })),
   },
 ];
-
 export const DataSourceFormFields = {
+  [DataSourceKey.GOOGLE_CLOUD_STORAGE]: [
+    {
+      label: 'GCS Access Key ID',
+      name: 'config.credentials.access_key_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'GCS Secret Access Key',
+      name: 'config.credentials.secret_access_key',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Bucket Name',
+      name: 'config.bucket_name',
+      type: FormFieldType.Text,
+      required: true,
+    },
+  ],
+  [DataSourceKey.OCI_STORAGE]: [
+    {
+      label: 'OCI Namespace',
+      name: 'config.credentials.namespace',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'OCI Region',
+      name: 'config.credentials.region',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'OCI Access Key ID',
+      name: 'config.credentials.access_key_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'OCI Secret Access Key',
+      name: 'config.credentials.secret_access_key',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Bucket Name',
+      name: 'config.bucket_name',
+      type: FormFieldType.Text,
+      required: true,
+    },
+  ],
+  [DataSourceKey.R2]: [
+    {
+      label: 'R2 Account ID',
+      name: 'config.credentials.account_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'R2 Access Key ID',
+      name: 'config.credentials.r2_access_key_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'R2 Secret Access Key',
+      name: 'config.credentials.r2_secret_access_key',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Bucket Name',
+      name: 'config.bucket_name',
+      type: FormFieldType.Text,
+      required: true,
+    },
+  ],
   [DataSourceKey.S3]: [
     {
       label: 'AWS Access Key ID',
@@ -149,9 +246,6 @@ export const DataSourceFormFields = {
       type: FormFieldType.Select,
       options: [
         { label: 'S3', value: 's3' },
-        { label: 'R2', value: 'r2' },
-        { label: 'Google Cloud Storage', value: 'google_cloud_storage' },
-        { label: 'OCI Storage', value: 'oci_storage' },
         { label: 'S3 Compatible', value: 's3_compatible' },
       ],
       required: true,
@@ -304,7 +398,6 @@ export const DataSourceFormFields = {
         <GoogleDriveTokenField
           value={fieldProps.value}
           onChange={fieldProps.onChange}
-          placeholder='{ "token": "...", "refresh_token": "...", ... }'
         />
       ),
       tooltip: t('setting.google_driveTokenTip'),
@@ -399,7 +492,6 @@ export const DataSourceFormFields = {
         <GmailTokenField
           value={fieldProps.value}
           onChange={fieldProps.onChange}
-          placeholder='{ "token": "...", "refresh_token": "...", ... }'
         />
       ),
       tooltip: t('setting.gmailTokenTip'),
@@ -613,6 +705,18 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  [DataSourceKey.R2]: {
+    name: '',
+    source: DataSourceKey.R2,
+    config: {
+      bucket_name: '',
+      credentials: {
+        account_id: '',
+        r2_access_key_id: '',
+        r2_secret_access_key: '',
+      },
+    },
+  },
   [DataSourceKey.NOTION]: {
     name: '',
     source: DataSourceKey.NOTION,
@@ -675,6 +779,30 @@ export const DataSourceFormDefaultValues = {
         google_primary_admin: '',
         google_tokens: '',
         authentication_method: 'uploaded',
+      },
+    },
+  },
+  [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
+    name: '',
+    source: DataSourceKey.GOOGLE_CLOUD_STORAGE,
+    config: {
+      bucket_name: '',
+      credentials: {
+        access_key_id: '',
+        secret_access_key: '',
+      },
+    },
+  },
+  [DataSourceKey.OCI_STORAGE]: {
+    name: '',
+    source: DataSourceKey.OCI_STORAGE,
+    config: {
+      bucket_name: '',
+      credentials: {
+        namespace: '',
+        region: '',
+        access_key_id: '',
+        secret_access_key: '',
       },
     },
   },
