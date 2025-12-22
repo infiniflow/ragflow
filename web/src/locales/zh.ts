@@ -1835,6 +1835,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         schema: '模式',
         response: '响应',
         executionMode: '执行模式',
+        executionModeTip:
+          'Accepted Response：请求校验通过后立即返回接收成功响应，工作流在后台异步执行；Final Response：系统在工作流执行完成后返回最终处理结果',
         authMethods: '认证方法',
         authType: '认证类型',
         limit: '请求限制',

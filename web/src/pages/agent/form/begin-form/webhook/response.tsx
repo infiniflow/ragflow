@@ -24,9 +24,10 @@ export function WebhookResponse() {
         <RAGFlowFormItem
           name="execution_mode"
           label={t('flow.webhook.executionMode')}
+          tooltip={t('flow.webhook.executionModeTip')}
         >
           <SelectWithSearch
-            options={buildOptions(WebhookExecutionMode)}
+            options={buildOptions(WebhookExecutionMode, t, 'flow.webhook')}
           ></SelectWithSearch>
         </RAGFlowFormItem>
         {executionMode === WebhookExecutionMode.Immediately && (
