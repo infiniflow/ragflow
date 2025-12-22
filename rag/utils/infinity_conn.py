@@ -114,6 +114,8 @@ class InfinityConnection(InfinityConnectionBase):
         table_list = list()
         output = select_fields.copy()
         output = self.convert_select_fields(output)
+        if agg_fields is None:
+            agg_fields = []
         for essential_field in ["id"] + agg_fields:
             if essential_field not in output:
                 output.append(essential_field)
@@ -275,7 +277,6 @@ class InfinityConnection(InfinityConnectionBase):
         for knowledgebaseId in knowledgebase_ids:
             table_name = f"{index_name}_{knowledgebaseId}"
             table_list.append(table_name)
-            table_instance = None
             try:
                 table_instance = db_instance.get_table(table_name)
             except Exception:
