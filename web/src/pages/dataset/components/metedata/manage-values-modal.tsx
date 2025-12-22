@@ -204,7 +204,8 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
             </div>
           </div>
         )}
-        {metaData.restrictDefinedValues && (
+        {((metaData.restrictDefinedValues && isShowValueSwitch) ||
+          !isShowValueSwitch) && (
           <div className="flex flex-col gap-2">
             <div className="flex justify-between items-center">
               <div>{t('knowledgeDetails.metadata.values')}</div>

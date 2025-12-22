@@ -17,6 +17,7 @@ interface IProps {
   onSearchChange?: ChangeEventHandler<HTMLInputElement>;
   showFilter?: boolean;
   leftPanel?: ReactNode;
+  preChildren?: ReactNode;
 }
 
 export const FilterButton = React.forwardRef<
@@ -46,6 +47,7 @@ export const FilterButton = React.forwardRef<
 export default function ListFilterBar({
   title,
   children,
+  preChildren,
   searchString,
   onSearchChange,
   showFilter = true,
@@ -63,7 +65,18 @@ export default function ListFilterBar({
   const filterCount = useMemo(() => {
     return typeof value === 'object' && value !== null
       ? Object.values(value).reduce((pre, cur) => {
-          return pre + cur.length;
+          if (Array.isArray(cur)) {
+            return pre + cur.length;
+          }
+          if (typeof cur === 'object') {
+            return (
+              pre +
+              Object.values(cur).reduce((pre, cur) => {
+                return pre + cur.length;
+              }, 0)
+            );
+          }
+          return pre;
         }, 0)
       : 0;
   }, [value]);
@@ -80,6 +93,7 @@ export default function ListFilterBar({
         {leftPanel || title}
       </div>
       <div className="flex gap-5 items-center">
+        {preChildren}
         {showFilter && (
           <FilterPopover
             value={value}
