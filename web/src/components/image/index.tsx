@@ -6,13 +6,14 @@ interface IImage {
   id: string;
   className?: string;
   onClick?(): void;
+  t?: string | number;
 }
 
-const Image = ({ id, className, ...props }: IImage) => {
+const Image = ({ id, t, className, ...props }: IImage) => {
   return (
     <img
       {...props}
-      src={`${api_host}/document/image/${id}`}
+      src={`${api_host}/document/image/${id}${t ? `?_t=${t}` : ''}`}
       alt=""
       className={classNames('max-w-[45vw] max-h-[40wh] block', className)}
     />
