@@ -34,7 +34,6 @@ from common import settings
 from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr
 
 
-@singleton
 class InfinityConnectionBase(DocStoreConnection):
     def __init__(self, mapping_file_name: str="infinity_mapping.json", logger_name: str="ragflow.infinity_conn"):
         self.dbName = settings.INFINITY.get("db_name", "default_db")

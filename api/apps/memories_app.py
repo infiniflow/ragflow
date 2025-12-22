@@ -191,24 +191,20 @@ async def get_memory_config(memory_id):
 @login_required
 async def get_memory_detail(memory_id):
     args = request.args
-    try:
-        agent_ids = args.getlist("agent_id")
-        keywords = args.get("keywords", "")
-        keywords = keywords.strip()
-        page = int(args.get("page", 1))
-        page_size = int(args.get("page_size", 50))
-        memory = MemoryService.get_by_memory_id(memory_id)
-        if not memory:
-            return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
-        messages = MessageService.list_message(
-            memory.tenant_id, memory_id, agent_ids, keywords, page, page_size)
-        agent_name_mapping = {}
-        if messages["message_list"]:
-            agent_list = UserCanvasService.get_basic_info_by_canvas_ids([message["agent_id"] for message in messages["message_list"]])
-            agent_name_mapping = {agent["id"]: agent["title"] for agent in agent_list}
-        for message in messages["message_list"]:
-            message["agent_name"] = agent_name_mapping.get(message["agent_id"], "Unknown")
-        return get_json_result(data={"messages": messages, "storage_type": memory.storage_type}, message=True)
-    except Exception as e:
-        logging.error(e)
-        return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
+    agent_ids = args.getlist("agent_id")
+    keywords = args.get("keywords", "")
+    keywords = keywords.strip()
+    page = int(args.get("page", 1))
+    page_size = int(args.get("page_size", 50))
+    memory = MemoryService.get_by_memory_id(memory_id)
+    if not memory:
+        return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
+    messages = MessageService.list_message(
+        memory.tenant_id, memory_id, agent_ids, keywords, page, page_size)
+    agent_name_mapping = {}
+    if messages["message_list"]:
+        agent_list = UserCanvasService.get_basic_info_by_canvas_ids([message["agent_id"] for message in messages["message_list"]])
+        agent_name_mapping = {agent["id"]: agent["title"] for agent in agent_list}
+    for message in messages["message_list"]:
+        message["agent_name"] = agent_name_mapping.get(message["agent_id"], "Unknown")
+    return get_json_result(data={"messages": messages, "storage_type": memory.storage_type}, message=True)
