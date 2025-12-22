@@ -145,6 +145,8 @@ interface FileUploaderProps
    */
   maxFileCount?: DropzoneProps['maxFiles'];
 
+  hideDropzoneOnMaxFileCount?: boolean;
+
   /**
    * Whether the uploader should accept multiple files.
    * @type boolean
@@ -178,6 +180,7 @@ export function FileUploader(props: FileUploaderProps) {
     maxFileCount = 100000000000,
     multiple = false,
     disabled = false,
+    hideDropzoneOnMaxFileCount = false,
     className,
     title,
     description,
@@ -188,6 +191,8 @@ export function FileUploader(props: FileUploaderProps) {
     prop: valueProp,
     onChange: onValueChange,
   });
+
+  const reachesMaxFileCount = (files?.length ?? 0) >= maxFileCount;
 
   const onDrop = React.useCallback(
     (acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
@@ -263,65 +268,68 @@ export function FileUploader(props: FileUploaderProps) {
 
   return (
     <div className="relative flex flex-col gap-6 overflow-hidden">
-      <Dropzone
-        onDrop={onDrop}
-        accept={accept}
-        maxSize={maxSize}
-        maxFiles={maxFileCount}
-        multiple={maxFileCount > 1 || multiple}
-        disabled={isDisabled}
-      >
-        {({ getRootProps, getInputProps, isDragActive }) => (
-          <div
-            {...getRootProps()}
-            className={cn(
-              'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border border-dashed border-border-default px-5 py-2.5 text-center transition hover:bg-border-button bg-bg-card',
-              'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-              isDragActive && 'border-border-button',
-              isDisabled && 'pointer-events-none opacity-60',
-              className,
-            )}
-            {...dropzoneProps}
-          >
-            <input {...getInputProps()} />
-            {isDragActive ? (
-              <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
-                <div className="rounded-full border border-dashed p-3">
-                  <Upload
-                    className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
-                    aria-hidden="true"
-                  />
-                </div>
-                <p className="font-medium text-text-secondary">
-                  Drop the files here
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
-                <div className="rounded-full border border-dashed p-3">
-                  <Upload
-                    className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
-                    aria-hidden="true"
-                  />
-                </div>
-                <div className="flex flex-col gap-px">
+      {!(hideDropzoneOnMaxFileCount && reachesMaxFileCount) && (
+        <Dropzone
+          onDrop={onDrop}
+          accept={accept}
+          maxSize={maxSize}
+          maxFiles={maxFileCount}
+          multiple={maxFileCount > 1 || multiple}
+          disabled={isDisabled}
+        >
+          {({ getRootProps, getInputProps, isDragActive }) => (
+            <div
+              {...getRootProps()}
+              className={cn(
+                'group relative grid h-72 w-full cursor-pointer place-items-center rounded-lg border border-dashed border-border-default px-5 py-2.5 text-center transition hover:bg-border-button bg-bg-card',
+                'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                isDragActive && 'border-border-button',
+                isDisabled && 'pointer-events-none opacity-60',
+                className,
+              )}
+              {...dropzoneProps}
+            >
+              <input {...getInputProps()} />
+              {isDragActive ? (
+                <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
+                  <div className="rounded-full border border-dashed p-3">
+                    <Upload
+                      className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
+                      aria-hidden="true"
+                    />
+                  </div>
                   <p className="font-medium text-text-secondary">
-                    {title || t('knowledgeDetails.uploadTitle')}
-                  </p>
-                  <p className="text-sm text-text-disabled">
-                    {description || t('knowledgeDetails.uploadDescription')}
-                    {/* You can upload
-                    {maxFileCount > 1
-                      ? ` ${maxFileCount === Infinity ? 'multiple' : maxFileCount}
-                      files (up to ${formatBytes(maxSize)} each)`
-                      : ` a file with ${formatBytes(maxSize)}`} */}
+                    Drop the files here
                   </p>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-      </Dropzone>
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-4 sm:px-5">
+                  <div className="rounded-full border border-dashed p-3">
+                    <Upload
+                      className="size-7 text-text-secondary transition-colors group-hover:text-text-primary"
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-px">
+                    <p className="font-medium text-text-secondary">
+                      {title || t('knowledgeDetails.uploadTitle')}
+                    </p>
+                    <p className="text-sm text-text-disabled">
+                      {description || t('knowledgeDetails.uploadDescription')}
+                      {/* You can upload
+                      {maxFileCount > 1
+                        ? ` ${maxFileCount === Infinity ? 'multiple' : maxFileCount}
+                        files (up to ${formatBytes(maxSize)} each)`
+                        : ` a file with ${formatBytes(maxSize)}`} */}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </Dropzone>
+      )}
+
       {files?.length ? (
         <div className="h-fit w-full px-3">
           <div className="flex max-h-48 flex-col gap-4 overflow-auto scrollbar-auto">
