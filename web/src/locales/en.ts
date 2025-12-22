@@ -364,6 +364,9 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
     },
     knowledgeConfiguration: {
       settings: 'Settings',
+      imageContextWindow: 'Image context window',
+      imageContextWindowTip:
+        'Captures N tokens of text above and below the image to provide richer background context for the image chunk.',
       autoMetadata: 'Auto metadata',
       mineruOptions: 'MinerU Options',
       mineruParseMethod: 'Parse Method',
