@@ -26,7 +26,6 @@ from infinity.common import ConflictType
 from infinity.index import IndexInfo, IndexType
 from infinity.connection_pool import ConnectionPool
 from infinity.errors import ErrorCode
-from common.decorator import singleton
 import pandas as pd
 from common.file_utils import get_project_base_directory
 from rag.nlp import is_english
