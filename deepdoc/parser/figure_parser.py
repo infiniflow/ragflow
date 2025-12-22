@@ -55,6 +55,31 @@ def vision_figure_parser_docx_wrapper(sections, tbls, callback=None,**kwargs):
             callback(0.8, f"Visual model error: {e}. Skipping figure parsing enhancement.")
     return tbls
 
+def vision_figure_parser_figure_xlsx_wrapper(images,callback=None, **kwargs):
+    tbls = []
+    if not images:
+        return []
+    try:
+        vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+        callback(0.2, "Visual model detected. Attempting to enhance Excel image extraction...")
+    except Exception:
+        vision_model = None
+    if vision_model:
+        figures_data = [((
+                        img["image"],   # Image.Image
+                        [img["image_description"]]     # description list (must be list)
+                    ),
+                    [
+                        (0, 0, 0, 0, 0)   # dummy position
+                    ]) for img in images]
+        try:
+            parser = VisionFigureParser(vision_model=vision_model, figures_data=figures_data, **kwargs)
+            callback(0.22, "Parsing images...")
+            boosted_figures = parser(callback=callback)
+            tbls.extend(boosted_figures)
+        except Exception as e:
+            callback(0.25, f"Excel visual model error: {e}. Skipping vision enhancement.")
+    return tbls
 
 def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
     if not tbls:

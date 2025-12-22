@@ -29,13 +29,14 @@ from collections import Counter
 from dateutil.parser import parse as datetime_parse
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from deepdoc.parser.figure_parser import vision_figure_parser_figure_xlsx_wrapper
 from deepdoc.parser.utils import get_text
-from rag.nlp import rag_tokenizer, tokenize
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table
 from deepdoc.parser import ExcelParser
 
 
 class Excel(ExcelParser):
-    def __call__(self, fnm, binary=None, from_page=0, to_page=10000000000, callback=None):
+    def __call__(self, fnm, binary=None, from_page=0, to_page=10000000000, callback=None, **kwargs):
         if not binary:
             wb = Excel._load_excel_to_workbook(fnm)
         else:
@@ -45,8 +46,23 @@ class Excel(ExcelParser):
             total += len(list(wb[sheetname].rows))
         res, fails, done = [], [], 0
         rn = 0
+        flow_images = []
+        pending_cell_images = []
+        tables = []
         for sheetname in wb.sheetnames:
             ws = wb[sheetname]
+            images = Excel._extract_images_from_worksheet(ws,sheetname=sheetname)
+            if images:
+                image_descriptions = vision_figure_parser_figure_xlsx_wrapper(images=images, callback=callback, **kwargs)
+                if image_descriptions and len(image_descriptions) == len(images):
+                    for i, bf in enumerate(image_descriptions):
+                        images[i]["image_description"] = "\n".join(bf[0][1])
+                    for img in images:
+                        if (img["span_type"] == "single_cell"and img.get("image_description")):
+                            pending_cell_images.append(img)
+                        else:
+                            flow_images.append(img)
+
             try:
                 rows = list(ws.rows)
             except Exception as e:
@@ -75,9 +91,38 @@ class Excel(ExcelParser):
             if len(data) == 0:
                 continue
             df = pd.DataFrame(data, columns=headers)
+            for img in pending_cell_images:
+                excel_row = img["row_from"] - 1
+                excel_col = img["col_from"] - 1
+
+                df_row_idx = excel_row - header_rows
+                if df_row_idx < 0 or df_row_idx >= len(df):
+                    flow_images.append(img)
+                    continue
+
+                if excel_col < 0 or excel_col >= len(df.columns):
+                    flow_images.append(img)
+                    continue
+
+                col_name = df.columns[excel_col]
+
+                if not df.iloc[df_row_idx][col_name]:
+                    df.iat[df_row_idx, excel_col] = img["image_description"]
             res.append(df)
+        for img in flow_images:
+            tables.append(
+                (
+                    (
+                        img["image"],   # Image.Image
+                        [img["image_description"]]     # description list (must be list)
+                    ),
+                    [
+                        (0, 0, 0, 0, 0)   # dummy position
+                    ]
+                )
+            )
         callback(0.3, ("Extract records: {}~{}".format(from_page + 1, min(to_page, from_page + rn)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
-        return res
+        return res,tables
 
     def _parse_headers(self, ws, rows):
         if len(rows) == 0:
@@ -320,11 +365,12 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
 
     Every row in table will be treated as a chunk.
     """
-
+    tbls = []
+    is_english = lang.lower() == "english"
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
-        dfs = excel_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback)
+        dfs,tbls = excel_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback, **kwargs)
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
@@ -419,7 +465,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 continue
             tokenize(d, "; ".join(row_txt), eng)
             res.append(d)
-
+        if tbls:
+            doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
+            res.extend(tokenize_table(tbls, doc, is_english))
         KnowledgebaseService.update_parser_config(kwargs["kb_id"], {"field_map": {k: v for k, v in clmns_map}})
     callback(0.35, "")
 
