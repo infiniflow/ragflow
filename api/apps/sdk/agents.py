@@ -765,7 +765,7 @@ async def webhook(agent_id: str):
                         if content:
                             contents.append(content)
                     if ans["event"] == "message_end":
-                        status = ans["data"].get("status", status)
+                        status = int(ans["data"].get("status", status))
                     if is_test:
                         append_webhook_trace(
                             agent_id,
@@ -783,11 +783,11 @@ async def webhook(agent_id: str):
                         }
                     )
                 final_content = "".join(contents)
-                return json.dumps({
+                return {
                     "message": final_content,
                     "success": True,
                     "code":  status,
-                }, ensure_ascii=False)
+                }
 
             except Exception as e:
                 if is_test:
@@ -809,7 +809,7 @@ async def webhook(agent_id: str):
                             "success": False,
                         }
                     )
-                return json.dumps({"code": 500, "message": str(e),"success":False}, ensure_ascii=False)
+                return {"code": 400, "message": str(e),"success":False}
 
         result = await sse()
         return Response(
