@@ -326,7 +326,6 @@ async def list_tools() -> Response:
                 try:
                     tools = await asyncio.to_thread(tool_call_session.get_tools, timeout)
                 except Exception as e:
-                    tools = []
                     return get_data_error_result(message=f"MCP list tools error: {e}")
 
                 results[server_key] = []
@@ -428,7 +427,6 @@ async def test_mcp() -> Response:
         try:
             tools = await asyncio.to_thread(tool_call_session.get_tools, timeout)
         except Exception as e:
-            tools = []
             return get_data_error_result(message=f"Test MCP error: {e}")
         finally:
             # PERF: blocking call to close sessions — consider moving to background thread or task queue

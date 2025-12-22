@@ -108,7 +108,7 @@ def _load_user():
     authorization = request.headers.get("Authorization")
     g.user = None
     if not authorization:
-        return
+        return None
 
     try:
         access_token = str(jwt.loads(authorization))

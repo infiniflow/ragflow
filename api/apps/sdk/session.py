@@ -448,7 +448,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 @token_required
 async def agents_completion_openai_compatibility(tenant_id, agent_id):
     req = await get_request_json()
-    tiktokenenc = tiktoken.get_encoding("cl100k_base")
+    tiktoken_encode = tiktoken.get_encoding("cl100k_base")
     messages = req.get("messages", [])
     if not messages:
         return get_error_data_result("You must provide at least one message.")
@@ -456,7 +456,7 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
         return get_error_data_result(f"You don't own the agent {agent_id}")
 
     filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
-    prompt_tokens = sum(len(tiktokenenc.encode(m["content"])) for m in filtered_messages)
+    prompt_tokens = sum(len(tiktoken_encode.encode(m["content"])) for m in filtered_messages)
     if not filtered_messages:
         return jsonify(
             get_data_openai(
@@ -464,7 +464,7 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
                 content="No valid messages found (user or assistant).",
                 finish_reason="stop",
                 model=req.get("model", ""),
-                completion_tokens=len(tiktokenenc.encode("No valid messages found (user or assistant).")),
+                completion_tokens=len(tiktoken_encode.encode("No valid messages found (user or assistant).")),
                 prompt_tokens=prompt_tokens,
             )
         )
@@ -500,6 +500,8 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
                 **req,
             ):
             return jsonify(response)
+
+        return None
 
 
 @manager.route("/agents/<agent_id>/completions", methods=["POST"])  # noqa: F821
@@ -920,6 +922,7 @@ async def chatbot_completions(dialog_id):
     async for answer in iframe_completion(dialog_id, **req):
         return get_result(data=answer)
 
+    return None
 
 @manager.route("/chatbots/<dialog_id>/info", methods=["GET"])  # noqa: F821
 async def chatbots_inputs(dialog_id):
@@ -967,6 +970,7 @@ async def agent_bot_completions(agent_id):
     async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
         return get_result(data=answer)
 
+    return None
 
 @manager.route("/agentbots/<agent_id>/inputs", methods=["GET"])  # noqa: F821
 async def begin_inputs(agent_id):

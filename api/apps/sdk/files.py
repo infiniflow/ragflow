@@ -205,7 +205,8 @@ async def create(tenant_id):
         if not FileService.is_parent_folder_exist(pf_id):
             return get_json_result(data=False, message="Parent Folder Doesn't Exist!", code=RetCode.BAD_REQUEST)
         if FileService.query(name=req["name"], parent_id=pf_id):
-            return get_json_result(data=False, message="Duplicated folder name in the same folder.", code=409)
+            return get_json_result(data=False, message="Duplicated folder name in the same folder.",
+                                   code=RetCode.CONFLICT)
 
         if input_file_type == FileType.FOLDER.value:
             file_type = FileType.FOLDER.value
@@ -565,11 +566,13 @@ async def rename(tenant_id):
 
         if file.type != FileType.FOLDER.value and pathlib.Path(req["name"].lower()).suffix != pathlib.Path(
                 file.name.lower()).suffix:
-            return get_json_result(data=False, message="The extension of file can't be changed", code=RetCode.BAD_REQUEST)
+            return get_json_result(data=False, message="The extension of file can't be changed",
+                                   code=RetCode.BAD_REQUEST)
 
         for existing_file in FileService.query(name=req["name"], pf_id=file.parent_id):
             if existing_file.name == req["name"]:
-                return get_json_result(data=False, message="Duplicated file name in the same folder.", code=409)
+                return get_json_result(data=False, message="Duplicated file name in the same folder.",
+                                       code=RetCode.CONFLICT)
 
         if not FileService.update_by_id(req["file_id"], {"name": req["name"]}):
             return get_json_result(message="Database error (File rename)!", code=RetCode.SERVER_ERROR)
@@ -631,9 +634,10 @@ async def get(tenant_id, file_id):
     except Exception as e:
         return server_error_response(e)
 
+
 @manager.route("/file/download/<attachment_id>", methods=["GET"])  # noqa: F821
 @token_required
-async def download_attachment(tenant_id,attachment_id):
+async def download_attachment(tenant_id, attachment_id):
     try:
         ext = request.args.get("ext", "markdown")
         data = await asyncio.to_thread(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
@@ -644,6 +648,7 @@ async def download_attachment(tenant_id,attachment_id):
 
     except Exception as e:
         return server_error_response(e)
+
 
 @manager.route('/file/mv', methods=['POST'])  # noqa: F821
 @token_required
