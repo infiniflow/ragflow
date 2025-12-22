@@ -1024,8 +1024,14 @@ async def do_handle_task(task):
 
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
-    e = await insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback)
-    if not e:
+
+    async def _maybe_insert_es(_chunks):
+        if has_canceled(task_id):
+            return True
+        e = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
+        return bool(e)
+
+    if not await _maybe_insert_es(chunks):
         return
 
     logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page,
@@ -1039,8 +1045,7 @@ async def do_handle_task(task):
     if toc_thread:
         d = toc_thread.result()
         if d:
-            e = await insert_es(task_id, task_tenant_id, task_dataset_id, [d], progress_callback)
-            if not e:
+            if not await _maybe_insert_es([d]):
                 return
             DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, 0, 1, 0)
 
@@ -1050,7 +1055,21 @@ async def do_handle_task(task):
         "Chunk doc({}), page({}-{}), chunks({}), token({}), elapsed:{:.2f}".format(task_document_name, task_from_page,
                                                                                    task_to_page, len(chunks),
                                                                                    token_count, task_time_cost))
-
+    if has_canceled(task_id):
+        # If the task is canceled during indexing, some chunks may have been inserted already.
+        # Clean them up to avoid leaving partial/index-inconsistent data in ES/Infinity.
+        try:
+            if settings.docStoreConn.indexExist(search.index_name(task_tenant_id), task_dataset_id):
+                await asyncio.to_thread(
+                    settings.docStoreConn.delete,
+                    {"doc_id": task_doc_id},
+                    search.index_name(task_tenant_id),
+                    task_dataset_id,
+                )
+        except Exception:
+            logging.exception(
+                f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled."
+            )
 
 async def handle_task():
 
