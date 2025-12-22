@@ -4,21 +4,27 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { PropsWithChildren, useCallback, useEffect, useState } from 'react';
+import {
+  PropsWithChildren,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useForm } from 'react-hook-form';
 import { ZodArray, ZodString, z } from 'zod';
 
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
+
 import {
   Form,
-  FormControl,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
 import { t } from 'i18next';
+import { FilterField } from './filter-field';
 import { FilterChange, FilterCollection, FilterValue } from './interface';
 
 export type CheckboxFormMultipleProps = {
@@ -35,29 +41,71 @@ function CheckboxFormMultiple({
   onChange,
   setOpen,
 }: CheckboxFormMultipleProps) {
-  const fieldsDict = filters?.reduce<Record<string, Array<any>>>((pre, cur) => {
-    pre[cur.field] = [];
-    return pre;
-  }, {});
+  const [resolvedFilters, setResolvedFilters] =
+    useState<FilterCollection[]>(filters);
 
-  const FormSchema = z.object(
-    filters.reduce<Record<string, ZodArray<ZodString, 'many'>>>((pre, cur) => {
-      pre[cur.field] = z.array(z.string());
+  useEffect(() => {
+    if (filters && filters.length > 0) {
+      setResolvedFilters(filters);
+    }
+  }, [filters]);
 
-      // .refine((value) => value.some((item) => item), {
-      //   message: 'You have to select at least one item.',
-      // });
+  const fieldsDict = useMemo(() => {
+    if (resolvedFilters.length === 0) {
+      return {};
+    }
+
+    return resolvedFilters.reduce<Record<string, any>>((pre, cur) => {
+      const hasNested = cur.list?.some(
+        (item) => item.list && item.list.length > 0,
+      );
+
+      if (hasNested) {
+        pre[cur.field] = {};
+      } else {
+        pre[cur.field] = [];
+      }
       return pre;
-    }, {}),
-  );
+    }, {});
+  }, [resolvedFilters]);
+
+  const FormSchema = useMemo(() => {
+    if (resolvedFilters.length === 0) {
+      return z.object({});
+    }
+
+    return z.object(
+      resolvedFilters.reduce<
+        Record<
+          string,
+          ZodArray<ZodString, 'many'> | z.ZodObject<any> | z.ZodOptional<any>
+        >
+      >((pre, cur) => {
+        const hasNested = cur.list?.some(
+          (item) => item.list && item.list.length > 0,
+        );
+
+        if (hasNested) {
+          pre[cur.field] = z
+            .record(z.string(), z.array(z.string().optional()).optional())
+            .optional();
+        } else {
+          pre[cur.field] = z.array(z.string().optional()).optional();
+        }
+
+        return pre;
+      }, {}),
+    );
+  }, [resolvedFilters]);
 
   const form = useForm<z.infer<typeof FormSchema>>({
-    resolver: zodResolver(FormSchema),
+    resolver: resolvedFilters.length > 0 ? zodResolver(FormSchema) : undefined,
     defaultValues: fieldsDict,
   });
 
-  function onSubmit(data: z.infer<typeof FormSchema>) {
-    onChange?.(data);
+  function onSubmit() {
+    const formValues = form.getValues();
+    onChange?.({ ...formValues });
     setOpen(false);
   }
 
@@ -67,8 +115,10 @@ function CheckboxFormMultiple({
   }, [fieldsDict, onChange, setOpen]);
 
   useEffect(() => {
-    form.reset(value);
-  }, [form, value]);
+    if (resolvedFilters.length > 0) {
+      form.reset(value || fieldsDict);
+    }
+  }, [form, value, resolvedFilters, fieldsDict]);
 
   return (
     <Form {...form}>
@@ -85,44 +135,21 @@ function CheckboxFormMultiple({
             render={() => (
               <FormItem className="space-y-4">
                 <div>
-                  <FormLabel className="text-base text-text-sub-title-invert">
-                    {x.label}
-                  </FormLabel>
+                  <FormLabel className="text-text-primary">{x.label}</FormLabel>
                 </div>
-                {x.list.map((item) => (
-                  <FormField
-                    key={item.id}
-                    control={form.control}
-                    name={x.field}
-                    render={({ field }) => {
-                      return (
-                        <div className="flex items-center justify-between text-text-primary text-xs">
-                          <FormItem
-                            key={item.id}
-                            className="flex flex-row  space-x-3 space-y-0 items-center "
-                          >
-                            <FormControl>
-                              <Checkbox
-                                checked={field.value?.includes(item.id)}
-                                onCheckedChange={(checked) => {
-                                  return checked
-                                    ? field.onChange([...field.value, item.id])
-                                    : field.onChange(
-                                        field.value?.filter(
-                                          (value) => value !== item.id,
-                                        ),
-                                      );
-                                }}
-                              />
-                            </FormControl>
-                            <FormLabel>{item.label}</FormLabel>
-                          </FormItem>
-                          <span className=" text-sm">{item.count}</span>
-                        </div>
-                      );
-                    }}
-                  />
-                ))}
+                {x.list.map((item) => {
+                  return (
+                    <FilterField
+                      key={item.id}
+                      item={{ ...item }}
+                      parent={{
+                        ...x,
+                        id: x.field,
+                        // field: `${x.field}${item.field ? '.' + item.field : ''}`,
+                      }}
+                    />
+                  );
+                })}
                 <FormMessage />
               </FormItem>
             )}
@@ -137,7 +164,13 @@ function CheckboxFormMultiple({
           >
             {t('common.clear')}
           </Button>
-          <Button type="submit" size={'sm'}>
+          <Button
+            type="submit"
+            onClick={() => {
+              console.log(form.formState.errors, form.getValues());
+            }}
+            size={'sm'}
+          >
             {t('common.submit')}
           </Button>
         </div>
