@@ -87,7 +87,7 @@ async def save_to_memory(memory_id: str, message_dict: dict):
     for idx, msg in enumerate(message_list):
         msg["content_embed"] = vector_list[idx]
     vector_dimension = len(vector_list[0])
-    if not MessageService.has_index(tenant_id):
+    if not MessageService.has_index(tenant_id, memory_id):
         created = MessageService.create_index(tenant_id, memory_id, vector_size=vector_dimension)
         if not created:
             return False, "Failed to create message index."
