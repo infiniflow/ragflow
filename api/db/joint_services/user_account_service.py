@@ -207,7 +207,7 @@ def delete_user_data(user_id: str) -> dict:
             if user_memory:
                 if MessageService.has_index(tenant_id):
                     MessageService.delete_index(tenant_id)
-                    done_msg += f" Deleted memory index."
+                    done_msg += " Deleted memory index."
                 memory_delete_res = MemoryService.delete_by_ids([m.id for m in user_memory])
                 done_msg += f"Deleted {memory_delete_res} memory datasets."
             # step1.4 delete own tenant
