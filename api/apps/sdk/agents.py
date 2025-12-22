@@ -326,7 +326,6 @@ async def webhook(agent_id: str):
         secret = jwt_cfg.get("secret")
         if not secret:
             raise Exception("JWT secret not configured")
-        required_claims = jwt_cfg.get("required_claims", [])
 
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
@@ -750,7 +749,7 @@ async def webhook(agent_id: str):
         async def sse():
             nonlocal canvas
             contents: list[str] = []
-
+            status = 200
             try:
                 async for ans in canvas.run(
                     query="",
@@ -765,6 +764,8 @@ async def webhook(agent_id: str):
                             content = "</think>"
                         if content:
                             contents.append(content)
+                    if ans["event"] == "message_end":
+                        status = ans["data"].get("status", status)
                     if is_test:
                         append_webhook_trace(
                             agent_id,
@@ -782,7 +783,11 @@ async def webhook(agent_id: str):
                         }
                     )
                 final_content = "".join(contents)
-                yield json.dumps(final_content, ensure_ascii=False)
+                return json.dumps({
+                    "message": final_content,
+                    "success": True,
+                    "code":  status,
+                }, ensure_ascii=False)
 
             except Exception as e:
                 if is_test:
@@ -804,10 +809,14 @@ async def webhook(agent_id: str):
                             "success": False,
                         }
                     )
-                yield json.dumps({"code": 500, "message": str(e)}, ensure_ascii=False)
+                return json.dumps({"code": 500, "message": str(e),"success":False}, ensure_ascii=False)
 
-        resp = Response(sse(), mimetype="application/json")
-        return resp
+        result = await sse()
+        return Response(
+            json.dumps(result),
+            status=result["code"],
+            mimetype="application/json",
+        )
 
 
 @manager.route("/webhook_trace/<agent_id>", methods=["GET"])  # noqa: F821
