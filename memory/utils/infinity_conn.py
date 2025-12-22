@@ -114,6 +114,8 @@ class InfinityConnection(InfinityConnectionBase):
             condition.update({"forget_at_flt": 0})
         output = select_fields.copy()
         output = self.convert_select_fields(output)
+        if agg_fields is None:
+            agg_fields = []
         for essential_field in ["id"] + agg_fields:
             if essential_field not in output:
                 output.append(essential_field)
