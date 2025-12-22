@@ -3,6 +3,8 @@ import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { BedrockRegionList } from '../setting-model/constant';
+import BlobTokenField from './component/blob-token-field';
 import BoxTokenField from './component/box-token-field';
 import { ConfluenceIndexingModeField } from './component/confluence-token-field';
 import GmailTokenField from './component/gmail-token-field';
@@ -104,6 +106,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
     },
   };
 };
+
+const awsRegionOptions = BedrockRegionList.map((r) => ({
+  label: r,
+  value: r,
+}));
 
 export const useDataSourceInfo = () => {
   const { t } = useTranslation();
@@ -223,57 +230,27 @@ export const DataSourceFormFields = {
   ],
   [DataSourceKey.S3]: [
     {
-      label: 'AWS Access Key ID',
-      name: 'config.credentials.aws_access_key_id',
-      type: FormFieldType.Text,
-      required: true,
-    },
-    {
-      label: 'AWS Secret Access Key',
-      name: 'config.credentials.aws_secret_access_key',
-      type: FormFieldType.Password,
-      required: true,
-    },
-    {
       label: 'Bucket Name',
       name: 'config.bucket_name',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Bucket Type',
-      name: 'config.bucket_type',
+      label: 'Region',
+      name: 'config.credentials.region',
       type: FormFieldType.Select,
-      options: [
-        { label: 'S3', value: 's3' },
-        { label: 'S3 Compatible', value: 's3_compatible' },
-      ],
-      required: true,
-    },
-    {
-      label: 'Addressing Style',
-      name: 'config.credentials.addressing_style',
-      type: FormFieldType.Select,
-      options: [
-        { label: 'Virtual Hosted Style', value: 'virtual' },
-        { label: 'Path Style', value: 'path' },
-      ],
       required: false,
-      placeholder: 'Virtual Hosted Style',
-      tooltip: t('setting.S3CompatibleAddressingStyleTip'),
-      shouldRender: (formValues: any) => {
-        return formValues?.config?.bucket_type === 's3_compatible';
-      },
-    },
-    {
-      label: 'Endpoint URL',
-      name: 'config.credentials.endpoint_url',
-      type: FormFieldType.Text,
-      required: false,
-      placeholder: 'https://fsn1.your-objectstorage.com',
-      tooltip: t('setting.S3CompatibleEndpointUrlTip'),
-      shouldRender: (formValues: any) => {
-        return formValues?.config?.bucket_type === 's3_compatible';
+      options: awsRegionOptions,
+      customValidate: (val: string, formValues: any) => {
+        const credentials = formValues?.config?.credentials || {};
+        const bucketType = formValues?.config?.bucket_type || 's3';
+        const hasAccessKey = Boolean(
+          credentials.aws_access_key_id || credentials.aws_secret_access_key,
+        );
+        if (bucketType === 's3' && hasAccessKey) {
+          return Boolean(val) || 'Region is required when using access key';
+        }
+        return true;
       },
     },
     {
@@ -282,6 +259,14 @@ export const DataSourceFormFields = {
       type: FormFieldType.Text,
       required: false,
       tooltip: t('setting.s3PrefixTip'),
+    },
+    {
+      label: 'Credentials',
+      name: 'config.credentials.__blob_token',
+      type: FormFieldType.Custom,
+      hideLabel: true,
+      required: false,
+      render: () => <BlobTokenField />,
     },
   ],
   [DataSourceKey.NOTION]: [
@@ -700,6 +685,9 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         aws_access_key_id: '',
         aws_secret_access_key: '',
+        region: '',
+        authentication_method: 'access_key',
+        aws_role_arn: '',
         endpoint_url: '',
         addressing_style: 'virtual',
       },

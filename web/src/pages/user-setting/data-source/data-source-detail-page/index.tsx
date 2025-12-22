@@ -10,8 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { RunningStatus } from '@/constants/knowledge';
 import { t } from 'i18next';
-import { debounce } from 'lodash';
-import { CirclePause, Repeat } from 'lucide-react';
+import { CirclePause, Loader2, Repeat } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues } from 'react-hook-form';
 import {
@@ -120,11 +119,11 @@ const SourceDetailPage = () => {
     ];
   }, [detail, runSchedule]);
 
-  const { handleAddOk } = useAddDataSource();
+  const { addLoading, handleAddOk } = useAddDataSource();
 
   const onSubmit = useCallback(() => {
     formRef?.current?.submit();
-  }, [formRef]);
+  }, []);
 
   useEffect(() => {
     if (detail) {
@@ -140,9 +139,7 @@ const SourceDetailPage = () => {
         return {
           ...field,
           horizontal: true,
-          onChange: () => {
-            onSubmit();
-          },
+          onChange: undefined,
         };
       });
       setFields(newFields);
@@ -175,11 +172,22 @@ const SourceDetailPage = () => {
             <DynamicForm.Root
               ref={formRef}
               fields={fields}
-              onSubmit={debounce((data) => {
-                handleAddOk(data);
-              }, 500)}
+              onSubmit={(data) => handleAddOk(data)}
               defaultValues={defaultValues}
             />
+          </div>
+          <div className="max-w-[1200px] flex justify-end">
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={addLoading}
+              className="flex items-center justify-center min-w-[100px] px-4 py-2 bg-primary text-white rounded-md disabled:opacity-60"
+            >
+              {addLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {addLoading
+                ? t('modal.loadingText', { defaultValue: 'Submitting...' })
+                : t('modal.okText', { defaultValue: 'Submit' })}
+            </button>
           </div>
           <section className="flex flex-col gap-2">
             <div className="text-2xl text-text-primary mb-2">
