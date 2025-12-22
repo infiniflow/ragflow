@@ -26,7 +26,7 @@ from quart import websocket
 
 from api.db.services.dialog_service import DialogService
 from api.db.services.canvas_service import UserCanvasService
-from api.db.services.conversation_service import async_completion as rag_completion
+from api.db.services.conversation_service import completion as rag_completion
 from api.db.services.canvas_service import completion as agent_completion
 from api.utils.api_utils import ws_token_required
 from common.constants import StatusEnum
@@ -85,13 +85,17 @@ async def chat_completions_ws(tenant_id, chat_id):
             session_id = req.get("session_id")
             stream = req.get("stream", True)
             
-            if question is None:
+            # Log the received question for debugging
+            logging.info(f"WebSocket received question: {question[:100] if question else 'None'}, session_id: {session_id}")
+            
+            if not question:
                 await send_ws_error("Missing required parameter: question", code=400)
                 continue
             
             try:
                 if stream:
-                    async for response_chunk in rag_completion(
+                    # completion returns a regular generator, not async generator
+                    for response_chunk in rag_completion(
                         tenant_id=tenant_id,
                         chat_id=chat_id,
                         question=question,
@@ -103,14 +107,21 @@ async def chat_completions_ws(tenant_id, chat_id):
                             json_str = response_chunk[5:].strip()
                             try:
                                 response_data = json.loads(json_str)
-                                await websocket.send(json.dumps(response_data, ensure_ascii=False))
+                                # Check if this is an error response
+                                if response_data.get("code", 0) != 0:
+                                    # Error response - send it as-is so client can display it
+                                    await websocket.send(json.dumps(response_data, ensure_ascii=False))
+                                else:
+                                    # Normal response - send it
+                                    await websocket.send(json.dumps(response_data, ensure_ascii=False))
                             except json.JSONDecodeError:
                                 continue
                     
                     logging.info(f"Chat completion streamed successfully for chat_id: {chat_id}")
                 else:
                     response = None
-                    async for resp in rag_completion(
+                    # completion returns a regular generator, not async generator
+                    for resp in rag_completion(
                         tenant_id=tenant_id,
                         chat_id=chat_id,
                         question=question,
@@ -178,7 +189,8 @@ async def agent_completions_ws(tenant_id, agent_id):
             
             try:
                 if stream:
-                    async for response_chunk in agent_completion(
+                    # agent_completion returns a regular generator, not async generator
+                    for response_chunk in agent_completion(
                         tenant_id=tenant_id,
                         agent_id=agent_id,
                         question=question,
@@ -206,7 +218,8 @@ async def agent_completions_ws(tenant_id, agent_id):
                     reference = {}
                     final_ans = None
                     
-                    async for response_chunk in agent_completion(
+                    # agent_completion returns a regular generator, not async generator
+                    for response_chunk in agent_completion(
                         tenant_id=tenant_id,
                         agent_id=agent_id,
                         question=question,

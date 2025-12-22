@@ -42,6 +42,7 @@ services:
       - ../history_data_agent:/ragflow/history_data_agent
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
+      - ../api/apps/sdk/websocket.py:/ragflow/api/apps/sdk/websocket.py
     env_file: .env
     networks:
       - ragflow
@@ -91,6 +92,7 @@ services:
       - ../history_data_agent:/ragflow/history_data_agent
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
+      - ../api/apps/sdk/websocket.py:/ragflow/api/apps/sdk/websocket.py
     env_file: .env
     networks:
       - ragflow
