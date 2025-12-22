@@ -333,7 +333,7 @@ class ESConnection(ESConnectionBase):
                     f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
         scripts = []
         params = {}
-        for k, v in new_value.items():
+        for k, v in update_dict.items():
             if k == "remove":
                 if isinstance(v, str):
                     scripts.append(f"ctx._source.remove('{v}');")
@@ -369,7 +369,6 @@ class ESConnection(ESConnectionBase):
         ubq = ubq.params(refresh=True)
         ubq = ubq.params(slices=5)
         ubq = ubq.params(conflicts="proceed")
-
         for _ in range(ATTEMPT_TIME):
             try:
                 _ = ubq.execute()
@@ -453,9 +452,7 @@ class ESConnection(ESConnectionBase):
                     continue
                 if not isinstance(v, str):
                     m[n] = str(m[n])
-                # if n.find("tks") > 0:
-                #     m[n] = remove_redundant_spaces(m[n])
 
             if m:
-                res_fields[d["id"]] = m
+                res_fields[d["id"]] = self.get_message_from_es_doc(m)
         return res_fields
