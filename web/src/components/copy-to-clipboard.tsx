@@ -25,3 +25,12 @@ const CopyToClipboard = ({ text }: Props) => {
 };
 
 export default CopyToClipboard;
+
+export function CopyToClipboardWithText({ text }: { text: string }) {
+  return (
+    <div className="bg-bg-card p-1 rounded-md flex gap-2">
+      <span className="flex-1 truncate">{text}</span>
+      <CopyToClipboard text={text}></CopyToClipboard>
+    </div>
+  );
+}

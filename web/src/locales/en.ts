@@ -175,6 +175,21 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       parserRequired: 'Chunk method is required',
     },
     knowledgeDetails: {
+      metadata: {
+        changesAffectNewParses: 'Changes affect new parses only.',
+        editMetadataForDataset: 'View and edit metadata for ',
+        restrictDefinedValues: 'Restrict to defined values',
+        metadataGenerationSettings: 'Metadata generation settings',
+        manageMetadataForDataset: 'Manage metadata for this dataset',
+        manageMetadata: 'Manage metadata',
+        metadata: 'Metadata',
+        values: 'Values',
+        action: 'Action',
+        field: 'Field',
+        description: 'Description',
+        fieldName: 'Field name',
+        editMetadata: 'Edit metadata',
+      },
       localUpload: 'Local upload',
       fileSize: 'File size',
       fileType: 'File type',
@@ -348,6 +363,11 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      settings: 'Settings',
+      imageContextWindow: 'Image context window',
+      imageContextWindowTip:
+        'Captures N tokens of text above and below the image to provide richer background context for the image chunk.',
+      autoMetadata: 'Auto metadata',
       mineruOptions: 'MinerU Options',
       mineruParseMethod: 'Parse Method',
       mineruParseMethodTip:
@@ -587,6 +607,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'The document being parsed cannot be deleted',
     },
     chunk: {
+      type: 'Type',
+      docType: {
+        image: 'Image',
+        table: 'Table',
+        text: 'Text',
+      },
       chunk: 'Chunk',
       bulk: 'Bulk',
       selectAll: 'Select all',
@@ -787,6 +813,15 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       deleteModel: 'Delete model',
       bedrockCredentialsHint:
         'Tip: Leave Access Key / Secret Key blank to use AWS IAM authentication.',
+      awsAuthModeAccessKeySecret: 'Access Key',
+      awsAuthModeIamRole: 'IAM Role',
+      awsAuthModeAssumeRole: 'Assume Role',
+      awsAccessKeyId: 'AWS Access Key ID',
+      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsRoleArn: 'AWS Role ARN',
+      awsRoleArnMessage: 'Please enter AWS Role ARN',
+      awsAssumeRoleTip:
+        'If you select this mode, the Amazon EC2 instance will assume its existing role to access AWS services. No additional credentials are required.',
       modelEmptyTip:
         'No models available. <br>Please add models from the panel on the right.',
       sourceEmptyTip: 'No data sources added yet. Select one below to connect.',
@@ -823,6 +858,12 @@ Example: Virtual Hosted Style`,
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
         'Connect to your AWS S3 bucket to import and sync stored files.',
+      google_cloud_storageDescription:
+        'Connect your Google Cloud Storage bucket to import and sync files.',
+      r2Description:
+        'Connect your Cloudflare R2 bucket to import and sync files.',
+      oci_storageDescription:
+        'Connect your Oracle Cloud Object Storage bucket to import and sync files.',
       discordDescription:
         'Link your Discord server to access and analyze chat data.',
       notionDescription:
@@ -847,6 +888,7 @@ Example: Virtual Hosted Style`,
         'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
+      boxDescription: 'Connect your Box drive to sync files and folders.',
       dropboxAccessTokenTip:
         'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
       moodleDescription:
@@ -1101,6 +1143,9 @@ Example: Virtual Hosted Style`,
       mcp: 'MCP',
       mineru: {
         modelNameRequired: 'Model name is required',
+        apiServerRequired: 'MinerU API Server Configuration is required',
+        serverUrlBackendLimit:
+          'MinerU Server URL Address is only available for the HTTP client backend',
         apiserver: 'MinerU API Server Configuration',
         outputDir: 'MinerU Output Directory Path',
         backend: 'MinerU Processing Backend Type',
@@ -1112,6 +1157,11 @@ Example: Virtual Hosted Style`,
           vlmTransformers: 'Vision Language Model with Transformers',
           vlmVllmEngine: 'Vision Language Model with vLLM Engine',
           vlmHttpClient: 'Vision Language Model via HTTP Client',
+          vlmMlxEngine: 'Vision Language Model with MLX Engine',
+          vlmVllmAsyncEngine:
+            'Vision Language Model with vLLM Async Engine (Experimental)',
+          vlmLmdeployEngine:
+            'Vision Language Model with LMDeploy Engine (Experimental)',
         },
       },
     },
@@ -2043,12 +2093,14 @@ Important structured information may include: names, dates, locations, events, k
         schema: 'Schema',
         response: 'Response',
         executionMode: 'Execution mode',
+        executionModeTip:
+          'Accepted Response: The system returns an acknowledgment immediately after the request is validated, while the workflow continues to execute asynchronously in the background. /Final Response: The system returns a response only after the workflow execution is completed.',
         authMethods: 'Authentication methods',
         authType: 'Authentication type',
         limit: 'Request limit',
         per: 'Time period',
         maxBodySize: 'Maximum body size',
-        ipWhitelist: 'Ip whitelist',
+        ipWhitelist: 'IP whitelist',
         tokenHeader: 'Token header',
         tokenValue: 'Token value',
         username: 'Username',
@@ -2068,6 +2120,8 @@ Important structured information may include: names, dates, locations, events, k
         queryParameters: 'Query parameters',
         headerParameters: 'Header parameters',
         requestBodyParameters: 'Request body parameters',
+        streaming: 'Accepted response',
+        immediately: 'Final response',
       },
     },
     llmTools: {

@@ -3,6 +3,8 @@ import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { BedrockRegionList } from '../setting-model/constant';
+import BlobTokenField from './component/blob-token-field';
 import BoxTokenField from './component/box-token-field';
 import { ConfluenceIndexingModeField } from './component/confluence-token-field';
 import GmailTokenField from './component/gmail-token-field';
@@ -20,6 +22,9 @@ export enum DataSourceKey {
   WEBDAV = 'webdav',
   BOX = 'box',
   DROPBOX = 'dropbox',
+  R2 = 'r2',
+  OCI_STORAGE = 'oci_storage',
+  GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -27,6 +32,23 @@ export enum DataSourceKey {
 
 export const generateDataSourceInfo = (t: TFunction) => {
   return {
+    [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
+      name: 'Google Cloud Storage',
+      description: t(
+        `setting.${DataSourceKey.GOOGLE_CLOUD_STORAGE}Description`,
+      ),
+      icon: <SvgIcon name={'data-source/google-cloud-storage'} width={38} />,
+    },
+    [DataSourceKey.OCI_STORAGE]: {
+      name: 'Oracle Storage',
+      description: t(`setting.${DataSourceKey.OCI_STORAGE}Description`),
+      icon: <SvgIcon name={'data-source/oracle-storage'} width={38} />,
+    },
+    [DataSourceKey.R2]: {
+      name: 'R2',
+      description: t(`setting.${DataSourceKey.R2}Description`),
+      icon: <SvgIcon name={'data-source/r2'} width={38} />,
+    },
     [DataSourceKey.S3]: {
       name: 'S3',
       description: t(`setting.${DataSourceKey.S3}Description`),
@@ -85,6 +107,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
   };
 };
 
+const awsRegionOptions = BedrockRegionList.map((r) => ({
+  label: r,
+  value: r,
+}));
+
 export const useDataSourceInfo = () => {
   const { t } = useTranslation();
   const [dataSourceInfo, setDataSourceInfo] = useState<IDataSourceInfoMap>(
@@ -122,18 +149,17 @@ export const DataSourceFormBaseFields = [
     })),
   },
 ];
-
 export const DataSourceFormFields = {
-  [DataSourceKey.S3]: [
+  [DataSourceKey.GOOGLE_CLOUD_STORAGE]: [
     {
-      label: 'AWS Access Key ID',
-      name: 'config.credentials.aws_access_key_id',
+      label: 'GCS Access Key ID',
+      name: 'config.credentials.access_key_id',
       type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'AWS Secret Access Key',
-      name: 'config.credentials.aws_secret_access_key',
+      label: 'GCS Secret Access Key',
+      name: 'config.credentials.secret_access_key',
       type: FormFieldType.Password,
       required: true,
     },
@@ -143,43 +169,88 @@ export const DataSourceFormFields = {
       type: FormFieldType.Text,
       required: true,
     },
+  ],
+  [DataSourceKey.OCI_STORAGE]: [
     {
-      label: 'Bucket Type',
-      name: 'config.bucket_type',
-      type: FormFieldType.Select,
-      options: [
-        { label: 'S3', value: 's3' },
-        { label: 'R2', value: 'r2' },
-        { label: 'Google Cloud Storage', value: 'google_cloud_storage' },
-        { label: 'OCI Storage', value: 'oci_storage' },
-        { label: 'S3 Compatible', value: 's3_compatible' },
-      ],
+      label: 'OCI Namespace',
+      name: 'config.credentials.namespace',
+      type: FormFieldType.Text,
       required: true,
     },
     {
-      label: 'Addressing Style',
-      name: 'config.credentials.addressing_style',
-      type: FormFieldType.Select,
-      options: [
-        { label: 'Virtual Hosted Style', value: 'virtual' },
-        { label: 'Path Style', value: 'path' },
-      ],
-      required: false,
-      placeholder: 'Virtual Hosted Style',
-      tooltip: t('setting.S3CompatibleAddressingStyleTip'),
-      shouldRender: (formValues: any) => {
-        return formValues?.config?.bucket_type === 's3_compatible';
-      },
+      label: 'OCI Region',
+      name: 'config.credentials.region',
+      type: FormFieldType.Text,
+      required: true,
     },
     {
-      label: 'Endpoint URL',
-      name: 'config.credentials.endpoint_url',
+      label: 'OCI Access Key ID',
+      name: 'config.credentials.access_key_id',
       type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'OCI Secret Access Key',
+      name: 'config.credentials.secret_access_key',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Bucket Name',
+      name: 'config.bucket_name',
+      type: FormFieldType.Text,
+      required: true,
+    },
+  ],
+  [DataSourceKey.R2]: [
+    {
+      label: 'R2 Account ID',
+      name: 'config.credentials.account_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'R2 Access Key ID',
+      name: 'config.credentials.r2_access_key_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'R2 Secret Access Key',
+      name: 'config.credentials.r2_secret_access_key',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Bucket Name',
+      name: 'config.bucket_name',
+      type: FormFieldType.Text,
+      required: true,
+    },
+  ],
+  [DataSourceKey.S3]: [
+    {
+      label: 'Bucket Name',
+      name: 'config.bucket_name',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Region',
+      name: 'config.credentials.region',
+      type: FormFieldType.Select,
       required: false,
-      placeholder: 'https://fsn1.your-objectstorage.com',
-      tooltip: t('setting.S3CompatibleEndpointUrlTip'),
-      shouldRender: (formValues: any) => {
-        return formValues?.config?.bucket_type === 's3_compatible';
+      options: awsRegionOptions,
+      customValidate: (val: string, formValues: any) => {
+        const credentials = formValues?.config?.credentials || {};
+        const bucketType = formValues?.config?.bucket_type || 's3';
+        const hasAccessKey = Boolean(
+          credentials.aws_access_key_id || credentials.aws_secret_access_key,
+        );
+        if (bucketType === 's3' && hasAccessKey) {
+          return Boolean(val) || 'Region is required when using access key';
+        }
+        return true;
       },
     },
     {
@@ -188,6 +259,14 @@ export const DataSourceFormFields = {
       type: FormFieldType.Text,
       required: false,
       tooltip: t('setting.s3PrefixTip'),
+    },
+    {
+      label: 'Credentials',
+      name: 'config.credentials.__blob_token',
+      type: FormFieldType.Custom,
+      hideLabel: true,
+      required: false,
+      render: () => <BlobTokenField />,
     },
   ],
   [DataSourceKey.NOTION]: [
@@ -304,7 +383,6 @@ export const DataSourceFormFields = {
         <GoogleDriveTokenField
           value={fieldProps.value}
           onChange={fieldProps.onChange}
-          placeholder='{ "token": "...", "refresh_token": "...", ... }'
         />
       ),
       tooltip: t('setting.google_driveTokenTip'),
@@ -399,7 +477,6 @@ export const DataSourceFormFields = {
         <GmailTokenField
           value={fieldProps.value}
           onChange={fieldProps.onChange}
-          placeholder='{ "token": "...", "refresh_token": "...", ... }'
         />
       ),
       tooltip: t('setting.gmailTokenTip'),
@@ -608,8 +685,23 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         aws_access_key_id: '',
         aws_secret_access_key: '',
+        region: '',
+        authentication_method: 'access_key',
+        aws_role_arn: '',
         endpoint_url: '',
         addressing_style: 'virtual',
+      },
+    },
+  },
+  [DataSourceKey.R2]: {
+    name: '',
+    source: DataSourceKey.R2,
+    config: {
+      bucket_name: '',
+      credentials: {
+        account_id: '',
+        r2_access_key_id: '',
+        r2_secret_access_key: '',
       },
     },
   },
@@ -675,6 +767,30 @@ export const DataSourceFormDefaultValues = {
         google_primary_admin: '',
         google_tokens: '',
         authentication_method: 'uploaded',
+      },
+    },
+  },
+  [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
+    name: '',
+    source: DataSourceKey.GOOGLE_CLOUD_STORAGE,
+    config: {
+      bucket_name: '',
+      credentials: {
+        access_key_id: '',
+        secret_access_key: '',
+      },
+    },
+  },
+  [DataSourceKey.OCI_STORAGE]: {
+    name: '',
+    source: DataSourceKey.OCI_STORAGE,
+    config: {
+      bucket_name: '',
+      credentials: {
+        namespace: '',
+        region: '',
+        access_key_id: '',
+        secret_access_key: '',
       },
     },
   },
