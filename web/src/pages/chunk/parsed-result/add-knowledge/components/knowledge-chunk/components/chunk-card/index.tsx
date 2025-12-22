@@ -25,6 +25,7 @@ interface IProps {
   selected: boolean;
   clickChunkCard: (chunkId: string) => void;
   textMode: ChunkTextMode;
+  t?: string | number; // Cache-busting key for images
 }
 
 const ChunkCard = ({
@@ -36,6 +37,7 @@ const ChunkCard = ({
   selected,
   clickChunkCard,
   textMode,
+  t: imageCacheKey,
 }: IProps) => {
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(false);
@@ -79,7 +81,11 @@ const ChunkCard = ({
               onMouseLeave={() => setOpen(false)}
             >
               <div>
-                <Image id={item.image_id} className={styles.image}></Image>
+                <Image
+                  t={imageCacheKey}
+                  id={item.image_id}
+                  className={styles.image}
+                />
               </div>
             </PopoverTrigger>
             <PopoverContent
@@ -90,6 +96,7 @@ const ChunkCard = ({
             >
               <div>
                 <Image
+                  t={imageCacheKey}
                   id={item.image_id}
                   className={styles.imagePreview}
                 ></Image>
