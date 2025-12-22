@@ -177,10 +177,9 @@ async def set():
             settings.docStoreConn.update({"id": req["chunk_id"]}, _d, search.index_name(tenant_id), doc.kb_id)
 
             # update image
-            image_id = req.get("img_id")
-            bkt, name = image_id.split("-")
             image_base64 = req.get("image_base64", None)
             if image_base64:
+                bkt, name = req.get("img_id", "-").split("-")
                 image_binary = base64.b64decode(image_base64)
                 settings.STORAGE_IMPL.put(bkt, name, image_binary)
             return get_json_result(data=True)
