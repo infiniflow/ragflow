@@ -690,7 +690,7 @@ async def delete(tenant_id, dataset_id):
         schema:
           type: object
           properties:
-            ids:
+            document_ids:
               type: array
               items:
                 type: string
@@ -712,7 +712,7 @@ async def delete(tenant_id, dataset_id):
     if not req:
         doc_ids = None
     else:
-        doc_ids = req.get("ids")
+        doc_ids = req.get("document_ids")
     if not doc_ids:
         doc_list = []
         docs = DocumentService.query(kb_id=dataset_id)

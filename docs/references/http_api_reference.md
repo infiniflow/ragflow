@@ -1724,7 +1724,7 @@ Deletes documents by ID.
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
-  - `"ids"`: `list[string]`
+  - `"document_ids"`: `list[string]`
 
 ##### Request example
 
@@ -1735,7 +1735,7 @@ curl --request DELETE \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '
      {
-          "ids": ["id_1","id_2"]
+          "document_ids": ["id_1","id_2"]
      }'
 ```
 
@@ -1743,7 +1743,7 @@ curl --request DELETE \
 
 - `dataset_id`: (*Path parameter*)  
   The associated dataset ID.
-- `"ids"`: (*Body parameter*), `list[string]`  
+- `"document_ids"`: (*Body parameter*), `list[string]`  
   The IDs of the documents to delete. If it is not specified, all documents in the specified dataset will be deleted.
 
 #### Response
