@@ -201,8 +201,9 @@ class ESConnection(ESConnectionBase):
                 orders.append({field: order_info})
             s = s.sort(*orders)
 
-        for fld in agg_fields:
-            s.aggs.bucket(f'aggs_{fld}', 'terms', field=fld, size=1000000)
+        if agg_fields:
+            for fld in agg_fields:
+                s.aggs.bucket(f'aggs_{fld}', 'terms', field=fld, size=1000000)
 
         if limit > 0:
             s = s[offset:offset + limit]
