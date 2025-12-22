@@ -165,10 +165,14 @@ def init_message_id_sequence():
         current_max_id = REDIS_CONN.get(message_id_redis_key)
         logging.info(f"No need to init message_id sequence, current max id is {current_max_id}.")
     else:
+        max_id = 1
         exist_memory_list = MemoryService.get_all_memory()
-        max_id = MessageService.get_max_message_id(
-            uid_list=[m.tenant_id for m in exist_memory_list],
-            memory_ids=[m.id for m in exist_memory_list]
-        )
-        REDIS_CONN.set(message_id_redis_key, max_id)
-        logging.info(f"Init message_id sequence done, current max id is {max_id}")
+        if not exist_memory_list:
+            REDIS_CONN.set(message_id_redis_key, max_id)
+        else:
+            max_id = MessageService.get_max_message_id(
+                uid_list=[m.tenant_id for m in exist_memory_list],
+                memory_ids=[m.id for m in exist_memory_list]
+            )
+            REDIS_CONN.set(message_id_redis_key, max_id)
+        logging.info(f"Init message_id sequence done, current max id is {max_id}.")
