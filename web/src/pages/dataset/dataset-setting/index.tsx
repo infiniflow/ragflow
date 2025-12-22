@@ -92,6 +92,7 @@ export default function DatasetSettings() {
         },
         metadata: [],
         enable_metadata: false,
+        llm_id: '',
       },
       pipeline_id: '',
       parseType: 1,

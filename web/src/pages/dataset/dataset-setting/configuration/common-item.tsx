@@ -3,7 +3,10 @@ import {
   FormFieldType,
   RenderField,
 } from '@/components/dynamic-form';
-import { SelectWithSearch } from '@/components/originui/select-with-search';
+import {
+  SelectWithSearch,
+  SelectWithSearchFlagOptionType,
+} from '@/components/originui/select-with-search';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,7 +19,9 @@ import {
 import { Radio } from '@/components/ui/radio';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
+import { LlmModelType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import { Settings } from 'lucide-react';
@@ -41,6 +46,8 @@ import {
 interface IProps {
   line?: 1 | 2;
   isEdit?: boolean;
+  label?: string;
+  name?: string;
 }
 export function ChunkMethodItem(props: IProps) {
   const { line } = props;
@@ -338,7 +345,7 @@ export function AutoMetadata() {
     type: FormFieldType.Custom,
     horizontal: true,
     defaultValue: true,
-
+    tooltip: t('knowledgeConfiguration.autoMetadataTip'),
     render: (fieldProps: ControllerRenderProps) => (
       <div className="flex items-center justify-between">
         <Button
@@ -399,6 +406,83 @@ export function AutoMetadata() {
           }}
         />
       )}
+    </>
+  );
+}
+
+export const LLMSelect = ({
+  isEdit,
+  field,
+  disabled = false,
+}: {
+  isEdit: boolean;
+  field: FieldValues;
+  name?: string;
+  disabled?: boolean;
+}) => {
+  const { t } = useTranslate('knowledgeConfiguration');
+  const modelOptions = useComposeLlmOptionsByModelTypes([
+    LlmModelType.Chat,
+    LlmModelType.Image2text,
+  ]);
+  return (
+    <SelectWithSearch
+      onChange={async (value) => {
+        field.onChange(value);
+      }}
+      disabled={disabled && !isEdit}
+      value={field.value}
+      options={modelOptions as SelectWithSearchFlagOptionType[]}
+      placeholder={t('embeddingModelPlaceholder')}
+    />
+  );
+};
+
+export function LLMModelItem({ line = 1, isEdit, label, name }: IProps) {
+  const { t } = useTranslate('knowledgeConfiguration');
+  const form = useFormContext();
+  const disabled = useHasParsedDocument(isEdit);
+  return (
+    <>
+      <FormField
+        control={form.control}
+        name={name ?? 'llm_id'}
+        render={({ field }) => (
+          <FormItem className={cn(' items-center space-y-0 ')}>
+            <div
+              className={cn('flex', {
+                ' items-center': line === 1,
+                'flex-col gap-1': line === 2,
+              })}
+            >
+              <FormLabel
+                required
+                tooltip={t('globalIndexModelTip')}
+                className={cn('text-sm  whitespace-wrap ', {
+                  'w-1/4': line === 1,
+                })}
+              >
+                {label ?? t('llmModel')}
+              </FormLabel>
+              <div
+                className={cn('text-text-secondary', { 'w-3/4': line === 1 })}
+              >
+                <FormControl>
+                  <LLMSelect
+                    isEdit={!!isEdit}
+                    field={field}
+                    disabled={disabled}
+                  ></LLMSelect>
+                </FormControl>
+              </div>
+            </div>
+            <div className="flex pt-1">
+              <div className={line === 1 ? 'w-1/4' : ''}></div>
+              <FormMessage />
+            </div>
+          </FormItem>
+        )}
+      />
     </>
   );
 }

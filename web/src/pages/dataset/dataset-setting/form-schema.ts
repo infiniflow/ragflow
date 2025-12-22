@@ -95,6 +95,7 @@ export const formSchema = z
           )
           .optional(),
         enable_metadata: z.boolean().optional(),
+        llm_id: z.string().optional(),
       })
       .optional(),
     pagerank: z.number(),

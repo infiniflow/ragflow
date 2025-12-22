@@ -27,7 +27,7 @@ import {
 import { Plus, Settings, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useManageMetaDataModal } from './hook';
+import { MetadataType, useManageMetaDataModal } from './hook';
 import { IManageModalProps, IMetaDataTableData } from './interface';
 import { ManageValuesModal } from './manage-values-modal';
 export const ManageMetadataModal = (props: IManageModalProps) => {
@@ -335,7 +335,13 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       </Modal>
       {manageValuesVisible && (
         <ManageValuesModal
-          title={<div>{t('knowledgeDetails.metadata.editMetadata')}</div>}
+          title={
+            <div>
+              {metadataType === MetadataType.Setting
+                ? t('knowledgeDetails.metadata.fieldSetting')
+                : t('knowledgeDetails.metadata.editMetadata')}
+            </div>
+          }
           visible={manageValuesVisible}
           hideModal={hideManageValuesModal}
           data={valueData}
