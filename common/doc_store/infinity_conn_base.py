@@ -270,6 +270,7 @@ class InfinityConnectionBase(DocStoreConnection):
                 )
         self.connPool.release_conn(inf_conn)
         self.logger.info(f"INFINITY created table {table_name}, vector size {vector_size}")
+        return True
 
     def delete_idx(self, index_name: str, dataset_id: str):
         table_name = f"{index_name}_{dataset_id}"

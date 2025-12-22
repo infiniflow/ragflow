@@ -53,6 +53,16 @@ class InfinityConnection(InfinityConnectionBase):
             case _:
                 return field_name
 
+    @staticmethod
+    def convert_infinity_field_to_message(field_name: str):
+        if field_name.startswith("message_type"):
+            return "message_type"
+        if field_name.startswith("status"):
+            return "status"
+        if re.match(r"q_\d+_vec", field_name):
+            return "content_embed"
+        return field_name
+
     def convert_select_fields(self, output_fields: list[str]) -> list[str]:
         return list({self.convert_message_field_to_infinity(f) for f in output_fields})
 
@@ -291,22 +301,18 @@ class InfinityConnection(InfinityConnectionBase):
         return res_fields.get(message_id, None)
 
     def insert(self, documents: list[dict], index_name: str, memory_id: str = None) -> list[str]:
+        if not documents:
+            return []
         inf_conn = self.connPool.get_conn()
         db_instance = inf_conn.get_database(self.dbName)
         table_name = f"{index_name}_{memory_id}"
+        vector_size = int(len(documents[0]["content_embed"]))
         try:
             table_instance = db_instance.get_table(table_name)
         except InfinityException as e:
             # src/common/status.cppm, kTableNotExist = 3022
             if e.error_code != ErrorCode.TABLE_NOT_EXIST:
                 raise
-            vector_size = 0
-            patt = re.compile(r"q_(?P<vector_size>\d+)_vec")
-            for k in documents[0].keys():
-                m = patt.match(k)
-                if m:
-                    vector_size = int(m.group("vector_size"))
-                    break
             if vector_size == 0:
                 raise ValueError("Cannot infer vector size from documents")
             self.create_idx(index_name, memory_id, vector_size)
@@ -328,7 +334,9 @@ class InfinityConnection(InfinityConnectionBase):
             for k, v in list(d.items()):
                 field_name = self.convert_message_field_to_infinity(k)
                 if field_name in ["valid_at", "invalid_at", "forget_at"]:
-                    d[f"{field_name}_flt"] = date_string_to_timestamp(v)
+                    d[f"{field_name}_flt"] = date_string_to_timestamp(v) if v else 0
+                    if v is None:
+                        d[field_name] = ""
                 elif self.field_keyword(k):
                     if isinstance(v, list):
                         d[k] = "###".join(v)
@@ -337,6 +345,9 @@ class InfinityConnection(InfinityConnectionBase):
                 elif k == "memory_id":
                     if isinstance(d[k], list):
                         d[k] = d[k][0]  # since d[k] is a list, but we need a str
+                elif field_name == "content_embed":
+                    d[f"q_{vector_size}_vec"] = d["content_embed"]
+                    d.pop("content_embed")
                 else:
                     d[field_name] = v
                 if k != field_name:
@@ -368,22 +379,25 @@ class InfinityConnection(InfinityConnectionBase):
         condition_dict = {self.convert_condition_and_order_field(k): v for k, v in condition.items()}
         filter = self.equivalent_condition_to_str(condition_dict, table_instance)
         update_dict = {self.convert_message_field_to_infinity(k): v for k, v in new_value.items()}
+        date_floats = {}
         for k, v in update_dict.items():
             if k in ["valid_at", "invalid_at", "forget_at"]:
-                update_dict[f"{k}_flt"] = date_string_to_timestamp(v)
+                date_floats[f"{k}_flt"] = date_string_to_timestamp(v) if v else 0
             elif self.field_keyword(k):
                 if isinstance(v, list):
-                    new_value[k] = "###".join(v)
+                    update_dict[k] = "###".join(v)
                 else:
-                    new_value[k] = v
+                    update_dict[k] = v
             elif k == "memory_id":
-                if isinstance(new_value[k], list):
-                    new_value[k] = new_value[k][0]  # since d[k] is a list, but we need a str
+                if isinstance(update_dict[k], list):
+                    update_dict[k] = update_dict[k][0]  # since d[k] is a list, but we need a str
             else:
-                new_value[k] = v
+                update_dict[k] = v
+        if date_floats:
+            update_dict.update(date_floats)
 
         self.logger.debug(f"INFINITY update table {table_name}, filter {filter}, newValue {new_value}.")
-        table_instance.update(filter, new_value)
+        table_instance.update(filter, update_dict)
         self.connPool.release_conn(inf_conn)
         return True
 
@@ -398,7 +412,7 @@ class InfinityConnection(InfinityConnectionBase):
             return {}
         fields_all = fields.copy()
         fields_all.append("id")
-        fields_all = set(fields_all)
+        fields_all = {self.convert_message_field_to_infinity(f) for f in fields_all}
 
         column_map = {col.lower(): col for col in res.columns}
         matched_columns = {column_map[col.lower()]: col for col in fields_all if col.lower() in column_map}
@@ -420,4 +434,5 @@ class InfinityConnection(InfinityConnectionBase):
         for column in none_columns:
             res2[column] = None
 
-        return res2.set_index("id").to_dict(orient="index")
+        res_dict = res2.set_index("id").to_dict(orient="index")
+        return {_id: {self.convert_infinity_field_to_message(k): v for k, v in doc.items()} for _id, doc in res_dict.items()}

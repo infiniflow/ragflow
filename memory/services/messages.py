@@ -25,9 +25,9 @@ def index_name(uid: str): return f"memory_{uid}"
 class MessageService:
 
     @classmethod
-    def has_index(cls, uid: str):
+    def has_index(cls, uid: str, memory_id: str):
         index = index_name(uid)
-        return settings.msgStoreConn.index_exist(index)
+        return settings.msgStoreConn.index_exist(index, memory_id)
 
     @classmethod
     def create_index(cls, uid: str, memory_id: str, vector_size: int):
@@ -35,14 +35,17 @@ class MessageService:
         return settings.msgStoreConn.create_idx(index, memory_id, vector_size)
 
     @classmethod
-    def delete_index(cls, uid: str):
+    def delete_index(cls, uid: str, memory_id: str):
         index = index_name(uid)
-        return settings.msgStoreConn.delete_idx(index)
+        return settings.msgStoreConn.delete_idx(index, memory_id)
 
     @classmethod
     def insert_message(cls, messages: List[dict], uid: str, memory_id: str):
         index = index_name(uid)
-        [m.update({"id": f'{memory_id}_{m["message_id"]}'}) for m in messages]
+        [m.update({
+            "id": f'{memory_id}_{m["message_id"]}',
+            "status": 1 if m["status"] else 0
+        }) for m in messages]
         return settings.msgStoreConn.insert(messages, index, memory_id)
 
     @classmethod
