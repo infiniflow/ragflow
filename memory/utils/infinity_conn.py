@@ -338,7 +338,9 @@ class InfinityConnection(InfinityConnectionBase):
                     if isinstance(d[k], list):
                         d[k] = d[k][0]  # since d[k] is a list, but we need a str
                 else:
-                    d[k] = v
+                    d[field_name] = v
+                if k != field_name:
+                    d.pop(k)
 
             for n, vs in embedding_columns:
                 if n in d:
