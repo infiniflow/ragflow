@@ -170,6 +170,7 @@ export interface IAgentForm {
   tools: Array<{
     name: string;
     component_name: string;
+    id: string;
     params: Record<string, any>;
   }>;
   mcp: Array<{

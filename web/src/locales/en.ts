@@ -604,6 +604,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'The document being parsed cannot be deleted',
     },
     chunk: {
+      type: 'Type',
+      docType: {
+        image: 'Image',
+        table: 'Table',
+        text: 'Text',
+      },
       chunk: 'Chunk',
       bulk: 'Bulk',
       selectAll: 'Select all',
@@ -849,6 +855,12 @@ Example: Virtual Hosted Style`,
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
         'Connect to your AWS S3 bucket to import and sync stored files.',
+      google_cloud_storageDescription:
+        'Connect your Google Cloud Storage bucket to import and sync files.',
+      r2Description:
+        'Connect your Cloudflare R2 bucket to import and sync files.',
+      oci_storageDescription:
+        'Connect your Oracle Cloud Object Storage bucket to import and sync files.',
       discordDescription:
         'Link your Discord server to access and analyze chat data.',
       notionDescription:
@@ -873,6 +885,7 @@ Example: Virtual Hosted Style`,
         'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
+      boxDescription: 'Connect your Box drive to sync files and folders.',
       dropboxAccessTokenTip:
         'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
       moodleDescription:
@@ -2077,12 +2090,14 @@ Important structured information may include: names, dates, locations, events, k
         schema: 'Schema',
         response: 'Response',
         executionMode: 'Execution mode',
+        executionModeTip:
+          'Accepted Response: The system returns an acknowledgment immediately after the request is validated, while the workflow continues to execute asynchronously in the background. /Final Response: The system returns a response only after the workflow execution is completed.',
         authMethods: 'Authentication methods',
         authType: 'Authentication type',
         limit: 'Request limit',
         per: 'Time period',
         maxBodySize: 'Maximum body size',
-        ipWhitelist: 'Ip whitelist',
+        ipWhitelist: 'IP whitelist',
         tokenHeader: 'Token header',
         tokenValue: 'Token value',
         username: 'Username',
@@ -2102,6 +2117,8 @@ Important structured information may include: names, dates, locations, events, k
         queryParameters: 'Query parameters',
         headerParameters: 'Header parameters',
         requestBodyParameters: 'Request body parameters',
+        streaming: 'Accepted response',
+        immediately: 'Final response',
       },
     },
     llmTools: {

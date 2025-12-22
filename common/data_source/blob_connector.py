@@ -56,7 +56,7 @@ class BlobStorageConnector(LoadConnector, PollConnector):
 
         # Validate credentials
         if self.bucket_type == BlobType.R2:
-            if not all(
+            if not all( 
                 credentials.get(key)
                 for key in ["r2_access_key_id", "r2_secret_access_key", "account_id"]
             ):

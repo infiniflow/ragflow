@@ -55,6 +55,7 @@ const Chunk = () => {
     handleInputChange,
     available,
     handleSetAvailable,
+    dataUpdatedAt,
   } = useFetchNextChunkList();
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
   const isPdf = documentInfo?.type === 'pdf';
@@ -277,6 +278,7 @@ const Chunk = () => {
                         clickChunkCard={handleChunkCardClick}
                         selected={item.chunk_id === selectedChunkId}
                         textMode={textMode}
+                        t={dataUpdatedAt}
                       ></ChunkCard>
                     ))}
                   </div>
