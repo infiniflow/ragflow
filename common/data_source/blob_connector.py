@@ -3,7 +3,6 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Optional
-import boto3
 
 from common.data_source.utils import (
     create_s3_client,
