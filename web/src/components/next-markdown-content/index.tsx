@@ -5,7 +5,6 @@ import { getExtension } from '@/utils/document-util';
 import DOMPurify from 'dompurify';
 import { memo, useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
-import reactStringReplace from 'react-string-replace';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
@@ -18,7 +17,6 @@ import { useTranslation } from 'react-i18next';
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
 import {
-  currentReg,
   preprocessLaTeX,
   replaceTextByOldReg,
   replaceThinkToSection,
@@ -31,6 +29,11 @@ import classNames from 'classnames';
 import { omit } from 'lodash';
 import { pipe } from 'lodash/fp';
 import { CircleAlert } from 'lucide-react';
+import { ImageCarousel } from '../markdown-content/image-carousel';
+import {
+  groupConsecutiveReferences,
+  shouldShowCarousel,
+} from '../markdown-content/reference-utils';
 import { Button } from '../ui/button';
 import {
   HoverCard,
@@ -38,6 +41,19 @@ import {
   HoverCardTrigger,
 } from '../ui/hover-card';
 import styles from './index.less';
+
+// Helper function to convert IReferenceObject to IReference
+const convertReferenceObjectToReference = (
+  referenceObject: IReferenceObject,
+) => {
+  const chunks = Object.values(referenceObject.chunks);
+  const docAggs = Object.values(referenceObject.doc_aggs);
+  return {
+    chunks,
+    doc_aggs: docAggs,
+    total: chunks.length,
+  };
+};
 
 const getChunkIndex = (match: string) => Number(match);
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
@@ -211,47 +227,95 @@ function MarkdownContent({
 
   const renderReference = useCallback(
     (text: string) => {
-      let replacedText = reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
+      const groups = groupConsecutiveReferences(text);
+      const elements = [];
+      let lastIndex = 0;
 
-        const { documentUrl, fileExtension, imageId, chunkItem, documentId } =
-          getReferenceInfo(chunkIndex);
+      const convertedReference = reference
+        ? convertReferenceObjectToReference(reference)
+        : null;
 
-        const docType = chunkItem?.doc_type;
+      groups.forEach((group, groupIndex) => {
+        if (group[0].start > lastIndex) {
+          elements.push(text.substring(lastIndex, group[0].start));
+        }
 
-        return showImage(docType) ? (
-          <section>
-            <Image
-              id={imageId}
-              className={styles.referenceInnerChunkImage}
-              onClick={
-                documentId
-                  ? handleDocumentButtonClick(
-                      documentId,
-                      chunkItem,
-                      fileExtension === 'pdf',
-                      documentUrl,
-                    )
-                  : () => {}
-              }
-            ></Image>
-            <span className="text-accent-primary">{imageId}</span>
-          </section>
-        ) : (
-          <HoverCard key={i}>
-            <HoverCardTrigger>
-              <CircleAlert className="size-4 inline-block" />
-            </HoverCardTrigger>
-            <HoverCardContent className="max-w-3xl">
-              {renderPopoverContent(chunkIndex)}
-            </HoverCardContent>
-          </HoverCard>
-        );
+        if (
+          convertedReference &&
+          shouldShowCarousel(group, convertedReference)
+        ) {
+          elements.push(
+            <ImageCarousel
+              key={`carousel-${groupIndex}`}
+              group={group}
+              reference={convertedReference}
+              fileThumbnails={fileThumbnails}
+              onImageClick={handleDocumentButtonClick}
+            />,
+          );
+        } else {
+          group.forEach((ref) => {
+            const chunkIndex = getChunkIndex(ref.id);
+            const {
+              documentUrl,
+              fileExtension,
+              imageId,
+              chunkItem,
+              documentId,
+            } = getReferenceInfo(chunkIndex);
+            const docType = chunkItem?.doc_type;
+
+            if (showImage(docType)) {
+              elements.push(
+                <section key={ref.id}>
+                  <Image
+                    id={imageId}
+                    className={styles.referenceInnerChunkImage}
+                    onClick={
+                      documentId
+                        ? handleDocumentButtonClick(
+                            documentId,
+                            chunkItem,
+                            fileExtension === 'pdf',
+                            documentUrl,
+                          )
+                        : () => {}
+                    }
+                  />
+                  <span className="text-accent-primary"> {imageId}</span>
+                </section>,
+              );
+            } else {
+              elements.push(
+                <HoverCard key={ref.id}>
+                  <HoverCardTrigger>
+                    <CircleAlert className="size-4 inline-block" />
+                  </HoverCardTrigger>
+                  <HoverCardContent className="max-w-3xl">
+                    {renderPopoverContent(chunkIndex)}
+                  </HoverCardContent>
+                </HoverCard>,
+              );
+            }
+          });
+        }
+
+        lastIndex = group[group.length - 1].end;
       });
 
-      return replacedText;
+      if (lastIndex < text.length) {
+        elements.push(text.substring(lastIndex));
+      }
+
+      return elements;
     },
-    [renderPopoverContent, getReferenceInfo, handleDocumentButtonClick],
+    [
+      renderPopoverContent,
+      getReferenceInfo,
+      handleDocumentButtonClick,
+      reference,
+      fileThumbnails,
+    ],
   );
 
   return (

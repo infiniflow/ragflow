@@ -4,9 +4,8 @@ import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import DOMPurify from 'dompurify';
-import { memo, useCallback, useEffect, useMemo } from 'react';
+import React, { memo, useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
-import reactStringReplace from 'react-string-replace';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
@@ -18,8 +17,13 @@ import { useTranslation } from 'react-i18next';
 
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
+import ImageCarousel from '@/components/markdown-content/image-carousel';
 import {
-  currentReg,
+  groupConsecutiveReferences,
+  shouldShowCarousel,
+  type ReferenceGroup,
+} from '@/components/markdown-content/reference-utils';
+import {
   preprocessLaTeX,
   replaceTextByOldReg,
   replaceThinkToSection,
@@ -36,8 +40,6 @@ import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import classNames from 'classnames';
 import { omit } from 'lodash';
 import { pipe } from 'lodash/fp';
-
-const getChunkIndex = (match: string) => Number(match);
 
 // Defining Tailwind CSS class name constants
 const styles = {
@@ -86,18 +88,11 @@ const MarkdownContent = ({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      // isPdf: boolean,
-      // documentUrl?: string,
+      isPdf: boolean = false,
+      documentUrl?: string,
     ) =>
       () => {
-        // if (!isPdf) {
-        //   if (!documentUrl) {
-        //     return;
-        //   }
-        //   window.open(documentUrl, '_blank');
-        // } else {
         clickDocumentButton?.(documentId, chunk);
-        // }
       },
     [clickDocumentButton],
   );
@@ -218,43 +213,83 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      let replacedText = reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
+      const groups = groupConsecutiveReferences(text);
+      const elements: React.ReactNode[] = [];
+      let lastIndex = 0;
 
-        const { imageId, chunkItem, documentId } = getReferenceInfo(chunkIndex);
+      groups.forEach((group: ReferenceGroup) => {
+        // Add text before the group
+        if (group[0].start > lastIndex) {
+          elements.push(text.slice(lastIndex, group[0].start));
+        }
 
-        const docType = chunkItem?.doc_type;
+        // Determine if this group should be a carousel
+        if (shouldShowCarousel(group, reference)) {
+          // Render carousel for consecutive image group
+          elements.push(
+            <ImageCarousel
+              key={`carousel-${group[0].id}`}
+              group={group}
+              reference={reference}
+              fileThumbnails={fileThumbnails}
+              onImageClick={handleDocumentButtonClick}
+            />,
+          );
+        } else {
+          // Render individual references in the group
+          group.forEach((ref) => {
+            const chunkIndex = Number(ref.id);
+            const { imageId, chunkItem, documentId } =
+              getReferenceInfo(chunkIndex);
+            const docType = chunkItem?.doc_type;
 
-        return showImage(docType) ? (
-          <Image
-            id={imageId}
-            className={styles.referenceInnerChunkImage}
-            onClick={
-              documentId
-                ? handleDocumentButtonClick(
-                    documentId,
-                    chunkItem,
-                    // fileExtension === 'pdf',
-                    // documentUrl,
-                  )
-                : () => {}
+            if (showImage(docType)) {
+              elements.push(
+                <Image
+                  key={ref.id}
+                  id={imageId}
+                  className={styles.referenceInnerChunkImage}
+                  onClick={
+                    documentId
+                      ? handleDocumentButtonClick(documentId, chunkItem)
+                      : () => {}
+                  }
+                />,
+              );
+            } else {
+              elements.push(
+                <Popover key={ref.id}>
+                  <PopoverTrigger>
+                    <InfoCircleOutlined className={styles.referenceIcon} />
+                  </PopoverTrigger>
+                  <PopoverContent className="!w-fit">
+                    {getPopoverContent(chunkIndex)}
+                  </PopoverContent>
+                </Popover>,
+              );
             }
-          ></Image>
-        ) : (
-          <Popover>
-            <PopoverTrigger>
-              <InfoCircleOutlined className={styles.referenceIcon} />
-            </PopoverTrigger>
-            <PopoverContent className="!w-fit">
-              {getPopoverContent(chunkIndex)}
-            </PopoverContent>
-          </Popover>
-        );
+            // Add the original reference text
+            elements.push(ref.fullMatch);
+          });
+        }
+
+        lastIndex = group[group.length - 1].end;
       });
 
-      return replacedText;
+      // Add any remaining text after the last group
+      if (lastIndex < text.length) {
+        elements.push(text.slice(lastIndex));
+      }
+
+      return elements;
     },
-    [getPopoverContent, getReferenceInfo, handleDocumentButtonClick],
+    [
+      reference,
+      fileThumbnails,
+      handleDocumentButtonClick,
+      getReferenceInfo,
+      getPopoverContent,
+    ],
   );
 
   return (
@@ -265,7 +300,11 @@ const MarkdownContent = ({
       components={
         {
           'custom-typography': ({ children }: { children: string }) =>
-            renderReference(children),
+            Array.isArray(renderReference(children))
+              ? renderReference(children).map((element, index) => (
+                  <React.Fragment key={index}>{element}</React.Fragment>
+                ))
+              : renderReference(children),
           code(props: any) {
             const { children, className, ...rest } = props;
             const restProps = omit(rest, 'node');
