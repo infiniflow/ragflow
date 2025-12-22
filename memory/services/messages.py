@@ -15,8 +15,6 @@
 #
 from typing import List
 
-from playhouse.sqlite_udf import aggregate
-
 from common import settings
 from common.doc_store.doc_store_base import OrderByExpr, MatchExpr
 
