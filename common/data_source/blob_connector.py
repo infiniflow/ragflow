@@ -3,6 +3,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Optional
+import boto3
 
 from common.data_source.utils import (
     create_s3_client,
@@ -64,15 +65,23 @@ class BlobStorageConnector(LoadConnector, PollConnector):
 
         elif self.bucket_type == BlobType.S3:
             authentication_method = credentials.get("authentication_method", "access_key")
+
             if authentication_method == "access_key":
                 if not all(
                     credentials.get(key)
                     for key in ["aws_access_key_id", "aws_secret_access_key"]
                 ):
                     raise ConnectorMissingCredentialError("Amazon S3")
+
             elif authentication_method == "iam_role":
                 if not credentials.get("aws_role_arn"):
                     raise ConnectorMissingCredentialError("Amazon S3 IAM role ARN is required")
+                
+            elif authentication_method == "assume_role":
+                pass
+
+            else:
+                raise ConnectorMissingCredentialError("Unsupported S3 authentication method")
 
         elif self.bucket_type == BlobType.GOOGLE_CLOUD_STORAGE:
             if not all(
