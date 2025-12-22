@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/form';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { WebHookResponseStatusFormField } from '@/components/webhook-response-status';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X } from 'lucide-react';
 import { memo } from 'react';
@@ -20,6 +21,7 @@ import { ExportFileType } from '../../constant';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { PromptEditor } from '../components/prompt-editor';
+import { useShowWebhookResponseStatus } from './use-show-response-status';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
@@ -38,6 +40,7 @@ function MessageForm({ node }: INextOperatorForm) {
       .optional(),
     output_format: z.string().optional(),
     auto_play: z.boolean().optional(),
+    status: z.number().optional(),
   });
 
   const form = useForm({
@@ -56,9 +59,14 @@ function MessageForm({ node }: INextOperatorForm) {
     control: form.control,
   });
 
+  const showWebhookResponseStatus = useShowWebhookResponseStatus(form);
+
   return (
     <Form {...form}>
       <FormWrapper>
+        {showWebhookResponseStatus && (
+          <WebHookResponseStatusFormField name="status"></WebHookResponseStatusFormField>
+        )}
         <FormContainer>
           <FormItem>
             <FormLabel tooltip={t('flow.msgTip')}>{t('flow.msg')}</FormLabel>
