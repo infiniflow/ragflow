@@ -55,6 +55,7 @@ class ESConnection(ESConnectionBase):
         :return: A dictionary formatted for Elasticsearch/Infinity indexing.
         """
         storage_doc = {
+            "id": message.get("id"),
             "message_id": message["message_id"],
             "message_type_kwd": message["message_type"],
             "source_id": message["source_id"],
@@ -440,7 +441,7 @@ class ESConnection(ESConnectionBase):
         target_fields = [self.convert_field_name(field) for field in fields]
         if not target_fields:
             return {}
-        for d in self.__get_source(res):
+        for d in self._get_source(res):
             m = {n: d.get(n) for n in target_fields if d.get(n) is not None}
             for n, v in m.items():
                 if isinstance(v, list):

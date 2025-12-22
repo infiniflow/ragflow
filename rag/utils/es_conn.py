@@ -354,7 +354,7 @@ class ESConnection(ESConnectionBase):
         res_fields = {}
         if not fields:
             return {}
-        for d in self.__get_source(res):
+        for d in self._get_source(res):
             m = {n: d.get(n) for n in fields if d.get(n) is not None}
             for n, v in m.items():
                 if isinstance(v, list):
