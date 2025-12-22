@@ -2117,8 +2117,8 @@ Important structured information may include: names, dates, locations, events, k
         queryParameters: 'Query parameters',
         headerParameters: 'Header parameters',
         requestBodyParameters: 'Request body parameters',
-        streaming: 'Accepted response',
-        immediately: 'Final response',
+        immediately: 'Accepted response',
+        streaming: 'Final response',
       },
     },
     llmTools: {
