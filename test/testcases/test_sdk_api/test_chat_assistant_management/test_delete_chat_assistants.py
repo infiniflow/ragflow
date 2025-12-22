@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import batch_create_chat_assistants
+from common_utils import batch_create_chat_assistants
 
 
 class TestChatAssistantsDelete:

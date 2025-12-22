@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import create_dialog, delete_dialog, get_dialog, update_dialog
+from common_utils import create_dialog, delete_dialog, get_dialog, update_dialog
 
 
 @pytest.mark.usefixtures("clear_dialogs")

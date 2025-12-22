@@ -16,7 +16,7 @@
 
 
 import pytest
-from common import bulk_upload_documents
+from common_utils import bulk_upload_documents
 from pytest import FixtureRequest
 from ragflow_sdk import DataSet, Document
 

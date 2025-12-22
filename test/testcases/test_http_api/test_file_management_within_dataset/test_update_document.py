@@ -16,7 +16,7 @@
 
 
 import pytest
-from common import list_documents, update_document
+from common_utils import list_documents, update_document
 from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 from configs import DEFAULT_PARSER_CONFIG

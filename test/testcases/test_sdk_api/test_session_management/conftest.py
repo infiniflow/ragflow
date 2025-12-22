@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import batch_add_sessions_with_chat_assistant
+from common_utils import batch_add_sessions_with_chat_assistant
 from pytest import FixtureRequest
 from ragflow_sdk import Chat, DataSet, Document, Session
 

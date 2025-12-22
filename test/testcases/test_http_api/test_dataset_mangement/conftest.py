@@ -16,7 +16,7 @@
 
 
 import pytest
-from common import batch_create_datasets, delete_datasets
+from common_utils import batch_create_datasets, delete_datasets
 
 
 @pytest.fixture(scope="class")

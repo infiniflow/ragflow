@@ -16,7 +16,7 @@
 
 
 import pytest
-from common import bulk_upload_documents, delete_document, list_documents
+from common_utils import bulk_upload_documents, delete_document, list_documents
 
 
 @pytest.fixture(scope="function")

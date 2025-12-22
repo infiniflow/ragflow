@@ -15,7 +15,7 @@
 #
 
 import pytest
-from common import (
+from common_utils import (
     list_kbs,
     rm_kb,
 )

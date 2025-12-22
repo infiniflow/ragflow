@@ -17,7 +17,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import retrieval_chunks
+from common_utils import retrieval_chunks
 from common.constants import BGE_RERANKER_V2_M3
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth

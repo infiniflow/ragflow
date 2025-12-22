@@ -18,7 +18,7 @@ from pathlib import Path
 from time import sleep
 
 import pytest
-from common import (
+from common_utils import (
     batch_add_chunks,
     batch_create_chat_assistants,
     batch_create_datasets,

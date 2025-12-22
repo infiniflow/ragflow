@@ -17,7 +17,7 @@ import string
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import create_document, list_kbs
+from common_utils import create_document, list_kbs
 from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 from utils.file_utils import create_txt_file

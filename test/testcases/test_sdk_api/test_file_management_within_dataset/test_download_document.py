@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import bulk_upload_documents
+from common_utils import bulk_upload_documents
 from utils import compare_by_hash
 
 

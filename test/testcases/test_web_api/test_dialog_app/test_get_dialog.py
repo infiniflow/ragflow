@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import create_dialog, get_dialog
+from common_utils import create_dialog, get_dialog
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 

@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import add_chunk, delete_documents, list_chunks
+from common_utils import add_chunk, delete_documents, list_chunks
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 

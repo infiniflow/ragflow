@@ -18,7 +18,7 @@
 from time import sleep
 
 import pytest
-from common import batch_add_chunks
+from common_utils import batch_add_chunks
 from pytest import FixtureRequest
 from ragflow_sdk import Chunk, DataSet, Document
 from utils import wait_for

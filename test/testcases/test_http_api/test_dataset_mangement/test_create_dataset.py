@@ -23,7 +23,7 @@ from utils import encode_avatar
 from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
 
-from common import create_dataset
+from common_utils import create_dataset
 
 
 @pytest.mark.usefixtures("clear_datasets")

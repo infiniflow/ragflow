@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import batch_create_chat_assistants
+from common_utils import batch_create_chat_assistants
 from pytest import FixtureRequest
 from ragflow_sdk import Chat, DataSet, Document, RAGFlow
 from utils import wait_for

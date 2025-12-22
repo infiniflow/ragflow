@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import batch_create_dialogs, delete_dialogs
+from common_utils import batch_create_dialogs, delete_dialogs
 
 
 @pytest.fixture(scope="function")

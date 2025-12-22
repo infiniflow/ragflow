@@ -19,7 +19,7 @@ from random import randint
 from time import sleep
 
 import pytest
-from common import delete_document, list_chunks, update_chunk
+from common_utils import delete_document, list_chunks, update_chunk
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 

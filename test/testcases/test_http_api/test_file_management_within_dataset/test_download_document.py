@@ -18,7 +18,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import bulk_upload_documents, download_document, upload_documents
+from common_utils import bulk_upload_documents, download_document, upload_documents
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 from requests import codes

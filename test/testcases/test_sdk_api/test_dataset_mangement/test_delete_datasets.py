@@ -17,7 +17,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import batch_create_datasets
+from common_utils import batch_create_datasets
 from configs import HOST_ADDRESS, INVALID_API_TOKEN
 from ragflow_sdk import RAGFlow
 

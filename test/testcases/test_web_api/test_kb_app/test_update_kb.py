@@ -17,7 +17,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import update_kb
+from common_utils import update_kb
 from configs import DATASET_NAME_LIMIT, INVALID_API_TOKEN
 from hypothesis import HealthCheck, example, given, settings
 from libs.auth import RAGFlowWebApiAuth

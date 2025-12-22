@@ -17,7 +17,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import batch_add_chunks, list_chunks
+from common_utils import batch_add_chunks, list_chunks
 from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowWebApiAuth
 

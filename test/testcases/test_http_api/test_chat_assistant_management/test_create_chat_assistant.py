@@ -15,7 +15,7 @@
 #
 
 import pytest
-from common import create_chat_assistant
+from common_utils import create_chat_assistant
 from configs import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 from utils import encode_avatar

@@ -16,7 +16,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import create_dialog
+from common_utils import create_dialog
 from configs import CHAT_ASSISTANT_NAME_LIMIT, INVALID_API_TOKEN
 from hypothesis import example, given, settings
 from libs.auth import RAGFlowWebApiAuth

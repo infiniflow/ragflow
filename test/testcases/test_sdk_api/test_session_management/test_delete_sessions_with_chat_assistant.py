@@ -17,7 +17,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import batch_add_sessions_with_chat_assistant
+from common_utils import batch_add_sessions_with_chat_assistant
 
 
 class TestSessionWithChatAssistantDelete:
