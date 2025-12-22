@@ -25,12 +25,33 @@ export function useSelectDatasetFilters() {
       }));
     }
   }, [filter.run_status, t]);
+  const metaDataList = useMemo(() => {
+    if (filter.metadata) {
+      return Object.keys(filter.metadata).map((x) => ({
+        id: x.toString(),
+        field: x.toString(),
+        label: x.toString(),
+        list: Object.keys(filter.metadata[x]).map((y) => ({
+          id: y.toString(),
+          field: y.toString(),
+          label: y.toString(),
+          value: [y],
+          count: filter.metadata[x][y],
+        })),
+        count: Object.keys(filter.metadata[x]).reduce(
+          (acc, cur) => acc + filter.metadata[x][cur],
+          0,
+        ),
+      }));
+    }
+  }, [filter.metadata]);
   const filters: FilterCollection[] = useMemo(() => {
     return [
       { field: 'type', label: 'File Type', list: fileTypes },
       { field: 'run', label: 'Status', list: fileStatus },
+      { field: 'metadata', label: 'metadata', list: metaDataList },
     ] as FilterCollection[];
-  }, [fileStatus, fileTypes]);
+  }, [fileStatus, fileTypes, metaDataList]);
 
   return { filters, onOpenChange };
 }
