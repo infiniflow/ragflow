@@ -33,6 +33,7 @@ class Chunk(Base):
         self.create_timestamp = 0.0
         self.dataset_id = None
         self.document_name = ""
+        self.documnet_keyword = ""
         self.document_id = ""
         self.available = True
         # Additional fields for retrieval results
@@ -45,6 +46,11 @@ class Chunk(Base):
             if k not in self.__dict__:
                 res_dict.pop(k)
         super().__init__(rag, res_dict)
+
+        #for backward compatibility
+        if not self.document_name:
+            self.document_name = self.documnet_keyword
+
 
     def update(self, update_message: dict):
         res = self.put(f"/datasets/{self.dataset_id}/documents/{self.document_id}/chunks/{self.id}", update_message)
