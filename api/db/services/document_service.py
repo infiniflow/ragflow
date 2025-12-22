@@ -180,6 +180,16 @@ class DocumentService(CommonService):
              "1": 2,
              "2": 2
             }
+            "metadata": {
+                "key1": {
+                 "key1_value1": 1,
+                 "key1_value2": 2,
+                },
+                "key2": {
+                 "key2_value1": 2,
+                 "key2_value2": 1,
+                },
+            }
         }, total
         where "1" => RUNNING, "2" => CANCEL
         """
@@ -200,19 +210,40 @@ class DocumentService(CommonService):
         if suffix:
             query = query.where(cls.model.suffix.in_(suffix))
 
-        rows = query.select(cls.model.run, cls.model.suffix)
+        rows = query.select(cls.model.run, cls.model.suffix, cls.model.meta_fields)
         total = rows.count()
 
         suffix_counter = {}
         run_status_counter = {}
+        metadata_counter = {}
 
         for row in rows:
             suffix_counter[row.suffix] = suffix_counter.get(row.suffix, 0) + 1
             run_status_counter[str(row.run)] = run_status_counter.get(str(row.run), 0) + 1
+            meta_fields = row.meta_fields or {}
+            if isinstance(meta_fields, str):
+                try:
+                    meta_fields = json.loads(meta_fields)
+                except Exception:
+                    meta_fields = {}
+            if not isinstance(meta_fields, dict):
+                continue
+            for key, value in meta_fields.items():
+                values = value if isinstance(value, list) else [value]
+                for vv in values:
+                    if vv is None:
+                        continue
+                    if isinstance(vv, str) and not vv.strip():
+                        continue
+                    sv = str(vv)
+                    if key not in metadata_counter:
+                        metadata_counter[key] = {}
+                    metadata_counter[key][sv] = metadata_counter[key].get(sv, 0) + 1
 
         return {
             "suffix": suffix_counter,
-            "run_status": run_status_counter
+            "run_status": run_status_counter,
+            "metadata": metadata_counter,
         }, total
 
     @classmethod
