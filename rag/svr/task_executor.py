@@ -852,7 +852,7 @@ async def do_handle_task(task):
     task_tenant_id = task["tenant_id"]
     task_embedding_id = task["embd_id"]
     task_language = task["language"]
-    task_llm_id = task["llm_id"]
+    task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
     task_dataset_id = task["kb_id"]
     task_doc_id = task["doc_id"]
     task_document_name = task["name"]
