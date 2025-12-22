@@ -45,9 +45,16 @@ def get_opendal_config():
         # Only include non-sensitive keys in logs. Do NOT
         # add 'password' or any key containing embedded credentials
         # (like 'connection_string').
-        SAFE_LOG_KEYS = ['scheme', 'host', 'port', 'database', 'table'] # explicitly non-sensitive
-        loggable_kwargs = {k: v for k, v in kwargs.items() if k in SAFE_LOG_KEYS}
-        logging.info("Loaded OpenDAL configuration (non sensitive fields only): %s", loggable_kwargs)
+        safe_log_info = {
+            "scheme": kwargs.get("scheme"),
+            "host": kwargs.get("host"),
+            "port": kwargs.get("port"),
+            "database": kwargs.get("database"),
+            "table": kwargs.get("table"),
+            # indicate presence of credentials without logging them
+            "has_credentials": any(k in kwargs for k in ("password", "connection_string")),
+        }
+        logging.info("Loaded OpenDAL configuration (non sensitive fields only): %s", safe_log_info)
 
         # For safety, explicitly remove sensitive keys from kwargs after use
         if "password" in kwargs:
