@@ -19,6 +19,7 @@ import json
 import copy
 from infinity.common import InfinityException, SortType
 from infinity.errors import ErrorCode
+
 from common.decorator import singleton
 import pandas as pd
 from common.constants import PAGERANK_FLD, TAG_FLD
@@ -310,13 +311,13 @@ class InfinityConnection(InfinityConnectionBase):
             table_instance = db_instance.get_table(table_name)
 
         # embedding fields can't have a default value....
-        embedding_clmns = []
-        clmns = table_instance.show_columns().rows()
-        for n, ty, _, _ in clmns:
+        embedding_columns = []
+        table_columns = table_instance.show_columns().rows()
+        for n, ty, _, _ in table_columns:
             r = re.search(r"Embedding\([a-z]+,([0-9]+)\)", ty)
             if not r:
                 continue
-            embedding_clmns.append((n, int(r.group(1))))
+            embedding_columns.append((n, int(r.group(1))))
 
         docs = copy.deepcopy(documents)
         for d in docs:
@@ -337,7 +338,7 @@ class InfinityConnection(InfinityConnectionBase):
                 else:
                     d[k] = v
 
-            for n, vs in embedding_clmns:
+            for n, vs in embedding_columns:
                 if n in d:
                     continue
                 d[n] = [0] * vs
@@ -345,9 +346,6 @@ class InfinityConnection(InfinityConnectionBase):
         str_ids = ", ".join(ids)
         str_filter = f"id IN ({str_ids})"
         table_instance.delete(str_filter)
-        # for doc in documents:
-        #     logger.info(f"insert position_int: {doc['position_int']}")
-        # logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
         table_instance.insert(docs)
         self.connPool.release_conn(inf_conn)
         self.logger.debug(f"INFINITY inserted into {table_name} {str_ids}.")
@@ -358,8 +356,6 @@ class InfinityConnection(InfinityConnectionBase):
         db_instance = inf_conn.get_database(self.dbName)
         table_name = f"{index_name}_{memory_id}"
         table_instance = db_instance.get_table(table_name)
-        # if "exists" in condition:
-        #    del condition["exists"]
 
         columns = {}
         if table_instance:
@@ -367,7 +363,6 @@ class InfinityConnection(InfinityConnectionBase):
                 columns[n] = (ty, de)
         condition_dict = {self.convert_condition_and_order_field(k): v for k, v in condition.items()}
         filter = self.equivalent_condition_to_str(condition_dict, table_instance)
-        remove_value = {}
         update_dict = {self.convert_message_field_to_infinity(k): v for k, v in new_value.items()}
         for k, v in update_dict.items():
             if k in ["valid_at", "invalid_at", "forget_at"]:
