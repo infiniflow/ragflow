@@ -49,7 +49,7 @@ export function WebhookResponse() {
               name="response.body_template"
               label={t('flow.webhook.bodyTemplate')}
             >
-              <Textarea></Textarea>
+              <Textarea className="overflow-auto"></Textarea>
             </RAGFlowFormItem>
           </>
         )}

@@ -77,6 +77,8 @@ export default {
   unbindPipelineTask: ({ kb_id, type }: { kb_id: string; type: string }) =>
     `${api_host}/kb/unbind_task?kb_id=${kb_id}&pipeline_task_type=${type}`,
   pipelineRerun: `${api_host}/canvas/rerun`,
+  getMetaData: `${api_host}/document/metadata/summary`,
+  updateMetaData: `${api_host}/document/metadata/update`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,
@@ -202,6 +204,9 @@ export default {
   prompt: `${api_host}/canvas/prompts`,
   cancelDataflow: (id: string) => `${api_host}/canvas/cancel/${id}`,
   downloadFile: `${api_host}/canvas/download`,
+  testWebhook: (id: string) => `${ExternalApi}${api_host}/webhook_test/${id}`,
+  fetchWebhookTrace: (id: string) =>
+    `${ExternalApi}${api_host}/webhook_trace/${id}`,
 
   // mcp server
   listMcpServer: `${api_host}/mcp_server/list`,
@@ -235,9 +240,12 @@ export default {
   deleteMemory: (id: string) => `${api_host}/memory/rm/${id}`,
   getMemoryDetail: (id: string) => `${api_host}/memories/${id}`,
   updateMemorySetting: (id: string) => `${api_host}/memories/${id}`,
-  deleteMemoryMessage: (id: string) => `${api_host}/message/rm/${id}`,
-  getMessageContent: (message_id: string) =>
-    `${api_host}/messages/${message_id}/content`,
+  deleteMemoryMessage: (data: { memory_id: string; message_id: string }) =>
+    `${api_host}/messages/${data.memory_id}:${data.message_id}`,
+  getMessageContent: (data: { memory_id: string; message_id: string }) =>
+    `${api_host}/messages/${data.memory_id}:${data.message_id}/content`,
+  updateMessageState: (data: { memory_id: string; message_id: string }) =>
+    `${api_host}/messages/${data.memory_id}:${data.message_id}`,
 
   // data pipeline
   fetchDataflow: (id: string) => `${api_host}/dataflow/get/${id}`,

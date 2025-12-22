@@ -1,5 +1,11 @@
+import {
+  FormFieldConfig,
+  FormFieldType,
+  RenderField,
+} from '@/components/dynamic-form';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { SliderInputFormField } from '@/components/slider-input-form-field';
+import { Button } from '@/components/ui/button';
 import {
   FormControl,
   FormField,
@@ -13,8 +19,19 @@ import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { t } from 'i18next';
+import { Settings } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { FieldValues, useFormContext } from 'react-hook-form';
+import {
+  ControllerRenderProps,
+  FieldValues,
+  useFormContext,
+} from 'react-hook-form';
+import {
+  MetadataType,
+  useManageMetadata,
+  util,
+} from '../../components/metedata/hook';
+import { ManageMetadataModal } from '../../components/metedata/manage-modal';
 import {
   useHandleKbEmbedding,
   useHasParsedDocument,
@@ -72,16 +89,18 @@ export const EmbeddingSelect = ({
   isEdit,
   field,
   name,
+  disabled = false,
 }: {
   isEdit: boolean;
   field: FieldValues;
   name?: string;
+  disabled?: boolean;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   const embeddingModelOptions = useSelectEmbeddingModelOptions();
   const { handleChange } = useHandleKbEmbedding();
-  const disabled = useHasParsedDocument(isEdit);
+
   const oldValue = useMemo(() => {
     const embdStr = form.getValues(name || 'embd_id');
     return embdStr || '';
@@ -101,7 +120,7 @@ export const EmbeddingSelect = ({
             setLoading(true);
             const res = await handleChange({
               embed_id: value,
-              callback: field.onChange,
+              // callback: field.onChange,
             });
             if (res.code !== 0) {
               field.onChange(oldValue);
@@ -109,6 +128,7 @@ export const EmbeddingSelect = ({
             setLoading(false);
           }
         }}
+        disabled={disabled && !isEdit}
         value={field.value}
         options={embeddingModelOptions}
         placeholder={t('embeddingModelPlaceholder')}
@@ -120,6 +140,7 @@ export const EmbeddingSelect = ({
 export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
+  const disabled = useHasParsedDocument(isEdit);
   return (
     <>
       <FormField
@@ -149,6 +170,7 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
                   <EmbeddingSelect
                     isEdit={!!isEdit}
                     field={field}
+                    disabled={disabled}
                   ></EmbeddingSelect>
                 </FormControl>
               </div>
@@ -297,5 +319,86 @@ export function OverlappedPercent() {
       max={0.3}
       step={0.01}
     ></SliderInputFormField>
+  );
+}
+
+export function AutoMetadata() {
+  // get metadata field
+  const form = useFormContext();
+  const {
+    manageMetadataVisible,
+    showManageMetadataModal,
+    hideManageMetadataModal,
+    tableData,
+    config: metadataConfig,
+  } = useManageMetadata();
+  const autoMetadataField: FormFieldConfig = {
+    name: 'parser_config.enable_metadata',
+    label: t('knowledgeConfiguration.autoMetadata'),
+    type: FormFieldType.Custom,
+    horizontal: true,
+    defaultValue: true,
+
+    render: (fieldProps: ControllerRenderProps) => (
+      <div className="flex items-center justify-between">
+        <Button
+          variant="ghost"
+          onClick={() => {
+            const metadata = form.getValues('parser_config.metadata');
+            const tableMetaData =
+              util.metaDataSettingJSONToMetaDataTableData(metadata);
+            showManageMetadataModal({
+              metadata: tableMetaData,
+              isCanAdd: true,
+              type: MetadataType.Setting,
+            });
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <Settings />
+            {t('knowledgeConfiguration.settings')}
+          </div>
+        </Button>
+        <Switch
+          checked={fieldProps.value}
+          onCheckedChange={fieldProps.onChange}
+        />
+      </div>
+    ),
+  };
+  return (
+    <>
+      <RenderField field={autoMetadataField} />
+      {manageMetadataVisible && (
+        <ManageMetadataModal
+          title={
+            metadataConfig.title || (
+              <div className="flex flex-col gap-2">
+                <div className="text-base font-normal">
+                  {t('knowledgeDetails.metadata.metadataGenerationSettings')}
+                </div>
+                <div className="text-sm text-text-secondary">
+                  {t('knowledgeDetails.metadata.changesAffectNewParses')}
+                </div>
+              </div>
+            )
+          }
+          visible={manageMetadataVisible}
+          hideModal={hideManageMetadataModal}
+          // selectedRowKeys={selectedRowKeys}
+          tableData={tableData}
+          isCanAdd={metadataConfig.isCanAdd}
+          isDeleteSingleValue={metadataConfig.isDeleteSingleValue}
+          type={metadataConfig.type}
+          otherData={metadataConfig.record}
+          isShowDescription={true}
+          isShowValueSwitch={true}
+          isVerticalShowValue={false}
+          success={(data) => {
+            form.setValue('parser_config.metadata', data || []);
+          }}
+        />
+      )}
+    </>
   );
 }

@@ -45,7 +45,6 @@ from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.gmail_connector import GmailConnector
 from common.data_source.box_connector import BoxConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
-from common.data_source.utils import load_all_docs_from_checkpoint_connector
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
@@ -162,23 +161,59 @@ class SyncBase:
     def _get_source_prefix(self):
         return ""
 
-
-class S3(SyncBase):
-    SOURCE_NAME: str = FileSource.S3
+class _BlobLikeBase(SyncBase):
+    DEFAULT_BUCKET_TYPE: str = "s3"
 
     async def _generate(self, task: dict):
-        self.connector = BlobStorageConnector(bucket_type=self.conf.get("bucket_type", "s3"), bucket_name=self.conf["bucket_name"], prefix=self.conf.get("prefix", ""))
+        bucket_type = self.conf.get("bucket_type", self.DEFAULT_BUCKET_TYPE)
+
+        self.connector = BlobStorageConnector(
+            bucket_type=bucket_type,
+            bucket_name=self.conf["bucket_name"],
+            prefix=self.conf.get("prefix", ""),
+        )
         self.connector.load_credentials(self.conf["credentials"])
+
         document_batch_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+            else self.connector.poll_source(
+                task["poll_range_start"].timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
         )
 
-        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
-        logging.info("Connect to {}: {}(prefix/{}) {}".format(self.conf.get("bucket_type", "s3"), self.conf["bucket_name"], self.conf.get("prefix", ""), begin_info))
+        begin_info = (
+            "totally"
+            if task["reindex"] == "1" or not task["poll_range_start"]
+            else "from {}".format(task["poll_range_start"])
+        )
+
+        logging.info(
+            "Connect to {}: {}(prefix/{}) {}".format(
+                bucket_type,
+                self.conf["bucket_name"],
+                self.conf.get("prefix", ""),
+                begin_info,
+            )
+        )
         return document_batch_generator
 
+class S3(_BlobLikeBase):
+    SOURCE_NAME: str = FileSource.S3
+    DEFAULT_BUCKET_TYPE: str = "s3"
+
+class R2(_BlobLikeBase):
+    SOURCE_NAME: str = FileSource.R2
+    DEFAULT_BUCKET_TYPE: str = "r2"
+
+class OCI_STORAGE(_BlobLikeBase):
+    SOURCE_NAME: str = FileSource.OCI_STORAGE
+    DEFAULT_BUCKET_TYPE: str = "oci_storage"
+
+class GOOGLE_CLOUD_STORAGE(_BlobLikeBase):
+    SOURCE_NAME: str = FileSource.GOOGLE_CLOUD_STORAGE
+    DEFAULT_BUCKET_TYPE: str = "google_cloud_storage"
 
 class Confluence(SyncBase):
     SOURCE_NAME: str = FileSource.CONFLUENCE
@@ -226,14 +261,48 @@ class Confluence(SyncBase):
 
         end_time = datetime.now(timezone.utc).timestamp()
 
-        document_generator = load_all_docs_from_checkpoint_connector(
-            connector=self.connector,
-            start=start_time,
-            end=end_time,
-        )
+        raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
 
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            pending_docs = []
+            iterations = 0
+            iteration_limit = 100_000
+
+            while checkpoint.has_more:
+                wrapper = CheckpointOutputWrapper()
+                doc_generator = wrapper(self.connector.load_from_checkpoint(start_time, end_time, checkpoint))
+                for document, failure, next_checkpoint in doc_generator:
+                    if failure is not None:
+                        logging.warning("Confluence connector failure: %s", getattr(failure, "failure_message", failure))
+                        continue
+                    if document is not None:
+                        pending_docs.append(document)
+                        if len(pending_docs) >= batch_size:
+                            yield pending_docs
+                            pending_docs = []
+                    if next_checkpoint is not None:
+                        checkpoint = next_checkpoint
+
+                iterations += 1
+                if iterations > iteration_limit:
+                    raise RuntimeError("Too many iterations while loading Confluence documents.")
+
+            if pending_docs:
+                yield pending_docs
+
+        async def async_wrapper():
+            for batch in document_batches():
+                yield batch
+        
         logging.info("Connect to Confluence: {} {}".format(self.conf["wiki_base"], begin_info))
-        return [document_generator]
+        return async_wrapper()
 
 
 class Notion(SyncBase):
@@ -672,6 +741,9 @@ class BOX(SyncBase):
     
 func_factory = {
     FileSource.S3: S3,
+    FileSource.R2: R2,
+    FileSource.OCI_STORAGE: OCI_STORAGE,
+    FileSource.GOOGLE_CLOUD_STORAGE: GOOGLE_CLOUD_STORAGE,
     FileSource.NOTION: Notion,
     FileSource.DISCORD: Discord,
     FileSource.CONFLUENCE: Confluence,

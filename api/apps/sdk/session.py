@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import copy
 import re
 import time
 
@@ -32,7 +33,7 @@ from api.db.services.dialog_service import DialogService, async_ask, async_chat,
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from common.metadata_utils import apply_meta_data_filter
+from common.metadata_utils import apply_meta_data_filter, convert_conditions, meta_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from common.misc_utils import get_uuid
@@ -128,11 +129,33 @@ async def chat_completion(tenant_id, chat_id):
         req = {"question": ""}
     if not req.get("session_id"):
         req["question"] = ""
-    if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
+    dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
+    if not dia:
         return get_error_data_result(f"You don't own the chat {chat_id}")
+    dia = dia[0]
     if req.get("session_id"):
         if not ConversationService.query(id=req["session_id"], dialog_id=chat_id):
             return get_error_data_result(f"You don't own the session {req['session_id']}")
+
+    metadata_condition = req.get("metadata_condition") or {}
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_error_data_result(message="metadata_condition must be an object.")
+
+    if metadata_condition and req.get("question"):
+        metas = DocumentService.get_meta_by_kbs(dia.kb_ids or [])
+        filtered_doc_ids = meta_filter(
+            metas,
+            convert_conditions(metadata_condition),
+            metadata_condition.get("logic", "and"),
+        )
+        if metadata_condition.get("conditions") and not filtered_doc_ids:
+            filtered_doc_ids = ["-999"]
+
+        if filtered_doc_ids:
+            req["doc_ids"] = ",".join(filtered_doc_ids)
+        else:
+            req.pop("doc_ids", None)
+
     if req.get("stream", True):
         resp = Response(rag_completion(tenant_id, chat_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -195,7 +218,19 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             {"role": "user", "content": "Can you tell me how to install neovim"},
         ],
         stream=stream,
-        extra_body={"reference": reference}
+        extra_body={
+            "reference": reference,
+            "metadata_condition": {
+                "logic": "and",
+                "conditions": [
+                    {
+                        "name": "author",
+                        "comparison_operator": "is",
+                        "value": "bob"
+                    }
+                ]
+            }
+        }
     )
 
     if stream:
@@ -211,7 +246,11 @@ async def chat_completion_openai_like(tenant_id, chat_id):
     """
     req = await get_request_json()
 
-    need_reference = bool(req.get("reference", False))
+    extra_body = req.get("extra_body") or {}
+    if extra_body and not isinstance(extra_body, dict):
+        return get_error_data_result("extra_body must be an object.")
+
+    need_reference = bool(extra_body.get("reference", False))
 
     messages = req.get("messages", [])
     # To prevent empty [] input
@@ -228,6 +267,22 @@ async def chat_completion_openai_like(tenant_id, chat_id):
     if not dia:
         return get_error_data_result(f"You don't own the chat {chat_id}")
     dia = dia[0]
+
+    metadata_condition = extra_body.get("metadata_condition") or {}
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_error_data_result(message="metadata_condition must be an object.")
+
+    doc_ids_str = None
+    if metadata_condition:
+        metas = DocumentService.get_meta_by_kbs(dia.kb_ids or [])
+        filtered_doc_ids = meta_filter(
+            metas,
+            convert_conditions(metadata_condition),
+            metadata_condition.get("logic", "and"),
+        )
+        if metadata_condition.get("conditions") and not filtered_doc_ids:
+            filtered_doc_ids = ["-999"]
+        doc_ids_str = ",".join(filtered_doc_ids) if filtered_doc_ids else None
 
     # Filter system and non-sense assistant messages
     msg = []
@@ -276,14 +331,17 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             }
 
             try:
-                async for ans in async_chat(dia, msg, True, toolcall_session=toolcall_session, tools=tools, quote=need_reference):
+                chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
+                if doc_ids_str:
+                    chat_kwargs["doc_ids"] = doc_ids_str
+                async for ans in async_chat(dia, msg, True, **chat_kwargs):
                     last_ans = ans
                     answer = ans["answer"]
 
                     reasoning_match = re.search(r"<think>(.*?)</think>", answer, flags=re.DOTALL)
                     if reasoning_match:
                         reasoning_part = reasoning_match.group(1)
-                        content_part = answer[reasoning_match.end():]
+                        content_part = answer[reasoning_match.end() :]
                     else:
                         reasoning_part = ""
                         content_part = answer
@@ -328,8 +386,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             response["choices"][0]["delta"]["content"] = None
             response["choices"][0]["delta"]["reasoning_content"] = None
             response["choices"][0]["finish_reason"] = "stop"
-            response["usage"] = {"prompt_tokens": len(prompt), "completion_tokens": token_used,
-                                 "total_tokens": len(prompt) + token_used}
+            response["usage"] = {"prompt_tokens": len(prompt), "completion_tokens": token_used, "total_tokens": len(prompt) + token_used}
             if need_reference:
                 response["choices"][0]["delta"]["reference"] = chunks_format(last_ans.get("reference", []))
                 response["choices"][0]["delta"]["final_content"] = last_ans.get("answer", "")
@@ -344,7 +401,10 @@ async def chat_completion_openai_like(tenant_id, chat_id):
         return resp
     else:
         answer = None
-        async for ans in async_chat(dia, msg, False, toolcall_session=toolcall_session, tools=tools, quote=need_reference):
+        chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
+        if doc_ids_str:
+            chat_kwargs["doc_ids"] = doc_ids_str
+        async for ans in async_chat(dia, msg, False, **chat_kwargs):
             # focus answer content only
             answer = ans
             break
@@ -446,10 +506,12 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
 @token_required
 async def agent_completions(tenant_id, agent_id):
     req = await get_request_json()
+    return_trace = bool(req.get("return_trace", False))
 
     if req.get("stream", True):
 
         async def generate():
+            trace_items = []
             async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
                 if isinstance(answer, str):
                     try:
@@ -457,7 +519,21 @@ async def agent_completions(tenant_id, agent_id):
                     except Exception:
                         continue
 
-                if ans.get("event") not in ["message", "message_end"]:
+                event = ans.get("event")
+                if event == "node_finished":
+                    if return_trace:
+                        data = ans.get("data", {})
+                        trace_items.append(
+                            {
+                                "component_id": data.get("component_id"),
+                                "trace": [copy.deepcopy(data)],
+                            }
+                        )
+                        ans.setdefault("data", {})["trace"] = trace_items
+                        answer = "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+                    yield answer
+
+                if event not in ["message", "message_end"]:
                     continue
 
                 yield answer
@@ -474,6 +550,7 @@ async def agent_completions(tenant_id, agent_id):
     full_content = ""
     reference = {}
     final_ans = ""
+    trace_items = []
     async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
         try:
             ans = json.loads(answer[5:])
@@ -484,11 +561,22 @@ async def agent_completions(tenant_id, agent_id):
             if ans.get("data", {}).get("reference", None):
                 reference.update(ans["data"]["reference"])
 
+            if return_trace and ans.get("event") == "node_finished":
+                data = ans.get("data", {})
+                trace_items.append(
+                    {
+                        "component_id": data.get("component_id"),
+                        "trace": [copy.deepcopy(data)],
+                    }
+                )
+
             final_ans = ans
         except Exception as e:
             return get_result(data=f"**ERROR**: {str(e)}")
     final_ans["data"]["content"] = full_content
     final_ans["data"]["reference"] = reference
+    if return_trace and final_ans:
+        final_ans["data"]["trace"] = trace_items
     return get_result(data=final_ans)
 
 

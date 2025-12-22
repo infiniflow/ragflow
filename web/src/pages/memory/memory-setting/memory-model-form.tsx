@@ -1,7 +1,8 @@
 import { FormFieldType, RenderField } from '@/components/dynamic-form';
 import { useModelOptions } from '@/components/llm-setting-items/llm-form-field';
 import { EmbeddingSelect } from '@/pages/dataset/dataset-setting/configuration/common-item';
-import { t } from 'i18next';
+import { MemoryType } from '@/pages/memories/constants';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 
 export const memoryModelFormSchema = {
@@ -13,11 +14,12 @@ export const memoryModelFormSchema = {
 export const defaultMemoryModelForm = {
   embd_id: '',
   llm_id: '',
-  memory_type: [],
+  memory_type: [MemoryType.Raw],
   memory_size: 0,
 };
 export const MemoryModelForm = () => {
   const { modelOptions } = useModelOptions();
+  const { t } = useTranslation();
   return (
     <>
       <RenderField
@@ -29,7 +31,12 @@ export const MemoryModelForm = () => {
           horizontal: true,
           // hideLabel: true,
           type: FormFieldType.Custom,
-          render: (field) => <EmbeddingSelect field={field} isEdit={false} />,
+          disabled: true,
+          render: (field) => (
+            <EmbeddingSelect field={field} isEdit={false} disabled={true} />
+          ),
+
+          tooltip: t('memories.embeddingModelTooltip'),
         }}
       />
       <RenderField
@@ -41,6 +48,7 @@ export const MemoryModelForm = () => {
           horizontal: true,
           type: FormFieldType.Select,
           options: modelOptions as { value: string; label: string }[],
+          tooltip: t('memories.llmTooltip'),
         }}
       />
       <RenderField
@@ -50,6 +58,8 @@ export const MemoryModelForm = () => {
           type: FormFieldType.MultiSelect,
           horizontal: true,
           placeholder: t('memories.memoryTypePlaceholder'),
+          tooltip: t('memories.memoryTypeTooltip'),
+          disabled: true,
           options: [
             { label: 'Raw', value: 'raw' },
             { label: 'Semantic', value: 'semantic' },

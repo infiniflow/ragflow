@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { camelCase } from 'lodash';
 import { ReactNode, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
+import { MinerUOptionsFormField } from './mineru-options-form-field';
 import { SelectWithSearch } from './originui/select-with-search';
 import {
   FormControl,
@@ -26,11 +27,13 @@ export function LayoutRecognizeFormField({
   horizontal = true,
   optionsWithoutLLM,
   label,
+  showMineruOptions = true,
 }: {
   name?: string;
   horizontal?: boolean;
   optionsWithoutLLM?: { value: string; label: string }[];
   label?: ReactNode;
+  showMineruOptions?: boolean;
 }) {
   const form = useFormContext();
 
@@ -79,35 +82,38 @@ export function LayoutRecognizeFormField({
       name={name}
       render={({ field }) => {
         return (
-          <FormItem className={'items-center space-y-0 '}>
-            <div
-              className={cn('flex', {
-                'flex-col ': !horizontal,
-                'items-center': horizontal,
-              })}
-            >
-              <FormLabel
-                tooltip={t('layoutRecognizeTip')}
-                className={cn('text-sm text-text-secondary whitespace-wrap', {
-                  ['w-1/4']: horizontal,
+          <>
+            <FormItem className={'items-center space-y-0 '}>
+              <div
+                className={cn('flex', {
+                  'flex-col ': !horizontal,
+                  'items-center': horizontal,
                 })}
               >
-                {label || t('layoutRecognize')}
-              </FormLabel>
-              <div className={horizontal ? 'w-3/4' : 'w-full'}>
-                <FormControl>
-                  <SelectWithSearch
-                    {...field}
-                    options={options}
-                  ></SelectWithSearch>
-                </FormControl>
+                <FormLabel
+                  tooltip={t('layoutRecognizeTip')}
+                  className={cn('text-sm text-text-secondary whitespace-wrap', {
+                    ['w-1/4']: horizontal,
+                  })}
+                >
+                  {label || t('layoutRecognize')}
+                </FormLabel>
+                <div className={horizontal ? 'w-3/4' : 'w-full'}>
+                  <FormControl>
+                    <SelectWithSearch
+                      {...field}
+                      options={options}
+                    ></SelectWithSearch>
+                  </FormControl>
+                </div>
               </div>
-            </div>
-            <div className="flex pt-1">
-              <div className={horizontal ? 'w-1/4' : 'w-full'}></div>
-              <FormMessage />
-            </div>
-          </FormItem>
+              <div className="flex pt-1">
+                <div className={horizontal ? 'w-1/4' : 'w-full'}></div>
+                <FormMessage />
+              </div>
+            </FormItem>
+            {showMineruOptions && <MinerUOptionsFormField />}
+          </>
         );
       }}
     />

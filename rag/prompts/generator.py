@@ -821,3 +821,13 @@ async def relevant_chunks_with_toc(query: str, toc:list[dict], chat_mdl, topn: i
     except Exception as e:
         logging.exception(e)
     return []
+
+
+META_DATA = load_prompt("meta_data")
+async def gen_metadata(chat_mdl, schema:dict, content:str):
+    template = PROMPT_JINJA_ENV.from_string(META_DATA)
+    system_prompt = template.render(content=content, schema=schema)
+    user_prompt = "Output: "
+    _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
+    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
+    return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)

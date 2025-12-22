@@ -39,9 +39,9 @@ class TestChatAssistantUpdate:
         chat_assistant = chat_assistants[0]
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.update(payload)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             chat_assistant.update(payload)
             updated_chat = client.list_chats(id=chat_assistant.id)[0]
@@ -101,9 +101,9 @@ class TestChatAssistantUpdate:
         payload = {"name": "llm_test", "llm": llm, "dataset_ids": [dataset.id]}
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.update(payload)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             chat_assistant.update(payload)
             updated_chat = client.list_chats(id=chat_assistant.id)[0]
@@ -178,9 +178,9 @@ class TestChatAssistantUpdate:
         payload = {"name": "prompt_test", "prompt": prompt, "dataset_ids": [dataset.id]}
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 chat_assistant.update(payload)
-            assert expected_message in str(excinfo.value)
+            assert expected_message in str(exception_info.value)
         else:
             chat_assistant.update(payload)
             updated_chat = client.list_chats(id=chat_assistant.id)[0]

@@ -76,19 +76,23 @@ const ExtractorForm = ({ node }: INextOperatorForm) => {
             ></SelectWithSearch>
           )}
         </RAGFlowFormItem>
-        <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">
-          <PromptEditor
-            placeholder={t('flow.messagePlaceholder')}
-            showToolbar={true}
-            baseOptions={promptOptions}
-          ></PromptEditor>
-        </RAGFlowFormItem>
-        <RAGFlowFormItem label={t('flow.userPrompt')} name="prompts">
-          <PromptEditor
-            showToolbar={true}
-            baseOptions={promptOptions}
-          ></PromptEditor>
-        </RAGFlowFormItem>
+        {form.getValues('field_name') !== 'toc' && (
+          <>
+            <RAGFlowFormItem label={t('flow.systemPrompt')} name="sys_prompt">
+              <PromptEditor
+                placeholder={t('flow.messagePlaceholder')}
+                showToolbar={true}
+                baseOptions={promptOptions}
+              ></PromptEditor>
+            </RAGFlowFormItem>
+            <RAGFlowFormItem label={t('flow.userPrompt')} name="prompts">
+              <PromptEditor
+                showToolbar={true}
+                baseOptions={promptOptions}
+              ></PromptEditor>
+            </RAGFlowFormItem>
+          </>
+        )}
         <Output list={outputList}></Output>
       </FormWrapper>
       {visible && (

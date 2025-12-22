@@ -51,6 +51,8 @@ export default {
       search: '搜索',
       noDataFound: '没有找到数据。',
       noData: '暂无数据',
+      bedrockCredentialsHint:
+        '提示：Access Key / Secret Key 可留空，以启用 AWS IAM 自动验证。',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
       selected: '已选择',
     },
@@ -265,6 +267,8 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      settings: '设置',
+      autoMetadata: '自动元数据',
       mineruOptions: 'MinerU 选项',
       mineruParseMethod: '解析方法',
       mineruParseMethodTip:
@@ -728,8 +732,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       log: '日志',
       confluenceDescription: '连接你的 Confluence 工作区以搜索文档内容。',
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
+      google_cloud_storageDescription:
+        '连接你的 Google Cloud Storage 存储桶以导入和同步文件。',
       discordDescription: ' 连接你的 Discord 服务器以访问和分析聊天数据。',
       notionDescription: ' 同步 Notion 页面与数据库，用于知识检索。',
+      oci_storageDescription:
+        '连接你的 Oracle Cloud Object Storage 存储桶以导入和同步文件。',
       google_driveDescription:
         '通过 OAuth 连接 Google Drive，并同步指定的文件夹或云端硬盘。',
       gmailDescription: '通过 OAuth 连接 Gmail，用于同步邮件。',
@@ -745,6 +753,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       gmailTokenTip:
         '请上传由 Google Console 生成的 OAuth JSON。如果仅包含 client credentials，请通过浏览器授权一次以获取长期有效的刷新 Token。',
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
+      boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
+      r2Description: '连接你的 Cloudflare R2 存储桶以导入和同步文件。',
       dropboxAccessTokenTip:
         '请在 Dropbox App Console 生成 Access Token，并勾选 files.metadata.read、files.content.read、sharing.read 等必要权限。',
       jiraDescription: '接入 Jira 工作区，持续同步Issues、评论与附件。',
@@ -874,6 +884,15 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       bedrockAKMessage: '请输入 ACCESS KEY',
       addBedrockSK: 'SECRET KEY',
       bedrockSKMessage: '请输入 SECRET KEY',
+      awsAuthModeAccessKeySecret: 'Access Key 和 Secret',
+      awsAuthModeIamRole: 'IAM Role',
+      awsAuthModeAssumeRole: 'Assume Role',
+      awsAccessKeyId: 'AWS Access Key ID',
+      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsRoleArn: 'AWS Role ARN',
+      awsRoleArnMessage: '请输入 AWS Role ARN',
+      awsAssumeRoleTip:
+        '选择此模式后，EC2 实例将使用其已有的 IAM Role 访问 AWS 服务，无需额外的凭证。',
       bedrockRegion: 'AWS Region',
       bedrockRegionMessage: '请选择！',
       'us-east-1': '美国东部 (弗吉尼亚北部)',
@@ -948,6 +967,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       mcp: 'MCP',
       mineru: {
         modelNameRequired: '模型名称为必填项',
+        apiServerRequired: 'MinerU API服务器配置为必填项',
+        serverUrlBackendLimit: '仅在backend 为vlm-http-client 时可填写',
         apiserver: 'MinerU API服务器配置',
         outputDir: 'MinerU输出目录路径',
         backend: 'MinerU处理后端类型',
@@ -959,6 +980,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
           vlmTransformers: '基于Transformers的视觉语言模型',
           vlmVllmEngine: '基于vLLM引擎的视觉语言模型',
           vlmHttpClient: '通过HTTP客户端连接的视觉语言模型',
+          vlmMlxEngine: '基于MLX引擎的视觉语言模型',
+          vlmVllmAsyncEngine: '基于vLLM异步引擎的视觉语言模型（实验性）',
+          vlmLmdeployEngine: '基于LMDeploy引擎的视觉语言模型（实验性）',
         },
       },
     },

@@ -717,7 +717,7 @@ class OnyxConfluence:
         """
         The search/user endpoint can be used to fetch users.
         It's a separate endpoint from the content/search endpoint used only for users.
-        Otherwise it's very similar to the content/search endpoint.
+        It's very similar to the content/search endpoint.
         """
 
         # this is needed since there is a live bug with Confluence Server/Data Center
@@ -1311,6 +1311,9 @@ class ConfluenceConnector(
         self._low_timeout_confluence_client: OnyxConfluence | None = None
         self._fetched_titles: set[str] = set()
         self.allow_images = False
+        # Track document names to detect duplicates
+        self._document_name_counts: dict[str, int] = {}
+        self._document_name_paths: dict[str, list[str]] = {}
 
         # Remove trailing slash from wiki_base if present
         self.wiki_base = wiki_base.rstrip("/")
@@ -1513,6 +1516,40 @@ class ConfluenceConnector(
                 self.wiki_base, page["_links"]["webui"], self.is_cloud
             )
 
+            # Build hierarchical path for semantic identifier
+            space_name = page.get("space", {}).get("name", "")
+            
+            # Build path from ancestors
+            path_parts = []
+            if space_name:
+                path_parts.append(space_name)
+            
+            # Add ancestor pages to path if available
+            if "ancestors" in page and page["ancestors"]:
+                for ancestor in page["ancestors"]:
+                    ancestor_title = ancestor.get("title", "")
+                    if ancestor_title:
+                        path_parts.append(ancestor_title)
+            
+            # Add current page title
+            path_parts.append(page_title)
+            
+            # Track page names for duplicate detection
+            full_path = " / ".join(path_parts) if len(path_parts) > 1 else page_title
+            
+            # Count occurrences of this page title
+            if page_title not in self._document_name_counts:
+                self._document_name_counts[page_title] = 0
+                self._document_name_paths[page_title] = []
+            self._document_name_counts[page_title] += 1
+            self._document_name_paths[page_title].append(full_path)
+            
+            # Use simple name if no duplicates, otherwise use full path
+            if self._document_name_counts[page_title] == 1:
+                semantic_identifier = page_title
+            else:
+                semantic_identifier = full_path
+
             # Get the page content
             page_content = extract_text_from_confluence_html(
                 self.confluence_client, page, self._fetched_titles
@@ -1559,7 +1596,7 @@ class ConfluenceConnector(
             return Document(
                 id=page_url,
                 source=DocumentSource.CONFLUENCE,
-                semantic_identifier=page_title,
+                semantic_identifier=semantic_identifier,
                 extension=".html",  # Confluence pages are HTML
                 blob=page_content.encode("utf-8"),  # Encode page content as bytes
                 size_bytes=len(page_content.encode("utf-8")),  # Calculate size in bytes
@@ -1601,7 +1638,6 @@ class ConfluenceConnector(
             expand=",".join(_ATTACHMENT_EXPANSION_FIELDS),
         ):
             media_type: str = attachment.get("metadata", {}).get("mediaType", "")
-
             # TODO(rkuo): this check is partially redundant with validate_attachment_filetype
             # and checks in convert_attachment_to_content/process_attachment
             # but doing the check here avoids an unnecessary download. Due for refactoring.
@@ -1669,6 +1705,34 @@ class ConfluenceConnector(
                     self.wiki_base, attachment["_links"]["webui"], self.is_cloud
                 )
 
+                # Build semantic identifier with space and page context
+                attachment_title = attachment.get("title", object_url)
+                space_name = page.get("space", {}).get("name", "")
+                page_title = page.get("title", "")
+                
+                # Create hierarchical name: Space / Page / Attachment
+                attachment_path_parts = []
+                if space_name:
+                    attachment_path_parts.append(space_name)
+                if page_title:
+                    attachment_path_parts.append(page_title)
+                attachment_path_parts.append(attachment_title)
+                
+                full_attachment_path = " / ".join(attachment_path_parts) if len(attachment_path_parts) > 1 else attachment_title
+                
+                # Track attachment names for duplicate detection
+                if attachment_title not in self._document_name_counts:
+                    self._document_name_counts[attachment_title] = 0
+                    self._document_name_paths[attachment_title] = []
+                self._document_name_counts[attachment_title] += 1
+                self._document_name_paths[attachment_title].append(full_attachment_path)
+                
+                # Use simple name if no duplicates, otherwise use full path
+                if self._document_name_counts[attachment_title] == 1:
+                    attachment_semantic_identifier = attachment_title
+                else:
+                    attachment_semantic_identifier = full_attachment_path
+
                 primary_owners: list[BasicExpertInfo] | None = None
                 if "version" in attachment and "by" in attachment["version"]:
                     author = attachment["version"]["by"]
@@ -1680,11 +1744,12 @@ class ConfluenceConnector(
 
                 extension = Path(attachment.get("title", "")).suffix or ".unknown"
 
+
                 attachment_doc = Document(
                     id=attachment_id,
                     # sections=sections,
                     source=DocumentSource.CONFLUENCE,
-                    semantic_identifier=attachment.get("title", object_url),
+                    semantic_identifier=attachment_semantic_identifier,
                     extension=extension,
                     blob=file_blob,
                     size_bytes=len(file_blob),
@@ -1741,7 +1806,7 @@ class ConfluenceConnector(
             start_ts, end, self.batch_size
         )
         logging.debug(f"page_query_url: {page_query_url}")
-
+        
         # store the next page start for confluence server, cursor for confluence cloud
         def store_next_page_url(next_page_url: str) -> None:
             checkpoint.next_page_url = next_page_url
