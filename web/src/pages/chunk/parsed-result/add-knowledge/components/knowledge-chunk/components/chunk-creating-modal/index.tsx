@@ -15,6 +15,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
+import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
 import Space from '@/components/ui/space';
 import { Switch } from '@/components/ui/switch';
@@ -76,6 +77,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
   const { removeChunk } = useDeleteChunkByIds();
   const { data } = useFetchChunk(chunkId);
   const { t } = useTranslation();
+  const isEditMode = !!chunkId;
 
   const isTagParser = parserId === 'tag';
   const onSubmit = useCallback(
@@ -143,6 +145,28 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               </FormItem>
             )}
           />
+
+          {/* Do not display the type field in create mode */}
+          {isEditMode && (
+            <FormField
+              control={form.control}
+              name="doc_type_kwd"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t(`chunk.type`)}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="text"
+                      value={t(
+                        `chunk.docType.${field.value ? String(field.value).toLowerCase() : 'text'}`,
+                      )}
+                      readOnly
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          )}
 
           <FormField
             control={form.control}

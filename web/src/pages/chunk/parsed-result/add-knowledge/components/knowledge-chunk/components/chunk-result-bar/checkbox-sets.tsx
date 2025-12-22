@@ -45,7 +45,7 @@ export default (props: ICheckboxSetProps) => {
   }, [selectedChunkIds]);
 
   return (
-    <div className="flex gap-[40px] py-4 px-2">
+    <div className="flex gap-[40px] py-4 px-2 h-14">
       <div className="flex items-center gap-3 cursor-pointer text-muted-foreground hover:text-text-primary">
         <Checkbox
           id="all_chunks_checkbox"
