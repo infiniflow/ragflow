@@ -15,6 +15,8 @@
 #
 from typing import List
 
+from playhouse.sqlite_udf import aggregate
+
 from common import settings
 from common.doc_store.doc_store_base import OrderByExpr, MatchExpr
 
@@ -76,7 +78,7 @@ class MessageService:
             condition=filter_dict,
             match_expressions=[], order_by=order_by,
             offset=(page-1)*page_size, limit=page_size,
-            index_names=index, memory_ids=[memory_id], hide_forgotten=False
+            index_names=index, memory_ids=[memory_id], agg_fields=[], hide_forgotten=False
         )
         total_count = settings.msgStoreConn.get_total(res)
         doc_mapping = settings.msgStoreConn.get_fields(res, [
@@ -106,7 +108,7 @@ class MessageService:
             condition=condition_dict,
             match_expressions=[], order_by=order_by,
             offset=0, limit=limit,
-            index_names=index_names, memory_ids=memory_ids,
+            index_names=index_names, memory_ids=memory_ids, agg_fields=[]
         )
         doc_mapping = settings.msgStoreConn.get_fields(res, [
             "message_id", "message_type", "source_id", "memory_id","user_id", "agent_id", "session_id",
@@ -134,7 +136,7 @@ class MessageService:
             match_expressions=match_expressions,
             order_by=order_by,
             offset=0, limit=top_n,
-            index_names=index_names, memory_ids=memory_ids,
+            index_names=index_names, memory_ids=memory_ids, agg_fields=[]
         )
         docs = settings.msgStoreConn.get_fields(res, [
             "message_id", "message_type", "source_id", "memory_id", "user_id", "agent_id", "session_id", "valid_at",
@@ -161,7 +163,7 @@ class MessageService:
             order_by=order_by,
             offset=0, limit=1,
             index_names=index_names, memory_ids=memory_ids,
-            hide_forgotten=False
+            agg_fields=[], hide_forgotten=False
         )
         docs = settings.msgStoreConn.get_fields(res, ["message_id"])
         if not docs:

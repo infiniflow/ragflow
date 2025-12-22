@@ -241,7 +241,7 @@ class ESConnectionBase(DocStoreConnection):
     def get_doc_ids(self, res):
         return [d["_id"] for d in res["hits"]["hits"]]
 
-    def __get_source(self, res):
+    def _get_source(self, res):
         rr = []
         for d in res["hits"]["hits"]:
             d["_source"]["id"] = d["_id"]
