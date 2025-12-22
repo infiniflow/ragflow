@@ -125,7 +125,7 @@ async def update_memory(memory_id):
         return get_json_result(message=True, data=memory_dict)
 
     try:
-        MemoryService.update_memory(memory_id, to_update)
+        MemoryService.update_memory(current_memory.tenant_id, memory_id, to_update)
         updated_memory = MemoryService.get_by_memory_id(memory_id)
         return get_json_result(message=True, data=format_ret_data_from_memory(updated_memory))
 

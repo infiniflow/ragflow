@@ -15,7 +15,6 @@
 #
 from typing import List
 
-from api.apps import current_user
 from api.db.db_models import DB, Memory, User
 from api.db.services import duplicate_name
 from api.db.services.common_service import CommonService
@@ -143,7 +142,7 @@ class MemoryService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def update_memory(cls, memory_id: str, update_dict: dict):
+    def update_memory(cls, tenant_id: str, memory_id: str, update_dict: dict):
         if not update_dict:
             return 0
         if "temperature" in update_dict and isinstance(update_dict["temperature"], str):
@@ -152,7 +151,7 @@ class MemoryService(CommonService):
             update_dict["name"] = duplicate_name(
                 cls.query,
                 name=update_dict["name"],
-                tenant_id=current_user.id
+                tenant_id=tenant_id
             )
         update_dict.update({
             "update_time": current_timestamp(),
