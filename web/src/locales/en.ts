@@ -604,6 +604,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'The document being parsed cannot be deleted',
     },
     chunk: {
+      type: 'Type',
+      docType: {
+        image: 'Image',
+        table: 'Table',
+        text: 'Text',
+      },
       chunk: 'Chunk',
       bulk: 'Bulk',
       selectAll: 'Select all',

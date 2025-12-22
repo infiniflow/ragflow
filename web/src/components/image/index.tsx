@@ -1,11 +1,10 @@
 import { api_host } from '@/utils/api';
 import classNames from 'classnames';
+import React from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 
-interface IImage {
+interface IImage extends React.ImgHTMLAttributes<HTMLImageElement> {
   id: string;
-  className?: string;
-  onClick?(): void;
   t?: string | number;
 }
 
