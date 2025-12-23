@@ -230,4 +230,4 @@ def init_memory_size_cache():
         for memory in memory_list:
             memory_size = memory_size_map.get(memory.id, 0)
             set_memory_size_cache(memory.id, memory_size)
-        logging.info(f"Memory size cache init done.")
+        logging.info("Memory size cache init done.")
