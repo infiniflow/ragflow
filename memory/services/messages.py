@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import sys
 from typing import List
 
 from common import settings
@@ -144,6 +145,32 @@ class MessageService:
             "invalid_at", "forget_at", "status", "content"
         ])
         return list(docs.values())
+
+    @classmethod
+    def calculate_memory_size(cls, memory_ids: List[str], uid_list: List[str]):
+        index_names = [index_name(uid) for uid in uid_list]
+        order_by = OrderByExpr()
+        order_by.desc("valid_at")
+
+        res = settings.msgStoreConn.search(
+            select_fields=["memory_id", "content", "content_embed"],
+            highlight_fields=[],
+            condition={},
+            match_expressions=[],
+            order_by=order_by,
+            offset=0, limit=2000*len(memory_ids),
+            index_names=index_names, memory_ids=memory_ids, agg_fields=[], hide_forgotten=False
+        )
+        docs = settings.msgStoreConn.get_fields(res, ["memory_id", "content", "content_embed"])
+        size_dict = {}
+        for doc in docs.values():
+            if size_dict.get(doc["memory_id"]):
+                size_dict[doc["memory_id"]] += sys.getsizeof(doc["content"])
+                size_dict[doc["memory_id"]] += sys.getsizeof(doc["content_embed"][0]) * len(doc["content_embed"])
+            else:
+                size_dict[doc["memory_id"]] = sys.getsizeof(doc["content"])
+                size_dict[doc["memory_id"]] += sys.getsizeof(doc["content_embed"][0]) * len(doc["content_embed"])
+        return size_dict
 
     @classmethod
     def get_by_message_id(cls, memory_id: str, message_id: int, uid: str):

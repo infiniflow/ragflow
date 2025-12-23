@@ -176,3 +176,23 @@ def init_message_id_sequence():
             )
             REDIS_CONN.set(message_id_redis_key, max_id)
         logging.info(f"Init message_id sequence done, current max id is {max_id}.")
+
+
+def set_memory_size_cache(memory_id: str, size: int):
+    redis_key = f"memory_{memory_id}"
+    return REDIS_CONN.set(redis_key, size)
+
+
+def init_memory_size_cache():
+    memory_list = MemoryService.get_all_memory()
+    if not memory_list:
+        logging.info("No memory found, no need to init memory size.")
+    else:
+        memory_size_map = MessageService.calculate_memory_size(
+            memory_ids=[m.id for m in memory_list],
+            uid_list=[m.tenant_id for m in memory_list],
+        )
+        for memory in memory_list:
+            memory_size = memory_size_map.get(memory.id, 0)
+            set_memory_size_cache(memory.id, memory_size)
+        logging.info(f"Memory size cache init done.")
