@@ -16,7 +16,7 @@ export function useShowWebhookResponseStatus(form: UseFormReturn<any>) {
     const formData: BeginFormSchemaType = getNode(BeginId)?.data.form;
     return (
       formData?.mode === AgentDialogueMode.Webhook &&
-      formData.execution_mode === WebhookExecutionMode.Streaming
+      formData?.execution_mode === WebhookExecutionMode.Streaming
     );
   }, [getNode]);
 
