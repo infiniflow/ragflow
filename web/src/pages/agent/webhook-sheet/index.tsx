@@ -32,7 +32,7 @@ const WebhookSheet = ({ hideModal }: RunSheetProps) => {
 
   const { data } = useFetchWebhookTrace(true);
 
-  const firstInput = data?.events.find(
+  const firstInput = data?.events?.find(
     (event) =>
       event.event === MessageEventType.NodeFinished &&
       event.data.component_id === BeginId,
@@ -74,6 +74,7 @@ const WebhookSheet = ({ hideModal }: RunSheetProps) => {
         </div>
 
         <section>
+          <span>{t('flow.webhook.agentStatus')}</span>
           <div
             className={cn({
               'text-state-error': statusInfo.status === 'fail',
@@ -90,14 +91,22 @@ const WebhookSheet = ({ hideModal }: RunSheetProps) => {
           className="flex-1  min-h-0 flex flex-col"
         >
           <TabsList className="w-fit">
-            <TabsTrigger value={WebhookTraceTabType.Detail}>Detail</TabsTrigger>
+            <TabsTrigger value={WebhookTraceTabType.Detail}>
+              {t('flow.webhook.overview')}
+            </TabsTrigger>
             <TabsTrigger value={WebhookTraceTabType.Tracing}>
-              Tracing
+              {t('flow.webhook.logs')}
             </TabsTrigger>
           </TabsList>
           <TabsContent value={WebhookTraceTabType.Detail}>
-            <JsonViewer data={firstInput || {}} title={'Input'}></JsonViewer>
-            <JsonViewer data={latestOutput || {}} title={'Output'}></JsonViewer>
+            <JsonViewer
+              data={firstInput || {}}
+              title={t('flow.input')}
+            ></JsonViewer>
+            <JsonViewer
+              data={latestOutput || {}}
+              title={t('flow.output')}
+            ></JsonViewer>
           </TabsContent>
           <TabsContent
             value={WebhookTraceTabType.Tracing}
