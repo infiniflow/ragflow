@@ -2130,6 +2130,8 @@ Important structured information may include: names, dates, locations, events, k
         immediately: 'Accepted response',
         streaming: 'Final response',
       },
+      saveToMemory: 'Save to memory',
+      memory: 'Memory',
     },
     llmTools: {
       bad_calculator: {
