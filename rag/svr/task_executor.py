@@ -506,7 +506,7 @@ def build_TOC(task, docs, progress_callback):
 
 def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
-    return settings.docStoreConn.createIdx(idxnm, row.get("kb_id", ""), vector_size)
+    return settings.docStoreConn.create_idx(idxnm, row.get("kb_id", ""), vector_size)
 
 
 async def embedding(docs, mdl, parser_config=None, callback=None):
