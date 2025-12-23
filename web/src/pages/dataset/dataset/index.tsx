@@ -16,7 +16,7 @@ import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-reques
 import { Pen, Upload } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useManageMetadata } from '../components/metedata/hook';
+import { MetadataType, useManageMetadata } from '../components/metedata/hook';
 import { ManageMetadataModal } from '../components/metedata/manage-modal';
 import { DatasetTable } from './dataset-table';
 import Generate from './generate-button/generate';
@@ -53,7 +53,7 @@ export default function Dataset() {
   const { data: dataSetData } = useFetchKnowledgeBaseConfiguration({
     refreshCount,
   });
-  const { filters, onOpenChange } = useSelectDatasetFilters();
+  const { filters, onOpenChange, filterGroup } = useSelectDatasetFilters();
 
   const {
     createLoading,
@@ -90,6 +90,7 @@ export default function Dataset() {
           onSearchChange={handleInputChange}
           searchString={searchString}
           value={filterValue}
+          filterGroup={filterGroup}
           onChange={handleFilterSubmit}
           onOpenChange={onOpenChange}
           filters={filters}
@@ -105,7 +106,25 @@ export default function Dataset() {
             <Button
               variant={'ghost'}
               className="border border-border-button"
-              onClick={() => showManageMetadataModal()}
+              onClick={() =>
+                showManageMetadataModal({
+                  type: MetadataType.Manage,
+                  isCanAdd: false,
+                  isEditField: true,
+                  title: (
+                    <div className="flex flex-col gap-2">
+                      <div className="text-base font-normal">
+                        {t('knowledgeDetails.metadata.manageMetadata')}
+                      </div>
+                      <div className="text-sm text-text-secondary">
+                        {t(
+                          'knowledgeDetails.metadata.manageMetadataForDataset',
+                        )}
+                      </div>
+                    </div>
+                  ),
+                })
+              }
             >
               <div className="flex gap-1 items-center">
                 <Pen size={14} />
@@ -179,6 +198,7 @@ export default function Dataset() {
             // selectedRowKeys={selectedRowKeys}
             tableData={tableData}
             isCanAdd={metadataConfig.isCanAdd}
+            isEditField={metadataConfig.isEditField}
             isDeleteSingleValue={metadataConfig.isDeleteSingleValue}
             type={metadataConfig.type}
             otherData={metadataConfig.record}
