@@ -154,7 +154,7 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
       open={visible}
       onCancel={handleHideModal}
       className="!w-[460px]"
-      okText={t('common.save')}
+      okText={t('common.confirm')}
       onOk={handleSave}
       maskClosable={false}
       footer={null}

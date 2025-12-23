@@ -1,5 +1,8 @@
 import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
-import { EmbeddingSelect } from '@/pages/dataset/dataset-setting/configuration/common-item';
+import {
+  EmbeddingSelect,
+  LLMSelect,
+} from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { TFunction } from 'i18next';
 export enum MemoryType {
   Raw = 'raw',
@@ -52,6 +55,7 @@ export const createMemoryFields = (t: TFunction) =>
       required: true,
       type: FormFieldType.Select,
       tooltip: t('memories.llmTooltip'),
+      render: (field) => <LLMSelect field={field} isEdit={false} />,
     },
   ] as FormFieldConfig[];
 

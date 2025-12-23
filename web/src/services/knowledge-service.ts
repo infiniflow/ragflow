@@ -47,6 +47,7 @@ const {
   runRaptor,
   traceRaptor,
   check_embedding,
+  kbUpdateMetaData,
 } = api;
 
 const methods = {
@@ -213,6 +214,10 @@ const methods = {
 
   checkEmbedding: {
     url: check_embedding,
+    method: 'post',
+  },
+  kbUpdateMetaData: {
+    url: kbUpdateMetaData,
     method: 'post',
   },
   // getMetaData: {
