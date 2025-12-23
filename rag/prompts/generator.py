@@ -324,8 +324,9 @@ def tool_schema(tools_description: list[dict], complete_task=False):
                 }
             }
         }
-    for tool in tools_description:
-        desc[tool["function"]["name"]] = tool
+    for idx, tool in enumerate(tools_description):
+        name = tool["function"]["name"]
+        desc[f"{name}_{idx}"] = tool
 
     return "\n\n".join([f"## {i+1}. {fnm}\n{json.dumps(des, ensure_ascii=False, indent=4)}" for i, (fnm, des) in enumerate(desc.items())])
 
