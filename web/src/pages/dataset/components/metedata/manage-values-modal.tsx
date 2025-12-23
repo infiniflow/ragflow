@@ -110,8 +110,8 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
 
   // Handle blur event, synchronize to main state
   const handleValueBlur = useCallback(() => {
-    addUpdateValue(metaData.field, [...tempValues]);
-    handleChange('values', [...tempValues]);
+    addUpdateValue(metaData.field, [...new Set([...tempValues])]);
+    handleChange('values', [...new Set([...tempValues])]);
   }, [handleChange, tempValues, metaData, addUpdateValue]);
 
   // Handle delete operation
@@ -139,12 +139,12 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
 
   // Handle adding new value
   const handleAddValue = useCallback(() => {
-    setTempValues((prev) => [...prev, '']);
+    setTempValues((prev) => [...new Set([...prev, ''])]);
 
     // Synchronize to main state
     setMetaData((prev) => ({
       ...prev,
-      values: [...prev.values, ''],
+      values: [...new Set([...prev.values, ''])],
     }));
   }, []);
 
