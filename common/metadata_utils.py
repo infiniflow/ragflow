@@ -47,11 +47,12 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
 
             if operator in ["=", "≠", ">", "<", "≥", "≤"]:
                 try:
+                    if isinstance(input, list):
+                        input = input[0]
                     input = float(input)
                     value = float(value)
                 except Exception:
-                    input = str(input)
-                    value = str(value)
+                    pass
             if isinstance(input, str):
                 input = input.lower()
             if isinstance(value, str):
@@ -62,8 +63,8 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                 (operator == "not contains", input not in value if not isinstance(input, list) else all([i not in value for i in input])),
                 (operator == "in", input in value if not isinstance(input, list) else all([i in value for i in input])),
                 (operator == "not in", input not in value if not isinstance(input, list) else all([i not in value for i in input])),
-                (operator == "start with", str(input).lower().startswith(str(value).lower())),
-                (operator == "end with", str(input).lower().endswith(str(value).lower())),
+                (operator == "start with", str(input).lower().startswith(str(value).lower())  if not isinstance(input, list) else "".join([str(i).lower() for i in input]).startswith(str(value).lower())),
+                (operator == "end with", str(input).lower().endswith(str(value).lower())  if not isinstance(input, list) else "".join([str(i).lower() for i in input]).endswith(str(value).lower())),
                 (operator == "empty", not input),
                 (operator == "not empty", input),
                 (operator == "=", input == value),
