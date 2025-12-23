@@ -1863,6 +1863,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         headerParameters: '请求头参数',
         requestBodyParameters: '请求体参数',
       },
+      saveToMemory: '保存到Memory',
+      memory: 'Memory',
     },
     footer: {
       profile: 'All rights reserved @ React',

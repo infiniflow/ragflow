@@ -115,7 +115,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
           <PromptEditor></PromptEditor>
         </RAGFlowFormItem>
         <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
-        <MemoriesFormField label="Memory"></MemoriesFormField>
+        <MemoriesFormField label={t('flow.memory')}></MemoriesFormField>
         <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField

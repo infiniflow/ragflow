@@ -43,7 +43,7 @@ const RetrievalForm = () => {
       <FormWrapper>
         <DescriptionField></DescriptionField>
         <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
-        <MemoriesFormField label="Memory"></MemoriesFormField>
+        <MemoriesFormField label={t('flow.memory')}></MemoriesFormField>
         <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField

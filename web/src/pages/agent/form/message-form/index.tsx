@@ -161,7 +161,7 @@ function MessageForm({ node }: INextOperatorForm) {
             </FormItem>
           </>
         )}
-        <MemoriesFormField label="Save to memory"></MemoriesFormField>
+        <MemoriesFormField label={t('flow.saveToMemory')}></MemoriesFormField>
       </FormWrapper>
     </Form>
   );
