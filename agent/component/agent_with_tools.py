@@ -86,8 +86,9 @@ class Agent(LLM, ToolBase):
         self.tools = {}
         for idx, cpn in enumerate(self._param.tools):
             cpn = self._load_tool_obj(cpn)
-            name = cpn.get_meta()["function"]["name"]
-            self.tools[f"{name}_{idx}"] = cpn
+            original_name = cpn.get_meta()["function"]["name"]
+            indexed_name = f"{original_name}_{idx}"
+            self.tools[indexed_name] = cpn
 
         self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id,
                                   max_retries=self._param.max_retries,
@@ -95,7 +96,12 @@ class Agent(LLM, ToolBase):
                                   max_rounds=self._param.max_rounds,
                                   verbose_tool_use=True
                                   )
-        self.tool_meta = [v.get_meta() for _,v in self.tools.items()]
+        self.tool_meta = []
+        for indexed_name, tool_obj in self.tools.items():
+            original_meta = tool_obj.get_meta()
+            indexed_meta = deepcopy(original_meta)
+            indexed_meta["function"]["name"] = indexed_name
+            self.tool_meta.append(indexed_meta)
 
         for mcp in self._param.mcp:
             _, mcp_server = MCPServerService.get_by_id(mcp["mcp_id"])
@@ -109,7 +115,8 @@ class Agent(LLM, ToolBase):
 
     def _load_tool_obj(self, cpn: dict) -> object:
         from agent.component import component_class
-        param = component_class(cpn["component_name"] + "Param")()
+        tool_name = cpn["component_name"]
+        param = component_class(tool_name + "Param")()
         param.update(cpn["params"])
         try:
             param.check()
