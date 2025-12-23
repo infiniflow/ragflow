@@ -345,6 +345,9 @@ export default {
     },
     knowledgeConfiguration: {
       settings: '设置',
+      imageTableContextWindow: '图像与表格上下文窗口',
+      imageTableContextWindowTip:
+        '抓取图像与表格上下方的 N 个 token，为该 chunk 提供更丰富的背景上下文。',
       autoMetadata: '自动元数据',
       mineruOptions: 'MinerU 选项',
       mineruParseMethod: '解析方法',

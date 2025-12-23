@@ -371,8 +371,8 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       globalIndexModel: 'Indexing model',
       settings: 'Settings',
       autoMetadataTip: `Automatically generate metadata. Applies to new files during parsing. Existing files require re-parsing to update (chunks remain preserved). Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'.`,
-      imageContextWindow: 'Image & table context window',
-      imageContextWindowTip:
+      imageTableContextWindow: 'Image & table context window',
+      imageTableContextWindowTip:
         'Captures N tokens of text above and below the image & table to provide richer background context.',
       autoMetadata: 'Auto metadata',
       mineruOptions: 'MinerU Options',
