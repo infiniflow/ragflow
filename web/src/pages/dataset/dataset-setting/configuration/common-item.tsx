@@ -317,6 +317,36 @@ export function EnableTocToggle() {
   );
 }
 
+export function ImageContextWindow() {
+  const { t } = useTranslate('knowledgeConfiguration');
+  const form = useFormContext();
+
+  return (
+    <FormField
+      control={form.control}
+      name="parser_config.image_context_window"
+      render={({ field }) => (
+        <FormItem>
+          <FormControl>
+            <SliderInputFormField
+              {...field}
+              label={t('imageContextWindow')}
+              tooltip={t('imageContextWindowTip')}
+              defaultValue={0}
+              min={0}
+              max={256}
+            />
+          </FormControl>
+          <div className="flex pt-1">
+            <div className="w-1/4"></div>
+            <FormMessage />
+          </div>
+        </FormItem>
+      )}
+    />
+  );
+}
+
 export function OverlappedPercent() {
   return (
     <SliderInputFormField
