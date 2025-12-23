@@ -377,9 +377,9 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       globalIndexModel: 'Indexing model',
       settings: 'Settings',
       autoMetadataTip: `Automatically generate metadata. Applies to new files during parsing. Existing files require re-parsing to update (chunks remain preserved). Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'.`,
-      imageContextWindow: 'Image context window',
+      imageContextWindow: 'Image & table context window',
       imageContextWindowTip:
-        'Captures N tokens of text above and below the image to provide richer background context for the image chunk.',
+        'Captures N tokens of text above and below the image & table to provide richer background context.',
       autoMetadata: 'Auto metadata',
       mineruOptions: 'MinerU Options',
       mineruParseMethod: 'Parse Method',
@@ -1795,6 +1795,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       variableSettings: 'Variable settings',
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
+      tocDataSource: 'Data source',
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
@@ -2030,6 +2031,7 @@ Key Instructions:
           metadata: `Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.
 
 Important structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.`,
+          toc: '',
         },
         user: {
           keywords: `Text Content
@@ -2039,6 +2041,7 @@ Important structured information may include: names, dates, locations, events, k
           summary: `Text to Summarize:
 [Insert text here]`,
           metadata: `Content: [INSERT CONTENT HERE]`,
+          toc: '[Insert text here]',
         },
       },
       cancel: 'Cancel',
@@ -2135,6 +2138,9 @@ Important structured information may include: names, dates, locations, events, k
         requestBodyParameters: 'Request body parameters',
         immediately: 'Accepted response',
         streaming: 'Final response',
+        overview: 'Overview',
+        logs: 'Logs',
+        agentStatus: 'Agent status:',
       },
       saveToMemory: 'Save to memory',
       memory: 'Memory',
