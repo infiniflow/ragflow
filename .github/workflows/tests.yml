@@ -209,7 +209,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api | tee es_sdk_test.log
+          source .venv/bin/activate && pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api 2>&1 | tee es_sdk_test.log
 
       - name: Run frontend api tests against Elasticsearch
         run: |
@@ -218,7 +218,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && pytest -s --tb=short sdk/python/test/test_frontend_api/get_email.py sdk/python/test/test_frontend_api/test_dataset.py | tee es_api_test.log
+          source .venv/bin/activate && pytest -s --tb=short sdk/python/test/test_frontend_api/get_email.py sdk/python/test/test_frontend_api/test_dataset.py 2>&1 | tee es_api_test.log
           
       - name: Run http api tests against Elasticsearch
         run: |
@@ -227,7 +227,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api | tee es_http_api_test.log
+          source .venv/bin/activate && pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee es_http_api_test.log
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
@@ -247,7 +247,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api | tee infinity_sdk_test.log
+          source .venv/bin/activate && DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_sdk_api 2>&1 | tee infinity_sdk_test.log
 
       - name: Run frontend api tests against Infinity
         run: |
@@ -256,7 +256,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && DOC_ENGINE=infinity pytest -s --tb=short sdk/python/test/test_frontend_api/get_email.py sdk/python/test/test_frontend_api/test_dataset.py | tee infinity_api_test.log
+          source .venv/bin/activate && DOC_ENGINE=infinity pytest -s --tb=short sdk/python/test/test_frontend_api/get_email.py sdk/python/test/test_frontend_api/test_dataset.py 2>&1 | tee infinity_api_test.log
 
       - name: Run http api tests against Infinity
         run: |
@@ -265,7 +265,7 @@ jobs:
             echo "Waiting for service to be available..."
             sleep 5
           done
-          source .venv/bin/activate && DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api | tee infinity_http_api_test.log
+          source .venv/bin/activate && DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} test/testcases/test_http_api 2>&1 | tee infinity_http_api_test.log
 
       - name: Stop ragflow:nightly
         if: always()  # always run this step even if previous steps failed
