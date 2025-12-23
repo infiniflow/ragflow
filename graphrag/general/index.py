@@ -198,7 +198,7 @@ async def run_graphrag_for_kb(
 
         for d in raw_chunks:
             content = d["content_with_weight"]
-            if num_tokens_from_string(current_chunk + content) < 1024:
+            if num_tokens_from_string(current_chunk + content) < 4096:
                 current_chunk += content
             else:
                 if current_chunk:

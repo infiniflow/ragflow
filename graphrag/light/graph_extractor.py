@@ -78,10 +78,6 @@ class GraphExtractor(Extractor):
         hint_prompt = self._entity_extract_prompt.format(**self._context_base, input_text=content)
 
         gen_conf = {}
-        final_result = ""
-        glean_result = ""
-        if_loop_result = ""
-        history = []
         logging.info(f"Start processing for {chunk_key}: {content[:25]}...")
         if self.callback:
             self.callback(msg=f"Start processing for {chunk_key}: {content[:25]}...")

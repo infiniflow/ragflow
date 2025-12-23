@@ -380,7 +380,7 @@ async def build_chunks(task, progress_callback):
                     cached = await gen_metadata(chat_mdl,
                                                 metadata_schema(task["parser_config"]["metadata"]),
                                                 d["content_with_weight"])
-                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata")
+                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata", {})
             if cached:
                 d["metadata_obj"] = cached
         tasks = []
