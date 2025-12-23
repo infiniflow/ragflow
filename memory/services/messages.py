@@ -146,6 +146,10 @@ class MessageService:
         ])
         return list(docs.values())
 
+    @staticmethod
+    def calculate_message_size(message: dict):
+        return sys.getsizeof(message["content"]) + sys.getsizeof(message["content_embed"][0]) * len(message["content_embed"])
+
     @classmethod
     def calculate_memory_size(cls, memory_ids: List[str], uid_list: List[str]):
         index_names = [index_name(uid) for uid in uid_list]
@@ -165,12 +169,47 @@ class MessageService:
         size_dict = {}
         for doc in docs.values():
             if size_dict.get(doc["memory_id"]):
-                size_dict[doc["memory_id"]] += sys.getsizeof(doc["content"])
-                size_dict[doc["memory_id"]] += sys.getsizeof(doc["content_embed"][0]) * len(doc["content_embed"])
+                size_dict[doc["memory_id"]] += cls.calculate_message_size(doc)
             else:
-                size_dict[doc["memory_id"]] = sys.getsizeof(doc["content"])
-                size_dict[doc["memory_id"]] += sys.getsizeof(doc["content_embed"][0]) * len(doc["content_embed"])
+                size_dict[doc["memory_id"]] = cls.calculate_message_size(doc)
         return size_dict
+
+    @classmethod
+    def pick_messages_to_delete_by_fifo(cls, memory_id: str, uid: str, size_to_delete: int):
+        select_fields = ["message_id", "content", "content_embed"]
+        _index_name = index_name(uid)
+        res = settings.msgStoreConn.get_forgotten_messages(select_fields, _index_name, memory_id)
+        message_list = settings.msgStoreConn.get_fields(res, select_fields)
+        current_size = 0
+        ids_to_remove = []
+        for message in message_list:
+            if current_size < size_to_delete:
+                current_size += cls.calculate_message_size(message)
+                ids_to_remove.append(message["message_id"])
+            else:
+                return ids_to_remove, current_size
+        if current_size >= size_to_delete:
+            return ids_to_remove, current_size
+
+        order_by = OrderByExpr()
+        order_by.asc("valid_at")
+        res = settings.msgStoreConn.search(
+            select_fields=["memory_id", "content", "content_embed"],
+            highlight_fields=[],
+            condition={},
+            match_expressions=[],
+            order_by=order_by,
+            offset=0, limit=2000,
+            index_names=[_index_name], memory_ids=[memory_id], agg_fields=[]
+        )
+        docs = settings.msgStoreConn.get_fields(res, select_fields)
+        for doc in docs.values():
+            if current_size < size_to_delete:
+                current_size += cls.calculate_message_size(doc)
+                ids_to_remove.append(doc["memory_id"])
+            else:
+                return ids_to_remove, current_size
+        return ids_to_remove, current_size
 
     @classmethod
     def get_by_message_id(cls, memory_id: str, message_id: int, uid: str):

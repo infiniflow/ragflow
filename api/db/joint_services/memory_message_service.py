@@ -92,10 +92,21 @@ async def save_to_memory(memory_id: str, message_dict: dict):
         if not created:
             return False, "Failed to create message index."
 
+    new_msg_size = sum([MessageService.calculate_message_size(m) for m in message_list])
+    current_memory_size = get_memory_size_cache(memory_id, tenant_id)
+    if new_msg_size + current_memory_size > memory.memory_size:
+        size_to_delete = current_memory_size + new_msg_size - memory.memory_size
+        if memory.forgetting_policy == "fifo":
+            message_ids_to_delete, delete_size = MessageService.pick_messages_to_delete_by_fifo(memory_id, tenant_id, size_to_delete)
+            MessageService.delete_message({"message_id": message_ids_to_delete}, tenant_id, memory_id)
+            decrease_memory_size_cache(memory_id, tenant_id, delete_size)
+        else:
+            return False, "Failed to insert message into memory. Memory size reached limit and cannot decide which to delete."
     fail_cases = MessageService.insert_message(message_list, tenant_id, memory_id)
     if fail_cases:
         return False, "Failed to insert message into memory. Details: " + "; ".join(fail_cases)
 
+    increase_memory_size_cache(memory_id, tenant_id, new_msg_size)
     return True, "Message saved successfully."
 
 
@@ -178,9 +189,33 @@ def init_message_id_sequence():
         logging.info(f"Init message_id sequence done, current max id is {max_id}.")
 
 
+def get_memory_size_cache(memory_id: str, uid: str):
+    redis_key = f"memory_{memory_id}"
+    if REDIS_CONN.exists(redis_key):
+        return REDIS_CONN.get(redis_key)
+    else:
+        memory_size_map = MessageService.calculate_memory_size(
+            [memory_id],
+            [uid]
+        )
+        memory_size = memory_size_map.get(memory_id, 0)
+        set_memory_size_cache(memory_id, memory_size)
+        return memory_size
+
+
 def set_memory_size_cache(memory_id: str, size: int):
     redis_key = f"memory_{memory_id}"
     return REDIS_CONN.set(redis_key, size)
+
+
+def increase_memory_size_cache(memory_id: str, uid: str, size: int):
+    current_value = get_memory_size_cache(memory_id, uid)
+    return set_memory_size_cache(memory_id, current_value + size)
+
+
+def decrease_memory_size_cache(memory_id: str, uid: str, size: int):
+    current_value = get_memory_size_cache(memory_id, uid)
+    return set_memory_size_cache(memory_id, max(current_value - size, 0))
 
 
 def init_memory_size_cache():
