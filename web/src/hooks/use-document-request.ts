@@ -124,6 +124,7 @@ export const useFetchDocumentList = () => {
         {
           suffix: filterValue.type,
           run_status: filterValue.run,
+          metadata: filterValue.metadata,
         },
       );
       if (ret.data.code === 0) {
@@ -196,6 +197,7 @@ export const useGetDocumentFilter = (): {
     filter: data?.filter || {
       run_status: {},
       suffix: {},
+      metadata: {},
     },
     onOpenChange: handleOnpenChange,
   };

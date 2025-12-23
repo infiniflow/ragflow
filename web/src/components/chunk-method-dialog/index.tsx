@@ -21,6 +21,7 @@ import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import {
   ChunkMethodItem,
   EnableTocToggle,
+  ImageContextWindow,
   ParseTypeItem,
 } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -119,6 +120,7 @@ export function ChunkMethodDialog({
         auto_questions: z.coerce.number().optional(),
         html4excel: z.boolean().optional(),
         toc_extraction: z.boolean().optional(),
+        image_context_window: z.coerce.number().optional(),
         mineru_parse_method: z.enum(['auto', 'txt', 'ocr']).optional(),
         mineru_formula_enable: z.boolean().optional(),
         mineru_table_enable: z.boolean().optional(),
@@ -364,7 +366,10 @@ export function ChunkMethodDialog({
                   className="space-y-3"
                 >
                   {selectedTag === DocumentParserType.Naive && (
-                    <EnableTocToggle />
+                    <>
+                      <EnableTocToggle />
+                      <ImageContextWindow />
+                    </>
                   )}
                   {showAutoKeywords(selectedTag) && (
                     <>

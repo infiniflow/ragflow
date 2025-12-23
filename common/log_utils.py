@@ -75,9 +75,12 @@ def init_root_logger(logfile_basename: str, log_format: str = "%(asctime)-15s %(
 def log_exception(e, *args):
     logging.exception(e)
     for a in args:
-        if hasattr(a, "text"):
-            logging.error(a.text)
-            raise Exception(a.text)
-        else:
-            logging.error(str(a))
+        try:
+            text = getattr(a, "text")
+        except Exception:
+            text = None
+        if text is not None:
+            logging.error(text)
+            raise Exception(text)
+        logging.error(str(a))
     raise e

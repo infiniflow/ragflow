@@ -91,7 +91,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             filename, binary=binary, from_page=from_page, to_page=to_page)
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
-        tbls=vision_figure_parser_docx_wrapper(sections=sections,tbls=tbls,callback=callback,**kwargs)
+        tbls = vision_figure_parser_docx_wrapper(sections=sections,tbls=tbls,callback=callback,**kwargs)
         # tbls = [((None, lns), None) for lns in tbls]
         sections=[(item[0],item[1] if item[1] is not None else "") for item in sections if not isinstance(item[1], Image.Image)]
         callback(0.8, "Finish parsing.")
@@ -147,9 +147,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        with BytesIO(binary) as binary:
-            binary = BytesIO(binary)
-            doc_parsed = parser.from_buffer(binary)
+        try:
+            from tika import parser as tika_parser
+        except Exception as e:
+            callback(0.8, f"tika not available: {e}. Unsupported .doc parsing.")
+            logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
+            return []
+
+        binary = BytesIO(binary)
+        doc_parsed = tika_parser.from_buffer(binary)
+        if doc_parsed.get('content', None) is not None:
             sections = doc_parsed['content'].split('\n')
             sections = [(line, "") for line in sections if line]
             remove_contents_table(sections, eng=is_english(
