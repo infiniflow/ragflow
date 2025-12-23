@@ -14,6 +14,7 @@ import {
 import {
   AutoMetadata,
   EnableTocToggle,
+  ImageContextWindow,
   OverlappedPercent,
 } from './common-item';
 
@@ -26,6 +27,7 @@ export function NaiveConfiguration() {
         <DelimiterFormField></DelimiterFormField>
         <ChildrenDelimiterForm />
         <EnableTocToggle />
+        <ImageContextWindow />
         <AutoMetadata />
         <OverlappedPercent />
       </ConfigurationFormContainer>

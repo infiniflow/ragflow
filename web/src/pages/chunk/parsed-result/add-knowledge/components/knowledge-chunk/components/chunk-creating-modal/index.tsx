@@ -175,18 +175,18 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
               <FormItem>
                 <FormLabel className="gap-1">{t('chunk.image')}</FormLabel>
 
-                <div className="grid grid-cols-2 gap-4 items-start">
+                <div className="space-y-4">
                   {data?.data?.img_id && (
                     <Image
                       id={data?.data?.img_id}
-                      className="w-full object-contain"
+                      className="mx-auto w-auto max-w-full object-contain max-h-[800px]"
                     />
                   )}
 
                   <div className="col-start-2 col-end-3 only:col-span-2">
                     <FormControl>
                       <FileUploader
-                        className="h-48"
+                        className="h-auto p-6"
                         value={field.value}
                         onValueChange={field.onChange}
                         accept={{
@@ -195,6 +195,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
                           'image/webp': [],
                         }}
                         maxFileCount={1}
+                        hideDropzoneOnMaxFileCount
                         title={t('chunk.imageUploaderTitle')}
                         description={<></>}
                       />

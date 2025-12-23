@@ -110,8 +110,8 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
 
   // Handle blur event, synchronize to main state
   const handleValueBlur = useCallback(() => {
-    addUpdateValue(metaData.field, [...tempValues]);
-    handleChange('values', [...tempValues]);
+    addUpdateValue(metaData.field, [...new Set([...tempValues])]);
+    handleChange('values', [...new Set([...tempValues])]);
   }, [handleChange, tempValues, metaData, addUpdateValue]);
 
   // Handle delete operation
@@ -139,12 +139,12 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
 
   // Handle adding new value
   const handleAddValue = useCallback(() => {
-    setTempValues((prev) => [...prev, '']);
+    setTempValues((prev) => [...new Set([...prev, ''])]);
 
     // Synchronize to main state
     setMetaData((prev) => ({
       ...prev,
-      values: [...prev.values, ''],
+      values: [...new Set([...prev.values, ''])],
     }));
   }, []);
 
@@ -154,7 +154,7 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
       open={visible}
       onCancel={handleHideModal}
       className="!w-[460px]"
-      okText={t('common.save')}
+      okText={t('common.confirm')}
       onOk={handleSave}
       maskClosable={false}
       footer={null}
@@ -204,7 +204,8 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
             </div>
           </div>
         )}
-        {metaData.restrictDefinedValues && (
+        {((metaData.restrictDefinedValues && isShowValueSwitch) ||
+          !isShowValueSwitch) && (
           <div className="flex flex-col gap-2">
             <div className="flex justify-between items-center">
               <div>{t('knowledgeDetails.metadata.values')}</div>

@@ -1,7 +1,7 @@
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useSetDocumentMeta } from '@/hooks/use-document-request';
-import {
+import kbService, {
   getMetaDataService,
   updateMetaData,
 } from '@/services/knowledge-service';
@@ -198,20 +198,24 @@ export const useManageMetaDataModal = (
   const { setDocumentMeta } = useSetDocumentMeta();
 
   useEffect(() => {
-    if (data) {
-      setTableData(data);
-    } else {
-      setTableData([]);
+    if (type === MetadataType.Manage) {
+      if (data) {
+        setTableData(data);
+      } else {
+        setTableData([]);
+      }
     }
-  }, [data]);
+  }, [data, type]);
 
   useEffect(() => {
-    if (metaData) {
-      setTableData(metaData);
-    } else {
-      setTableData([]);
+    if (type !== MetadataType.Manage) {
+      if (metaData) {
+        setTableData(metaData);
+      } else {
+        setTableData([]);
+      }
     }
-  }, [metaData]);
+  }, [metaData, type]);
 
   const handleDeleteSingleValue = useCallback(
     (field: string, value: string) => {
@@ -255,7 +259,7 @@ export const useManageMetaDataModal = (
         data: operations,
       });
       if (res.code === 0) {
-        message.success(t('message.success'));
+        message.success(t('message.operated'));
         callback();
       }
     },
@@ -282,11 +286,18 @@ export const useManageMetaDataModal = (
   const handleSaveSettings = useCallback(
     async (callback: () => void) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      callback();
+      const { data: res } = await kbService.kbUpdateMetaData({
+        kb_id: id,
+        metadata: data,
+      });
+      if (res.code === 0) {
+        message.success(t('message.operated'));
+        callback?.();
+      }
 
       return data;
     },
-    [tableData],
+    [tableData, id],
   );
 
   const handleSave = useCallback(

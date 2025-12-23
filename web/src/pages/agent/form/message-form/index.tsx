@@ -1,4 +1,4 @@
-import { FormContainer } from '@/components/form-container';
+import { MemoriesFormField } from '@/components/memories-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
 import {
   Form,
@@ -41,6 +41,7 @@ function MessageForm({ node }: INextOperatorForm) {
     output_format: z.string().optional(),
     auto_play: z.boolean().optional(),
     status: z.number().optional(),
+    memory_ids: z.array(z.string()).optional(),
   });
 
   const form = useForm({
@@ -67,99 +68,100 @@ function MessageForm({ node }: INextOperatorForm) {
         {showWebhookResponseStatus && (
           <WebHookResponseStatusFormField name="status"></WebHookResponseStatusFormField>
         )}
-        <FormContainer>
-          <FormItem>
-            <FormLabel tooltip={t('flow.msgTip')}>{t('flow.msg')}</FormLabel>
-            <div className="space-y-4">
-              {fields.map((field, index) => (
-                <div key={field.id} className="flex items-start gap-2">
-                  <FormField
-                    control={form.control}
-                    name={`content.${index}.value`}
-                    render={({ field }) => (
-                      <FormItem className="flex-1">
-                        <FormControl>
-                          <PromptEditor
-                            {...field}
-                            placeholder={t('flow.messagePlaceholder')}
-                          ></PromptEditor>
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  {fields.length > 1 && (
-                    <Button
-                      type="button"
-                      variant={'ghost'}
-                      onClick={() => remove(index)}
-                    >
-                      <X />
-                    </Button>
+        <FormItem>
+          <FormLabel tooltip={t('flow.msgTip')}>{t('flow.msg')}</FormLabel>
+          <div className="space-y-4">
+            {fields.map((field, index) => (
+              <div key={field.id} className="flex items-start gap-2">
+                <FormField
+                  control={form.control}
+                  name={`content.${index}.value`}
+                  render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormControl>
+                        <PromptEditor
+                          {...field}
+                          placeholder={t('flow.messagePlaceholder')}
+                        ></PromptEditor>
+                      </FormControl>
+                    </FormItem>
                   )}
-                </div>
-              ))}
+                />
+                {fields.length > 1 && (
+                  <Button
+                    type="button"
+                    variant={'ghost'}
+                    onClick={() => remove(index)}
+                  >
+                    <X />
+                  </Button>
+                )}
+              </div>
+            ))}
 
-              <BlockButton
-                type="button"
-                onClick={() => append({ value: '' })} // "" will cause the inability to add, refer to: https://github.com/orgs/react-hook-form/discussions/8485#discussioncomment-2961861
-              >
-                {t('flow.addMessage')}
-              </BlockButton>
-            </div>
-            <FormMessage />
-          </FormItem>
-        </FormContainer>
-        <FormContainer>
-          <FormItem>
-            <FormLabel tooltip={t('flow.downloadFileTypeTip')}>
-              {t('flow.downloadFileType')}
-            </FormLabel>
-            <FormField
-              control={form.control}
-              name={`output_format`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormControl>
-                    <RAGFlowSelect
-                      options={Object.keys(ExportFileType).map(
-                        (key: string) => {
-                          return {
-                            value:
-                              ExportFileType[
-                                key as keyof typeof ExportFileType
-                              ],
-                            label: key,
-                          };
-                        },
-                      )}
-                      {...field}
-                      onValueChange={field.onChange}
-                      placeholder={t('common.selectPlaceholder')}
-                      allowClear
-                    ></RAGFlowSelect>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          </FormItem>
-          <FormItem>
-            <FormLabel>{t('flow.autoPlay')}</FormLabel>
-            <FormField
-              control={form.control}
-              name={`auto_play`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          </FormItem>
-        </FormContainer>
+            <BlockButton
+              type="button"
+              onClick={() => append({ value: '' })} // "" will cause the inability to add, refer to: https://github.com/orgs/react-hook-form/discussions/8485#discussioncomment-2961861
+            >
+              {t('flow.addMessage')}
+            </BlockButton>
+          </div>
+          <FormMessage />
+        </FormItem>
+        {!showWebhookResponseStatus && (
+          <>
+            <FormItem>
+              <FormLabel tooltip={t('flow.downloadFileTypeTip')}>
+                {t('flow.downloadFileType')}
+              </FormLabel>
+              <FormField
+                control={form.control}
+                name={`output_format`}
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormControl>
+                      <RAGFlowSelect
+                        options={Object.keys(ExportFileType).map(
+                          (key: string) => {
+                            return {
+                              value:
+                                ExportFileType[
+                                  key as keyof typeof ExportFileType
+                                ],
+                              label: key,
+                            };
+                          },
+                        )}
+                        {...field}
+                        onValueChange={field.onChange}
+                        placeholder={t('common.selectPlaceholder')}
+                        allowClear
+                      ></RAGFlowSelect>
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </FormItem>
+            <FormItem>
+              <FormLabel>{t('flow.autoPlay')}</FormLabel>
+              <FormField
+                control={form.control}
+                name={`auto_play`}
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </FormItem>
+          </>
+        )}
+        <MemoriesFormField label={t('flow.saveToMemory')}></MemoriesFormField>
       </FormWrapper>
     </Form>
   );
