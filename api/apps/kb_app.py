@@ -150,6 +150,21 @@ async def update():
         return server_error_response(e)
 
 
+@manager.route('/update_metadata_setting', methods=['post'])  # noqa: F821
+@login_required
+@validate_request("kb_id", "metadata")
+async def update_metadata_setting():
+    req = await get_request_json()
+    e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
+    if not e:
+        return get_data_error_result(
+            message="Database error (Knowledgebase rename)!")
+    kb = kb.to_dict()
+    kb["parser_config"]["metadata"] = req["metadata"]
+    KnowledgebaseService.update_by_id(kb["id"], kb)
+    return get_json_result(data=kb)
+
+
 @manager.route('/detail', methods=['GET'])  # noqa: F821
 @login_required
 def detail():

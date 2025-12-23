@@ -374,7 +374,7 @@ async def build_chunks(task, progress_callback):
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
 
         async def gen_metadata_task(chat_mdl, d):
-            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata")
+            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata", {})
             if not cached:
                 async with chat_limiter:
                     cached = await gen_metadata(chat_mdl,
@@ -852,7 +852,7 @@ async def do_handle_task(task):
     task_tenant_id = task["tenant_id"]
     task_embedding_id = task["embd_id"]
     task_language = task["language"]
-    task_llm_id = task["llm_id"]
+    task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
     task_dataset_id = task["kb_id"]
     task_doc_id = task["doc_id"]
     task_document_name = task["name"]
