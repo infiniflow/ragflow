@@ -376,6 +376,7 @@ export const initialInvokeValues = {
   proxy: '',
   clean_html: false,
   variables: [],
+  request_body: '',
   outputs: {
     result: {
       value: '',

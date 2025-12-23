@@ -57,9 +57,10 @@ export const FormSchema = z.object({
   method: z.string(),
   timeout: z.number(),
   headers: z.string(),
-  proxy: z.string().url(),
+  proxy: z.string().url().or(z.literal('')),
   clean_html: z.boolean(),
   variables: z.array(VariableFormSchema),
+  request_body: z.string().optional(),
 });
 
 export type FormSchemaType = z.infer<typeof FormSchema>;

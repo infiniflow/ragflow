@@ -160,6 +160,25 @@ function InvokeForm({ node }: INextOperatorForm) {
           />
           <FormField
             control={form.control}
+            name="request_body"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('flow.requestBody')}</FormLabel>
+                <FormControl>
+                  <Editor
+                    height={200}
+                    defaultLanguage="json"
+                    theme={isDarkTheme ? 'vs-dark' : undefined}
+                    {...field}
+                    placeholder='{"key": "value"}'
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
             name="proxy"
             render={({ field }) => (
               <FormItem>
