@@ -763,6 +763,13 @@
             "rank": "940",
             "llm": [
                 {
+                    "llm_name": "glm-4.7",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "glm-4.5",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
