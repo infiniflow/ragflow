@@ -303,6 +303,7 @@ class InfinityConnection(InfinityConnectionBase):
         mem_res, _ = builder.option({"total_hits_count": True}).to_df()
         res = self.concat_dataframes(mem_res, output_fields)
         res.head(limit)
+        self.connPool.release_conn(inf_conn)
         return res
 
     def get(self, message_id: str, index_name: str, memory_ids: list[str]) -> dict | None:
