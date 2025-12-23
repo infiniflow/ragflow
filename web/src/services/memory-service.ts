@@ -1,6 +1,6 @@
 import api from '@/utils/api';
+import request from '@/utils/next-request';
 import { registerNextServer } from '@/utils/register-server';
-import request from '@/utils/request';
 
 const {
   createMemory,

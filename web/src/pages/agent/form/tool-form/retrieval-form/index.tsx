@@ -2,6 +2,7 @@ import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import { MemoriesFormField } from '@/components/memories-form-field';
 import { MetadataFilter } from '@/components/metadata-filter';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
@@ -40,10 +41,9 @@ const RetrievalForm = () => {
   return (
     <Form {...form}>
       <FormWrapper>
-        <FormContainer>
-          <DescriptionField></DescriptionField>
-          <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
-        </FormContainer>
+        <DescriptionField></DescriptionField>
+        <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
+        <MemoriesFormField label={t('flow.memory')}></MemoriesFormField>
         <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField

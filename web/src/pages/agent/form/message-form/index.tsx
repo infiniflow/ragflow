@@ -1,3 +1,4 @@
+import { MemoriesFormField } from '@/components/memories-form-field';
 import { BlockButton, Button } from '@/components/ui/button';
 import {
   Form,
@@ -40,6 +41,7 @@ function MessageForm({ node }: INextOperatorForm) {
     output_format: z.string().optional(),
     auto_play: z.boolean().optional(),
     status: z.number().optional(),
+    memory_ids: z.array(z.string()).optional(),
   });
 
   const form = useForm({
@@ -159,6 +161,7 @@ function MessageForm({ node }: INextOperatorForm) {
             </FormItem>
           </>
         )}
+        <MemoriesFormField label={t('flow.saveToMemory')}></MemoriesFormField>
       </FormWrapper>
     </Form>
   );

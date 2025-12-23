@@ -2,6 +2,7 @@ import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import { MemoriesFormField } from '@/components/memories-form-field';
 import {
   MetadataFilter,
   MetadataFilterSchema,
@@ -46,6 +47,7 @@ export const RetrievalPartialSchema = {
   use_kg: z.boolean(),
   toc_enhance: z.boolean(),
   ...MetadataFilterSchema,
+  memory_ids: z.array(z.string()).optional(),
 };
 
 export const FormSchema = z.object({
@@ -109,12 +111,11 @@ function RetrievalForm({ node }: INextOperatorForm) {
   return (
     <Form {...form}>
       <FormWrapper>
-        <FormContainer>
-          <RAGFlowFormItem name="query" label={t('flow.query')}>
-            <PromptEditor></PromptEditor>
-          </RAGFlowFormItem>
-          <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
-        </FormContainer>
+        <RAGFlowFormItem name="query" label={t('flow.query')}>
+          <PromptEditor></PromptEditor>
+        </RAGFlowFormItem>
+        <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
+        <MemoriesFormField label={t('flow.memory')}></MemoriesFormField>
         <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField
