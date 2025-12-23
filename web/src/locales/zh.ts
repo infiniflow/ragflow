@@ -1816,6 +1816,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       keywords: '关键词',
       questions: '问题',
       metadata: '元数据',
+      toc: '目录',
       fieldName: '结果目的地',
       prompts: {
         system: {
