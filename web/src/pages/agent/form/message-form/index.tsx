@@ -108,51 +108,59 @@ function MessageForm({ node }: INextOperatorForm) {
           </div>
           <FormMessage />
         </FormItem>
-        <FormItem>
-          <FormLabel tooltip={t('flow.downloadFileTypeTip')}>
-            {t('flow.downloadFileType')}
-          </FormLabel>
-          <FormField
-            control={form.control}
-            name={`output_format`}
-            render={({ field }) => (
-              <FormItem className="flex-1">
-                <FormControl>
-                  <RAGFlowSelect
-                    options={Object.keys(ExportFileType).map((key: string) => {
-                      return {
-                        value:
-                          ExportFileType[key as keyof typeof ExportFileType],
-                        label: key,
-                      };
-                    })}
-                    {...field}
-                    onValueChange={field.onChange}
-                    placeholder={t('common.selectPlaceholder')}
-                    allowClear
-                  ></RAGFlowSelect>
-                </FormControl>
-              </FormItem>
-            )}
-          />
-        </FormItem>
-        <FormItem>
-          <FormLabel>{t('flow.autoPlay')}</FormLabel>
-          <FormField
-            control={form.control}
-            name={`auto_play`}
-            render={({ field }) => (
-              <FormItem className="flex-1">
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </FormItem>
-            )}
-          />
-        </FormItem>
+        {!showWebhookResponseStatus && (
+          <>
+            <FormItem>
+              <FormLabel tooltip={t('flow.downloadFileTypeTip')}>
+                {t('flow.downloadFileType')}
+              </FormLabel>
+              <FormField
+                control={form.control}
+                name={`output_format`}
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormControl>
+                      <RAGFlowSelect
+                        options={Object.keys(ExportFileType).map(
+                          (key: string) => {
+                            return {
+                              value:
+                                ExportFileType[
+                                  key as keyof typeof ExportFileType
+                                ],
+                              label: key,
+                            };
+                          },
+                        )}
+                        {...field}
+                        onValueChange={field.onChange}
+                        placeholder={t('common.selectPlaceholder')}
+                        allowClear
+                      ></RAGFlowSelect>
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </FormItem>
+            <FormItem>
+              <FormLabel>{t('flow.autoPlay')}</FormLabel>
+              <FormField
+                control={form.control}
+                name={`auto_play`}
+                render={({ field }) => (
+                  <FormItem className="flex-1">
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </FormItem>
+          </>
+        )}
         <MemoriesFormField label="Save to memory"></MemoriesFormField>
       </FormWrapper>
     </Form>
