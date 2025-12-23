@@ -540,6 +540,8 @@ class Canvas(Graph):
                         cite = re.search(r"\[ID:[ 0-9]+\]",  cpn_obj.output("content"))
 
                     message_end = {}
+                    if cpn_obj.get_param("status"):
+                        message_end["status"] = cpn_obj.get_param("status")
                     if isinstance(cpn_obj.output("attachment"), dict):
                         message_end["attachment"] = cpn_obj.output("attachment")
                     if cite:
