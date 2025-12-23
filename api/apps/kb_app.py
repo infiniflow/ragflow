@@ -97,6 +97,19 @@ async def update():
                 code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
+
+        # Rename folder in FileService
+        if e and req["name"].lower() != kb.name.lower():
+            FileService.filter_update(
+                [
+                    File.tenant_id == kb.tenant_id,
+                    File.source_type == FileSource.KNOWLEDGEBASE,
+                    File.type == "folder",
+                    File.name == kb.name,
+                ],
+                {"name": req["name"]},
+            )
+
         if not e:
             return get_data_error_result(
                 message="Can't find this dataset!")
@@ -260,7 +273,13 @@ async def rm():
                     FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
                 File2DocumentService.delete_by_document_id(doc.id)
             FileService.filter_delete(
-                [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
+                [
+                    File.tenant_id == kbs[0].tenant_id,
+                    File.source_type == FileSource.KNOWLEDGEBASE,
+                    File.type == "folder",
+                    File.name == kbs[0].name,
+                ]
+            )
             if not KnowledgebaseService.delete_by_id(req["kb_id"]):
                 return get_data_error_result(
                     message="Database error (Knowledgebase removal)!")
