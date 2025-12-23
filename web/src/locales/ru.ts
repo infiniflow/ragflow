@@ -277,6 +277,9 @@ export default {
       reRankModelWaring: 'Re-rank модель очень требовательна ко времени.',
     },
     knowledgeConfiguration: {
+      imageTableContextWindow: 'Окно контекста изображения и таблицы',
+      imageTableContextWindowTip:
+        'Захватывает N токенов текста выше и ниже изображения и таблицы, чтобы дать более богатый контекст.',
       generationScopeTip:
         'Определяет, генерируется ли RAPTOR для всего набора данных или для одного файла.',
       scopeDataset: 'Датасет',

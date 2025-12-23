@@ -208,6 +208,9 @@ export default {
       plainText: 'Einfach',
     },
     knowledgeConfiguration: {
+      imageTableContextWindow: 'Kontextfenster für Bild und Tabelle',
+      imageTableContextWindowTip:
+        'Erfasst N Token Text ober- und unterhalb von Bild und Tabelle, um reicheren Kontext bereitzustellen.',
       titleDescription:
         'Aktualisieren Sie hier Ihre Wissensdatenbank-Konfiguration, insbesondere die Chunk-Methode.',
       name: 'Name der Wissensdatenbank',

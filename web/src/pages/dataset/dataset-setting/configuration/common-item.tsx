@@ -324,14 +324,14 @@ export function ImageContextWindow() {
   return (
     <FormField
       control={form.control}
-      name="parser_config.image_context_window"
+      name="parser_config.image_table_context_window"
       render={({ field }) => (
         <FormItem>
           <FormControl>
             <SliderInputFormField
               {...field}
-              label={t('imageContextWindow')}
-              tooltip={t('imageContextWindowTip')}
+              label={t('imageTableContextWindow')}
+              tooltip={t('imageTableContextWindowTip')}
               defaultValue={0}
               min={0}
               max={256}

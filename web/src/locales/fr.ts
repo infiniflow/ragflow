@@ -196,6 +196,9 @@ export default {
     knowledgeConfiguration: {
       titleDescription:
         'Modifiez ici la configuration de votre base de connaissances, notamment la méthode de découpage.',
+      imageTableContextWindow: 'Fenêtre de contexte image & tableau',
+      imageTableContextWindowTip:
+        "Capture N jetons de texte au-dessus et au-dessous de l'image et du tableau pour fournir un contexte plus riche.",
       name: 'Nom de la base de connaissances',
       photo: 'Photo de la base de connaissances',
       photoTip: 'Vous pouvez téléverser un fichier de 4 Mo',
