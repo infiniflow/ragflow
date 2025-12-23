@@ -38,7 +38,8 @@ def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
 
 
 def vision_figure_parser_docx_wrapper(sections, tbls, callback=None,**kwargs):
-    tbls = tbls or []
+    if not sections:
+        return tbls
     try:
         vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
         callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
@@ -56,7 +57,8 @@ def vision_figure_parser_docx_wrapper(sections, tbls, callback=None,**kwargs):
 
 def vision_figure_parser_figure_xlsx_wrapper(images,callback=None, **kwargs):
     tbls = []
-    images = images or []
+    if not images:
+        return []
     try:
         vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
         callback(0.2, "Visual model detected. Attempting to enhance Excel image extraction...")
