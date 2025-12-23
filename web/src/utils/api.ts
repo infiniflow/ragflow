@@ -79,6 +79,7 @@ export default {
   pipelineRerun: `${api_host}/canvas/rerun`,
   getMetaData: `${api_host}/document/metadata/summary`,
   updateMetaData: `${api_host}/document/metadata/update`,
+  kbUpdateMetaData: `${api_host}/kb/update_metadata_setting`,
 
   // tags
   listTag: (knowledgeId: string) => `${api_host}/kb/${knowledgeId}/tags`,

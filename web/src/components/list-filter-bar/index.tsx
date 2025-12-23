@@ -58,9 +58,11 @@ export default function ListFilterBar({
   filters,
   className,
   icon,
+  filterGroup,
 }: PropsWithChildren<IProps & Omit<CheckboxFormMultipleProps, 'setOpen'>> & {
   className?: string;
   icon?: ReactNode;
+  filterGroup?: Record<string, string[]>;
 }) {
   const filterCount = useMemo(() => {
     return typeof value === 'object' && value !== null
@@ -99,6 +101,7 @@ export default function ListFilterBar({
             value={value}
             onChange={onChange}
             filters={filters}
+            filterGroup={filterGroup}
             onOpenChange={onOpenChange}
           >
             <FilterButton count={filterCount}></FilterButton>
