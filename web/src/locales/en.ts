@@ -176,6 +176,7 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
     },
     knowledgeDetails: {
       metadata: {
+        fieldSetting: 'Field settings',
         changesAffectNewParses: 'Changes affect new parses only.',
         editMetadataForDataset: 'View and edit metadata for ',
         restrictDefinedValues: 'Restrict to defined values',
@@ -363,7 +364,11 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      globalIndexModelTip:
+        'Used to generate Knowledge graphs, RAPTOR, auto-metadata, auto-keyword and auto-question. Model performance will affects generation quality.',
+      globalIndexModel: 'Indexing model',
       settings: 'Settings',
+      autoMetadataTip: `Automatically generate metadata. Applies to new files during parsing. Existing files require re-parsing to update (chunks remain preserved). Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'.`,
       imageContextWindow: 'Image context window',
       imageContextWindowTip:
         'Captures N tokens of text above and below the image to provide richer background context for the image chunk.',
@@ -2120,9 +2125,11 @@ Important structured information may include: names, dates, locations, events, k
         queryParameters: 'Query parameters',
         headerParameters: 'Header parameters',
         requestBodyParameters: 'Request body parameters',
-        streaming: 'Accepted response',
-        immediately: 'Final response',
+        immediately: 'Accepted response',
+        streaming: 'Final response',
       },
+      saveToMemory: 'Save to memory',
+      memory: 'Memory',
     },
     llmTools: {
       bad_calculator: {

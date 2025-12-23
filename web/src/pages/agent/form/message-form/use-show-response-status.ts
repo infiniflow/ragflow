@@ -15,16 +15,16 @@ export function useShowWebhookResponseStatus(form: UseFormReturn<any>) {
   const showWebhookResponseStatus = useMemo(() => {
     const formData: BeginFormSchemaType = getNode(BeginId)?.data.form;
     return (
-      formData.mode === AgentDialogueMode.Webhook &&
+      formData?.mode === AgentDialogueMode.Webhook &&
       formData.execution_mode === WebhookExecutionMode.Streaming
     );
-  }, []);
+  }, [getNode]);
 
   useEffect(() => {
     if (showWebhookResponseStatus && isEmpty(form.getValues('status'))) {
       form.setValue('status', 200, { shouldValidate: true, shouldDirty: true });
     }
-  }, []);
+  }, [form, showWebhookResponseStatus]);
 
   return showWebhookResponseStatus;
 }

@@ -7,7 +7,6 @@ import {
 import {
   IAttachment,
   IEventList,
-  IInputEvent,
   IMessageEndData,
   IMessageEndEvent,
   IMessageEvent,
@@ -93,7 +92,7 @@ export function findMessageFromList(eventList: IEventList) {
 export function findInputFromList(eventList: IEventList) {
   const inputEvent = eventList.find(
     (x) => x.event === MessageEventType.UserInputs,
-  ) as IInputEvent;
+  );
 
   if (!inputEvent) {
     return {};
