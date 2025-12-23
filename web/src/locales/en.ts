@@ -176,6 +176,11 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
     },
     knowledgeDetails: {
       metadata: {
+        valueExists:
+          'Value already exists. Confirm to merge duplicates and combine all associated files.',
+        fieldNameExists:
+          'Field name already exists. Confirm to merge duplicates and combine all associated files.',
+        fieldExists: 'Field already exists.',
         fieldSetting: 'Field settings',
         changesAffectNewParses: 'Changes affect new parses only.',
         editMetadataForDataset: 'View and edit metadata for ',
@@ -190,6 +195,7 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         description: 'Description',
         fieldName: 'Field name',
         editMetadata: 'Edit metadata',
+        deleteWarn: 'This {{field}} will be removed from all associated files',
       },
       metadataField: 'Metadata field',
       systemAttribute: 'System attribute',

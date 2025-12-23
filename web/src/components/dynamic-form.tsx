@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import { Loader } from 'lucide-react';
 import { MultiSelect, MultiSelectOptionType } from './ui/multi-select';
+import { Switch } from './ui/switch';
 
 // Field type enumeration
 export enum FormFieldType {
@@ -46,6 +47,7 @@ export enum FormFieldType {
   Select = 'select',
   MultiSelect = 'multi-select',
   Checkbox = 'checkbox',
+  Switch = 'switch',
   Tag = 'tag',
   Custom = 'custom',
 }
@@ -154,6 +156,7 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
           }
           break;
         case FormFieldType.Checkbox:
+        case FormFieldType.Switch:
           fieldSchema = z.boolean();
           break;
         case FormFieldType.Tag:
@@ -193,6 +196,8 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
     if (
       field.type !== FormFieldType.Number &&
       field.type !== FormFieldType.Checkbox &&
+      field.type !== FormFieldType.Switch &&
+      field.type !== FormFieldType.Custom &&
       field.type !== FormFieldType.Tag &&
       field.required
     ) {
@@ -289,7 +294,10 @@ const generateDefaultValues = <T extends FieldValues>(
       const lastKey = keys[keys.length - 1];
       if (field.defaultValue !== undefined) {
         current[lastKey] = field.defaultValue;
-      } else if (field.type === FormFieldType.Checkbox) {
+      } else if (
+        field.type === FormFieldType.Checkbox ||
+        field.type === FormFieldType.Switch
+      ) {
         current[lastKey] = false;
       } else if (field.type === FormFieldType.Tag) {
         current[lastKey] = [];
@@ -299,7 +307,10 @@ const generateDefaultValues = <T extends FieldValues>(
     } else {
       if (field.defaultValue !== undefined) {
         defaultValues[field.name] = field.defaultValue;
-      } else if (field.type === FormFieldType.Checkbox) {
+      } else if (
+        field.type === FormFieldType.Checkbox ||
+        field.type === FormFieldType.Switch
+      ) {
         defaultValues[field.name] = false;
       } else if (
         field.type === FormFieldType.Tag ||
@@ -501,6 +512,32 @@ export const RenderField = ({
             </FormItem>
           )}
         />
+      );
+    case FormFieldType.Switch:
+      return (
+        <RAGFlowFormItem
+          {...field}
+          labelClassName={labelClassName || field.labelClassName}
+        >
+          {(fieldProps) => {
+            const finalFieldProps = field.onChange
+              ? {
+                  ...fieldProps,
+                  onChange: (checked: boolean) => {
+                    fieldProps.onChange(checked);
+                    field.onChange?.(checked);
+                  },
+                }
+              : fieldProps;
+            return (
+              <Switch
+                checked={finalFieldProps.value as boolean}
+                onCheckedChange={(checked) => finalFieldProps.onChange(checked)}
+                disabled={field.disabled}
+              />
+            );
+          }}
+        </RAGFlowFormItem>
       );
 
     case FormFieldType.Tag:
