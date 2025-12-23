@@ -122,9 +122,9 @@ export const useFetchDocumentList = () => {
           page: pagination.current,
         },
         {
-          suffix: filterValue.type,
-          run_status: filterValue.run,
-          metadata: filterValue.metadata,
+          suffix: filterValue.type as string[],
+          run_status: filterValue.run as string[],
+          metadata: filterValue.metadata as Record<string, string[]>,
         },
       );
       if (ret.data.code === 0) {

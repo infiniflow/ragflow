@@ -198,20 +198,24 @@ export const useManageMetaDataModal = (
   const { setDocumentMeta } = useSetDocumentMeta();
 
   useEffect(() => {
-    if (data) {
-      setTableData(data);
-    } else {
-      setTableData([]);
+    if (type === MetadataType.Manage) {
+      if (data) {
+        setTableData(data);
+      } else {
+        setTableData([]);
+      }
     }
-  }, [data]);
+  }, [data, type]);
 
   useEffect(() => {
-    if (metaData) {
-      setTableData(metaData);
-    } else {
-      setTableData([]);
+    if (type !== MetadataType.Manage) {
+      if (metaData) {
+        setTableData(metaData);
+      } else {
+        setTableData([]);
+      }
     }
-  }, [metaData]);
+  }, [metaData, type]);
 
   const handleDeleteSingleValue = useCallback(
     (field: string, value: string) => {
