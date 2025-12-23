@@ -27,7 +27,7 @@ import {
 import { Plus, Settings, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useManageMetaDataModal } from './hook';
+import { MetadataType, useManageMetaDataModal } from './hook';
 import { IManageModalProps, IMetaDataTableData } from './interface';
 import { ManageValuesModal } from './manage-values-modal';
 export const ManageMetadataModal = (props: IManageModalProps) => {
@@ -54,7 +54,6 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     values: [],
   });
 
-  const [currentValueIndex, setCurrentValueIndex] = useState<number>(0);
   const [deleteDialogContent, setDeleteDialogContent] = useState({
     visible: false,
     title: '',
@@ -95,12 +94,12 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       description: '',
       values: [],
     });
-    setCurrentValueIndex(tableData.length || 0);
+    // setCurrentValueIndex(tableData.length || 0);
     showManageValuesModal();
   };
   const handleEditValueRow = useCallback(
-    (data: IMetaDataTableData, index: number) => {
-      setCurrentValueIndex(index);
+    (data: IMetaDataTableData) => {
+      // setCurrentValueIndex(index);
       setValueData(data);
       showManageValuesModal();
     },
@@ -186,7 +185,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
               variant={'ghost'}
               className="bg-transparent px-1 py-0"
               onClick={() => {
-                handleEditValueRow(row.original, row.index);
+                handleEditValueRow(row.original);
               }}
             >
               <Settings />
@@ -244,16 +243,32 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
 
   const handleSaveValues = (data: IMetaDataTableData) => {
     setTableData((prev) => {
-      if (currentValueIndex >= prev.length) {
-        return [...prev, data];
+      //If the keys are the same, they need to be merged.
+      const fieldMap = new Map<string, any>();
+
+      prev.forEach((item) => {
+        if (fieldMap.has(item.field)) {
+          const existingItem = fieldMap.get(item.field);
+          const mergedValues = [
+            ...new Set([...existingItem.values, ...item.values]),
+          ];
+          fieldMap.set(item.field, { ...existingItem, values: mergedValues });
+        } else {
+          fieldMap.set(item.field, item);
+        }
+      });
+
+      if (fieldMap.has(data.field)) {
+        const existingItem = fieldMap.get(data.field);
+        const mergedValues = [
+          ...new Set([...existingItem.values, ...data.values]),
+        ];
+        fieldMap.set(data.field, { ...existingItem, values: mergedValues });
       } else {
-        return prev.map((item, index) => {
-          if (index === currentValueIndex) {
-            return data;
-          }
-          return item;
-        });
+        fieldMap.set(data.field, data);
       }
+
+      return Array.from(fieldMap.values());
     });
   };
 
@@ -335,7 +350,13 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       </Modal>
       {manageValuesVisible && (
         <ManageValuesModal
-          title={<div>{t('knowledgeDetails.metadata.editMetadata')}</div>}
+          title={
+            <div>
+              {metadataType === MetadataType.Setting
+                ? t('knowledgeDetails.metadata.fieldSetting')
+                : t('knowledgeDetails.metadata.editMetadata')}
+            </div>
+          }
           visible={manageValuesVisible}
           hideModal={hideManageValuesModal}
           data={valueData}

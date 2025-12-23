@@ -84,9 +84,10 @@ class Agent(LLM, ToolBase):
     def __init__(self, canvas, id, param: LLMParam):
         LLM.__init__(self, canvas, id, param)
         self.tools = {}
-        for cpn in self._param.tools:
+        for idx, cpn in enumerate(self._param.tools):
             cpn = self._load_tool_obj(cpn)
-            self.tools[cpn.get_meta()["function"]["name"]] = cpn
+            name = cpn.get_meta()["function"]["name"]
+            self.tools[f"{name}_{idx}"] = cpn
 
         self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id,
                                   max_retries=self._param.max_retries,
@@ -202,7 +203,7 @@ class Agent(LLM, ToolBase):
         _, msg = message_fit_in([{"role": "system", "content": prompt}, *msg], int(self.chat_mdl.max_length * 0.97))
         use_tools = []
         ans = ""
-        async for delta_ans, _tk in self._react_with_tools_streamly_async(prompt, msg, use_tools, user_defined_prompt,schema_prompt=schema_prompt):
+        async for delta_ans, _tk in self._react_with_tools_streamly_async_simple(prompt, msg, use_tools, user_defined_prompt,schema_prompt=schema_prompt):
             if self.check_if_canceled("Agent processing"):
                 return
             ans += delta_ans
