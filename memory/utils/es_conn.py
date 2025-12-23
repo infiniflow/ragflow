@@ -234,6 +234,38 @@ class ESConnection(ESConnectionBase):
         self.logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
         raise Exception("ESConnection.search timeout.")
 
+    def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int=2000):
+        bool_query = Q("bool", must_not=[])
+        bool_query.must_not.append(Q("term", forget_at=None))
+        bool_query.filter.append(Q("term", memory_id=memory_id))
+        # from old to new
+        order_by = OrderByExpr()
+        order_by.asc("forget_at")
+        # build search
+        s = Search()
+        s = s.query(bool_query)
+        s = s.sort(order_by)
+        s = s[:limit]
+        q = s.to_dict()
+        # search
+        for i in range(ATTEMPT_TIME):
+            try:
+                res = self.es.search(index=index_name, body=q, timeout="600s", track_total_hits=True, _source=True)
+                if str(res.get("timed_out", "")).lower() == "true":
+                    raise Exception("Es Timeout.")
+                self.logger.debug(f"ESConnection.search {str(index_name)} res: " + str(res))
+                return res
+            except ConnectionTimeout:
+                self.logger.exception("ES request timeout")
+                self._connect()
+                continue
+            except Exception as e:
+                self.logger.exception(f"ESConnection.search {str(index_name)} query: " + str(q) + str(e))
+                raise e
+
+        self.logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
+        raise Exception("ESConnection.search timeout.")
+
     def get(self, doc_id: str, index_name: str, memory_ids: list[str]) -> dict | None:
         for i in range(ATTEMPT_TIME):
             try:
