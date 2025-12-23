@@ -406,7 +406,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     dialog.vector_similarity_weight,
                     doc_ids=attachments,
                     top=dialog.top_k,
-                    aggs=False,
+                    aggs=True,
                     rerank_mdl=rerank_mdl,
                     rank_feature=label_question(" ".join(questions), kbs),
                 )
