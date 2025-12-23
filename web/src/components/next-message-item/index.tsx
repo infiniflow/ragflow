@@ -134,6 +134,51 @@ function MessageItem({
     },
     [currentEventListWithoutMessageById, loading],
   );
+
+  const renderContent = useCallback(() => {
+    /* Show message content if there's any text besides the download */
+
+    if (pdfDownloadInfo) {
+      return null;
+    }
+
+    return (
+      <div
+        className={cn({
+          [theme === 'dark' ? styles.messageTextDark : styles.messageText]:
+            isAssistant,
+          [styles.messageUserText]: !isAssistant,
+          'bg-bg-card': !isAssistant,
+        })}
+      >
+        {item.data ? (
+          children
+        ) : sendLoading && isEmpty(messageContent) ? (
+          <>{!isShare && 'running...'}</>
+        ) : (
+          <MarkdownContent
+            loading={loading}
+            content={messageContent}
+            reference={reference}
+            clickDocumentButton={clickDocumentButton}
+          ></MarkdownContent>
+        )}
+      </div>
+    );
+  }, [
+    children,
+    clickDocumentButton,
+    isAssistant,
+    isShare,
+    item.data,
+    loading,
+    messageContent,
+    pdfDownloadInfo,
+    reference,
+    sendLoading,
+    theme,
+  ]);
+
   return (
     <div
       className={classNames(styles.messageItem, {
@@ -239,6 +284,7 @@ function MessageItem({
                   />
                 </div>
               )}
+
             {/* Show PDF download button if download info is present */}
             {pdfDownloadInfo && (
               <PDFDownloadButton
@@ -247,31 +293,8 @@ function MessageItem({
               />
             )}
 
-            {/* Show message content if there's any text besides the download */}
-            {messageContent && (
-              <div
-                className={cn({
-                  [theme === 'dark'
-                    ? styles.messageTextDark
-                    : styles.messageText]: isAssistant,
-                  [styles.messageUserText]: !isAssistant,
-                  'bg-bg-card': !isAssistant,
-                })}
-              >
-                {item.data ? (
-                  children
-                ) : sendLoading && isEmpty(messageContent) ? (
-                  <>{!isShare && 'running...'}</>
-                ) : (
-                  <MarkdownContent
-                    loading={loading}
-                    content={messageContent}
-                    reference={reference}
-                    clickDocumentButton={clickDocumentButton}
-                  ></MarkdownContent>
-                )}
-              </div>
-            )}
+            {renderContent()}
+
             {isAssistant && referenceDocuments.length > 0 && (
               <ReferenceDocumentList
                 list={referenceDocuments}
