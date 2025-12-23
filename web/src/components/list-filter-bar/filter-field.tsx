@@ -118,7 +118,7 @@ export const FilterField = memo(
                     setShowAll(!showAll);
                   }}
                 >
-                  <FormLabel className="text-text-primary">
+                  <FormLabel className="text-text-secondary text-sm">
                     {item.label}
                   </FormLabel>
                   {showAll ? (

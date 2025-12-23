@@ -49,9 +49,13 @@ export function useSelectDatasetFilters() {
     return [
       { field: 'type', label: 'File Type', list: fileTypes },
       { field: 'run', label: 'Status', list: fileStatus },
-      { field: 'metadata', label: 'metadata', list: metaDataList },
+      { field: 'metadata', label: 'Metadata field', list: metaDataList },
     ] as FilterCollection[];
   }, [fileStatus, fileTypes, metaDataList]);
 
-  return { filters, onOpenChange };
+  const filterGroup = {
+    [t('systemAttribute')]: ['type', 'run'],
+    // [t('metadataField')]: ['metadata'],
+  };
+  return { filters, onOpenChange, filterGroup };
 }

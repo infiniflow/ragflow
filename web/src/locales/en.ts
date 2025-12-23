@@ -191,6 +191,8 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         fieldName: 'Field name',
         editMetadata: 'Edit metadata',
       },
+      metadataField: 'Metadata field',
+      systemAttribute: 'System attribute',
       localUpload: 'Local upload',
       fileSize: 'File size',
       fileType: 'File type',
@@ -1787,6 +1789,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       variableSettings: 'Variable settings',
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
+      tocDataSource: 'Data source',
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
@@ -2022,6 +2025,7 @@ Key Instructions:
           metadata: `Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.
 
 Important structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.`,
+          toc: '',
         },
         user: {
           keywords: `Text Content
@@ -2031,6 +2035,7 @@ Important structured information may include: names, dates, locations, events, k
           summary: `Text to Summarize:
 [Insert text here]`,
           metadata: `Content: [INSERT CONTENT HERE]`,
+          toc: '[Insert text here]',
         },
       },
       cancel: 'Cancel',
@@ -2127,6 +2132,9 @@ Important structured information may include: names, dates, locations, events, k
         requestBodyParameters: 'Request body parameters',
         immediately: 'Accepted response',
         streaming: 'Final response',
+        overview: 'Overview',
+        logs: 'Logs',
+        agentStatus: 'Agent status:',
       },
       saveToMemory: 'Save to memory',
       memory: 'Memory',

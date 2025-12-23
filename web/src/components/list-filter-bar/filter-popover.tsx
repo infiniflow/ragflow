@@ -33,6 +33,7 @@ export type CheckboxFormMultipleProps = {
   onChange?: FilterChange;
   onOpenChange?: (open: boolean) => void;
   setOpen(open: boolean): void;
+  filterGroup?: Record<string, string[]>;
 };
 
 function CheckboxFormMultiple({
@@ -40,6 +41,7 @@ function CheckboxFormMultiple({
   value,
   onChange,
   setOpen,
+  filterGroup,
 }: CheckboxFormMultipleProps) {
   const [resolvedFilters, setResolvedFilters] =
     useState<FilterCollection[]>(filters);
@@ -120,6 +122,20 @@ function CheckboxFormMultiple({
     }
   }, [form, value, resolvedFilters, fieldsDict]);
 
+  const filterList = useMemo(() => {
+    const filterSet = filterGroup
+      ? Object.values(filterGroup).reduce<Set<string>>((pre, cur) => {
+          cur.forEach((item) => pre.add(item));
+          return pre;
+        }, new Set())
+      : new Set();
+    return [...filterSet];
+  }, [filterGroup]);
+
+  const notInfilterGroup = useMemo(() => {
+    return filters.filter((x) => !filterList.includes(x.field));
+  }, [filterList, filters]);
+
   return (
     <Form {...form}>
       <form
@@ -127,34 +143,70 @@ function CheckboxFormMultiple({
         className="space-y-8 px-5 py-2.5"
         onReset={() => form.reset()}
       >
-        {filters.map((x) => (
-          <FormField
-            key={x.field}
-            control={form.control}
-            name={x.field}
-            render={() => (
-              <FormItem className="space-y-4">
-                <div>
-                  <FormLabel className="text-text-primary">{x.label}</FormLabel>
+        <div className="space-y-4">
+          {filterGroup &&
+            Object.keys(filterGroup).map((key) => {
+              const filterKeys = filterGroup[key];
+              const thisFilters = filters.filter((x) =>
+                filterKeys.includes(x.field),
+              );
+              return (
+                <div
+                  key={key}
+                  className="flex flex-col space-y-4 border-b border-border-button pb-4"
+                >
+                  <div className="text-text-primary text-sm">{key}</div>
+                  <div className="flex flex-col space-y-4">
+                    {thisFilters.map((x) => (
+                      <FilterField
+                        key={x.field}
+                        item={{ ...x, id: x.field }}
+                        parent={{
+                          ...x,
+                          id: x.field,
+                          field: ``,
+                        }}
+                      />
+                    ))}
+                  </div>
                 </div>
-                {x.list.map((item) => {
-                  return (
-                    <FilterField
-                      key={item.id}
-                      item={{ ...item }}
-                      parent={{
-                        ...x,
-                        id: x.field,
-                        // field: `${x.field}${item.field ? '.' + item.field : ''}`,
-                      }}
-                    />
-                  );
-                })}
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        ))}
+              );
+            })}
+          {notInfilterGroup &&
+            notInfilterGroup.map((x) => {
+              return (
+                <FormField
+                  key={x.field}
+                  control={form.control}
+                  name={x.field}
+                  render={() => (
+                    <FormItem className="space-y-4">
+                      <div>
+                        <FormLabel className="text-text-primary text-sm">
+                          {x.label}
+                        </FormLabel>
+                      </div>
+                      {x.list.map((item) => {
+                        return (
+                          <FilterField
+                            key={item.id}
+                            item={{ ...item }}
+                            parent={{
+                              ...x,
+                              id: x.field,
+                              // field: `${x.field}${item.field ? '.' + item.field : ''}`,
+                            }}
+                          />
+                        );
+                      })}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              );
+            })}
+        </div>
+
         <div className="flex justify-end gap-5">
           <Button
             type="button"
@@ -185,6 +237,7 @@ export function FilterPopover({
   onChange,
   onOpenChange,
   filters,
+  filterGroup,
 }: PropsWithChildren & Omit<CheckboxFormMultipleProps, 'setOpen'>) {
   const [open, setOpen] = useState(false);
   const onOpenChangeFun = useCallback(
@@ -203,6 +256,7 @@ export function FilterPopover({
           value={value}
           filters={filters}
           setOpen={setOpen}
+          filterGroup={filterGroup}
         ></CheckboxFormMultiple>
       </PopoverContent>
     </Popover>
