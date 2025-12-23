@@ -44,6 +44,7 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
     def filter_out(v2docs, operator, value):
         ids = []
         for input, docids in v2docs.items():
+
             if operator in ["=", "≠", ">", "<", "≥", "≤"]:
                 try:
                     input = float(input)
@@ -51,12 +52,16 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                 except Exception:
                     input = str(input)
                     value = str(value)
+            if isinstance(input, str):
+                input = input.lower()
+            if isinstance(value, str):
+                value = value.lower()
 
             for conds in [
-                (operator == "contains", str(value).lower() in str(input).lower()),
-                (operator == "not contains", str(value).lower() not in str(input).lower()),
-                (operator == "in", str(input).lower() in str(value).lower()),
-                (operator == "not in", str(input).lower() not in str(value).lower()),
+                (operator == "contains", input in value if not isinstance(input, list) else all([i in value for i in input])),
+                (operator == "not contains", input not in value if not isinstance(input, list) else all([i not in value for i in input])),
+                (operator == "in", input in value if not isinstance(input, list) else all([i in value for i in input])),
+                (operator == "not in", input not in value if not isinstance(input, list) else all([i not in value for i in input])),
                 (operator == "start with", str(input).lower().startswith(str(value).lower())),
                 (operator == "end with", str(input).lower().endswith(str(value).lower())),
                 (operator == "empty", not input),
