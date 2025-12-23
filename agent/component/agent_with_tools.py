@@ -386,7 +386,7 @@ class Agent(LLM, ToolBase):
                         raise TypeError(f"An object type should be returned, but `{f}`")
 
                 tool_tasks = []
-                for func in functions:
+                for idx, func in enumerate(functions):
                     name = func["name"]
                     args = func["arguments"]
                     if name == COMPLETE_TASK:
@@ -394,7 +394,7 @@ class Agent(LLM, ToolBase):
                         async for txt, tkcnt in complete():
                             yield txt, tkcnt
                         return
-
+                    name = f"{name}_{idx}"
                     tool_tasks.append(asyncio.create_task(use_tool_async(name, args)))
 
                 results = await asyncio.gather(*tool_tasks) if tool_tasks else []
