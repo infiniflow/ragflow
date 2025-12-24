@@ -117,6 +117,8 @@ class MemoryService(CommonService):
         if len(memory_name) > MEMORY_NAME_LIMIT:
             return False, f"Memory name {memory_name} exceeds limit of {MEMORY_NAME_LIMIT}."
 
+        timestamp = current_timestamp()
+        format_time = get_format_time()
         # build create dict
         memory_info = {
             "id": get_uuid(),
@@ -126,10 +128,10 @@ class MemoryService(CommonService):
             "embd_id": embd_id,
             "llm_id": llm_id,
             "system_prompt": PromptAssembler.assemble_system_prompt({"memory_type": memory_type}),
-            "create_time": current_timestamp(),
-            "create_date": get_format_time(),
-            "update_time": current_timestamp(),
-            "update_date": get_format_time(),
+            "create_time": timestamp,
+            "create_date": format_time,
+            "update_time": timestamp,
+            "update_date": format_time,
         }
         obj = cls.model(**memory_info).save(force_insert=True)
 
