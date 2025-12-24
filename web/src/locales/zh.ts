@@ -177,6 +177,7 @@ export default {
         manageMetadata: '管理元数据',
         metadata: '元数据',
         values: '值',
+        value: '值',
         action: '操作',
         field: '字段',
         description: '描述',
@@ -186,6 +187,11 @@ export default {
         fieldNameExists: '字段名已存在。确认合并重复项并组合所有关联文件。',
         fieldExists: '字段名已存在。',
         deleteWarn: '此 {{field}} 将从所有关联文件中移除',
+        deleteManageFieldAllWarn:
+          '此字段及其所有对应值将从所有关联的文件中删除。',
+        deleteManageValueAllWarn: '此值将从所有关联的文件中删除。',
+        deleteManageFieldSingleWarn: '此字段及其所有对应值将从此文件中删除。',
+        deleteManageValueSingleWarn: '此值将从此文件中删除。',
       },
       localUpload: '本地上传',
       fileSize: '文件大小',
@@ -1509,6 +1515,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         endWith: '结束是',
         empty: '为空',
         notEmpty: '不为空',
+        is: '是',
+        isNot: '不是',
       },
       switchLogicOperatorOptions: {
         and: '与',

@@ -9,6 +9,7 @@ import kbService, {
   updateMetaData,
 } from '@/services/knowledge-service';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { TFunction } from 'i18next';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
@@ -19,12 +20,43 @@ import {
   IMetaDataTableData,
   MetadataOperations,
   ShowManageMetadataModalProps,
-} from './interface';
+} from '../interface';
 export enum MetadataType {
   Manage = 1,
   UpdateSingle = 2,
   Setting = 3,
+  SingleFileSetting = 4,
 }
+
+export const MetadataDeleteMap = (
+  t: TFunction<'translation', undefined>,
+): Record<
+  MetadataType,
+  { title: string; warnFieldText: string; warnValueText: string }
+> => {
+  return {
+    [MetadataType.Manage]: {
+      title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
+      warnFieldText: t('knowledgeDetails.metadata.deleteManageFieldAllWarn'),
+      warnValueText: t('knowledgeDetails.metadata.deleteManageValueAllWarn'),
+    },
+    [MetadataType.Setting]: {
+      title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
+      warnFieldText: t('knowledgeDetails.metadata.deleteManageFieldAllWarn'),
+      warnValueText: t('knowledgeDetails.metadata.deleteManageValueAllWarn'),
+    },
+    [MetadataType.UpdateSingle]: {
+      title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
+      warnFieldText: t('knowledgeDetails.metadata.deleteManageFieldSingleWarn'),
+      warnValueText: t('knowledgeDetails.metadata.deleteManageValueSingleWarn'),
+    },
+    [MetadataType.SingleFileSetting]: {
+      title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
+      warnFieldText: t('knowledgeDetails.metadata.deleteManageFieldSingleWarn'),
+      warnValueText: t('knowledgeDetails.metadata.deleteManageValueSingleWarn'),
+    },
+  };
+};
 export const util = {
   changeToMetaDataTableData(data: IMetaDataReturnType): IMetaDataTableData[] {
     return Object.entries(data).map(([key, value]) => {
@@ -42,10 +74,21 @@ export const util = {
     data: Record<string, string | string[]>,
   ): IMetaDataTableData[] {
     return Object.entries(data).map(([key, value]) => {
+      let thisValue = [] as string[];
+      if (value && Array.isArray(value)) {
+        thisValue = value;
+      } else if (value && typeof value === 'string') {
+        thisValue = [value];
+      } else if (value && typeof value === 'object') {
+        thisValue = [JSON.stringify(value)];
+      } else if (value) {
+        thisValue = [value.toString()];
+      }
+
       return {
         field: key,
         description: '',
-        values: value,
+        values: thisValue,
       } as IMetaDataTableData;
     });
   },
@@ -103,12 +146,42 @@ export const useMetadataOperations = () => {
     }));
   }, []);
 
+  // const addUpdateValue = useCallback(
+  //   (key: string, value: string | string[]) => {
+  //     setOperations((prev) => ({
+  //       ...prev,
+  //       updates: [...prev.updates, { key, value }],
+  //     }));
+  //   },
+  //   [],
+  // );
   const addUpdateValue = useCallback(
-    (key: string, value: string | string[]) => {
-      setOperations((prev) => ({
-        ...prev,
-        updates: [...prev.updates, { key, value }],
-      }));
+    (key: string, originalValue: string, newValue: string) => {
+      setOperations((prev) => {
+        const existsIndex = prev.updates.findIndex(
+          (update) => update.key === key && update.match === originalValue,
+        );
+
+        if (existsIndex > -1) {
+          const updatedUpdates = [...prev.updates];
+          updatedUpdates[existsIndex] = {
+            key,
+            match: originalValue,
+            value: newValue,
+          };
+          return {
+            ...prev,
+            updates: updatedUpdates,
+          };
+        }
+        return {
+          ...prev,
+          updates: [
+            ...prev.updates,
+            { key, match: originalValue, value: newValue },
+          ],
+        };
+      });
     },
     [],
   );
@@ -195,8 +268,13 @@ export const useManageMetaDataModal = (
 
   const [tableData, setTableData] = useState<IMetaDataTableData[]>(metaData);
   const queryClient = useQueryClient();
-  const { operations, addDeleteRow, addDeleteValue, addUpdateValue } =
-    useMetadataOperations();
+  const {
+    operations,
+    addDeleteRow,
+    addDeleteValue,
+    addUpdateValue,
+    resetOperations,
+  } = useMetadataOperations();
 
   const { setDocumentMeta } = useSetDocumentMeta();
 
@@ -265,11 +343,12 @@ export const useManageMetaDataModal = (
         queryClient.invalidateQueries({
           queryKey: [DocumentApiAction.FetchDocumentList],
         });
+        resetOperations();
         message.success(t('message.operated'));
         callback();
       }
     },
-    [operations, id, t, queryClient],
+    [operations, id, t, queryClient, resetOperations],
   );
 
   const handleSaveUpdateSingle = useCallback(
@@ -303,7 +382,26 @@ export const useManageMetaDataModal = (
 
       return data;
     },
-    [tableData, id],
+    [tableData, id, t],
+  );
+
+  const handleSaveSingleFileSettings = useCallback(
+    async (callback: () => void) => {
+      const data = util.tableDataToMetaDataSettingJSON(tableData);
+      if (otherData?.documentId) {
+        const { data: res } = await kbService.documentUpdateMetaData({
+          doc_id: otherData.documentId,
+          metadata: data,
+        });
+        if (res.code === 0) {
+          message.success(t('message.operated'));
+          callback?.();
+        }
+      }
+
+      return data;
+    },
+    [tableData, t, otherData],
   );
 
   const handleSave = useCallback(
@@ -317,12 +415,20 @@ export const useManageMetaDataModal = (
           break;
         case MetadataType.Setting:
           return handleSaveSettings(callback);
+        case MetadataType.SingleFileSetting:
+          return handleSaveSingleFileSettings(callback);
         default:
           handleSaveManage(callback);
           break;
       }
     },
-    [handleSaveManage, type, handleSaveUpdateSingle, handleSaveSettings],
+    [
+      handleSaveManage,
+      type,
+      handleSaveUpdateSingle,
+      handleSaveSettings,
+      handleSaveSingleFileSettings,
+    ],
   );
 
   return {
@@ -376,12 +482,4 @@ export const useManageMetadata = () => {
     tableData,
     config,
   };
-};
-
-export const useManageValues = () => {
-  const [updateValues, setUpdateValues] = useState<{
-    field: string;
-    values: string[];
-  } | null>(null);
-  return { updateValues, setUpdateValues };
 };
