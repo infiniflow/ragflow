@@ -14,69 +14,40 @@
 #  limitations under the License.
 #
 
+import infinity.rag_tokenizer
 from common import settings
 
-try:
-    import infinity.rag_tokenizer
-    HAS_INFINITY_TOKENIZER = True
-except ImportError:
-    HAS_INFINITY_TOKENIZER = False
-    class DummyRagTokenizer:
-        def tokenize(self, line: str) -> str:
-            return line
-        def fine_grained_tokenize(self, tks: str) -> str:
-            return tks
-        def tag(self, txt):
-            return []
-        def freq(self, txt):
-            return {}
-        def _tradi2simp(self, txt):
-            return txt
-        def _strQ2B(self, txt):
-            return txt
 
-if HAS_INFINITY_TOKENIZER:
-    class RagTokenizer(infinity.rag_tokenizer.RagTokenizer):
-        def tokenize(self, line: str) -> str:
-            if settings.DOC_ENGINE_INFINITY:
-                return line
-            else:
-                return super().tokenize(line)
-        def fine_grained_tokenize(self, tks: str) -> str:
-            if settings.DOC_ENGINE_INFINITY:
-                return tks
-            else:
-                return super().fine_grained_tokenize(tks)
-else:
-    class RagTokenizer(DummyRagTokenizer):
-        def tokenize(self, line: str) -> str:
+class RagTokenizer(infinity.rag_tokenizer.RagTokenizer):
+
+    def tokenize(self, line: str) -> str:
+        if settings.DOC_ENGINE_INFINITY:
             return line
-        def fine_grained_tokenize(self, tks: str) -> str:
+        else:
+            return super().tokenize(line)
+
+    def fine_grained_tokenize(self, tks: str) -> str:
+        if settings.DOC_ENGINE_INFINITY:
             return tks
+        else:
+            return super().fine_grained_tokenize(tks)
+
 
 def is_chinese(s):
-    if HAS_INFINITY_TOKENIZER:
-        return infinity.rag_tokenizer.is_chinese(s)
-    return any('\u4e00' <= char <= '\u9fff' for char in s)
+    return infinity.rag_tokenizer.is_chinese(s)
+
 
 def is_number(s):
-    if HAS_INFINITY_TOKENIZER:
-        return infinity.rag_tokenizer.is_number(s)
-    try:
-        float(s)
-        return True
-    except ValueError:
-        return False
+    return infinity.rag_tokenizer.is_number(s)
+
 
 def is_alphabet(s):
-    if HAS_INFINITY_TOKENIZER:
-        return infinity.rag_tokenizer.is_alphabet(s)
-    return s.isalpha()
+    return infinity.rag_tokenizer.is_alphabet(s)
+
 
 def naive_qie(txt):
-    if HAS_INFINITY_TOKENIZER:
-        return infinity.rag_tokenizer.naive_qie(txt)
-    return txt
+    return infinity.rag_tokenizer.naive_qie(txt)
+
 
 tokenizer = RagTokenizer()
 tokenize = tokenizer.tokenize
