@@ -151,6 +151,18 @@ async def apply_meta_data_filter(
     return doc_ids
 
 
+def dedupe_list(values: list) -> list:
+    seen = set()
+    deduped = []
+    for item in values:
+        key = str(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
 def update_metadata_to(metadata, meta):
     if not meta:
         return metadata
@@ -162,11 +174,13 @@ def update_metadata_to(metadata, meta):
             return metadata
     if not isinstance(meta, dict):
         return metadata
+
     for k, v in meta.items():
         if isinstance(v, list):
             v = [vv for vv in v if isinstance(vv, str)]
             if not v:
                 continue
+            v = dedupe_list(v)
         if not isinstance(v, list) and not isinstance(v, str):
             continue
         if k not in metadata:
@@ -177,6 +191,7 @@ def update_metadata_to(metadata, meta):
                 metadata[k].extend(v)
             else:
                 metadata[k].append(v)
+            metadata[k] = dedupe_list(metadata[k])
         else:
             metadata[k] = v
 
