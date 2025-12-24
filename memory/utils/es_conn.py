@@ -234,7 +234,7 @@ class ESConnection(ESConnectionBase):
         self.logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
         raise Exception("ESConnection.search timeout.")
 
-    def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int=2000):
+    def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int=512):
         bool_query = Q("bool", must_not=[])
         bool_query.must_not.append(Q("term", forget_at=None))
         bool_query.filter.append(Q("term", memory_id=memory_id))
