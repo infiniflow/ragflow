@@ -701,6 +701,8 @@ class DocumentService(CommonService):
                     v = [v]
                 for vv in v:
                     if vv not in meta[k]:
+                        if isinstance(vv, list) or isinstance(vv, dict):
+                            continue
                         meta[k][vv] = []
                     meta[k][vv].append(doc_id)
         return meta
