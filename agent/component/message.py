@@ -427,12 +427,6 @@ class Message(ComponentBase):
             logging.error(f"Error converting content to {self._param.output_format}: {e}")
 
     async def _save_to_memory(self, content):
-        logging.info(f"Save to memory: {self._param.memory_ids}")
-        logging.info(f"Use canvas_id: {self._canvas._id} as agent_id")
-        logging.info(f"Use task_id: {self._canvas.task_id} as session_id")
-        logging.info(f"Use tenant_id: {self._canvas._tenant_id} as user_id.")
-        logging.info(f"User input: {self._canvas.get_sys_query()}")
-        logging.info(f"Agent response: {content}")
         if not self._param.memory_ids:
             return True, "No memory selected."
 
