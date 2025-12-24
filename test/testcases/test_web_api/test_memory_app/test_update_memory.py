@@ -101,7 +101,7 @@ class TestMemoryUpdate:
     @pytest.mark.p1
     def test_llm(self, WebApiAuth, add_memory_func):
         memory_ids = add_memory_func
-        llm_id = "ZHIPU-AI@glm-4"
+        llm_id = "glm-4@ZHIPU-AI"
         payload = {"llm_id": llm_id}
         res = update_memory(WebApiAuth, memory_ids[0], payload)
         assert res["code"] == 0, res

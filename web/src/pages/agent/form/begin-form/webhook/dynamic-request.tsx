@@ -6,15 +6,10 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { buildOptions } from '@/utils/form';
 import { loader } from '@monaco-editor/react';
-import { omit } from 'lodash';
 import { X } from 'lucide-react';
 import { ReactNode } from 'react';
-import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
-import {
-  TypesWithArray,
-  WebhookContentType,
-  WebhookRequestParameters,
-} from '../../../constant';
+import { useFieldArray, useFormContext } from 'react-hook-form';
+import { TypesWithArray, WebhookRequestParameters } from '../../../constant';
 import { DynamicFormHeader } from '../../components/dynamic-fom-header';
 
 loader.config({ paths: { vs: '/vs' } });
@@ -28,15 +23,8 @@ type SelectKeysProps = {
   requiredField?: string;
   nodeId?: string;
   isObject?: boolean;
+  operatorList: WebhookRequestParameters[];
 };
-
-function buildParametersOptions(isObject: boolean) {
-  const list = isObject
-    ? WebhookRequestParameters
-    : omit(WebhookRequestParameters, ['File']);
-
-  return buildOptions(list);
-}
 
 export function DynamicRequest({
   name,
@@ -45,15 +33,9 @@ export function DynamicRequest({
   keyField = 'key',
   operatorField = 'type',
   requiredField = 'required',
-  isObject = false,
+  operatorList,
 }: SelectKeysProps) {
   const form = useFormContext();
-  const contentType = useWatch({
-    name: 'content_types',
-    control: form.control,
-  });
-  const isFormDataContentType =
-    contentType === WebhookContentType.MultipartFormData;
 
   const { fields, remove, append } = useFieldArray({
     name: name,
@@ -94,9 +76,7 @@ export function DynamicRequest({
                         onChange={(val) => {
                           field.onChange(val);
                         }}
-                        options={buildParametersOptions(
-                          isObject && isFormDataContentType,
-                        )}
+                        options={buildOptions(operatorList)}
                       ></SelectWithSearch>
                     )}
                   </RAGFlowFormItem>

@@ -1,16 +1,15 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Input } from '@/components/ui/input';
-import { WebhookAlgorithmList } from '@/constants/agent';
+import { WebhookJWTAlgorithmList } from '@/constants/agent';
 import { WebhookSecurityAuthType } from '@/pages/agent/constant';
 import { buildOptions } from '@/utils/form';
 import { useCallback } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { DynamicStringForm } from '../../components/dynamic-string-form';
 
-const AlgorithmOptions = buildOptions(WebhookAlgorithmList);
-
-const RequiredClaimsOptions = buildOptions(['exp', 'sub']);
+const AlgorithmOptions = buildOptions(WebhookJWTAlgorithmList);
 
 export function Auth() {
   const { t } = useTranslation();
@@ -88,38 +87,10 @@ export function Auth() {
         >
           <Input></Input>
         </RAGFlowFormItem>
-        <RAGFlowFormItem
+        <DynamicStringForm
           name="security.jwt.required_claims"
           label={t('flow.webhook.requiredClaims')}
-        >
-          <SelectWithSearch options={RequiredClaimsOptions}></SelectWithSearch>
-        </RAGFlowFormItem>
-      </>
-    ),
-    [t],
-  );
-
-  const renderHmacAuth = useCallback(
-    () => (
-      <>
-        <RAGFlowFormItem
-          name="security.hmac.header"
-          label={t('flow.webhook.header')}
-        >
-          <Input></Input>
-        </RAGFlowFormItem>
-        <RAGFlowFormItem
-          name="security.hmac.secret"
-          label={t('flow.webhook.secret')}
-        >
-          <Input></Input>
-        </RAGFlowFormItem>
-        <RAGFlowFormItem
-          name="security.hmac.algorithm"
-          label={t('flow.webhook.algorithm')}
-        >
-          <SelectWithSearch options={AlgorithmOptions}></SelectWithSearch>
-        </RAGFlowFormItem>
+        ></DynamicStringForm>
       </>
     ),
     [t],
@@ -129,11 +100,14 @@ export function Auth() {
     [WebhookSecurityAuthType.Token]: renderTokenAuth,
     [WebhookSecurityAuthType.Basic]: renderBasicAuth,
     [WebhookSecurityAuthType.Jwt]: renderJwtAuth,
-    [WebhookSecurityAuthType.Hmac]: renderHmacAuth,
     [WebhookSecurityAuthType.None]: () => null,
   };
 
-  return AuthMap[
-    (authType ?? WebhookSecurityAuthType.None) as WebhookSecurityAuthType
-  ]();
+  return (
+    <div key={`auth-${authType}`} className="space-y-5">
+      {AuthMap[
+        (authType ?? WebhookSecurityAuthType.None) as WebhookSecurityAuthType
+      ]()}
+    </div>
+  );
 }

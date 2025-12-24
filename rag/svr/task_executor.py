@@ -374,13 +374,13 @@ async def build_chunks(task, progress_callback):
         chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
 
         async def gen_metadata_task(chat_mdl, d):
-            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata")
+            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata", {})
             if not cached:
                 async with chat_limiter:
                     cached = await gen_metadata(chat_mdl,
                                                 metadata_schema(task["parser_config"]["metadata"]),
                                                 d["content_with_weight"])
-                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata")
+                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata", {})
             if cached:
                 d["metadata_obj"] = cached
         tasks = []
@@ -506,7 +506,7 @@ def build_TOC(task, docs, progress_callback):
 
 def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
-    return settings.docStoreConn.createIdx(idxnm, row.get("kb_id", ""), vector_size)
+    return settings.docStoreConn.create_idx(idxnm, row.get("kb_id", ""), vector_size)
 
 
 async def embedding(docs, mdl, parser_config=None, callback=None):
@@ -852,7 +852,7 @@ async def do_handle_task(task):
     task_tenant_id = task["tenant_id"]
     task_embedding_id = task["embd_id"]
     task_language = task["language"]
-    task_llm_id = task["llm_id"]
+    task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
     task_dataset_id = task["kb_id"]
     task_doc_id = task["doc_id"]
     task_document_name = task["name"]
@@ -1024,33 +1024,65 @@ async def do_handle_task(task):
 
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
-    e = await insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback)
-    if not e:
-        return
 
-    logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page,
-                                                                                     task_to_page, len(chunks),
-                                                                                     timer() - start_ts))
+    async def _maybe_insert_es(_chunks):
+        if has_canceled(task_id):
+            return True
+        e = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
+        return bool(e)
+    
+    try:
+        if not await _maybe_insert_es(chunks):
+            return
 
-    DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
+        logging.info(
+            "Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(
+                task_document_name, task_from_page, task_to_page, len(chunks), timer() - start_ts
+            )
+        )
 
-    time_cost = timer() - start_ts
-    progress_callback(msg="Indexing done ({:.2f}s).".format(time_cost))
-    if toc_thread:
-        d = toc_thread.result()
-        if d:
-            e = await insert_es(task_id, task_tenant_id, task_dataset_id, [d], progress_callback)
-            if not e:
-                return
-            DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, 0, 1, 0)
+        DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
 
-    task_time_cost = timer() - task_start_ts
-    progress_callback(prog=1.0, msg="Task done ({:.2f}s)".format(task_time_cost))
-    logging.info(
-        "Chunk doc({}), page({}-{}), chunks({}), token({}), elapsed:{:.2f}".format(task_document_name, task_from_page,
-                                                                                   task_to_page, len(chunks),
-                                                                                   token_count, task_time_cost))
+        progress_callback(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
 
+        if toc_thread:
+            d = toc_thread.result()
+            if d:
+                if not await _maybe_insert_es([d]):
+                    return
+                DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, 0, 1, 0)
+
+        if has_canceled(task_id):
+            progress_callback(-1, msg="Task has been canceled.")
+            return
+
+        task_time_cost = timer() - task_start_ts
+        progress_callback(prog=1.0, msg="Task done ({:.2f}s)".format(task_time_cost))
+        logging.info(
+            "Chunk doc({}), page({}-{}), chunks({}), token({}), elapsed:{:.2f}".format(
+                task_document_name, task_from_page, task_to_page, len(chunks), token_count, task_time_cost
+            )
+        )
+
+    finally:
+        if has_canceled(task_id):
+            try:
+                exists = await asyncio.to_thread(
+                    settings.docStoreConn.indexExist,
+                    search.index_name(task_tenant_id),
+                    task_dataset_id,
+                )
+                if exists:
+                    await asyncio.to_thread(
+                        settings.docStoreConn.delete,
+                        {"doc_id": task_doc_id},
+                        search.index_name(task_tenant_id),
+                        task_dataset_id,
+                    )
+            except Exception:
+                logging.exception(
+                    f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled."
+                )
 
 async def handle_task():
 

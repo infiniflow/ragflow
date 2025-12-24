@@ -186,7 +186,7 @@ class OnyxConfluence:
         # between the db and redis everywhere the credentials might be updated
         new_credential_str = json.dumps(new_credentials)
         self.redis_client.set(
-            self.credential_key, new_credential_str, nx=True, ex=self.CREDENTIAL_TTL
+            self.credential_key, new_credential_str, exp=self.CREDENTIAL_TTL
         )
         self._credentials_provider.set_credentials(new_credentials)
 
@@ -1599,8 +1599,8 @@ class ConfluenceConnector(
                 semantic_identifier=semantic_identifier,
                 extension=".html",  # Confluence pages are HTML
                 blob=page_content.encode("utf-8"),  # Encode page content as bytes
-                size_bytes=len(page_content.encode("utf-8")),  # Calculate size in bytes
                 doc_updated_at=datetime_from_string(page["version"]["when"]),
+                size_bytes=len(page_content.encode("utf-8")),  # Calculate size in bytes
                 primary_owners=primary_owners if primary_owners else None,
                 metadata=metadata if metadata else None,
             )

@@ -196,7 +196,7 @@ export enum SwitchLogicOperator {
   Or = 'or',
 }
 
-export const WebhookAlgorithmList = [
+export const WebhookJWTAlgorithmList = [
   'hs256',
   'hs384',
   'hs512',

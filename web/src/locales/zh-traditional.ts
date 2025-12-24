@@ -203,6 +203,9 @@ export default {
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
+      imageTableContextWindow: '影像與表格上下文視窗',
+      imageTableContextWindowTip:
+        '擷取影像與表格上下方的 N 個 token，為該 chunk 提供更豐富的背景上下文。',
       name: '知識庫名稱',
       photo: '知識庫圖片',
       photoTip: '你可以上傳4MB的文件',
@@ -546,6 +549,15 @@ export default {
       profileDescription: '在此更新您的照片和個人詳細信息。',
       bedrockCredentialsHint:
         '提示：Access Key / Secret Key 可留空，以啟用 AWS IAM 自動驗證。',
+      awsAuthModeAccessKeySecret: 'Access Key 和 Secret',
+      awsAuthModeIamRole: 'IAM Role',
+      awsAuthModeAssumeRole: 'Assume Role',
+      awsAccessKeyId: 'AWS Access Key ID',
+      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsRoleArn: 'AWS Role ARN',
+      awsRoleArnMessage: '請輸入 AWS Role ARN',
+      awsAssumeRoleTip:
+        '選擇此模式後，EC2 執行個體將使用其既有的 IAM Role 存取 AWS 服務，無需額外憑證。',
       maxTokens: '最大token數',
       maxTokensMessage: '最大token數是必填項',
       maxTokensTip:

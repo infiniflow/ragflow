@@ -201,6 +201,8 @@ class RAGFlow:
         keyword: bool = False,
         cross_languages: list[str]|None = None,
         metadata_condition: dict | None = None,
+        use_kg: bool = False,
+        toc_enhance: bool = False,
     ):
         if document_ids is None:
             document_ids = []
@@ -216,7 +218,9 @@ class RAGFlow:
             "dataset_ids": dataset_ids,
             "document_ids": document_ids,
             "cross_languages": cross_languages,
-            "metadata_condition": metadata_condition
+            "metadata_condition": metadata_condition,
+            "use_kg": use_kg,
+            "toc_enhance": toc_enhance
         }
         # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
         res = self.post("/retrieval", json=data_json)

@@ -11,7 +11,12 @@ import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
-import { EnableTocToggle, OverlappedPercent } from './common-item';
+import {
+  AutoMetadata,
+  EnableTocToggle,
+  ImageContextWindow,
+  OverlappedPercent,
+} from './common-item';
 
 export function NaiveConfiguration() {
   return (
@@ -22,6 +27,8 @@ export function NaiveConfiguration() {
         <DelimiterFormField></DelimiterFormField>
         <ChildrenDelimiterForm />
         <EnableTocToggle />
+        <ImageContextWindow />
+        <AutoMetadata />
         <OverlappedPercent />
       </ConfigurationFormContainer>
       <ConfigurationFormContainer>

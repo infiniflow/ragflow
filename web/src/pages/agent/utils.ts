@@ -34,6 +34,7 @@ import {
   NodeHandleId,
   Operator,
   TypesWithArray,
+  WebhookSecurityAuthType,
 } from './constant';
 import { BeginFormSchemaType } from './form/begin-form/schema';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
@@ -119,13 +120,17 @@ function buildAgentTools(edges: Edge[], nodes: Node[], nodeId: string) {
         return {
           component_name: Operator.Agent,
           id,
-          name: name as string, // Cast name to string and provide fallback
+          name,
           params: { ...formData },
         };
       }),
     );
   }
-  return { params, name: node?.data.name, id: node?.id };
+  return { params, name: node?.data.name, id: node?.id } as {
+    params: IAgentForm;
+    name: string;
+    id: string;
+  };
 }
 
 function filterTargetsBySourceHandleId(edges: Edge[], handleId: string) {
@@ -353,13 +358,20 @@ function transformRequestSchemaToJsonschema(
 
 function transformBeginParams(params: BeginFormSchemaType) {
   if (params.mode === AgentDialogueMode.Webhook) {
+    const nextSecurity: Record<string, any> = {
+      ...params.security,
+      ip_whitelist: params.security?.ip_whitelist.map((x) => x.value),
+    };
+    if (params.security?.auth_type === WebhookSecurityAuthType.Jwt) {
+      nextSecurity.jwt = {
+        ...nextSecurity.jwt,
+        required_claims: nextSecurity.jwt?.required_claims.map((x) => x.value),
+      };
+    }
     return {
       ...params,
       schema: transformRequestSchemaToJsonschema(params.schema),
-      security: {
-        ...params.security,
-        ip_whitelist: params.security?.ip_whitelist.map((x) => x.value),
-      },
+      security: nextSecurity,
     };
   }
 
