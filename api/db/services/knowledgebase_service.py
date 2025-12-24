@@ -411,8 +411,6 @@ class KnowledgebaseService(CommonService):
         ok, _t = TenantService.get_by_id(tenant_id)
         if not ok:
             return False, get_data_error_result(message="Tenant not found.")
-        if kwargs.get("parser_config") and isinstance(kwargs["parser_config"], dict) and not kwargs["parser_config"].get("llm_id"):
-            kwargs["parser_config"]["llm_id"] = _t.llm_id
 
         # Build payload
         kb_id = get_uuid()
@@ -427,6 +425,7 @@ class KnowledgebaseService(CommonService):
 
         # Update parser_config (always override with validated default/merged config)
         payload["parser_config"] = get_parser_config(parser_id, kwargs.get("parser_config"))
+        payload["parser_config"]["llm_id"] = _t.llm_id
 
         return True, payload
 
