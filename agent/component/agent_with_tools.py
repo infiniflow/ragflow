@@ -103,8 +103,12 @@ class Agent(LLM, ToolBase):
             indexed_meta["function"]["name"] = indexed_name
             self.tool_meta.append(indexed_meta)
 
+        custom_header = self._param.custom_header
+
         for mcp in self._param.mcp:
             _, mcp_server = MCPServerService.get_by_id(mcp["mcp_id"])
+            if custom_header is not None and custom_header:
+                mcp_server.custom_header = custom_header
             tool_call_session = MCPToolCallSession(mcp_server, mcp_server.variables)
             for tnm, meta in mcp["tools"].items():
                 self.tool_meta.append(mcp_tool_metadata_to_openai_tool(meta))

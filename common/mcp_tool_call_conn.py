@@ -59,6 +59,7 @@ class MCPToolCallSession(ToolCallSession):
     async def _mcp_server_loop(self) -> None:
         url = self._mcp_server.url.strip()
         raw_headers: dict[str, str] = self._mcp_server.headers or {}
+        custom_header: dict[str, str] = self._mcp_server.custom_header or {}
         headers: dict[str, str] = {}
 
         for h, v in raw_headers.items():
@@ -66,6 +67,11 @@ class MCPToolCallSession(ToolCallSession):
             nv = Template(v).safe_substitute(self._server_variables)
             if nh.strip() and nv.strip().strip("Bearer"):
                 headers[nh] = nv
+
+        for h, v in custom_header.items():
+            nh = Template(h).safe_substitute(self._server_variables)
+            nv = Template(v).safe_substitute(self._server_variables)
+            headers[nh] = nv
 
         if self._mcp_server.server_type == MCPServerType.SSE:
             # SSE transport
