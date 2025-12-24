@@ -287,7 +287,7 @@ def list_chat(tenant_id):
     chats = DialogService.get_list(tenant_id, page_number, items_per_page, orderby, desc, id, name)
     if not chats:
         return get_result(data=[])
-    list_assts = []
+    list_assistants = []
     key_mapping = {
         "parameters": "variables",
         "prologue": "opener",
@@ -321,5 +321,5 @@ def list_chat(tenant_id):
         del res["kb_ids"]
         res["datasets"] = kb_list
         res["avatar"] = res.pop("icon")
-        list_assts.append(res)
-    return get_result(data=list_assts)
+        list_assistants.append(res)
+    return get_result(data=list_assistants)

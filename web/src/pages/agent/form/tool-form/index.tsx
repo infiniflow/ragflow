@@ -7,9 +7,11 @@ const EmptyContent = () => <div></div>;
 
 function ToolForm() {
   const clickedToolId = useGraphStore((state) => state.clickedToolId);
+  const { getAgentToolById } = useGraphStore();
+  const tool = getAgentToolById(clickedToolId);
 
   const ToolForm =
-    ToolFormConfigMap[clickedToolId as keyof typeof ToolFormConfigMap] ??
+    ToolFormConfigMap[tool?.component_name as keyof typeof ToolFormConfigMap] ??
     MCPForm ??
     EmptyContent;
 

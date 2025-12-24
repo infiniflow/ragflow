@@ -291,6 +291,9 @@ export default {
       reRankModelWaring: 'Il modello re-rank richiede molto tempo.',
     },
     knowledgeConfiguration: {
+      imageTableContextWindow: 'Finestra di contesto immagine e tabella',
+      imageTableContextWindowTip:
+        "Cattura N token di testo sopra e sotto l'immagine e la tabella per fornire un contesto più ricco.",
       generationScopeTip:
         "Determina se RAPTOR viene generato per l'intero dataset o per un singolo file.",
       scopeDataset: 'Dataset',

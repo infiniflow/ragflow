@@ -176,6 +176,12 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
     },
     knowledgeDetails: {
       metadata: {
+        valueExists:
+          'Value already exists. Confirm to merge duplicates and combine all associated files.',
+        fieldNameExists:
+          'Field name already exists. Confirm to merge duplicates and combine all associated files.',
+        fieldExists: 'Field already exists.',
+        fieldSetting: 'Field settings',
         changesAffectNewParses: 'Changes affect new parses only.',
         editMetadataForDataset: 'View and edit metadata for ',
         restrictDefinedValues: 'Restrict to defined values',
@@ -189,7 +195,10 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         description: 'Description',
         fieldName: 'Field name',
         editMetadata: 'Edit metadata',
+        deleteWarn: 'This {{field}} will be removed from all associated files',
       },
+      metadataField: 'Metadata field',
+      systemAttribute: 'System attribute',
       localUpload: 'Local upload',
       fileSize: 'File size',
       fileType: 'File type',
@@ -363,7 +372,14 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      globalIndexModelTip:
+        'Used to generate Knowledge graphs, RAPTOR, auto-metadata, auto-keyword and auto-question. Model performance will affects generation quality.',
+      globalIndexModel: 'Indexing model',
       settings: 'Settings',
+      autoMetadataTip: `Automatically generate metadata. Applies to new files during parsing. Existing files require re-parsing to update (chunks remain preserved). Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'.`,
+      imageTableContextWindow: 'Image & table context window',
+      imageTableContextWindowTip:
+        'Captures N tokens of text above and below the image & table to provide richer background context.',
       autoMetadata: 'Auto metadata',
       mineruOptions: 'MinerU Options',
       mineruParseMethod: 'Parse Method',
@@ -604,6 +620,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'The document being parsed cannot be deleted',
     },
     chunk: {
+      type: 'Type',
+      docType: {
+        image: 'Image',
+        table: 'Table',
+        text: 'Text',
+      },
       chunk: 'Chunk',
       bulk: 'Bulk',
       selectAll: 'Select all',
@@ -849,6 +871,12 @@ Example: Virtual Hosted Style`,
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
         'Connect to your AWS S3 bucket to import and sync stored files.',
+      google_cloud_storageDescription:
+        'Connect your Google Cloud Storage bucket to import and sync files.',
+      r2Description:
+        'Connect your Cloudflare R2 bucket to import and sync files.',
+      oci_storageDescription:
+        'Connect your Oracle Cloud Object Storage bucket to import and sync files.',
       discordDescription:
         'Link your Discord server to access and analyze chat data.',
       notionDescription:
@@ -873,6 +901,7 @@ Example: Virtual Hosted Style`,
         'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
+      boxDescription: 'Connect your Box drive to sync files and folders.',
       dropboxAccessTokenTip:
         'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
       moodleDescription:
@@ -1766,6 +1795,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       variableSettings: 'Variable settings',
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
+      tocDataSource: 'Data source',
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
@@ -2001,6 +2031,7 @@ Key Instructions:
           metadata: `Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.
 
 Important structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.`,
+          toc: '',
         },
         user: {
           keywords: `Text Content
@@ -2010,6 +2041,7 @@ Important structured information may include: names, dates, locations, events, k
           summary: `Text to Summarize:
 [Insert text here]`,
           metadata: `Content: [INSERT CONTENT HERE]`,
+          toc: '[Insert text here]',
         },
       },
       cancel: 'Cancel',
@@ -2077,12 +2109,14 @@ Important structured information may include: names, dates, locations, events, k
         schema: 'Schema',
         response: 'Response',
         executionMode: 'Execution mode',
+        executionModeTip:
+          'Accepted Response: The system returns an acknowledgment immediately after the request is validated, while the workflow continues to execute asynchronously in the background. /Final Response: The system returns a response only after the workflow execution is completed.',
         authMethods: 'Authentication methods',
         authType: 'Authentication type',
         limit: 'Request limit',
         per: 'Time period',
         maxBodySize: 'Maximum body size',
-        ipWhitelist: 'Ip whitelist',
+        ipWhitelist: 'IP whitelist',
         tokenHeader: 'Token header',
         tokenValue: 'Token value',
         username: 'Username',
@@ -2102,7 +2136,14 @@ Important structured information may include: names, dates, locations, events, k
         queryParameters: 'Query parameters',
         headerParameters: 'Header parameters',
         requestBodyParameters: 'Request body parameters',
+        immediately: 'Accepted response',
+        streaming: 'Final response',
+        overview: 'Overview',
+        logs: 'Logs',
+        agentStatus: 'Agent status:',
       },
+      saveToMemory: 'Save to memory',
+      memory: 'Memory',
     },
     llmTools: {
       bad_calculator: {

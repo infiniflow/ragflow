@@ -77,9 +77,9 @@ class Benchmark:
     def init_index(self, vector_size: int):
         if self.initialized_index:
             return
-        if settings.docStoreConn.indexExist(self.index_name, self.kb_id):
-            settings.docStoreConn.deleteIdx(self.index_name, self.kb_id)
-        settings.docStoreConn.createIdx(self.index_name, self.kb_id, vector_size)
+        if settings.docStoreConn.index_exist(self.index_name, self.kb_id):
+            settings.docStoreConn.delete_idx(self.index_name, self.kb_id)
+        settings.docStoreConn.create_idx(self.index_name, self.kb_id, vector_size)
         self.initialized_index = True
 
     def ms_marco_index(self, file_path, index_name):

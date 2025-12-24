@@ -56,7 +56,6 @@ class LLMParam(ComponentParamBase):
         self.check_nonnegative_number(int(self.max_tokens), "[Agent] Max tokens")
         self.check_decimal_float(float(self.top_p), "[Agent] Top P")
         self.check_empty(self.llm_id, "[Agent] LLM")
-        self.check_empty(self.sys_prompt, "[Agent] System prompt")
         self.check_empty(self.prompts, "[Agent] User prompt")
 
     def gen_conf(self):
