@@ -33,6 +33,8 @@ from common.connection_utils import timeout
 from common.misc_utils import get_uuid
 from common import settings
 
+from api.db.joint_services.memory_message_service import save_to_memory
+
 
 class MessageParam(ComponentParamBase):
     """
@@ -166,6 +168,7 @@ class Message(ComponentBase):
 
         self.set_output("content", all_content)
         self._convert_content(all_content)
+        await self._save_to_memory(all_content)
 
     def _is_jinjia2(self, content:str) -> bool:
         patt = [
@@ -198,6 +201,7 @@ class Message(ComponentBase):
 
         self.set_output("content", content)
         self._convert_content(content)
+        self._save_to_memory(content)
 
     def thoughts(self) -> str:
         return ""
@@ -421,3 +425,35 @@ class Message(ComponentBase):
 
         except Exception as e:
             logging.error(f"Error converting content to {self._param.output_format}: {e}")
+
+    async def _save_to_memory(self, content):
+        logging.info(f"Save to memory: {self._param.memory_ids}")
+        logging.info(f"Use canvas_id: {self._canvas._id} as agent_id")
+        logging.info(f"Use task_id: {self._canvas.task_id} as session_id")
+        logging.info(f"Use tenant_id: {self._canvas._tenant_id} as user_id.")
+        logging.info(f"User input: {self._canvas.get_sys_query()}")
+        logging.info(f"Agent response: {content}")
+        if not self._param.memory_ids:
+            return True, "No memory selected."
+
+        message_dict = {
+            "user_id": self._canvas._tenant_id,
+            "agent_id": self._canvas._id,
+            "session_id": self._canvas.task_id,
+            "user_input": self._canvas.get_sys_query(),
+            "agent_response": content
+        }
+        res = []
+        for memory_id in self._param.memory_ids:
+            success, msg = await save_to_memory(memory_id, message_dict)
+            res.append({
+                "memory_id": memory_id,
+                "success": success,
+                "msg": msg
+            })
+        if all([r["success"] for r in res]):
+            return True, "Successfully added to memories."
+
+        error_text = "Some messages failed to add. " + " ".join([f"Add to memory {r['memory_id']} failed, detail: {r['msg']}" for r in res if not r["success"]])
+        logging.error(error_text)
+        return False, error_text
