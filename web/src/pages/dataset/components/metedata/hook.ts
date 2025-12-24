@@ -1,11 +1,14 @@
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useSetDocumentMeta } from '@/hooks/use-document-request';
+import {
+  DocumentApiAction,
+  useSetDocumentMeta,
+} from '@/hooks/use-document-request';
 import kbService, {
   getMetaDataService,
   updateMetaData,
 } from '@/services/knowledge-service';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
@@ -191,7 +194,7 @@ export const useManageMetaDataModal = (
   const { data, loading } = useFetchMetaDataManageData(type);
 
   const [tableData, setTableData] = useState<IMetaDataTableData[]>(metaData);
-
+  const queryClient = useQueryClient();
   const { operations, addDeleteRow, addDeleteValue, addUpdateValue } =
     useMetadataOperations();
 
@@ -259,11 +262,14 @@ export const useManageMetaDataModal = (
         data: operations,
       });
       if (res.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [DocumentApiAction.FetchDocumentList],
+        });
         message.success(t('message.operated'));
         callback();
       }
     },
-    [operations, id, t],
+    [operations, id, t, queryClient],
   );
 
   const handleSaveUpdateSingle = useCallback(

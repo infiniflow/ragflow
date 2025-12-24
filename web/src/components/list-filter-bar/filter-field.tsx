@@ -31,14 +31,16 @@ const handleCheckChange = ({
           (value: string) => value !== item.id.toString(),
         );
 
-    const newValue = {
-      ...currentValue,
-      [parentId]: newParentValues,
-    };
+    const newValue = newParentValues?.length
+      ? {
+          ...currentValue,
+          [parentId]: newParentValues,
+        }
+      : { ...currentValue };
 
-    if (newValue[parentId].length === 0) {
-      delete newValue[parentId];
-    }
+    // if (newValue[parentId].length === 0) {
+    //   delete newValue[parentId];
+    // }
 
     return field.onChange(newValue);
   } else {
@@ -66,20 +68,31 @@ const FilterItem = memo(
   }) => {
     return (
       <div
-        className={`flex items-center justify-between text-text-primary text-xs ${level > 0 ? 'ml-4' : ''}`}
+        className={`flex items-center justify-between text-text-primary text-xs ${level > 0 ? 'ml-1' : ''}`}
       >
-        <FormItem className="flex flex-row space-x-3 space-y-0 items-center">
+        <FormItem className="flex flex-row space-x-3 space-y-0 items-center ">
           <FormControl>
-            <Checkbox
-              checked={field.value?.includes(item.id.toString())}
-              onCheckedChange={(checked: boolean) =>
-                handleCheckChange({ checked, field, item })
-              }
-            />
+            <div className="flex space-x-3">
+              <Checkbox
+                checked={field.value?.includes(item.id.toString())}
+                onCheckedChange={(checked: boolean) =>
+                  handleCheckChange({ checked, field, item })
+                }
+                // className="hidden group-hover:block"
+              />
+              <FormLabel
+                onClick={() =>
+                  handleCheckChange({
+                    checked: !field.value?.includes(item.id.toString()),
+                    field,
+                    item,
+                  })
+                }
+              >
+                {item.label}
+              </FormLabel>
+            </div>
           </FormControl>
-          <FormLabel onClick={(e) => e.stopPropagation()}>
-            {item.label}
-          </FormLabel>
         </FormItem>
         {item.count !== undefined && (
           <span className="text-sm">{item.count}</span>
@@ -107,11 +120,11 @@ export const FilterField = memo(
       <FormField
         key={item.id}
         control={form.control}
-        name={parent.field as string}
+        name={parent.field?.toString() as string}
         render={({ field }) => {
           if (hasNestedList) {
             return (
-              <div className={`flex flex-col gap-2 ${level > 0 ? 'ml-4' : ''}`}>
+              <div className={`flex flex-col gap-2 ${level > 0 ? 'ml-1' : ''}`}>
                 <div
                   className="flex items-center justify-between cursor-pointer"
                   onClick={() => {
@@ -138,23 +151,6 @@ export const FilterField = memo(
                       }}
                       level={level + 1}
                     />
-                    // <FilterItem key={child.id} item={child} field={child.field} level={level+1} />
-                    // <div
-                    //   className="flex flex-row space-x-3 space-y-0 items-center"
-                    //   key={child.id}
-                    // >
-                    //   <FormControl>
-                    //     <Checkbox
-                    //       checked={field.value?.includes(child.id.toString())}
-                    //       onCheckedChange={(checked) =>
-                    //         handleCheckChange({ checked, field, item: child })
-                    //       }
-                    //     />
-                    //   </FormControl>
-                    //   <FormLabel onClick={(e) => e.stopPropagation()}>
-                    //     {child.label}
-                    //   </FormLabel>
-                    // </div>
                   ))}
               </div>
             );

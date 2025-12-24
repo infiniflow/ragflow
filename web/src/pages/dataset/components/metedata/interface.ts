@@ -39,6 +39,7 @@ export type IManageModalProps = {
 
 export interface IManageValuesProps {
   title: ReactNode;
+  existsKeys: string[];
   visible: boolean;
   isEditField?: boolean;
   isAddValue?: boolean;
@@ -46,6 +47,7 @@ export interface IManageValuesProps {
   isShowValueSwitch?: boolean;
   isVerticalShowValue?: boolean;
   data: IMetaDataTableData;
+  type: MetadataType;
   hideModal: () => void;
   onSave: (data: IMetaDataTableData) => void;
   addUpdateValue: (key: string, value: string | string[]) => void;
