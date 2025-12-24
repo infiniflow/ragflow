@@ -1509,6 +1509,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         endWith: '结束是',
         empty: '为空',
         notEmpty: '不为空',
+        is: '是',
+        isNot: '不是',
       },
       switchLogicOperatorOptions: {
         and: '与',
