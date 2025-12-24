@@ -228,7 +228,7 @@ class ESConnection(ESConnectionBase):
                 self._connect()
                 continue
             except NotFoundError as e:
-                self.logger.exception(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
+                self.logger.debug(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
                 return None
             except Exception as e:
                 self.logger.exception(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
@@ -263,7 +263,7 @@ class ESConnection(ESConnectionBase):
                 self._connect()
                 continue
             except NotFoundError as e:
-                self.logger.exception(f"ESConnection.search {str(index_name)} query: " + str(q) + str(e))
+                self.logger.debug(f"ESConnection.search {str(index_name)} query: " + str(q) + str(e))
                 return None
             except Exception as e:
                 self.logger.exception(f"ESConnection.search {str(index_name)} query: " + str(q) + str(e))

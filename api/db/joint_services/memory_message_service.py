@@ -191,8 +191,8 @@ def init_message_id_sequence():
 
 def get_memory_size_cache(memory_id: str, uid: str):
     redis_key = f"memory_{memory_id}"
-    if REDIS_CONN.exists(redis_key):
-        return REDIS_CONN.get(redis_key)
+    if REDIS_CONN.exist(redis_key):
+        return int(REDIS_CONN.get(redis_key))
     else:
         memory_size_map = MessageService.calculate_memory_size(
             [memory_id],
