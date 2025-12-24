@@ -59,6 +59,12 @@ class InfinityConnectionBase(DocStoreConnection):
                 time.sleep(5)
             except Exception as e:
                 self.logger.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
+                try:
+                    if conn_pool is not None and inf_conn is not None:
+                        conn_pool.release_conn(inf_conn)
+                        self.logger.debug("Connection released")
+                except Exception as release_err:
+                    self.logger.error(f"Failed to release connection: {release_err}")
                 time.sleep(5)
         if self.connPool is None:
             msg = f"Infinity {infinity_uri} is unhealthy in 120s."
