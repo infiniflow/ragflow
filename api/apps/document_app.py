@@ -447,6 +447,26 @@ async def metadata_update():
     return get_json_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
 
+@manager.route("/update_metadata_setting", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("doc_id", "metadata")
+async def update_metadata_setting():
+    req = await get_request_json()
+    if not DocumentService.accessible(req["doc_id"], current_user.id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+
+    e, doc = DocumentService.get_by_id(req["doc_id"])
+    if not e:
+        return get_data_error_result(message="Document not found!")
+
+    DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
+    e, doc = DocumentService.get_by_id(doc.id)
+    if not e:
+        return get_data_error_result(message="Document not found!")
+
+    return get_json_result(data=doc.to_dict())
+
+
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
 # @login_required
 def thumbnails():
