@@ -397,7 +397,7 @@ async def build_chunks(task, progress_callback):
         metadata = {}
         for doc in docs:
             metadata = update_metadata_to(metadata, doc["metadata_obj"])
-            del ck["metadata_obj"]
+            del doc["metadata_obj"]
         if metadata:
             e, doc = DocumentService.get_by_id(task["doc_id"])
             if e:
