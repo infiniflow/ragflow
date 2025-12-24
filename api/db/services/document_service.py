@@ -696,10 +696,12 @@ class DocumentService(CommonService):
             for k,v in r.meta_fields.items():
                 if k not in meta:
                     meta[k] = {}
-                v = str(v)
-                if v not in meta[k]:
-                    meta[k][v] = []
-                meta[k][v].append(doc_id)
+                if not isinstance(v, list):
+                    v = [v]
+                for vv in v:
+                    if vv not in meta[k]:
+                        meta[k][vv] = []
+                    meta[k][vv].append(doc_id)
         return meta
 
     @classmethod
