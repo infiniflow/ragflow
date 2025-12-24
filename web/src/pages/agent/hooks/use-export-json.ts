@@ -8,7 +8,18 @@ export const useHandleExportJsonFile = () => {
   const { data } = useFetchAgent();
 
   const handleExportJson = useCallback(() => {
-    downloadJsonFile(buildDslData().graph, `${data.title}.json`);
+    const dslData = buildDslData();
+    // Export full DSL data including conversation variables
+    // Previously only graph was exported, now including variables for complete agent restoration
+    downloadJsonFile(
+      {
+        graph: dslData.graph,
+        variables: dslData.variables || {},
+        components: dslData.components,
+        globals: dslData.globals,
+      },
+      `${data.title}.json`,
+    );
   }, [buildDslData, data.title]);
 
   return {
