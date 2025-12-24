@@ -36,9 +36,11 @@ export function useDefaultParserValues() {
       // },
       entity_types: [],
       pages: [],
+      metadata: [],
+      enable_metadata: false,
     };
 
-    return defaultParserValues;
+    return defaultParserValues as IParserConfig;
   }, [t]);
 
   return defaultParserValues;

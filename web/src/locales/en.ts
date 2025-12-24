@@ -190,12 +190,21 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         manageMetadata: 'Manage metadata',
         metadata: 'Metadata',
         values: 'Values',
+        value: 'Value',
         action: 'Action',
         field: 'Field',
         description: 'Description',
         fieldName: 'Field name',
         editMetadata: 'Edit metadata',
         deleteWarn: 'This {{field}} will be removed from all associated files',
+        deleteManageFieldAllWarn:
+          'This field and all its corresponding values will be deleted from all associated files.',
+        deleteManageValueAllWarn:
+          'This value will be deleted from from all associated files.',
+        deleteManageFieldSingleWarn:
+          'This field and all its corresponding values will be deleted from this files.',
+        deleteManageValueSingleWarn:
+          'This value will be deleted from this files.',
       },
       metadataField: 'Metadata field',
       systemAttribute: 'System attribute',
