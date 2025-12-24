@@ -99,14 +99,14 @@ async def save_to_memory(memory_id: str, message_dict: dict):
         if memory.forgetting_policy == "fifo":
             message_ids_to_delete, delete_size = MessageService.pick_messages_to_delete_by_fifo(memory_id, tenant_id, size_to_delete)
             MessageService.delete_message({"message_id": message_ids_to_delete}, tenant_id, memory_id)
-            decrease_memory_size_cache(memory_id, tenant_id, delete_size)
+            decrease_memory_size_cache(memory_id, delete_size)
         else:
             return False, "Failed to insert message into memory. Memory size reached limit and cannot decide which to delete."
     fail_cases = MessageService.insert_message(message_list, tenant_id, memory_id)
     if fail_cases:
         return False, "Failed to insert message into memory. Details: " + "; ".join(fail_cases)
 
-    increase_memory_size_cache(memory_id, tenant_id, new_msg_size)
+    increase_memory_size_cache(memory_id, new_msg_size)
     return True, "Message saved successfully."
 
 
@@ -208,14 +208,14 @@ def set_memory_size_cache(memory_id: str, size: int):
     return REDIS_CONN.set(redis_key, size)
 
 
-def increase_memory_size_cache(memory_id: str, uid: str, size: int):
-    current_value = get_memory_size_cache(memory_id, uid)
-    return set_memory_size_cache(memory_id, current_value + size)
+def increase_memory_size_cache(memory_id: str, size: int):
+    redis_key = f"memory_{memory_id}"
+    return REDIS_CONN.incrby(redis_key, size)
 
 
-def decrease_memory_size_cache(memory_id: str, uid: str, size: int):
-    current_value = get_memory_size_cache(memory_id, uid)
-    return set_memory_size_cache(memory_id, max(current_value - size, 0))
+def decrease_memory_size_cache(memory_id: str, size: int):
+    redis_key = f"memory_{memory_id}"
+    return REDIS_CONN.decrby(redis_key, size)
 
 
 def init_memory_size_cache():

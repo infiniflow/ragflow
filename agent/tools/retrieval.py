@@ -265,16 +265,13 @@ class Retrieval(ToolBase, ABC):
             "keywords_similarity_weight": self._param.keywords_similarity_weight,
             "top_n": self._param.top_n
         })
-        print(f"found {len(message_list)} messages.")
-
         if not message_list:
             self.set_output("formalized_content", self._param.empty_response)
             return
         formated_content = "\n".join(memory_prompt(message_list, 200000))
-
         # set formalized_content output
         self.set_output("formalized_content", formated_content)
-        print(f"formated_content {formated_content}")
+
         return formated_content
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))

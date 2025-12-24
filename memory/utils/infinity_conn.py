@@ -277,7 +277,7 @@ class InfinityConnection(InfinityConnectionBase):
         self.logger.debug(f"INFINITY search final result: {str(res)}")
         return res, total_hits_count
 
-    def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int=2000):
+    def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int=512):
         condition = {"memory_id": memory_id, "exists": "forget_at_flt"}
         order_by = OrderByExpr()
         order_by.asc("forget_at_flt")

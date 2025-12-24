@@ -162,7 +162,7 @@ class MessageService:
             condition={},
             match_expressions=[],
             order_by=order_by,
-            offset=0, limit=2000*len(memory_ids),
+            offset=0, limit=2048*len(memory_ids),
             index_names=index_names, memory_ids=memory_ids, agg_fields=[], hide_forgotten=False
         )
         docs = settings.msgStoreConn.get_fields(res, ["memory_id", "content", "content_embed"])
@@ -199,7 +199,7 @@ class MessageService:
             condition={},
             match_expressions=[],
             order_by=order_by,
-            offset=0, limit=2000,
+            offset=0, limit=512,
             index_names=[_index_name], memory_ids=[memory_id], agg_fields=[]
         )
         docs = settings.msgStoreConn.get_fields(res, select_fields)
