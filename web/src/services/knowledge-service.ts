@@ -47,6 +47,7 @@ const {
   runRaptor,
   traceRaptor,
   check_embedding,
+  kbUpdateMetaData,
 } = api;
 
 const methods = {
@@ -215,6 +216,10 @@ const methods = {
     url: check_embedding,
     method: 'post',
   },
+  kbUpdateMetaData: {
+    url: kbUpdateMetaData,
+    method: 'post',
+  },
   // getMetaData: {
   //   url: getMetaData,
   //   method: 'get',
@@ -258,7 +263,7 @@ export const documentFilter = (kb_id: string) =>
 export const getMetaDataService = ({ kb_id }: { kb_id: string }) =>
   request.post(api.getMetaData, { data: { kb_id } });
 export const updateMetaData = ({ kb_id, data }: { kb_id: string; data: any }) =>
-  request.post(api.updateMetaData, { data: { kb_id, data } });
+  request.post(api.updateMetaData, { data: { kb_id, ...data } });
 
 export const listDataPipelineLogDocument = (
   params?: IFetchKnowledgeListRequestParams,

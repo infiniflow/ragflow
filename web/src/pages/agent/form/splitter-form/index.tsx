@@ -22,6 +22,7 @@ const outputList = buildOutputList(initialSplitterValues.outputs);
 
 export const FormSchema = z.object({
   chunk_token_size: z.number(),
+  image_table_context_window: z.number(),
   delimiters: z.array(
     z.object({
       value: z.string().optional(),
@@ -73,6 +74,13 @@ const SplitterForm = ({ node }: INextOperatorForm) => {
           max={30}
           min={0}
           label={t('flow.overlappedPercent')}
+        ></SliderInputFormField>
+        <SliderInputFormField
+          name="image_table_context_window"
+          max={256}
+          min={0}
+          label={t('knowledgeConfiguration.imageTableContextWindow')}
+          tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
         ></SliderInputFormField>
         <section>
           <span className="mb-2 inline-block">{t('flow.delimiters')}</span>

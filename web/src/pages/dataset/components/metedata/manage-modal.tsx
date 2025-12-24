@@ -27,7 +27,7 @@ import {
 import { Plus, Settings, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useManageMetaDataModal } from './hook';
+import { MetadataType, useManageMetaDataModal } from './hook';
 import { IManageModalProps, IMetaDataTableData } from './interface';
 import { ManageValuesModal } from './manage-values-modal';
 export const ManageMetadataModal = (props: IManageModalProps) => {
@@ -154,10 +154,33 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                               variant={'delete'}
                               className="p-0 bg-transparent"
                               onClick={() => {
-                                handleDeleteSingleValue(
-                                  row.getValue('field'),
-                                  value,
-                                );
+                                setDeleteDialogContent({
+                                  visible: true,
+                                  title:
+                                    t('common.delete') +
+                                    ' ' +
+                                    t('knowledgeDetails.metadata.metadata'),
+                                  name: row.getValue('field') + '/' + value,
+                                  warnText: t(
+                                    'knowledgeDetails.metadata.deleteWarn',
+                                    {
+                                      field:
+                                        t('knowledgeDetails.metadata.field') +
+                                        '/' +
+                                        t('knowledgeDetails.metadata.values'),
+                                    },
+                                  ),
+                                  onOk: () => {
+                                    hideDeleteModal();
+                                    handleDeleteSingleValue(
+                                      row.getValue('field'),
+                                      value,
+                                    );
+                                  },
+                                  onCancel: () => {
+                                    hideDeleteModal();
+                                  },
+                                });
                               }}
                             >
                               <Trash2 />
@@ -202,7 +225,9 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                     ' ' +
                     t('knowledgeDetails.metadata.metadata'),
                   name: row.getValue('field'),
-                  warnText: t('knowledgeDetails.metadata.deleteWarn'),
+                  warnText: t('knowledgeDetails.metadata.deleteWarn', {
+                    field: t('knowledgeDetails.metadata.field'),
+                  }),
                   onOk: () => {
                     hideDeleteModal();
                     handleDeleteSingleRow(row.getValue('field'));
@@ -244,18 +269,42 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
 
   const handleSaveValues = (data: IMetaDataTableData) => {
     setTableData((prev) => {
+      let newData;
       if (currentValueIndex >= prev.length) {
-        return [...prev, data];
+        // Add operation
+        newData = [...prev, data];
       } else {
-        return prev.map((item, index) => {
+        // Edit operation
+        newData = prev.map((item, index) => {
           if (index === currentValueIndex) {
             return data;
           }
           return item;
         });
       }
+
+      // Deduplicate by field and merge values
+      const fieldMap = new Map<string, IMetaDataTableData>();
+      newData.forEach((item) => {
+        if (fieldMap.has(item.field)) {
+          // Merge values if field exists
+          const existingItem = fieldMap.get(item.field)!;
+          const mergedValues = [
+            ...new Set([...existingItem.values, ...item.values]),
+          ];
+          fieldMap.set(item.field, { ...existingItem, values: mergedValues });
+        } else {
+          fieldMap.set(item.field, item);
+        }
+      });
+
+      return Array.from(fieldMap.values());
     });
   };
+
+  const existsKeys = useMemo(() => {
+    return tableData.map((item) => item.field);
+  }, [tableData]);
 
   return (
     <>
@@ -335,7 +384,15 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       </Modal>
       {manageValuesVisible && (
         <ManageValuesModal
-          title={<div>{t('knowledgeDetails.metadata.editMetadata')}</div>}
+          title={
+            <div>
+              {metadataType === MetadataType.Setting
+                ? t('knowledgeDetails.metadata.fieldSetting')
+                : t('knowledgeDetails.metadata.editMetadata')}
+            </div>
+          }
+          type={metadataType}
+          existsKeys={existsKeys}
           visible={manageValuesVisible}
           hideModal={hideManageValuesModal}
           data={valueData}

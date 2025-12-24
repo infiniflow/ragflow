@@ -203,6 +203,9 @@ export default {
     },
     knowledgeConfiguration: {
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
+      imageTableContextWindow: '影像與表格上下文視窗',
+      imageTableContextWindowTip:
+        '擷取影像與表格上下方的 N 個 token，為該 chunk 提供更豐富的背景上下文。',
       name: '知識庫名稱',
       photo: '知識庫圖片',
       photoTip: '你可以上傳4MB的文件',

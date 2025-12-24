@@ -73,6 +73,10 @@ export function SavingButton() {
                   ...values,
                   parser_config: {
                     ...values.parser_config,
+                    image_context_size:
+                      values.parser_config.image_table_context_window,
+                    table_context_size:
+                      values.parser_config.image_table_context_window,
                     // Unset children delimiter if this option is not enabled
                     children_delimiter: values.parser_config.enable_children
                       ? values.parser_config.children_delimiter

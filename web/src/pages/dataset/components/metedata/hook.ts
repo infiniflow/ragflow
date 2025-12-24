@@ -1,11 +1,14 @@
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useSetDocumentMeta } from '@/hooks/use-document-request';
 import {
+  DocumentApiAction,
+  useSetDocumentMeta,
+} from '@/hooks/use-document-request';
+import kbService, {
   getMetaDataService,
   updateMetaData,
 } from '@/services/knowledge-service';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'umi';
@@ -191,27 +194,31 @@ export const useManageMetaDataModal = (
   const { data, loading } = useFetchMetaDataManageData(type);
 
   const [tableData, setTableData] = useState<IMetaDataTableData[]>(metaData);
-
+  const queryClient = useQueryClient();
   const { operations, addDeleteRow, addDeleteValue, addUpdateValue } =
     useMetadataOperations();
 
   const { setDocumentMeta } = useSetDocumentMeta();
 
   useEffect(() => {
-    if (data) {
-      setTableData(data);
-    } else {
-      setTableData([]);
+    if (type === MetadataType.Manage) {
+      if (data) {
+        setTableData(data);
+      } else {
+        setTableData([]);
+      }
     }
-  }, [data]);
+  }, [data, type]);
 
   useEffect(() => {
-    if (metaData) {
-      setTableData(metaData);
-    } else {
-      setTableData([]);
+    if (type !== MetadataType.Manage) {
+      if (metaData) {
+        setTableData(metaData);
+      } else {
+        setTableData([]);
+      }
     }
-  }, [metaData]);
+  }, [metaData, type]);
 
   const handleDeleteSingleValue = useCallback(
     (field: string, value: string) => {
@@ -255,11 +262,14 @@ export const useManageMetaDataModal = (
         data: operations,
       });
       if (res.code === 0) {
-        message.success(t('message.success'));
+        queryClient.invalidateQueries({
+          queryKey: [DocumentApiAction.FetchDocumentList],
+        });
+        message.success(t('message.operated'));
         callback();
       }
     },
-    [operations, id, t],
+    [operations, id, t, queryClient],
   );
 
   const handleSaveUpdateSingle = useCallback(
@@ -282,11 +292,18 @@ export const useManageMetaDataModal = (
   const handleSaveSettings = useCallback(
     async (callback: () => void) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      callback();
+      const { data: res } = await kbService.kbUpdateMetaData({
+        kb_id: id,
+        metadata: data,
+      });
+      if (res.code === 0) {
+        message.success(t('message.operated'));
+        callback?.();
+      }
 
       return data;
     },
-    [tableData],
+    [tableData, id],
   );
 
   const handleSave = useCallback(

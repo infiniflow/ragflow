@@ -171,6 +171,9 @@ export default {
       autoQuestionsTip: `ランキングスコアを向上させるために、「システムモデル設定」で定義されたチャットモデルを使用して、ナレッジベースのチャンクごとにN個の質問を抽出します。 これにより、追加のトークンが消費されることに注意してください。 結果はチャンクリストで表示および編集できます。 質問抽出エラーはチャンク処理をブロックしません。空の結果が元のチャンクに追加されます。詳細は https://ragflow.io/docs/dev/autokeyword_autoquestion をご覧ください。`,
     },
     knowledgeConfiguration: {
+      imageTableContextWindow: '画像・表コンテキストウィンドウ',
+      imageTableContextWindowTip:
+        '画像と表の上下のテキストをNトークン取得し、より豊かな背景コンテキストを提供します。',
       titleDescription:
         'ナレッジベースの設定、特にチャンク方法をここで更新してください。',
       name: 'ナレッジベース名',

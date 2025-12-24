@@ -425,6 +425,7 @@ class KnowledgebaseService(CommonService):
 
         # Update parser_config (always override with validated default/merged config)
         payload["parser_config"] = get_parser_config(parser_id, kwargs.get("parser_config"))
+        payload["parser_config"]["llm_id"] = _t.llm_id
 
         return True, payload
 

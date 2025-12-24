@@ -70,7 +70,7 @@ export default function DatasetSettings() {
         html4excel: false,
         topn_tags: 3,
         toc_extraction: false,
-        image_context_window: 0,
+        image_table_context_window: 0,
         overlapped_percent: 0,
         // MinerU-specific defaults
         mineru_parse_method: 'auto',
@@ -93,6 +93,7 @@ export default function DatasetSettings() {
         },
         metadata: [],
         enable_metadata: false,
+        llm_id: '',
       },
       pipeline_id: '',
       parseType: 1,

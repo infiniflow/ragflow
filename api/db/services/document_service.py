@@ -33,12 +33,13 @@ from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTena
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from common.metadata_utils import dedupe_list
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
 from common.constants import LLMType, ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import REDIS_CONN
-from rag.utils.doc_store_conn import OrderByExpr
+from common.doc_store.doc_store_base import OrderByExpr
 from common import settings
 
 
@@ -345,7 +346,7 @@ class DocumentService(CommonService):
                 chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
                                                       page * page_size, page_size, search.index_name(tenant_id),
                                                       [doc.kb_id])
-                chunk_ids = settings.docStoreConn.get_chunk_ids(chunks)
+                chunk_ids = settings.docStoreConn.get_doc_ids(chunks)
                 if not chunk_ids:
                     break
                 all_chunk_ids.extend(chunk_ids)
@@ -696,10 +697,12 @@ class DocumentService(CommonService):
             for k,v in r.meta_fields.items():
                 if k not in meta:
                     meta[k] = {}
-                v = str(v)
-                if v not in meta[k]:
-                    meta[k][v] = []
-                meta[k][v].append(doc_id)
+                if not isinstance(v, list):
+                    v = [v]
+                for vv in v:
+                    if vv not in meta[k]:
+                        meta[k][vv] = []
+                    meta[k][vv].append(doc_id)
         return meta
 
     @classmethod
@@ -797,7 +800,10 @@ class DocumentService(CommonService):
                 match_provided = "match" in upd
                 if isinstance(meta[key], list):
                     if not match_provided:
-                        meta[key] = new_value
+                        if isinstance(new_value, list):
+                            meta[key] = dedupe_list(new_value)
+                        else:
+                            meta[key] = new_value
                         changed = True
                     else:
                         match_value = upd.get("match")
@@ -810,7 +816,7 @@ class DocumentService(CommonService):
                             else:
                                 new_list.append(item)
                         if replaced:
-                            meta[key] = new_list
+                            meta[key] = dedupe_list(new_list)
                             changed = True
                 else:
                     if not match_provided:
@@ -1230,8 +1236,8 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             d["q_%d_vec" % len(v)] = v
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
-                if not settings.docStoreConn.indexExist(idxnm, kb_id):
-                    settings.docStoreConn.createIdx(idxnm, kb_id, len(vectors[0]))
+                if not settings.docStoreConn.index_exist(idxnm, kb_id):
+                    settings.docStoreConn.create_idx(idxnm, kb_id, len(vectors[0]))
                 try_create_idx = False
             settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 

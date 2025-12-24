@@ -82,7 +82,7 @@ def id2image(image_id:str|None, storage_get_func: partial):
         return
     bkt, nm = image_id.split("-")
     try:
-        blob = storage_get_func(bucket=bkt, filename=nm)
+        blob = storage_get_func(bucket=bkt, fnm=nm)
         if not blob:
             return
         return Image.open(BytesIO(blob))

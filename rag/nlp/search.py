@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from rag.prompts.generator import relevant_chunks_with_toc
 from rag.nlp import rag_tokenizer, query
 import numpy as np
-from rag.utils.doc_store_conn import DocStoreConnection, MatchDenseExpr, FusionExpr, OrderByExpr
+from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByExpr, DocStoreConnection
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
@@ -155,7 +155,7 @@ class Dealer:
                     kwds.add(kk)
 
         logging.debug(f"TOTAL: {total}")
-        ids = self.dataStore.get_chunk_ids(res)
+        ids = self.dataStore.get_doc_ids(res)
         keywords = list(kwds)
         highlight = self.dataStore.get_highlight(res, keywords, "content_with_weight")
         aggs = self.dataStore.get_aggregation(res, "docnm_kwd")
@@ -545,7 +545,7 @@ class Dealer:
         return res
 
     def all_tags(self, tenant_id: str, kb_ids: list[str], S=1000):
-        if not self.dataStore.indexExist(index_name(tenant_id), kb_ids[0]):
+        if not self.dataStore.index_exist(index_name(tenant_id), kb_ids[0]):
             return []
         res = self.dataStore.search([], [], {}, [], OrderByExpr(), 0, 0, index_name(tenant_id), kb_ids, ["tag_kwd"])
         return self.dataStore.get_aggregation(res, "tag_kwd")
