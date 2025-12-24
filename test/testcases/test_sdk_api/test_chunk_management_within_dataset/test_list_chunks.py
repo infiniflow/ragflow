@@ -77,7 +77,6 @@ class TestChunksList:
             ({"keywords": ""}, 5),
             ({"keywords": "1"}, 1),
             ({"keywords": "chunk"}, 4),
-            pytest.param({"keywords": "ragflow"}, 1, marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6509")),
             pytest.param({"keywords": "ragflow"}, 5, marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") != "infinity", reason="issues/6509")),
             ({"keywords": "unknown"}, 0),
         ],

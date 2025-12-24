@@ -37,6 +37,7 @@ SESSION_WITH_CHAT_NAME_LIMIT = 255
 
 DEFAULT_PARSER_CONFIG = {
     "layout_recognize": "DeepDOC",
+    "llm_id": "glm-4-flash@ZHIPU-AI",
     "chunk_token_num": 512,
     "delimiter": "\n",
     "auto_keywords": 0,
