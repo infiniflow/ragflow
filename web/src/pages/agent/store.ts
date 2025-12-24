@@ -466,7 +466,7 @@ const useGraphStore = create<RFState>()(
         }
       },
       updateSwitchFormData: (source, sourceHandle, target, isConnecting) => {
-        const { updateNodeForm, edges } = get();
+        const { updateNodeForm, edges, getOperatorTypeFromId } = get();
         if (sourceHandle) {
           // A handle will connect to multiple downstream nodes
           let currentHandleTargets = edges
@@ -474,7 +474,8 @@ const useGraphStore = create<RFState>()(
               (x) =>
                 x.source === source &&
                 x.sourceHandle === sourceHandle &&
-                typeof x.target === 'string',
+                typeof x.target === 'string' &&
+                getOperatorTypeFromId(x.target) !== Operator.Placeholder,
             )
             .map((x) => x.target);
 
