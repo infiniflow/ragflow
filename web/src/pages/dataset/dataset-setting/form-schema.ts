@@ -96,7 +96,7 @@ export const formSchema = z
           )
           .optional(),
         enable_metadata: z.boolean().optional(),
-        llm_id: z.string().optional(),
+        llm_id: z.string().min(1, { message: 'Indexing model is required' }),
       })
       .optional(),
     pagerank: z.number(),

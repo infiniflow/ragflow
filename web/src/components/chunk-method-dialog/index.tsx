@@ -18,7 +18,9 @@ import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-reques
 import { IModalProps } from '@/interfaces/common';
 import { IParserConfig } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import { MetadataType } from '@/pages/dataset/components/metedata/hooks/use-manage-modal';
 import {
+  AutoMetadata,
   ChunkMethodItem,
   EnableTocToggle,
   ImageContextWindow,
@@ -86,6 +88,7 @@ export function ChunkMethodDialog({
   visible,
   parserConfig,
   loading,
+  documentId,
 }: IProps) {
   const { t } = useTranslation();
 
@@ -142,6 +145,18 @@ export function ChunkMethodDialog({
         pages: z
           .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
           .optional(),
+        metadata: z
+          .array(
+            z
+              .object({
+                key: z.string().optional(),
+                description: z.string().optional(),
+                enum: z.array(z.string().optional()).optional(),
+              })
+              .optional(),
+          )
+          .optional(),
+        enable_metadata: z.boolean().optional(),
       }),
     })
     .superRefine((data, ctx) => {
@@ -373,6 +388,10 @@ export function ChunkMethodDialog({
                   )}
                   {showAutoKeywords(selectedTag) && (
                     <>
+                      <AutoMetadata
+                        type={MetadataType.SingleFileSetting}
+                        otherData={{ documentId }}
+                      />
                       <AutoKeywordsFormField></AutoKeywordsFormField>
                       <AutoQuestionsFormField></AutoQuestionsFormField>
                     </>

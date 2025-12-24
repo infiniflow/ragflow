@@ -15,6 +15,7 @@ import { Progress } from '@/components/ui/progress';
 import { useControllableState } from '@/hooks/use-controllable-state';
 import { cn, formatBytes } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 function isFileWithPreview(file: File): file is File & { preview: string } {
   return 'preview' in file && typeof file.preview === 'string';
@@ -58,10 +59,17 @@ function FileCard({ file, progress, onRemove }: FileCardProps) {
         </div>
         <div className="flex flex-col flex-1 gap-2 overflow-hidden">
           <div className="flex flex-col gap-px">
-            <p className="line-clamp-1 text-sm font-medium text-foreground/80 text-ellipsis">
-              {file.name}
-            </p>
-            <p className="text-xs text-muted-foreground">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className=" w-fit line-clamp-1 text-sm font-medium text-foreground/80 text-ellipsis truncate max-w-[370px]">
+                  {file.name}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent className="border border-border-button">
+                {file.name}
+              </TooltipContent>
+            </Tooltip>
+            <p className="text-xs text-text-secondary">
               {formatBytes(file.size)}
             </p>
           </div>
@@ -311,7 +319,7 @@ export function FileUploader(props: FileUploaderProps) {
                     />
                   </div>
                   <div className="flex flex-col gap-px">
-                    <p className="font-medium text-text-secondary">
+                    <p className="font-medium text-text-secondary ">
                       {title || t('knowledgeDetails.uploadTitle')}
                     </p>
                     <p className="text-sm text-text-disabled">

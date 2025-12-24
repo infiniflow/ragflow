@@ -50,7 +50,11 @@ export interface IManageValuesProps {
   type: MetadataType;
   hideModal: () => void;
   onSave: (data: IMetaDataTableData) => void;
-  addUpdateValue: (key: string, value: string | string[]) => void;
+  addUpdateValue: (
+    key: string,
+    originalValue: string,
+    newValue: string,
+  ) => void;
   addDeleteValue: (key: string, value: string) => void;
 }
 
@@ -61,7 +65,8 @@ interface DeleteOperation {
 
 interface UpdateOperation {
   key: string;
-  value: string | string[];
+  match: string;
+  value: string;
 }
 
 export interface MetadataOperations {
