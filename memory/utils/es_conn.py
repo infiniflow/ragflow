@@ -227,6 +227,9 @@ class ESConnection(ESConnectionBase):
                 self.logger.exception("ES request timeout")
                 self._connect()
                 continue
+            except NotFoundError as e:
+                self.logger.exception(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
+                return None
             except Exception as e:
                 self.logger.exception(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
                 raise e
@@ -259,6 +262,9 @@ class ESConnection(ESConnectionBase):
                 self.logger.exception("ES request timeout")
                 self._connect()
                 continue
+            except NotFoundError as e:
+                self.logger.exception(f"ESConnection.search {str(index_name)} query: " + str(q) + str(e))
+                return None
             except Exception as e:
                 self.logger.exception(f"ESConnection.search {str(index_name)} query: " + str(q) + str(e))
                 raise e
