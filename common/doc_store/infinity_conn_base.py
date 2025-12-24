@@ -45,6 +45,7 @@ class InfinityConnectionBase(DocStoreConnection):
         self.connPool = None
         self.logger.info(f"Use Infinity {infinity_uri} as the doc engine.")
         for _ in range(24):
+            # todo rm manually destroy conn_pool after infinity sdk fixed __del__
             try:
                 conn_pool = ConnectionPool(infinity_uri, max_size=4)
                 inf_conn = conn_pool.get_conn()
@@ -53,8 +54,10 @@ class InfinityConnectionBase(DocStoreConnection):
                     self._migrate_db(inf_conn)
                     self.connPool = conn_pool
                     conn_pool.release_conn(inf_conn)
+                    conn_pool.destroy()
                     break
                 conn_pool.release_conn(inf_conn)
+                conn_pool.destroy()
                 self.logger.warning(f"Infinity status: {res.server_status}. Waiting Infinity {infinity_uri} to be healthy.")
                 time.sleep(5)
             except Exception as e:
@@ -62,7 +65,10 @@ class InfinityConnectionBase(DocStoreConnection):
                 try:
                     if conn_pool is not None and inf_conn is not None:
                         conn_pool.release_conn(inf_conn)
-                        self.logger.debug("Connection released")
+                        conn_pool.destroy()
+                    elif conn_pool is not None:
+                        conn_pool.destroy()
+                    self.logger.debug("Connection released")
                 except Exception as release_err:
                     self.logger.error(f"Failed to release connection: {release_err}")
                 time.sleep(5)
