@@ -3051,7 +3051,7 @@ wheels = [
 
 [[package]]
 name = "infinity-sdk"
-version = "0.6.11"
+version = "0.6.13"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "datrie" },
@@ -3068,9 +3068,9 @@ dependencies = [
     { name = "sqlglot", extra = ["rs"] },
     { name = "thrift" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/6e/6d/294b4c8fb36f874c92576107fab22da6d64f567fd3e24a312d7bcba5f17a/infinity_sdk-0.6.11.tar.gz", hash = "sha256:f78acd5439c3837715ab308c49be04b416bdaa42a5f4fb840682639ee39d435f", size = 29518792, upload-time = "2025-12-08T05:58:35.167Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/03/de/56fdc0fa962d5a8e0aa68d16f5321b2d88d79fceb7d0d6cfdde338b65d05/infinity_sdk-0.6.13.tar.gz", hash = "sha256:faf7bc23de7fa549a3842753eddad54ae551ada9df4fff25421658a7fa6fa8c2", size = 29518902, upload-time = "2025-12-24T10:00:01.483Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/18/cf/d7d1bc584c8f7d1cd8f75c39067179b98ca4bcbe5a86c61e7dbc2b8e692d/infinity_sdk-0.6.11-py3-none-any.whl", hash = "sha256:ec5ac3e710f29db4b875d3e24e20e391ad64270a5e5d189295cc91c362af74d1", size = 29737403, upload-time = "2025-12-08T05:54:58.798Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f4/a0/8f1e134fdf4ca8bebac7b62caace1816953bb5ffc720d9f0004246c8c38d/infinity_sdk-0.6.13-py3-none-any.whl", hash = "sha256:c08a523d2c27e9a7e6e88be640970530b4661a67c3e9dc3e1aa89533a822fd78", size = 29737403, upload-time = "2025-12-24T09:56:16.93Z" },
 ]
 
 [[package]]
@@ -6229,7 +6229,7 @@ requires-dist = [
     { name = "grpcio-status", specifier = "==1.67.1" },
     { name = "html-text", specifier = "==0.6.2" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
-    { name = "infinity-sdk", specifier = "==0.6.11" },
+    { name = "infinity-sdk", specifier = "==0.6.13" },
     { name = "jira", specifier = "==3.10.5" },
     { name = "json-repair", specifier = "==0.35.0" },
     { name = "langfuse", specifier = ">=2.60.0" },
