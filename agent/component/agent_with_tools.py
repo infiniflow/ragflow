@@ -86,8 +86,9 @@ class Agent(LLM, ToolBase):
         self.tools = {}
         for idx, cpn in enumerate(self._param.tools):
             cpn = self._load_tool_obj(cpn)
-            name = cpn.get_meta()["function"]["name"]
-            self.tools[f"{name}_{idx}"] = cpn
+            original_name = cpn.get_meta()["function"]["name"]
+            indexed_name = f"{original_name}_{idx}"
+            self.tools[indexed_name] = cpn
 
         self.chat_mdl = LLMBundle(self._canvas.get_tenant_id(), TenantLLMService.llm_id2llm_type(self._param.llm_id), self._param.llm_id,
                                   max_retries=self._param.max_retries,
@@ -95,7 +96,12 @@ class Agent(LLM, ToolBase):
                                   max_rounds=self._param.max_rounds,
                                   verbose_tool_use=True
                                   )
-        self.tool_meta = [v.get_meta() for _,v in self.tools.items()]
+        self.tool_meta = []
+        for indexed_name, tool_obj in self.tools.items():
+            original_meta = tool_obj.get_meta()
+            indexed_meta = deepcopy(original_meta)
+            indexed_meta["function"]["name"] = indexed_name
+            self.tool_meta.append(indexed_meta)
 
         for mcp in self._param.mcp:
             _, mcp_server = MCPServerService.get_by_id(mcp["mcp_id"])
@@ -109,7 +115,8 @@ class Agent(LLM, ToolBase):
 
     def _load_tool_obj(self, cpn: dict) -> object:
         from agent.component import component_class
-        param = component_class(cpn["component_name"] + "Param")()
+        tool_name = cpn["component_name"]
+        param = component_class(tool_name + "Param")()
         param.update(cpn["params"])
         try:
             param.check()
@@ -277,19 +284,15 @@ class Agent(LLM, ToolBase):
         else:
             user_request = history[-1]["content"]
 
-        def build_task_desc(prompt: str, user_request: str, tool_metas: list[dict], user_defined_prompt: dict | None = None) -> str:
+        def build_task_desc(prompt: str, user_request: str, user_defined_prompt: dict | None = None) -> str:
             """Build a minimal task_desc by concatenating prompt, query, and tool schemas."""
             user_defined_prompt = user_defined_prompt or {}
-
-            tools_json = json.dumps(tool_metas, ensure_ascii=False, indent=2)
 
             task_desc = (
                 "### Agent Prompt\n"
                 f"{prompt}\n\n"
                 "### User Request\n"
                 f"{user_request}\n\n"
-                "### Tools (schemas)\n"
-                f"{tools_json}\n"
             )
 
             if user_defined_prompt:
@@ -368,7 +371,7 @@ class Agent(LLM, ToolBase):
                 hist.append({"role": "user", "content": content})
 
         st = timer()
-        task_desc = build_task_desc(prompt, user_request, tool_metas, user_defined_prompt)
+        task_desc = build_task_desc(prompt, user_request, user_defined_prompt)
         self.callback("analyze_task", {}, task_desc, elapsed_time=timer()-st)
         for _ in range(self._param.max_rounds + 1):
             if self.check_if_canceled("Agent streaming"):

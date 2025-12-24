@@ -395,9 +395,9 @@ async def build_chunks(task, progress_callback):
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
         metadata = {}
-        for ck in cks:
-            metadata = update_metadata_to(metadata, ck["metadata_obj"])
-            del ck["metadata_obj"]
+        for doc in docs:
+            metadata = update_metadata_to(metadata, doc["metadata_obj"])
+            del doc["metadata_obj"]
         if metadata:
             e, doc = DocumentService.get_by_id(task["doc_id"])
             if e:
@@ -506,7 +506,7 @@ def build_TOC(task, docs, progress_callback):
 
 def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
-    return settings.docStoreConn.createIdx(idxnm, row.get("kb_id", ""), vector_size)
+    return settings.docStoreConn.create_idx(idxnm, row.get("kb_id", ""), vector_size)
 
 
 async def embedding(docs, mdl, parser_config=None, callback=None):

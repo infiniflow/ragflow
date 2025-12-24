@@ -11,7 +11,7 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { useForm } from 'react-hook-form';
+import { FieldPath, useForm } from 'react-hook-form';
 import { ZodArray, ZodString, z } from 'zod';
 
 import { Button } from '@/components/ui/button';
@@ -178,7 +178,9 @@ function CheckboxFormMultiple({
                 <FormField
                   key={x.field}
                   control={form.control}
-                  name={x.field}
+                  name={
+                    x.field.toString() as FieldPath<z.infer<typeof FormSchema>>
+                  }
                   render={() => (
                     <FormItem className="space-y-4">
                       <div>
@@ -186,19 +188,20 @@ function CheckboxFormMultiple({
                           {x.label}
                         </FormLabel>
                       </div>
-                      {x.list.map((item) => {
-                        return (
-                          <FilterField
-                            key={item.id}
-                            item={{ ...item }}
-                            parent={{
-                              ...x,
-                              id: x.field,
-                              // field: `${x.field}${item.field ? '.' + item.field : ''}`,
-                            }}
-                          />
-                        );
-                      })}
+                      {x.list?.length &&
+                        x.list.map((item) => {
+                          return (
+                            <FilterField
+                              key={item.id}
+                              item={{ ...item }}
+                              parent={{
+                                ...x,
+                                id: x.field,
+                                // field: `${x.field}${item.field ? '.' + item.field : ''}`,
+                              }}
+                            />
+                          );
+                        })}
                       <FormMessage />
                     </FormItem>
                   )}

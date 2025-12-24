@@ -35,7 +35,8 @@ import {
   MetadataType,
   useManageMetadata,
   util,
-} from '../../components/metedata/hook';
+} from '../../components/metedata/hooks/use-manage-modal';
+import { IMetaDataReturnJSONSettings } from '../../components/metedata/interface';
 import { ManageMetadataModal } from '../../components/metedata/manage-modal';
 import {
   useHandleKbEmbedding,
@@ -324,14 +325,14 @@ export function ImageContextWindow() {
   return (
     <FormField
       control={form.control}
-      name="parser_config.image_context_window"
+      name="parser_config.image_table_context_window"
       render={({ field }) => (
         <FormItem>
           <FormControl>
             <SliderInputFormField
               {...field}
-              label={t('imageContextWindow')}
-              tooltip={t('imageContextWindowTip')}
+              label={t('imageTableContextWindow')}
+              tooltip={t('imageTableContextWindowTip')}
               defaultValue={0}
               min={0}
               max={256}
@@ -359,7 +360,13 @@ export function OverlappedPercent() {
   );
 }
 
-export function AutoMetadata() {
+export function AutoMetadata({
+  type = MetadataType.Setting,
+  otherData,
+}: {
+  type?: MetadataType;
+  otherData?: Record<string, any>;
+}) {
   // get metadata field
   const form = useFormContext();
   const {
@@ -369,6 +376,7 @@ export function AutoMetadata() {
     tableData,
     config: metadataConfig,
   } = useManageMetadata();
+
   const autoMetadataField: FormFieldConfig = {
     name: 'parser_config.enable_metadata',
     label: t('knowledgeConfiguration.autoMetadata'),
@@ -379,6 +387,7 @@ export function AutoMetadata() {
     render: (fieldProps: ControllerRenderProps) => (
       <div className="flex items-center justify-between">
         <Button
+          type="button"
           variant="ghost"
           onClick={() => {
             const metadata = form.getValues('parser_config.metadata');
@@ -387,7 +396,8 @@ export function AutoMetadata() {
             showManageMetadataModal({
               metadata: tableMetaData,
               isCanAdd: true,
-              type: MetadataType.Setting,
+              type: type,
+              record: otherData,
             });
           }}
         >
@@ -402,6 +412,10 @@ export function AutoMetadata() {
         />
       </div>
     ),
+  };
+
+  const handleSaveMetadata = (data?: IMetaDataReturnJSONSettings) => {
+    form.setValue('parser_config.metadata', data || []);
   };
   return (
     <>
@@ -431,8 +445,8 @@ export function AutoMetadata() {
           isShowDescription={true}
           isShowValueSwitch={true}
           isVerticalShowValue={false}
-          success={(data) => {
-            form.setValue('parser_config.metadata', data || []);
+          success={(data?: IMetaDataReturnJSONSettings) => {
+            handleSaveMetadata(data);
           }}
         />
       )}

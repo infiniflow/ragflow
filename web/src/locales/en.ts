@@ -176,6 +176,11 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
     },
     knowledgeDetails: {
       metadata: {
+        valueExists:
+          'Value already exists. Confirm to merge duplicates and combine all associated files.',
+        fieldNameExists:
+          'Field name already exists. Confirm to merge duplicates and combine all associated files.',
+        fieldExists: 'Field already exists.',
         fieldSetting: 'Field settings',
         changesAffectNewParses: 'Changes affect new parses only.',
         editMetadataForDataset: 'View and edit metadata for ',
@@ -185,11 +190,21 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         manageMetadata: 'Manage metadata',
         metadata: 'Metadata',
         values: 'Values',
+        value: 'Value',
         action: 'Action',
         field: 'Field',
         description: 'Description',
         fieldName: 'Field name',
         editMetadata: 'Edit metadata',
+        deleteWarn: 'This {{field}} will be removed from all associated files',
+        deleteManageFieldAllWarn:
+          'This field and all its corresponding values will be deleted from all associated files.',
+        deleteManageValueAllWarn:
+          'This value will be deleted from from all associated files.',
+        deleteManageFieldSingleWarn:
+          'This field and all its corresponding values will be deleted from this files.',
+        deleteManageValueSingleWarn:
+          'This value will be deleted from this files.',
       },
       metadataField: 'Metadata field',
       systemAttribute: 'System attribute',
@@ -371,9 +386,9 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       globalIndexModel: 'Indexing model',
       settings: 'Settings',
       autoMetadataTip: `Automatically generate metadata. Applies to new files during parsing. Existing files require re-parsing to update (chunks remain preserved). Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'.`,
-      imageContextWindow: 'Image context window',
-      imageContextWindowTip:
-        'Captures N tokens of text above and below the image to provide richer background context for the image chunk.',
+      imageTableContextWindow: 'Image & table context window',
+      imageTableContextWindowTip:
+        'Captures N tokens of text above and below the image & table to provide richer background context.',
       autoMetadata: 'Auto metadata',
       mineruOptions: 'MinerU Options',
       mineruParseMethod: 'Parse Method',
@@ -1607,6 +1622,8 @@ Example: Virtual Hosted Style`,
         notEmpty: 'Not empty',
         in: 'In',
         notIn: 'Not in',
+        is: 'Is',
+        isNot: 'Is not',
       },
       switchLogicOperatorOptions: {
         and: 'AND',
@@ -1868,6 +1885,8 @@ This process aggregates variables from multiple branches into a single variable 
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       query: 'Query variables',
+      switchPromptMessage:
+        'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
       queryRequired: 'Query is required',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',

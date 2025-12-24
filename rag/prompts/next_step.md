@@ -94,7 +94,7 @@ This content will NOT be shown to the user.
 ## Step 2: Structured Reflection (MANDATORY before `complete_task`)
 
 ### Context
-- Goal: {{ task_analysis }}
+- Goal: Reflect on the current task based on the full conversation context
 - Executed tool calls so far (if any): reflect from conversation history
 
 ### Task Complexity Assessment
