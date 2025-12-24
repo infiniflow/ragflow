@@ -54,7 +54,6 @@ class InfinityConnectionBase(DocStoreConnection):
                     self._migrate_db(inf_conn)
                     self.connPool = conn_pool
                     conn_pool.release_conn(inf_conn)
-                    conn_pool.destroy()
                     break
                 conn_pool.release_conn(inf_conn)
                 conn_pool.destroy()
