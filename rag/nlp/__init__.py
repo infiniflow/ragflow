@@ -348,7 +348,8 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
             d["doc_type_kwd"] = "table"
             if img:
                 d["image"] = img
-                d["doc_type_kwd"] = "image"
+                if d["content_with_weight"].find("<tr>") < 0:
+                    d["doc_type_kwd"] = "image"
             if poss:
                 add_positions(d, poss)
             res.append(d)
@@ -361,7 +362,8 @@ def tokenize_table(tbls, doc, eng, batch_size=10):
             d["doc_type_kwd"] = "table"
             if img:
                 d["image"] = img
-                d["doc_type_kwd"] = "image"
+                if d["content_with_weight"].find("<tr>") < 0:
+                    d["doc_type_kwd"] = "image"
             add_positions(d, poss)
             res.append(d)
     return res
