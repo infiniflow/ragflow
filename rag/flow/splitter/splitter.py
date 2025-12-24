@@ -23,7 +23,7 @@ from rag.utils.base64_image import id2image, image2id
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.splitter.schema import SplitterFromUpstream
-from rag.nlp import naive_merge, naive_merge_with_images
+from rag.nlp import attach_media_context, naive_merge, naive_merge_with_images
 from common import settings
 
 
@@ -34,11 +34,15 @@ class SplitterParam(ProcessParamBase):
         self.delimiters = ["\n"]
         self.overlapped_percent = 0
         self.children_delimiters = []
+        self.table_context_size = 0
+        self.image_context_size = 0
 
     def check(self):
         self.check_empty(self.delimiters, "Delimiters.")
         self.check_positive_integer(self.chunk_token_size, "Chunk token size.")
         self.check_decimal_float(self.overlapped_percent, "Overlapped percentage: [0, 1)")
+        self.check_nonnegative_number(self.table_context_size, "Table context size.")
+        self.check_nonnegative_number(self.image_context_size, "Image context size.")
 
     def get_input_form(self) -> dict[str, dict]:
         return {}
@@ -103,8 +107,18 @@ class Splitter(ProcessBase):
             return
 
         # json
+        json_result = from_upstream.json_result or []
+        if self._param.table_context_size or self._param.image_context_size:
+            for ck in json_result:
+                if "image" not in ck and ck.get("img_id") and not (isinstance(ck.get("text"), str) and ck.get("text").strip()):
+                    ck["image"] = True
+            attach_media_context(json_result, self._param.table_context_size, self._param.image_context_size)
+            for ck in json_result:
+                if ck.get("image") is True:
+                    del ck["image"]
+
         sections, section_images = [], []
-        for o in from_upstream.json_result or []:
+        for o in json_result:
             sections.append((o.get("text", ""), o.get("position_tag", "")))
             section_images.append(id2image(o.get("img_id"), partial(settings.STORAGE_IMPL.get, tenant_id=self._canvas._tenant_id)))
 

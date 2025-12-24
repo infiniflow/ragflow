@@ -289,10 +289,14 @@ function transformParserParams(params: ParserFormSchemaType) {
 }
 
 function transformSplitterParams(params: SplitterFormSchemaType) {
+  const { image_table_context_window, ...rest } = params;
+  const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
-    ...params,
+    ...rest,
     overlapped_percent: Number(params.overlapped_percent) / 100,
     delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
+    table_context_size: imageTableContextWindow,
+    image_context_size: imageTableContextWindow,
 
     // Unset children delimiters if this option is not enabled
     children_delimiters: params.enable_children
