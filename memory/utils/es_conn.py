@@ -134,15 +134,16 @@ class ESConnection(ESConnectionBase):
 
         condition["memory_id"] = memory_ids
         for k, v in condition.items():
-            if k == "session_id" and v:
+            field_name = self.convert_field_name(k)
+            if field_name == "session_id" and v:
                 bool_query.filter.append(Q("query_string", **{"query": f"*{v}*", "fields": ["session_id"], "analyze_wildcard": True}))
                 continue
             if not v:
                 continue
             if isinstance(v, list):
-                bool_query.filter.append(Q("terms", **{k: v}))
+                bool_query.filter.append(Q("terms", **{field_name: v}))
             elif isinstance(v, str) or isinstance(v, int):
-                bool_query.filter.append(Q("term", **{k: v}))
+                bool_query.filter.append(Q("term", **{field_name: v}))
             else:
                 raise Exception(
                     f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
