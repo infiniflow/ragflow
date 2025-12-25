@@ -267,7 +267,7 @@ class Retrieval(ToolBase, ABC):
         })
         if not message_list:
             self.set_output("formalized_content", self._param.empty_response)
-            return
+            return ""
         formated_content = "\n".join(memory_prompt(message_list, 200000))
         # set formalized_content output
         self.set_output("formalized_content", formated_content)
@@ -278,14 +278,13 @@ class Retrieval(ToolBase, ABC):
     async def _invoke_async(self, **kwargs):
         if self.check_if_canceled("Retrieval processing"):
             return
-        print(f"debug retrieval, query is {kwargs.get('query')}.", flush=True)
         if not kwargs.get("query"):
             self.set_output("formalized_content", self._param.empty_response)
             return
 
         if self._param.kb_ids:
             return await self._retrieve_kb(kwargs["query"])
-        elif self._param.memory_ids:
+        elif hasattr(self._param, "memory_ids") and self._param.memory_ids:
             return await self._retrieve_memory(kwargs["query"])
         else:
             self.set_output("formalized_content", self._param.empty_response)
