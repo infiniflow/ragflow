@@ -197,7 +197,7 @@ jobs:
           echo -e "COMPOSE_PROFILES=\${COMPOSE_PROFILES},tei-cpu" >> docker/.env
           echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env
           echo -e "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}" >> docker/.env
-          echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}" >> ${GITHUB_ENV}
+          echo "HOST_ADDRESS=http://host.docker.internal:${SVR_HTTP_PORT}/v1/system/version" >> ${GITHUB_ENV}
 
           sudo docker compose -f docker/docker-compose.yml -p ${GITHUB_RUN_ID} up -d
           uv sync --python 3.12 --only-group test --no-default-groups --frozen && uv pip install sdk/python --group test
