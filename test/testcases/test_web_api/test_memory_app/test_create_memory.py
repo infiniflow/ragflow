@@ -49,8 +49,8 @@ class TestMemoryCreate:
         payload = {
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "SILICONFLOW@BAAI/bge-large-zh-v1.5",
-            "llm_id": "ZHIPU-AI@glm-4-flash"
+            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         res = create_memory(WebApiAuth, payload)
         assert res["code"] == 0, res
@@ -72,8 +72,8 @@ class TestMemoryCreate:
         payload = {
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "SILICONFLOW@BAAI/bge-large-zh-v1.5",
-            "llm_id": "ZHIPU-AI@glm-4-flash"
+            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         res = create_memory(WebApiAuth, payload)
         assert res["message"] == expected_message, res
@@ -84,8 +84,8 @@ class TestMemoryCreate:
         payload = {
             "name": name,
             "memory_type": ["something"],
-            "embd_id": "SILICONFLOW@BAAI/bge-large-zh-v1.5",
-            "llm_id": "ZHIPU-AI@glm-4-flash"
+            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         res = create_memory(WebApiAuth, payload)
         assert res["message"] == f"Memory type '{ {'something'} }' is not supported.", res
@@ -96,8 +96,8 @@ class TestMemoryCreate:
         payload = {
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
-            "embd_id": "SILICONFLOW@BAAI/bge-large-zh-v1.5",
-            "llm_id": "ZHIPU-AI@glm-4-flash"
+            "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
+            "llm_id": "glm-4-flash@ZHIPU-AI"
         }
         res1 = create_memory(WebApiAuth, payload)
         assert res1["code"] == 0, res1

@@ -29,6 +29,11 @@ from common.versions import get_ragflow_version
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
 
 
+@admin_bp.route('/ping', methods=['GET'])
+def ping():
+    return success_response('PONG')
+
+
 @admin_bp.route('/login', methods=['POST'])
 def login():
     if not request.json:

@@ -25,10 +25,12 @@ from api.db.services.document_service import DocumentService
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
+from api.db.services.memory_service import MemoryService
+from api.db.joint_services import memory_message_service
 from common import settings
 from common.connection_utils import timeout
 from rag.app.tag import label_question
-from rag.prompts.generator import cross_languages, kb_prompt
+from rag.prompts.generator import cross_languages, kb_prompt, memory_prompt
 
 
 class RetrievalParam(ToolParamBase):
@@ -57,6 +59,7 @@ class RetrievalParam(ToolParamBase):
         self.top_n = 8
         self.top_k = 1024
         self.kb_ids = []
+        self.memory_ids = []
         self.kb_vars = []
         self.rerank_id = ""
         self.empty_response = ""
@@ -81,15 +84,7 @@ class RetrievalParam(ToolParamBase):
 class Retrieval(ToolBase, ABC):
     component_name = "Retrieval"
 
-    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
-    async def _invoke_async(self, **kwargs):
-        if self.check_if_canceled("Retrieval processing"):
-            return
-
-        if not kwargs.get("query"):
-            self.set_output("formalized_content", self._param.empty_response)
-            return
-
+    async def _retrieve_kb(self, query_text: str):
         kb_ids: list[str] = []
         for id in self._param.kb_ids:
             if id.find("@") < 0:
@@ -124,12 +119,12 @@ class Retrieval(ToolBase, ABC):
         if self._param.rerank_id:
             rerank_mdl = LLMBundle(kbs[0].tenant_id, LLMType.RERANK, self._param.rerank_id)
 
-        vars = self.get_input_elements_from_text(kwargs["query"])
-        vars = {k:o["value"] for k,o in vars.items()}
-        query = self.string_format(kwargs["query"], vars)
+        vars = self.get_input_elements_from_text(query_text)
+        vars = {k: o["value"] for k, o in vars.items()}
+        query = self.string_format(query_text, vars)
 
-        doc_ids=[]
-        if self._param.meta_data_filter!={}:
+        doc_ids = []
+        if self._param.meta_data_filter != {}:
             metas = DocumentService.get_meta_by_kbs(kb_ids)
 
             def _resolve_manual_filter(flt: dict) -> dict:
@@ -198,18 +193,20 @@ class Retrieval(ToolBase, ABC):
 
             if self._param.toc_enhance:
                 chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT)
-                cks = settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs], chat_mdl, self._param.top_n)
+                cks = settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs],
+                                                          chat_mdl, self._param.top_n)
                 if self.check_if_canceled("Retrieval processing"):
                     return
                 if cks:
                     kbinfos["chunks"] = cks
-            kbinfos["chunks"] = settings.retriever.retrieval_by_children(kbinfos["chunks"], [kb.tenant_id for kb in kbs])
+            kbinfos["chunks"] = settings.retriever.retrieval_by_children(kbinfos["chunks"],
+                                                                         [kb.tenant_id for kb in kbs])
             if self._param.use_kg:
                 ck = settings.kg_retriever.retrieval(query,
-                                                       [kb.tenant_id for kb in kbs],
-                                                       kb_ids,
-                                                       embd_mdl,
-                                                       LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT))
+                                                     [kb.tenant_id for kb in kbs],
+                                                     kb_ids,
+                                                     embd_mdl,
+                                                     LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT))
                 if self.check_if_canceled("Retrieval processing"):
                     return
                 if ck["content_with_weight"]:
@@ -218,7 +215,8 @@ class Retrieval(ToolBase, ABC):
             kbinfos = {"chunks": [], "doc_aggs": []}
 
         if self._param.use_kg and kbs:
-            ck = settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl, LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
+            ck = settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl,
+                                                 LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
             if self.check_if_canceled("Retrieval processing"):
                 return
             if ck["content_with_weight"]:
@@ -247,6 +245,50 @@ class Retrieval(ToolBase, ABC):
         self.set_output("json", json_output)
 
         return form_cnt
+
+    async def _retrieve_memory(self, query_text: str):
+        memory_ids: list[str] = [memory_id for memory_id in self._param.memory_ids]
+        memory_list = MemoryService.get_by_ids(memory_ids)
+        if not memory_list:
+            raise Exception("No memory is selected.")
+
+        embd_names = list({memory.embd_id for memory in memory_list})
+        assert len(embd_names) == 1, "Memory use different embedding models."
+
+        vars = self.get_input_elements_from_text(query_text)
+        vars = {k: o["value"] for k, o in vars.items()}
+        query = self.string_format(query_text, vars)
+        # query message
+        message_list = memory_message_service.query_message({"memory_id": memory_ids}, {
+            "query": query,
+            "similarity_threshold": self._param.similarity_threshold,
+            "keywords_similarity_weight": self._param.keywords_similarity_weight,
+            "top_n": self._param.top_n
+        })
+        if not message_list:
+            self.set_output("formalized_content", self._param.empty_response)
+            return ""
+        formated_content = "\n".join(memory_prompt(message_list, 200000))
+        # set formalized_content output
+        self.set_output("formalized_content", formated_content)
+
+        return formated_content
+
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
+    async def _invoke_async(self, **kwargs):
+        if self.check_if_canceled("Retrieval processing"):
+            return
+        if not kwargs.get("query"):
+            self.set_output("formalized_content", self._param.empty_response)
+            return
+
+        if self._param.kb_ids:
+            return await self._retrieve_kb(kwargs["query"])
+        elif hasattr(self._param, "memory_ids") and self._param.memory_ids:
+            return await self._retrieve_memory(kwargs["query"])
+        else:
+            self.set_output("formalized_content", self._param.empty_response)
+            return
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):

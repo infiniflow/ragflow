@@ -1080,7 +1080,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
 
-    elif settings.docStoreConn.indexExist(search.index_name(tenant_id), dataset_id):
+    elif settings.docStoreConn.index_exist(search.index_name(tenant_id), dataset_id):
         sres = settings.retriever.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None, highlight=True)
         res["total"] = sres.total
         for id in sres.ids:
