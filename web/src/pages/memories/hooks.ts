@@ -3,6 +3,7 @@
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import memoryService, { updateMemoryById } from '@/services/memory-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
@@ -216,15 +217,22 @@ export const useRenameMemory = () => {
   const { updateMemory } = useUpdateMemory();
   const { createMemory } = useCreateMemory();
   const [loading, setLoading] = useState(false);
+  const { data: tenantInfo } = useFetchTenantInfo();
 
   const handleShowChatRenameModal = useCallback(
     (record?: IMemory) => {
       if (record) {
-        setMemory(record);
+        const embd_id = record.embd_id || tenantInfo?.embd_id;
+        const llm_id = record.llm_id || tenantInfo?.llm_id;
+        setMemory({
+          ...record,
+          embd_id,
+          llm_id,
+        });
       }
       showChatRenameModal();
     },
-    [showChatRenameModal],
+    [showChatRenameModal, tenantInfo],
   );
 
   const handleHideModal = useCallback(() => {

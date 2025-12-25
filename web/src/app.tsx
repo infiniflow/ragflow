@@ -24,6 +24,18 @@ import { TooltipProvider } from './components/ui/tooltip';
 import { ThemeEnum } from './constants/common';
 import storage from './utils/authorization-util';
 
+import { configResponsive } from 'ahooks';
+
+configResponsive({
+  sm: 640,
+  md: 768,
+  lg: 1024,
+  xl: 1280,
+  '2xl': 1536,
+  '3xl': 1780,
+  '4xl': 1980,
+});
+
 dayjs.extend(customParseFormat);
 dayjs.extend(advancedFormat);
 dayjs.extend(weekday);

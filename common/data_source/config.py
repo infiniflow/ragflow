@@ -53,6 +53,7 @@ class DocumentSource(str, Enum):
     S3_COMPATIBLE = "s3_compatible"
     DROPBOX = "dropbox"
     BOX = "box"
+    AIRTABLE = "airtable"
 
 class FileOrigin(str, Enum):
     """File origins"""
@@ -250,6 +251,10 @@ WEB_CONNECTOR_IGNORED_CLASSES = os.environ.get(
 WEB_CONNECTOR_IGNORED_ELEMENTS = os.environ.get(
     "WEB_CONNECTOR_IGNORED_ELEMENTS", "nav,footer,meta,script,style,symbol,aside"
 ).split(",")
+
+AIRTABLE_CONNECTOR_SIZE_THRESHOLD = int(
+    os.environ.get("AIRTABLE_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
+)
 
 _USER_NOT_FOUND = "Unknown Confluence User"
 

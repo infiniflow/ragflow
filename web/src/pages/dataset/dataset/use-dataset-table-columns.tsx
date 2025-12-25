@@ -187,11 +187,11 @@ export function useDatasetTableColumns({
                 type: MetadataType.UpdateSingle,
                 record: row,
                 title: (
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-2 w-full">
                     <div className="text-base font-normal">
                       {t('metadata.editMetadata')}
                     </div>
-                    <div className="text-sm text-text-secondary">
+                    <div className="text-sm text-text-secondary w-full truncate">
                       {t('metadata.editMetadataForDataset')}
                       {row.name}
                     </div>
