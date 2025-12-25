@@ -234,6 +234,10 @@ async def list_docs():
 
     req = await get_request_json()
 
+    return_empty_metadata = req.get("return_empty_metadata", False)
+    if isinstance(return_empty_metadata, str):
+        return_empty_metadata = return_empty_metadata.lower() == "true"
+
     run_status = req.get("run_status", [])
     if run_status:
         invalid_status = {s for s in run_status if s not in VALID_TASK_STATUS}
@@ -248,11 +252,18 @@ async def list_docs():
 
     suffix = req.get("suffix", [])
     metadata_condition = req.get("metadata_condition", {}) or {}
-    if metadata_condition and not isinstance(metadata_condition, dict):
-        return get_data_error_result(message="metadata_condition must be an object.")
     metadata = req.get("metadata", {}) or {}
-    if metadata and not isinstance(metadata, dict):
-        return get_data_error_result(message="metadata must be an object.")
+    if isinstance(metadata, dict) and metadata.get("empty_metadata"):
+        return_empty_metadata = True
+        metadata = {k: v for k, v in metadata.items() if k != "empty_metadata"}
+    if return_empty_metadata:
+        metadata_condition = {}
+        metadata = {}
+    else:
+        if metadata_condition and not isinstance(metadata_condition, dict):
+            return get_data_error_result(message="metadata_condition must be an object.")
+        if metadata and not isinstance(metadata, dict):
+            return get_data_error_result(message="metadata must be an object.")
 
     doc_ids_filter = None
     metas = None
@@ -295,7 +306,19 @@ async def list_docs():
         doc_ids_filter = list(doc_ids_filter)
 
     try:
-        docs, tol = DocumentService.get_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix, doc_ids_filter)
+        docs, tol = DocumentService.get_by_kb_id(
+            kb_id,
+            page_number,
+            items_per_page,
+            orderby,
+            desc,
+            keywords,
+            run_status,
+            types,
+            suffix,
+            doc_ids_filter,
+            return_empty_metadata=return_empty_metadata,
+        )
 
         if create_time_from or create_time_to:
             filtered_docs = []
