@@ -274,6 +274,20 @@ client_urls_prefix = [
 ]
 
 
+@app.before_request
+async def log_request_info():
+    print(f"Request path: {request.path}")
+    print(f"Request method: {request.method}")
+    print(f"log_info, full URL: {request.url}")
+
+@app.errorhandler(404)
+async def not_found(error):
+    print(f"Error handle: full URL: {request.url}")
+    return {
+        "error": "Not Found",
+        "message": f"The requested URL {request.path} was not found",
+    }, 404
+
 @app.teardown_request
 def _db_close(exception):
     if exception:
