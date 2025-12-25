@@ -922,6 +922,8 @@ Example: Virtual Hosted Style`,
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
       boxDescription: 'Connect your Box drive to sync files and folders.',
+      airtableDescription:
+        'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
       dropboxAccessTokenTip:
         'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
       moodleDescription:

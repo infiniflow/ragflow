@@ -38,7 +38,7 @@ from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.config_utils import show_configs
-from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector, DropboxConnector, WebDAVConnector
+from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector, DropboxConnector, WebDAVConnector, AirtableConnector
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
@@ -738,7 +738,52 @@ class BOX(SyncBase):
                 begin_info = "from {}".format(poll_start)
         logging.info("Connect to Box: folder_id({}) {}".format(self.conf["folder_id"], begin_info))
         return document_generator
-    
+
+class Airtable(SyncBase):
+    SOURCE_NAME: str = FileSource.AIRTABLE
+
+    async def _generate(self, task: dict):
+        """
+        Sync files from Airtable attachments.
+        """
+
+        self.connector = AirtableConnector(
+            base_id=self.conf.get("base_id"),
+            table_name_or_id=self.conf.get("table_name_or_id"),
+        )
+
+        credentials = self.conf.get("credentials", {})
+        if "airtable_access_token" not in credentials:
+            raise ValueError("Missing airtable_access_token in credentials")
+
+        self.connector.load_credentials(
+            {"airtable_access_token": credentials["airtable_access_token"]}
+        )
+
+        if task.get("reindex") == "1" or not task.get("poll_range_start"):
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task.get("poll_range_start")
+            if poll_start is None:
+                document_generator = self.connector.load_from_state()
+                begin_info = "totally"
+            else:
+                document_generator = self.connector.poll_source(
+                    poll_start.timestamp(),
+                    datetime.now(timezone.utc).timestamp(),
+                )
+                begin_info = f"from {poll_start}"
+
+        logging.info(
+            "Connect to Airtable: base_id(%s), table(%s) %s",
+            self.conf.get("base_id"),
+            self.conf.get("table_name_or_id"),
+            begin_info,
+        )
+
+        return document_generator
+
 func_factory = {
     FileSource.S3: S3,
     FileSource.R2: R2,
@@ -756,7 +801,8 @@ func_factory = {
     FileSource.MOODLE: Moodle,
     FileSource.DROPBOX: Dropbox,
     FileSource.WEBDAV: WebDAV,
-    FileSource.BOX: BOX
+    FileSource.BOX: BOX,
+    FileSource.AIRTABLE: Airtable,
 }
 
 
@@ -775,7 +821,6 @@ async def dispatch_tasks():
             task["poll_range_start"] = task["poll_range_start"].astimezone(timezone.utc)
         if task["poll_range_end"]:
             task["poll_range_end"] = task["poll_range_end"].astimezone(timezone.utc)
-
         func = func_factory[task["source"]](task["config"])
         tasks.append(asyncio.create_task(func(task)))
 
