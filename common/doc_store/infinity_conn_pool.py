@@ -71,6 +71,7 @@ class InfinityConnectionPool:
                 raise Exception(f"{res.error_code}: {res.server_status}")
 
         except Exception as e:
+            logging.error(str(e))
             if hasattr(self, "conn_pool") and self.conn_pool:
                 self.conn_pool.destroy()
                 self.conn_pool = ConnectionPool(self.infinity_uri, max_size=32)
