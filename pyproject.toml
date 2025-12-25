@@ -164,6 +164,7 @@ test = [
     "reportlab>=4.4.1",
     "requests>=2.32.2",
     "requests-toolbelt>=1.0.0",
+    "websockets>=14.0",
 ]
 
 [[tool.uv.index]]

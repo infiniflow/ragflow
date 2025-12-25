@@ -19,10 +19,11 @@ import json
 import time
 
 import copy
+from elasticsearch import NotFoundError
 from elasticsearch_dsl import UpdateByQuery, Q, Search
 from elastic_transport import ConnectionTimeout
 from common.decorator import singleton
-from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr, MatchExpr, MatchDenseExpr, FusionExpr
+from common.doc_store.doc_store_base import MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, FusionExpr
 from common.doc_store.es_conn_base import ESConnectionBase
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
@@ -32,6 +33,74 @@ ATTEMPT_TIME = 2
 
 @singleton
 class ESConnection(ESConnectionBase):
+
+    @staticmethod
+    def convert_field_name(field_name: str) -> str:
+        match field_name:
+            case "message_type":
+                return "message_type_kwd"
+            case "status":
+                return "status_int"
+            case "content":
+                return "content_ltks"
+            case _:
+                return field_name
+
+    @staticmethod
+    def map_message_to_es_fields(message: dict) -> dict:
+        """
+        Map message dictionary fields to Elasticsearch document/Infinity fields.
+
+        :param message: A dictionary containing message details.
+        :return: A dictionary formatted for Elasticsearch/Infinity indexing.
+        """
+        storage_doc = {
+            "id": message.get("id"),
+            "message_id": message["message_id"],
+            "message_type_kwd": message["message_type"],
+            "source_id": message["source_id"],
+            "memory_id": message["memory_id"],
+            "user_id": message["user_id"],
+            "agent_id": message["agent_id"],
+            "session_id": message["session_id"],
+            "valid_at": message["valid_at"],
+            "invalid_at": message["invalid_at"],
+            "forget_at": message["forget_at"],
+            "status_int": 1 if message["status"] else 0,
+            "zone_id": message.get("zone_id", 0),
+            "content_ltks": message["content"],
+            f"q_{len(message['content_embed'])}_vec": message["content_embed"],
+        }
+        return storage_doc
+
+    @staticmethod
+    def get_message_from_es_doc(doc: dict) -> dict:
+        """
+        Convert an Elasticsearch/Infinity document back to a message dictionary.
+
+        :param doc: A dictionary representing the Elasticsearch/Infinity document.
+        :return: A dictionary formatted as a message.
+        """
+        embd_field_name = next((key for key in doc.keys() if re.match(r"q_\d+_vec", key)), None)
+        message = {
+            "message_id": doc["message_id"],
+            "message_type": doc["message_type_kwd"],
+            "source_id": doc["source_id"] if doc["source_id"] else None,
+            "memory_id": doc["memory_id"],
+            "user_id": doc.get("user_id", ""),
+            "agent_id": doc["agent_id"],
+            "session_id": doc["session_id"],
+            "zone_id": doc.get("zone_id", 0),
+            "valid_at": doc["valid_at"],
+            "invalid_at": doc.get("invalid_at", "-"),
+            "forget_at": doc.get("forget_at", "-"),
+            "status": bool(int(doc["status_int"])),
+            "content": doc.get("content_ltks", ""),
+            "content_embed": doc.get(embd_field_name, []) if embd_field_name else [],
+        }
+        if doc.get("id"):
+            message["id"] = doc["id"]
+        return message
 
     """
     CRUD operations
@@ -46,9 +115,10 @@ class ESConnection(ESConnectionBase):
             offset: int,
             limit: int,
             index_names: str | list[str],
-            knowledgebase_ids: list[str],
+            memory_ids: list[str],
             agg_fields: list[str] | None = None,
-            rank_feature: dict | None = None
+            rank_feature: dict | None = None,
+            hide_forgotten: bool = True
     ):
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
@@ -57,16 +127,15 @@ class ESConnection(ESConnectionBase):
             index_names = index_names.split(",")
         assert isinstance(index_names, list) and len(index_names) > 0
         assert "_id" not in condition
+        bool_query = Q("bool", must=[], must_not=[])
+        if hide_forgotten:
+            # filter not forget
+            bool_query.must_not.append(Q("exists", field="forget_at"))
 
-        bool_query = Q("bool", must=[])
-        condition["kb_id"] = knowledgebase_ids
+        condition["memory_id"] = memory_ids
         for k, v in condition.items():
-            if k == "available_int":
-                if v == 0:
-                    bool_query.filter.append(Q("range", available_int={"lt": 1}))
-                else:
-                    bool_query.filter.append(
-                        Q("bool", must_not=Q("range", available_int={"lt": 1})))
+            if k == "session_id" and v:
+                bool_query.filter.append(Q("query_string", **{"query": f"*{v}*", "fields": ["session_id"], "analyze_wildcard": True}))
                 continue
             if not v:
                 continue
@@ -77,7 +146,6 @@ class ESConnection(ESConnectionBase):
             else:
                 raise Exception(
                     f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
-
         s = Search()
         vector_similarity_weight = 0.5
         for m in match_expressions:
@@ -92,7 +160,7 @@ class ESConnection(ESConnectionBase):
                 minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
                 if isinstance(minimum_should_match, float):
                     minimum_should_match = str(int(minimum_should_match * 100)) + "%"
-                bool_query.must.append(Q("query_string", fields=m.fields,
+                bool_query.must.append(Q("query_string", fields=[self.convert_field_name(f) for f in m.fields],
                                    type="best_fields", query=m.matching_text,
                                    minimum_should_match=minimum_should_match,
                                    boost=1))
@@ -103,7 +171,7 @@ class ESConnection(ESConnectionBase):
                 similarity = 0.0
                 if "similarity" in m.extra_options:
                     similarity = m.extra_options["similarity"]
-                s = s.knn(m.vector_column_name,
+                s = s.knn(self.convert_field_name(m.vector_column_name),
                           m.topn,
                           m.topn * 2,
                           query_vector=list(m.embedding_data),
@@ -126,15 +194,13 @@ class ESConnection(ESConnectionBase):
             orders = list()
             for field, order in order_by.fields:
                 order = "asc" if order == 0 else "desc"
-                if field in ["page_num_int", "top_int"]:
-                    order_info = {"order": order, "unmapped_type": "float",
-                                  "mode": "avg", "numeric_type": "double"}
-                elif field.endswith("_int") or field.endswith("_flt"):
+                if field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
                 else:
                     order_info = {"order": order, "unmapped_type": "text"}
                 orders.append({field: order_info})
             s = s.sort(*orders)
+
         if agg_fields:
             for fld in agg_fields:
                 s.aggs.bucket(f'aggs_{fld}', 'terms', field=fld, size=1000000)
@@ -168,19 +234,69 @@ class ESConnection(ESConnectionBase):
         self.logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
         raise Exception("ESConnection.search timeout.")
 
-    def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None) -> list[str]:
+    def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int=2000):
+        bool_query = Q("bool", must_not=[])
+        bool_query.must_not.append(Q("term", forget_at=None))
+        bool_query.filter.append(Q("term", memory_id=memory_id))
+        # from old to new
+        order_by = OrderByExpr()
+        order_by.asc("forget_at")
+        # build search
+        s = Search()
+        s = s.query(bool_query)
+        s = s.sort(order_by)
+        s = s[:limit]
+        q = s.to_dict()
+        # search
+        for i in range(ATTEMPT_TIME):
+            try:
+                res = self.es.search(index=index_name, body=q, timeout="600s", track_total_hits=True, _source=True)
+                if str(res.get("timed_out", "")).lower() == "true":
+                    raise Exception("Es Timeout.")
+                self.logger.debug(f"ESConnection.search {str(index_name)} res: " + str(res))
+                return res
+            except ConnectionTimeout:
+                self.logger.exception("ES request timeout")
+                self._connect()
+                continue
+            except Exception as e:
+                self.logger.exception(f"ESConnection.search {str(index_name)} query: " + str(q) + str(e))
+                raise e
+
+        self.logger.error(f"ESConnection.search timeout for {ATTEMPT_TIME} times!")
+        raise Exception("ESConnection.search timeout.")
+
+    def get(self, doc_id: str, index_name: str, memory_ids: list[str]) -> dict | None:
+        for i in range(ATTEMPT_TIME):
+            try:
+                res = self.es.get(index=index_name,
+                                  id=doc_id, source=True, )
+                if str(res.get("timed_out", "")).lower() == "true":
+                    raise Exception("Es Timeout.")
+                message = res["_source"]
+                message["id"] = doc_id
+                return self.get_message_from_es_doc(message)
+            except NotFoundError:
+                return None
+            except Exception as e:
+                self.logger.exception(f"ESConnection.get({doc_id}) got exception")
+                raise e
+        self.logger.error(f"ESConnection.get timeout for {ATTEMPT_TIME} times!")
+        raise Exception("ESConnection.get timeout.")
+
+    def insert(self, documents: list[dict], index_name: str, memory_id: str = None) -> list[str]:
         # Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
         operations = []
         for d in documents:
             assert "_id" not in d
             assert "id" in d
-            d_copy = copy.deepcopy(d)
-            d_copy["kb_id"] = knowledgebase_id
+            d_copy_raw = copy.deepcopy(d)
+            d_copy = self.map_message_to_es_fields(d_copy_raw)
+            d_copy["memory_id"] = memory_id
             meta_id = d_copy.pop("id", "")
             operations.append(
                 {"index": {"_index": index_name, "_id": meta_id}})
             operations.append(d_copy)
-
         res = []
         for _ in range(ATTEMPT_TIME):
             try:
@@ -206,33 +322,35 @@ class ESConnection(ESConnectionBase):
 
         return res
 
-    def update(self, condition: dict, new_value: dict, index_name: str, knowledgebase_id: str) -> bool:
+    def update(self, condition: dict, new_value: dict, index_name: str, memory_id: str) -> bool:
         doc = copy.deepcopy(new_value)
-        doc.pop("id", None)
-        condition["kb_id"] = knowledgebase_id
-        if "id" in condition and isinstance(condition["id"], str):
+        update_dict = {self.convert_field_name(k): v for k, v in doc.items()}
+        update_dict.pop("id", None)
+        condition_dict = {self.convert_field_name(k): v for k, v in condition.items()}
+        condition_dict["memory_id"] = memory_id
+        if "id" in condition_dict and isinstance(condition_dict["id"], str):
             # update specific single document
-            chunk_id = condition["id"]
+            message_id = condition_dict["id"]
             for i in range(ATTEMPT_TIME):
-                for k in doc.keys():
+                for k in update_dict.keys():
                     if "feas" != k.split("_")[-1]:
                         continue
                     try:
-                        self.es.update(index=index_name, id=chunk_id, script=f"ctx._source.remove(\"{k}\");")
+                        self.es.update(index=index_name, id=message_id, script=f"ctx._source.remove(\"{k}\");")
                     except Exception:
-                        self.logger.exception(f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
+                        self.logger.exception(f"ESConnection.update(index={index_name}, id={message_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                 try:
-                    self.es.update(index=index_name, id=chunk_id, doc=doc)
+                    self.es.update(index=index_name, id=message_id, doc=update_dict)
                     return True
                 except Exception as e:
                     self.logger.exception(
-                        f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception: " + str(e))
+                        f"ESConnection.update(index={index_name}, id={message_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception: " + str(e))
                     break
             return False
 
         # update unspecific maybe-multiple documents
         bool_query = Q("bool")
-        for k, v in condition.items():
+        for k, v in condition_dict.items():
             if not isinstance(k, str) or not v:
                 continue
             if k == "exists":
@@ -247,7 +365,7 @@ class ESConnection(ESConnectionBase):
                     f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
         scripts = []
         params = {}
-        for k, v in new_value.items():
+        for k, v in update_dict.items():
             if k == "remove":
                 if isinstance(v, str):
                     scripts.append(f"ctx._source.remove('{v}');")
@@ -262,7 +380,7 @@ class ESConnection(ESConnectionBase):
                         scripts.append(f"ctx._source.{kk}.add(params.pp_{kk});")
                         params[f"pp_{kk}"] = vv.strip()
                 continue
-            if (not isinstance(k, str) or not v) and k != "available_int":
+            if (not isinstance(k, str) or not v) and k != "status_int":
                 continue
             if isinstance(v, str):
                 v = re.sub(r"(['\n\r]|\\.)", " ", v)
@@ -283,7 +401,6 @@ class ESConnection(ESConnectionBase):
         ubq = ubq.params(refresh=True)
         ubq = ubq.params(slices=5)
         ubq = ubq.params(conflicts="proceed")
-
         for _ in range(ATTEMPT_TIME):
             try:
                 _ = ubq.execute()
@@ -298,20 +415,21 @@ class ESConnection(ESConnectionBase):
                 break
         return False
 
-    def delete(self, condition: dict, index_name: str, knowledgebase_id: str) -> int:
+    def delete(self, condition: dict, index_name: str, memory_id: str) -> int:
         assert "_id" not in condition
-        condition["kb_id"] = knowledgebase_id
-        if "id" in condition:
-            chunk_ids = condition["id"]
-            if not isinstance(chunk_ids, list):
-                chunk_ids = [chunk_ids]
-            if not chunk_ids:  # when chunk_ids is empty, delete all
+        condition_dict = {self.convert_field_name(k): v for k, v in condition.items()}
+        condition_dict["memory_id"] = memory_id
+        if "id" in condition_dict:
+            message_ids = condition_dict["id"]
+            if not isinstance(message_ids, list):
+                message_ids = [message_ids]
+            if not message_ids:  # when message_ids is empty, delete all
                 qry = Q("match_all")
             else:
-                qry = Q("ids", values=chunk_ids)
+                qry = Q("ids", values=message_ids)
         else:
             qry = Q("bool")
-            for k, v in condition.items():
+            for k, v in condition_dict.items():
                 if k == "exists":
                     qry.filter.append(Q("exists", field=v))
 
@@ -354,20 +472,23 @@ class ESConnection(ESConnectionBase):
         res_fields = {}
         if not fields:
             return {}
-        for d in self._get_source(res):
-            m = {n: d.get(n) for n in fields if d.get(n) is not None}
-            for n, v in m.items():
+        for doc in self._get_source(res):
+            message = self.get_message_from_es_doc(doc)
+            m = {}
+            for n, v in message.items():
+                if n not in fields:
+                    continue
                 if isinstance(v, list):
                     m[n] = v
                     continue
-                if n == "available_int" and isinstance(v, (int, float)):
+                if n in ["message_id", "source_id", "valid_at", "invalid_at", "forget_at", "status"] and isinstance(v, (int, float, bool)):
                     m[n] = v
                     continue
                 if not isinstance(v, str):
-                    m[n] = str(m[n])
-                # if n.find("tks") > 0:
-                #     m[n] = remove_redundant_spaces(m[n])
+                    m[n] = str(v)
+                else:
+                    m[n] = v
 
             if m:
-                res_fields[d["id"]] = m
+                res_fields[doc["id"]] = m
         return res_fields
