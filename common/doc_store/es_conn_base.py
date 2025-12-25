@@ -21,11 +21,12 @@ import time
 import os
 from abc import abstractmethod
 
-from elasticsearch import Elasticsearch, NotFoundError
+from elasticsearch import NotFoundError
 from elasticsearch_dsl import Index
 from elastic_transport import ConnectionTimeout
 from common.file_utils import get_project_base_directory
 from common.misc_utils import convert_bytes
+from common.doc_store.es_conn_pool import ES_CONN
 from common.doc_store.doc_store_base import DocStoreConnection, OrderByExpr, MatchExpr
 from rag.nlp import is_english, rag_tokenizer
 from common import settings
@@ -39,24 +40,7 @@ class ESConnectionBase(DocStoreConnection):
 
         self.info = {}
         self.logger.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
-        for _ in range(ATTEMPT_TIME):
-            try:
-                if self._connect():
-                    break
-            except Exception as e:
-                self.logger.warning(f"{str(e)}. Waiting Elasticsearch {settings.ES['hosts']} to be healthy.")
-                time.sleep(5)
-
-        if not self.es.ping():
-            msg = f"Elasticsearch {settings.ES['hosts']} is unhealthy in 120s."
-            self.logger.error(msg)
-            raise Exception(msg)
-        v = self.info.get("version", {"number": "8.11.3"})
-        v = v["number"].split(".")[0]
-        if int(v) < 8:
-            msg = f"Elasticsearch version must be greater than or equal to 8, current version: {v}"
-            self.logger.error(msg)
-            raise Exception(msg)
+        self.es = ES_CONN.get_conn()
         fp_mapping = os.path.join(get_project_base_directory(), "conf", mapping_file_name)
         if not os.path.exists(fp_mapping):
             msg = f"Elasticsearch mapping file not found at {fp_mapping}"
@@ -64,18 +48,6 @@ class ESConnectionBase(DocStoreConnection):
             raise Exception(msg)
         self.mapping = json.load(open(fp_mapping, "r"))
         self.logger.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
-
-    def _connect(self):
-        self.es = Elasticsearch(
-            settings.ES["hosts"].split(","),
-            basic_auth=(settings.ES["username"], settings.ES[
-                "password"]) if "username" in settings.ES and "password" in settings.ES else None,
-            verify_certs= settings.ES.get("verify_certs", False),
-            timeout=600 )
-        if self.es:
-            self.info = self.es.info()
-            return True
-        return False
 
     """
     Database operations
@@ -172,7 +144,7 @@ class ESConnectionBase(DocStoreConnection):
             except ConnectionTimeout:
                 self.logger.exception("ES request timeout")
                 time.sleep(3)
-                self._connect()
+                self.es = ES_CONN.refresh_conn()
                 continue
             except Exception as e:
                 self.logger.exception(e)
@@ -317,7 +289,7 @@ class ESConnectionBase(DocStoreConnection):
             except ConnectionTimeout:
                 self.logger.exception("ES request timeout")
                 time.sleep(3)
-                self._connect()
+                self.es = ES_CONN.refresh_conn()
                 continue
             except Exception as e:
                 self.logger.exception(f"ESConnection.sql got exception. SQL:\n{sql}")
