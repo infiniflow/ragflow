@@ -163,9 +163,9 @@ def query_message(filter_dict: dict, params: dict):
     memory = memory_list[0]
     embd_model = LLMBundle(memory.tenant_id, llm_type=LLMType.EMBEDDING, llm_name=memory.embd_id)
     match_dense = get_vector(question, embd_model, similarity=params["similarity_threshold"])
-    match_text, _ = MsgTextQuery().question(question, min_match=0.3)
+    match_text, _ = MsgTextQuery().question(question, min_match=params["similarity_threshold"])
     keywords_similarity_weight = params.get("keywords_similarity_weight", 0.7)
-    fusion_expr = FusionExpr("weighted_sum", params["top_n"], {"weights": ",".join([str(keywords_similarity_weight), str(1 - keywords_similarity_weight)])})
+    fusion_expr = FusionExpr("weighted_sum", params["top_n"], {"weights": ",".join([str(1 - keywords_similarity_weight), str(keywords_similarity_weight)])})
 
     return MessageService.search_message(memory_ids, condition_dict, uids, [match_text, match_dense, fusion_expr], params["top_n"])
 
