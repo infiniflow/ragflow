@@ -252,3 +252,8 @@ export function parseColorToRGBA(color: string, opcity = 1): string {
   const [r, g, b] = parseColorToRGB(color);
   return `rgba(${r},${g},${b},${opcity})`;
 }
+
+export function middleEllipsis(str: string, front = 12, back = 8) {
+  if (str.length <= front + back) return str;
+  return `${str.slice(0, front)}…${str.slice(-back)}`;
+}
