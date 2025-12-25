@@ -190,12 +190,21 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         manageMetadata: 'Manage metadata',
         metadata: 'Metadata',
         values: 'Values',
+        value: 'Value',
         action: 'Action',
         field: 'Field',
         description: 'Description',
         fieldName: 'Field name',
         editMetadata: 'Edit metadata',
         deleteWarn: 'This {{field}} will be removed from all associated files',
+        deleteManageFieldAllWarn:
+          'This field and all its corresponding values will be deleted from all associated files.',
+        deleteManageValueAllWarn:
+          'This value will be deleted from from all associated files.',
+        deleteManageFieldSingleWarn:
+          'This field and all its corresponding values will be deleted from this files.',
+        deleteManageValueSingleWarn:
+          'This value will be deleted from this files.',
       },
       metadataField: 'Metadata field',
       systemAttribute: 'System attribute',
@@ -1613,6 +1622,8 @@ Example: Virtual Hosted Style`,
         notEmpty: 'Not empty',
         in: 'In',
         notIn: 'Not in',
+        is: 'Is',
+        isNot: 'Is not',
       },
       switchLogicOperatorOptions: {
         and: 'AND',
@@ -1874,6 +1885,8 @@ This process aggregates variables from multiple branches into a single variable 
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       query: 'Query variables',
+      switchPromptMessage:
+        'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
       queryRequired: 'Query is required',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',
