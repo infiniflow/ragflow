@@ -32,28 +32,42 @@ export const MetadataDeleteMap = (
   t: TFunction<'translation', undefined>,
 ): Record<
   MetadataType,
-  { title: string; warnFieldText: string; warnValueText: string }
+  {
+    title: string;
+    warnFieldText: string;
+    warnValueText: string;
+    warnFieldName: string;
+    warnValueName: string;
+  }
 > => {
   return {
     [MetadataType.Manage]: {
       title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
       warnFieldText: t('knowledgeDetails.metadata.deleteManageFieldAllWarn'),
       warnValueText: t('knowledgeDetails.metadata.deleteManageValueAllWarn'),
+      warnFieldName: t('knowledgeDetails.metadata.fieldNameExists'),
+      warnValueName: t('knowledgeDetails.metadata.valueExists'),
     },
     [MetadataType.Setting]: {
       title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
       warnFieldText: t('knowledgeDetails.metadata.deleteSettingFieldWarn'),
       warnValueText: t('knowledgeDetails.metadata.deleteSettingValueWarn'),
+      warnFieldName: t('knowledgeDetails.metadata.fieldExists'),
+      warnValueName: t('knowledgeDetails.metadata.valueExists'),
     },
     [MetadataType.UpdateSingle]: {
       title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
       warnFieldText: t('knowledgeDetails.metadata.deleteManageFieldSingleWarn'),
       warnValueText: t('knowledgeDetails.metadata.deleteManageValueSingleWarn'),
+      warnFieldName: t('knowledgeDetails.metadata.fieldSingleNameExists'),
+      warnValueName: t('knowledgeDetails.metadata.valueSingleExists'),
     },
     [MetadataType.SingleFileSetting]: {
       title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
       warnFieldText: t('knowledgeDetails.metadata.deleteSettingFieldWarn'),
       warnValueText: t('knowledgeDetails.metadata.deleteSettingValueWarn'),
+      warnFieldName: t('knowledgeDetails.metadata.fieldExists'),
+      warnValueName: t('knowledgeDetails.metadata.valueSingleExists'),
     },
   };
 };

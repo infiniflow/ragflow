@@ -485,7 +485,7 @@ export const LLMSelect = ({
 export function LLMModelItem({ line = 1, isEdit, label, name }: IProps) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
-  const disabled = useHasParsedDocument(isEdit);
+  // const disabled = useHasParsedDocument(isEdit);
   return (
     <>
       <FormField
@@ -515,7 +515,7 @@ export function LLMModelItem({ line = 1, isEdit, label, name }: IProps) {
                   <LLMSelect
                     isEdit={!!isEdit}
                     field={field}
-                    disabled={disabled}
+                    disabled={false}
                   ></LLMSelect>
                 </FormControl>
               </div>

@@ -184,6 +184,10 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
           'Value already exists. Confirm to merge duplicates and combine all associated files.',
         fieldNameExists:
           'Field name already exists. Confirm to merge duplicates and combine all associated files.',
+        valueSingleExists:
+          'Value already exists. Confirm to merge duplicates .',
+        fieldSingleNameExists:
+          'Field name already exists. Confirm to merge duplicates .',
         fieldExists: 'Field already exists.',
         fieldSetting: 'Field settings',
         changesAffectNewParses: 'Changes affect new parses only.',

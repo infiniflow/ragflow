@@ -47,10 +47,10 @@ export const useManageValues = (props: IManageValuesProps) => {
         setValueError((prev) => {
           return {
             ...prev,
-            field:
-              type === MetadataType.Setting
-                ? t('knowledgeDetails.metadata.fieldExists')
-                : t('knowledgeDetails.metadata.fieldNameExists'),
+            field: MetadataDeleteMap(t)[type as MetadataType].warnFieldName,
+            // type === MetadataType.Setting
+            //   ? t('knowledgeDetails.metadata.fieldExists')
+            //   : t('knowledgeDetails.metadata.fieldNameExists'),
           };
         });
       } else if (field === 'field' && !existsKeys.includes(value)) {
@@ -103,7 +103,8 @@ export const useManageValues = (props: IManageValuesProps) => {
           setValueError((prev) => {
             return {
               ...prev,
-              values: t('knowledgeDetails.metadata.valueExists'),
+              values: MetadataDeleteMap(t)[type as MetadataType].warnValueName,
+              // t('knowledgeDetails.metadata.valueExists'),
             };
           });
         } else {
@@ -120,7 +121,7 @@ export const useManageValues = (props: IManageValuesProps) => {
         return newValues;
       });
     },
-    [t],
+    [t, type],
   );
 
   // Handle blur event, synchronize to main state

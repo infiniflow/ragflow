@@ -37,6 +37,15 @@ const handleDocHelpCLick = () => {
   window.open('https://ragflow.io/docs/dev/category/guides', 'target');
 };
 
+const PathMap = {
+  [Routes.Datasets]: [Routes.Datasets],
+  [Routes.Chats]: [Routes.Chats],
+  [Routes.Searches]: [Routes.Searches],
+  [Routes.Agents]: [Routes.Agents],
+  [Routes.Memories]: [Routes.Memories, Routes.Memory, Routes.MemoryMessage],
+  [Routes.Files]: [Routes.Files],
+} as const;
+
 export function Header() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
@@ -106,6 +115,18 @@ export function Header() {
     navigate(Routes.Root);
   }, [navigate]);
 
+  const activePathName = useMemo(() => {
+    const name = Object.keys(PathMap).find((x: string) => {
+      const pathList = PathMap[x as keyof typeof PathMap];
+      return pathList.some((y: string) => pathname.indexOf(y) > -1);
+    });
+    if (name) {
+      return name;
+    } else {
+      return pathname;
+    }
+  }, [pathname]);
+
   return (
     <section className="py-5 px-10 flex justify-between items-center ">
       <div className="flex items-center gap-4">
@@ -121,7 +142,7 @@ export function Header() {
         sizeType="xl"
         buttonSize="xl"
         options={options}
-        value={pathname}
+        value={activePathName}
         onChange={handleChange}
         activeClassName="text-bg-base bg-metallic-gradient border-b-[#00BEB4] border-b-2"
       ></Segmented>
