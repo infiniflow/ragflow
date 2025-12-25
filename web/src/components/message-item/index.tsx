@@ -13,6 +13,7 @@ import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
 import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
+import { ReferenceImageList } from '../next-message-item/reference-image-list';
 import { UploadedMessageFiles } from '../next-message-item/uploaded-message-files';
 import {
   PDFDownloadButton,
@@ -140,7 +141,6 @@ const MessageItem = ({
                 sendLoading={sendLoading}
               ></UserGroupButton>
             )}
-
             {/* Show PDF download button if download info is present */}
             {pdfDownloadInfo && (
               <PDFDownloadButton
@@ -148,7 +148,6 @@ const MessageItem = ({
                 className="mb-2"
               />
             )}
-
             {/* Show message content if there's any text besides the download */}
             {messageContent && (
               <div
@@ -168,6 +167,12 @@ const MessageItem = ({
                   clickDocumentButton={clickDocumentButton}
                 ></MarkdownContent>
               </div>
+            )}
+            {isAssistant && (
+              <ReferenceImageList
+                referenceChunks={reference.chunks}
+                messageContent={messageContent}
+              ></ReferenceImageList>
             )}
             {isAssistant && referenceDocumentList.length > 0 && (
               <ReferenceDocumentList

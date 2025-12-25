@@ -94,7 +94,7 @@ class Document(BaseModel):
     blob: bytes
     doc_updated_at: datetime
     size_bytes: int
-    primary_owners: list
+    primary_owners: Optional[list] = None
     metadata: Optional[dict[str, Any]] = None
 
 
