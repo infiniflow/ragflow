@@ -1225,6 +1225,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         if key in key_mapping:
             new_key = key_mapping.get(key, key)
             renamed_chunk[new_key] = value
+    logging.info(f"{renamed_chunk}")
     _ = Chunk(**renamed_chunk)  # validate the chunk
     return get_result(data={"chunk": renamed_chunk})
     # return get_result(data={"chunk_id": chunk_id})
