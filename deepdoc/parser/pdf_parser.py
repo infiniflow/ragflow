@@ -1447,6 +1447,7 @@ class VisionParser(RAGFlowPdfParser):
     def __init__(self, vision_model, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.vision_model = vision_model
+        self.outlines = []
 
     def __images__(self, fnm, zoomin=3, page_from=0, page_to=299, callback=None):
         try:
