@@ -840,6 +840,11 @@ async def relevant_chunks_with_toc(query: str, toc:list[dict], chat_mdl, topn: i
 META_DATA = load_prompt("meta_data")
 async def gen_metadata(chat_mdl, schema:dict, content:str):
     template = PROMPT_JINJA_ENV.from_string(META_DATA)
+    for k, desc in schema.items():
+        if "enum" in desc and not desc.get("enum"):
+            del desc["enum"]
+        if desc.get("enum"):
+            desc["description"] += "\n** Extracted values must strictly match the given list specified by `enum`. **"
     system_prompt = template.render(content=content, schema=schema)
     user_prompt = "Output: "
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)

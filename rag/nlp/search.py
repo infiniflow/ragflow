@@ -619,6 +619,8 @@ class Dealer:
                 chunks[id2idx[cid]]["similarity"] += sim
                 continue
             chunk = self.dataStore.get(cid, idx_nms, kb_ids)
+            if not chunk:
+                continue
             d = {
                 "chunk_id": cid,
                 "content_ltks": chunk["content_ltks"],
