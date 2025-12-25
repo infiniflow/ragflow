@@ -29,12 +29,13 @@ import pandas as pd
 from common.file_utils import get_project_base_directory
 from rag.nlp import is_english
 from common import settings
-from common.doc_store.infinity_conn_pool import INFINITY_CONN
 from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr
 
 
 class InfinityConnectionBase(DocStoreConnection):
     def __init__(self, mapping_file_name: str="infinity_mapping.json", logger_name: str="ragflow.infinity_conn"):
+        from common.doc_store.infinity_conn_pool import INFINITY_CONN
+
         self.dbName = settings.INFINITY.get("db_name", "default_db")
         self.mapping_file_name = mapping_file_name
         self.logger = logging.getLogger(logger_name)
