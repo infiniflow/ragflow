@@ -176,6 +176,10 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
     },
     knowledgeDetails: {
       metadata: {
+        descriptionTip:
+          'Provide descriptions or examples to guide LLM extract values for this field. If left empty, it will rely on the field name.',
+        restrictTDefinedValuesTip:
+          'Enum Mode: Restricts LLM extraction to match preset values only. Define values below.',
         valueExists:
           'Value already exists. Confirm to merge duplicates and combine all associated files.',
         fieldNameExists:
@@ -205,7 +209,10 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
           'This field and all its corresponding values will be deleted from this files.',
         deleteManageValueSingleWarn:
           'This value will be deleted from this files.',
+        deleteSettingFieldWarn: `This field will be deleted; existing metadata won't be affected.`,
+        deleteSettingValueWarn: `This value will be deleted; existing metadata won't be affected.`,
       },
+      emptyMetadata: 'No metadata',
       metadataField: 'Metadata field',
       systemAttribute: 'System attribute',
       localUpload: 'Local upload',

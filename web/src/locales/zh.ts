@@ -168,6 +168,10 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        descriptionTip:
+          '提供描述或示例来指导大语言模型为此字段提取值。如果留空，将依赖字段名称。',
+        restrictTDefinedValuesTip:
+          '枚举模式：限制大语言模型仅提取预设值。在下方定义值。',
         fieldSetting: '字段设置',
         changesAffectNewParses: '更改仅影响新解析。',
         editMetadataForDataset: '查看和编辑元数据于 ',
@@ -192,7 +196,10 @@ export default {
         deleteManageValueAllWarn: '此值将从所有关联的文件中删除。',
         deleteManageFieldSingleWarn: '此字段及其所有对应值将从此文件中删除。',
         deleteManageValueSingleWarn: '此值将从此文件中删除。',
+        deleteSettingFieldWarn: `此字段将被删除；现有元数据不会受到影响。`,
+        deleteSettingValueWarn: `此值将被删除；现有元数据不会受到影响。`,
       },
+      emptyMetadata: '无元数据',
       localUpload: '本地上传',
       fileSize: '文件大小',
       fileType: '文件类型',
