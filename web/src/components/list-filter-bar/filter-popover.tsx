@@ -11,8 +11,8 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { useForm } from 'react-hook-form';
-import { ZodArray, ZodString, z } from 'zod';
+import { FieldPath, useForm } from 'react-hook-form';
+import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
 
@@ -71,34 +71,37 @@ function CheckboxFormMultiple({
     }, {});
   }, [resolvedFilters]);
 
+  // const FormSchema = useMemo(() => {
+  //   if (resolvedFilters.length === 0) {
+  //     return z.object({});
+  //   }
+
+  //   return z.object(
+  //     resolvedFilters.reduce<
+  //       Record<
+  //         string,
+  //         ZodArray<ZodString, 'many'> | z.ZodObject<any> | z.ZodOptional<any>
+  //       >
+  //     >((pre, cur) => {
+  //       const hasNested = cur.list?.some(
+  //         (item) => item.list && item.list.length > 0,
+  //       );
+
+  //       if (hasNested) {
+  //         pre[cur.field] = z
+  //           .record(z.string(), z.array(z.string().optional()).optional())
+  //           .optional();
+  //       } else {
+  //         pre[cur.field] = z.array(z.string().optional()).optional();
+  //       }
+
+  //       return pre;
+  //     }, {}),
+  //   );
+  // }, [resolvedFilters]);
   const FormSchema = useMemo(() => {
-    if (resolvedFilters.length === 0) {
-      return z.object({});
-    }
-
-    return z.object(
-      resolvedFilters.reduce<
-        Record<
-          string,
-          ZodArray<ZodString, 'many'> | z.ZodObject<any> | z.ZodOptional<any>
-        >
-      >((pre, cur) => {
-        const hasNested = cur.list?.some(
-          (item) => item.list && item.list.length > 0,
-        );
-
-        if (hasNested) {
-          pre[cur.field] = z
-            .record(z.string(), z.array(z.string().optional()).optional())
-            .optional();
-        } else {
-          pre[cur.field] = z.array(z.string().optional()).optional();
-        }
-
-        return pre;
-      }, {}),
-    );
-  }, [resolvedFilters]);
+    return z.object({});
+  }, []);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: resolvedFilters.length > 0 ? zodResolver(FormSchema) : undefined,
@@ -178,7 +181,9 @@ function CheckboxFormMultiple({
                 <FormField
                   key={x.field}
                   control={form.control}
-                  name={x.field}
+                  name={
+                    x.field.toString() as FieldPath<z.infer<typeof FormSchema>>
+                  }
                   render={() => (
                     <FormItem className="space-y-4">
                       <div>
@@ -186,19 +191,20 @@ function CheckboxFormMultiple({
                           {x.label}
                         </FormLabel>
                       </div>
-                      {x.list.map((item) => {
-                        return (
-                          <FilterField
-                            key={item.id}
-                            item={{ ...item }}
-                            parent={{
-                              ...x,
-                              id: x.field,
-                              // field: `${x.field}${item.field ? '.' + item.field : ''}`,
-                            }}
-                          />
-                        );
-                      })}
+                      {x.list?.length &&
+                        x.list.map((item) => {
+                          return (
+                            <FilterField
+                              key={item.id}
+                              item={{ ...item }}
+                              parent={{
+                                ...x,
+                                id: x.field,
+                                // field: `${x.field}${item.field ? '.' + item.field : ''}`,
+                              }}
+                            />
+                          );
+                        })}
                       <FormMessage />
                     </FormItem>
                   )}

@@ -4,6 +4,7 @@ import { useSendAgentMessage } from './use-send-agent-message';
 
 import { FileUploadProps } from '@/components/file-upload';
 import { NextMessageInput } from '@/components/message-input/next';
+import MarkdownContent from '@/components/next-markdown-content';
 import MessageItem from '@/components/next-message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
@@ -102,8 +103,10 @@ function AgentChatBox() {
                   {message.role === MessageType.Assistant &&
                     derivedMessages.length - 1 !== i && (
                       <div>
-                        <div>{message?.data?.tips}</div>
-
+                        <MarkdownContent
+                          content={message?.data?.tips}
+                          loading={false}
+                        ></MarkdownContent>
                         <div>
                           {buildInputList(message)?.map((item) => item.value)}
                         </div>

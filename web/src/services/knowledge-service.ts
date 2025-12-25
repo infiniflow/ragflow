@@ -48,10 +48,10 @@ const {
   traceRaptor,
   check_embedding,
   kbUpdateMetaData,
+  documentUpdateMetaData,
 } = api;
 
 const methods = {
-  // 知识库管理
   createKb: {
     url: create_kb,
     method: 'post',
@@ -220,6 +220,10 @@ const methods = {
     url: kbUpdateMetaData,
     method: 'post',
   },
+  documentUpdateMetaData: {
+    url: documentUpdateMetaData,
+    method: 'post',
+  },
   // getMetaData: {
   //   url: getMetaData,
   //   method: 'get',
@@ -263,7 +267,7 @@ export const documentFilter = (kb_id: string) =>
 export const getMetaDataService = ({ kb_id }: { kb_id: string }) =>
   request.post(api.getMetaData, { data: { kb_id } });
 export const updateMetaData = ({ kb_id, data }: { kb_id: string; data: any }) =>
-  request.post(api.updateMetaData, { data: { kb_id, data } });
+  request.post(api.updateMetaData, { data: { kb_id, ...data } });
 
 export const listDataPipelineLogDocument = (
   params?: IFetchKnowledgeListRequestParams,

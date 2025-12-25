@@ -33,6 +33,7 @@ from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTena
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from common.metadata_utils import dedupe_list
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
 from common.constants import LLMType, ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME
@@ -700,6 +701,8 @@ class DocumentService(CommonService):
                     v = [v]
                 for vv in v:
                     if vv not in meta[k]:
+                        if isinstance(vv, list) or isinstance(vv, dict):
+                            continue
                         meta[k][vv] = []
                     meta[k][vv].append(doc_id)
         return meta
@@ -799,7 +802,10 @@ class DocumentService(CommonService):
                 match_provided = "match" in upd
                 if isinstance(meta[key], list):
                     if not match_provided:
-                        meta[key] = new_value
+                        if isinstance(new_value, list):
+                            meta[key] = dedupe_list(new_value)
+                        else:
+                            meta[key] = new_value
                         changed = True
                     else:
                         match_value = upd.get("match")
@@ -812,7 +818,7 @@ class DocumentService(CommonService):
                             else:
                                 new_list.append(item)
                         if replaced:
-                            meta[key] = new_list
+                            meta[key] = dedupe_list(new_list)
                             changed = True
                 else:
                     if not match_provided:
