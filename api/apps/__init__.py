@@ -25,6 +25,7 @@ from quart_cors import cors
 from common.constants import StatusEnum
 from api.db.db_models import close_connection, APIToken
 from api.db.services import UserService
+from api.db.services.user_session_service import UserSessionService
 from api.utils.json_encode import CustomJSONEncoder
 from api.utils import commands
 
@@ -122,6 +123,23 @@ def _load_user():
             logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
             return None
 
+        # 先尝试从 UserSession 获取用户（支持多点登录）
+        try:
+            session_obj = UserSessionService.get_session_by_token(access_token)
+            if session_obj:
+                # 更新最后活动时间
+                UserSessionService.update_last_activity(access_token)
+                user = UserService.query(
+                    id=session_obj.get("user_id"), status=StatusEnum.VALID.value
+                )
+                if user:
+                    g.user = user[0]
+                    return user[0]
+        except Exception as session_err:
+            # UserSession 表可能还不存在，或者查询失败，继续使用旧方式
+            pass  # 静默失败，不输出日志避免干扰
+        
+        # 回退到老的方式（直接检查 user.access_token）
         user = UserService.query(
             access_token=access_token, status=StatusEnum.VALID.value
         )
@@ -137,6 +155,7 @@ def _load_user():
             return user[0]
     except Exception as e:
         logging.warning(f"load_user got exception {e}")
+        return None
 
 
 current_user = LocalProxy(_load_user)

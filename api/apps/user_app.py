@@ -25,6 +25,7 @@ import base64
 
 from quart import make_response, redirect, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
+from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
@@ -33,6 +34,7 @@ from api.db.services.file_service import FileService
 from api.db.services.llm_service import get_init_tenant_llm
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
+from api.db.services.user_session_service import UserSessionService
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.misc_utils import download_img, get_uuid
 from common.constants import RetCode
@@ -125,14 +127,42 @@ async def login():
         )
     elif user:
         response_data = user.to_json()
-        user.access_token = get_uuid()
         login_user(user)
         user.update_time = current_timestamp()
         user.update_date = datetime_format(datetime.now())
-        user.save()
+        
+        # 创建会话记录（支持多点登录）
+        auth_token = None
+        try:
+            device_name = request.headers.get("User-Agent", "Unknown Device")
+            ip_address = request.headers.get("X-Forwarded-For") or request.remote_addr
+            success, session_data = UserSessionService.create_session(
+                user_id=user.id,
+                device_name=device_name[:255] if device_name else "Unknown Device",
+                ip_address=ip_address[:45] if ip_address else "Unknown IP"
+            )
+            
+            if success:
+                # 使用 UserSession 的 token
+                session_token = session_data.get("access_token")
+                # 更新 user.access_token 为相同的值，保持一致性
+                user.access_token = session_token
+                user.save()
+                # 更新返回数据中的 access_token
+                response_data["access_token"] = session_token
+                auth_token = user.get_id()  # 返回 JWT 编码后的 token
+        except Exception as e:
+            # UserSession 表可能不存在，使用旧方式
+            logging.debug(f"UserSession creation failed, using old token method: {e}")
+        
+        # 如果 UserSession 创建失败，使用旧方式
+        if not auth_token:
+            user.access_token = get_uuid()
+            user.save()
+            auth_token = user.get_id()
+        
         msg = "Welcome back!"
-
-        return await construct_response(data=response_data, auth=user.get_id(), message=msg)
+        return await construct_response(data=response_data, auth=auth_token, message=msg)
     else:
         return get_json_result(
             data=False,
@@ -487,7 +517,7 @@ async def user_info_from_github(access_token):
     return user_info
 
 
-@manager.route("/logout", methods=["GET"])  # noqa: F821
+@manager.route("/logout", methods=["POST"])  # noqa: F821
 @login_required
 async def log_out():
     """
@@ -497,16 +527,128 @@ async def log_out():
       - User
     security:
       - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        required: false
+        schema:
+          type: object
+          properties:
+            logout_all:
+              type: boolean
+              description: 是否登出所有会话，默认false
     responses:
       200:
         description: Logout successful.
         schema:
           type: object
     """
+    # 获取当前 token
+    jwt = Serializer(secret_key=settings.SECRET_KEY)
+    authorization = request.headers.get("Authorization")
+    access_token = str(jwt.loads(authorization)) if authorization else None
+    
+    # 检查是否要登出所有会话
+    logout_all = False
+    if request.content_length:
+        request_data = await get_request_json()
+        logout_all = request_data.get("logout_all", False)
+    
+    if logout_all:
+        # 登出用户的所有会话
+        count = UserSessionService.logout_all_sessions(current_user.id)
+        logging.info(f"User {current_user.email} logged out from {count} sessions")
+    else:
+        # 只登出当前会话
+        if access_token:
+            UserSessionService.logout_session(access_token)
+    
+    # 失效旧的 access_token
     current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
     current_user.save()
     logout_user()
     return get_json_result(data=True)
+
+
+@manager.route("/sessions", methods=["GET"])  # noqa: F821
+@login_required
+async def get_user_sessions():
+    """
+    获取用户的所有活跃会话
+    ---
+    tags:
+      - User
+    security:
+      - ApiKeyAuth: []
+    responses:
+      200:
+        description: 会话列表获取成功
+        schema:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+    """
+    sessions = UserSessionService.get_user_sessions(current_user.id)
+    return get_json_result(data=sessions)
+
+
+@manager.route("/sessions/<session_id>", methods=["DELETE"])  # noqa: F821
+@login_required
+async def delete_session(session_id):
+    """
+    删除指定的会话
+    ---
+    tags:
+      - User
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: session_id
+        required: true
+        type: string
+        description: 会话 ID
+    responses:
+      200:
+        description: 会话删除成功
+        schema:
+          type: object
+    """
+    # 获取会话信息并验证归属
+    from api.db.db_models import UserSession, DB
+    try:
+        session_obj = UserSession.select().where(
+            (UserSession.id == session_id) &
+            (UserSession.user_id == current_user.id)
+        ).first()
+        
+        if not session_obj:
+            return get_json_result(
+                data=False,
+                code=RetCode.OPERATING_ERROR,
+                message="Session not found or access denied"
+            )
+        
+        # 登出该会话
+        success = UserSessionService.logout_session(session_obj.access_token)
+        if success:
+            return get_json_result(data=True)
+        else:
+            return get_json_result(
+                data=False,
+                code=RetCode.OPERATING_ERROR,
+                message="Failed to delete session"
+            )
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(
+            data=False,
+            code=RetCode.EXCEPTION_ERROR,
+            message=str(e)
+        )
 
 
 @manager.route("/setting", methods=["POST"])  # noqa: F821
