@@ -176,6 +176,10 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
     },
     knowledgeDetails: {
       metadata: {
+        descriptionTip:
+          'Provide descriptions or examples to guide LLM extract values for this field. If left empty, it will rely on the field name.',
+        restrictTDefinedValuesTip:
+          'Enum Mode: Restricts LLM extraction to match preset values only. Define values below.',
         valueExists:
           'Value already exists. Confirm to merge duplicates and combine all associated files.',
         fieldNameExists:
@@ -190,13 +194,25 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         manageMetadata: 'Manage metadata',
         metadata: 'Metadata',
         values: 'Values',
+        value: 'Value',
         action: 'Action',
         field: 'Field',
         description: 'Description',
         fieldName: 'Field name',
         editMetadata: 'Edit metadata',
         deleteWarn: 'This {{field}} will be removed from all associated files',
+        deleteManageFieldAllWarn:
+          'This field and all its corresponding values will be deleted from all associated files.',
+        deleteManageValueAllWarn:
+          'This value will be deleted from from all associated files.',
+        deleteManageFieldSingleWarn:
+          'This field and all its corresponding values will be deleted from this files.',
+        deleteManageValueSingleWarn:
+          'This value will be deleted from this files.',
+        deleteSettingFieldWarn: `This field will be deleted; existing metadata won't be affected.`,
+        deleteSettingValueWarn: `This value will be deleted; existing metadata won't be affected.`,
       },
+      emptyMetadata: 'No metadata',
       metadataField: 'Metadata field',
       systemAttribute: 'System attribute',
       localUpload: 'Local upload',
@@ -340,9 +356,9 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       html4excel: 'Excel to HTML',
       html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the knowledge base will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
       autoKeywords: 'Auto-keyword',
-      autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the chat model specified in 'System model settings'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Auto-question',
-      autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the LLM specified in 'System model settings'. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       redo: 'Do you want to clear the existing {{chunkNum}} chunks?',
       setMetaData: 'Set meta data',
       pleaseInputJson: 'Please enter JSON',
@@ -1613,6 +1629,8 @@ Example: Virtual Hosted Style`,
         notEmpty: 'Not empty',
         in: 'In',
         notIn: 'Not in',
+        is: 'Is',
+        isNot: 'Is not',
       },
       switchLogicOperatorOptions: {
         and: 'AND',
@@ -1874,6 +1892,8 @@ This process aggregates variables from multiple branches into a single variable 
       beginInputTip:
         'By defining input parameters, this content can be accessed by other components in subsequent processes.',
       query: 'Query variables',
+      switchPromptMessage:
+        'The prompt words will change. Please confirm whether you want to discard the existing prompt words?',
       queryRequired: 'Query is required',
       queryTip: 'Select the variable you want to use',
       agent: 'Agent',

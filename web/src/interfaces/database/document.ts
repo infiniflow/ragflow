@@ -43,6 +43,18 @@ export interface IParserConfig {
   task_page_size?: number;
   raptor?: Raptor;
   graphrag?: GraphRag;
+  image_context_window?: number;
+  mineru_parse_method?: 'auto' | 'txt' | 'ocr';
+  mineru_formula_enable?: boolean;
+  mineru_table_enable?: boolean;
+  mineru_lang?: string;
+  entity_types?: string[];
+  metadata?: Array<{
+    key?: string;
+    description?: string;
+    enum?: string[];
+  }>;
+  enable_metadata?: boolean;
 }
 
 interface Raptor {

@@ -4,15 +4,16 @@ import {
 } from '@/components/confirm-delete-dialog';
 import EditTag from '@/components/edit-tag';
 import { Button } from '@/components/ui/button';
+import { FormLabel } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2 } from 'lucide-react';
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MetadataType } from './hook';
-import { IManageValuesProps, IMetaDataTableData } from './interface';
+import { useManageValues } from './hooks/use-manage-values-modal';
+import { IManageValuesProps } from './interface';
 
 // Create a separate input component, wrapped with memo to avoid unnecessary re-renders
 const ValueInputItem = memo(
@@ -57,188 +58,28 @@ const ValueInputItem = memo(
 export const ManageValuesModal = (props: IManageValuesProps) => {
   const {
     title,
-    data,
     isEditField,
     visible,
     isAddValue,
     isShowDescription,
     isShowValueSwitch,
     isVerticalShowValue,
-    hideModal,
-    onSave,
-    addUpdateValue,
-    addDeleteValue,
-    existsKeys,
-    type,
   } = props;
-  const [metaData, setMetaData] = useState(data);
+  const {
+    metaData,
+    tempValues,
+    valueError,
+    deleteDialogContent,
+    handleChange,
+    handleValueChange,
+    handleValueBlur,
+    handleDelete,
+    handleAddValue,
+    showDeleteModal,
+    handleSave,
+    handleHideModal,
+  } = useManageValues(props);
   const { t } = useTranslation();
-  const [valueError, setValueError] = useState<Record<string, string>>({
-    field: '',
-    values: '',
-  });
-  const [deleteDialogContent, setDeleteDialogContent] = useState({
-    visible: false,
-    title: '',
-    name: '',
-    warnText: '',
-    onOk: () => {},
-    onCancel: () => {},
-  });
-  const hideDeleteModal = () => {
-    setDeleteDialogContent({
-      visible: false,
-      title: '',
-      name: '',
-      warnText: '',
-      onOk: () => {},
-      onCancel: () => {},
-    });
-  };
-
-  // Use functional update to avoid closure issues
-  const handleChange = useCallback(
-    (field: string, value: any) => {
-      if (field === 'field' && existsKeys.includes(value)) {
-        setValueError((prev) => {
-          return {
-            ...prev,
-            field:
-              type === MetadataType.Setting
-                ? t('knowledgeDetails.metadata.fieldExists')
-                : t('knowledgeDetails.metadata.fieldNameExists'),
-          };
-        });
-      } else if (field === 'field' && !existsKeys.includes(value)) {
-        setValueError((prev) => {
-          return {
-            ...prev,
-            field: '',
-          };
-        });
-      }
-      setMetaData((prev) => ({
-        ...prev,
-        [field]: value,
-      }));
-    },
-    [existsKeys, type, t],
-  );
-
-  // Maintain separate state for each input box
-  const [tempValues, setTempValues] = useState<string[]>([...data.values]);
-
-  useEffect(() => {
-    setTempValues([...data.values]);
-    setMetaData(data);
-  }, [data]);
-
-  const handleHideModal = useCallback(() => {
-    hideModal();
-    setMetaData({} as IMetaDataTableData);
-  }, [hideModal]);
-
-  const handleSave = useCallback(() => {
-    if (type === MetadataType.Setting && valueError.field) {
-      return;
-    }
-    if (!metaData.restrictDefinedValues && isShowValueSwitch) {
-      const newMetaData = { ...metaData, values: [] };
-      onSave(newMetaData);
-    } else {
-      onSave(metaData);
-    }
-    handleHideModal();
-  }, [metaData, onSave, handleHideModal, isShowValueSwitch, type, valueError]);
-
-  // Handle value changes, only update temporary state
-  const handleValueChange = useCallback(
-    (index: number, value: string) => {
-      setTempValues((prev) => {
-        if (prev.includes(value)) {
-          setValueError((prev) => {
-            return {
-              ...prev,
-              values: t('knowledgeDetails.metadata.valueExists'),
-            };
-          });
-        } else {
-          setValueError((prev) => {
-            return {
-              ...prev,
-              values: '',
-            };
-          });
-        }
-        const newValues = [...prev];
-        newValues[index] = value;
-
-        return newValues;
-      });
-    },
-    [t],
-  );
-
-  // Handle blur event, synchronize to main state
-  const handleValueBlur = useCallback(() => {
-    addUpdateValue(metaData.field, [...new Set([...tempValues])]);
-    handleChange('values', [...new Set([...tempValues])]);
-  }, [handleChange, tempValues, metaData, addUpdateValue]);
-
-  // Handle delete operation
-  const handleDelete = useCallback(
-    (index: number) => {
-      setTempValues((prev) => {
-        const newTempValues = [...prev];
-        addDeleteValue(metaData.field, newTempValues[index]);
-        newTempValues.splice(index, 1);
-        return newTempValues;
-      });
-
-      // Synchronize to main state
-      setMetaData((prev) => {
-        const newMetaDataValues = [...prev.values];
-        newMetaDataValues.splice(index, 1);
-        return {
-          ...prev,
-          values: newMetaDataValues,
-        };
-      });
-    },
-    [addDeleteValue, metaData],
-  );
-
-  const showDeleteModal = (item: string, callback: () => void) => {
-    setDeleteDialogContent({
-      visible: true,
-      title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
-      name: metaData.field + '/' + item,
-      warnText: t('knowledgeDetails.metadata.deleteWarn', {
-        field:
-          t('knowledgeDetails.metadata.field') +
-          '/' +
-          t('knowledgeDetails.metadata.values'),
-      }),
-      onOk: () => {
-        hideDeleteModal();
-        callback();
-      },
-      onCancel: () => {
-        hideDeleteModal();
-      },
-    });
-  };
-
-  // Handle adding new value
-  const handleAddValue = useCallback(() => {
-    setTempValues((prev) => [...new Set([...prev, ''])]);
-
-    // Synchronize to main state
-    setMetaData((prev) => ({
-      ...prev,
-      values: [...new Set([...prev.values, ''])],
-    }));
-  }, []);
 
   return (
     <Modal
@@ -276,7 +117,12 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
         )}
         {isShowDescription && (
           <div className="flex flex-col gap-2">
-            <div>{t('knowledgeDetails.metadata.description')}</div>
+            <FormLabel
+              className="text-text-primary text-base"
+              tooltip={t('knowledgeDetails.metadata.descriptionTip')}
+            >
+              {t('knowledgeDetails.metadata.description')}
+            </FormLabel>
             <div>
               <Textarea
                 value={metaData.description}
@@ -289,7 +135,12 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
         )}
         {isShowValueSwitch && (
           <div className="flex flex-col gap-2">
-            <div>{t('knowledgeDetails.metadata.restrictDefinedValues')}</div>
+            <FormLabel
+              className="text-text-primary text-base"
+              tooltip={t('knowledgeDetails.metadata.restrictTDefinedValuesTip')}
+            >
+              {t('knowledgeDetails.metadata.restrictDefinedValues')}
+            </FormLabel>
             <div>
               <Switch
                 checked={metaData.restrictDefinedValues || false}
