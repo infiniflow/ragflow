@@ -115,14 +115,19 @@ export const useFetchDocumentList = () => {
     refetchInterval: isLoop ? 5000 : false,
     enabled: !!knowledgeId || !!id,
     queryFn: async () => {
-      const run = [...(filterValue.run as string[])];
-      const returnEmptyMetadataIndex = run.findIndex(
-        (r: string) => r === EMPTY_METADATA_FIELD,
-      );
+      let run = [] as any;
       let returnEmptyMetadata = false;
-      if (returnEmptyMetadataIndex > -1) {
-        returnEmptyMetadata = true;
-        run.splice(returnEmptyMetadataIndex, 1);
+      if (filterValue.run && Array.isArray(filterValue.run)) {
+        run = [...(filterValue.run as string[])];
+        const returnEmptyMetadataIndex = run.findIndex(
+          (r: string) => r === EMPTY_METADATA_FIELD,
+        );
+        if (returnEmptyMetadataIndex > -1) {
+          returnEmptyMetadata = true;
+          run.splice(returnEmptyMetadataIndex, 1);
+        }
+      } else {
+        run = filterValue.run;
       }
       const ret = await listDocument(
         {
