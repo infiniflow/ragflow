@@ -168,43 +168,45 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
             />
           )}
 
-          <FormField
-            control={form.control}
-            name="image"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="gap-1">{t('chunk.image')}</FormLabel>
+          {isEditMode && form.getValues('doc_type_kwd') === 'image' && (
+            <FormField
+              control={form.control}
+              name="image"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="gap-1">{t('chunk.image')}</FormLabel>
 
-                <div className="space-y-4">
-                  {data?.data?.img_id && (
-                    <Image
-                      id={data?.data?.img_id}
-                      className="mx-auto w-auto max-w-full object-contain max-h-[800px]"
-                    />
-                  )}
-
-                  <div className="col-start-2 col-end-3 only:col-span-2">
-                    <FormControl>
-                      <FileUploader
-                        className="h-auto p-6"
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        accept={{
-                          'image/png': [],
-                          'image/jpeg': [],
-                          'image/webp': [],
-                        }}
-                        maxFileCount={1}
-                        hideDropzoneOnMaxFileCount
-                        title={t('chunk.imageUploaderTitle')}
-                        description={<></>}
+                  <div className="space-y-4">
+                    {data?.data?.img_id && (
+                      <Image
+                        id={data?.data?.img_id}
+                        className="mx-auto w-auto max-w-full object-contain max-h-[800px]"
                       />
-                    </FormControl>
+                    )}
+
+                    <div className="col-start-2 col-end-3 only:col-span-2">
+                      <FormControl>
+                        <FileUploader
+                          className="h-auto p-6"
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          accept={{
+                            'image/png': [],
+                            'image/jpeg': [],
+                            'image/webp': [],
+                          }}
+                          maxFileCount={1}
+                          hideDropzoneOnMaxFileCount
+                          title={t('chunk.imageUploaderTitle')}
+                          description={<></>}
+                        />
+                      </FormControl>
+                    </div>
                   </div>
-                </div>
-              </FormItem>
-            )}
-          />
+                </FormItem>
+              )}
+            />
+          )}
 
           <FormField
             control={form.control}

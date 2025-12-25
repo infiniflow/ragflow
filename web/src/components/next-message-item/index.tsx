@@ -36,6 +36,7 @@ import { Button } from '../ui/button';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.less';
 import { ReferenceDocumentList } from './reference-document-list';
+import { ReferenceImageList } from './reference-image-list';
 import { UploadedMessageFiles } from './uploaded-message-files';
 
 interface IProps
@@ -294,6 +295,13 @@ function MessageItem({
             )}
 
             {renderContent()}
+
+            {isAssistant && (
+              <ReferenceImageList
+                referenceChunks={reference?.chunks}
+                messageContent={messageContent}
+              ></ReferenceImageList>
+            )}
 
             {isAssistant && referenceDocuments.length > 0 && (
               <ReferenceDocumentList
