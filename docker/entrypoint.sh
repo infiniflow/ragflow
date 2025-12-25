@@ -151,26 +151,26 @@ done
 # -----------------------------------------------------------------------------
 # Replace env variables in the service_conf.yaml file
 # -----------------------------------------------------------------------------
-# 自动检测是否在Docker容器中或本地开发环境
+# Automatically detect whether in Docker container or local development environment
 if [ -d "/ragflow/conf" ]; then
     CONF_DIR="/ragflow/conf"
     PROJECT_ROOT="/ragflow"
     IN_DOCKER=1
 else
-    # 本地开发环境，使用相对路径
+    # Local development environment, use relative paths
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     PROJECT_ROOT="${SCRIPT_DIR}/.."
     CONF_DIR="${PROJECT_ROOT}/conf"
     IN_DOCKER=0
 fi
 
-# 切换到项目根目录
+# Switch to project root directory
 cd "${PROJECT_ROOT}"
 
 TEMPLATE_FILE="${CONF_DIR}/service_conf.yaml.template"
 CONF_FILE="${CONF_DIR}/service_conf.yaml"
 
-# 检查模板文件是否存在
+# Check if template file exists
 if [ ! -f "${TEMPLATE_FILE}" ]; then
     echo "Error: Template file not found: ${TEMPLATE_FILE}"
     echo "Trying alternative location: docker/service_conf.yaml.template"
