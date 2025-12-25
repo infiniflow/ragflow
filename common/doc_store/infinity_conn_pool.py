@@ -40,7 +40,7 @@ class InfinityConnectionPool:
 
         for _ in range(24):
             try:
-                conn_pool = ConnectionPool(self.infinity_uri, max_size=32)
+                conn_pool = ConnectionPool(self.infinity_uri, max_size=4)
                 inf_conn = conn_pool.get_conn()
                 res = inf_conn.show_current_node()
                 if res.error_code == ErrorCode.OK and res.server_status in ["started", "alive"]:
