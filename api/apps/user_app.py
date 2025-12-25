@@ -536,34 +536,34 @@ async def log_out():
           properties:
             logout_all:
               type: boolean
-              description: 是否登出所有会话，默认false
+              description: Whether to logout all sessions, default false
     responses:
       200:
         description: Logout successful.
         schema:
           type: object
     """
-    # 获取当前 token
+    # Get current token
     jwt = Serializer(secret_key=settings.SECRET_KEY)
     authorization = request.headers.get("Authorization")
     access_token = str(jwt.loads(authorization)) if authorization else None
     
-    # 检查是否要登出所有会话
+    # Check if logout all sessions is requested
     logout_all = False
     if request.content_length:
         request_data = await get_request_json()
         logout_all = request_data.get("logout_all", False)
     
     if logout_all:
-        # 登出用户的所有会话
+        # Logout all user sessions
         count = UserSessionService.logout_all_sessions(current_user.id)
         logging.info(f"User {current_user.email} logged out from {count} sessions")
     else:
-        # 只登出当前会话
+        # Logout only current session
         if access_token:
             UserSessionService.logout_session(access_token)
     
-    # 失效旧的 access_token
+    # Invalidate old access_token
     current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
     current_user.save()
     logout_user()
@@ -574,7 +574,7 @@ async def log_out():
 @login_required
 async def get_user_sessions():
     """
-    获取用户的所有活跃会话
+    Get all active sessions for the user
     ---
     tags:
       - User
@@ -582,7 +582,7 @@ async def get_user_sessions():
       - ApiKeyAuth: []
     responses:
       200:
-        description: 会话列表获取成功
+        description: Session list retrieved successfully
         schema:
           type: object
           properties:
@@ -599,7 +599,7 @@ async def get_user_sessions():
 @login_required
 async def delete_session(session_id):
     """
-    删除指定的会话
+    Delete a specific session
     ---
     tags:
       - User
@@ -610,14 +610,14 @@ async def delete_session(session_id):
         name: session_id
         required: true
         type: string
-        description: 会话 ID
+        description: Session ID
     responses:
       200:
-        description: 会话删除成功
+        description: Session deleted successfully
         schema:
           type: object
     """
-    # 获取会话信息并验证归属
+    # Get session info and validate ownership
     from api.db.db_models import UserSession, DB
     try:
         session_obj = UserSession.select().where(
@@ -632,7 +632,7 @@ async def delete_session(session_id):
                 message="Session not found or access denied"
             )
         
-        # 登出该会话
+        # Logout this session
         success = UserSessionService.logout_session(session_obj.access_token)
         if success:
             return get_json_result(data=True)
