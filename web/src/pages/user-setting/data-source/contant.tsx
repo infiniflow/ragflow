@@ -25,6 +25,7 @@ export enum DataSourceKey {
   R2 = 'r2',
   OCI_STORAGE = 'oci_storage',
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
+  AIRTABLE = 'airtable',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -103,6 +104,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Box',
       description: t(`setting.${DataSourceKey.BOX}Description`),
       icon: <SvgIcon name={'data-source/box'} width={38} />,
+    },
+    [DataSourceKey.AIRTABLE]: {
+      name: 'Airtable',
+      description: t(`setting.${DataSourceKey.AIRTABLE}Description`),
+      icon: <SvgIcon name={'data-source/airtable'} width={38} />,
     },
   };
 };
@@ -672,6 +678,26 @@ export const DataSourceFormFields = {
       placeholder: 'Defaults root',
     },
   ],
+  [DataSourceKey.AIRTABLE]: [
+    {
+      label: 'Access Token',
+      name: 'config.credentials.airtable_access_token',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Base ID',
+      name: 'config.base_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Table Name OR ID',
+      name: 'config.table_name_or_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -855,6 +881,18 @@ export const DataSourceFormDefaultValues = {
       folder_id: '0',
       credentials: {
         box_tokens: '',
+      },
+    },
+  },
+  [DataSourceKey.AIRTABLE]: {
+    name: '',
+    source: DataSourceKey.AIRTABLE,
+    config: {
+      name: '',
+      base_id: '',
+      table_name_or_id: '',
+      credentials: {
+        airtable_access_token: '',
       },
     },
   },
