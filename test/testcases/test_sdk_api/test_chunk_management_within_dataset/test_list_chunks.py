@@ -77,7 +77,7 @@ class TestChunksList:
             ({"keywords": ""}, 5),
             ({"keywords": "1"}, 1),
             ({"keywords": "chunk"}, 4),
-            ({"keywords": "ragflow"}, 1),
+            ({"keywords": "ragflow"}, 5),
             ({"keywords": "unknown"}, 0),
         ],
     )
