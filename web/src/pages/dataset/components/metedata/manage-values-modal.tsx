@@ -4,6 +4,7 @@ import {
 } from '@/components/confirm-delete-dialog';
 import EditTag from '@/components/edit-tag';
 import { Button } from '@/components/ui/button';
+import { FormLabel } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
 import { Switch } from '@/components/ui/switch';
@@ -116,7 +117,12 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
         )}
         {isShowDescription && (
           <div className="flex flex-col gap-2">
-            <div>{t('knowledgeDetails.metadata.description')}</div>
+            <FormLabel
+              className="text-text-primary text-base"
+              tooltip={t('knowledgeDetails.metadata.descriptionTip')}
+            >
+              {t('knowledgeDetails.metadata.description')}
+            </FormLabel>
             <div>
               <Textarea
                 value={metaData.description}
@@ -129,7 +135,12 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
         )}
         {isShowValueSwitch && (
           <div className="flex flex-col gap-2">
-            <div>{t('knowledgeDetails.metadata.restrictDefinedValues')}</div>
+            <FormLabel
+              className="text-text-primary text-base"
+              tooltip={t('knowledgeDetails.metadata.restrictTDefinedValuesTip')}
+            >
+              {t('knowledgeDetails.metadata.restrictDefinedValues')}
+            </FormLabel>
             <div>
               <Switch
                 checked={metaData.restrictDefinedValues || false}
