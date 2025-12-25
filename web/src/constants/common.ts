@@ -51,6 +51,7 @@ export const LanguageList = [
   'Portuguese BR',
   'German',
   'French',
+  'Italian',
 ];
 export const LanguageMap = {
   English: 'English',
@@ -64,6 +65,7 @@ export const LanguageMap = {
   'Portuguese BR': 'Português BR',
   German: 'German',
   French: 'Français',
+  Italian: 'Italiano',
 };
 
 export enum LanguageAbbreviation {
@@ -78,6 +80,7 @@ export enum LanguageAbbreviation {
   PtBr = 'pt-BR',
   De = 'de',
   Fr = 'fr',
+  It = 'it',
 }
 
 export const LanguageAbbreviationMap = {
@@ -92,6 +95,7 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.PtBr]: 'Português BR',
   [LanguageAbbreviation.De]: 'Deutsch',
   [LanguageAbbreviation.Fr]: 'Français',
+  [LanguageAbbreviation.It]: 'Italiano',
 };
 
 export const LanguageTranslationMap = {
@@ -99,13 +103,22 @@ export const LanguageTranslationMap = {
   Chinese: 'zh',
   'Traditional Chinese': 'zh-TRADITIONAL',
   Russian: 'ru',
-  Indonesia: 'id',
+  Indonesian: 'id',
   Spanish: 'es',
   Vietnamese: 'vi',
   Japanese: 'ja',
+  Korean: 'ko',
   'Portuguese BR': 'pt-br',
   German: 'de',
   French: 'fr',
+  Italian: 'it',
+  Tamil: 'ta',
+  Telugu: 'te',
+  Kannada: 'ka',
+  Thai: 'th',
+  Greek: 'el',
+  Hindi: 'hi',
+  Ukrainian: 'uk',
 };
 
 export enum FileMimeType {

@@ -12,10 +12,17 @@ export function useDefaultParserValues() {
       layout_recognize: ParseDocumentType.DeepDOC,
       chunk_token_num: 512,
       delimiter: '\n',
+      enable_children: false,
+      children_delimiter: '\n',
       auto_keywords: 0,
       auto_questions: 0,
       html4excel: false,
       toc_extraction: false,
+      image_table_context_window: 0,
+      mineru_parse_method: 'auto',
+      mineru_formula_enable: true,
+      mineru_table_enable: true,
+      mineru_lang: 'English',
       // raptor: {
       //   use_raptor: false,
       //   prompt: t('knowledgeConfiguration.promptText'),
@@ -29,9 +36,11 @@ export function useDefaultParserValues() {
       // },
       entity_types: [],
       pages: [],
+      metadata: [],
+      enable_metadata: false,
     };
 
-    return defaultParserValues;
+    return defaultParserValues as IParserConfig;
   }, [t]);
 
   return defaultParserValues;

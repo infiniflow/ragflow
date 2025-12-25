@@ -14,7 +14,7 @@ A complete reference for RAGFlow's RESTful API. Before proceeding, please ensure
 ---
 
 | Code | Message               | Description                |
-| ---- | --------------------- | -------------------------- |
+|------|-----------------------|----------------------------|
 | 400  | Bad Request           | Invalid request parameters |
 | 401  | Unauthorized          | Unauthorized access        |
 | 403  | Forbidden             | Access denied              |
@@ -48,6 +48,7 @@ This API follows the same request and response format as OpenAI's API. It allows
   - `"model"`: `string`
   - `"messages"`: `object list`
   - `"stream"`: `boolean`
+  - `"extra_body"`: `object` (optional)
 
 ##### Request example
 
@@ -59,7 +60,20 @@ curl --request POST \
      --data '{
         "model": "model",
         "messages": [{"role": "user", "content": "Say this is a test!"}],
-        "stream": true
+        "stream": true,
+        "extra_body": {
+          "reference": true,
+          "metadata_condition": {
+            "logic": "and",
+            "conditions": [
+              {
+                "name": "author",
+                "comparison_operator": "is",
+                "value": "bob"
+              }
+            ]
+          }
+        }
       }'
 ```
 
@@ -73,6 +87,11 @@ curl --request POST \
 
 - `stream` (*Body parameter*) `boolean`  
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
+
+- `extra_body` (*Body parameter*) `object`  
+  Extra request parameters:  
+  - `reference`: `boolean` - include reference in the final chunk (stream) or in the final message (non-stream).
+  - `metadata_condition`: `object` - metadata filter conditions applied to retrieval results.
 
 #### Response
 
@@ -1410,8 +1429,83 @@ Success:
 
 ```json
 {
-    "code": 0
+  "code": 0,
+  "data": {
+    "id": "cd38dd72d4a611f0af9c71de94a988ef",
+    "name": "large.md",
+    "type": "doc",
+    "suffix": "md",
+    "size": 2306906,
+    "location": "large.md",
+    "source_type": "local",
+    "status": "1",
+    "run": "DONE",
+    "dataset_id": "5f546a1ad4a611f0af9c71de94a988ef",
+
+    "chunk_method": "naive",
+    "chunk_count": 2,
+    "token_count": 8126,
+
+    "created_by": "eab7f446cb5a11f0ab334fbc3aa38f35",
+    "create_date": "Tue, 09 Dec 2025 10:28:52 GMT",
+    "create_time": 1765247332122,
+    "update_date": "Wed, 17 Dec 2025 10:51:16 GMT",
+    "update_time": 1765939876819,
+
+    "process_begin_at": "Wed, 17 Dec 2025 10:33:55 GMT",
+    "process_duration": 14.8615,
+    "progress": 1.0,
+
+    "progress_msg": [
+      "10:33:58 Task has been received.",
+      "10:33:59 Page(1~100000001): Start to parse.",
+      "10:33:59 Page(1~100000001): Finish parsing.",
+      "10:34:07 Page(1~100000001): Generate 2 chunks",
+      "10:34:09 Page(1~100000001): Embedding chunks (2.13s)",
+      "10:34:09 Page(1~100000001): Indexing done (0.31s).",
+      "10:34:09 Page(1~100000001): Task done (11.68s)"
+    ],
+
+    "parser_config": {
+      "chunk_token_num": 512,
+      "delimiter": "\n",
+      "auto_keywords": 0,
+      "auto_questions": 0,
+      "topn_tags": 3,
+
+      "layout_recognize": "DeepDOC",
+      "html4excel": false,
+      "image_context_size": 0,
+      "table_context_size": 0,
+
+      "graphrag": {
+        "use_graphrag": true,
+        "method": "light",
+        "entity_types": [
+          "organization",
+          "person",
+          "geo",
+          "event",
+          "category"
+        ]
+      },
+
+      "raptor": {
+        "use_raptor": true,
+        "max_cluster": 64,
+        "max_token": 256,
+        "threshold": 0.1,
+        "random_seed": 0,
+        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize."
+      }
+    },
+
+    "meta_fields": {},
+    "pipeline_id": "",
+    "thumbnail": ""
+  }
 }
+
 ```
 
 Failure:
@@ -1477,7 +1571,7 @@ Failure:
 
 ### List documents
 
-**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}`
+**GET** `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}&metadata_condition={json}`
 
 Lists documents in a specified dataset.
 
@@ -1492,6 +1586,7 @@ Lists documents in a specified dataset.
 ##### Request examples
 
 **A basic request with pagination:**
+
 ```bash
 curl --request GET \
      --url http://{address}/api/v1/datasets/{dataset_id}/documents?page=1&page_size=10 \
@@ -1534,6 +1629,11 @@ curl --request GET \
     - `3` / `DONE`: Document processing completed successfully
     - `4` / `FAIL`: Document processing failed  
   Defaults to all statuses.
+- `metadata_condition`: (*Filter parameter*), `object` (JSON in query)
+  Optional metadata filter applied to documents when `document_ids` is not provided. Uses the same structure as retrieval:
+  - `logic`: `"and"` (default) or `"or"`
+  - `conditions`: array of `{ "name": string, "comparison_operator": string, "value": string }`
+    - `comparison_operator` supports: `is`, `not is`, `contains`, `not contains`, `in`, `not in`, `start with`, `end with`, `>`, `<`, `≥`, `≤`, `empty`, `not empty`
 
 ##### Usage examples
 
@@ -1543,6 +1643,15 @@ curl --request GET \
 curl --request GET \
      --url 'http://{address}/api/v1/datasets/{dataset_id}/documents?suffix=pdf&run=DONE&page=1&page_size=10' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+**Filter by metadata (query JSON):**
+
+```bash
+curl -G \
+  --url "http://localhost:9222/api/v1/datasets/{{KB_ID}}/documents" \
+  --header 'Authorization: Bearer <YOUR_API_KEY>' \
+  --data-urlencode 'metadata_condition={"logic":"and","conditions":[{"name":"tags","comparison_operator":"is","value":"bar"},{"name":"author","comparison_operator":"is","value":"alice"}]}'
 ```
 
 #### Response
@@ -2088,6 +2197,140 @@ Failure:
 
 ---
 
+### Retrieve a metadata summary from a dataset
+
+**GET** `/api/v1/datasets/{dataset_id}/metadata/summary`
+
+Aggregates metadata values across all documents in a dataset.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/datasets/{dataset_id}/metadata/summary`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Response
+
+Success:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "summary": {
+      "tags": [["bar", 2], ["foo", 1], ["baz", 1]],
+      "author": [["alice", 2], ["bob", 1]]
+    }
+  }
+}
+```
+
+---
+
+### Update or delete metadata
+
+**POST** `/api/v1/datasets/{dataset_id}/metadata/update`
+
+Batch update or delete document-level metadata within a specified dataset. If both `document_ids` and `metadata_condition` are omitted, all documents within that dataset are selected. When both are provided, the intersection is used.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/datasets/{dataset_id}/metadata/update`
+- Headers:
+  - `'content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `selector`: `object`
+  - `updates`: `list[object]`
+  - `deletes`: `list[object]`
+
+#### Request parameters
+
+- `dataset_id`: (*Path parameter*)  
+  The associated dataset ID.
+- `"selector"`: (*Body parameter*), `object`, *optional*  
+  A document selector:  
+  - `"document_ids"`: `list[string]` *optional*  
+    The associated document ID.  
+  - `"metadata_condition"`: `object`, *optional*  
+    - `"logic"`: Defines the logic relation between conditions if multiple conditions are provided. Options:
+      - `"and"` (default)
+      - `"or"`
+    - `"conditions"`: `list[object]` *optional*  
+      Each object: `{ "name": string, "comparison_operator": string, "value": string }`  
+      - `"name"`: `string` The key name to search by.
+      - `"comparison_operator"`: `string` Available options:
+        - `"is"`
+        - `"not is"`
+        - `"contains"`
+        - `"not contains"`
+        - `"in"`
+        - `"not in"`
+        - `"start with"`
+        - `"end with"`
+        - `">"`
+        - `"<"`
+        - `"≥"`
+        - `"≤"`
+        - `"empty"`
+        - `"not empty"`
+      - `"value"`: `string` The key value to search by.  
+- `"updates"`: (*Body parameter*), `list[object]`, *optional*  
+  Replaces metadata of the retrieved documents. Each object: `{ "key": string, "match": string, "value": string }`.  
+  - `"key"`: `string` The name of the key to update.
+  - `"match"`: `string` *optional* The current value of the key to update. When omitted, the corresponding keys are updated to `"value"` regardless of their current values.
+  - `"value"`: `string` The new value to set for the specified keys.
+- `"deletes`: (*Body parameter*), `list[ojbect]`, *optional*  
+  Deletes metadata of the retrieved documents. Each object: `{ "key": string, "value": string }`.  
+  - `"key"`: `string` The name of the key to delete.
+  - `"value"`: `string` *Optional* The value of the key to delete.
+    - When provided, only keys with a matching value are deleted.
+    - When omitted, all specified keys are deleted.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/datasets/{dataset_id}/metadata/update \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+       "selector": {
+         "metadata_condition": {
+           "logic": "and",
+           "conditions": [
+             {"name": "author", "comparison_operator": "is", "value": "alice"}
+           ]
+         }
+       },
+       "updates": [
+         {"key": "tags", "match": "foo", "value": "foo_new"}
+       ],
+       "deletes": [
+         {"key": "obsolete_key"},
+         {"key": "author", "value": "alice"}
+       ]
+     }'
+```
+
+##### Response
+
+Success:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "updated": 1,
+    "matched_docs": 2
+  }
+}
+```
+
+---
+
 ### Retrieve chunks
 
 **POST** `/api/v1/retrieval`
@@ -2117,6 +2360,7 @@ Retrieves chunks from specified datasets.
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
   - `"toc_enhance"`: `boolean`
+
 ##### Request example
 
 ```bash
@@ -2189,7 +2433,7 @@ curl --request POST \
   - `"conditions"`: (*Body parameter*), `array`  
     A list of metadata filter conditions.  
     - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/set_metadata.md) for details.
-    - `comparison_operator`: `string` - The comparison operator. Can be one of: 
+    - `comparison_operator`: `string` - The comparison operator. Can be one of:
       - `"contains"`
       - `"not contains"`
       - `"start with"`
@@ -2202,7 +2446,6 @@ curl --request POST \
       - `"≥"`
       - `"≤"`
     - `"value"`: `string` - The value to compare.
-
 
 #### Response
 
@@ -2305,6 +2548,19 @@ curl --request POST \
   The LLM settings for the chat assistant to create. If it is not explicitly set, a JSON object with the following values will be generated as the default. An `llm` JSON object contains the following attributes:  
   - `"model_name"`, `string`  
     The chat model name. If not set, the user's default chat model will be used.  
+
+  :::caution WARNING
+  `model_type` is an *internal* parameter, serving solely as a temporary workaround for the current model-configuration design limitations.
+
+  Its main purpose is to let *multimodal* models (stored in the database as `"image2text"`) pass backend validation/dispatching. Be mindful that:
+
+  - Do *not* treat it as a stable public API.
+  - It is subject to change or removal in future releases.
+  :::
+
+  - `"model_type"`: `string`  
+    A model type specifier. Only `"chat"` and `"image2text"` are recognized; any other inputs, or when omitted, are treated as `"chat"`.
+  - `"model_name"`, `string`
   - `"temperature"`: `float`  
     Controls the randomness of the model's predictions. A lower temperature results in more conservative responses, while a higher temperature yields more creative and diverse responses. Defaults to `0.1`.  
   - `"top_p"`: `float`  
@@ -2948,6 +3204,7 @@ Asks a specified chat assistant a question to start an AI-powered conversation.
   - `"stream"`: `boolean`
   - `"session_id"`: `string` (optional)
   - `"user_id`: `string` (optional)
+  - `"metadata_condition"`: `object` (optional)
 
 ##### Request example
 
@@ -2970,7 +3227,17 @@ curl --request POST \
      {
           "question": "Who are you",
           "stream": true,
-          "session_id":"9fa7691cb85c11ef9c5f0242ac120005"
+          "session_id":"9fa7691cb85c11ef9c5f0242ac120005",
+          "metadata_condition": {
+            "logic": "and",
+            "conditions": [
+              {
+                "name": "author",
+                "comparison_operator": "is",
+                "value": "bob"
+              }
+            ]
+          }
      }'
 ```
 
@@ -2988,6 +3255,13 @@ curl --request POST \
   The ID of session. If it is not provided, a new session will be generated.
 - `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
+- `"metadata_condition"`: (*Body parameter*), `object`  
+  Optional metadata filter conditions applied to retrieval results.  
+  - `logic`: `string`, one of `and` / `or`
+  - `conditions`: `list[object]` where each condition contains:
+    - `name`: `string` metadata key
+    - `comparison_operator`: `string` (e.g. `is`, `not is`, `contains`, `not contains`, `start with`, `end with`, `empty`, `not empty`, `>`, `<`, `≥`, `≤`)
+    - `value`: `string|number|boolean` (optional for `empty`/`not empty`)
 
 #### Response
 
@@ -3364,6 +3638,8 @@ Asks a specified agent a question to start an AI-powered conversation.
   [DONE]
   ```
 
+- You can optionally return step-by-step trace logs (see `return_trace` below).
+
 :::
 
 #### Request
@@ -3379,6 +3655,17 @@ Asks a specified agent a question to start an AI-powered conversation.
   - `"session_id"`: `string` (optional)
   - `"inputs"`: `object` (optional)
   - `"user_id"`: `string` (optional)
+  - `"return_trace"`: `boolean` (optional, default `false`) — include execution trace logs.
+
+#### Streaming events to handle
+
+When `stream=true`, the server sends Server-Sent Events (SSE). Clients should handle these `event` types:
+
+- `message`: streaming content from Message components.
+- `message_end`: end of a Message component; may include `reference`/`attachment`.
+- `node_finished`: a component finishes; `data.inputs/outputs/error/elapsed_time` describe the node result. If `return_trace=true`, the trace is attached inside the same `node_finished` event (`data.trace`).
+
+The stream terminates with `[DONE]`.
 
 :::info IMPORTANT
 You can include custom parameters in the request body, but first ensure they are defined in the [Begin](../guides/agent/agent_component_reference/begin.mdx) component.
@@ -3563,6 +3850,92 @@ data: {
     "session_id": "cd097ca083dc11f0858253708ecb6573"
 }
 
+data: {
+    "event": "node_finished",
+    "message_id": "cecdcb0e83dc11f0858253708ecb6573",
+    "created_at": 1756364483,
+    "task_id": "d1f79142831f11f09cc51795b9eb07c0",
+    "data": {
+        "inputs": {
+            "sys.query": "how to install neovim?"
+        },
+        "outputs": {
+            "content": "xxxxxxx",
+            "_created_time": 15294.0382,
+            "_elapsed_time": 0.00017
+        },
+        "component_id": "Agent:EveryHairsChew",
+        "component_name": "Agent_1",
+        "component_type": "Agent",
+        "error": null,
+        "elapsed_time": 11.2091,
+        "created_at": 15294.0382,
+        "trace": [
+            {
+                "component_id": "begin",
+                "trace": [
+                    {
+                        "inputs": {},
+                        "outputs": {
+                            "_created_time": 15257.7949,
+                            "_elapsed_time": 0.00070
+                        },
+                        "component_id": "begin",
+                        "component_name": "begin",
+                        "component_type": "Begin",
+                        "error": null,
+                        "elapsed_time": 0.00085,
+                        "created_at": 15257.7949
+                    }
+                ]
+            },
+            {
+                "component_id": "Agent:WeakDragonsRead",
+                "trace": [
+                    {
+                        "inputs": {
+                            "sys.query": "how to install neovim?"
+                        },
+                        "outputs": {
+                            "content": "xxxxxxx",
+                            "_created_time": 15257.7982,
+                            "_elapsed_time": 36.2382
+                        },
+                        "component_id": "Agent:WeakDragonsRead",
+                        "component_name": "Agent_0",
+                        "component_type": "Agent",
+                        "error": null,
+                        "elapsed_time": 36.2385,
+                        "created_at": 15257.7982
+                    }
+                ]
+            },
+            {
+                "component_id": "Agent:EveryHairsChew",
+                "trace": [
+                    {
+                        "inputs": {
+                            "sys.query": "how to install neovim?"
+                        },
+                        "outputs": {
+                            "content": "xxxxxxxxxxxxxxxxx",
+                            "_created_time": 15294.0382,
+                            "_elapsed_time": 0.00017
+                        },
+                        "component_id": "Agent:EveryHairsChew",
+                        "component_name": "Agent_1",
+                        "component_type": "Agent",
+                        "error": null,
+                        "elapsed_time": 11.2091,
+                        "created_at": 15294.0382
+                    }
+                ]
+            }
+        ]
+    },
+    "session_id": "cd097ca083dc11f0858253708ecb6573"
+}
+
 data:[DONE]
 ```
 
@@ -3637,7 +4010,100 @@ Non-stream:
                         "doc_name": "INSTALL3.md"
                     }
                 }
-            }
+            },
+            "trace": [
+                {
+                    "component_id": "begin",
+                    "trace": [
+                        {
+                            "component_id": "begin",
+                            "component_name": "begin",
+                            "component_type": "Begin",
+                            "created_at": 15926.567517862,
+                            "elapsed_time": 0.0008189299987861887,
+                            "error": null,
+                            "inputs": {},
+                            "outputs": {
+                                "_created_time": 15926.567517862,
+                                "_elapsed_time": 0.0006958619997021742
+                            }
+                        }
+                    ]
+                },
+                {
+                    "component_id": "Agent:WeakDragonsRead",
+                    "trace": [
+                        {
+                            "component_id": "Agent:WeakDragonsRead",
+                            "component_name": "Agent_0",
+                            "component_type": "Agent",
+                            "created_at": 15926.569121755,
+                            "elapsed_time": 53.49016142000073,
+                            "error": null,
+                            "inputs": {
+                                "sys.query": "how to install neovim?"
+                            },
+                            "outputs": {
+                                "_created_time": 15926.569121755,
+                                "_elapsed_time": 53.489981256001556,
+                                "content": "xxxxxxxxxxxxxx",
+                                "use_tools": [
+                                    {
+                                        "arguments": {
+                                            "query": "xxxx"
+                                        },
+                                        "name": "search_my_dateset",
+                                        "results": "xxxxxxxxxxx"
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "component_id": "Agent:EveryHairsChew",
+                    "trace": [
+                        {
+                            "component_id": "Agent:EveryHairsChew",
+                            "component_name": "Agent_1",
+                            "component_type": "Agent",
+                            "created_at": 15980.060569101,
+                            "elapsed_time": 23.61718057500002,
+                            "error": null,
+                            "inputs": {
+                                "sys.query": "how to install neovim?"
+                            },
+                            "outputs": {
+                                "_created_time": 15980.060569101,
+                                "_elapsed_time": 0.0003451630000199657,
+                                "content": "xxxxxxxxxxxx"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "component_id": "Message:SlickDingosHappen",
+                    "trace": [
+                        {
+                            "component_id": "Message:SlickDingosHappen",
+                            "component_name": "Message_0",
+                            "component_type": "Message",
+                            "created_at": 15980.061302513,
+                            "elapsed_time": 23.61655923699982,
+                            "error": null,
+                            "inputs": {
+                                "Agent:EveryHairsChew@content": "xxxxxxxxx",
+                                "Agent:WeakDragonsRead@content": "xxxxxxxxxxx"
+                            },
+                            "outputs": {
+                                "_created_time": 15980.061302513,
+                                "_elapsed_time": 0.0006695749998471001,
+                                "content": "xxxxxxxxxxx"
+                            }
+                        }
+                    ]
+                }
+            ]
         },
         "event": "workflow_finished",
         "message_id": "c4692a2683d911f0858253708ecb6573",
@@ -4450,7 +4916,9 @@ Failure:
 ---
 
 ### System
+
 ---
+
 ### Check system health
 
 **GET** `/v1/system/healthz`
@@ -4519,6 +4987,691 @@ Content-Type: application/json
 ```
 
 Explanation:  
+
 - Each service is reported as "ok" or "nok".  
 - The top-level `status` reflects overall health.  
 - If any service is "nok", detailed error info appears in `_meta`.  
+
+---
+
+## FILE MANAGEMENT
+
+---
+
+### Upload file
+
+**POST** `/api/v1/file/upload`
+
+Uploads one or multiple files to the system.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/upload`
+- Headers:
+  - `'Content-Type: multipart/form-data'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Form:
+  - `'file=@{FILE_PATH}'`
+  - `'parent_id'`: `string` (optional)
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/upload \
+     --header 'Content-Type: multipart/form-data' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --form 'file=@./test1.txt' \
+     --form 'file=@./test2.pdf' \
+     --form 'parent_id={folder_id}'
+```
+
+##### Request parameters
+
+- `'file'`: (*Form parameter*), `file`, *Required*  
+  The file(s) to upload. Multiple files can be uploaded in a single request.
+- `'parent_id'`: (*Form parameter*), `string`  
+  The parent folder ID where the file will be uploaded. If not specified, files will be uploaded to the root folder.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "id": "b330ec2e91ec11efbc510242ac120004",
+            "name": "test1.txt",
+            "size": 17966,
+            "type": "doc",
+            "parent_id": "527fa74891e811ef9c650242ac120006",
+            "location": "test1.txt",
+            "create_time": 1729763127646
+        }
+    ]
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 400,
+    "message": "No file part!"
+}
+```
+
+---
+
+### Create file or folder
+
+**POST** `/api/v1/file/create`
+
+Creates a new file or folder in the system.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/create`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"name"`: `string`
+  - `"parent_id"`: `string` (optional)
+  - `"type"`: `string`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/create \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "name": "New Folder",
+          "type": "FOLDER",
+          "parent_id": "{folder_id}"
+     }'
+```
+
+##### Request parameters
+
+- `"name"`: (*Body parameter*), `string`, *Required*  
+  The name of the file or folder to create.
+- `"parent_id"`: (*Body parameter*), `string`  
+  The parent folder ID. If not specified, the file/folder will be created in the root folder.
+- `"type"`: (*Body parameter*), `string`  
+  The type of the file to create. Available options:
+  - `"FOLDER"`: Create a folder
+  - `"VIRTUAL"`: Create a virtual file
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "id": "b330ec2e91ec11efbc510242ac120004",
+        "name": "New Folder",
+        "type": "FOLDER",
+        "parent_id": "527fa74891e811ef9c650242ac120006",
+        "size": 0,
+        "create_time": 1729763127646
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 409,
+    "message": "Duplicated folder name in the same folder."
+}
+```
+
+---
+
+### List files
+
+**GET** `/api/v1/file/list?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+
+Lists files and folders under a specific folder.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/file/list?parent_id={parent_id}&keywords={keywords}&page={page}&page_size={page_size}&orderby={orderby}&desc={desc}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/file/list?parent_id={folder_id}&page=1&page_size=15' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `parent_id`: (*Filter parameter*), `string`  
+  The folder ID to list files from. If not specified, the root folder is used by default.
+- `keywords`: (*Filter parameter*), `string`  
+  Search keyword to filter files by name.
+- `page`: (*Filter parameter*), `integer`  
+  Specifies the page on which the files will be displayed. Defaults to `1`.
+- `page_size`: (*Filter parameter*), `integer`  
+  The number of files on each page. Defaults to `15`.
+- `orderby`: (*Filter parameter*), `string`  
+  The field by which files should be sorted. Available options:
+  - `create_time` (default)
+- `desc`: (*Filter parameter*), `boolean`  
+  Indicates whether the retrieved files should be sorted in descending order. Defaults to `true`.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "total": 10,
+        "files": [
+            {
+                "id": "b330ec2e91ec11efbc510242ac120004",
+                "name": "test1.txt",
+                "type": "doc",
+                "size": 17966,
+                "parent_id": "527fa74891e811ef9c650242ac120006",
+                "create_time": 1729763127646
+            }
+        ],
+        "parent_folder": {
+            "id": "527fa74891e811ef9c650242ac120006",
+            "name": "Parent Folder"
+        }
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "Folder not found!"
+}
+```
+
+---
+
+### Get root folder
+
+**GET** `/api/v1/file/root_folder`
+
+Retrieves the user's root folder information.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/file/root_folder`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/file/root_folder \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+No parameters required.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "root_folder": {
+            "id": "527fa74891e811ef9c650242ac120006",
+            "name": "root",
+            "type": "FOLDER"
+        }
+    }
+}
+```
+
+---
+
+### Get parent folder
+
+**GET** `/api/v1/file/parent_folder?file_id={file_id}`
+
+Retrieves the immediate parent folder information of a specified file.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/file/parent_folder?file_id={file_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/file/parent_folder?file_id={file_id}' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `file_id`: (*Filter parameter*), `string`, *Required*  
+  The ID of the file whose immediate parent folder to retrieve.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "parent_folder": {
+            "id": "527fa74891e811ef9c650242ac120006",
+            "name": "Parent Folder"
+        }
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "Folder not found!"
+}
+```
+
+---
+
+### Get all parent folders
+
+**GET** `/api/v1/file/all_parent_folder?file_id={file_id}`
+
+Retrieves all parent folders of a specified file in the folder hierarchy.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/file/all_parent_folder?file_id={file_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/file/all_parent_folder?file_id={file_id}' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Request parameters
+
+- `file_id`: (*Filter parameter*), `string`, *Required*  
+  The ID of the file whose parent folders to retrieve.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": {
+        "parent_folders": [
+            {
+                "id": "527fa74891e811ef9c650242ac120006",
+                "name": "Parent Folder 1"
+            },
+            {
+                "id": "627fa74891e811ef9c650242ac120007",
+                "name": "Parent Folder 2"
+            }
+        ]
+    }
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "Folder not found!"
+}
+```
+
+---
+
+### Delete files
+
+**POST** `/api/v1/file/rm`
+
+Deletes one or multiple files or folders.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/rm`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"file_ids"`: `list[string]`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/rm \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "file_ids": ["file_id_1", "file_id_2"]
+     }'
+```
+
+##### Request parameters
+
+- `"file_ids"`: (*Body parameter*), `list[string]`, *Required*  
+  The IDs of the files or folders to delete.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "File or Folder not found!"
+}
+```
+
+---
+
+### Rename file
+
+**POST** `/api/v1/file/rename`
+
+Renames a file or folder.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/rename`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"file_id"`: `string`
+  - `"name"`: `string`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/rename \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "file_id": "{file_id}",
+          "name": "new_name.txt"
+     }'
+```
+
+##### Request parameters
+
+- `"file_id"`: (*Body parameter*), `string`, *Required*  
+  The ID of the file or folder to rename.
+- `"name"`: (*Body parameter*), `string`, *Required*  
+  The new name for the file or folder. Note: Changing file extensions is *not* supported.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 400,
+    "message": "The extension of file can't be changed"
+}
+```
+
+or
+
+```json
+{
+    "code": 409,
+    "message": "Duplicated file name in the same folder."
+}
+```
+
+---
+
+### Download file
+
+**GET** `/api/v1/file/get/{file_id}`
+
+Downloads a file from the system.
+
+#### Request
+
+- Method: GET
+- URL: `/api/v1/file/get/{file_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+
+##### Request example
+
+```bash
+curl --request GET \
+     --url http://{address}/api/v1/file/get/{file_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --output ./downloaded_file.txt
+```
+
+##### Request parameters
+
+- `file_id`: (*Path parameter*), `string`, *Required*  
+  The ID of the file to download.
+
+#### Response
+
+Success:
+
+Returns the file content as a binary stream with appropriate Content-Type headers.
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "Document not found!"
+}
+```
+
+---
+
+### Move files
+
+**POST** `/api/v1/file/mv`
+
+Moves one or multiple files or folders to a specified folder.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/mv`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"src_file_ids"`: `list[string]`
+  - `"dest_file_id"`: `string`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/mv \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "src_file_ids": ["file_id_1", "file_id_2"],
+          "dest_file_id": "{destination_folder_id}"
+     }'
+```
+
+##### Request parameters
+
+- `"src_file_ids"`: (*Body parameter*), `list[string]`, *Required*  
+  The IDs of the files or folders to move.
+- `"dest_file_id"`: (*Body parameter*), `string`, *Required*  
+  The ID of the destination folder.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "File or Folder not found!"
+}
+```
+
+or
+
+```json
+{
+    "code": 404,
+    "message": "Parent Folder not found!"
+}
+```
+
+---
+
+### Convert files to documents and link them to datasets
+
+**POST** `/api/v1/file/convert`
+
+Converts files to documents and links them to specified datasets.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/file/convert`
+- Headers:
+  - `'Content-Type: application/json'`
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body:
+  - `"file_ids"`: `list[string]`
+  - `"kb_ids"`: `list[string]`
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/file/convert \
+     --header 'Content-Type: application/json' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>' \
+     --data '{
+          "file_ids": ["file_id_1", "file_id_2"],
+          "kb_ids": ["dataset_id_1", "dataset_id_2"]
+     }'
+```
+
+##### Request parameters
+
+- `"file_ids"`: (*Body parameter*), `list[string]`, *Required*  
+  The IDs of the files to convert. If a folder ID is provided, all files within that folder will be converted.
+- `"kb_ids"`: (*Body parameter*), `list[string]`, *Required*  
+  The IDs of the target datasets.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": [
+        {
+            "id": "file2doc_id_1",
+            "file_id": "file_id_1",
+            "document_id": "document_id_1"
+        }
+    ]
+}
+```
+
+Failure:
+
+```json
+{
+    "code": 404,
+    "message": "File not found!"
+}
+```
+
+or
+
+```json
+{
+    "code": 404,
+    "message": "Can't find this dataset!"
+}
+```

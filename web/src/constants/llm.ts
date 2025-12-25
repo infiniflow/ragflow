@@ -60,6 +60,7 @@ export enum LLMFactory {
   DeerAPI = 'DeerAPI',
   JiekouAI = 'Jiekou.AI',
   Builtin = 'Builtin',
+  MinerU = 'MinerU',
 }
 
 // Please lowercase the file name
@@ -125,6 +126,7 @@ export const IconMap = {
   [LLMFactory.DeerAPI]: 'deerapi',
   [LLMFactory.JiekouAI]: 'jiekouai',
   [LLMFactory.Builtin]: 'builtin',
+  [LLMFactory.MinerU]: 'mineru',
 };
 
 export const APIMapUrl = {
@@ -142,7 +144,7 @@ export const APIMapUrl = {
   [LLMFactory.BaiduYiYan]: 'https://wenxin.baidu.com/user/key',
   [LLMFactory.Meituan]: 'https://longcat.chat/platform/api_keys',
   [LLMFactory.Bedrock]:
-    'https://us-east-2.console.aws.amazon.com/bedrock/home#/api-keys',
+    'https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-2#/users',
   [LLMFactory.AzureOpenAI]:
     'https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/keys',

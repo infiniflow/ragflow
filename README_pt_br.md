@@ -206,10 +206,10 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
 
 > Nota: Antes da `v0.22.0`, fornecíamos imagens com modelos de embedding e imagens slim sem modelos de embedding. Detalhes a seguir:
 
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-| ----------------- | --------------- | --------------------- | ------------------------ |
-| v0.21.1           | &approx;9       | ✔️                    | Stable release           |
-| v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
+|-------------------|-----------------|-----------------------|----------------|
+| v0.21.1           | &approx;9       | ✔️                    | Stable release |
+| v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
 
 > A partir da `v0.22.0`, distribuímos apenas a edição slim e não adicionamos mais o sufixo **-slim** às tags das imagens.
 
@@ -305,7 +305,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 # instala os módulos Python dependentes do RAGFlow
+   uv sync --python 3.12 # instala os módulos Python dependentes do RAGFlow
    uv run download_deps.py
    pre-commit install
    ```

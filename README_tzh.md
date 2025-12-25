@@ -205,10 +205,10 @@
 
 > 注意：在 `v0.22.0` 之前的版本，我們會同時提供包含 embedding 模型的映像和不含 embedding 模型的 slim 映像。具體如下：
 
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-| ----------------- | --------------- | --------------------- | ------------------------ |
-| v0.21.1           | &approx;9       | ✔️                    | Stable release           |
-| v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
+|-------------------|-----------------|-----------------------|----------------|
+| v0.21.1           | &approx;9       | ✔️                    | Stable release |
+| v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
 
 > 從 `v0.22.0` 開始，我們只發佈 slim 版本，並且不再在映像標籤後附加 **-slim** 後綴。
 
@@ -315,7 +315,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 # install RAGFlow dependent python modules
+   uv sync --python 3.12 # install RAGFlow dependent python modules
    uv run download_deps.py
    pre-commit install
    ```

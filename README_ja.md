@@ -186,10 +186,10 @@
 
 > 注意：`v0.22.0` より前のバージョンでは、embedding モデルを含むイメージと、embedding モデルを含まない slim イメージの両方を提供していました。詳細は以下の通りです：
 
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?                  |
-| ----------------- | --------------- | --------------------- | ------------------------ |
-| v0.21.1           | &approx;9       | ✔️                    | Stable release           |
-| v0.21.1-slim      | &approx;2       | ❌                    | Stable release           |
+| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
+|-------------------|-----------------|-----------------------|----------------|
+| v0.21.1           | &approx;9       | ✔️                    | Stable release |
+| v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
 
 > `v0.22.0` 以降、当プロジェクトでは slim エディションのみを提供し、イメージタグに **-slim** サフィックスを付けなくなりました。
 
@@ -288,7 +288,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
-   uv sync --python 3.10 # install RAGFlow dependent python modules
+   uv sync --python 3.12 # install RAGFlow dependent python modules
    uv run download_deps.py
    pre-commit install
    ```

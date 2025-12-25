@@ -51,9 +51,9 @@ class TestDocumentsList:
     def test_page(self, add_documents, params, expected_page_size, expected_message):
         dataset, _ = add_documents
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 dataset.list_documents(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             documents = dataset.list_documents(**params)
             assert len(documents) == expected_page_size, str(documents)
@@ -84,9 +84,9 @@ class TestDocumentsList:
     def test_page_size(self, add_documents, params, expected_page_size, expected_message):
         dataset, _ = add_documents
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 dataset.list_documents(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             documents = dataset.list_documents(**params)
             assert len(documents) == expected_page_size, str(documents)
@@ -105,9 +105,9 @@ class TestDocumentsList:
     def test_orderby(self, add_documents, params, expected_message):
         dataset, _ = add_documents
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 dataset.list_documents(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             dataset.list_documents(**params)
 
@@ -129,9 +129,9 @@ class TestDocumentsList:
     def test_desc(self, add_documents, params, expected_message):
         dataset, _ = add_documents
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 dataset.list_documents(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             dataset.list_documents(**params)
 
@@ -164,9 +164,9 @@ class TestDocumentsList:
     def test_name(self, add_documents, params, expected_num, expected_message):
         dataset, _ = add_documents
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 dataset.list_documents(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             documents = dataset.list_documents(**params)
             assert len(documents) == expected_num, str(documents)
@@ -191,9 +191,9 @@ class TestDocumentsList:
             params = {"id": document_id}
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 dataset.list_documents(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             documents = dataset.list_documents(**params)
             assert len(documents) == expected_num, str(documents)
@@ -215,9 +215,9 @@ class TestDocumentsList:
         params = {"id": document_id(documents) if callable(document_id) else document_id, "name": name}
 
         if expected_message:
-            with pytest.raises(Exception) as excinfo:
+            with pytest.raises(Exception) as exception_info:
                 dataset.list_documents(**params)
-            assert expected_message in str(excinfo.value), str(excinfo.value)
+            assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
             documents = dataset.list_documents(**params)
             assert len(documents) == expected_num, str(documents)
@@ -242,6 +242,6 @@ class TestDocumentsList:
     def test_invalid_params(self, add_documents):
         dataset, _ = add_documents
         params = {"a": "b"}
-        with pytest.raises(TypeError) as excinfo:
+        with pytest.raises(TypeError) as exception_info:
             dataset.list_documents(**params)
-        assert "got an unexpected keyword argument" in str(excinfo.value), str(excinfo.value)
+        assert "got an unexpected keyword argument" in str(exception_info.value), str(exception_info.value)

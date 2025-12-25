@@ -20,8 +20,8 @@ import random
 import re
 from functools import partial
 
+from litellm import logging
 import numpy as np
-import trio
 from PIL import Image
 
 from api.db.services.file2document_service import File2DocumentService
@@ -31,14 +31,12 @@ from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid
 from deepdoc.parser import ExcelParser
-from deepdoc.parser.mineru_parser import MinerUParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.app.naive import Docx
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.schema import ParserFromUpstream
 from rag.llm.cv_model import Base as VLM
-from rag.nlp import attach_media_context
 from rag.utils.base64_image import image2id
 
 
@@ -87,8 +85,6 @@ class ParserParam(ProcessParamBase):
                     "pdf",
                 ],
                 "output_format": "json",
-                "table_context_size": 0,
-                "image_context_size": 0,
             },
             "spreadsheet": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
@@ -98,8 +94,6 @@ class ParserParam(ProcessParamBase):
                     "xlsx",
                     "csv",
                 ],
-                "table_context_size": 0,
-                "image_context_size": 0,
             },
             "word": {
                 "suffix": [
@@ -107,14 +101,10 @@ class ParserParam(ProcessParamBase):
                     "docx",
                 ],
                 "output_format": "json",
-                "table_context_size": 0,
-                "image_context_size": 0,
             },
             "text&markdown": {
                 "suffix": ["md", "markdown", "mdx", "txt"],
                 "output_format": "json",
-                "table_context_size": 0,
-                "image_context_size": 0,
             },
             "slides": {
                 "parse_method": "deepdoc",  # deepdoc/tcadp_parser
@@ -123,8 +113,6 @@ class ParserParam(ProcessParamBase):
                     "ppt",
                 ],
                 "output_format": "json",
-                "table_context_size": 0,
-                "image_context_size": 0,
             },
             "image": {
                 "parse_method": "ocr",
@@ -235,25 +223,53 @@ class Parser(ProcessBase):
         conf = self._param.setups["pdf"]
         self.set_output("output_format", conf["output_format"])
 
-        if conf.get("parse_method").lower() == "deepdoc":
+        raw_parse_method = conf.get("parse_method", "")
+        parser_model_name = None
+        parse_method = raw_parse_method
+        parse_method = parse_method or ""
+        if isinstance(raw_parse_method, str):
+            lowered = raw_parse_method.lower()
+            if lowered.endswith("@mineru"):
+                parser_model_name = raw_parse_method.rsplit("@", 1)[0]
+                parse_method = "MinerU"
+
+        if parse_method.lower() == "deepdoc":
             bboxes = RAGFlowPdfParser().parse_into_bboxes(blob, callback=self.callback)
-        elif conf.get("parse_method").lower() == "plain_text":
+        elif parse_method.lower() == "plain_text":
             lines, _ = PlainParser()(blob)
             bboxes = [{"text": t} for t, _ in lines]
-        elif conf.get("parse_method").lower() == "mineru":
-            mineru_executable = os.environ.get("MINERU_EXECUTABLE", "mineru")
-            mineru_api = os.environ.get("MINERU_APISERVER", "http://host.docker.internal:9987")
-            pdf_parser = MinerUParser(mineru_path=mineru_executable, mineru_api=mineru_api)
-            ok, reason = pdf_parser.check_installation()
-            if not ok:
-                raise RuntimeError(f"MinerU not found or server not accessible: {reason}. Please install it via: pip install -U 'mineru[core]'.")
+        elif parse_method.lower() == "mineru":
+            def resolve_mineru_llm_name():
+                configured = parser_model_name or conf.get("mineru_llm_name")
+                if configured:
+                    return configured
+
+                tenant_id = self._canvas._tenant_id
+                if not tenant_id:
+                    return None
+
+                from api.db.services.tenant_llm_service import TenantLLMService
+
+                env_name = TenantLLMService.ensure_mineru_from_env(tenant_id)
+                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="MinerU", model_type=LLMType.OCR.value)
+                if candidates:
+                    return candidates[0].llm_name
+                return env_name
+
+            parser_model_name = resolve_mineru_llm_name()
+            if not parser_model_name:
+                raise RuntimeError("MinerU model not configured. Please add MinerU in Model Providers or set MINERU_* env.")
+
+            tenant_id = self._canvas._tenant_id
+            ocr_model = LLMBundle(tenant_id, LLMType.OCR, llm_name=parser_model_name, lang=conf.get("lang", "Chinese"))
+            pdf_parser = ocr_model.mdl
 
             lines, _ = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
-                output_dir=os.environ.get("MINERU_OUTPUT_DIR", ""),
-                delete_output=bool(int(os.environ.get("MINERU_DELETE_OUTPUT", 1))),
+                parse_method=conf.get("mineru_parse_method", "raw"),
+                lang=conf.get("lang", "Chinese"),
             )
             bboxes = []
             for t, poss in lines:
@@ -263,7 +279,7 @@ class Parser(ProcessBase):
                     "text": t,
                 }
                 bboxes.append(box)
-        elif conf.get("parse_method").lower() == "tcadp parser":
+        elif parse_method.lower() == "tcadp parser":
             # ADP is a document parsing tool using Tencent Cloud API
             table_result_type = conf.get("table_result_type", "1")
             markdown_image_response_type = conf.get("markdown_image_response_type", "1")
@@ -329,11 +345,6 @@ class Parser(ProcessBase):
                 b["doc_type_kwd"] = "image"
             elif layout == "table":
                 b["doc_type_kwd"] = "table"
-
-        table_ctx = conf.get("table_context_size", 0) or 0
-        image_ctx = conf.get("image_context_size", 0) or 0
-        if table_ctx or image_ctx:
-            bboxes = attach_media_context(bboxes, table_ctx, image_ctx)
 
         if conf.get("output_format") == "json":
             self.set_output("json", bboxes)
@@ -409,11 +420,6 @@ class Parser(ProcessBase):
                     if table:
                         result.append({"text": table, "doc_type_kwd": "table"})
 
-                table_ctx = conf.get("table_context_size", 0) or 0
-                image_ctx = conf.get("image_context_size", 0) or 0
-                if table_ctx or image_ctx:
-                    result = attach_media_context(result, table_ctx, image_ctx)
-
                 self.set_output("json", result)
 
             elif output_format == "markdown":
@@ -448,11 +454,6 @@ class Parser(ProcessBase):
             sections, tbls = docx_parser(name, binary=blob)
             sections = [{"text": section[0], "image": section[1]} for section in sections if section]
             sections.extend([{"text": tb, "image": None, "doc_type_kwd": "table"} for ((_, tb), _) in tbls])
-
-            table_ctx = conf.get("table_context_size", 0) or 0
-            image_ctx = conf.get("image_context_size", 0) or 0
-            if table_ctx or image_ctx:
-                sections = attach_media_context(sections, table_ctx, image_ctx)
 
             self.set_output("json", sections)
         elif conf.get("output_format") == "markdown":
@@ -509,11 +510,6 @@ class Parser(ProcessBase):
                     if table:
                         result.append({"text": table, "doc_type_kwd": "table"})
 
-                table_ctx = conf.get("table_context_size", 0) or 0
-                image_ctx = conf.get("image_context_size", 0) or 0
-                if table_ctx or image_ctx:
-                    result = attach_media_context(result, table_ctx, image_ctx)
-
                 self.set_output("json", result)
         else:
             # Default DeepDOC parser (supports .pptx format)
@@ -527,10 +523,6 @@ class Parser(ProcessBase):
             # json
             assert conf.get("output_format") == "json", "have to be json for ppt"
             if conf.get("output_format") == "json":
-                table_ctx = conf.get("table_context_size", 0) or 0
-                image_ctx = conf.get("image_context_size", 0) or 0
-                if table_ctx or image_ctx:
-                    sections = attach_media_context(sections, table_ctx, image_ctx)
                 self.set_output("json", sections)
 
     def _markdown(self, name, blob):
@@ -569,11 +561,6 @@ class Parser(ProcessBase):
                     json_result["image"] = combined_image
 
                 json_results.append(json_result)
-
-            table_ctx = conf.get("table_context_size", 0) or 0
-            image_ctx = conf.get("image_context_size", 0) or 0
-            if table_ctx or image_ctx:
-                json_results = attach_media_context(json_results, table_ctx, image_ctx)
 
             self.set_output("json", json_results)
         else:
@@ -623,7 +610,7 @@ class Parser(ProcessBase):
             tmpf.flush()
             tmp_path = os.path.abspath(tmpf.name)
 
-            seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT)
+            seq2txt_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.SPEECH2TEXT, llm_name=conf["llm_id"])
             txt = seq2txt_mdl.transcription(tmp_path)
 
             self.set_output("text", txt)
@@ -805,7 +792,7 @@ class Parser(ProcessBase):
         for p_type, conf in self._param.setups.items():
             if from_upstream.name.split(".")[-1].lower() not in conf.get("suffix", []):
                 continue
-            await trio.to_thread.run_sync(function_map[p_type], name, blob)
+            await asyncio.to_thread(function_map[p_type], name, blob)
             done = True
             break
 
@@ -813,6 +800,15 @@ class Parser(ProcessBase):
             raise Exception("No suitable for file extension: `.%s`" % from_upstream.name.split(".")[-1].lower())
 
         outs = self.output()
-        async with trio.open_nursery() as nursery:
-            for d in outs.get("json", []):
-                nursery.start_soon(image2id, d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())
+        tasks = []
+        for d in outs.get("json", []):
+            tasks.append(asyncio.create_task(image2id(d,partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id),get_uuid())))
+
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error("Error while parsing: %s" % e)
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise

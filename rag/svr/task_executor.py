@@ -12,6 +12,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import asyncio
 import socket
 import concurrent
 # from beartype import BeartypeConf
@@ -22,19 +23,19 @@ import sys
 import threading
 import time
 
-import json_repair
-
 from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 from common.connection_utils import timeout
+from common.metadata_utils import update_metadata_to, metadata_schema
 from rag.utils.base64_image import image2id
 from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
 from common.log_utils import init_root_logger
 from common.config_utils import show_configs
 from graphrag.general.index import run_graphrag_for_kb
 from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
-from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text
+from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text, \
+    gen_metadata
 import logging
 import os
 from datetime import datetime
@@ -46,7 +47,6 @@ from functools import partial
 from multiprocessing.context import TimeoutError
 from timeit import default_timer as timer
 import signal
-import trio
 import exceptiongroup
 import faulthandler
 import numpy as np
@@ -69,7 +69,6 @@ from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
-from common.misc_utils import check_and_install_mineru
 
 BATCH_SIZE = 64
 
@@ -114,11 +113,11 @@ CURRENT_TASKS = {}
 MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', "5"))
 MAX_CONCURRENT_CHUNK_BUILDERS = int(os.environ.get('MAX_CONCURRENT_CHUNK_BUILDERS', "1"))
 MAX_CONCURRENT_MINIO = int(os.environ.get('MAX_CONCURRENT_MINIO', '10'))
-task_limiter = trio.Semaphore(MAX_CONCURRENT_TASKS)
-chunk_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
-embed_limiter = trio.CapacityLimiter(MAX_CONCURRENT_CHUNK_BUILDERS)
-minio_limiter = trio.CapacityLimiter(MAX_CONCURRENT_MINIO)
-kg_limiter = trio.CapacityLimiter(2)
+task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
+chunk_limiter = asyncio.Semaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
+embed_limiter = asyncio.Semaphore(MAX_CONCURRENT_CHUNK_BUILDERS)
+minio_limiter = asyncio.Semaphore(MAX_CONCURRENT_MINIO)
+kg_limiter = asyncio.Semaphore(2)
 WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get('WORKER_HEARTBEAT_TIMEOUT', '120'))
 stop_event = threading.Event()
 
@@ -219,7 +218,7 @@ async def collect():
 
 
 async def get_storage_binary(bucket, name):
-    return await trio.to_thread.run_sync(lambda: settings.STORAGE_IMPL.get(bucket, name))
+    return await asyncio.to_thread(settings.STORAGE_IMPL.get, bucket, name)
 
 
 @timeout(60*80, 1)
@@ -250,9 +249,18 @@ async def build_chunks(task, progress_callback):
 
     try:
         async with chunk_limiter:
-            cks = await trio.to_thread.run_sync(lambda: chunker.chunk(task["name"], binary=binary, from_page=task["from_page"],
-                                to_page=task["to_page"], lang=task["language"], callback=progress_callback,
-                                kb_id=task["kb_id"], parser_config=task["parser_config"], tenant_id=task["tenant_id"]))
+            cks = await asyncio.to_thread(
+                chunker.chunk,
+                task["name"],
+                binary=binary,
+                from_page=task["from_page"],
+                to_page=task["to_page"],
+                lang=task["language"],
+                callback=progress_callback,
+                kb_id=task["kb_id"],
+                parser_config=task["parser_config"],
+                tenant_id=task["tenant_id"],
+            )
         logging.info("Chunking({}) {}/{} done".format(timer() - st, task["location"], task["name"]))
     except TaskCanceledException:
         raise
@@ -290,9 +298,17 @@ async def build_chunks(task, progress_callback):
                 "Saving image of chunk {}/{}/{} got exception".format(task["location"], task["name"], d["id"]))
             raise
 
-    async with trio.open_nursery() as nursery:
-        for ck in cks:
-            nursery.start_soon(upload_to_minio, doc, ck)
+    tasks = []
+    for ck in cks:
+        tasks.append(asyncio.create_task(upload_to_minio(doc, ck)))
+    try:
+        await asyncio.gather(*tasks, return_exceptions=False)
+    except Exception as e:
+        logging.error(f"MINIO PUT({task['name']}) got exception: {e}")
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
     el = timer() - st
     logging.info("MINIO PUT({}) cost {:.3f} s".format(task["name"], el))
@@ -306,15 +322,23 @@ async def build_chunks(task, progress_callback):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords", {"topn": topn})
             if not cached:
                 async with chat_limiter:
-                    cached = await trio.to_thread.run_sync(lambda: keyword_extraction(chat_mdl, d["content_with_weight"], topn))
+                    cached = await keyword_extraction(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
             if cached:
                 d["important_kwd"] = cached.split(",")
                 d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
             return
-        async with trio.open_nursery() as nursery:
-            for d in docs:
-                nursery.start_soon(doc_keyword_extraction, chat_mdl, d, task["parser_config"]["auto_keywords"])
+        tasks = []
+        for d in docs:
+            tasks.append(asyncio.create_task(doc_keyword_extraction(chat_mdl, d, task["parser_config"]["auto_keywords"])))
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error("Error in doc_keyword_extraction: {}".format(e))
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
         progress_callback(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["parser_config"].get("auto_questions", 0):
@@ -326,14 +350,61 @@ async def build_chunks(task, progress_callback):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question", {"topn": topn})
             if not cached:
                 async with chat_limiter:
-                    cached = await trio.to_thread.run_sync(lambda: question_proposal(chat_mdl, d["content_with_weight"], topn))
+                    cached = await question_proposal(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "question", {"topn": topn})
             if cached:
                 d["question_kwd"] = cached.split("\n")
                 d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
-        async with trio.open_nursery() as nursery:
-            for d in docs:
-                nursery.start_soon(doc_question_proposal, chat_mdl, d, task["parser_config"]["auto_questions"])
+        tasks = []
+        for d in docs:
+            tasks.append(asyncio.create_task(doc_question_proposal(chat_mdl, d, task["parser_config"]["auto_questions"])))
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error("Error in doc_question_proposal", exc_info=e)
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+        progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+
+    if task["parser_config"].get("enable_metadata", False) and task["parser_config"].get("metadata"):
+        st = timer()
+        progress_callback(msg="Start to generate meta-data for every chunk ...")
+        chat_mdl = LLMBundle(task["tenant_id"], LLMType.CHAT, llm_name=task["llm_id"], lang=task["language"])
+
+        async def gen_metadata_task(chat_mdl, d):
+            cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata", {})
+            if not cached:
+                async with chat_limiter:
+                    cached = await gen_metadata(chat_mdl,
+                                                metadata_schema(task["parser_config"]["metadata"]),
+                                                d["content_with_weight"])
+                set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "metadata", {})
+            if cached:
+                d["metadata_obj"] = cached
+        tasks = []
+        for d in docs:
+            tasks.append(asyncio.create_task(gen_metadata_task(chat_mdl, d)))
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error("Error in doc_question_proposal", exc_info=e)
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+        metadata = {}
+        for doc in docs:
+            metadata = update_metadata_to(metadata, doc["metadata_obj"])
+            del doc["metadata_obj"]
+        if metadata:
+            e, doc = DocumentService.get_by_id(task["doc_id"])
+            if e:
+                if isinstance(doc.meta_fields, str):
+                    doc.meta_fields = json.loads(doc.meta_fields)
+                metadata = update_metadata_to(metadata, doc.meta_fields)
+                DocumentService.update_by_id(task["doc_id"], {"meta_fields": metadata})
         progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     if task["kb_parser_config"].get("tag_kb_ids", []):
@@ -371,15 +442,29 @@ async def build_chunks(task, progress_callback):
                 if not picked_examples:
                     picked_examples.append({"content": "This is an example", TAG_FLD: {'example': 1}})
                 async with chat_limiter:
-                    cached = await trio.to_thread.run_sync(lambda: content_tagging(chat_mdl, d["content_with_weight"], all_tags, picked_examples, topn=topn_tags))
+                    cached = await content_tagging(
+                        chat_mdl,
+                        d["content_with_weight"],
+                        all_tags,
+                        picked_examples,
+                        topn_tags,
+                    )
                 if cached:
                     cached = json.dumps(cached)
             if cached:
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, all_tags, {"topn": topn_tags})
                 d[TAG_FLD] = json.loads(cached)
-        async with trio.open_nursery() as nursery:
-            for d in docs_to_tag:
-                nursery.start_soon(doc_content_tagging, chat_mdl, d, topn_tags)
+        tasks = []
+        for d in docs_to_tag:
+            tasks.append(asyncio.create_task(doc_content_tagging(chat_mdl, d, topn_tags)))
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error("Error tagging docs: {}".format(e))
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
         progress_callback(msg="Tagging {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
 
     return docs
@@ -392,7 +477,7 @@ def build_TOC(task, docs, progress_callback):
         d.get("page_num_int", 0)[0] if isinstance(d.get("page_num_int", 0), list) else d.get("page_num_int", 0),
         d.get("top_int", 0)[0] if isinstance(d.get("top_int", 0), list) else d.get("top_int", 0)
     ))
-    toc: list[dict] = trio.run(run_toc_from_text, [d["content_with_weight"] for d in docs], chat_mdl, progress_callback)
+    toc: list[dict] = asyncio.run(run_toc_from_text([d["content_with_weight"] for d in docs], chat_mdl, progress_callback))
     logging.info("------------ T O C -------------\n"+json.dumps(toc, ensure_ascii=False, indent='  '))
     ii = 0
     while ii < len(toc):
@@ -440,7 +525,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
 
     tk_count = 0
     if len(tts) == len(cnts):
-        vts, c = await trio.to_thread.run_sync(lambda: mdl.encode(tts[0: 1]))
+        vts, c = await asyncio.to_thread(mdl.encode, tts[0:1])
         tts = np.tile(vts[0], (len(cnts), 1))
         tk_count += c
 
@@ -452,7 +537,7 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
     cnts_ = np.array([])
     for i in range(0, len(cnts), settings.EMBEDDING_BATCH_SIZE):
         async with embed_limiter:
-            vts, c = await trio.to_thread.run_sync(lambda: batch_encode(cnts[i: i + settings.EMBEDDING_BATCH_SIZE]))
+            vts, c = await asyncio.to_thread(batch_encode, cnts[i : i + settings.EMBEDDING_BATCH_SIZE])
         if len(cnts_) == 0:
             cnts_ = vts
         else:
@@ -535,7 +620,7 @@ async def run_dataflow(task: dict):
             prog = 0.8
             for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
                 async with embed_limiter:
-                    vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + settings.EMBEDDING_BATCH_SIZE]))
+                    vts, c = await asyncio.to_thread(batch_encode, texts[i : i + settings.EMBEDDING_BATCH_SIZE])
                 if len(vects) == 0:
                     vects = vts
                 else:
@@ -556,36 +641,6 @@ async def run_dataflow(task: dict):
 
 
     metadata = {}
-    def dict_update(meta):
-        nonlocal metadata
-        if not meta:
-            return
-        if isinstance(meta, str):
-            try:
-                meta = json_repair.loads(meta)
-            except Exception:
-                logging.error("Meta data format error.")
-                return
-        if not isinstance(meta, dict):
-            return
-        for k, v in meta.items():
-            if isinstance(v, list):
-                v = [vv for vv in v if isinstance(vv, str)]
-                if not v:
-                    continue
-            if not isinstance(v, list) and not isinstance(v, str):
-                continue
-            if k not in metadata:
-                metadata[k] = v
-                continue
-            if isinstance(metadata[k], list):
-                if isinstance(v, list):
-                    metadata[k].extend(v)
-                else:
-                    metadata[k].append(v)
-            else:
-                metadata[k] = v
-
     for ck in chunks:
         ck["doc_id"] = doc_id
         ck["kb_id"] = [str(task["kb_id"])]
@@ -610,7 +665,7 @@ async def run_dataflow(task: dict):
                 ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck["content_ltks"])
             del ck["summary"]
         if "metadata" in ck:
-            dict_update(ck["metadata"])
+            metadata = update_metadata_to(metadata, ck["metadata"])
             del ck["metadata"]
         if "content_with_weight" not in ck:
             ck["content_with_weight"] = ck["text"]
@@ -624,7 +679,7 @@ async def run_dataflow(task: dict):
         if e:
             if isinstance(doc.meta_fields, str):
                 doc.meta_fields = json.loads(doc.meta_fields)
-            dict_update(doc.meta_fields)
+            metadata = update_metadata_to(metadata, doc.meta_fields)
             DocumentService.update_by_id(doc_id, {"meta_fields": metadata})
 
     start_ts = timer()
@@ -742,14 +797,14 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
         mothers.append(mom_ck)
 
     for b in range(0, len(mothers), settings.DOC_BULK_SIZE):
-        await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(mothers[b:b + settings.DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
+        await asyncio.to_thread(settings.docStoreConn.insert,mothers[b:b + settings.DOC_BULK_SIZE],search.index_name(task_tenant_id),task_dataset_id,)
         task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
             return False
 
     for b in range(0, len(chunks), settings.DOC_BULK_SIZE):
-        doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.insert(chunks[b:b + settings.DOC_BULK_SIZE], search.index_name(task_tenant_id), task_dataset_id))
+        doc_store_result = await asyncio.to_thread(settings.docStoreConn.insert,chunks[b:b + settings.DOC_BULK_SIZE],search.index_name(task_tenant_id),task_dataset_id,)
         task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
@@ -766,10 +821,18 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
             TaskService.update_chunk_ids(task_id, chunk_ids_str)
         except DoesNotExist:
             logging.warning(f"do_handle_task update_chunk_ids failed since task {task_id} is unknown.")
-            doc_store_result = await trio.to_thread.run_sync(lambda: settings.docStoreConn.delete({"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id))
-            async with trio.open_nursery() as nursery:
-                for chunk_id in chunk_ids:
-                    nursery.start_soon(delete_image, task_dataset_id, chunk_id)
+            doc_store_result = await asyncio.to_thread(settings.docStoreConn.delete,{"id": chunk_ids},search.index_name(task_tenant_id),task_dataset_id,)
+            tasks = []
+            for chunk_id in chunk_ids:
+                tasks.append(asyncio.create_task(delete_image(task_dataset_id, chunk_id)))
+            try:
+                await asyncio.gather(*tasks, return_exceptions=False)
+            except Exception as e:
+                logging.error(f"delete_image failed: {e}")
+                for t in tasks:
+                    t.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                raise
             progress_callback(-1, msg=f"Chunk updates failed since task {task_id} is unknown.")
             return False
     return True
@@ -789,7 +852,7 @@ async def do_handle_task(task):
     task_tenant_id = task["tenant_id"]
     task_embedding_id = task["embd_id"]
     task_language = task["language"]
-    task_llm_id = task["llm_id"]
+    task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
     task_dataset_id = task["kb_id"]
     task_doc_id = task["doc_id"]
     task_document_name = task["name"]
@@ -833,7 +896,7 @@ async def do_handle_task(task):
     if task_type == "raptor":
         ok, kb = KnowledgebaseService.get_by_id(task_dataset_id)
         if not ok:
-            progress_callback(prog=-1.0, msg="Cannot found valid knowledgebase for RAPTOR task")
+            progress_callback(prog=-1.0, msg="Cannot found valid dataset for RAPTOR task")
             return
 
         kb_parser_config = kb.parser_config
@@ -859,7 +922,7 @@ async def do_handle_task(task):
         file_type = task.get("type", "")
         parser_id = task.get("parser_id", "")
         raptor_config = kb_parser_config.get("raptor", {})
-        
+
         if should_skip_raptor(file_type, parser_id, task_parser_config, raptor_config):
             skip_reason = get_skip_reason(file_type, parser_id, task_parser_config)
             logging.info(f"Skipping Raptor for document {task_document_name}: {skip_reason}")
@@ -885,7 +948,7 @@ async def do_handle_task(task):
     elif task_type == "graphrag":
         ok, kb = KnowledgebaseService.get_by_id(task_dataset_id)
         if not ok:
-            progress_callback(prog=-1.0, msg="Cannot found valid knowledgebase for GraphRAG task")
+            progress_callback(prog=-1.0, msg="Cannot found valid dataset for GraphRAG task")
             return
 
         kb_parser_config = kb.parser_config
@@ -961,40 +1024,72 @@ async def do_handle_task(task):
 
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
-    e = await insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback)
-    if not e:
-        return
 
-    logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page,
-                                                                                     task_to_page, len(chunks),
-                                                                                     timer() - start_ts))
+    async def _maybe_insert_es(_chunks):
+        if has_canceled(task_id):
+            return True
+        e = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
+        return bool(e)
+    
+    try:
+        if not await _maybe_insert_es(chunks):
+            return
 
-    DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
+        logging.info(
+            "Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(
+                task_document_name, task_from_page, task_to_page, len(chunks), timer() - start_ts
+            )
+        )
 
-    time_cost = timer() - start_ts
-    progress_callback(msg="Indexing done ({:.2f}s).".format(time_cost))
-    if toc_thread:
-        d = toc_thread.result()
-        if d:
-            e = await insert_es(task_id, task_tenant_id, task_dataset_id, [d], progress_callback)
-            if not e:
-                return
-            DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, 0, 1, 0)
+        DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
 
-    task_time_cost = timer() - task_start_ts
-    progress_callback(prog=1.0, msg="Task done ({:.2f}s)".format(task_time_cost))
-    logging.info(
-        "Chunk doc({}), page({}-{}), chunks({}), token({}), elapsed:{:.2f}".format(task_document_name, task_from_page,
-                                                                                   task_to_page, len(chunks),
-                                                                                   token_count, task_time_cost))
+        progress_callback(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
 
+        if toc_thread:
+            d = toc_thread.result()
+            if d:
+                if not await _maybe_insert_es([d]):
+                    return
+                DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, 0, 1, 0)
+
+        if has_canceled(task_id):
+            progress_callback(-1, msg="Task has been canceled.")
+            return
+
+        task_time_cost = timer() - task_start_ts
+        progress_callback(prog=1.0, msg="Task done ({:.2f}s)".format(task_time_cost))
+        logging.info(
+            "Chunk doc({}), page({}-{}), chunks({}), token({}), elapsed:{:.2f}".format(
+                task_document_name, task_from_page, task_to_page, len(chunks), token_count, task_time_cost
+            )
+        )
+
+    finally:
+        if has_canceled(task_id):
+            try:
+                exists = await asyncio.to_thread(
+                    settings.docStoreConn.indexExist,
+                    search.index_name(task_tenant_id),
+                    task_dataset_id,
+                )
+                if exists:
+                    await asyncio.to_thread(
+                        settings.docStoreConn.delete,
+                        {"doc_id": task_doc_id},
+                        search.index_name(task_tenant_id),
+                        task_dataset_id,
+                    )
+            except Exception:
+                logging.exception(
+                    f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled."
+                )
 
 async def handle_task():
 
     global DONE_TASKS, FAILED_TASKS
     redis_msg, task = await collect()
     if not task:
-        await trio.sleep(5)
+        await asyncio.sleep(5)
         return
 
     task_type = task["task_type"]
@@ -1091,7 +1186,7 @@ async def report_status():
             logging.exception("report_status got exception")
         finally:
             redis_lock.release()
-        await trio.sleep(30)
+        await asyncio.sleep(30)
 
 
 async def task_manager():
@@ -1102,6 +1197,19 @@ async def task_manager():
 
 
 async def main():
+    # Stagger executor startup to prevent connection storm to Infinity
+    # Extract worker number from CONSUMER_NAME (e.g., "task_executor_abc123_5" -> 5)
+    try:
+        worker_num = int(CONSUMER_NAME.rsplit("_", 1)[-1])
+        # Add random delay: base delay + worker_num * 2.0s + random jitter
+        # This spreads out connection attempts over several seconds
+        startup_delay = worker_num * 2.0 + random.uniform(0, 0.5)
+        if startup_delay > 0:
+            logging.info(f"Staggering startup by {startup_delay:.2f}s to prevent connection storm")
+            await asyncio.sleep(startup_delay)
+    except (ValueError, IndexError):
+        pass  # Non-standard consumer name, skip delay
+
     logging.info(r"""
     ____                      __  _
    /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____
@@ -1114,7 +1222,6 @@ async def main():
     show_configs()
     settings.init_settings()
     settings.check_and_install_torch()
-    check_and_install_mineru()
     logging.info(f'default embedding config: {settings.EMBEDDING_CFG}')
     settings.print_rag_settings()
     if sys.platform != "win32":
@@ -1127,14 +1234,22 @@ async def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    async with trio.open_nursery() as nursery:
-        nursery.start_soon(report_status)
+    report_task = asyncio.create_task(report_status())
+    tasks = []
+    try:
         while not stop_event.is_set():
             await task_limiter.acquire()
-            nursery.start_soon(task_manager)
+            t = asyncio.create_task(task_manager())
+            tasks.append(t)
+    finally:
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        report_task.cancel()
+        await asyncio.gather(report_task, return_exceptions=True)
     logging.error("BUG!!! You should not reach here!!!")
 
 if __name__ == "__main__":
     faulthandler.enable()
     init_root_logger(CONSUMER_NAME)
-    trio.run(main)
+    asyncio.run(main())

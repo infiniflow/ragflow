@@ -146,10 +146,12 @@ class RAGFlow:
                 prompt.opener = "Hi! I'm your assistant. What can I do for you?"
             if prompt.prompt is None:
                 prompt.prompt = (
-                    "You are an intelligent assistant. Please summarize the content of the knowledge base to answer the question. "
-                    "Please list the data in the knowledge base and answer in detail. When all knowledge base content is irrelevant to the question, "
-                    "your answer must include the sentence 'The answer you are looking for is not found in the knowledge base!' "
-                    "Answers need to consider chat history.\nHere is the knowledge base:\n{knowledge}\nThe above is the knowledge base."
+                    "You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base."
+                    "**Essential Rules:**"
+                    "- Your answer must be derived **solely** from this knowledge base: `{knowledge}`."
+                    "- **When information is available**: Summarize the content to give a detailed answer."
+                    "- **When information is unavailable**: Your response must contain this exact sentence: 'The answer you are looking for is not found in the knowledge base!' "
+                    "- **Always consider** the entire conversation history."
                 )
 
         temp_dict = {"name": name, "avatar": avatar, "dataset_ids": dataset_list if dataset_list else [], "llm": llm.to_json(), "prompt": prompt.to_json()}
@@ -199,6 +201,8 @@ class RAGFlow:
         keyword: bool = False,
         cross_languages: list[str]|None = None,
         metadata_condition: dict | None = None,
+        use_kg: bool = False,
+        toc_enhance: bool = False,
     ):
         if document_ids is None:
             document_ids = []
@@ -214,7 +218,9 @@ class RAGFlow:
             "dataset_ids": dataset_ids,
             "document_ids": document_ids,
             "cross_languages": cross_languages,
-            "metadata_condition": metadata_condition
+            "metadata_condition": metadata_condition,
+            "use_kg": use_kg,
+            "toc_enhance": toc_enhance
         }
         # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
         res = self.post("/retrieval", json=data_json)

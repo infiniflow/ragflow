@@ -12,17 +12,18 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import asyncio
+import logging
 import random
 import re
 from copy import deepcopy
 from functools import partial
-import trio
 from common.misc_utils import get_uuid
 from rag.utils.base64_image import id2image, image2id
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.splitter.schema import SplitterFromUpstream
-from rag.nlp import naive_merge, naive_merge_with_images
+from rag.nlp import attach_media_context, naive_merge, naive_merge_with_images
 from common import settings
 
 
@@ -33,11 +34,15 @@ class SplitterParam(ProcessParamBase):
         self.delimiters = ["\n"]
         self.overlapped_percent = 0
         self.children_delimiters = []
+        self.table_context_size = 0
+        self.image_context_size = 0
 
     def check(self):
         self.check_empty(self.delimiters, "Delimiters.")
         self.check_positive_integer(self.chunk_token_size, "Chunk token size.")
         self.check_decimal_float(self.overlapped_percent, "Overlapped percentage: [0, 1)")
+        self.check_nonnegative_number(self.table_context_size, "Table context size.")
+        self.check_nonnegative_number(self.image_context_size, "Image context size.")
 
     def get_input_form(self) -> dict[str, dict]:
         return {}
@@ -59,14 +64,7 @@ class Splitter(ProcessBase):
                 deli += f"`{d}`"
             else:
                 deli += d
-        child_deli = ""
-        for d in self._param.children_delimiters:
-            if len(d) > 1:
-                child_deli += f"`{d}`"
-            else:
-                child_deli += d
-        child_deli = [m.group(1) for m in re.finditer(r"`([^`]+)`", child_deli)]
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(child_deli), key=len, reverse=True))
+        custom_pattern = "|".join(re.escape(t) for t in sorted(set(self._param.children_delimiters), key=len, reverse=True))
 
         self.set_output("output_format", "chunks")
         self.callback(random.randint(1, 5) / 100.0, "Start to split into chunks.")
@@ -109,8 +107,18 @@ class Splitter(ProcessBase):
             return
 
         # json
+        json_result = from_upstream.json_result or []
+        if self._param.table_context_size or self._param.image_context_size:
+            for ck in json_result:
+                if "image" not in ck and ck.get("img_id") and not (isinstance(ck.get("text"), str) and ck.get("text").strip()):
+                    ck["image"] = True
+            attach_media_context(json_result, self._param.table_context_size, self._param.image_context_size)
+            for ck in json_result:
+                if ck.get("image") is True:
+                    del ck["image"]
+
         sections, section_images = [], []
-        for o in from_upstream.json_result or []:
+        for o in json_result:
             sections.append((o.get("text", ""), o.get("position_tag", "")))
             section_images.append(id2image(o.get("img_id"), partial(settings.STORAGE_IMPL.get, tenant_id=self._canvas._tenant_id)))
 
@@ -129,9 +137,17 @@ class Splitter(ProcessBase):
             }
             for c, img in zip(chunks, images) if c.strip()
         ]
-        async with trio.open_nursery() as nursery:
-            for d in cks:
-                nursery.start_soon(image2id, d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())
+        tasks = []
+        for d in cks:
+            tasks.append(asyncio.create_task(image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())))
+        try:
+            await asyncio.gather(*tasks, return_exceptions=False)
+        except Exception as e:
+            logging.error(f"error when splitting: {e}")
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
         if custom_pattern:
             docs = []

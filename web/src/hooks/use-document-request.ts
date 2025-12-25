@@ -14,6 +14,7 @@ import {
   IDocumentMetaRequestBody,
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
+import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import kbService, { listDocument } from '@/services/knowledge-service';
 import api, { api_host } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/document-util';
@@ -114,6 +115,20 @@ export const useFetchDocumentList = () => {
     refetchInterval: isLoop ? 5000 : false,
     enabled: !!knowledgeId || !!id,
     queryFn: async () => {
+      let run = [] as any;
+      let returnEmptyMetadata = false;
+      if (filterValue.run && Array.isArray(filterValue.run)) {
+        run = [...(filterValue.run as string[])];
+        const returnEmptyMetadataIndex = run.findIndex(
+          (r: string) => r === EMPTY_METADATA_FIELD,
+        );
+        if (returnEmptyMetadataIndex > -1) {
+          returnEmptyMetadata = true;
+          run.splice(returnEmptyMetadataIndex, 1);
+        }
+      } else {
+        run = filterValue.run;
+      }
       const ret = await listDocument(
         {
           kb_id: knowledgeId || id,
@@ -122,8 +137,10 @@ export const useFetchDocumentList = () => {
           page: pagination.current,
         },
         {
-          suffix: filterValue.type,
-          run_status: filterValue.run,
+          suffix: filterValue.type as string[],
+          run_status: run as string[],
+          return_empty_metadata: returnEmptyMetadata,
+          metadata: filterValue.metadata as Record<string, string[]>,
         },
       );
       if (ret.data.code === 0) {
@@ -196,6 +213,7 @@ export const useGetDocumentFilter = (): {
     filter: data?.filter || {
       run_status: {},
       suffix: {},
+      metadata: {},
     },
     onOpenChange: handleOnpenChange,
   };

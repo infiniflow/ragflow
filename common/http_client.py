@@ -16,7 +16,9 @@ import logging
 import os
 import time
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse, urlunparse
 
+from common import settings
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -52,11 +54,73 @@ def _get_delay(backoff_factor: float, attempt: int) -> float:
     return backoff_factor * (2**attempt)
 
 
+# List of sensitive parameters to redact from URLs before logging
+_SENSITIVE_QUERY_KEYS = {"client_secret", "secret", "code", "access_token", "refresh_token", "password", "token", "app_secret"}
+
+def _redact_sensitive_url_params(url: str) -> str:
+    """
+    Return a version of the URL that is safe to log.
+
+    We intentionally drop query parameters and userinfo to avoid leaking
+    credentials or tokens via logs. Only scheme, host, port and path
+    are preserved.
+    """
+    try:
+        parsed = urlparse(url)
+        # Remove any potential userinfo (username:password@)
+        netloc = parsed.hostname or ""
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        # Reconstruct URL without query, params, fragment, or userinfo.
+        safe_url = urlunparse(
+            (
+                parsed.scheme,
+                netloc,
+                parsed.path,
+                "",  # params
+                "",  # query
+                "",  # fragment
+            )
+        )
+        return safe_url
+    except Exception:
+        # If parsing fails, fall back to omitting the URL entirely.
+        return "<redacted-url>"
+
+def _is_sensitive_url(url: str) -> bool:
+    """Return True if URL is one of the configured OAuth endpoints."""
+    # Collect known sensitive endpoint URLs from settings
+    oauth_urls = set()
+    # GitHub OAuth endpoints
+    try:
+        if settings.GITHUB_OAUTH is not None:
+            url_val = settings.GITHUB_OAUTH.get("url")
+            if url_val:
+                oauth_urls.add(url_val)
+    except Exception:
+        pass
+    # Feishu OAuth endpoints
+    try:
+        if settings.FEISHU_OAUTH is not None:
+            for k in ("app_access_token_url", "user_access_token_url"):
+                url_val = settings.FEISHU_OAUTH.get(k)
+                if url_val:
+                    oauth_urls.add(url_val)
+    except Exception:
+        pass
+    # Defensive normalization: compare only scheme+netloc+path
+    url_obj = urlparse(url)
+    for sensitive_url in oauth_urls:
+        sensitive_obj = urlparse(sensitive_url)
+        if (url_obj.scheme, url_obj.netloc, url_obj.path) == (sensitive_obj.scheme, sensitive_obj.netloc, sensitive_obj.path):
+            return True
+    return False
+
 async def async_request(
     method: str,
     url: str,
     *,
-    timeout: float | httpx.Timeout | None = None,
+    request_timeout: float | httpx.Timeout | None = None,
     follow_redirects: bool | None = None,
     max_redirects: Optional[int] = None,
     headers: Optional[Dict[str, str]] = None,
@@ -67,7 +131,7 @@ async def async_request(
     **kwargs: Any,
 ) -> httpx.Response:
     """Lightweight async HTTP wrapper using httpx.AsyncClient with safe defaults."""
-    timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
+    timeout = request_timeout if request_timeout is not None else DEFAULT_TIMEOUT
     follow_redirects = (
         DEFAULT_FOLLOW_REDIRECTS if follow_redirects is None else follow_redirects
     )
@@ -93,20 +157,28 @@ async def async_request(
                     method=method, url=url, headers=headers, **kwargs
                 )
                 duration = time.monotonic() - start
-                logger.debug(
-                    f"async_request {method} {url} -> {response.status_code} in {duration:.3f}s"
-                )
+                if not _is_sensitive_url(url):
+                    log_url = _redact_sensitive_url_params(url)
+                    logger.debug(f"async_request {method} {log_url} -> {response.status_code} in {duration:.3f}s")
                 return response
             except httpx.RequestError as exc:
                 last_exc = exc
                 if attempt >= retries:
+                    if not _is_sensitive_url(url):
+                        log_url = _redact_sensitive_url_params(url)
+                        logger.warning(f"async_request exhausted retries for {method}")
+                    raise
+                delay = _get_delay(backoff_factor, attempt)
+                if not _is_sensitive_url(url):
+                    log_url = _redact_sensitive_url_params(url)
                     logger.warning(
-                        f"async_request exhausted retries for {method} {url}: {exc}"
+                        f"async_request attempt {attempt + 1}/{retries + 1} failed for {method}; retrying in {delay:.2f}s"
                     )
                     raise
                 delay = _get_delay(backoff_factor, attempt)
+                # Avoid including the (potentially sensitive) URL in retry logs.
                 logger.warning(
-                    f"async_request attempt {attempt + 1}/{retries + 1} failed for {method} {url}: {exc}; retrying in {delay:.2f}s"
+                    f"async_request attempt {attempt + 1}/{retries + 1} failed for {method}; retrying in {delay:.2f}s"
                 )
                 await asyncio.sleep(delay)
         raise last_exc  # pragma: no cover

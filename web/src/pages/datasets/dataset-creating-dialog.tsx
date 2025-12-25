@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { FormLayout } from '@/constants/form';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
@@ -33,6 +34,7 @@ const FormId = 'dataset-creating-form';
 
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
+  const { data: tenantInfo } = useFetchTenantInfo();
 
   const FormSchema = z
     .object({
@@ -64,8 +66,6 @@ export function InputForm({ onOk }: IModalProps<any>) {
           path: ['parser_id'],
         });
       }
-
-      console.log('form-data', data);
       // When parseType === 1, pipline_id required
       if (data.parseType === 2 && !data.pipeline_id) {
         ctx.addIssue({
@@ -82,7 +82,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
       name: '',
       parseType: 1,
       parser_id: '',
-      embd_id: '',
+      embd_id: tenantInfo?.embd_id,
     },
   });
 

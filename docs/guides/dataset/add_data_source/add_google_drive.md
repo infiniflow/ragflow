@@ -45,7 +45,7 @@ Google Cloud external project.
 http://localhost:9380/v1/connector/google-drive/oauth/web/callback
 ```
 
-### If using Docker deployment:
+- If using Docker deployment:
 
 **Authorized JavaScript origin:**
 ```
@@ -53,15 +53,16 @@ http://localhost:80
 ```
 
 ![placeholder-image](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image8.png?raw=true)
-### If running from source:
+
+- If running from source:
 **Authorized JavaScript origin:**
 ```
 http://localhost:9222
 ```
 
 ![placeholder-image](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image9.png?raw=true)
-5.  After saving, click **Download JSON**. This file will later be
-    uploaded into RAGFlow.
+
+5.  After saving, click **Download JSON**. This file will later be uploaded into RAGFlow.
 
 ![placeholder-image](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image10.png?raw=true)
 

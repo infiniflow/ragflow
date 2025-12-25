@@ -1,36 +1,32 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
-import { cn, formatBytes } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
-import { Banknote, Logs } from 'lucide-react';
+import { MemoryStick, Settings } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFetchMemoryBaseConfiguration } from '../hooks/use-memory-setting';
 import { useHandleMenuClick } from './hooks';
 
-type PropType = {
-  refreshCount?: number;
-};
-
-export function SideBar({ refreshCount }: PropType) {
+export function SideBar() {
   const pathName = useSecondPathName();
   const { handleMenuClick } = useHandleMenuClick();
   // refreshCount: be for avatar img sync update on top left
-  const { data } = useFetchMemoryBaseConfiguration({ refreshCount });
+  const { data } = useFetchMemoryBaseConfiguration();
   const { t } = useTranslation();
 
   const items = useMemo(() => {
     const list = [
       {
-        icon: <Logs className="size-4" />,
-        label: t(`knowledgeDetails.overview`),
+        icon: <MemoryStick className="size-4" />,
+        label: t(`memory.sideBar.messages`),
         key: Routes.MemoryMessage,
       },
       {
-        icon: <Banknote className="size-4" />,
-        label: t(`knowledgeDetails.configuration`),
+        icon: <Settings className="size-4" />,
+        label: t(`memory.sideBar.configuration`),
         key: Routes.MemorySetting,
       },
     ];
@@ -50,10 +46,8 @@ export function SideBar({ refreshCount }: PropType) {
             {data.name}
           </h3>
           <div className="flex justify-between">
-            <span>
-              {data.doc_num} {t('knowledgeDetails.files')}
-            </span>
-            <span>{formatBytes(data.size)}</span>
+            <span className="truncate ">{data.description}</span>
+            {/* <span>{formatBytes(data.size)}</span> */}
           </div>
           <div>
             {t('knowledgeDetails.created')} {formatPureDate(data.create_time)}

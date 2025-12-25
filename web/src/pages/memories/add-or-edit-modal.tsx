@@ -1,9 +1,8 @@
-import { DynamicForm, DynamicFormRef } from '@/components/dynamic-form';
-import { useModelOptions } from '@/components/llm-setting-items/llm-form-field';
+import { DynamicForm } from '@/components/dynamic-form';
 import { HomeIcon } from '@/components/svg-icon';
 import { Modal } from '@/components/ui/modal/modal';
-import { t } from 'i18next';
-import { useCallback, useEffect, useState } from 'react';
+import { memo, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createMemoryFields } from './constants';
 import { IMemory } from './interface';
 
@@ -13,30 +12,35 @@ type IProps = {
   onSubmit?: (data: any) => void;
   initialMemory: IMemory;
   loading?: boolean;
+  isCreate?: boolean;
 };
-export const AddOrEditModal = (props: IProps) => {
-  const { open, onClose, onSubmit, initialMemory } = props;
-  //   const [fields, setFields] = useState<FormFieldConfig[]>(createMemoryFields);
-  //   const formRef = useRef<DynamicFormRef>(null);
-  const [formInstance, setFormInstance] = useState<DynamicFormRef | null>(null);
+export const AddOrEditModal = memo((props: IProps) => {
+  const { open, onClose, onSubmit, initialMemory, isCreate } = props;
+  const { t } = useTranslation();
+  // const { modelOptions } = useModelOptions();
 
-  const formCallbackRef = useCallback((node: DynamicFormRef | null) => {
-    if (node) {
-      // formRef.current = node;
-      setFormInstance(node);
-    }
-  }, []);
-  const { modelOptions } = useModelOptions();
-
-  useEffect(() => {
-    if (initialMemory && initialMemory.id) {
-      formInstance?.onFieldUpdate('memory_type', { hidden: true });
-      formInstance?.onFieldUpdate('embedding', { hidden: true });
-      formInstance?.onFieldUpdate('llm', { hidden: true });
+  const fields = useMemo(() => {
+    if (!isCreate) {
+      return createMemoryFields(t).filter(
+        (field: any) => field.name === 'name',
+      );
     } else {
-      formInstance?.onFieldUpdate('llm', { options: modelOptions as any });
+      // const tempFields = createMemoryFields(t).map((field: any) => {
+      //   if (field.name === 'llm_id') {
+      //     return {
+      //       ...field,
+      //       options: modelOptions,
+      //     };
+      //   } else {
+      //     return {
+      //       ...field,
+      //     };
+      //   }
+      // });
+      // return tempFields;
+      return createMemoryFields(t);
     }
-  }, [modelOptions, formInstance, initialMemory]);
+  }, [isCreate, t]);
 
   return (
     <Modal
@@ -48,15 +52,14 @@ export const AddOrEditModal = (props: IProps) => {
           <div>
             <HomeIcon name="memory" width={'24'} />
           </div>
-          {t('memory.createMemory')}
+          {isCreate ? t('memories.createMemory') : t('memories.editName')}
         </div>
       }
       showfooter={false}
       confirmLoading={props.loading}
     >
       <DynamicForm.Root
-        ref={formCallbackRef}
-        fields={createMemoryFields}
+        fields={fields}
         onSubmit={() => {}}
         defaultValues={initialMemory}
       >
@@ -72,4 +75,4 @@ export const AddOrEditModal = (props: IProps) => {
       </DynamicForm.Root>
     </Modal>
   );
-};
+});

@@ -13,9 +13,14 @@ import {
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import { Upload } from 'lucide-react';
+import { Pen, Upload } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import {
+  MetadataType,
+  useManageMetadata,
+} from '../components/metedata/hooks/use-manage-modal';
+import { ManageMetadataModal } from '../components/metedata/manage-modal';
 import { DatasetTable } from './dataset-table';
 import Generate from './generate-button/generate';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
@@ -51,7 +56,7 @@ export default function Dataset() {
   const { data: dataSetData } = useFetchKnowledgeBaseConfiguration({
     refreshCount,
   });
-  const { filters, onOpenChange } = useSelectDatasetFilters();
+  const { filters, onOpenChange, filterGroup } = useSelectDatasetFilters();
 
   const {
     createLoading,
@@ -60,6 +65,14 @@ export default function Dataset() {
     hideCreateModal,
     showCreateModal,
   } = useCreateEmptyDocument();
+
+  const {
+    manageMetadataVisible,
+    showManageMetadataModal,
+    hideManageMetadataModal,
+    tableData,
+    config: metadataConfig,
+  } = useManageMetadata();
 
   const { rowSelection, rowSelectionIsEmpty, setRowSelection, selectedCount } =
     useRowSelection();
@@ -80,6 +93,7 @@ export default function Dataset() {
           onSearchChange={handleInputChange}
           searchString={searchString}
           value={filterValue}
+          filterGroup={filterGroup}
           onChange={handleFilterSubmit}
           onOpenChange={onOpenChange}
           filters={filters}
@@ -90,6 +104,36 @@ export default function Dataset() {
                 {t('knowledgeDetails.datasetDescription')}
               </div>
             </div>
+          }
+          preChildren={
+            <Button
+              variant={'ghost'}
+              className="border border-border-button"
+              onClick={() =>
+                showManageMetadataModal({
+                  type: MetadataType.Manage,
+                  isCanAdd: false,
+                  isEditField: true,
+                  title: (
+                    <div className="flex flex-col gap-2">
+                      <div className="text-base font-normal">
+                        {t('knowledgeDetails.metadata.manageMetadata')}
+                      </div>
+                      <div className="text-sm text-text-secondary">
+                        {t(
+                          'knowledgeDetails.metadata.manageMetadataForDataset',
+                        )}
+                      </div>
+                    </div>
+                  ),
+                })
+              }
+            >
+              <div className="flex gap-1 items-center">
+                <Pen size={14} />
+                {t('knowledgeDetails.metadata.metadata')}
+              </div>
+            </Button>
           }
         >
           <DropdownMenu>
@@ -119,6 +163,7 @@ export default function Dataset() {
           setPagination={setPagination}
           rowSelection={rowSelection}
           setRowSelection={setRowSelection}
+          showManageMetadataModal={showManageMetadataModal}
           loading={loading}
         ></DatasetTable>
         {documentUploadVisible && (
@@ -136,6 +181,31 @@ export default function Dataset() {
             loading={createLoading}
             title={'File Name'}
           ></RenameDialog>
+        )}
+        {manageMetadataVisible && (
+          <ManageMetadataModal
+            title={
+              metadataConfig.title || (
+                <div className="flex flex-col gap-2">
+                  <div className="text-base font-normal">
+                    {t('knowledgeDetails.metadata.manageMetadata')}
+                  </div>
+                  <div className="text-sm text-text-secondary">
+                    {t('knowledgeDetails.metadata.manageMetadataForDataset')}
+                  </div>
+                </div>
+              )
+            }
+            visible={manageMetadataVisible}
+            hideModal={hideManageMetadataModal}
+            // selectedRowKeys={selectedRowKeys}
+            tableData={tableData}
+            isCanAdd={metadataConfig.isCanAdd}
+            isEditField={metadataConfig.isEditField}
+            isDeleteSingleValue={metadataConfig.isDeleteSingleValue}
+            type={metadataConfig.type}
+            otherData={metadataConfig.record}
+          />
         )}
       </section>
     </>

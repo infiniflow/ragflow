@@ -17,3 +17,8 @@ export interface IMessageTableProps {
   messages: { message_list: Array<IMessageInfo>; total: number };
   storage_type: string;
 }
+
+export interface IMessageContentProps {
+  content: string;
+  content_embed: string;
+}

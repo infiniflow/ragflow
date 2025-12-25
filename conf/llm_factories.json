@@ -8,6 +8,20 @@
             "rank": "999",
             "llm": [
                 {
+                    "llm_name": "gpt-5.2-pro",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.2",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "gpt-5.1",
                     "tags": "LLM,CHAT,400k,IMAGE2TEXT",
                     "max_tokens": 400000,
@@ -366,6 +380,13 @@
                     "llm_name": "Moonshot-Kimi-K2-Instruct",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 131072,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "deepseek-v3.2",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
                     "model_type": "chat",
                     "is_tools": true
                 },
@@ -741,6 +762,13 @@
             "status": "1",
             "rank": "940",
             "llm": [
+                {
+                    "llm_name": "glm-4.7",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
                 {
                     "llm_name": "glm-4.5",
                     "tags": "LLM,CHAT,128K",
@@ -1230,6 +1258,12 @@
             "status": "1",
             "rank": "810",
             "llm": [
+                {
+                    "llm_name": "MiniMax-M2.1",
+                    "tags": "LLM,CHAT,200k",
+                    "max_tokens": 200000,
+                    "model_type": "chat"
+                },
                 {
                     "llm_name": "MiniMax-M2",
                     "tags": "LLM,CHAT,200k",
@@ -5489,6 +5523,14 @@
                     "model_type": "reranker"
                 }
             ]
+        },
+        {
+            "name": "MinerU",
+            "logo": "",
+            "tags": "OCR",
+            "status": "1",
+            "rank": "900",
+            "llm": []
         }
     ]
 }

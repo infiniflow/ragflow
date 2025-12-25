@@ -3,10 +3,10 @@
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import memoryService, { updateMemoryById } from '@/services/memory-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
+import { omit } from 'lodash';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'umi';
@@ -24,35 +24,21 @@ import {
 export const useCreateMemory = () => {
   const { t } = useTranslation();
 
-  const {
-    data,
-    isError,
-    mutateAsync: createMemoryMutation,
-  } = useMutation<CreateMemoryResponse, Error, ICreateMemoryProps>({
-    mutationKey: ['createMemory'],
-    mutationFn: async (props) => {
+  const createMemory = useCallback(
+    async (props: ICreateMemoryProps): Promise<CreateMemoryResponse> => {
       const { data: response } = await memoryService.createMemory(props);
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to create memory');
       }
+      if (response.code === 0) {
+        message.success(t('message.created'));
+      }
       return response.data;
     },
-    onSuccess: () => {
-      message.success(t('message.created'));
-    },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
-    },
-  });
-
-  const createMemory = useCallback(
-    (props: ICreateMemoryProps) => {
-      return createMemoryMutation(props);
-    },
-    [createMemoryMutation],
+    [t],
   );
 
-  return { data, isError, createMemory };
+  return { createMemory };
 };
 
 export const useFetchMemoryList = () => {
@@ -153,7 +139,9 @@ export const useDeleteMemory = () => {
   } = useMutation<DeleteMemoryResponse, Error, DeleteMemoryProps>({
     mutationKey: ['deleteMemory'],
     mutationFn: async (props) => {
-      const { data: response } = await memoryService.deleteMemory(props);
+      const { data: response } = await memoryService.deleteMemory(
+        props.memory_id,
+      );
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to delete memory');
       }
@@ -189,10 +177,12 @@ export const useUpdateMemory = () => {
   } = useMutation<any, Error, IMemoryAppDetailProps>({
     mutationKey: ['updateMemory'],
     mutationFn: async (formData) => {
-      const { data: response } = await updateMemoryById(formData.id, formData);
+      const param = omit(formData, ['id']);
+      const { data: response } = await updateMemoryById(formData.id, param);
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to update memory');
       }
+
       return response.data;
     },
     onSuccess: (data, variables) => {
@@ -218,7 +208,6 @@ export const useUpdateMemory = () => {
 
 export const useRenameMemory = () => {
   const [memory, setMemory] = useState<IMemory>({} as IMemory);
-  const { navigateToMemory } = useNavigatePage();
   const {
     visible: openCreateModal,
     hideModal: hideChatRenameModal,
@@ -245,37 +234,29 @@ export const useRenameMemory = () => {
 
   const onMemoryRenameOk = useCallback(
     async (data: ICreateMemoryProps, callBack?: () => void) => {
-      let res;
+      // let res;
       setLoading(true);
       if (memory?.id) {
         try {
-          // const reponse = await memoryService.getMemoryDetail({
-          //   id: memory?.id,
-          // });
-          // const detail = reponse.data?.data;
-          // console.log('detail-->', detail);
-
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          // const { id, created_by, update_time, ...memoryDataTemp } = detail;
-          res = await updateMemory({
+          await updateMemory({
             // ...memoryDataTemp,
-            name: data.memory_name,
+            name: data.name,
             id: memory?.id,
           } as unknown as IMemoryAppDetailProps);
         } catch (e) {
           console.error('error', e);
         }
       } else {
-        res = await createMemory(data);
+        await createMemory(data);
       }
-      if (res && !memory?.id) {
-        navigateToMemory(res?.id)();
-      }
+      // if (res && !memory?.id) {
+      //   navigateToMemory(res?.id)();
+      // }
       callBack?.();
       setLoading(false);
       handleHideModal();
     },
-    [memory, createMemory, handleHideModal, navigateToMemory, updateMemory],
+    [memory, createMemory, handleHideModal, updateMemory],
   );
   return {
     memoryRenameLoading: loading,

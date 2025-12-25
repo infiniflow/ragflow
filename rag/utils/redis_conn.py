@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import asyncio
 import logging
 import json
 import uuid
@@ -22,7 +23,6 @@ import valkey as redis
 from common.decorator import singleton
 from common import settings
 from valkey.lock import Lock
-import trio
 
 REDIS = {}
 try:
@@ -59,6 +59,7 @@ class RedisMsg:
 @singleton
 class RedisDB:
     lua_delete_if_equal = None
+    lua_token_bucket = None
     LUA_DELETE_IF_EQUAL_SCRIPT = """
         local current_value = redis.call('get', KEYS[1])
         if current_value and current_value == ARGV[1] then
@@ -66,6 +67,47 @@ class RedisDB:
             return 1
         end
         return 0
+    """
+
+    LUA_TOKEN_BUCKET_SCRIPT = """
+        -- KEYS[1] = rate limit key
+        -- ARGV[1] = capacity
+        -- ARGV[2] = rate
+        -- ARGV[3] = now
+        -- ARGV[4] = cost
+
+        local key       = KEYS[1]
+        local capacity  = tonumber(ARGV[1])
+        local rate      = tonumber(ARGV[2])
+        local now       = tonumber(ARGV[3])
+        local cost      = tonumber(ARGV[4])
+
+        local data = redis.call("HMGET", key, "tokens", "timestamp")
+        local tokens = tonumber(data[1])
+        local last_ts = tonumber(data[2])
+
+        if tokens == nil then
+            tokens = capacity
+            last_ts = now
+        end
+
+        local delta = math.max(0, now - last_ts)
+        tokens = math.min(capacity, tokens + delta * rate)
+
+        if tokens < cost then
+            return {0, tokens}
+        end
+
+        tokens = tokens - cost
+
+        redis.call("HMSET", key,
+            "tokens", tokens,
+            "timestamp", now
+        )
+
+        redis.call("EXPIRE", key, math.ceil(capacity / rate * 2))
+
+        return {1, tokens}
     """
 
     def __init__(self):
@@ -77,6 +119,7 @@ class RedisDB:
         cls = self.__class__
         client = self.REDIS
         cls.lua_delete_if_equal = client.register_script(cls.LUA_DELETE_IF_EQUAL_SCRIPT)
+        cls.lua_token_bucket = client.register_script(cls.LUA_TOKEN_BUCKET_SCRIPT)
 
     def __open__(self):
         try:
@@ -405,7 +448,7 @@ class RedisDistributedLock:
         while True:
             if self.lock.acquire(token=self.lock_value):
                 break
-            await trio.sleep(10)
+            await asyncio.sleep(10)
 
     def release(self):
         REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)

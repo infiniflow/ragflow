@@ -208,6 +208,9 @@ export default {
       plainText: 'Einfach',
     },
     knowledgeConfiguration: {
+      imageTableContextWindow: 'Kontextfenster für Bild und Tabelle',
+      imageTableContextWindowTip:
+        'Erfasst N Token Text ober- und unterhalb von Bild und Tabelle, um reicheren Kontext bereitzustellen.',
       titleDescription:
         'Aktualisieren Sie hier Ihre Wissensdatenbank-Konfiguration, insbesondere die Chunk-Methode.',
       name: 'Name der Wissensdatenbank',
@@ -878,6 +881,27 @@ export default {
       searXNG: 'SearXNG',
       searXNGDescription:
         'Eine Komponente, die auf https://searxng.org/ sucht und Ihnen ermöglicht, die Anzahl der Suchergebnisse mit TopN anzugeben. Sie ergänzt die vorhandenen Wissensdatenbanken.',
+      pdfGenerator: 'Dokumentengenerator',
+      pDFGenerator: 'Dokumentengenerator',
+      pdfGeneratorDescription: `Eine Komponente, die Dokumente (PDF, DOCX, TXT) aus markdown-formatierten Inhalten mit anpassbarem Stil, Bildern und Tabellen generiert. Unterstützt: **fett**, *kursiv*, # Überschriften, - Listen, Tabellen mit | Syntax.`,
+      pDFGeneratorDescription: `Eine Komponente, die Dokumente (PDF, DOCX, TXT) aus markdown-formatierten Inhalten mit anpassbarem Stil, Bildern und Tabellen generiert. Unterstützt: **fett**, *kursiv*, # Überschriften, - Listen, Tabellen mit | Syntax.`,
+      subtitle: 'Untertitel',
+      logoImage: 'Logo-Bild',
+      logoPosition: 'Logo-Position',
+      logoWidth: 'Logo-Breite',
+      logoHeight: 'Logo-Höhe',
+      fontFamily: 'Schriftfamilie',
+      fontSize: 'Schriftgröße',
+      titleFontSize: 'Titel-Schriftgröße',
+      pageSize: 'Seitengröße',
+      orientation: 'Ausrichtung',
+      marginTop: 'Oberer Rand',
+      marginBottom: 'Unterer Rand',
+      filename: 'Dateiname',
+      outputDirectory: 'Ausgabeverzeichnis',
+      addPageNumbers: 'Seitenzahlen hinzufügen',
+      addTimestamp: 'Zeitstempel hinzufügen',
+      watermarkText: 'Wasserzeichentext',
       channel: 'Kanal',
       channelTip:
         'Führt eine Textsuche oder Nachrichtensuche für die Eingabe der Komponente durch',

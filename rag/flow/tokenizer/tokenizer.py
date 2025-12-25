@@ -12,12 +12,12 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import asyncio
 import logging
 import random
 import re
 
 import numpy as np
-import trio
 
 from common.constants import LLMType
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -84,7 +84,7 @@ class Tokenizer(ProcessBase):
         cnts_ = np.array([])
         for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
             async with embed_limiter:
-                vts, c = await trio.to_thread.run_sync(lambda: batch_encode(texts[i : i + settings.EMBEDDING_BATCH_SIZE]))
+                vts, c = await asyncio.to_thread(batch_encode,texts[i : i + settings.EMBEDDING_BATCH_SIZE],)
             if len(cnts_) == 0:
                 cnts_ = vts
             else:
@@ -105,6 +105,9 @@ class Tokenizer(ProcessBase):
 
     async def _invoke(self, **kwargs):
         try:
+            chunks = kwargs.get("chunks")
+            kwargs["chunks"] = [c for c in chunks if c is not None]
+
             from_upstream = TokenizerFromUpstream.model_validate(kwargs)
         except Exception as e:
             self.set_output("_ERROR", f"Input error: {str(e)}")

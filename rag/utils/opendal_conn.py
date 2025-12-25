@@ -41,8 +41,27 @@ def get_opendal_config():
             scheme = opendal_config.get("scheme")
             config_data = opendal_config.get("config", {})
             kwargs = {"scheme": scheme, **config_data}
-        logging.info("Loaded OpenDAL configuration from yaml: %s", kwargs)
-        return kwargs
+
+        # Only include non-sensitive keys in logs. Do NOT
+        # add 'password' or any key containing embedded credentials
+        # (like 'connection_string').
+        safe_log_info = {
+            "scheme": kwargs.get("scheme"),
+            "host": kwargs.get("host"),
+            "port": kwargs.get("port"),
+            "database": kwargs.get("database"),
+            "table": kwargs.get("table"),
+            # indicate presence of credentials without logging them
+            "has_credentials": any(k in kwargs for k in ("password", "connection_string")),
+        }
+        logging.info("Loaded OpenDAL configuration (non sensitive fields only): %s", safe_log_info)
+
+        # For safety, explicitly remove sensitive keys from kwargs after use
+        if "password" in kwargs:
+            del kwargs["password"]
+        if "connection_string" in kwargs:
+            del kwargs["connection_string"]
+        return kwargs   
     except Exception as e:
         logging.error("Failed to load OpenDAL configuration from yaml: %s", str(e))
         raise

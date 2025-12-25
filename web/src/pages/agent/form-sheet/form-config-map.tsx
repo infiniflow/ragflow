@@ -22,6 +22,7 @@ import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
 import ParserForm from '../form/parser-form';
+import PDFGeneratorForm from '../form/pdf-generator-form';
 import PubMedForm from '../form/pubmed-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
@@ -109,6 +110,9 @@ export const FormConfigMap = {
   },
   [Operator.SearXNG]: {
     component: SearXNGForm,
+  },
+  [Operator.PDFGenerator]: {
+    component: PDFGeneratorForm,
   },
   [Operator.Note]: {
     component: () => <></>,

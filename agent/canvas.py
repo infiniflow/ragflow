@@ -160,7 +160,7 @@ class Graph:
         return self._tenant_id
 
     def get_value_with_variable(self,value: str) -> Any:
-        pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*")
+        pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*")
         out_parts = []
         last = 0
 
@@ -368,8 +368,13 @@ class Canvas(Graph):
 
         if kwargs.get("webhook_payload"):
             for k, cpn in self.components.items():
-                if self.components[k]["obj"].component_name.lower() == "webhook":
-                    for kk, vv in kwargs["webhook_payload"].items():
+                if self.components[k]["obj"].component_name.lower() == "begin"  and self.components[k]["obj"]._param.mode == "Webhook":
+                    payload = kwargs.get("webhook_payload", {})
+                    if "input" in payload:
+                        self.components[k]["obj"].set_input_value("request", payload["input"])
+                    for kk, vv in payload.items():
+                        if kk == "input":
+                            continue
                         self.components[k]["obj"].set_output(kk, vv)
 
         for k in kwargs.keys():
@@ -535,6 +540,8 @@ class Canvas(Graph):
                         cite = re.search(r"\[ID:[ 0-9]+\]",  cpn_obj.output("content"))
 
                     message_end = {}
+                    if cpn_obj.get_param("status"):
+                        message_end["status"] = cpn_obj.get_param("status")
                     if isinstance(cpn_obj.output("attachment"), dict):
                         message_end["attachment"] = cpn_obj.output("attachment")
                     if cite:

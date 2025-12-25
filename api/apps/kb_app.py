@@ -93,19 +93,32 @@ async def update():
         if not KnowledgebaseService.query(
                 created_by=current_user.id, id=req["kb_id"]):
             return get_json_result(
-                data=False, message='Only owner of knowledgebase authorized for this operation.',
+                data=False, message='Only owner of dataset authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
+
+        # Rename folder in FileService
+        if e and req["name"].lower() != kb.name.lower():
+            FileService.filter_update(
+                [
+                    File.tenant_id == kb.tenant_id,
+                    File.source_type == FileSource.KNOWLEDGEBASE,
+                    File.type == "folder",
+                    File.name == kb.name,
+                ],
+                {"name": req["name"]},
+            )
+
         if not e:
             return get_data_error_result(
-                message="Can't find this knowledgebase!")
+                message="Can't find this dataset!")
 
         if req["name"].lower() != kb.name.lower() \
                 and len(
             KnowledgebaseService.query(name=req["name"], tenant_id=current_user.id, status=StatusEnum.VALID.value)) >= 1:
             return get_data_error_result(
-                message="Duplicated knowledgebase name.")
+                message="Duplicated dataset name.")
 
         del req["kb_id"]
         connectors = []
@@ -150,6 +163,21 @@ async def update():
         return server_error_response(e)
 
 
+@manager.route('/update_metadata_setting', methods=['post'])  # noqa: F821
+@login_required
+@validate_request("kb_id", "metadata")
+async def update_metadata_setting():
+    req = await get_request_json()
+    e, kb = KnowledgebaseService.get_by_id(req["kb_id"])
+    if not e:
+        return get_data_error_result(
+            message="Database error (Knowledgebase rename)!")
+    kb = kb.to_dict()
+    kb["parser_config"]["metadata"] = req["metadata"]
+    KnowledgebaseService.update_by_id(kb["id"], kb)
+    return get_json_result(data=kb)
+
+
 @manager.route('/detail', methods=['GET'])  # noqa: F821
 @login_required
 def detail():
@@ -162,12 +190,12 @@ def detail():
                 break
         else:
             return get_json_result(
-                data=False, message='Only owner of knowledgebase authorized for this operation.',
+                data=False, message='Only owner of dataset authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
         kb = KnowledgebaseService.get_detail(kb_id)
         if not kb:
             return get_data_error_result(
-                message="Can't find this knowledgebase!")
+                message="Can't find this dataset!")
         kb["size"] = DocumentService.get_total_size_by_kb_id(kb_id=kb["id"],keywords="", run_status=[], types=[])
         kb["connectors"] = Connector2KbService.list_connectors(kb_id)
 
@@ -232,7 +260,7 @@ async def rm():
             created_by=current_user.id, id=req["kb_id"])
         if not kbs:
             return get_json_result(
-                data=False, message='Only owner of knowledgebase authorized for this operation.',
+                data=False, message='Only owner of dataset authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
 
         def _rm_sync():
@@ -245,7 +273,13 @@ async def rm():
                     FileService.filter_delete([File.source_type == FileSource.KNOWLEDGEBASE, File.id == f2d[0].file_id])
                 File2DocumentService.delete_by_document_id(doc.id)
             FileService.filter_delete(
-                [File.source_type == FileSource.KNOWLEDGEBASE, File.type == "folder", File.name == kbs[0].name])
+                [
+                    File.tenant_id == kbs[0].tenant_id,
+                    File.source_type == FileSource.KNOWLEDGEBASE,
+                    File.type == "folder",
+                    File.name == kbs[0].name,
+                ]
+            )
             if not KnowledgebaseService.delete_by_id(req["kb_id"]):
                 return get_data_error_result(
                     message="Database error (Knowledgebase removal)!")

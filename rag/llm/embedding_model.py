@@ -28,7 +28,7 @@ from openai import OpenAI
 from zhipuai import ZhipuAI
 
 from common.log_utils import log_exception
-from common.token_utils import num_tokens_from_string, truncate
+from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from common import settings
 import logging
 import base64
@@ -48,17 +48,6 @@ class Base(ABC):
 
     def encode_queries(self, text: str):
         raise NotImplementedError("Please implement encode method!")
-
-    def total_token_count(self, resp):
-        try:
-            return resp.usage.total_tokens
-        except Exception:
-            pass
-        try:
-            return resp["usage"]["total_tokens"]
-        except Exception:
-            pass
-        return 0
 
 
 class BuiltinEmbed(Base):
@@ -118,14 +107,19 @@ class OpenAIEmbed(Base):
             res = self.client.embeddings.create(input=texts[i : i + batch_size], model=self.model_name, encoding_format="float", extra_body={"drop_params": True})
             try:
                 ress.extend([d.embedding for d in res.data])
-                total_tokens += self.total_token_count(res)
+                total_tokens += total_token_count_from_response(res)
             except Exception as _e:
                 log_exception(_e, res)
+                raise Exception(f"Error: {res}")
         return np.array(ress), total_tokens
 
     def encode_queries(self, text):
         res = self.client.embeddings.create(input=[truncate(text, 8191)], model=self.model_name, encoding_format="float",extra_body={"drop_params": True})
-        return np.array(res.data[0].embedding), self.total_token_count(res)
+        try:
+            return np.array(res.data[0].embedding), total_token_count_from_response(res)
+        except Exception as _e:
+            log_exception(_e, res)
+            raise Exception(f"Error: {res}")
 
 
 class LocalAIEmbed(Base):
@@ -147,6 +141,7 @@ class LocalAIEmbed(Base):
                 ress.extend([d.embedding for d in res.data])
             except Exception as _e:
                 log_exception(_e, res)
+                raise Exception(f"Error: {res}")
         # local embedding for LmStudio donot count tokens
         return np.array(ress), 1024
 
@@ -210,7 +205,7 @@ class QWenEmbed(Base):
                 for e in resp["output"]["embeddings"]:
                     embds[e["text_index"]] = e["embedding"]
                 res.extend(embds)
-                token_count += self.total_token_count(resp)
+                token_count += total_token_count_from_response(resp)
             except Exception as _e:
                 log_exception(_e, resp)
                 raise
@@ -219,9 +214,10 @@ class QWenEmbed(Base):
     def encode_queries(self, text):
         resp = dashscope.TextEmbedding.call(model=self.model_name, input=text[:2048], api_key=self.key, text_type="query")
         try:
-            return np.array(resp["output"]["embeddings"][0]["embedding"]), self.total_token_count(resp)
+            return np.array(resp["output"]["embeddings"][0]["embedding"]), total_token_count_from_response(resp)
         except Exception as _e:
             log_exception(_e, resp)
+            raise Exception(f"Error: {resp}")
 
 
 class ZhipuEmbed(Base):
@@ -246,17 +242,19 @@ class ZhipuEmbed(Base):
             res = self.client.embeddings.create(input=txt, model=self.model_name)
             try:
                 arr.append(res.data[0].embedding)
-                tks_num += self.total_token_count(res)
+                tks_num += total_token_count_from_response(res)
             except Exception as _e:
                 log_exception(_e, res)
+                raise Exception(f"Error: {res}")
         return np.array(arr), tks_num
 
     def encode_queries(self, text):
         res = self.client.embeddings.create(input=text, model=self.model_name)
         try:
-            return np.array(res.data[0].embedding), self.total_token_count(res)
+            return np.array(res.data[0].embedding), total_token_count_from_response(res)
         except Exception as _e:
             log_exception(_e, res)
+            raise Exception(f"Error: {res}")
 
 
 class OllamaEmbed(Base):
@@ -281,6 +279,7 @@ class OllamaEmbed(Base):
                 arr.append(res["embedding"])
             except Exception as _e:
                 log_exception(_e, res)
+                raise Exception(f"Error: {res}")
             tks_num += 128
         return np.array(arr), tks_num
 
@@ -293,6 +292,7 @@ class OllamaEmbed(Base):
             return np.array(res["embedding"]), 128
         except Exception as _e:
             log_exception(_e, res)
+            raise Exception(f"Error: {res}")
 
 
 class XinferenceEmbed(Base):
@@ -312,18 +312,20 @@ class XinferenceEmbed(Base):
             try:
                 res = self.client.embeddings.create(input=texts[i : i + batch_size], model=self.model_name)
                 ress.extend([d.embedding for d in res.data])
-                total_tokens += self.total_token_count(res)
+                total_tokens += total_token_count_from_response(res)
             except Exception as _e:
                 log_exception(_e, res)
+                raise Exception(f"Error: {res}")
         return np.array(ress), total_tokens
 
     def encode_queries(self, text):
         res = None
         try:
             res = self.client.embeddings.create(input=[text], model=self.model_name)
-            return np.array(res.data[0].embedding), self.total_token_count(res)
+            return np.array(res.data[0].embedding), total_token_count_from_response(res)
         except Exception as _e:
             log_exception(_e, res)
+            raise Exception(f"Error: {res}")
 
 
 class YoudaoEmbed(Base):
@@ -396,9 +398,10 @@ class JinaMultiVecEmbed(Base):
 
                     ress.append(chunk_emb)
 
-                token_count += self.total_token_count(res)
+                token_count += total_token_count_from_response(res)
             except Exception as _e:
                 log_exception(_e, response)
+                raise Exception(f"Error: {response}")
         return np.array(ress), token_count
 
     def encode_queries(self, text):
@@ -429,7 +432,7 @@ class MistralEmbed(Base):
                 try:
                     res = self.client.embeddings(input=texts[i : i + batch_size], model=self.model_name)
                     ress.extend([d.embedding for d in res.data])
-                    token_count += self.total_token_count(res)
+                    token_count += total_token_count_from_response(res)
                     break
                 except Exception as _e:
                     if retry_max == 1:
@@ -446,7 +449,7 @@ class MistralEmbed(Base):
         while retry_max > 0:
             try:
                 res = self.client.embeddings(input=[truncate(text, 8196)], model=self.model_name)
-                return np.array(res.data[0].embedding), self.total_token_count(res)
+                return np.array(res.data[0].embedding), total_token_count_from_response(res)
             except Exception as _e:
                 if retry_max == 1:
                     log_exception(_e)
@@ -460,19 +463,44 @@ class BedrockEmbed(Base):
 
     def __init__(self, key, model_name, **kwargs):
         import boto3
+        # `key` protocol (backend stores as JSON string in `api_key`):
+        # - Must decode into a dict.
+        # - Required: `auth_mode`, `bedrock_region`.
+        # - Supported auth modes:
+        #   - "access_key_secret": requires `bedrock_ak` + `bedrock_sk`.
+        #   - "iam_role": requires `aws_role_arn` and assumes role via STS.
+        #   - else: treated as "assume_role" (default AWS credential chain).
+        key = json.loads(key)
+        mode = key.get("auth_mode")
+        if not mode:
+            logging.error("Bedrock auth_mode is not provided in the key")
+            raise ValueError("Bedrock auth_mode must be provided in the key")
 
-        self.bedrock_ak = json.loads(key).get("bedrock_ak", "")
-        self.bedrock_sk = json.loads(key).get("bedrock_sk", "")
-        self.bedrock_region = json.loads(key).get("bedrock_region", "")
+        self.bedrock_region = key.get("bedrock_region")
+
         self.model_name = model_name
         self.is_amazon = self.model_name.split(".")[0] == "amazon"
         self.is_cohere = self.model_name.split(".")[0] == "cohere"
-
-        if self.bedrock_ak == "" or self.bedrock_sk == "" or self.bedrock_region == "":
-            # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
-            self.client = boto3.client("bedrock-runtime")
-        else:
+        
+        if mode == "access_key_secret":
+            self.bedrock_ak = key.get("bedrock_ak")
+            self.bedrock_sk = key.get("bedrock_sk")
             self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
+        elif mode == "iam_role":
+            self.aws_role_arn = key.get("aws_role_arn")
+            sts_client = boto3.client("sts", region_name=self.bedrock_region)
+            resp = sts_client.assume_role(RoleArn=self.aws_role_arn, RoleSessionName="BedrockSession")
+            creds = resp["Credentials"]
+
+            self.client = boto3.client(
+                service_name="bedrock-runtime",
+                aws_access_key_id=creds["AccessKeyId"],
+                aws_secret_access_key=creds["SecretAccessKey"],
+                aws_session_token=creds["SessionToken"],
+            )
+        else: # assume_role
+            self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
+
 
     def encode(self, texts: list):
         texts = [truncate(t, 8196) for t in texts]
@@ -531,6 +559,7 @@ class GeminiEmbed(Base):
                 ress.extend(result["embedding"])
             except Exception as _e:
                 log_exception(_e, result)
+                raise Exception(f"Error: {result}")
         return np.array(ress), token_count
 
     def encode_queries(self, text):
@@ -541,6 +570,7 @@ class GeminiEmbed(Base):
             return np.array(result["embedding"]), token_count
         except Exception as _e:
             log_exception(_e, result)
+            raise Exception(f"Error: {result}")
 
 
 class NvidiaEmbed(Base):
@@ -578,10 +608,11 @@ class NvidiaEmbed(Base):
             response = requests.post(self.base_url, headers=self.headers, json=payload)
             try:
                 res = response.json()
+                ress.extend([d["embedding"] for d in res["data"]])
+                token_count += total_token_count_from_response(res)
             except Exception as _e:
                 log_exception(_e, response)
-            ress.extend([d["embedding"] for d in res["data"]])
-            token_count += self.total_token_count(res)
+                raise Exception(f"Error: {response}")
         return np.array(ress), token_count
 
     def encode_queries(self, text):
@@ -633,9 +664,10 @@ class CoHereEmbed(Base):
             )
             try:
                 ress.extend([d for d in res.embeddings.float])
-                token_count += res.meta.billed_units.input_tokens
+                token_count += total_token_count_from_response(res)
             except Exception as _e:
                 log_exception(_e, res)
+                raise Exception(f"Error: {res}")
         return np.array(ress), token_count
 
     def encode_queries(self, text):
@@ -646,9 +678,10 @@ class CoHereEmbed(Base):
             embedding_types=["float"],
         )
         try:
-            return np.array(res.embeddings.float[0]), int(res.meta.billed_units.input_tokens)
+            return np.array(res.embeddings.float[0]), int(total_token_count_from_response(res))
         except Exception as _e:
             log_exception(_e, res)
+            raise Exception(f"Error: {res}")
 
 
 class TogetherAIEmbed(OpenAIEmbed):
@@ -713,9 +746,10 @@ class SILICONFLOWEmbed(Base):
             try:
                 res = response.json()
                 ress.extend([d["embedding"] for d in res["data"]])
-                token_count += self.total_token_count(res)
+                token_count += total_token_count_from_response(res)
             except Exception as _e:
                 log_exception(_e, response)
+                raise Exception(f"Error: {response}")
 
         return np.array(ress), token_count
 
@@ -728,9 +762,10 @@ class SILICONFLOWEmbed(Base):
         response = requests.post(self.base_url, json=payload, headers=self.headers)
         try:
             res = response.json()
-            return np.array(res["data"][0]["embedding"]), self.total_token_count(res)
+            return np.array(res["data"][0]["embedding"]), total_token_count_from_response(res)
         except Exception as _e:
             log_exception(_e, response)
+            raise Exception(f"Error: {response}")
 
 
 class ReplicateEmbed(Base):
@@ -773,20 +808,22 @@ class BaiduYiyanEmbed(Base):
         try:
             return (
                 np.array([r["embedding"] for r in res["data"]]),
-                self.total_token_count(res),
+                total_token_count_from_response(res),
             )
         except Exception as _e:
             log_exception(_e, res)
+            raise Exception(f"Error: {res}")
 
     def encode_queries(self, text):
         res = self.client.do(model=self.model_name, texts=[text]).body
         try:
             return (
                 np.array([r["embedding"] for r in res["data"]]),
-                self.total_token_count(res),
+                total_token_count_from_response(res),
             )
         except Exception as _e:
             log_exception(_e, res)
+            raise Exception(f"Error: {res}")
 
 
 class VoyageEmbed(Base):
@@ -809,6 +846,7 @@ class VoyageEmbed(Base):
                 token_count += res.total_tokens
             except Exception as _e:
                 log_exception(_e, res)
+                raise Exception(f"Error: {res}")
         return np.array(ress), token_count
 
     def encode_queries(self, text):
@@ -817,6 +855,7 @@ class VoyageEmbed(Base):
             return np.array(res.embeddings)[0], res.total_tokens
         except Exception as _e:
             log_exception(_e, res)
+            raise Exception(f"Error: {res}")
 
 
 class HuggingFaceEmbed(Base):

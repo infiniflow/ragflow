@@ -28,7 +28,6 @@ from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
 from api.utils import commands
 
-from flask_mail import Mail
 from quart_auth import Unauthorized
 from common import settings
 from api.utils.api_utils import server_error_response
@@ -42,7 +41,6 @@ __all__ = ["app"]
 
 app = Quart(__name__)
 app = cors(app, allow_origin="*")
-smtp_mail_server = Mail()
 
 # Add this at the beginning of your file to configure Swagger UI
 swagger_config = {
@@ -110,7 +108,7 @@ def _load_user():
     authorization = request.headers.get("Authorization")
     g.user = None
     if not authorization:
-        return
+        return None
 
     try:
         access_token = str(jwt.loads(authorization))
