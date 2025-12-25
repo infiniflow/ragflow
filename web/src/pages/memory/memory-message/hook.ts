@@ -117,12 +117,13 @@ export const useMessageAction = () => {
     data: messageContent,
     isPending: fetchMessageContentLoading,
     mutateAsync: fetchMessageContent,
-  } = useMutation<IMessageContentProps>({
+  } = useMutation<IMessageContentProps, Error, IMessageInfo>({
     mutationKey: [
       MemoryApiAction.FetchMessageContent,
       selectedMessage.message_id,
     ],
-    mutationFn: async () => {
+
+    mutationFn: async (selectedMessage: IMessageInfo) => {
       setShowMessageContentDialog(true);
       const res = await memoryService.getMessageContent({
         memory_id: memoryId,
@@ -140,7 +141,7 @@ export const useMessageAction = () => {
   const handleClickMessageContentDialog = useCallback(
     (message: IMessageInfo) => {
       setSelectedMessage(message);
-      fetchMessageContent();
+      fetchMessageContent(message);
     },
     [fetchMessageContent],
   );
