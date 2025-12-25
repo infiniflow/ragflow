@@ -49,6 +49,12 @@ class ESConnectionBase(DocStoreConnection):
         self.mapping = json.load(open(fp_mapping, "r"))
         self.logger.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
 
+    def _connect(self):
+        if self.es.ping():
+            return True
+        self.es = ES_CONN.refresh_conn()
+        return True
+
     """
     Database operations
     """
