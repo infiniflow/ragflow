@@ -60,7 +60,8 @@ function MessageForm({ node }: INextOperatorForm) {
     control: form.control,
   });
 
-  const showWebhookResponseStatus = useShowWebhookResponseStatus(form);
+  const { showWebhookResponseStatus, isWebhookMode } =
+    useShowWebhookResponseStatus(form);
 
   return (
     <Form {...form}>
@@ -108,7 +109,7 @@ function MessageForm({ node }: INextOperatorForm) {
           </div>
           <FormMessage />
         </FormItem>
-        {!showWebhookResponseStatus && (
+        {!isWebhookMode && (
           <>
             <FormItem>
               <FormLabel tooltip={t('flow.downloadFileTypeTip')}>
