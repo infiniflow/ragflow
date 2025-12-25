@@ -77,7 +77,7 @@ class InfinityConnection(InfinityConnectionBase):
         tokens = field_weight_str.split("^")
         field = tokens[0]
         if field == "content":
-            field = "content@ft_contentm_rag_fine"
+            field = "content@ft_content_rag_fine"
         tokens[0] = field
         return "^".join(tokens)
 
@@ -219,6 +219,9 @@ class InfinityConnection(InfinityConnectionBase):
                     del matchExpr.extra_options["similarity"]
                 self.logger.debug(f"INFINITY search MatchDenseExpr: {json.dumps(matchExpr.__dict__)}")
             elif isinstance(matchExpr, FusionExpr):
+                if matchExpr.method == "weighted_sum":
+                    # The default is "minmax" which gives a zero score for the last doc.
+                    matchExpr.fusion_params["normalize"] = "atan"
                 self.logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
 
         order_by_expr_list = list()
@@ -337,7 +340,7 @@ class InfinityConnection(InfinityConnectionBase):
         res = self.concat_dataframes(df_list, ["id"])
         fields = set(res.columns.tolist())
         res_fields = self.get_fields(res, list(fields))
-        return {self.convert_infinity_field_to_message(k): v for k, v in res_fields[message_id]} if res_fields.get(message_id) else {}
+        return {self.convert_infinity_field_to_message(k): v for k, v in res_fields[message_id].items()} if res_fields.get(message_id) else {}
 
     def insert(self, documents: list[dict], index_name: str, memory_id: str = None) -> list[str]:
         if not documents:
