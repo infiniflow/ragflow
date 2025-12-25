@@ -596,7 +596,7 @@ def fill_db_model_object(model_object, human_model_dict):
 
 
 class UserSession(DataBaseModel):
-    """用户会话表，支持多点登录"""
+    """User session table, supports multiple login sessions"""
     id = CharField(max_length=32, primary_key=True)
     user_id = CharField(max_length=32, null=False, index=True)
     access_token = CharField(max_length=255, null=False, index=True)

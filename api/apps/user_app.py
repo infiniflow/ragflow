@@ -131,7 +131,7 @@ async def login():
         user.update_time = current_timestamp()
         user.update_date = datetime_format(datetime.now())
         
-        # 创建会话记录（支持多点登录）
+        # Create session record (supports multiple login sessions)
         auth_token = None
         try:
             device_name = request.headers.get("User-Agent", "Unknown Device")
@@ -143,19 +143,19 @@ async def login():
             )
             
             if success:
-                # 使用 UserSession 的 token
+                # Use UserSession's token
                 session_token = session_data.get("access_token")
-                # 更新 user.access_token 为相同的值，保持一致性
+                # Update user.access_token to the same value for consistency
                 user.access_token = session_token
                 user.save()
-                # 更新返回数据中的 access_token
+                # Update access_token in response data
                 response_data["access_token"] = session_token
-                auth_token = user.get_id()  # 返回 JWT 编码后的 token
+                auth_token = user.get_id()  # Return JWT encoded token
         except Exception as e:
-            # UserSession 表可能不存在，使用旧方式
+            # UserSession table may not exist, use old method
             logging.debug(f"UserSession creation failed, using old token method: {e}")
         
-        # 如果 UserSession 创建失败，使用旧方式
+        # If UserSession creation failed, use old method
         if not auth_token:
             user.access_token = get_uuid()
             user.save()

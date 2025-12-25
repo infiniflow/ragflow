@@ -23,23 +23,23 @@ from common.time_utils import current_timestamp, datetime_format
 
 
 class UserSessionService(CommonService):
-    """用户会话服务类，支持多点登录"""
+    """User session service class, supports multiple login sessions"""
     model = UserSession
 
     @classmethod
     @DB.connection_context()
     def create_session(cls, user_id, device_name=None, ip_address=None, expires_in=2592000):
         """
-        创建新的用户会话
+        Create a new user session
         
         Args:
-            user_id: 用户ID
-            device_name: 设备名称或浏览器信息
-            ip_address: IP地址
-            expires_in: 会话过期时间（秒），默认30天（2592000秒）
+            user_id: User ID
+            device_name: Device name or browser information
+            ip_address: IP address
+            expires_in: Session expiration time (seconds), default 30 days (2592000 seconds)
             
         Returns:
-            (success, session_dict): 成功标志和会话信息字典
+            (success, session_dict): Success flag and session information dictionary
         """
         try:
             session_id = get_uuid()
@@ -65,17 +65,17 @@ class UserSessionService(CommonService):
             
             return True, session.to_dict()
         except Exception as e:
-            logging.exception(f"创建会话失败: {e}")
+            logging.exception(f"Failed to create session: {e}")
             return False, {"error": str(e)}
 
     @classmethod
     @DB.connection_context()
     def get_session_by_token(cls, access_token):
         """
-        通过access_token获取会话
+        Get session by access_token
         
         Args:
-            access_token: 访问令牌
+            access_token: Access token
             
         Returns:
             session dict or None
@@ -92,30 +92,30 @@ class UserSessionService(CommonService):
             if not session:
                 return None
             
-            # 检查是否过期：基于最后活动时间 + 30天（滚动过期）
+            # Check expiration: based on last activity time + 30 days (rolling expiration)
             if session.last_activity_time:
                 current_time = current_timestamp()
-                # 30天未活动才过期
-                inactivity_timeout = 2592000  # 30天
+                # Expires after 30 days of inactivity
+                inactivity_timeout = 2592000  # 30 days
                 if current_time - session.last_activity_time > inactivity_timeout:
-                    # 会话已过期，标记为非活跃
+                    # Session expired, mark as inactive
                     cls.logout_session(access_token)
                     return None
             
             return session.to_dict()
         except Exception as e:
-            logging.exception(f"获取会话失败: {e}")
+            logging.exception(f"Failed to get session: {e}")
             return None
 
     @classmethod
     @DB.connection_context()
     def get_user_sessions(cls, user_id, active_only=True):
         """
-        获取用户的所有会话
+        Get all sessions for a user
         
         Args:
-            user_id: 用户ID
-            active_only: 是否只返回活跃会话
+            user_id: User ID
+            active_only: Whether to return only active sessions
             
         Returns:
             list of session dicts
@@ -128,34 +128,34 @@ class UserSessionService(CommonService):
                 
             sessions = list(query.order_by(cls.model.last_activity_time.desc()).dicts())
             
-            # 过滤过期的会话：基于最后活动时间
+            # Filter expired sessions: based on last activity time
             current_time = current_timestamp()
-            inactivity_timeout = 2592000  # 30天
+            inactivity_timeout = 2592000  # 30 days
             valid_sessions = []
             for session in sessions:
                 if session.get('last_activity_time'):
                     if current_time - session['last_activity_time'] > inactivity_timeout:
-                        # 标记为非活跃
+                        # Mark as inactive
                         cls.logout_session(session['access_token'])
                         continue
                 valid_sessions.append(session)
             
             return valid_sessions
         except Exception as e:
-            logging.exception(f"获取用户会话列表失败: {e}")
+            logging.exception(f"Failed to get user session list: {e}")
             return []
 
     @classmethod
     @DB.connection_context()
     def logout_session(cls, access_token):
         """
-        登出指定会话
+        Logout a specific session
         
         Args:
-            access_token: 访问令牌
+            access_token: Access token
             
         Returns:
-            bool: 是否成功
+            bool: Success status
         """
         try:
             updated = cls.model.update(
@@ -167,20 +167,20 @@ class UserSessionService(CommonService):
             ).execute()
             return updated > 0
         except Exception as e:
-            logging.exception(f"登出会话失败: {e}")
+            logging.exception(f"Failed to logout session: {e}")
             return False
 
     @classmethod
     @DB.connection_context()
     def logout_all_sessions(cls, user_id):
         """
-        登出用户的所有会话
+        Logout all sessions for a user
         
         Args:
-            user_id: 用户ID
+            user_id: User ID
             
         Returns:
-            int: 登出的会话数量
+            int: Number of sessions logged out
         """
         try:
             updated = cls.model.update(
@@ -193,20 +193,20 @@ class UserSessionService(CommonService):
             ).execute()
             return updated
         except Exception as e:
-            logging.exception(f"登出所有会话失败: {e}")
+            logging.exception(f"Failed to logout all sessions: {e}")
             return 0
 
     @classmethod
     @DB.connection_context()
     def update_last_activity(cls, access_token):
         """
-        更新会话的最后活动时间
+        Update the last activity time of a session
         
         Args:
-            access_token: 访问令牌
+            access_token: Access token
             
         Returns:
-            bool: 是否成功
+            bool: Success status
         """
         try:
             updated = cls.model.update(
@@ -219,24 +219,24 @@ class UserSessionService(CommonService):
             ).execute()
             return updated > 0
         except Exception as e:
-            logging.exception(f"更新会话活动时间失败: {e}")
+            logging.exception(f"Failed to update session activity time: {e}")
             return False
 
     @classmethod
     @DB.connection_context()
     def remove_expired_sessions(cls, user_id=None):
         """
-        清理过期的会话（基于最后活动时间）
+        Clean up expired sessions (based on last activity time)
         
         Args:
-            user_id: 用户ID（可选），如果提供则只清理该用户的过期会话
+            user_id: User ID (optional), if provided only clean up expired sessions for that user
             
         Returns:
-            int: 清理的会话数量
+            int: Number of sessions cleaned up
         """
         try:
             current_time = current_timestamp()
-            inactivity_timeout = 2592000  # 30天
+            inactivity_timeout = 2592000  # 30 days
             expiry_threshold = current_time - inactivity_timeout
             
             query = cls.model.update(
@@ -254,5 +254,5 @@ class UserSessionService(CommonService):
             removed = query.execute()
             return removed
         except Exception as e:
-            logging.exception(f"清理过期会话失败: {e}")
+            logging.exception(f"Failed to clean up expired sessions: {e}")
             return 0

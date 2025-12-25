@@ -123,11 +123,11 @@ def _load_user():
             logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
             return None
 
-        # 先尝试从 UserSession 获取用户（支持多点登录）
+        # Try to get user from UserSession first (supports multiple login sessions)
         try:
             session_obj = UserSessionService.get_session_by_token(access_token)
             if session_obj:
-                # 更新最后活动时间
+                # Update last activity time
                 UserSessionService.update_last_activity(access_token)
                 user = UserService.query(
                     id=session_obj.get("user_id"), status=StatusEnum.VALID.value
@@ -136,10 +136,10 @@ def _load_user():
                     g.user = user[0]
                     return user[0]
         except Exception as session_err:
-            # UserSession 表可能还不存在，或者查询失败，继续使用旧方式
-            pass  # 静默失败，不输出日志避免干扰
+            # UserSession table may not exist yet, or query failed, continue with old method
+            pass  # Silent failure to avoid log clutter
         
-        # 回退到老的方式（直接检查 user.access_token）
+        # Fallback to old method (check user.access_token directly)
         user = UserService.query(
             access_token=access_token, status=StatusEnum.VALID.value
         )
