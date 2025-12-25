@@ -13,7 +13,7 @@ on:
       - '*.mdx'
   # The only difference between pull_request and pull_request_target is the context in which the workflow runs:
   # — pull_request_target workflows use the workflow files from the default branch, and secrets are available.
-  # — pull_request workflows use the workflow files from the pull request branch, and secrets are unavailable.
+  # — pull_request workflows use the workflow files from the pull request branch, and secrets are unavailable. 
   pull_request:
     types: [ synchronize, ready_for_review ]
     paths-ignore:
