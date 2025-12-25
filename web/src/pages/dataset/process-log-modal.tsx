@@ -47,7 +47,7 @@ const InfoItem: React.FC<{
       <span className="text-text-secondary text-sm">{label}</span>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="text-text-primary mt-1 truncate max-w-[200px]">
+          <span className="text-text-primary mt-1 truncate w-full">
             {value}
           </span>
         </TooltipTrigger>
