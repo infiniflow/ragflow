@@ -225,13 +225,14 @@ class InfinityConnection(InfinityConnectionBase):
                 self.logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
 
         order_by_expr_list = list()
-        if order_by.fields:
-            for order_field in order_by.fields:
-                order_field_name = self.convert_condition_and_order_field(order_field[0])
-                if order_field[1] == 0:
-                    order_by_expr_list.append((order_field_name, SortType.Asc))
-                else:
-                    order_by_expr_list.append((order_field_name, SortType.Desc))
+        # todo use order_by after infinity fixed bug
+        # if order_by.fields:
+        #     for order_field in order_by.fields:
+        #         order_field_name = self.convert_condition_and_order_field(order_field[0])
+        #         if order_field[1] == 0:
+        #             order_by_expr_list.append((order_field_name, SortType.Asc))
+        #         else:
+        #             order_by_expr_list.append((order_field_name, SortType.Desc))
 
         total_hits_count = 0
         # Scatter search tables and gather the results
