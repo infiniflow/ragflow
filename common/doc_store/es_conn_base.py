@@ -51,6 +51,8 @@ class ESConnectionBase(DocStoreConnection):
         self.logger.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
 
     def _connect(self):
+        from common.doc_store.es_conn_pool import ES_CONN
+
         if self.es.ping():
             return True
         self.es = ES_CONN.refresh_conn()
@@ -151,7 +153,7 @@ class ESConnectionBase(DocStoreConnection):
             except ConnectionTimeout:
                 self.logger.exception("ES request timeout")
                 time.sleep(3)
-                self.es = ES_CONN.refresh_conn()
+                self._connect()
                 continue
             except Exception as e:
                 self.logger.exception(e)
@@ -296,7 +298,7 @@ class ESConnectionBase(DocStoreConnection):
             except ConnectionTimeout:
                 self.logger.exception("ES request timeout")
                 time.sleep(3)
-                self.es = ES_CONN.refresh_conn()
+                self._connect()
                 continue
             except Exception as e:
                 self.logger.exception(f"ESConnection.sql got exception. SQL:\n{sql}")
