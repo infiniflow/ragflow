@@ -257,6 +257,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     isShowDescription,
     isDeleteSingleValue,
     handleEditValueRow,
+    metadataType,
   ]);
 
   const table = useReactTable({
