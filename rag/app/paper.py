@@ -58,6 +58,7 @@ class Pdf(PdfParser):
         start = timer()
         self._text_merge()
         tbls = self._extract_table_figure(True, zoomin, True, True)
+        self._naive_vertical_merge()
         column_width = np.median([b["x1"] - b["x0"] for b in self.boxes])
         self._concat_downward()
         self._filter_forpages()
