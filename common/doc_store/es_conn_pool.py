@@ -24,7 +24,7 @@ ATTEMPT_TIME = 2
 
 
 @singleton
-class ElasticSearchConn:
+class ElasticSearchConnectionPool:
 
     def __init__(self):
         if hasattr(settings, "ES"):
@@ -81,4 +81,4 @@ class ElasticSearchConn:
             self.es_conn.close()
 
 
-ES_CONN = ElasticSearchConn()
+ES_CONN = ElasticSearchConnectionPool()
