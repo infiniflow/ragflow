@@ -33,5 +33,6 @@ export interface IFetchKnowledgeListRequestParams {
 export interface IFetchDocumentListRequestBody {
   suffix?: string[];
   run_status?: string[];
+  return_empty_metadata?: boolean;
   metadata?: Record<string, string[]>;
 }

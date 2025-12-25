@@ -12,7 +12,7 @@ import {
   useState,
 } from 'react';
 import { FieldPath, useForm } from 'react-hook-form';
-import { ZodArray, ZodString, z } from 'zod';
+import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
 
@@ -71,34 +71,37 @@ function CheckboxFormMultiple({
     }, {});
   }, [resolvedFilters]);
 
+  // const FormSchema = useMemo(() => {
+  //   if (resolvedFilters.length === 0) {
+  //     return z.object({});
+  //   }
+
+  //   return z.object(
+  //     resolvedFilters.reduce<
+  //       Record<
+  //         string,
+  //         ZodArray<ZodString, 'many'> | z.ZodObject<any> | z.ZodOptional<any>
+  //       >
+  //     >((pre, cur) => {
+  //       const hasNested = cur.list?.some(
+  //         (item) => item.list && item.list.length > 0,
+  //       );
+
+  //       if (hasNested) {
+  //         pre[cur.field] = z
+  //           .record(z.string(), z.array(z.string().optional()).optional())
+  //           .optional();
+  //       } else {
+  //         pre[cur.field] = z.array(z.string().optional()).optional();
+  //       }
+
+  //       return pre;
+  //     }, {}),
+  //   );
+  // }, [resolvedFilters]);
   const FormSchema = useMemo(() => {
-    if (resolvedFilters.length === 0) {
-      return z.object({});
-    }
-
-    return z.object(
-      resolvedFilters.reduce<
-        Record<
-          string,
-          ZodArray<ZodString, 'many'> | z.ZodObject<any> | z.ZodOptional<any>
-        >
-      >((pre, cur) => {
-        const hasNested = cur.list?.some(
-          (item) => item.list && item.list.length > 0,
-        );
-
-        if (hasNested) {
-          pre[cur.field] = z
-            .record(z.string(), z.array(z.string().optional()).optional())
-            .optional();
-        } else {
-          pre[cur.field] = z.array(z.string().optional()).optional();
-        }
-
-        return pre;
-      }, {}),
-    );
-  }, [resolvedFilters]);
+    return z.object({});
+  }, []);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: resolvedFilters.length > 0 ? zodResolver(FormSchema) : undefined,

@@ -42,8 +42,8 @@ export const MetadataDeleteMap = (
     },
     [MetadataType.Setting]: {
       title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
-      warnFieldText: t('knowledgeDetails.metadata.deleteManageFieldAllWarn'),
-      warnValueText: t('knowledgeDetails.metadata.deleteManageValueAllWarn'),
+      warnFieldText: t('knowledgeDetails.metadata.deleteSettingFieldWarn'),
+      warnValueText: t('knowledgeDetails.metadata.deleteSettingValueWarn'),
     },
     [MetadataType.UpdateSingle]: {
       title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
@@ -52,8 +52,8 @@ export const MetadataDeleteMap = (
     },
     [MetadataType.SingleFileSetting]: {
       title: t('common.delete') + ' ' + t('knowledgeDetails.metadata.metadata'),
-      warnFieldText: t('knowledgeDetails.metadata.deleteManageFieldSingleWarn'),
-      warnValueText: t('knowledgeDetails.metadata.deleteManageValueSingleWarn'),
+      warnFieldText: t('knowledgeDetails.metadata.deleteSettingFieldWarn'),
+      warnValueText: t('knowledgeDetails.metadata.deleteSettingValueWarn'),
     },
   };
 };
