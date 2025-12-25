@@ -116,6 +116,16 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
                                     ensure_ascii=False) + "\n\n"
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
             return
+        else:
+            answer = {
+                "answer": conv["message"][0]["content"],
+                "reference": {},
+                "audio_binary": None,
+                "id": None,
+                "session_id": session_id
+            }
+            yield answer
+            return
 
     conv = ConversationService.query(id=session_id, dialog_id=chat_id)
     if not conv:
