@@ -18,27 +18,22 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import {
+  currentReg,
   preprocessLaTeX,
   replaceTextByOldReg,
   replaceThinkToSection,
-  showImage,
 } from '@/utils/chat';
 import classNames from 'classnames';
 import { omit } from 'lodash';
 import { pipe } from 'lodash/fp';
-import { CircleAlert } from 'lucide-react';
+import reactStringReplace from 'react-string-replace';
 import { Button } from '../ui/button';
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from '../ui/hover-card';
-import { ImageCarousel } from './image-carousel';
 import styles from './index.less';
-import {
-  groupConsecutiveReferences,
-  shouldShowCarousel,
-} from './reference-utils';
 
 const getChunkIndex = (match: string) => Number(match);
 
@@ -191,7 +186,7 @@ const MarkdownContent = ({
                 )}
                 <Button
                   variant="link"
-                  className={'text-wrap p-0'}
+                  className={'text-wrap p-0 flex-1 h-auto'}
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
@@ -212,88 +207,26 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      const groups = groupConsecutiveReferences(text);
-      const elements = [];
-      let lastIndex = 0;
+      let replacedText = reactStringReplace(text, currentReg, (match, i) => {
+        const chunkIndex = getChunkIndex(match);
 
-      groups.forEach((group, groupIndex) => {
-        if (group[0].start > lastIndex) {
-          elements.push(text.substring(lastIndex, group[0].start));
-        }
-
-        if (shouldShowCarousel(group, reference)) {
-          elements.push(
-            <ImageCarousel
-              key={`carousel-${groupIndex}`}
-              group={group}
-              reference={reference}
-              fileThumbnails={fileThumbnails}
-              onImageClick={handleDocumentButtonClick}
-            />,
-          );
-        } else {
-          group.forEach((ref) => {
-            const chunkIndex = getChunkIndex(ref.id);
-            const {
-              documentUrl,
-              fileExtension,
-              imageId,
-              chunkItem,
-              documentId,
-            } = getReferenceInfo(chunkIndex);
-            const docType = chunkItem?.doc_type;
-
-            if (showImage(docType)) {
-              elements.push(
-                <section key={ref.id}>
-                  <Image
-                    id={imageId}
-                    className={styles.referenceInnerChunkImage}
-                    onClick={
-                      documentId
-                        ? handleDocumentButtonClick(
-                            documentId,
-                            chunkItem,
-                            fileExtension === 'pdf',
-                            documentUrl,
-                          )
-                        : () => {}
-                    }
-                  />
-                  <span className="text-accent-primary"> {imageId}</span>
-                </section>,
-              );
-            } else {
-              elements.push(
-                <HoverCard key={ref.id}>
-                  <HoverCardTrigger>
-                    <CircleAlert className="size-4 inline-block" />
-                  </HoverCardTrigger>
-                  <HoverCardContent className="max-w-3xl">
-                    {getPopoverContent(chunkIndex)}
-                  </HoverCardContent>
-                </HoverCard>,
-              );
-            }
-          });
-        }
-
-        lastIndex = group[group.length - 1].end;
+        return (
+          <HoverCard key={i}>
+            <HoverCardTrigger>
+              <span className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1">
+                Fig. {chunkIndex + 1}
+              </span>
+            </HoverCardTrigger>
+            <HoverCardContent className="max-w-3xl">
+              {getPopoverContent(chunkIndex)}
+            </HoverCardContent>
+          </HoverCard>
+        );
       });
 
-      if (lastIndex < text.length) {
-        elements.push(text.substring(lastIndex));
-      }
-
-      return elements;
+      return replacedText;
     },
-    [
-      getPopoverContent,
-      getReferenceInfo,
-      handleDocumentButtonClick,
-      reference,
-      fileThumbnails,
-    ],
+    [getPopoverContent],
   );
 
   return (
