@@ -246,7 +246,7 @@ export default function Agent() {
           </Button>
           <Button variant={'secondary'} onClick={showVersionDialog}>
             <History />
-            {t('flow.historyversion')}
+            {t('flow.historyVersion')}
           </Button>
           {isPipeline || (
             <Button

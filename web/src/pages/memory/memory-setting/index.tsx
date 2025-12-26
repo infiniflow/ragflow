@@ -57,7 +57,7 @@ export default function MemoryMessage() {
       temperature: data?.temperature,
       system_prompt: data?.system_prompt || '',
       user_prompt: data?.user_prompt || '',
-      forgetting_policy: data?.forgetting_policy || 'fifo',
+      forgetting_policy: data?.forgetting_policy || 'FIFO',
       storage_type: data?.storage_type || 'table',
       permissions: data?.permissions || 'me',
     });

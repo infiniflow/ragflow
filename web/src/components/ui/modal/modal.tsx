@@ -172,7 +172,7 @@ const Modal: ModalType = ({
     <DialogPrimitive.Root open={open} onOpenChange={handleChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay
-          className="fixed inset-0 z-50 bg-bg-card backdrop-blur-[1px] flex items-center justify-center p-4"
+          className="fixed inset-0 z-[1000] bg-bg-card backdrop-blur-[1px] flex items-center justify-center p-4"
           onClick={() => maskClosable && onOpenChange?.(false)}
           style={{ zIndex: zIndex }}
         >

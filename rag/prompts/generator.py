@@ -136,6 +136,19 @@ def kb_prompt(kbinfos, max_tokens, hash_id=False):
     return knowledges
 
 
+def memory_prompt(message_list, max_tokens):
+    used_token_count = 0
+    content_list = []
+    for message in message_list:
+        current_content_tokens = num_tokens_from_string(message["content"])
+        if used_token_count + current_content_tokens > max_tokens * 0.97:
+            logging.warning(f"Not all the retrieval into prompt: {len(content_list)}/{len(message_list)}")
+            break
+        content_list.append(message["content"])
+        used_token_count += current_content_tokens
+    return content_list
+
+
 CITATION_PROMPT_TEMPLATE = load_prompt("citation_prompt")
 CITATION_PLUS_TEMPLATE = load_prompt("citation_plus")
 CONTENT_TAGGING_PROMPT_TEMPLATE = load_prompt("content_tagging_prompt")
@@ -827,7 +840,7 @@ async def relevant_chunks_with_toc(query: str, toc:list[dict], chat_mdl, topn: i
 META_DATA = load_prompt("meta_data")
 async def gen_metadata(chat_mdl, schema:dict, content:str):
     template = PROMPT_JINJA_ENV.from_string(META_DATA)
-    for k, desc in schema.items():
+    for k, desc in schema["properties"].items():
         if "enum" in desc and not desc.get("enum"):
             del desc["enum"]
         if desc.get("enum"):

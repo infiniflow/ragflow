@@ -394,7 +394,7 @@ async def webhook(agent_id: str):
     if not isinstance(cvs.dsl, str):
         dsl = json.dumps(cvs.dsl, ensure_ascii=False)
     try:
-        canvas = Canvas(dsl, cvs.user_id, agent_id)
+        canvas = Canvas(dsl, cvs.user_id, agent_id, canvas_id=agent_id)
     except Exception as e:
         resp=get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e))
         resp.status_code = RetCode.BAD_REQUEST

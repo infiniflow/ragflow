@@ -15,7 +15,6 @@
 #
 from typing import List
 
-from api.apps import current_user
 from api.db.db_models import DB, Memory, User
 from api.db.services import duplicate_name
 from api.db.services.common_service import CommonService
@@ -23,6 +22,7 @@ from api.utils.memory_utils import calculate_memory_type
 from api.constants import MEMORY_NAME_LIMIT
 from common.misc_utils import get_uuid
 from common.time_utils import get_format_time, current_timestamp
+from memory.utils.prompt_util import PromptAssembler
 
 
 class MemoryService(CommonService):
@@ -33,6 +33,17 @@ class MemoryService(CommonService):
     @DB.connection_context()
     def get_by_memory_id(cls, memory_id: str):
         return cls.model.select().where(cls.model.id == memory_id).first()
+
+    @classmethod
+    @DB.connection_context()
+    def get_by_tenant_id(cls, tenant_id: str):
+        return cls.model.select().where(cls.model.tenant_id == tenant_id)
+
+    @classmethod
+    @DB.connection_context()
+    def get_all_memory(cls):
+        memory_list = cls.model.select()
+        return list(memory_list)
 
     @classmethod
     @DB.connection_context()
@@ -53,7 +64,9 @@ class MemoryService(CommonService):
             cls.model.forgetting_policy,
             cls.model.temperature,
             cls.model.system_prompt,
-            cls.model.user_prompt
+            cls.model.user_prompt,
+            cls.model.create_date,
+            cls.model.create_time
         ]
         memory = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id)).where(
             cls.model.id == memory_id
@@ -72,7 +85,9 @@ class MemoryService(CommonService):
             cls.model.memory_type,
             cls.model.storage_type,
             cls.model.permissions,
-            cls.model.description
+            cls.model.description,
+            cls.model.create_time,
+            cls.model.create_date
         ]
         memories = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id))
         if filter_dict.get("tenant_id"):
@@ -102,6 +117,8 @@ class MemoryService(CommonService):
         if len(memory_name) > MEMORY_NAME_LIMIT:
             return False, f"Memory name {memory_name} exceeds limit of {MEMORY_NAME_LIMIT}."
 
+        timestamp = current_timestamp()
+        format_time = get_format_time()
         # build create dict
         memory_info = {
             "id": get_uuid(),
@@ -110,10 +127,11 @@ class MemoryService(CommonService):
             "tenant_id": tenant_id,
             "embd_id": embd_id,
             "llm_id": llm_id,
-            "create_time": current_timestamp(),
-            "create_date": get_format_time(),
-            "update_time": current_timestamp(),
-            "update_date": get_format_time(),
+            "system_prompt": PromptAssembler.assemble_system_prompt({"memory_type": memory_type}),
+            "create_time": timestamp,
+            "create_date": format_time,
+            "update_time": timestamp,
+            "update_date": format_time,
         }
         obj = cls.model(**memory_info).save(force_insert=True)
 
@@ -126,7 +144,7 @@ class MemoryService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def update_memory(cls, memory_id: str, update_dict: dict):
+    def update_memory(cls, tenant_id: str, memory_id: str, update_dict: dict):
         if not update_dict:
             return 0
         if "temperature" in update_dict and isinstance(update_dict["temperature"], str):
@@ -135,7 +153,7 @@ class MemoryService(CommonService):
             update_dict["name"] = duplicate_name(
                 cls.query,
                 name=update_dict["name"],
-                tenant_id=current_user.id
+                tenant_id=tenant_id
             )
         update_dict.update({
             "update_time": current_timestamp(),
