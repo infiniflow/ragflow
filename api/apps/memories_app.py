@@ -21,6 +21,7 @@ from api.db import TenantPermission
 from api.db.services.memory_service import MemoryService
 from api.db.services.user_service import UserTenantService
 from api.db.services.canvas_service import UserCanvasService
+from api.db.joint_services.memory_message_service import get_memory_size_cache
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result, \
     not_allowed_parameters
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
@@ -68,7 +69,7 @@ async def create_memory():
 
 @manager.route("/<memory_id>", methods=["PUT"])  # noqa: F821
 @login_required
-@not_allowed_parameters("id", "tenant_id", "memory_type", "storage_type", "embd_id")
+@not_allowed_parameters("id", "tenant_id", "memory_type", "storage_type")
 async def update_memory(memory_id):
     req = await get_request_json()
     update_dict = {}
@@ -88,6 +89,14 @@ async def update_memory(memory_id):
         update_dict["permissions"] = req["permissions"]
     if req.get("llm_id"):
         update_dict["llm_id"] = req["llm_id"]
+    if req.get("embd_id"):
+        update_dict["embd_id"] = req["embd_id"]
+    if req.get("memory_type"):
+        memory_type = set(req["memory_type"])
+        invalid_type = memory_type - {e.name.lower() for e in MemoryType}
+        if invalid_type:
+            return get_error_argument_result(f"Memory type '{invalid_type}' is not supported.")
+        update_dict["memory_type"] = list(memory_type)
     # check memory_size valid
     if req.get("memory_size"):
         if not 0 < int(req["memory_size"]) <= MEMORY_SIZE_LIMIT:
@@ -123,6 +132,11 @@ async def update_memory(memory_id):
 
     if not to_update:
         return get_json_result(message=True, data=memory_dict)
+    # check memory empty when update embd_id, memory_type
+    memory_size = get_memory_size_cache(memory_id, current_memory.tenant_id)
+    not_allowed_update = [f for f in ["embd_id", "memory_type"] if f in to_update.keys() and memory_size > 0]
+    if not_allowed_update:
+        return get_error_argument_result(f"Can't update {not_allowed_update} when memory isn't empty.")
 
     try:
         MemoryService.update_memory(current_memory.tenant_id, memory_id, to_update)
