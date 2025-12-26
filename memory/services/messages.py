@@ -198,7 +198,7 @@ class MessageService:
         message_list = settings.msgStoreConn.get_fields(res, select_fields)
         current_size = 0
         ids_to_remove = []
-        for message in message_list:
+        for message in message_list.values():
             if current_size < size_to_delete:
                 current_size += cls.calculate_message_size(message)
                 ids_to_remove.append(message["message_id"])
@@ -210,7 +210,7 @@ class MessageService:
         order_by = OrderByExpr()
         order_by.asc("valid_at")
         res = settings.msgStoreConn.search(
-            select_fields=["memory_id", "content", "content_embed"],
+            select_fields=select_fields,
             highlight_fields=[],
             condition={},
             match_expressions=[],
@@ -222,7 +222,7 @@ class MessageService:
         for doc in docs.values():
             if current_size < size_to_delete:
                 current_size += cls.calculate_message_size(doc)
-                ids_to_remove.append(doc["memory_id"])
+                ids_to_remove.append(doc["message_id"])
             else:
                 return ids_to_remove, current_size
         return ids_to_remove, current_size
