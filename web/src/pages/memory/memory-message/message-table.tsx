@@ -251,6 +251,7 @@ export function MemoryTable({
           title={t('memory.messages.forgetMessage')}
           open={showDeleteDialog}
           onOpenChange={setShowDeleteDialog}
+          okButtonText={t('common.confirm')}
           content={{
             title: t('memory.messages.forgetMessageTip'),
             node: (

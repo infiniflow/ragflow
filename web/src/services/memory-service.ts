@@ -34,7 +34,7 @@ const methods = {
 } as const;
 const memoryService = registerNextServer<keyof typeof methods>(methods);
 export const updateMemoryById = (id: string, data: any) => {
-  return request.put(updateMemorySetting(id), { data });
+  return request.put(updateMemorySetting(id), { ...data });
 };
 export const getMemoryDetailById = (id: string, data: any) => {
   return request.get(getMemoryDetail(id), { params: data });

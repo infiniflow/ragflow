@@ -99,11 +99,15 @@ export default {
       llmTooltip: '分析对话内容，提取关键信息，并生成结构化的记忆摘要。',
       embeddingModelTooltip:
         '将文本转换为数值向量，用于语义相似度搜索和记忆检索。',
-      embeddingModelError: '记忆类型为必填项，且"原始"类型不可删除。',
+      embeddingModelError: '记忆类型为必填项，且"row"类型不可删除。',
       memoryTypeTooltip: `原始: 用户与代理之间的原始对话内容（默认必需）。
 语义记忆: 关于用户和世界的通用知识和事实。
 情景记忆: 带时间戳的特定事件和经历记录。
 程序记忆: 学习的技能、习惯和自动化程序。`,
+      raw: '原始',
+      semantic: '语义',
+      episodic: '情景',
+      procedural: '程序',
       editName: '编辑名称',
       memory: '记忆',
       createMemory: '创建记忆',

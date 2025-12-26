@@ -10,6 +10,12 @@ export enum MemoryType {
   Episodic = 'episodic',
   Procedural = 'procedural',
 }
+export const MemoryOptions = (t: TFunction) => [
+  { label: t('memories.raw'), value: MemoryType.Raw },
+  { label: t('memories.semantic'), value: MemoryType.Semantic },
+  { label: t('memories.episodic'), value: MemoryType.Episodic },
+  { label: t('memories.procedural'), value: MemoryType.Procedural },
+];
 export const createMemoryFields = (t: TFunction) =>
   [
     {
@@ -24,12 +30,7 @@ export const createMemoryFields = (t: TFunction) =>
       type: FormFieldType.MultiSelect,
       placeholder: t('memories.descriptionPlaceholder'),
       tooltip: t('memories.memoryTypeTooltip'),
-      options: [
-        { label: 'Raw', value: MemoryType.Raw },
-        { label: 'Semantic', value: MemoryType.Semantic },
-        { label: 'Episodic', value: MemoryType.Episodic },
-        { label: 'Procedural', value: MemoryType.Procedural },
-      ],
+      options: MemoryOptions(t),
       required: true,
       customValidate: (value) => {
         if (!value.includes(MemoryType.Raw) || !value.length) {
