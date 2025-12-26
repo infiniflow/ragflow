@@ -146,7 +146,7 @@ export const AdvancedSettingsForm = () => {
             field={{
               name: 'user_prompt',
               label: t('memory.config.userPrompt'),
-              type: FormFieldType.Text,
+              type: FormFieldType.Textarea,
               horizontal: true,
               placeholder: t('memory.config.userPromptPlaceholder'),
               required: false,

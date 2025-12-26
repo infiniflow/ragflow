@@ -1,6 +1,6 @@
 import { toast } from 'sonner';
 
-const duration = { duration: 1500 };
+const duration = { duration: 2500 };
 
 const message = {
   success: (msg: string) => {

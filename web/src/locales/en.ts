@@ -99,7 +99,7 @@ export default {
       search: 'Search',
       welcome: 'Welcome to',
       dataset: 'Dataset',
-      Memories: 'Memory',
+      memories: 'Memory',
     },
     memories: {
       llmTooltip:
@@ -2178,7 +2178,7 @@ Important structured information may include: names, dates, locations, events, k
         agentStatus: 'Agent status:',
       },
       saveToMemory: 'Save to memory',
-      memory: 'Memory',
+      retrievalFrom: 'Retrieval from',
     },
     llmTools: {
       bad_calculator: {
