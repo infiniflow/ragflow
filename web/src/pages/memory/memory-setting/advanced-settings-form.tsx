@@ -80,8 +80,8 @@ export const AdvancedSettingsForm = () => {
               horizontal: true,
               placeholder: t('memory.config.storageTypePlaceholder'),
               options: [
-                { label: 'table', value: 'table' },
-                // { label: 'graph', value: 'graph' },
+                { label: 'Table', value: 'table' },
+                // { label: 'Graph', value: 'graph' },
               ],
               required: false,
             }}
@@ -95,7 +95,7 @@ export const AdvancedSettingsForm = () => {
               // placeholder: t('memory.config.storageTypePlaceholder'),
               options: [
                 // { label: 'LRU', value: 'LRU' },
-                { label: 'FIFO', value: 'FIFO' },
+                { label: 'FIFO', value: 'fifo' },
               ],
               required: false,
             }}
