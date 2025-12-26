@@ -127,6 +127,11 @@ class ESConnection(ESConnectionBase):
             index_names = index_names.split(",")
         assert isinstance(index_names, list) and len(index_names) > 0
         assert "_id" not in condition
+
+        exist_index_list = [idx for idx in index_names if self.index_exist(idx)]
+        if not exist_index_list:
+            return None
+
         bool_query = Q("bool", must=[], must_not=[])
         if hide_forgotten:
             # filter not forget
@@ -214,7 +219,7 @@ class ESConnection(ESConnectionBase):
         for i in range(ATTEMPT_TIME):
             try:
                 #print(json.dumps(q, ensure_ascii=False))
-                res = self.es.search(index=index_names,
+                res = self.es.search(index=exist_index_list,
                                      body=q,
                                      timeout="600s",
                                      # search_type="dfs_query_then_fetch",
