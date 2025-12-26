@@ -866,7 +866,6 @@ async def dispatch_tasks():
         if task["poll_range_end"]:
             task["poll_range_end"] = task["poll_range_end"].astimezone(timezone.utc)
         func = func_factory[task["source"]](task["config"])
-        print(f"Dispatching task: {task}")
         tasks.append(asyncio.create_task(func(task)))
 
     try:
