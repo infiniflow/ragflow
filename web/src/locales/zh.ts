@@ -93,7 +93,7 @@ export default {
       search: '搜索',
       welcome: '欢迎来到',
       dataset: '知识库',
-      Memories: '记忆',
+      memories: '记忆',
     },
     memories: {
       llmTooltip: '分析对话内容，提取关键信息，并生成结构化的记忆摘要。',
@@ -1970,7 +1970,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         agentStatus: '智能体状态：',
       },
       saveToMemory: '保存到Memory',
-      memory: 'Memory',
+      retrievalFrom: '检索来源',
     },
     footer: {
       profile: 'All rights reserved @ React',

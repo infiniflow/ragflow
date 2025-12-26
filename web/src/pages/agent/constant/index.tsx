@@ -79,6 +79,11 @@ export const DataOperationsOperatorOptions = [
 
 export const SwitchElseTo = 'end_cpn_ids';
 
+export enum RetrievalFrom {
+  Dataset = 'dataset',
+  Memory = 'memory',
+}
+
 export const initialRetrievalValues = {
   query: AgentGlobalsSysQueryWithBrace,
   top_n: 8,
@@ -91,6 +96,7 @@ export const initialRetrievalValues = {
   use_kg: false,
   toc_enhance: false,
   cross_languages: [],
+  retrieval_from: RetrievalFrom.Dataset,
   outputs: {
     formalized_content: {
       type: 'string',
