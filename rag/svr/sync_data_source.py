@@ -38,7 +38,7 @@ from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.config_utils import show_configs
-from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector, DropboxConnector, WebDAVConnector, AirtableConnector
+from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector, DropboxConnector, WebDAVConnector, AirtableConnector, AsanaConnector
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
@@ -784,6 +784,49 @@ class Airtable(SyncBase):
 
         return document_generator
 
+class Asana(SyncBase):
+    SOURCE_NAME: str = FileSource.ASANA
+
+    async def _generate(self, task: dict):
+        self.connector = AsanaConnector(
+            self.conf.get("asana_workspace_id"),
+            self.conf.get("asana_project_ids"),
+            self.conf.get("asana_team_id"),
+        )
+        credentials = self.conf.get("credentials", {})
+        if "asana_api_token_secret" not in credentials:
+            raise ValueError("Missing asana_api_token_secret in credentials")
+
+        self.connector.load_credentials(
+            {"asana_api_token_secret": credentials["asana_api_token_secret"]}
+        )
+
+        if task.get("reindex") == "1" or not task.get("poll_range_start"):
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task.get("poll_range_start")
+            if poll_start is None:
+                document_generator = self.connector.load_from_state()
+                begin_info = "totally"
+            else:
+                document_generator = self.connector.poll_source(
+                    poll_start.timestamp(),
+                    datetime.now(timezone.utc).timestamp(),
+                )
+                begin_info = f"from {poll_start}"
+
+        logging.info(
+            "Connect to Asana: workspace_id(%s), project_ids(%s), team_id(%s) %s",
+            self.conf.get("asana_workspace_id"),
+            self.conf.get("asana_project_ids"),
+            self.conf.get("asana_team_id"),
+            begin_info,
+        )
+
+        return document_generator
+
+
 func_factory = {
     FileSource.S3: S3,
     FileSource.R2: R2,
@@ -803,6 +846,7 @@ func_factory = {
     FileSource.WEBDAV: WebDAV,
     FileSource.BOX: BOX,
     FileSource.AIRTABLE: Airtable,
+    FileSource.ASANA: Asana
 }
 
 
@@ -822,6 +866,7 @@ async def dispatch_tasks():
         if task["poll_range_end"]:
             task["poll_range_end"] = task["poll_range_end"].astimezone(timezone.utc)
         func = func_factory[task["source"]](task["config"])
+        print(f"Dispatching task: {task}")
         tasks.append(asyncio.create_task(func(task)))
 
     try:

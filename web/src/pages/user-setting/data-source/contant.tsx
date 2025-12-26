@@ -26,6 +26,7 @@ export enum DataSourceKey {
   OCI_STORAGE = 'oci_storage',
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   AIRTABLE = 'airtable',
+  ASANA = 'asana',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -109,6 +110,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Airtable',
       description: t(`setting.${DataSourceKey.AIRTABLE}Description`),
       icon: <SvgIcon name={'data-source/airtable'} width={38} />,
+    },
+    [DataSourceKey.ASANA]: {
+      name: 'Asana',
+      description: t(`setting.${DataSourceKey.ASANA}Description`),
+      icon: <SvgIcon name={'data-source/asana'} width={38} />,
     },
   };
 };
@@ -698,6 +704,32 @@ export const DataSourceFormFields = {
       required: true,
     },
   ],
+  [DataSourceKey.ASANA]: [
+    {
+      label: 'API Token',
+      name: 'config.credentials.asana_api_token_secret',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Workspace ID',
+      name: 'config.asana_workspace_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Project IDs',
+      name: 'config.asana_project_ids',
+      type: FormFieldType.Text,
+      required: false,
+    },
+    {
+      label: 'Team ID',
+      name: 'config.asana_team_id',
+      type: FormFieldType.Text,
+      required: false,
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -893,6 +925,19 @@ export const DataSourceFormDefaultValues = {
       table_name_or_id: '',
       credentials: {
         airtable_access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.ASANA]: {
+    name: '',
+    source: DataSourceKey.ASANA,
+    config: {
+      name: '',
+      asana_workspace_id: '',
+      asana_project_ids: '',
+      asana_team_id: '',
+      credentials: {
+        asana_api_token_secret: '',
       },
     },
   },
