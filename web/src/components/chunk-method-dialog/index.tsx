@@ -220,12 +220,15 @@ export function ChunkMethodDialog({
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
     console.log('🚀 ~ onSubmit ~ data:', data);
-    const { image_table_context_window, ...parserConfig } = data.parser_config;
-    const imageTableContextWindow = Number(image_table_context_window || 0);
+    const parserConfig = data.parser_config;
+    const imageTableContextWindow = Number(
+      parserConfig?.image_table_context_window || 0,
+    );
     const nextData = {
       ...data,
       parser_config: {
         ...parserConfig,
+        image_table_context_window: imageTableContextWindow,
         image_context_size: imageTableContextWindow,
         table_context_size: imageTableContextWindow,
         // Unset children delimiter if this option is not enabled
