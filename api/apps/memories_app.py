@@ -68,7 +68,7 @@ async def create_memory():
 
 @manager.route("/<memory_id>", methods=["PUT"])  # noqa: F821
 @login_required
-@not_allowed_parameters("id", "tenant_id", "memory_type", "storage_type", "embd_id")
+@not_allowed_parameters("id", "tenant_id", "storage_type", "embd_id")
 async def update_memory(memory_id):
     req = await get_request_json()
     update_dict = {}
