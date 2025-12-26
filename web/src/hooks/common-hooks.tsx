@@ -102,6 +102,7 @@ export const useShowDeleteConfirm = () => {
           style: {
             width: '450px',
           },
+          zIndex: 1000,
           okButtonClassName:
             'bg-state-error text-white hover:bg-state-error hover:text-white',
           onOk: async () => {
