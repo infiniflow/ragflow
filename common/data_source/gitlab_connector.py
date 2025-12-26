@@ -8,7 +8,6 @@ from datetime import timezone
 from typing import Any
 from typing import TypeVar
 import gitlab
-import pytz
 from gitlab.v4.objects import Project
 
 from common.data_source.config import DocumentSource, INDEX_BATCH_SIZE
