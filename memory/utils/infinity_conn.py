@@ -211,7 +211,6 @@ class InfinityConnection(InfinityConnectionBase):
                 self.logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
 
         order_by_expr_list = list()
-        # todo use order_by after infinity fixed bug
         if order_by.fields:
             for order_field in order_by.fields:
                 order_field_name = self.convert_condition_and_order_field(order_field[0])
