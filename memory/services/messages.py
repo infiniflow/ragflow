@@ -198,7 +198,7 @@ class MessageService:
         message_list = settings.msgStoreConn.get_fields(res, select_fields)
         current_size = 0
         ids_to_remove = []
-        for message in message_list:
+        for message in message_list.values():
             if current_size < size_to_delete:
                 current_size += cls.calculate_message_size(message)
                 ids_to_remove.append(message["message_id"])
