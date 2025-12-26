@@ -239,7 +239,7 @@ export default {
   createMemory: `${api_host}/memories`,
   getMemoryList: `${api_host}/memories`,
   getMemoryConfig: (id: string) => `${api_host}/memories/${id}/config`,
-  deleteMemory: (id: string) => `${api_host}/memory/rm/${id}`,
+  deleteMemory: (id: string) => `${api_host}/memories/${id}`,
   getMemoryDetail: (id: string) => `${api_host}/memories/${id}`,
   updateMemorySetting: (id: string) => `${api_host}/memories/${id}`,
   deleteMemoryMessage: (data: { memory_id: string; message_id: string }) =>

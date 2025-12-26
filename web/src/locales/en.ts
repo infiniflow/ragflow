@@ -125,8 +125,9 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
     },
     memory: {
       messages: {
+        forgetMessageTip: 'Are you sure you want to forget?',
         messageDescription:
-          'Memory retrieval is configured with Similarity threshold, Keyword similarity weight, and Top N from Advanced Settings.',
+          'Memory extract is configured with Prompts and Temperature from Advanced Settings.',
         copied: 'Copied!',
         contentEmbed: 'Content embed',
         content: 'Content',
@@ -459,7 +460,7 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       manualSetup: 'Choose pipeline',
       builtIn: 'Built-in',
       titleDescription:
-        'Update your knowledge base configuration here, particularly the chunking method.',
+        'Update your memory configuration here, particularly the LLM and prompts.',
       name: 'Knowledge base name',
       photo: 'Knowledge base photo',
       photoTip: 'You can upload a file with 4 MB',
