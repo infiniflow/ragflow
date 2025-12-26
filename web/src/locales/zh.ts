@@ -117,8 +117,8 @@ export default {
     },
     memory: {
       messages: {
-        messageDescription:
-          '记忆检索已在高级设置中配置相似度阈值、关键词相似度权重和前N个结果。',
+        forgetMessageTip: '确定遗忘吗？',
+        messageDescription: '记忆提取使用高级设置中的提示词和温度值进行配置。',
         copied: '已复制！',
         contentEmbed: '内容嵌入',
         content: '内容',
@@ -201,6 +201,10 @@ export default {
         deleteSettingFieldWarn: `此字段将被删除；现有元数据不会受到影响。`,
         deleteSettingValueWarn: `此值将被删除；现有元数据不会受到影响。`,
       },
+      redoAll: '清除现有分块',
+      applyAutoMetadataSettings: '应用全局自动元数据设置',
+      parseFileTip: '您确定要解析吗？',
+      parseFile: '解析文件',
       emptyMetadata: '无元数据',
       localUpload: '本地上传',
       fileSize: '文件大小',
@@ -418,7 +422,7 @@ export default {
       parseType: '解析方法',
       manualSetup: '选择pipeline',
       builtIn: '内置',
-      titleDescription: '在这里更新您的知识库详细信息，尤其是切片方法。',
+      titleDescription: '在这里更新您的记忆配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
       photoTip: '你可以上传4MB的文件',

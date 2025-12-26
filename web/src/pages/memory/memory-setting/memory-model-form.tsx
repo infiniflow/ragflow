@@ -4,6 +4,7 @@ import { EmbeddingSelect } from '@/pages/dataset/dataset-setting/configuration/c
 import { MemoryType } from '@/pages/memories/constants';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { useFetchMemoryMessageList } from '../memory-message/hook';
 
 export const memoryModelFormSchema = {
   embd_id: z.string(),
@@ -20,6 +21,7 @@ export const defaultMemoryModelForm = {
 export const MemoryModelForm = () => {
   const { modelOptions } = useModelOptions();
   const { t } = useTranslation();
+  const { data } = useFetchMemoryMessageList();
   return (
     <>
       <RenderField
@@ -33,7 +35,11 @@ export const MemoryModelForm = () => {
           type: FormFieldType.Custom,
           disabled: true,
           render: (field) => (
-            <EmbeddingSelect field={field} isEdit={false} disabled={true} />
+            <EmbeddingSelect
+              field={field}
+              isEdit={false}
+              disabled={data?.messages?.total_count > 0}
+            />
           ),
 
           tooltip: t('memories.embeddingModelTooltip'),
@@ -47,6 +53,7 @@ export const MemoryModelForm = () => {
           required: true,
           horizontal: true,
           type: FormFieldType.Select,
+          disabled: data?.messages?.total_count > 0,
           options: modelOptions as { value: string; label: string }[],
           tooltip: t('memories.llmTooltip'),
         }}
