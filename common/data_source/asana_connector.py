@@ -344,7 +344,6 @@ class AsanaConnector(LoadConnector, PollConnector):
         self.batch_size = batch_size
         self.continue_on_failure = continue_on_failure
         self.size_threshold = None
-        self.workspace_users_email = self.asana_client.get_accessible_emails(self.workspace_id, self.project_ids_to_index, self.asana_team_id)
         logging.info(
             f"AsanaConnector initialized with workspace_id: {asana_workspace_id}"
         )
@@ -356,6 +355,7 @@ class AsanaConnector(LoadConnector, PollConnector):
             workspace_gid=self.workspace_id,
             team_gid=self.asana_team_id,
         )
+        self.workspace_users_email = self.asana_client.get_accessible_emails(self.workspace_id, self.project_ids_to_index, self.asana_team_id)
         logging.info("Asana credentials loaded and API client initialized")
         return None
 
