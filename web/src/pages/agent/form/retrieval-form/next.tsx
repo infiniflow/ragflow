@@ -20,14 +20,20 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { Radio } from '@/components/ui/radio';
 import { Textarea } from '@/components/ui/textarea';
 import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
-import { useForm, useFormContext } from 'react-hook-form';
+import {
+  UseFormReturn,
+  useForm,
+  useFormContext,
+  useWatch,
+} from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
-import { initialRetrievalValues } from '../../constant';
+import { RetrievalFrom, initialRetrievalValues } from '../../constant';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
@@ -54,6 +60,42 @@ export const FormSchema = z.object({
   query: z.string().optional(),
   ...RetrievalPartialSchema,
 });
+
+export function MemoryDatasetForm() {
+  const { t } = useTranslation();
+  const form = useFormContext();
+  const retrievalFrom = useWatch({
+    control: form.control,
+    name: 'retrieval_from',
+  });
+
+  return (
+    <>
+      <RAGFlowFormItem name="retrieval_from" label={t('flow.retrievalFrom')}>
+        <Radio.Group>
+          <Radio value={RetrievalFrom.Dataset}>
+            {t('knowledgeDetails.dataset')}
+          </Radio>
+          <Radio value={RetrievalFrom.Memory}>{t('header.memories')}</Radio>
+        </Radio.Group>
+      </RAGFlowFormItem>
+      {retrievalFrom === RetrievalFrom.Memory ? (
+        <MemoriesFormField label={t('header.memories')}></MemoriesFormField>
+      ) : (
+        <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
+      )}
+    </>
+  );
+}
+
+export function useHideKnowledgeGraphField(form: UseFormReturn<any>) {
+  const retrievalFrom = useWatch({
+    control: form.control,
+    name: 'retrieval_from',
+  });
+
+  return retrievalFrom === RetrievalFrom.Memory;
+}
 
 export function EmptyResponseField() {
   const { t } = useTranslation();
@@ -106,6 +148,8 @@ function RetrievalForm({ node }: INextOperatorForm) {
     resolver: zodResolver(FormSchema),
   });
 
+  const hideKnowledgeGraphField = useHideKnowledgeGraphField(form);
+
   useWatchFormChange(node?.id, form);
 
   return (
@@ -114,8 +158,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
         <RAGFlowFormItem name="query" label={t('flow.query')}>
           <PromptEditor></PromptEditor>
         </RAGFlowFormItem>
-        <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
-        <MemoriesFormField label={t('flow.memory')}></MemoriesFormField>
+        <MemoryDatasetForm></MemoryDatasetForm>
         <Collapse title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField
@@ -123,12 +166,20 @@ function RetrievalForm({ node }: INextOperatorForm) {
               isTooltipShown
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>
-            <RerankFormFields></RerankFormFields>
-            <MetadataFilter canReference></MetadataFilter>
+            {hideKnowledgeGraphField || (
+              <>
+                <RerankFormFields></RerankFormFields>
+                <MetadataFilter canReference></MetadataFilter>
+              </>
+            )}
             <EmptyResponseField></EmptyResponseField>
-            <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
-            <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
-            <TOCEnhanceFormField name="toc_enhance"></TOCEnhanceFormField>
+            {hideKnowledgeGraphField || (
+              <>
+                <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+                <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+                <TOCEnhanceFormField name="toc_enhance"></TOCEnhanceFormField>
+              </>
+            )}
           </FormContainer>
         </Collapse>
         <Output list={outputList}></Output>

@@ -252,6 +252,7 @@ export function MemoryTable({
           open={showDeleteDialog}
           onOpenChange={setShowDeleteDialog}
           content={{
+            title: t('memory.messages.forgetMessageTip'),
             node: (
               <ConfirmDeleteDialogNode
                 // avatar={{ avatar: selectedMessage.avatar, name: selectedMessage.name }}
