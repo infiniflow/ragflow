@@ -42,7 +42,7 @@ const AddDataSourceModal = ({
       title={
         <div className="flex flex-col gap-4">
           <div className="size-6">{sourceData?.icon}</div>
-          {t('setting.addDataSourceModalTital', { name: sourceData?.name })}
+          {t('setting.addDataSourceModalTitle', { name: sourceData?.name })}
         </div>
       }
       open={visible || false}
