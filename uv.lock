@@ -3051,7 +3051,7 @@ wheels = [
 
 [[package]]
 name = "infinity-sdk"
-version = "0.6.13"
+version = "0.6.14"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "datrie" },
@@ -3068,9 +3068,9 @@ dependencies = [
     { name = "sqlglot", extra = ["rs"] },
     { name = "thrift" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/03/de/56fdc0fa962d5a8e0aa68d16f5321b2d88d79fceb7d0d6cfdde338b65d05/infinity_sdk-0.6.13.tar.gz", hash = "sha256:faf7bc23de7fa549a3842753eddad54ae551ada9df4fff25421658a7fa6fa8c2", size = 29518902, upload-time = "2025-12-24T10:00:01.483Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5d/b6/96a17abb560051fbee871912f439560648579713bf8364fced84c4c41984/infinity_sdk-0.6.14.tar.gz", hash = "sha256:026d25ddf5ea6c022cc48906164fff26ce41b9a4560bccfd0a845e8da7750232", size = 155748, upload-time = "2025-12-26T13:30:41.885Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f4/a0/8f1e134fdf4ca8bebac7b62caace1816953bb5ffc720d9f0004246c8c38d/infinity_sdk-0.6.13-py3-none-any.whl", hash = "sha256:c08a523d2c27e9a7e6e88be640970530b4661a67c3e9dc3e1aa89533a822fd78", size = 29737403, upload-time = "2025-12-24T09:56:16.93Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/97/a0/58ecc7e253da0d6dc4d20d8a4e22ac40561ff7e9edac26d60587f8217a17/infinity_sdk-0.6.14-py3-none-any.whl", hash = "sha256:2fb4a669f724d0a0bbf0965fa2b0b098c5d46fba44efafcdaae864321ca9422c", size = 175658, upload-time = "2025-12-26T13:30:44.267Z" },
 ]
 
 [[package]]
@@ -6255,7 +6255,7 @@ requires-dist = [
     { name = "grpcio-status", specifier = "==1.67.1" },
     { name = "html-text", specifier = "==0.6.2" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
-    { name = "infinity-sdk", specifier = "==0.6.13" },
+    { name = "infinity-sdk", specifier = "==0.6.14" },
     { name = "jira", specifier = "==3.10.5" },
     { name = "json-repair", specifier = "==0.35.0" },
     { name = "langfuse", specifier = ">=2.60.0" },
