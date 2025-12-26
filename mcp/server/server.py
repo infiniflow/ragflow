@@ -46,7 +46,7 @@ class Transport(StrEnum):
 
 
 BASE_URL = "http://127.0.0.1:9380"
-HOST = "127.0.0.1"
+HOST = ""
 PORT = "9382"
 HOST_API_KEY = ""
 MODE = ""

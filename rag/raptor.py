@@ -77,7 +77,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
         raise last_exc if last_exc else Exception("LLM chat failed without exception")
 
-    @timeout(20)
+    @timeout(20*60)
     async def _embedding_encode(self, txt):
         response = await asyncio.to_thread(get_embed_cache, self._embd_model.llm_name, txt)
         if response is not None:
