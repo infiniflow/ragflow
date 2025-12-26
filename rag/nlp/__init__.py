@@ -584,7 +584,6 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
         if bounds:
             text_bounds.append((idx, bounds))
 
-    total = len(ordered_indices)
     for sorted_pos, idx in enumerate(ordered_indices):
         ck = chunks[idx]
         token_budget = image_context_size if is_image_chunk(ck) else table_context_size if is_table_chunk(ck) else 0
@@ -626,13 +625,11 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
                     for neighbor in page_order[pos_in_page + 1:]:
                         if is_text_chunk(chunks[neighbor]):
                             best_idx = neighbor
-                            fallback_direction = "next"
                             break
                 elif pos_in_page == len(page_order) - 1:
                     for neighbor in reversed(page_order[:pos_in_page]):
                         if is_text_chunk(chunks[neighbor]):
                             best_idx = neighbor
-                            fallback_direction = "prev"
                             break
         if best_idx is not None:
             base_text = get_text(chunks[best_idx])
