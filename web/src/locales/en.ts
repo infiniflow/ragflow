@@ -1760,6 +1760,7 @@ Example: Virtual Hosted Style`,
       url: 'Url',
       method: 'Method',
       timeout: 'Timeout',
+      requestBody: 'Request Body',
       headers: 'Headers',
       cleanHtml: 'Clean HTML',
       cleanHtmlTip:
