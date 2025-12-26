@@ -12,7 +12,7 @@ import { z } from 'zod';
 export const advancedSettingsFormSchema = {
   permissions: z.string().optional(),
   storage_type: z.enum(['table', 'graph']).optional(),
-  forgetting_policy: z.enum(['lru', 'fifo']).optional(),
+  forgetting_policy: z.enum(['LRU', 'FIFO']).optional(),
   temperature: z.number().optional(),
   system_prompt: z.string().optional(),
   user_prompt: z.string().optional(),
@@ -20,7 +20,7 @@ export const advancedSettingsFormSchema = {
 export const defaultAdvancedSettingsForm = {
   permissions: 'me',
   storage_type: 'table',
-  forgetting_policy: 'fifo',
+  forgetting_policy: 'FIFO',
   temperature: 0.7,
   system_prompt: '',
   user_prompt: '',
@@ -94,8 +94,8 @@ export const AdvancedSettingsForm = () => {
               horizontal: true,
               // placeholder: t('memory.config.storageTypePlaceholder'),
               options: [
-                // { label: 'lru', value: 'lru' },
-                { label: 'fifo', value: 'fifo' },
+                // { label: 'LRU', value: 'LRU' },
+                { label: 'FIFO', value: 'FIFO' },
               ],
               required: false,
             }}

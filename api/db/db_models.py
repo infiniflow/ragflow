@@ -1189,7 +1189,7 @@ class Memory(DataBaseModel):
     permissions = CharField(max_length=16, null=False, index=True, help_text="me|team", default="me")
     description = TextField(null=True, help_text="description")
     memory_size = IntegerField(default=5242880, null=False, index=False)
-    forgetting_policy = CharField(max_length=32, null=False, default="fifo", index=False, help_text="lru|fifo")
+    forgetting_policy = CharField(max_length=32, null=False, default="FIFO", index=False, help_text="LRU|FIFO")
     temperature = FloatField(default=0.5, index=False)
     system_prompt = TextField(null=True, help_text="system prompt", index=False)
     user_prompt = TextField(null=True, help_text="user prompt", index=False)
