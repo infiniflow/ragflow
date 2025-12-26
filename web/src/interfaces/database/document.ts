@@ -44,6 +44,9 @@ export interface IParserConfig {
   raptor?: Raptor;
   graphrag?: GraphRag;
   image_context_window?: number;
+  image_table_context_window?: number;
+  image_context_size?: number;
+  table_context_size?: number;
   mineru_parse_method?: 'auto' | 'txt' | 'ocr';
   mineru_formula_enable?: boolean;
   mineru_table_enable?: boolean;
