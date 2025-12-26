@@ -5857,6 +5857,19 @@ wheels = [
 ]
 
 [[package]]
+name = "python-gitlab"
+version = "7.0.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "requests-toolbelt" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5e/c4/0b613303b4f0fcda69b3d2e03d0a1fb1b6b079a7c7832e03a8d92461e9fe/python_gitlab-7.0.0.tar.gz", hash = "sha256:e4d934430f64efc09e6208b782c61cc0a3389527765e03ffbef17f4323dce441", size = 400568, upload-time = "2025-10-29T15:06:02.069Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4f/9e/811edc46a15f8deb828cba7ef8aab3451dc11ca72d033f3df72a5af865d9/python_gitlab-7.0.0-py3-none-any.whl", hash = "sha256:712a6c8c5e79e7e66f6dabb25d8fe7831a6b238d4a5132f8231df6b3b890ceff", size = 144415, upload-time = "2025-10-29T15:06:00.232Z" },
+]
+
+[[package]]
 name = "python-multipart"
 version = "0.0.20"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -6162,6 +6175,7 @@ dependencies = [
     { name = "pypdf2" },
     { name = "python-calamine" },
     { name = "python-docx" },
+    { name = "python-gitlab" },
     { name = "python-pptx" },
     { name = "pywencai" },
     { name = "qianfan" },
@@ -6291,6 +6305,7 @@ requires-dist = [
     { name = "pypdf2", specifier = ">=3.0.1,<4.0.0" },
     { name = "python-calamine", specifier = ">=0.4.0" },
     { name = "python-docx", specifier = ">=1.1.2,<2.0.0" },
+    { name = "python-gitlab", specifier = ">=7.0.0" },
     { name = "python-pptx", specifier = ">=1.0.2,<2.0.0" },
     { name = "pywencai", specifier = ">=0.13.1,<1.0.0" },
     { name = "qianfan", specifier = "==0.4.6" },
