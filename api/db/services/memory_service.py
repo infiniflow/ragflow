@@ -149,6 +149,8 @@ class MemoryService(CommonService):
             return 0
         if "temperature" in update_dict and isinstance(update_dict["temperature"], str):
             update_dict["temperature"] = float(update_dict["temperature"])
+        if "memory_type" in update_dict and isinstance(update_dict["memory_type"], list):
+            update_dict["memory_type"] = calculate_memory_type(update_dict["memory_type"])
         if "name" in update_dict:
             update_dict["name"] = duplicate_name(
                 cls.query,
