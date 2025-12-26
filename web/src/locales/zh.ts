@@ -858,6 +858,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
       airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',
+      gitlabDescription:
+        '连接 GitLab，同步仓库、Issue、合并请求（MR）及相关文档内容。',
       r2Description: '连接你的 Cloudflare R2 存储桶以导入和同步文件。',
       dropboxAccessTokenTip:
         '请在 Dropbox App Console 生成 Access Token，并勾选 files.metadata.read、files.content.read、sharing.read 等必要权限。',
