@@ -223,13 +223,8 @@ def init_memory_size_cache():
     if not memory_list:
         logging.info("No memory found, no need to init memory size.")
     else:
-        memory_size_map = MessageService.calculate_memory_size(
-            memory_ids=[m.id for m in memory_list],
-            uid_list=[m.tenant_id for m in memory_list],
-        )
-        for memory in memory_list:
-            memory_size = memory_size_map.get(memory.id, 0)
-            set_memory_size_cache(memory.id, memory_size)
+        for m in memory_list:
+            get_memory_size_cache(m.id, m.tenant_id)
         logging.info("Memory size cache init done.")
 
 
