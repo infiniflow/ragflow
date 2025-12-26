@@ -211,7 +211,7 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
         if not isinstance(cvs.dsl, str):
             cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
         session_id=get_uuid()
-        canvas = Canvas(cvs.dsl, tenant_id, agent_id)
+        canvas = Canvas(cvs.dsl, tenant_id, agent_id, canvas_id=cvs.id)
         canvas.reset()
         conv = {
             "id": session_id,

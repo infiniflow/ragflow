@@ -20,7 +20,6 @@ from common.time_utils import current_timestamp, timestamp_to_date
 
 from memory.services.messages import MessageService
 from api.db.joint_services import memory_message_service
-from api.db.joint_services.memory_message_service import query_message
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from common.constants import RetCode
 
@@ -129,7 +128,7 @@ async def search_message():
         "keywords_similarity_weight": keywords_similarity_weight,
         "top_n": top_n
     }
-    res = query_message(filter_dict, params)
+    res = memory_message_service.query_message(filter_dict, params)
     return get_json_result(message=True, data=res)
 
 

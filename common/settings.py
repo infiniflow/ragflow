@@ -261,12 +261,12 @@ def init_settings():
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
-    global MSG_ENGINE, msgStoreConn
-    MSG_ENGINE = DOC_ENGINE  # use the same engine for message store
-    if MSG_ENGINE == "elasticsearch":
+    global msgStoreConn
+    # use the same engine for message store
+    if DOC_ENGINE == "elasticsearch":
         ES = get_base_config("es", {})
         msgStoreConn = memory_es_conn.ESConnection()
-    elif MSG_ENGINE == "infinity":
+    elif DOC_ENGINE == "infinity":
         INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
         msgStoreConn = memory_infinity_conn.InfinityConnection()
 

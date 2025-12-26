@@ -153,7 +153,7 @@ async def run():
         return get_json_result(data={"message_id": task_id})
 
     try:
-        canvas = Canvas(cvs.dsl, current_user.id)
+        canvas = Canvas(cvs.dsl, current_user.id, canvas_id=cvs.id)
     except Exception as e:
         return server_error_response(e)
 
@@ -232,7 +232,7 @@ async def reset():
         if not e:
             return get_data_error_result(message="canvas not found.")
 
-        canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
+        canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id, canvas_id=user_canvas.id)
         canvas.reset()
         req["dsl"] = json.loads(str(canvas))
         UserCanvasService.update_by_id(req["id"], {"dsl": req["dsl"]})
@@ -270,7 +270,7 @@ def input_form():
                 data=False, message='Only owner of canvas authorized for this operation.',
                 code=RetCode.OPERATING_ERROR)
 
-        canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
+        canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id, canvas_id=user_canvas.id)
         return get_json_result(data=canvas.get_component_input_form(cpn_id))
     except Exception as e:
         return server_error_response(e)
@@ -287,7 +287,7 @@ async def debug():
             code=RetCode.OPERATING_ERROR)
     try:
         e, user_canvas = UserCanvasService.get_by_id(req["id"])
-        canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id)
+        canvas = Canvas(json.dumps(user_canvas.dsl), current_user.id, canvas_id=user_canvas.id)
         canvas.reset()
         canvas.message_id = get_uuid()
         component = canvas.get_component(req["component_id"])["obj"]

@@ -99,14 +99,14 @@ async def save_to_memory(memory_id: str, message_dict: dict):
         if memory.forgetting_policy == "fifo":
             message_ids_to_delete, delete_size = MessageService.pick_messages_to_delete_by_fifo(memory_id, tenant_id, size_to_delete)
             MessageService.delete_message({"message_id": message_ids_to_delete}, tenant_id, memory_id)
-            decrease_memory_size_cache(memory_id, tenant_id, delete_size)
+            decrease_memory_size_cache(memory_id, delete_size)
         else:
             return False, "Failed to insert message into memory. Memory size reached limit and cannot decide which to delete."
     fail_cases = MessageService.insert_message(message_list, tenant_id, memory_id)
     if fail_cases:
         return False, "Failed to insert message into memory. Details: " + "; ".join(fail_cases)
 
-    increase_memory_size_cache(memory_id, tenant_id, new_msg_size)
+    increase_memory_size_cache(memory_id, new_msg_size)
     return True, "Message saved successfully."
 
 
@@ -163,9 +163,9 @@ def query_message(filter_dict: dict, params: dict):
     memory = memory_list[0]
     embd_model = LLMBundle(memory.tenant_id, llm_type=LLMType.EMBEDDING, llm_name=memory.embd_id)
     match_dense = get_vector(question, embd_model, similarity=params["similarity_threshold"])
-    match_text, _ = MsgTextQuery().question(question, min_match=0.3)
+    match_text, _ = MsgTextQuery().question(question, min_match=params["similarity_threshold"])
     keywords_similarity_weight = params.get("keywords_similarity_weight", 0.7)
-    fusion_expr = FusionExpr("weighted_sum", params["top_n"], {"weights": ",".join([str(keywords_similarity_weight), str(1 - keywords_similarity_weight)])})
+    fusion_expr = FusionExpr("weighted_sum", params["top_n"], {"weights": ",".join([str(1 - keywords_similarity_weight), str(keywords_similarity_weight)])})
 
     return MessageService.search_message(memory_ids, condition_dict, uids, [match_text, match_dense, fusion_expr], params["top_n"])
 
@@ -191,8 +191,8 @@ def init_message_id_sequence():
 
 def get_memory_size_cache(memory_id: str, uid: str):
     redis_key = f"memory_{memory_id}"
-    if REDIS_CONN.exists(redis_key):
-        return REDIS_CONN.get(redis_key)
+    if REDIS_CONN.exist(redis_key):
+        return int(REDIS_CONN.get(redis_key))
     else:
         memory_size_map = MessageService.calculate_memory_size(
             [memory_id],
@@ -208,14 +208,14 @@ def set_memory_size_cache(memory_id: str, size: int):
     return REDIS_CONN.set(redis_key, size)
 
 
-def increase_memory_size_cache(memory_id: str, uid: str, size: int):
-    current_value = get_memory_size_cache(memory_id, uid)
-    return set_memory_size_cache(memory_id, current_value + size)
+def increase_memory_size_cache(memory_id: str, size: int):
+    redis_key = f"memory_{memory_id}"
+    return REDIS_CONN.incrby(redis_key, size)
 
 
-def decrease_memory_size_cache(memory_id: str, uid: str, size: int):
-    current_value = get_memory_size_cache(memory_id, uid)
-    return set_memory_size_cache(memory_id, max(current_value - size, 0))
+def decrease_memory_size_cache(memory_id: str, size: int):
+    redis_key = f"memory_{memory_id}"
+    return REDIS_CONN.decrby(redis_key, size)
 
 
 def init_memory_size_cache():

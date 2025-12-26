@@ -26,7 +26,7 @@ from common.metadata_utils import apply_meta_data_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.memory_service import MemoryService
-from api.db.joint_services.memory_message_service import query_message
+from api.db.joint_services import memory_message_service
 from common import settings
 from common.connection_utils import timeout
 from rag.app.tag import label_question
@@ -259,36 +259,32 @@ class Retrieval(ToolBase, ABC):
         vars = {k: o["value"] for k, o in vars.items()}
         query = self.string_format(query_text, vars)
         # query message
-        message_list = query_message({"memory_id": memory_ids}, {
+        message_list = memory_message_service.query_message({"memory_id": memory_ids}, {
             "query": query,
             "similarity_threshold": self._param.similarity_threshold,
             "keywords_similarity_weight": self._param.keywords_similarity_weight,
             "top_n": self._param.top_n
         })
-        print(f"found {len(message_list)} messages.")
-
         if not message_list:
             self.set_output("formalized_content", self._param.empty_response)
-            return
+            return ""
         formated_content = "\n".join(memory_prompt(message_list, 200000))
-
         # set formalized_content output
         self.set_output("formalized_content", formated_content)
-        print(f"formated_content {formated_content}")
+
         return formated_content
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     async def _invoke_async(self, **kwargs):
         if self.check_if_canceled("Retrieval processing"):
             return
-        print(f"debug retrieval, query is {kwargs.get('query')}.", flush=True)
         if not kwargs.get("query"):
             self.set_output("formalized_content", self._param.empty_response)
             return
 
         if self._param.kb_ids:
             return await self._retrieve_kb(kwargs["query"])
-        elif self._param.memory_ids:
+        elif hasattr(self._param, "memory_ids") and self._param.memory_ids:
             return await self._retrieve_memory(kwargs["query"])
         else:
             self.set_output("formalized_content", self._param.empty_response)

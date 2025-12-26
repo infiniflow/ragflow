@@ -24,7 +24,6 @@ from abc import abstractmethod
 import infinity
 from infinity.common import ConflictType
 from infinity.index import IndexInfo, IndexType
-from infinity.connection_pool import ConnectionPool
 from infinity.errors import ErrorCode
 import pandas as pd
 from common.file_utils import get_project_base_directory
@@ -35,6 +34,8 @@ from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, Order
 
 class InfinityConnectionBase(DocStoreConnection):
     def __init__(self, mapping_file_name: str="infinity_mapping.json", logger_name: str="ragflow.infinity_conn"):
+        from common.doc_store.infinity_conn_pool import INFINITY_CONN
+
         self.dbName = settings.INFINITY.get("db_name", "default_db")
         self.mapping_file_name = mapping_file_name
         self.logger = logging.getLogger(logger_name)
@@ -44,9 +45,9 @@ class InfinityConnectionBase(DocStoreConnection):
             infinity_uri = infinity.common.NetworkAddress(host, int(port))
         self.connPool = None
         self.logger.info(f"Use Infinity {infinity_uri} as the doc engine.")
+        conn_pool = INFINITY_CONN.get_conn_pool()
         for _ in range(24):
             try:
-                conn_pool = ConnectionPool(infinity_uri, max_size=4)
                 inf_conn = conn_pool.get_conn()
                 res = inf_conn.show_current_node()
                 if res.error_code == ErrorCode.OK and res.server_status in ["started", "alive"]:
@@ -58,6 +59,7 @@ class InfinityConnectionBase(DocStoreConnection):
                 self.logger.warning(f"Infinity status: {res.server_status}. Waiting Infinity {infinity_uri} to be healthy.")
                 time.sleep(5)
             except Exception as e:
+                conn_pool = INFINITY_CONN.refresh_conn_pool()
                 self.logger.warning(f"{str(e)}. Waiting Infinity {infinity_uri} to be healthy.")
                 time.sleep(5)
         if self.connPool is None:
