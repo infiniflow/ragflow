@@ -22,8 +22,7 @@ from api.db.services.memory_service import MemoryService
 from api.db.services.user_service import UserTenantService
 from api.db.services.canvas_service import UserCanvasService
 from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default
-from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result, \
-    not_allowed_parameters
+from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
 from api.constants import MEMORY_NAME_LIMIT, MEMORY_SIZE_LIMIT
 from memory.services.messages import MessageService
@@ -70,7 +69,6 @@ async def create_memory():
 
 @manager.route("/<memory_id>", methods=["PUT"])  # noqa: F821
 @login_required
-@not_allowed_parameters("id", "tenant_id", "storage_type")
 async def update_memory(memory_id):
     req = await get_request_json()
     update_dict = {}
