@@ -1206,7 +1206,7 @@ class RAGFlowPdfParser:
         start = timer()
         self._text_merge()
         self._concat_downward()
-        self._naive_vertical_merge(zoomin)
+        #self._naive_vertical_merge(zoomin)
         if callback:
             callback(0.92, "Text merged ({:.2f}s)".format(timer() - start))
 

@@ -18,10 +18,10 @@ export const advancedSettingsFormSchema = {
   user_prompt: z.string().optional(),
 };
 export const defaultAdvancedSettingsForm = {
-  permissions: 'me',
-  storage_type: 'table',
-  forgetting_policy: 'FIFO',
-  temperature: 0.7,
+  permissions: '',
+  storage_type: '',
+  forgetting_policy: '',
+  temperature: 0,
   system_prompt: '',
   user_prompt: '',
 };
@@ -146,7 +146,7 @@ export const AdvancedSettingsForm = () => {
             field={{
               name: 'user_prompt',
               label: t('memory.config.userPrompt'),
-              type: FormFieldType.Text,
+              type: FormFieldType.Textarea,
               horizontal: true,
               placeholder: t('memory.config.userPromptPlaceholder'),
               required: false,

@@ -5,7 +5,7 @@ slug: /set_metadata
 
 # Set metadata
 
-Add metadata to an uploaded file
+Manually add metadata to an uploaded file
 
 ---
 
@@ -29,4 +29,4 @@ Ensure that your metadata is in JSON format; otherwise, your updates will not be
 
 ### Can I set metadata for multiple documents at once?
 
-No, you must set metadata *individually* for each document, as RAGFlow does not support batch setting of metadata. If you still consider this feature essential, please [raise an issue](https://github.com/infiniflow/ragflow/issues) explaining your use case and its importance.
+From v0.23.0 onwards, you can set metadata for each document individually or have the LLM auto-generate metadata for multiple files. See [Extract metadata](./auto_metadata.md) for details.

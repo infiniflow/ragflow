@@ -91,13 +91,13 @@ export function ConfirmDeleteDialog({
           </AlertDialogHeader>
           <AlertDialogFooter className="px-5 flex items-center gap-2">
             <AlertDialogCancel onClick={onCancel}>
-              {okButtonText || t('common.cancel')}
+              {cancelButtonText || t('common.cancel')}
             </AlertDialogCancel>
             <AlertDialogAction
               className="bg-state-error text-text-primary hover:text-text-primary hover:bg-state-error"
               onClick={onOk}
             >
-              {cancelButtonText || t('common.delete')}
+              {okButtonText || t('common.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

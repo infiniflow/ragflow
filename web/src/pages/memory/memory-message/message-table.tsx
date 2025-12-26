@@ -204,7 +204,7 @@ export function MemoryTable({
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-222px)]">
+      <Table rootClassName="max-h-[calc(100vh-282px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -251,6 +251,7 @@ export function MemoryTable({
           title={t('memory.messages.forgetMessage')}
           open={showDeleteDialog}
           onOpenChange={setShowDeleteDialog}
+          okButtonText={t('common.confirm')}
           content={{
             title: t('memory.messages.forgetMessageTip'),
             node: (
@@ -326,7 +327,7 @@ export function MemoryTable({
         </Modal>
       )}
 
-      <div className="flex items-center justify-end py-4 absolute bottom-3 right-3">
+      <div className="flex items-center justify-end  absolute bottom-3 right-3">
         <RAGFlowPagination
           {...pick(pagination, 'current', 'pageSize')}
           total={total}

@@ -248,7 +248,15 @@ class ESConnection(ESConnectionBase):
         # build search
         s = Search()
         s = s.query(bool_query)
-        s = s.sort(order_by)
+        orders = list()
+        for field, order in order_by.fields:
+            order = "asc" if order == 0 else "desc"
+            if field.endswith("_int") or field.endswith("_flt"):
+                order_info = {"order": order, "unmapped_type": "float"}
+            else:
+                order_info = {"order": order, "unmapped_type": "text"}
+            orders.append({field: order_info})
+        s = s.sort(*orders)
         s = s[:limit]
         q = s.to_dict()
         # search
