@@ -324,8 +324,6 @@ ubuntu 22.04/24.04
 ### 5.1 RUN VLLM WITH BEST PRACTISE
 
 ```bash
-  pip install modelscope
-  modelscope download --model Qwen/Qwen3-8B-FP8 --local_dir  /data/Qwen3-8B
 nohup vllm serve /data/Qwen3-8B --served-model-name Qwen3-8B-FP8 --dtype auto --port 1025 --gpu-memory-utilization 0.90 --tool-call-parser hermes --enable-auto-tool-choice  > /var/log/vllm_startup1.log 2>&1 &
   ```
 you can get log info
