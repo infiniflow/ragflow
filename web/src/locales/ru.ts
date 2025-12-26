@@ -311,7 +311,7 @@ export default {
       fileFilter: 'Фильтр файлов',
       setDefaultTip: '',
       setDefault: 'Установить по умолчанию',
-      eidtLinkDataPipeline: 'Редактировать пайплайн обработки',
+      editLinkDataPipeline: 'Редактировать пайплайн обработки',
       linkPipelineSetTip:
         'Управление связью пайплайна обработки с этим набором данных',
       default: 'По умолчанию',
@@ -722,7 +722,7 @@ export default {
 Пример: https://fsn1.your-objectstorage.com`,
       S3CompatibleAddressingStyleTip: `Требуется для S3 совместимого Storage Box. Укажите стиль адресации, совместимый с S3.
 Пример: Virtual Hosted Style`,
-      addDataSourceModalTital: 'Создайте ваш коннектор {{name}}',
+      addDataSourceModalTitle: 'Создайте ваш коннектор {{name}}',
       deleteSourceModalTitle: 'Удалить источник данных',
       deleteSourceModalContent: `
       <p>Вы уверены, что хотите удалить эту ссылку на источник данных?</p>`,
@@ -1133,12 +1133,12 @@ export default {
       search: 'Поиск',
       communication: 'Коммуникация',
       developer: 'Разработчик',
-      typeCommandOrsearch: 'Введите команду или поиск...',
+      typeCommandORsearch: 'Введите команду или поиск...',
       builtIn: 'Встроенный',
       ExceptionDefaultValue: 'Значение по умолчанию при исключении',
       exceptionMethod: 'Метод обработки исключений',
       maxRounds: 'Макс. раундов рефлексии',
-      delayEfterError: 'Задержка после ошибки',
+      delayAfterError: 'Задержка после ошибки',
       maxRetries: 'Макс. попыток повтора',
       advancedSettings: 'Расширенные настройки',
       addTools: 'Добавить инструменты',
@@ -1637,7 +1637,7 @@ export default {
       }`,
       datatype: 'MIME тип HTTP запроса',
       insertVariableTip: `Введите / Вставьте переменные`,
-      historyversion: 'История версий',
+      historyVersion: 'История версий',
       version: {
         created: 'Создано',
         details: 'Детали версии',
