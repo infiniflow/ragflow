@@ -812,7 +812,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                                parser_config.get("delimiter", "\n!?;。；！？"))
         callback(0.8, "Finish parsing.")
 
-    elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
+    elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         markdown_parser = Markdown(int(parser_config.get("chunk_token_num", 128)))
         sections, tables, section_images = markdown_parser(
