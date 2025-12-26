@@ -74,7 +74,7 @@ export default function MemoryMessage() {
       <div className="flex gap-14 flex-1 min-h-0">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(() => {})} className="space-y-6 ">
-            <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto">
+            <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
               <MainContainer className="text-text-secondary !space-y-10">
                 <div className="text-base font-medium text-text-primary">
                   {t('knowledgeConfiguration.baseInfo')}
