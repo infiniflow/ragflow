@@ -61,7 +61,7 @@ export function VersionDialog({
       <DialogContent className="max-w-[60vw]">
         <DialogHeader>
           <DialogTitle className="text-base">
-            {t('flow.historyversion')}
+            {t('flow.historyVersion')}
           </DialogTitle>
         </DialogHeader>
         <section className="flex gap-8 relative">

@@ -115,7 +115,7 @@ export function ToolCommand({ value, onChange }: ToolCommandProps) {
 
   return (
     <Command>
-      <CommandInput placeholder={t('flow.typeCommandOrsearch')} />
+      <CommandInput placeholder={t('flow.typeCommandORsearch')} />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
         {Menus.map((x) => (

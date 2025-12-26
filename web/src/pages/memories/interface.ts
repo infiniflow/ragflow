@@ -16,7 +16,7 @@ export interface MemoryListParams {
 export type MemoryType = 'raw' | 'semantic' | 'episodic' | 'procedural';
 export type StorageType = 'table' | 'graph';
 export type Permissions = 'me' | 'team';
-export type ForgettingPolicy = 'fifo' | 'lru';
+export type ForgettingPolicy = 'FIFO' | 'LRU';
 export interface ICreateMemoryProps {
   name: string;
   memory_type: MemoryType[];

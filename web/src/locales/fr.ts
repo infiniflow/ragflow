@@ -1191,7 +1191,7 @@ export default {
       }`,
       datatype: 'Type MIME de la requête HTTP',
       insertVariableTip: `Entrer / Insérer des variables`,
-      historyversion: 'Historique des versions',
+      historyVersion: 'Historique des versions',
       version: {
         created: 'Créé',
         details: 'Détails de la version',
