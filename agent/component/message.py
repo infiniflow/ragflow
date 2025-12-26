@@ -427,7 +427,7 @@ class Message(ComponentBase):
             logging.error(f"Error converting content to {self._param.output_format}: {e}")
 
     async def _save_to_memory(self, content):
-        if not self._param.memory_ids:
+        if hasattr(self._param, "memory_ids") and not self._param.memory_ids:
             return True, "No memory selected."
 
         message_dict = {
