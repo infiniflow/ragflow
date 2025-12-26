@@ -171,7 +171,7 @@ class MemoryStorageType(StrEnum):
 
 
 class ForgettingPolicy(StrEnum):
-    FIFO = "fifo"
+    FIFO = "FIFO"
 
 
 # environment
