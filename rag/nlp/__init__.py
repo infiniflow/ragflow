@@ -596,7 +596,6 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
         best_idx = None
         best_dist = None
         candidate_count = 0
-        fallback_direction = None
         if media_bounds and text_bounds:
             for text_idx, bounds in text_bounds:
                 for pn, (t_top, t_bottom) in bounds.items():
