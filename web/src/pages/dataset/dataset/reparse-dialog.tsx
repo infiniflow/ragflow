@@ -85,6 +85,7 @@ export const ReparseDialog = ({
       onCancel={() => handleCancel()}
       hidden={hidden}
       open={visible}
+      okButtonText={t('common.confirm')}
       content={{
         title: t(`knowledgeDetails.parseFileTip`),
         node: (
