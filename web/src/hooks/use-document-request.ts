@@ -266,20 +266,19 @@ export const useRunDocument = () => {
     mutationFn: async ({
       documentIds,
       run,
-      shouldDelete,
+      option,
     }: {
       documentIds: string[];
       run: number;
-      shouldDelete: boolean;
+      option?: { delete: boolean; apply_kb: boolean };
     }) => {
       queryClient.invalidateQueries({
         queryKey: [DocumentApiAction.FetchDocumentList],
       });
-
       const ret = await kbService.document_run({
         doc_ids: documentIds,
         run,
-        delete: shouldDelete,
+        ...option,
       });
       const code = get(ret, 'data.code');
       if (code === 0) {

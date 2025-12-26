@@ -325,7 +325,7 @@ export default {
       fileFilter: 'Filtro file',
       setDefaultTip: '',
       setDefault: 'Imposta come predefinito',
-      eidtLinkDataPipeline: 'Modifica pipeline di ingestione',
+      editLinkDataPipeline: 'Modifica pipeline di ingestione',
       linkPipelineSetTip:
         'Gestisci il collegamento della pipeline di ingestione con questo dataset',
       default: 'Predefinito',
