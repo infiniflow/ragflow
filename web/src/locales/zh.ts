@@ -104,6 +104,10 @@ export default {
 语义记忆: 关于用户和世界的通用知识和事实。
 情景记忆: 带时间戳的特定事件和经历记录。
 程序记忆: 学习的技能、习惯和自动化程序。`,
+      raw: '原始',
+      semantic: '语义',
+      episodic: '情景',
+      procedural: '程序',
       editName: '编辑名称',
       memory: '记忆',
       createMemory: '创建记忆',

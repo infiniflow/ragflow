@@ -54,12 +54,15 @@ export const RetrievalPartialSchema = {
   toc_enhance: z.boolean(),
   ...MetadataFilterSchema,
   memory_ids: z.array(z.string()).optional(),
+  retrieval_from: z.string(),
 };
 
 export const FormSchema = z.object({
   query: z.string().optional(),
   ...RetrievalPartialSchema,
 });
+
+export type RetrievalFormSchemaType = z.infer<typeof FormSchema>;
 
 export function MemoryDatasetForm() {
   const { t } = useTranslation();

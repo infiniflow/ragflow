@@ -6,9 +6,9 @@ import { MainContainer } from '@/pages/dataset/dataset-setting/configuration-for
 import { TopTitle } from '@/pages/dataset/dataset-title';
 import { IMemory } from '@/pages/memories/interface';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { t } from 'i18next';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { useFetchMemoryBaseConfiguration } from '../hooks/use-memory-setting';
 import {
@@ -24,14 +24,15 @@ import {
   memoryModelFormSchema,
 } from './memory-model-form';
 
-const MemoryMessageSchema = z.object({
-  id: z.string(),
-  ...basicInfoSchema,
-  ...memoryModelFormSchema,
-  ...advancedSettingsFormSchema,
-});
 // type MemoryMessageForm = z.infer<typeof MemoryMessageSchema>;
 export default function MemoryMessage() {
+  const { t } = useTranslation();
+  const MemoryMessageSchema = z.object({
+    id: z.string(),
+    ...basicInfoSchema,
+    ...memoryModelFormSchema(t),
+    ...advancedSettingsFormSchema,
+  });
   const form = useForm<IMemory>({
     resolver: zodResolver(MemoryMessageSchema),
     defaultValues: {
@@ -58,11 +59,12 @@ export default function MemoryMessage() {
       system_prompt: data?.system_prompt || '',
       user_prompt: data?.user_prompt || '',
       forgetting_policy: data?.forgetting_policy || 'FIFO',
-      storage_type: data?.storage_type || 'table',
+      storage_type: data?.storage_type || 'Table',
       permissions: data?.permissions || 'me',
     });
   }, [data, form]);
   const onSubmit = (data: IMemory) => {
+    console.log('data', data);
     onMemoryRenameOk(data);
   };
   return (
@@ -74,7 +76,7 @@ export default function MemoryMessage() {
       <div className="flex gap-14 flex-1 min-h-0">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(() => {})} className="space-y-6 ">
-            <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto">
+            <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
               <MainContainer className="text-text-secondary !space-y-10">
                 <div className="text-base font-medium text-text-primary">
                   {t('knowledgeConfiguration.baseInfo')}
