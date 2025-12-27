@@ -220,15 +220,22 @@ export function ChunkMethodDialog({
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
     console.log('🚀 ~ onSubmit ~ data:', data);
+    const parserConfig = data.parser_config;
+    const imageTableContextWindow = Number(
+      parserConfig?.image_table_context_window || 0,
+    );
     const nextData = {
       ...data,
       parser_config: {
-        ...data.parser_config,
+        ...parserConfig,
+        image_table_context_window: imageTableContextWindow,
+        image_context_size: imageTableContextWindow,
+        table_context_size: imageTableContextWindow,
         // Unset children delimiter if this option is not enabled
-        children_delimiter: data.parser_config.enable_children
-          ? data.parser_config.children_delimiter
+        children_delimiter: parserConfig.enable_children
+          ? parserConfig.children_delimiter
           : '',
-        pages: data.parser_config?.pages?.map((x: any) => [x.from, x.to]) ?? [],
+        pages: parserConfig?.pages?.map((x: any) => [x.from, x.to]) ?? [],
       },
     };
     console.log('🚀 ~ onSubmit ~ nextData:', nextData);
@@ -249,6 +256,10 @@ export function ChunkMethodDialog({
         parser_config: fillDefaultParserValue({
           pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
           ...omit(parserConfig, 'pages'),
+          image_table_context_window:
+            parserConfig?.image_table_context_window ??
+            parserConfig?.image_context_size ??
+            parserConfig?.table_context_size,
           // graphrag: {
           //   use_graphrag: get(
           //     parserConfig,

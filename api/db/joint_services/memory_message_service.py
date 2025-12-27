@@ -96,7 +96,7 @@ async def save_to_memory(memory_id: str, message_dict: dict):
     current_memory_size = get_memory_size_cache(memory_id, tenant_id)
     if new_msg_size + current_memory_size > memory.memory_size:
         size_to_delete = current_memory_size + new_msg_size - memory.memory_size
-        if memory.forgetting_policy == "fifo":
+        if memory.forgetting_policy == "FIFO":
             message_ids_to_delete, delete_size = MessageService.pick_messages_to_delete_by_fifo(memory_id, tenant_id, size_to_delete)
             MessageService.delete_message({"message_id": message_ids_to_delete}, tenant_id, memory_id)
             decrease_memory_size_cache(memory_id, delete_size)
@@ -223,11 +223,11 @@ def init_memory_size_cache():
     if not memory_list:
         logging.info("No memory found, no need to init memory size.")
     else:
-        memory_size_map = MessageService.calculate_memory_size(
-            memory_ids=[m.id for m in memory_list],
-            uid_list=[m.tenant_id for m in memory_list],
-        )
-        for memory in memory_list:
-            memory_size = memory_size_map.get(memory.id, 0)
-            set_memory_size_cache(memory.id, memory_size)
+        for m in memory_list:
+            get_memory_size_cache(m.id, m.tenant_id)
         logging.info("Memory size cache init done.")
+
+
+def judge_system_prompt_is_default(system_prompt: str, memory_type: int|list[str]):
+    memory_type_list = memory_type if isinstance(memory_type, list) else get_memory_type_human(memory_type)
+    return system_prompt == PromptAssembler.assemble_system_prompt({"memory_type": memory_type_list})

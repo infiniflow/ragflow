@@ -1,3 +1,4 @@
+import { useSetModalState } from '@/hooks/common-hooks';
 import {
   UseRowSelectionType,
   useSelectedIds,
@@ -30,9 +31,9 @@ export function useBulkOperateDataset({
   const { runDocumentByIds } = useRunDocument();
   const { setDocumentStatus } = useSetDocumentStatus();
   const { removeDocument } = useRemoveDocument();
-
+  const { visible, showModal, hideModal } = useSetModalState();
   const runDocument = useCallback(
-    (run: number) => {
+    async (run: number, option?: { delete: boolean; apply_kb: boolean }) => {
       const nonVirtualKeys = selectedRowKeys.filter(
         (x) =>
           !documents.some((y) => x === y.id && y.type === DocumentType.Virtual),
@@ -42,18 +43,22 @@ export function useBulkOperateDataset({
         toast.error(t('Please select a non-empty file list'));
         return;
       }
-      runDocumentByIds({
+      await runDocumentByIds({
         documentIds: nonVirtualKeys,
         run,
-        shouldDelete: false,
+        option,
       });
+      hideModal();
     },
-    [documents, runDocumentByIds, selectedRowKeys, t],
+    [documents, runDocumentByIds, selectedRowKeys, hideModal, t],
   );
 
-  const handleRunClick = useCallback(() => {
-    runDocument(1);
-  }, [runDocument]);
+  const handleRunClick = useCallback(
+    (option: { delete: boolean; apply_kb: boolean }) => {
+      runDocument(1, option);
+    },
+    [runDocument],
+  );
 
   const handleCancelClick = useCallback(() => {
     runDocument(2);
@@ -106,7 +111,7 @@ export function useBulkOperateDataset({
       id: 'run',
       label: t('knowledgeDetails.run'),
       icon: <Play />,
-      onClick: handleRunClick,
+      onClick: () => showModal(),
     },
     {
       id: 'cancel',
@@ -127,5 +132,5 @@ export function useBulkOperateDataset({
     },
   ];
 
-  return { list };
+  return { list, visible, hideModal, showModal, handleRunClick };
 }
