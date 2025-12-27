@@ -129,7 +129,7 @@ class FileSource(StrEnum):
     OCI_STORAGE = "oci_storage"
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
     AIRTABLE = "airtable"
-
+    GITLAB = "gitlab"
     
 class PipelineTaskType(StrEnum):
     PARSE = "Parse"
