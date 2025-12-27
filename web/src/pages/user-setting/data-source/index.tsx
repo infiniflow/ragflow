@@ -10,7 +10,7 @@ import {
 } from '../components/user-setting-header';
 import AddDataSourceModal from './add-datasource-modal';
 import { AddedSourceCard } from './component/added-source-card';
-import { DataSourceKey, useDataSourceInfo } from './contant';
+import { DataSourceKey, useDataSourceInfo } from './constant';
 import { useAddDataSource, useListDataSource } from './hooks';
 import { IDataSorceInfo } from './interface';
 
