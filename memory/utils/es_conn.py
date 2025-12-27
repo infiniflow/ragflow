@@ -228,14 +228,14 @@ class ESConnection(ESConnectionBase):
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
                 self.logger.debug(f"ESConnection.search {str(index_names)} res: " + str(res))
-                return res
+                return res, self.get_total(res)
             except ConnectionTimeout:
                 self.logger.exception("ES request timeout")
                 self._connect()
                 continue
             except NotFoundError as e:
                 self.logger.debug(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
-                return None
+                return None, 0
             except Exception as e:
                 self.logger.exception(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
                 raise e
