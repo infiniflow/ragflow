@@ -46,7 +46,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    `vm.max_map_count`. This value sets the maximum number of memory map areas a process may have. Its default value is 65530. While most applications require fewer than a thousand maps, reducing this value can result in abnormal behaviors, and the system will throw out-of-memory errors when a process reaches the limitation.
 
-   RAGFlow v0.22.1 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
+   RAGFlow v0.23.0 uses Elasticsearch or [Infinity](https://github.com/infiniflow/infinity) for multiple recall. Setting the value of `vm.max_map_count` correctly is crucial to the proper functioning of the Elasticsearch component.
 
 <Tabs
   defaultValue="linux"
@@ -186,7 +186,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
    ```bash
    $ git clone https://github.com/infiniflow/ragflow.git
    $ cd ragflow/docker
-   $ git checkout -f v0.22.1
+   $ git checkout -f v0.23.0
    ```
 
 3. Use the pre-built Docker images and start up the server:
@@ -202,7 +202,7 @@ This section provides instructions on setting up the RAGFlow server on Linux. If
 
    | RAGFlow image tag   | Image size (GB) | Stable?                  |
    | ------------------- | --------------- | ------------------------ |
-   | v0.22.1             | &approx;2       | Stable release           |
+   | v0.23.0             | &approx;2       | Stable release           |
    | nightly             | &approx;2       | _Unstable_ nightly build |
 
    ```mdx-code-block

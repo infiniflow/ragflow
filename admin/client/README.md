@@ -48,7 +48,7 @@ It consists of a server-side Service and a command-line client (CLI), both imple
 1.  Ensure the Admin Service is running.
 2.  Install ragflow-cli.
     ```bash
-    pip install ragflow-cli==0.22.1
+    pip install ragflow-cli==0.23.0
     ```
 3.  Launch the CLI client:
     ```bash

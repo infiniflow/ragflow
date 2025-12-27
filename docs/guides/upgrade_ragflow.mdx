@@ -60,16 +60,16 @@ To upgrade RAGFlow, you must upgrade **both** your code **and** your Docker imag
    git pull
    ```
 
-3. Switch to the latest, officially published release, e.g., `v0.22.1`:
+3. Switch to the latest, officially published release, e.g., `v0.23.0`:
 
    ```bash
-   git checkout -f v0.22.1
+   git checkout -f v0.23.0
    ```
 
 4. Update **ragflow/docker/.env**:
 
    ```bash
-   RAGFLOW_IMAGE=infiniflow/ragflow:v0.22.1
+   RAGFLOW_IMAGE=infiniflow/ragflow:v0.23.0
    ```
 
 5. Update the RAGFlow image and restart RAGFlow:
@@ -90,10 +90,10 @@ No, you do not need to. Upgrading RAGFlow in itself will *not* remove your uploa
 1. From an environment with Internet access, pull the required Docker image.
 2. Save the Docker image to a **.tar** file.
    ```bash
-   docker save -o ragflow.v0.22.1.tar infiniflow/ragflow:v0.22.1
+   docker save -o ragflow.v0.23.0.tar infiniflow/ragflow:v0.23.0
    ```
 3. Copy the **.tar** file to the target server.
 4. Load the **.tar** file into Docker:
    ```bash
-   docker load -i ragflow.v0.22.1.tar
+   docker load -i ragflow.v0.23.0.tar
    ```

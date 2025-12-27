@@ -133,7 +133,7 @@ See [Run retrieval test](./run_retrieval_test.md) for details.
 
 ## Search for dataset
 
-As of RAGFlow v0.22.1, the search feature is still in a rudimentary form, supporting only dataset search by name.
+As of RAGFlow v0.23.0, the search feature is still in a rudimentary form, supporting only dataset search by name.
 
 ![search dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/search_datasets.jpg)
 
