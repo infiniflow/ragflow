@@ -277,6 +277,15 @@ cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
+Jika berada di belakang proxy, Anda dapat melewatkan argumen proxy:
+
+```bash
+docker build --platform linux/amd64 \
+  --build-arg http_proxy=http://YOUR_PROXY:PORT \
+  --build-arg https_proxy=http://YOUR_PROXY:PORT \
+  -f Dockerfile -t infiniflow/ragflow:nightly .
+```
+
 ## 🔨 Menjalankan Aplikasi dari untuk Pengembangan
 
 1. Instal `uv` dan `pre-commit`, atau lewati langkah ini jika sudah terinstal:
