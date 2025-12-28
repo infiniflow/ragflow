@@ -9,7 +9,7 @@ Key features, improvements and bug fixes in the latest releases.
 
 ## v0.23.0
 
-Released on December 29, 2025.
+Released on December 27, 2025.
 
 ### New features
 
@@ -32,7 +32,7 @@ Released on December 29, 2025.
 
 ### Improvements
 
-- Bumps RAGFlow's document engine, [Infinity](https://github.com/infiniflow/infinity) to v0.6.13 (backward compatible).
+- Bumps RAGFlow's document engine, [Infinity](https://github.com/infiniflow/infinity) to v0.6.15 (backward compatible).
 
 ### Data sources
 
