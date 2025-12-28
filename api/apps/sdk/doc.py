@@ -99,6 +99,11 @@ async def upload(dataset_id, tenant_id):
         name: parent_path
         type: string
         description: Optional nested path under the parent folder. Uses '/' separators.
+      - in: formData
+        name: replace_existing
+        type: boolean
+        default: false
+        description: If true, replace existing documents with the same name instead of adding a suffix.
     responses:
       200:
         description: Successfully uploaded documents.
@@ -159,7 +164,8 @@ async def upload(dataset_id, tenant_id):
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         raise LookupError(f"Can't find the dataset with ID {dataset_id}!")
-    err, files = FileService.upload_document(kb, file_objs, tenant_id, parent_path=form.get("parent_path"))
+    replace_existing = form.get("replace_existing", "false").lower() in ("true", "1", "yes")
+    err, files = FileService.upload_document(kb, file_objs, tenant_id, parent_path=form.get("parent_path"), replace_existing=replace_existing)
     if err:
         return get_result(message="\n".join(err), code=RetCode.SERVER_ERROR)
     # rename key's name

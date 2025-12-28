@@ -74,7 +74,8 @@ async def upload():
     if not check_kb_team_permission(kb, current_user.id):
         return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
 
-    err, files = await asyncio.to_thread(FileService.upload_document, kb, file_objs, current_user.id)
+    replace_existing = form.get("replace_existing", "false").lower() in ("true", "1", "yes")
+    err, files = await asyncio.to_thread(FileService.upload_document, kb, file_objs, current_user.id, replace_existing=replace_existing)
     if err:
         return get_json_result(data=files, message="\n".join(err), code=RetCode.SERVER_ERROR)
 

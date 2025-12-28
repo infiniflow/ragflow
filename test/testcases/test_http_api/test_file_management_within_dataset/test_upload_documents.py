@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 import requests
-from common import FILE_API_URL, list_datasets, upload_documents
+from common import FILE_API_URL, list_datasets, list_documents, upload_documents
 from configs import DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 from requests_toolbelt import MultipartEncoder
@@ -216,3 +216,49 @@ class TestDocumentsUpload:
 
         res = list_datasets(HttpApiAuth, {"id": dataset_id})
         assert res["data"][0]["document_count"] == count
+
+    @pytest.mark.p1
+    def test_replace_existing_true(self, HttpApiAuth, add_dataset_func, tmp_path):
+        """When replace_existing=true, existing document with same name is replaced."""
+        dataset_id = add_dataset_func
+        fp = create_txt_file(tmp_path / "ragflow_test.txt")
+
+        # Upload first version
+        res1 = upload_documents(HttpApiAuth, dataset_id, [fp])
+        assert res1["code"] == 0
+        first_doc_id = res1["data"][0]["id"]
+
+        # Upload second version with replace_existing=true
+        res2 = upload_documents(HttpApiAuth, dataset_id, [fp], replace_existing=True)
+        assert res2["code"] == 0
+        second_doc_id = res2["data"][0]["id"]
+
+        # Document ID should be different, filename unchanged
+        assert first_doc_id != second_doc_id
+        assert res2["data"][0]["name"] == "ragflow_test.txt"
+
+        # Verify only one document exists
+        res_list = list_documents(HttpApiAuth, dataset_id)
+        assert res_list["code"] == 0
+        assert len(res_list["data"]["docs"]) == 1
+
+    @pytest.mark.p2
+    def test_replace_existing_false(self, HttpApiAuth, add_dataset_func, tmp_path):
+        """When replace_existing=false (default), duplicate naming with (1) suffix is used."""
+        dataset_id = add_dataset_func
+        fp = create_txt_file(tmp_path / "ragflow_test.txt")
+
+        upload_documents(HttpApiAuth, dataset_id, [fp])
+        res2 = upload_documents(HttpApiAuth, dataset_id, [fp], replace_existing=False)
+        assert res2["code"] == 0
+        assert res2["data"][0]["name"] == "ragflow_test(1).txt"
+
+    @pytest.mark.p2
+    def test_replace_existing_nonexistent(self, HttpApiAuth, add_dataset_func, tmp_path):
+        """replace_existing=true works when no existing file to replace."""
+        dataset_id = add_dataset_func
+        fp = create_txt_file(tmp_path / "new_file.txt")
+
+        res = upload_documents(HttpApiAuth, dataset_id, [fp], replace_existing=True)
+        assert res["code"] == 0
+        assert res["data"][0]["name"] == "new_file.txt"
