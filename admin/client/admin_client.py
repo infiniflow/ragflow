@@ -16,14 +16,14 @@
 
 import argparse
 import base64
-from cmd import Cmd
-
-from Cryptodome.PublicKey import RSA
-from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
-from typing import Dict, List, Any
-from lark import Lark, Transformer, Tree
-import requests
 import getpass
+from cmd import Cmd
+from typing import Any, Dict, List
+
+import requests
+from Cryptodome.Cipher import PKCS1_v1_5 as Cipher_pkcs1_v1_5
+from Cryptodome.PublicKey import RSA
+from lark import Lark, Transformer, Tree
 
 GRAMMAR = r"""
 start: command
@@ -141,7 +141,6 @@ NUMBER: /[0-9]+/
 
 
 class AdminTransformer(Transformer):
-
     def start(self, items):
         return items[0]
 
@@ -149,7 +148,7 @@ class AdminTransformer(Transformer):
         return items[0]
 
     def list_services(self, items):
-        result = {'type': 'list_services'}
+        result = {"type": "list_services"}
         return result
 
     def show_service(self, items):
@@ -236,11 +235,7 @@ class AdminTransformer(Transformer):
         action_list = items[1]
         resource = items[3]
         role_name = items[6]
-        return {
-            "type": "revoke_permission",
-            "role_name": role_name,
-            "resource": resource, "actions": action_list
-        }
+        return {"type": "revoke_permission", "role_name": role_name, "resource": resource, "actions": action_list}
 
     def alter_user_role(self, items):
         user_name = items[2]
@@ -264,12 +259,12 @@ class AdminTransformer(Transformer):
         # handle quoted parameter
         parsed_args = []
         for arg in args:
-            if hasattr(arg, 'value'):
+            if hasattr(arg, "value"):
                 parsed_args.append(arg.value)
             else:
                 parsed_args.append(str(arg))
 
-        return {'type': 'meta', 'command': command_name, 'args': parsed_args}
+        return {"type": "meta", "command": command_name, "args": parsed_args}
 
     def meta_command_name(self, items):
         return items[0]
@@ -279,22 +274,22 @@ class AdminTransformer(Transformer):
 
 
 def encrypt(input_string):
-    pub = '-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/z8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOOUEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVKRNLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK6olN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs2wIDAQAB\n-----END PUBLIC KEY-----'
+    pub = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/z8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOOUEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVKRNLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK6olN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs2wIDAQAB\n-----END PUBLIC KEY-----"
     pub_key = RSA.importKey(pub)
     cipher = Cipher_pkcs1_v1_5.new(pub_key)
-    cipher_text = cipher.encrypt(base64.b64encode(input_string.encode('utf-8')))
+    cipher_text = cipher.encrypt(base64.b64encode(input_string.encode("utf-8")))
     return base64.b64encode(cipher_text).decode("utf-8")
 
 
 def encode_to_base64(input_string):
-    base64_encoded = base64.b64encode(input_string.encode('utf-8'))
-    return base64_encoded.decode('utf-8')
+    base64_encoded = base64.b64encode(input_string.encode("utf-8"))
+    return base64_encoded.decode("utf-8")
 
 
 class AdminCLI(Cmd):
     def __init__(self):
         super().__init__()
-        self.parser = Lark(GRAMMAR, start='start', parser='lalr', transformer=AdminTransformer())
+        self.parser = Lark(GRAMMAR, start="start", parser="lalr", transformer=AdminTransformer())
         self.command_history = []
         self.is_interactive = False
         self.admin_account = "admin@ragflow.io"
@@ -312,7 +307,7 @@ class AdminCLI(Cmd):
             result = self.parse_command(command)
 
             if isinstance(result, dict):
-                if 'type' in result and result.get('type') == 'empty':
+                if "type" in result and result.get("type") == "empty":
                     return False
 
             self.execute_command(result)
@@ -320,7 +315,7 @@ class AdminCLI(Cmd):
             if isinstance(result, Tree):
                 return False
 
-            if result.get('type') == 'meta' and result.get('command') in ['q', 'quit', 'exit']:
+            if result.get("type") == "meta" and result.get("command") in ["q", "quit", "exit"]:
                 return True
 
         except KeyboardInterrupt:
@@ -338,7 +333,7 @@ class AdminCLI(Cmd):
 
     def parse_command(self, command_str: str) -> dict[str, str]:
         if not command_str.strip():
-            return {'type': 'empty'}
+            return {"type": "empty"}
 
         self.command_history.append(command_str)
 
@@ -346,11 +341,11 @@ class AdminCLI(Cmd):
             result = self.parser.parse(command_str)
             return result
         except Exception as e:
-            return {'type': 'error', 'message': f'Parse error: {str(e)}'}
+            return {"type": "error", "message": f"Parse error: {str(e)}"}
 
     def verify_admin(self, arguments: dict, single_command: bool):
-        self.host = arguments['host']
-        self.port = arguments['port']
+        self.host = arguments["host"]
+        self.port = arguments["port"]
         print("Attempt to access server for admin login")
         url = f"http://{self.host}:{self.port}/api/v1/admin/login"
 
@@ -365,25 +360,21 @@ class AdminCLI(Cmd):
                 return False
 
             if single_command:
-                admin_passwd = arguments['password']
+                admin_passwd = arguments["password"]
             else:
                 admin_passwd = getpass.getpass(f"password for {self.admin_account}: ").strip()
             try:
                 self.admin_password = encrypt(admin_passwd)
-                response = self.session.post(url, json={'email': self.admin_account, 'password': self.admin_password})
+                response = self.session.post(url, json={"email": self.admin_account, "password": self.admin_password})
                 if response.status_code == 200:
                     res_json = response.json()
-                    error_code = res_json.get('code', -1)
+                    error_code = res_json.get("code", -1)
                     if error_code == 0:
-                        self.session.headers.update({
-                            'Content-Type': 'application/json',
-                            'Authorization': response.headers['Authorization'],
-                            'User-Agent': 'RAGFlow-CLI/0.22.1'
-                        })
+                        self.session.headers.update({"Content-Type": "application/json", "Authorization": response.headers["Authorization"], "User-Agent": "RAGFlow-CLI/0.23.0"})
                         print("Authentication successful.")
                         return True
                     else:
-                        error_message = res_json.get('message', 'Unknown error')
+                        error_message = res_json.get("message", "Unknown error")
                         print(f"Authentication failed: {error_message}, try again")
                         continue
                 else:
@@ -403,10 +394,14 @@ class AdminCLI(Cmd):
         for k, v in data.items():
             # display latest status
             heartbeats = sorted(v, key=lambda x: x["now"], reverse=True)
-            task_executor_list.append({
-                "task_executor_name": k,
-                **heartbeats[0],
-            } if heartbeats else {"task_executor_name": k})
+            task_executor_list.append(
+                {
+                    "task_executor_name": k,
+                    **heartbeats[0],
+                }
+                if heartbeats
+                else {"task_executor_name": k}
+            )
         return task_executor_list
 
     def _print_table_simple(self, data):
@@ -422,12 +417,7 @@ class AdminCLI(Cmd):
         col_widths = {}
 
         def get_string_width(text):
-            half_width_chars = (
-                " !\"#$%&'()*+,-./0123456789:;<=>?@"
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`"
-                "abcdefghijklmnopqrstuvwxyz{|}~"
-                "\t\n\r"
-            )
+            half_width_chars = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\t\n\r"
             width = 0
             for char in text:
                 if char in half_width_chars:
@@ -439,7 +429,7 @@ class AdminCLI(Cmd):
         for col in columns:
             max_width = get_string_width(str(col))
             for item in data:
-                value_len = get_string_width(str(item.get(col, '')))
+                value_len = get_string_width(str(item.get(col, "")))
                 if value_len > max_width:
                     max_width = value_len
             col_widths[col] = max(2, max_width)
@@ -457,16 +447,15 @@ class AdminCLI(Cmd):
         for item in data:
             row = "|"
             for col in columns:
-                value = str(item.get(col, ''))
+                value = str(item.get(col, ""))
                 if get_string_width(value) > col_widths[col]:
-                    value = value[:col_widths[col] - 3] + "..."
+                    value = value[: col_widths[col] - 3] + "..."
                 row += f" {value:<{col_widths[col] - (get_string_width(value) - len(value))}} |"
             print(row)
 
         print(separator)
 
     def run_interactive(self):
-
         self.is_interactive = True
         print("RAGFlow Admin command line interface - Type '\\?' for help, '\\q' to quit")
 
@@ -483,7 +472,7 @@ class AdminCLI(Cmd):
                 if isinstance(result, Tree):
                     continue
 
-                if result.get('type') == 'meta' and result.get('command') in ['q', 'quit', 'exit']:
+                if result.get("type") == "meta" and result.get("command") in ["q", "quit", "exit"]:
                     break
 
             except KeyboardInterrupt:
@@ -497,36 +486,30 @@ class AdminCLI(Cmd):
         self.execute_command(result)
 
     def parse_connection_args(self, args: List[str]) -> Dict[str, Any]:
-        parser = argparse.ArgumentParser(description='Admin CLI Client', add_help=False)
-        parser.add_argument('-h', '--host', default='localhost', help='Admin service host')
-        parser.add_argument('-p', '--port', type=int, default=9381, help='Admin service port')
-        parser.add_argument('-w', '--password', default='admin', type=str, help='Superuser password')
-        parser.add_argument('command', nargs='?', help='Single command')
+        parser = argparse.ArgumentParser(description="Admin CLI Client", add_help=False)
+        parser.add_argument("-h", "--host", default="localhost", help="Admin service host")
+        parser.add_argument("-p", "--port", type=int, default=9381, help="Admin service port")
+        parser.add_argument("-w", "--password", default="admin", type=str, help="Superuser password")
+        parser.add_argument("command", nargs="?", help="Single command")
         try:
             parsed_args, remaining_args = parser.parse_known_args(args)
             if remaining_args:
                 command = remaining_args[0]
-                return {
-                    'host': parsed_args.host,
-                    'port': parsed_args.port,
-                    'password': parsed_args.password,
-                    'command': command
-                }
+                return {"host": parsed_args.host, "port": parsed_args.port, "password": parsed_args.password, "command": command}
             else:
                 return {
-                    'host': parsed_args.host,
-                    'port': parsed_args.port,
+                    "host": parsed_args.host,
+                    "port": parsed_args.port,
                 }
         except SystemExit:
-            return {'error': 'Invalid connection arguments'}
+            return {"error": "Invalid connection arguments"}
 
     def execute_command(self, parsed_command: Dict[str, Any]):
-
         command_dict: dict
         if isinstance(parsed_command, Tree):
             command_dict = parsed_command.children[0]
         else:
-            if parsed_command['type'] == 'error':
+            if parsed_command["type"] == "error":
                 print(f"Error: {parsed_command['message']}")
                 return
             else:
@@ -534,56 +517,56 @@ class AdminCLI(Cmd):
 
         # print(f"Parsed command: {command_dict}")
 
-        command_type = command_dict['type']
+        command_type = command_dict["type"]
 
         match command_type:
-            case 'list_services':
+            case "list_services":
                 self._handle_list_services(command_dict)
-            case 'show_service':
+            case "show_service":
                 self._handle_show_service(command_dict)
-            case 'restart_service':
+            case "restart_service":
                 self._handle_restart_service(command_dict)
-            case 'shutdown_service':
+            case "shutdown_service":
                 self._handle_shutdown_service(command_dict)
-            case 'startup_service':
+            case "startup_service":
                 self._handle_startup_service(command_dict)
-            case 'list_users':
+            case "list_users":
                 self._handle_list_users(command_dict)
-            case 'show_user':
+            case "show_user":
                 self._handle_show_user(command_dict)
-            case 'drop_user':
+            case "drop_user":
                 self._handle_drop_user(command_dict)
-            case 'alter_user':
+            case "alter_user":
                 self._handle_alter_user(command_dict)
-            case 'create_user':
+            case "create_user":
                 self._handle_create_user(command_dict)
-            case 'activate_user':
+            case "activate_user":
                 self._handle_activate_user(command_dict)
-            case 'list_datasets':
+            case "list_datasets":
                 self._handle_list_datasets(command_dict)
-            case 'list_agents':
+            case "list_agents":
                 self._handle_list_agents(command_dict)
-            case 'create_role':
+            case "create_role":
                 self._create_role(command_dict)
-            case 'drop_role':
+            case "drop_role":
                 self._drop_role(command_dict)
-            case 'alter_role':
+            case "alter_role":
                 self._alter_role(command_dict)
-            case 'list_roles':
+            case "list_roles":
                 self._list_roles(command_dict)
-            case 'show_role':
+            case "show_role":
                 self._show_role(command_dict)
-            case 'grant_permission':
+            case "grant_permission":
                 self._grant_permission(command_dict)
-            case 'revoke_permission':
+            case "revoke_permission":
                 self._revoke_permission(command_dict)
-            case 'alter_user_role':
+            case "alter_user_role":
                 self._alter_user_role(command_dict)
-            case 'show_user_permission':
+            case "show_user_permission":
                 self._show_user_permission(command_dict)
-            case 'show_version':
+            case "show_version":
                 self._show_version(command_dict)
-            case 'meta':
+            case "meta":
                 self._handle_meta_command(command_dict)
             case _:
                 print(f"Command '{command_type}' would be executed with API")
@@ -591,29 +574,29 @@ class AdminCLI(Cmd):
     def _handle_list_services(self, command):
         print("Listing all services")
 
-        url = f'http://{self.host}:{self.port}/api/v1/admin/services'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/services"
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
             print(f"Fail to get all services, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_show_service(self, command):
-        service_id: int = command['number']
+        service_id: int = command["number"]
         print(f"Showing service: {service_id}")
 
-        url = f'http://{self.host}:{self.port}/api/v1/admin/services/{service_id}'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/services/{service_id}"
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
-            res_data = res_json['data']
-            if 'status' in res_data and res_data['status'] == 'alive':
+            res_data = res_json["data"]
+            if "status" in res_data and res_data["status"] == "alive":
                 print(f"Service {res_data['service_name']} is alive, ")
-                if isinstance(res_data['message'], str):
-                    print(res_data['message'])
+                if isinstance(res_data["message"], str):
+                    print(res_data["message"])
                 else:
-                    data = self._format_service_detail_table(res_data['message'])
+                    data = self._format_service_detail_table(res_data["message"])
                     self._print_table_simple(data)
             else:
                 print(f"Service {res_data['service_name']} is down, {res_data['message']}")
@@ -621,47 +604,47 @@ class AdminCLI(Cmd):
             print(f"Fail to show service, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_restart_service(self, command):
-        service_id: int = command['number']
+        service_id: int = command["number"]
         print(f"Restart service {service_id}")
 
     def _handle_shutdown_service(self, command):
-        service_id: int = command['number']
+        service_id: int = command["number"]
         print(f"Shutdown service {service_id}")
 
     def _handle_startup_service(self, command):
-        service_id: int = command['number']
+        service_id: int = command["number"]
         print(f"Startup service {service_id}")
 
     def _handle_list_users(self, command):
         print("Listing all users")
 
-        url = f'http://{self.host}:{self.port}/api/v1/admin/users'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users"
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
             print(f"Fail to get all users, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_show_user(self, command):
-        username_tree: Tree = command['user_name']
+        username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Showing user: {user_name}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}"
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
-            table_data = res_json['data']
-            table_data.pop('avatar')
+            table_data = res_json["data"]
+            table_data.pop("avatar")
             self._print_table_simple(table_data)
         else:
             print(f"Fail to get user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_drop_user(self, command):
-        username_tree: Tree = command['user_name']
+        username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Drop user: {user_name}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}"
         response = self.session.delete(url)
         res_json = response.json()
         if response.status_code == 200:
@@ -670,13 +653,13 @@ class AdminCLI(Cmd):
             print(f"Fail to drop user, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_alter_user(self, command):
-        user_name_tree: Tree = command['user_name']
+        user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
-        password_tree: Tree = command['password']
+        password_tree: Tree = command["password"]
         password: str = password_tree.children[0].strip("'\"")
         print(f"Alter user: {user_name}, password: ******")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/password'
-        response = self.session.put(url, json={'new_password': encrypt(password)})
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/password"
+        response = self.session.put(url, json={"new_password": encrypt(password)})
         res_json = response.json()
         if response.status_code == 200:
             print(res_json["message"])
@@ -684,32 +667,29 @@ class AdminCLI(Cmd):
             print(f"Fail to alter password, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_create_user(self, command):
-        user_name_tree: Tree = command['user_name']
+        user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
-        password_tree: Tree = command['password']
+        password_tree: Tree = command["password"]
         password: str = password_tree.children[0].strip("'\"")
-        role: str = command['role']
+        role: str = command["role"]
         print(f"Create user: {user_name}, password: ******, role: {role}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/users'
-        response = self.session.post(
-            url,
-            json={'user_name': user_name, 'password': encrypt(password), 'role': role}
-        )
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users"
+        response = self.session.post(url, json={"user_name": user_name, "password": encrypt(password), "role": role})
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
             print(f"Fail to create user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_activate_user(self, command):
-        user_name_tree: Tree = command['user_name']
+        user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
-        activate_tree: Tree = command['activate_status']
+        activate_tree: Tree = command["activate_status"]
         activate_status: str = activate_tree.children[0].strip("'\"")
-        if activate_status.lower() in ['on', 'off']:
+        if activate_status.lower() in ["on", "off"]:
             print(f"Alter user {user_name} activate status, turn {activate_status.lower()}.")
-            url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/activate'
-            response = self.session.put(url, json={'activate_status': activate_status})
+            url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/activate"
+            response = self.session.put(url, json={"activate_status": activate_status})
             res_json = response.json()
             if response.status_code == 200:
                 print(res_json["message"])
@@ -719,202 +699,182 @@ class AdminCLI(Cmd):
             print(f"Unknown activate status: {activate_status}.")
 
     def _handle_list_datasets(self, command):
-        username_tree: Tree = command['user_name']
+        username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Listing all datasets of user: {user_name}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/datasets'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/datasets"
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
-            table_data = res_json['data']
+            table_data = res_json["data"]
             for t in table_data:
-                t.pop('avatar')
+                t.pop("avatar")
             self._print_table_simple(table_data)
         else:
             print(f"Fail to get all datasets of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_list_agents(self, command):
-        username_tree: Tree = command['user_name']
+        username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Listing all agents of user: {user_name}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/agents'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/agents"
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
-            table_data = res_json['data']
+            table_data = res_json["data"]
             for t in table_data:
-                t.pop('avatar')
+                t.pop("avatar")
             self._print_table_simple(table_data)
         else:
             print(f"Fail to get all agents of {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _create_role(self, command):
-        role_name_tree: Tree = command['role_name']
+        role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
-        desc_str: str = ''
-        if 'description' in command:
-            desc_tree: Tree = command['description']
+        desc_str: str = ""
+        if "description" in command:
+            desc_tree: Tree = command["description"]
             desc_str = desc_tree.children[0].strip("'\"")
 
         print(f"create role name: {role_name}, description: {desc_str}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/roles'
-        response = self.session.post(
-            url,
-            json={'role_name': role_name, 'description': desc_str}
-        )
+        url = f"http://{self.host}:{self.port}/api/v1/admin/roles"
+        response = self.session.post(url, json={"role_name": role_name, "description": desc_str})
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
             print(f"Fail to create role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _drop_role(self, command):
-        role_name_tree: Tree = command['role_name']
+        role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
         print(f"drop role name: {role_name}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}"
         response = self.session.delete(url)
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
             print(f"Fail to drop role {role_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _alter_role(self, command):
-        role_name_tree: Tree = command['role_name']
+        role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
-        desc_tree: Tree = command['description']
+        desc_tree: Tree = command["description"]
         desc_str: str = desc_tree.children[0].strip("'\"")
 
         print(f"alter role name: {role_name}, description: {desc_str}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}'
-        response = self.session.put(
-            url,
-            json={'description': desc_str}
-        )
+        url = f"http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}"
+        response = self.session.put(url, json={"description": desc_str})
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
-            print(
-                f"Fail to update role {role_name} with description: {desc_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to update role {role_name} with description: {desc_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _list_roles(self, command):
         print("Listing all roles")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/roles'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/roles"
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
             print(f"Fail to list roles, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_role(self, command):
-        role_name_tree: Tree = command['role_name']
+        role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
         print(f"show role: {role_name}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}/permission'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/roles/{role_name}/permission"
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
             print(f"Fail to list roles, code: {res_json['code']}, message: {res_json['message']}")
 
     def _grant_permission(self, command):
-        role_name_tree: Tree = command['role_name']
+        role_name_tree: Tree = command["role_name"]
         role_name_str: str = role_name_tree.children[0].strip("'\"")
-        resource_tree: Tree = command['resource']
+        resource_tree: Tree = command["resource"]
         resource_str: str = resource_tree.children[0].strip("'\"")
-        action_tree_list: list = command['actions']
+        action_tree_list: list = command["actions"]
         actions: list = []
         for action_tree in action_tree_list:
             action_str: str = action_tree.children[0].strip("'\"")
             actions.append(action_str)
         print(f"grant role_name: {role_name_str}, resource: {resource_str}, actions: {actions}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name_str}/permission'
-        response = self.session.post(
-            url,
-            json={'actions': actions, 'resource': resource_str}
-        )
+        url = f"http://{self.host}:{self.port}/api/v1/admin/roles/{role_name_str}/permission"
+        response = self.session.post(url, json={"actions": actions, "resource": resource_str})
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
-            print(
-                f"Fail to grant role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to grant role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _revoke_permission(self, command):
-        role_name_tree: Tree = command['role_name']
+        role_name_tree: Tree = command["role_name"]
         role_name_str: str = role_name_tree.children[0].strip("'\"")
-        resource_tree: Tree = command['resource']
+        resource_tree: Tree = command["resource"]
         resource_str: str = resource_tree.children[0].strip("'\"")
-        action_tree_list: list = command['actions']
+        action_tree_list: list = command["actions"]
         actions: list = []
         for action_tree in action_tree_list:
             action_str: str = action_tree.children[0].strip("'\"")
             actions.append(action_str)
         print(f"revoke role_name: {role_name_str}, resource: {resource_str}, actions: {actions}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/roles/{role_name_str}/permission'
-        response = self.session.delete(
-            url,
-            json={'actions': actions, 'resource': resource_str}
-        )
+        url = f"http://{self.host}:{self.port}/api/v1/admin/roles/{role_name_str}/permission"
+        response = self.session.delete(url, json={"actions": actions, "resource": resource_str})
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
-            print(
-                f"Fail to revoke role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to revoke role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _alter_user_role(self, command):
-        role_name_tree: Tree = command['role_name']
+        role_name_tree: Tree = command["role_name"]
         role_name_str: str = role_name_tree.children[0].strip("'\"")
-        user_name_tree: Tree = command['user_name']
+        user_name_tree: Tree = command["user_name"]
         user_name_str: str = user_name_tree.children[0].strip("'\"")
         print(f"alter_user_role user_name: {user_name_str}, role_name: {role_name_str}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name_str}/role'
-        response = self.session.put(
-            url,
-            json={'role_name': role_name_str}
-        )
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name_str}/role"
+        response = self.session.put(url, json={"role_name": role_name_str})
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
-            print(
-                f"Fail to alter user: {user_name_str} to role {role_name_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to alter user: {user_name_str} to role {role_name_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_user_permission(self, command):
-        user_name_tree: Tree = command['user_name']
+        user_name_tree: Tree = command["user_name"]
         user_name_str: str = user_name_tree.children[0].strip("'\"")
         print(f"show_user_permission user_name: {user_name_str}")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/users/{user_name_str}/permission'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name_str}/permission"
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
-            print(
-                f"Fail to show user: {user_name_str} permission, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Fail to show user: {user_name_str} permission, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_version(self, command):
         print("show_version")
-        url = f'http://{self.host}:{self.port}/api/v1/admin/version'
+        url = f"http://{self.host}:{self.port}/api/v1/admin/version"
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
-            self._print_table_simple(res_json['data'])
+            self._print_table_simple(res_json["data"])
         else:
             print(f"Fail to show version, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_meta_command(self, command):
-        meta_command = command['command']
-        args = command.get('args', [])
+        meta_command = command["command"]
+        args = command.get("args", [])
 
-        if meta_command in ['?', 'h', 'help']:
+        if meta_command in ["?", "h", "help"]:
             self.show_help()
-        elif meta_command in ['q', 'quit', 'exit']:
+        elif meta_command in ["q", "quit", "exit"]:
             print("Goodbye!")
         else:
             print(f"Meta command '{meta_command}' with args {args}")
@@ -950,16 +910,16 @@ def main():
     cli = AdminCLI()
 
     args = cli.parse_connection_args(sys.argv)
-    if 'error' in args:
+    if "error" in args:
         print("Error: Invalid connection arguments")
         return
 
-    if 'command' in args:
-        if 'password' not in args:
+    if "command" in args:
+        if "password" not in args:
             print("Error: password is missing")
             return
         if cli.verify_admin(args, single_command=True):
-            command: str = args['command']
+            command: str = args["command"]
             # print(f"Run single command: {command}")
             cli.run_single_command(command)
     else:
@@ -974,5 +934,5 @@ def main():
             cli.cmdloop()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
