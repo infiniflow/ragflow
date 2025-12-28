@@ -168,7 +168,7 @@ class MessageService:
         order_by = OrderByExpr()
         order_by.desc("valid_at")
 
-        res = settings.msgStoreConn.search(
+        res, count = settings.msgStoreConn.search(
             select_fields=["memory_id", "content", "content_embed"],
             highlight_fields=[],
             condition={},
@@ -177,8 +177,10 @@ class MessageService:
             offset=0, limit=2048*len(memory_ids),
             index_names=index_names, memory_ids=memory_ids, agg_fields=[], hide_forgotten=False
         )
-        if not res:
+
+        if count == 0:
             return {}
+
         docs = settings.msgStoreConn.get_fields(res, ["memory_id", "content", "content_embed"])
         size_dict = {}
         for doc in docs.values():
