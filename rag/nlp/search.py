@@ -125,7 +125,8 @@ class Dealer:
                     src.append(f"q_{len(q_vec)}_vec")
 
                 fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
-                matchExprs = [matchText, matchDense, fusionExpr]
+                # Put matchDense before matchText to avoid unnecessary text search (i.e. query_string) in knn.
+                matchExprs = [matchDense, matchText, fusionExpr]
 
                 res = self.dataStore.search(src, highlightFields, filters, matchExprs, orderBy, offset, limit,
                                             idx_names, kb_ids, rank_feature=rank_feature)

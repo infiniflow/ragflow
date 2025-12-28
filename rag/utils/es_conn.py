@@ -82,9 +82,12 @@ class ESConnection(ESConnectionBase):
         vector_similarity_weight = 0.5
         for m in match_expressions:
             if isinstance(m, FusionExpr) and m.method == "weighted_sum" and "weights" in m.fusion_params:
-                assert len(match_expressions) == 3 and isinstance(match_expressions[0], MatchTextExpr) and isinstance(match_expressions[1],
-                                                                                                                      MatchDenseExpr) and isinstance(
-                    match_expressions[2], FusionExpr)
+                assert (
+                    len(match_expressions) == 3 and
+                    isinstance(match_expressions[0], MatchDenseExpr) and
+                    isinstance(match_expressions[1], MatchTextExpr) and
+                    isinstance(match_expressions[2], FusionExpr)
+                )
                 weights = m.fusion_params["weights"]
                 vector_similarity_weight = get_float(weights.split(",")[1])
         for m in match_expressions:
