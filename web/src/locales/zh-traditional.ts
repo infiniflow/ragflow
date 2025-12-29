@@ -547,6 +547,8 @@ export default {
       avatar: '头像',
       avatarTip: '這會在你的個人主頁展示',
       profileDescription: '在此更新您的照片和個人詳細信息。',
+      gitlabDescription:
+        '連接 GitLab，同步儲存庫、Issue、合併請求（MR）及相關文件內容。',
       bedrockCredentialsHint:
         '提示：Access Key / Secret Key 可留空，以啟用 AWS IAM 自動驗證。',
       awsAuthModeAccessKeySecret: 'Access Key 和 Secret',

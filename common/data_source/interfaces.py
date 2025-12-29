@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from enum import IntFlag, auto
 from types import TracebackType
 from typing import Any, Dict, Generator, TypeVar, Generic, Callable, TypeAlias
-
+from collections.abc import Iterator
 from anthropic import BaseModel
 
 from common.data_source.models import (
@@ -16,6 +16,7 @@ from common.data_source.models import (
     SecondsSinceUnixEpoch, GenerateSlimDocumentOutput
 )
 
+GenerateDocumentsOutput = Iterator[list[Document]]
 
 class LoadConnector(ABC):
     """Load connector interface"""

@@ -151,6 +151,7 @@ dependencies = [
     "pyairtable>=3.3.0",
     "pygithub>=2.8.1",
     "asana>=5.2.2",
+    "python-gitlab>=7.0.0",
 ]
 
 [dependency-groups]
