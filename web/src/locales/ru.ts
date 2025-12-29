@@ -749,6 +749,8 @@ export default {
         'Подключите ваш диск Box для синхронизации файлов и папок.',
       airtableDescription:
         'Подключите Airtable и синхронизируйте файлы из указанной таблицы в заданном рабочем пространстве.',
+      asanaDescription:
+        'Подключите Asana и синхронизируйте файлы из рабочего пространства.',
       google_driveDescription:
         'Подключите ваш Google Drive через OAuth и синхронизируйте определенные папки или диски.',
       gmailDescription:
