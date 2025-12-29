@@ -29,8 +29,6 @@ from rag.app.naive import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
 
 
-
-
 class Docx(DocxParser):
     def __init__(self):
         pass
@@ -58,37 +56,36 @@ class Docx(DocxParser):
         return [line for line in lines if line]
 
     def __call__(self, filename, binary=None, from_page=0, to_page=100000):
-            self.doc = Document(
-                filename) if not binary else Document(BytesIO(binary))
-            pn = 0
-            lines = []
-            level_set = set()
-            bull = bullets_category([p.text for p in self.doc.paragraphs])
-            for p in self.doc.paragraphs:
-                if pn > to_page:
-                    break
-                question_level, p_text = docx_question_level(p, bull)
-                if not p_text.strip("\n"):
+        self.doc = Document(
+            filename) if not binary else Document(BytesIO(binary))
+        pn = 0
+        lines = []
+        level_set = set()
+        bull = bullets_category([p.text for p in self.doc.paragraphs])
+        for p in self.doc.paragraphs:
+            if pn > to_page:
+                break
+            question_level, p_text = docx_question_level(p, bull)
+            if not p_text.strip("\n"):
+                continue
+            lines.append((question_level, p_text))
+            level_set.add(question_level)
+            for run in p.runs:
+                if 'lastRenderedPageBreak' in run._element.xml:
+                    pn += 1
                     continue
-                lines.append((question_level, p_text))
-                level_set.add(question_level)
-                for run in p.runs:
-                    if 'lastRenderedPageBreak' in run._element.xml:
-                        pn += 1
-                        continue
-                    if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
-                        pn += 1
+                if 'w:br' in run._element.xml and 'type="page"' in run._element.xml:
+                    pn += 1
 
-            sorted_levels = sorted(level_set)
+        sorted_levels = sorted(level_set)
 
-            h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1
-            h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
+        h2_level = sorted_levels[1] if len(sorted_levels) > 1 else 1
+        h2_level = sorted_levels[-2] if h2_level == sorted_levels[-1] and len(sorted_levels) > 2 else h2_level
 
-            root = Node(level=0, depth=h2_level, texts=[])
-            root.build_tree(lines)
+        root = Node(level=0, depth=h2_level, texts=[])
+        root.build_tree(lines)
 
-            return [element for element in root.get_tree() if element]
-
+        return [element for element in root.get_tree() if element]
 
     def __str__(self) -> str:
         return f'''
@@ -153,7 +150,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         chunks = Docx()(filename, binary)
         callback(0.7, "Finish parsing.")
         return tokenize_chunks(chunks, doc, eng, None)
-    
+
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
         layout_recognizer, parser_model_name = normalize_layout_recognizer(
             parser_config.get("layout_recognize", "DeepDOC")
@@ -167,14 +164,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
 
         raw_sections, tables, pdf_parser = parser(
-            filename = filename,
-            binary = binary,
-            from_page = from_page,
-            to_page = to_page,
-            lang = lang,
-            callback = callback,
-            pdf_cls = Pdf,
-            layout_recognizer = layout_recognizer,
+            filename=filename,
+            binary=binary,
+            from_page=from_page,
+            to_page=to_page,
+            lang=lang,
+            callback=callback,
+            pdf_cls=Pdf,
+            layout_recognizer=layout_recognizer,
             mineru_llm_name=parser_model_name,
             **kwargs
         )
@@ -184,7 +181,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         if name in ["tcadp", "docling", "mineru"]:
             parser_config["chunk_token_num"] = 0
-        
+
         for txt, poss in raw_sections:
             sections.append(txt + poss)
 
@@ -225,14 +222,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         raise NotImplementedError(
             "file type not supported yet(doc, docx, pdf, txt supported)")
 
-
     # Remove 'Contents' part
     remove_contents_table(sections, eng)
 
     make_colon_as_title(sections)
     bull = bullets_category(sections)
     res = tree_merge(bull, sections, 2)
-
 
     if not res:
         callback(0.99, "No chunk parsed out.")
@@ -242,9 +237,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     # chunks = hierarchical_merge(bull, sections, 5)
     #     return tokenize_chunks(["\n".join(ck)for ck in chunks], doc, eng, pdf_parser)
 
+
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
+
     chunk(sys.argv[1], callback=dummy)
