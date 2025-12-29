@@ -28,7 +28,6 @@ from common.doc_store.infinity_conn_base import InfinityConnectionBase
 
 @singleton
 class InfinityConnection(InfinityConnectionBase):
-
     """
     Dataframe and fields convert
     """
@@ -83,24 +82,23 @@ class InfinityConnection(InfinityConnectionBase):
         tokens[0] = field
         return "^".join(tokens)
 
-
     """
     CRUD operations
     """
 
     def search(
-        self,
-        select_fields: list[str],
-        highlight_fields: list[str],
-        condition: dict,
-        match_expressions: list[MatchExpr],
-        order_by: OrderByExpr,
-        offset: int,
-        limit: int,
-        index_names: str | list[str],
-        knowledgebase_ids: list[str],
-        agg_fields: list[str] | None = None,
-        rank_feature: dict | None = None,
+            self,
+            select_fields: list[str],
+            highlight_fields: list[str],
+            condition: dict,
+            match_expressions: list[MatchExpr],
+            order_by: OrderByExpr,
+            offset: int,
+            limit: int,
+            index_names: str | list[str],
+            knowledgebase_ids: list[str],
+            agg_fields: list[str] | None = None,
+            rank_feature: dict | None = None,
     ) -> tuple[pd.DataFrame, int]:
         """
         BUG: Infinity returns empty for a highlight field if the query string doesn't use that field.
@@ -159,7 +157,8 @@ class InfinityConnection(InfinityConnectionBase):
                 if table_found:
                     break
             if not table_found:
-                self.logger.error(f"No valid tables found for indexNames {index_names} and knowledgebaseIds {knowledgebase_ids}")
+                self.logger.error(
+                    f"No valid tables found for indexNames {index_names} and knowledgebaseIds {knowledgebase_ids}")
                 return pd.DataFrame(), 0
 
         for matchExpr in match_expressions:
@@ -280,7 +279,8 @@ class InfinityConnection(InfinityConnectionBase):
             try:
                 table_instance = db_instance.get_table(table_name)
             except Exception:
-                self.logger.warning(f"Table not found: {table_name}, this dataset isn't created in Infinity. Maybe it is created in other document engine.")
+                self.logger.warning(
+                    f"Table not found: {table_name}, this dataset isn't created in Infinity. Maybe it is created in other document engine.")
                 continue
             kb_res, _ = table_instance.output(["*"]).filter(f"id = '{chunk_id}'").to_df()
             self.logger.debug(f"INFINITY get table: {str(table_list)}, result: {str(kb_res)}")
@@ -288,7 +288,9 @@ class InfinityConnection(InfinityConnectionBase):
         self.connPool.release_conn(inf_conn)
         res = self.concat_dataframes(df_list, ["id"])
         fields = set(res.columns.tolist())
-        for field in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "question_kwd", "question_tks","content_with_weight", "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks"]:
+        for field in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "question_kwd",
+                      "question_tks", "content_with_weight", "content_ltks", "content_sm_ltks", "authors_tks",
+                      "authors_sm_tks"]:
             fields.add(field)
         res_fields = self.get_fields(res, list(fields))
         return res_fields.get(chunk_id, None)
@@ -379,7 +381,9 @@ class InfinityConnection(InfinityConnectionBase):
                     d[k] = "_".join(f"{num:08x}" for num in v)
                 else:
                     d[k] = v
-            for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "content_with_weight", "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks", "question_kwd", "question_tks"]:
+            for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "content_with_weight",
+                      "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks", "question_kwd",
+                      "question_tks"]:
                 if k in d:
                     del d[k]
 
@@ -478,7 +482,8 @@ class InfinityConnection(InfinityConnectionBase):
                     del new_value[k]
             else:
                 new_value[k] = v
-        for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "content_with_weight", "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks", "question_kwd", "question_tks"]:
+        for k in ["docnm_kwd", "title_tks", "title_sm_tks", "important_kwd", "important_tks", "content_with_weight",
+                  "content_ltks", "content_sm_ltks", "authors_tks", "authors_sm_tks", "question_kwd", "question_tks"]:
             if k in new_value:
                 del new_value[k]
 
@@ -502,7 +507,8 @@ class InfinityConnection(InfinityConnectionBase):
         self.logger.debug(f"INFINITY update table {table_name}, filter {filter}, newValue {new_value}.")
         for update_kv, ids in remove_opt.items():
             k, v = json.loads(update_kv)
-            table_instance.update(filter + " AND id in ({0})".format(",".join([f"'{id}'" for id in ids])), {k: "###".join(v)})
+            table_instance.update(filter + " AND id in ({0})".format(",".join([f"'{id}'" for id in ids])),
+                                  {k: "###".join(v)})
 
         table_instance.update(filter, new_value)
         self.connPool.release_conn(inf_conn)
@@ -561,7 +567,7 @@ class InfinityConnection(InfinityConnectionBase):
                 def to_position_int(v):
                     if v:
                         arr = [int(hex_val, 16) for hex_val in v.split("_")]
-                        v = [arr[i : i + 5] for i in range(0, len(arr), 5)]
+                        v = [arr[i: i + 5] for i in range(0, len(arr), 5)]
                     else:
                         v = []
                     return v
