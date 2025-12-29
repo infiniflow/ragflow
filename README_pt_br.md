@@ -294,6 +294,15 @@ cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
+Se você estiver atrás de um proxy, pode passar argumentos de proxy:
+
+```bash
+docker build --platform linux/amd64 \
+  --build-arg http_proxy=http://YOUR_PROXY:PORT \
+  --build-arg https_proxy=http://YOUR_PROXY:PORT \
+  -f Dockerfile -t infiniflow/ragflow:nightly .
+```
+
 ## 🔨 Lançar o serviço a partir do código-fonte para desenvolvimento
 
 1. Instale o `uv` e o `pre-commit`, ou pule esta etapa se eles já estiverem instalados:

@@ -303,6 +303,15 @@ cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
+若您位於代理環境，可傳遞代理參數：
+
+```bash
+docker build --platform linux/amd64 \
+  --build-arg http_proxy=http://YOUR_PROXY:PORT \
+  --build-arg https_proxy=http://YOUR_PROXY:PORT \
+  -f Dockerfile -t infiniflow/ragflow:nightly .
+```
+
 ## 🔨 以原始碼啟動服務
 
 1. 安裝 `uv` 和 `pre-commit`。如已安裝，可跳過此步驟：
