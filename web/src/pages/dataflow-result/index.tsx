@@ -87,6 +87,7 @@ const Chunk = () => {
       case 'docx':
       case 'txt':
       case 'md':
+      case 'mdx':
       case 'pdf':
         return documentInfo?.type;
     }

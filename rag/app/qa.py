@@ -421,7 +421,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             res.append(beAdocPdf(deepcopy(doc), q, a, eng, image, poss))
         return res
 
-    elif re.search(r"\.(md|markdown)$", filename, re.IGNORECASE):
+    elif re.search(r"\.(md|markdown|mdx)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")

@@ -40,7 +40,9 @@ const DocumentViewer = () => {
           <ImagePreviewer className="w-full !h-dvh p-5" url={api} />
         </div>
       )}
-      {ext === 'md' && <Md url={api} className="!h-dvh p-5"></Md>}
+      {(ext === 'md' || ext === 'mdx') && (
+        <Md url={api} className="!h-dvh p-5"></Md>
+      )}
       {ext === 'txt' && <TxtPreviewer url={api}></TxtPreviewer>}
 
       {ext === 'pdf' && (
