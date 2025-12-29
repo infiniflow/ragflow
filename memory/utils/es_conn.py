@@ -127,6 +127,11 @@ class ESConnection(ESConnectionBase):
             index_names = index_names.split(",")
         assert isinstance(index_names, list) and len(index_names) > 0
         assert "_id" not in condition
+
+        exist_index_list = [idx for idx in index_names if self.index_exist(idx)]
+        if not exist_index_list:
+            return None
+
         bool_query = Q("bool", must=[], must_not=[])
         if hide_forgotten:
             # filter not forget
@@ -214,7 +219,7 @@ class ESConnection(ESConnectionBase):
         for i in range(ATTEMPT_TIME):
             try:
                 #print(json.dumps(q, ensure_ascii=False))
-                res = self.es.search(index=index_names,
+                res = self.es.search(index=exist_index_list,
                                      body=q,
                                      timeout="600s",
                                      # search_type="dfs_query_then_fetch",
@@ -223,14 +228,14 @@ class ESConnection(ESConnectionBase):
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("Es Timeout.")
                 self.logger.debug(f"ESConnection.search {str(index_names)} res: " + str(res))
-                return res
+                return res, self.get_total(res)
             except ConnectionTimeout:
                 self.logger.exception("ES request timeout")
                 self._connect()
                 continue
             except NotFoundError as e:
                 self.logger.debug(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
-                return None
+                return None, 0
             except Exception as e:
                 self.logger.exception(f"ESConnection.search {str(index_names)} query: " + str(q) + str(e))
                 raise e
@@ -239,8 +244,8 @@ class ESConnection(ESConnectionBase):
         raise Exception("ESConnection.search timeout.")
 
     def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int=512):
-        bool_query = Q("bool", must_not=[])
-        bool_query.must_not.append(Q("term", forget_at=None))
+        bool_query = Q("bool", must=[])
+        bool_query.must.append(Q("exists", field="forget_at"))
         bool_query.filter.append(Q("term", memory_id=memory_id))
         # from old to new
         order_by = OrderByExpr()
