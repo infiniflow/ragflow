@@ -233,7 +233,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
     * Running on all addresses (0.0.0.0)
    ```
 
-   > Jika Anda melewatkan langkah ini dan langsung login ke RAGFlow, browser Anda mungkin menampilkan error `network anormal`
+   > Jika Anda melewatkan langkah ini dan langsung login ke RAGFlow, browser Anda mungkin menampilkan error `network abnormal`
    > karena RAGFlow mungkin belum sepenuhnya siap.
    >
 2. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
