@@ -114,7 +114,7 @@ class NormalizeImage:
             except ValueError:
                 if '/' in scale:
                     parts = scale.split('/')
-                    scale = float(parts[0]) / float(parts[1])
+                    scale = ast.literal_eval(parts[0]) / ast.literal_eval(parts[1])
                 else:
                     scale = ast.literal_eval(scale)
         self.scale = np.float32(scale if scale is not None else 1.0 / 255.0)
