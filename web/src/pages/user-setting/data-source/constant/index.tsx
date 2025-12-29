@@ -3,13 +3,12 @@ import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BedrockRegionList } from '../setting-model/constant';
-import BlobTokenField from './component/blob-token-field';
-import BoxTokenField from './component/box-token-field';
-import { ConfluenceIndexingModeField } from './component/confluence-token-field';
-import GmailTokenField from './component/gmail-token-field';
-import GoogleDriveTokenField from './component/google-drive-token-field';
-import { IDataSourceInfoMap } from './interface';
+import BoxTokenField from '../component/box-token-field';
+import { ConfluenceIndexingModeField } from '../component/confluence-token-field';
+import GmailTokenField from '../component/gmail-token-field';
+import GoogleDriveTokenField from '../component/google-drive-token-field';
+import { IDataSourceInfoMap } from '../interface';
+import { S3Constant } from './s3-constant';
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   S3 = 's3',
@@ -118,11 +117,6 @@ export const generateDataSourceInfo = (t: TFunction) => {
     },
   };
 };
-
-const awsRegionOptions = BedrockRegionList.map((r) => ({
-  label: r,
-  value: r,
-}));
 
 export const useDataSourceInfo = () => {
   const { t } = useTranslation();
@@ -240,47 +234,7 @@ export const DataSourceFormFields = {
       required: true,
     },
   ],
-  [DataSourceKey.S3]: [
-    {
-      label: 'Bucket Name',
-      name: 'config.bucket_name',
-      type: FormFieldType.Text,
-      required: true,
-    },
-    {
-      label: 'Region',
-      name: 'config.credentials.region',
-      type: FormFieldType.Select,
-      required: false,
-      options: awsRegionOptions,
-      customValidate: (val: string, formValues: any) => {
-        const credentials = formValues?.config?.credentials || {};
-        const bucketType = formValues?.config?.bucket_type || 's3';
-        const hasAccessKey = Boolean(
-          credentials.aws_access_key_id || credentials.aws_secret_access_key,
-        );
-        if (bucketType === 's3' && hasAccessKey) {
-          return Boolean(val) || 'Region is required when using access key';
-        }
-        return true;
-      },
-    },
-    {
-      label: 'Prefix',
-      name: 'config.prefix',
-      type: FormFieldType.Text,
-      required: false,
-      tooltip: t('setting.s3PrefixTip'),
-    },
-    {
-      label: 'Credentials',
-      name: 'config.credentials.__blob_token',
-      type: FormFieldType.Custom,
-      hideLabel: true,
-      required: false,
-      render: () => <BlobTokenField />,
-    },
-  ],
+  [DataSourceKey.S3]: S3Constant(t),
   [DataSourceKey.NOTION]: [
     {
       label: 'Notion Integration Token',
@@ -739,6 +693,7 @@ export const DataSourceFormDefaultValues = {
     config: {
       bucket_name: '',
       bucket_type: 's3',
+      authMode: 'access_key',
       prefix: '',
       credentials: {
         aws_access_key_id: '',
