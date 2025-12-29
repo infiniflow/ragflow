@@ -236,16 +236,13 @@ class BaseConnector(abc.ABC, Generic[CT]):
 
     def validate_perm_sync(self) -> None:
         """
-        Don't override this; add a function to perm_sync_valid.py in the ee package
-        to do permission sync validation
+        Permission-sync validation hook.
+
+        RAGFlow doesn't ship the Onyx EE permission-sync validation package.
+        Connectors that support permission sync should override
+        `validate_connector_settings()` as needed.
         """
-        """
-        validate_connector_settings_fn = fetch_ee_implementation_or_noop(
-            "onyx.connectors.perm_sync_valid",
-            "validate_perm_sync",
-            noop_return_value=None,
-        )
-        validate_connector_settings_fn(self)"""
+        return None
 
     def set_allow_images(self, value: bool) -> None:
         """Implement if the underlying connector wants to skip/allow image downloading
