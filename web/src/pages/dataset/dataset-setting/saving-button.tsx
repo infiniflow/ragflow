@@ -73,6 +73,8 @@ export function SavingButton() {
                   ...values,
                   parser_config: {
                     ...values.parser_config,
+                    image_table_context_window:
+                      values.parser_config.image_table_context_window,
                     image_context_size:
                       values.parser_config.image_table_context_window,
                     table_context_size:

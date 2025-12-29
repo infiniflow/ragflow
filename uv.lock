@@ -3051,7 +3051,7 @@ wheels = [
 
 [[package]]
 name = "infinity-sdk"
-version = "0.6.13"
+version = "0.6.15"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "datrie" },
@@ -3068,9 +3068,9 @@ dependencies = [
     { name = "sqlglot", extra = ["rs"] },
     { name = "thrift" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/03/de/56fdc0fa962d5a8e0aa68d16f5321b2d88d79fceb7d0d6cfdde338b65d05/infinity_sdk-0.6.13.tar.gz", hash = "sha256:faf7bc23de7fa549a3842753eddad54ae551ada9df4fff25421658a7fa6fa8c2", size = 29518902, upload-time = "2025-12-24T10:00:01.483Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f9/e3/c7433ce0017fba9cd833bc2f2d0208acfdfaf4e635594f7257976bb7230e/infinity_sdk-0.6.15.tar.gz", hash = "sha256:b3159acb1b026e1868ac90a480d8259748655df82a32acdd838279b867b5f587", size = 29518841, upload-time = "2025-12-27T10:39:09.676Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f4/a0/8f1e134fdf4ca8bebac7b62caace1816953bb5ffc720d9f0004246c8c38d/infinity_sdk-0.6.13-py3-none-any.whl", hash = "sha256:c08a523d2c27e9a7e6e88be640970530b4661a67c3e9dc3e1aa89533a822fd78", size = 29737403, upload-time = "2025-12-24T09:56:16.93Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/0f/2c/427702ff4231f8965053b8c585b32cfd7571e0515e05fe5e95ddf2c56030/infinity_sdk-0.6.15-py3-none-any.whl", hash = "sha256:06f8a7f50c9817f17aac9d3cafe08f3478423b02b233bd608d17317e23588dc7", size = 29737429, upload-time = "2025-12-27T10:41:58.352Z" },
 ]
 
 [[package]]
@@ -6082,7 +6082,7 @@ wheels = [
 
 [[package]]
 name = "ragflow"
-version = "0.22.1"
+version = "0.23.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aiosmtplib" },
@@ -6255,7 +6255,7 @@ requires-dist = [
     { name = "grpcio-status", specifier = "==1.67.1" },
     { name = "html-text", specifier = "==0.6.2" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
-    { name = "infinity-sdk", specifier = "==0.6.13" },
+    { name = "infinity-sdk", specifier = "==0.6.15" },
     { name = "jira", specifier = "==3.10.5" },
     { name = "json-repair", specifier = "==0.35.0" },
     { name = "langfuse", specifier = ">=2.60.0" },
