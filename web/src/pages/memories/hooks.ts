@@ -7,9 +7,10 @@ import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import memoryService, { updateMemoryById } from '@/services/memory-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
+import { omit } from 'lodash';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams } from 'umi';
 import {
   CreateMemoryResponse,
   DeleteMemoryProps,
@@ -139,7 +140,9 @@ export const useDeleteMemory = () => {
   } = useMutation<DeleteMemoryResponse, Error, DeleteMemoryProps>({
     mutationKey: ['deleteMemory'],
     mutationFn: async (props) => {
-      const { data: response } = await memoryService.deleteMemory(props);
+      const { data: response } = await memoryService.deleteMemory(
+        props.memory_id,
+      );
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to delete memory');
       }
@@ -175,7 +178,8 @@ export const useUpdateMemory = () => {
   } = useMutation<any, Error, IMemoryAppDetailProps>({
     mutationKey: ['updateMemory'],
     mutationFn: async (formData) => {
-      const { data: response } = await updateMemoryById(formData.id, formData);
+      const param = omit(formData, ['id']);
+      const { data: response } = await updateMemoryById(formData.id, param);
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to update memory');
       }
@@ -244,7 +248,7 @@ export const useRenameMemory = () => {
         try {
           await updateMemory({
             // ...memoryDataTemp,
-            name: data.memory_name,
+            name: data.name,
             id: memory?.id,
           } as unknown as IMemoryAppDetailProps);
         } catch (e) {
@@ -253,9 +257,9 @@ export const useRenameMemory = () => {
       } else {
         await createMemory(data);
       }
-      if (res && !memory?.id) {
-        navigateToMemory(res?.id)();
-      }
+      // if (res && !memory?.id) {
+      //   navigateToMemory(res?.id)();
+      // }
       callBack?.();
       setLoading(false);
       handleHideModal();

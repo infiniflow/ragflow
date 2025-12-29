@@ -1,5 +1,5 @@
 import Spotlight from '@/components/spotlight';
-import { Outlet } from 'react-router';
+import { Outlet } from 'umi';
 import { SideBar } from './sidebar';
 
 export default function DatasetWrapper() {

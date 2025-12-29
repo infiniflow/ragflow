@@ -8,7 +8,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useSearchParams } from 'umi';
 import { AddOrEditModal } from './add-or-edit-modal';
 import { defaultMemoryFields } from './constants';
 import { useFetchMemoryList, useRenameMemory } from './hooks';
@@ -17,7 +17,7 @@ import { MemoryCard } from './memory-card';
 
 export default function MemoryList() {
   // const { data } = useFetchFlowList();
-  const { t } = useTranslate('memory');
+  const { t } = useTranslate('memories');
   const [addOrEditType, setAddOrEditType] = useState<'add' | 'edit'>('add');
   // const [isEdit, setIsEdit] = useState(false);
   const {
@@ -124,6 +124,7 @@ export default function MemoryList() {
                     key={x.id}
                     data={x}
                     showMemoryRenameModal={() => {
+                      setAddOrEditType('edit');
                       showMemoryRenameModal(x);
                     }}
                   ></MemoryCard>

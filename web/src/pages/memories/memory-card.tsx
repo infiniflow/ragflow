@@ -21,7 +21,7 @@ export function MemoryCard({ data, showMemoryRenameModal }: IProps) {
       }}
       moreDropdown={
         <MemoryDropdown
-          dataset={data}
+          memory={data}
           showMemoryRenameModal={showMemoryRenameModal}
         >
           <MoreButton></MoreButton>

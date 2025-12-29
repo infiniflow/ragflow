@@ -108,9 +108,6 @@ export default function MemoryMessage() {
           </form>
         </Form>
       </div>
-      <div className="flex items-center gap-2">
-        <div className="h-4 w-4 rounded-full bg-text ">setting</div>
-      </div>
     </section>
   );
 }

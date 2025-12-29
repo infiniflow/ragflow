@@ -1,10 +1,3 @@
-export interface ICreateMemoryProps {
-  memory_name: string;
-  memory_type: Array<string>;
-  embedding: string;
-  llm: string;
-}
-
 export interface CreateMemoryResponse {
   id: string;
   name: string;
@@ -32,14 +25,10 @@ export interface ICreateMemoryProps {
 }
 export interface IMemory extends ICreateMemoryProps {
   id: string;
-  name: string;
   avatar: string;
   tenant_id: string;
   owner_name: string;
-  memory_type: MemoryType[];
   storage_type: StorageType;
-  embedding: string;
-  llm: string;
   permissions: Permissions;
   description: string;
   memory_size: number;

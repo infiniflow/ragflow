@@ -1,18 +1,4 @@
 import {
-  ColumnDef,
-  ColumnFiltersState,
-  SortingState,
-  VisibilityState,
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import * as React from 'react';
-
-import {
   ConfirmDeleteDialog,
   ConfirmDeleteDialogNode,
 } from '@/components/confirm-delete-dialog';
@@ -32,11 +18,24 @@ import {
 } from '@/components/ui/table';
 import { Pagination } from '@/interfaces/common';
 import { replaceText } from '@/pages/dataset/process-log-modal';
+import {
+  ColumnDef,
+  ColumnFiltersState,
+  SortingState,
+  VisibilityState,
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
 import { t } from 'i18next';
 import { pick } from 'lodash';
 import { Copy, Eraser, TextSelect } from 'lucide-react';
+import * as React from 'react';
 import { useMemo, useState } from 'react';
-import CopyToClipboard from 'react-copy-to-clipboard';
+import { CopyToClipboard } from 'react-copy-to-clipboard';
 import { useMessageAction } from './hook';
 import { IMessageInfo } from './interface';
 
@@ -79,7 +78,7 @@ export function MemoryTable({
     () => [
       {
         accessorKey: 'session_id',
-        header: () => <span>{t('memoryDetail.messages.sessionId')}</span>,
+        header: () => <span>{t('memory.messages.sessionId')}</span>,
         cell: ({ row }) => (
           <div className="text-sm font-medium ">
             {row.getValue('session_id')}
@@ -88,7 +87,7 @@ export function MemoryTable({
       },
       {
         accessorKey: 'agent_name',
-        header: () => <span>{t('memoryDetail.messages.agent')}</span>,
+        header: () => <span>{t('memory.messages.agent')}</span>,
         cell: ({ row }) => (
           <div className="text-sm font-medium ">
             {row.getValue('agent_name')}
@@ -97,7 +96,7 @@ export function MemoryTable({
       },
       {
         accessorKey: 'message_type',
-        header: () => <span>{t('memoryDetail.messages.type')}</span>,
+        header: () => <span>{t('memory.messages.type')}</span>,
         cell: ({ row }) => (
           <div className="text-sm font-medium  capitalize">
             {row.getValue('message_type')}
@@ -106,28 +105,28 @@ export function MemoryTable({
       },
       {
         accessorKey: 'valid_at',
-        header: () => <span>{t('memoryDetail.messages.validDate')}</span>,
+        header: () => <span>{t('memory.messages.validDate')}</span>,
         cell: ({ row }) => (
           <div className="text-sm ">{row.getValue('valid_at')}</div>
         ),
       },
       {
         accessorKey: 'forget_at',
-        header: () => <span>{t('memoryDetail.messages.forgetAt')}</span>,
+        header: () => <span>{t('memory.messages.forgetAt')}</span>,
         cell: ({ row }) => (
           <div className="text-sm ">{row.getValue('forget_at')}</div>
         ),
       },
       {
         accessorKey: 'source_id',
-        header: () => <span>{t('memoryDetail.messages.source')}</span>,
+        header: () => <span>{t('memory.messages.source')}</span>,
         cell: ({ row }) => (
           <div className="text-sm ">{row.getValue('source_id')}</div>
         ),
       },
       {
         accessorKey: 'status',
-        header: () => <span>{t('memoryDetail.messages.enable')}</span>,
+        header: () => <span>{t('memory.messages.enable')}</span>,
         cell: ({ row }) => {
           const isEnabled = row.getValue('status') as boolean;
           return (
@@ -144,19 +143,28 @@ export function MemoryTable({
       },
       {
         accessorKey: 'action',
-        header: () => <span>{t('memoryDetail.messages.action')}</span>,
+        header: () => <span>{t('memory.messages.action')}</span>,
         meta: {
           cellClassName: 'w-12',
         },
-        cell: () => (
+        cell: ({ row }) => (
           <div className=" flex opacity-0 group-hover:opacity-100">
-            <Button variant={'ghost'} className="bg-transparent">
+            <Button
+              variant={'ghost'}
+              className="bg-transparent"
+              onClick={() => {
+                handleClickMessageContentDialog(row.original);
+              }}
+            >
               <TextSelect />
             </Button>
             <Button
               variant={'delete'}
               className="bg-transparent"
               aria-label="Edit"
+              onClick={() => {
+                handleClickDeleteMessage(row.original);
+              }}
             >
               <Eraser />
             </Button>
@@ -164,7 +172,7 @@ export function MemoryTable({
         ),
       },
     ],
-    [],
+    [handleClickDeleteMessage],
   );
 
   const currentPagination = useMemo(() => {
