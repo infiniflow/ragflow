@@ -25,7 +25,8 @@ from PIL import Image
 test_image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAIAAAD/gAIDAAAA6ElEQVR4nO3QwQ3AIBDAsIP9d25XIC+EZE8QZc18w5l9O+AlZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBWYFZgVmBT+IYAHHLHkdEgAAAABJRU5ErkJggg=="
 test_image = base64.b64decode(test_image_base64)
 
-async def image2id(d: dict, storage_put_func: partial, objname:str, bucket:str="imagetemps"):
+
+async def image2id(d: dict, storage_put_func: partial, objname: str, bucket: str = "imagetemps"):
     import logging
     from io import BytesIO
     from rag.svr.task_executor import minio_limiter
@@ -74,7 +75,7 @@ async def image2id(d: dict, storage_put_func: partial, objname:str, bucket:str="
     del d["image"]
 
 
-def id2image(image_id:str|None, storage_get_func: partial):
+def id2image(image_id: str | None, storage_get_func: partial):
     if not image_id:
         return
     arr = image_id.split("-")

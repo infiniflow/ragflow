@@ -25,17 +25,22 @@ import PyPDF2
 from docx import Document
 import olefile
 
+
 def _is_zip(h: bytes) -> bool:
     return h.startswith(b"PK\x03\x04") or h.startswith(b"PK\x05\x06") or h.startswith(b"PK\x07\x08")
+
 
 def _is_pdf(h: bytes) -> bool:
     return h.startswith(b"%PDF-")
 
+
 def _is_ole(h: bytes) -> bool:
     return h.startswith(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1")
 
+
 def _sha10(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()[:10]
+
 
 def _guess_ext(b: bytes) -> str:
     h = b[:8]
@@ -58,13 +63,14 @@ def _guess_ext(b: bytes) -> str:
         return ".doc"
     return ".bin"
 
+
 # Try to extract the real embedded payload from OLE's Ole10Native
 def _extract_ole10native_payload(data: bytes) -> bytes:
     try:
         pos = 0
         if len(data) < 4:
             return data
-        _ = int.from_bytes(data[pos:pos+4], "little")
+        _ = int.from_bytes(data[pos:pos + 4], "little")
         pos += 4
         # filename/src/tmp (NUL-terminated ANSI)
         for _ in range(3):
@@ -74,13 +80,14 @@ def _extract_ole10native_payload(data: bytes) -> bytes:
         pos += 4
         if pos + 4 > len(data):
             return data
-        size = int.from_bytes(data[pos:pos+4], "little")
+        size = int.from_bytes(data[pos:pos + 4], "little")
         pos += 4
         if pos + size <= len(data):
-            return data[pos:pos+size]
+            return data[pos:pos + size]
     except Exception:
         pass
     return data
+
 
 def extract_embed_file(target: Union[bytes, bytearray]) -> List[Tuple[str, bytes]]:
     """
@@ -163,7 +170,7 @@ def extract_links_from_docx(docx_bytes: bytes):
         # Each relationship may represent a hyperlink, image, footer, etc.
         for rel in document.part.rels.values():
             if rel.reltype == (
-                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
+                    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
             ):
                 links.add(rel.target_ref)
 
@@ -198,6 +205,8 @@ def extract_links_from_pdf(pdf_bytes: bytes):
 
 
 _GLOBAL_SESSION: Optional[requests.Session] = None
+
+
 def _get_session(headers: Optional[Dict[str, str]] = None) -> requests.Session:
     """Get or create a global reusable session."""
     global _GLOBAL_SESSION
@@ -216,10 +225,10 @@ def _get_session(headers: Optional[Dict[str, str]] = None) -> requests.Session:
 
 
 def extract_html(
-    url: str,
-    timeout: float = 60.0,
-    headers: Optional[Dict[str, str]] = None,
-    max_retries: int = 2,
+        url: str,
+        timeout: float = 60.0,
+        headers: Optional[Dict[str, str]] = None,
+        max_retries: int = 2,
 ) -> Tuple[Optional[bytes], Dict[str, str]]:
     """
     Extract the full HTML page as raw bytes from a given URL.

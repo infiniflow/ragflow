@@ -34,7 +34,8 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         if not ext:
             raise RuntimeError("No extension detected.")
 
-        if ext not in [".da", ".wave", ".wav", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma", ".realaudio", ".vqf", ".oggvorbis", ".aac", ".ape"]:
+        if ext not in [".da", ".wave", ".wav", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma",
+                       ".realaudio", ".vqf", ".oggvorbis", ".aac", ".ape"]:
             raise RuntimeError(f"Extension {ext} is not supported yet.")
 
         tmp_path = ""

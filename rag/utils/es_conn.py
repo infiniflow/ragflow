@@ -32,7 +32,6 @@ ATTEMPT_TIME = 2
 
 @singleton
 class ESConnection(ESConnectionBase):
-
     """
     CRUD operations
     """
@@ -82,8 +81,9 @@ class ESConnection(ESConnectionBase):
         vector_similarity_weight = 0.5
         for m in match_expressions:
             if isinstance(m, FusionExpr) and m.method == "weighted_sum" and "weights" in m.fusion_params:
-                assert len(match_expressions) == 3 and isinstance(match_expressions[0], MatchTextExpr) and isinstance(match_expressions[1],
-                                                                                                                      MatchDenseExpr) and isinstance(
+                assert len(match_expressions) == 3 and isinstance(match_expressions[0], MatchTextExpr) and isinstance(
+                    match_expressions[1],
+                    MatchDenseExpr) and isinstance(
                     match_expressions[2], FusionExpr)
                 weights = m.fusion_params["weights"]
                 vector_similarity_weight = get_float(weights.split(",")[1])
@@ -93,9 +93,9 @@ class ESConnection(ESConnectionBase):
                 if isinstance(minimum_should_match, float):
                     minimum_should_match = str(int(minimum_should_match * 100)) + "%"
                 bool_query.must.append(Q("query_string", fields=m.fields,
-                                   type="best_fields", query=m.matching_text,
-                                   minimum_should_match=minimum_should_match,
-                                   boost=1))
+                                         type="best_fields", query=m.matching_text,
+                                         minimum_should_match=minimum_should_match,
+                                         boost=1))
                 bool_query.boost = 1.0 - vector_similarity_weight
 
             elif isinstance(m, MatchDenseExpr):
@@ -146,7 +146,7 @@ class ESConnection(ESConnectionBase):
 
         for i in range(ATTEMPT_TIME):
             try:
-                #print(json.dumps(q, ensure_ascii=False))
+                # print(json.dumps(q, ensure_ascii=False))
                 res = self.es.search(index=index_names,
                                      body=q,
                                      timeout="600s",
@@ -220,13 +220,15 @@ class ESConnection(ESConnectionBase):
                     try:
                         self.es.update(index=index_name, id=chunk_id, script=f"ctx._source.remove(\"{k}\");")
                     except Exception:
-                        self.logger.exception(f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
+                        self.logger.exception(
+                            f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception")
                 try:
                     self.es.update(index=index_name, id=chunk_id, doc=doc)
                     return True
                 except Exception as e:
                     self.logger.exception(
-                        f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception: " + str(e))
+                        f"ESConnection.update(index={index_name}, id={chunk_id}, doc={json.dumps(condition, ensure_ascii=False)}) got exception: " + str(
+                            e))
                     break
             return False
 

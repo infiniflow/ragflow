@@ -31,16 +31,20 @@ from common.token_utils import num_tokens_from_string
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
-from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
-from deepdoc.parser.figure_parser import VisionFigureParser,vision_figure_parser_docx_wrapper,vision_figure_parser_pdf_wrapper
+from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, \
+    PdfParser, TxtParser
+from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper, \
+    vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.parser_config_utils import normalize_layout_recognizer
-from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, tokenize_chunks, tokenize_chunks_with_images, tokenize_table, attach_media_context
+from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, \
+    tokenize_chunks, tokenize_chunks_with_images, tokenize_table, attach_media_context
 
 
-def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None, **kwargs):
+def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None,
+               **kwargs):
     callback = callback
     binary = binary
     pdf_parser = pdf_cls() if pdf_cls else Pdf()
@@ -58,17 +62,17 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
 
 
 def by_mineru(
-    filename,
-    binary=None,
-    from_page=0,
-    to_page=100000,
-    lang="Chinese",
-    callback=None,
-    pdf_cls=None,
-    parse_method: str = "raw",
-    mineru_llm_name: str | None = None,
-    tenant_id: str | None = None,
-    **kwargs,
+        filename,
+        binary=None,
+        from_page=0,
+        to_page=100000,
+        lang="Chinese",
+        callback=None,
+        pdf_cls=None,
+        parse_method: str = "raw",
+        mineru_llm_name: str | None = None,
+        tenant_id: str | None = None,
+        **kwargs,
 ):
     pdf_parser = None
     if tenant_id:
@@ -106,7 +110,8 @@ def by_mineru(
     return None, None, None
 
 
-def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None, **kwargs):
+def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None,
+               **kwargs):
     pdf_parser = DoclingParser()
     parse_method = kwargs.get("parse_method", "raw")
 
@@ -125,7 +130,7 @@ def by_docling(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
     return sections, tables, pdf_parser
 
 
-def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls = None, **kwargs):
+def by_tcadp(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
     tcadp_parser = TCADPParser()
 
     if not tcadp_parser.check_installation():
@@ -168,10 +173,10 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=100000, callback=No
 
 
 PARSERS = {
-    "deepdoc":  by_deepdoc,
-    "mineru":   by_mineru,
-    "docling":  by_docling,
-    "tcadp":    by_tcadp,
+    "deepdoc": by_deepdoc,
+    "mineru": by_mineru,
+    "docling": by_docling,
+    "tcadp": by_tcadp,
     "plaintext": by_plaintext,  # default
 }
 
@@ -264,7 +269,7 @@ class Docx(DocxParser):
 
         # Find the nearest heading paragraph in reverse order
         nearest_title = None
-        for i in range(len(blocks)-1, -1, -1):
+        for i in range(len(blocks) - 1, -1, -1):
             block_type, pos, block = blocks[i]
             if pos >= target_table_pos:  # Skip blocks after the table
                 continue
@@ -293,7 +298,7 @@ class Docx(DocxParser):
             # Find all parent headings, allowing cross-level search
             while current_level > 1:
                 found = False
-                for i in range(len(blocks)-1, -1, -1):
+                for i in range(len(blocks) - 1, -1, -1):
                     block_type, pos, block = blocks[i]
                     if pos >= target_table_pos:  # Skip blocks after the table
                         continue
@@ -426,7 +431,8 @@ class Docx(DocxParser):
 
         try:
             if inline_images:
-                result = mammoth.convert_to_html(docx_file, convert_image=mammoth.images.img_element(_convert_image_to_base64))
+                result = mammoth.convert_to_html(docx_file,
+                                                 convert_image=mammoth.images.img_element(_convert_image_to_base64))
             else:
                 result = mammoth.convert_to_html(docx_file)
 
@@ -621,6 +627,7 @@ class Markdown(MarkdownParser):
             return sections, tbls, section_images
         return sections, tbls
 
+
 def load_from_xml_v2(baseURI, rels_item_xml):
     """
     Return |_SerializedRelationships| instance loaded with the
@@ -635,6 +642,7 @@ def load_from_xml_v2(baseURI, rels_item_xml):
                 continue
             srels._srels.append(_SerializedRelationship(baseURI, rel_elm))
     return srels
+
 
 def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, **kwargs):
     """
@@ -651,7 +659,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         "parser_config", {
             "chunk_token_num": 512, "delimiter": "\n!?。；！？", "layout_recognize": "DeepDOC", "analyze_hyperlink": True})
 
-    child_deli = (parser_config.get("children_delimiter") or "").encode('utf-8').decode('unicode_escape').encode('latin1').decode('utf-8')
+    child_deli = (parser_config.get("children_delimiter") or "").encode('utf-8').decode('unicode_escape').encode(
+        'latin1').decode('utf-8')
     cust_child_deli = re.findall(r"`([^`]+)`", child_deli)
     child_deli = "|".join(re.sub(r"`([^`]+)`", "", child_deli))
     if cust_child_deli:
@@ -685,7 +694,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         # Recursively chunk each embedded file and collect results
         for embed_filename, embed_bytes in embeds:
             try:
-                sub_res = chunk(embed_filename, binary=embed_bytes, lang=lang, callback=callback, is_root=False, **kwargs) or []
+                sub_res = chunk(embed_filename, binary=embed_bytes, lang=lang, callback=callback, is_root=False,
+                                **kwargs) or []
                 embed_res.extend(sub_res)
             except Exception as e:
                 if callback:
@@ -704,7 +714,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                     sub_url_res = chunk(url, html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
                 except Exception as e:
                     logging.info(f"Failed to chunk url in registered file type {url}: {e}")
-                    sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
+                    sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False,
+                                        **kwargs)
                 url_res.extend(sub_url_res)
 
         # fix "There is no item named 'word/NULL' in the archive", referring to https://github.com/python-openxml/python-docx/issues/1105#issuecomment-1298075246
@@ -747,14 +758,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         callback(0.1, "Start to parse.")
 
         sections, tables, pdf_parser = parser(
-            filename = filename,
-            binary = binary,
-            from_page = from_page,
-            to_page = to_page,
-            lang = lang,
-            callback = callback,
-            layout_recognizer = layout_recognizer,
-            mineru_llm_name = parser_model_name,
+            filename=filename,
+            binary=binary,
+            from_page=from_page,
+            to_page=to_page,
+            lang=lang,
+            callback=callback,
+            layout_recognizer=layout_recognizer,
+            mineru_llm_name=parser_model_name,
             **kwargs
         )
 
@@ -846,9 +857,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                     else:
                         section_images = [None] * len(sections)
                         section_images[idx] = combined_image
-                    markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data= [((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
+                    markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=[
+                        ((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
                     boosted_figures = markdown_vision_parser(callback=callback)
-                    sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
+                    sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]),
+                                     sections[idx][1])
 
         else:
             logging.warning("No visual model detected. Skipping figure parsing enhancement.")
@@ -945,7 +958,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         has_images = merged_images and any(img is not None for img in merged_images)
 
         if has_images:
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images, child_delimiters_pattern=child_deli))
+            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, merged_images,
+                                                   child_delimiters_pattern=child_deli))
         else:
             res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli))
     else:
@@ -955,10 +969,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         if section_images:
             chunks, images = naive_merge_with_images(sections, section_images,
-                                            int(parser_config.get(
-                                                "chunk_token_num", 128)), parser_config.get(
-                                                "delimiter", "\n!?。；！？"))
-            res.extend(tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
+                                                     int(parser_config.get(
+                                                         "chunk_token_num", 128)), parser_config.get(
+                    "delimiter", "\n!?。；！？"))
+            res.extend(
+                tokenize_chunks_with_images(chunks, doc, is_english, images, child_delimiters_pattern=child_deli))
         else:
             chunks = naive_merge(
                 sections, int(parser_config.get(
@@ -993,7 +1008,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
 
     chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)

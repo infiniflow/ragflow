@@ -66,7 +66,8 @@ class Dealer:
             if key in req and req[key] is not None:
                 condition[field] = req[key]
         # TODO(yzc): `available_int` is nullable however infinity doesn't support nullable columns.
-        for key in ["knowledge_graph_kwd", "available_int", "entity_kwd", "from_entity_kwd", "to_entity_kwd", "removed_kwd"]:
+        for key in ["knowledge_graph_kwd", "available_int", "entity_kwd", "from_entity_kwd", "to_entity_kwd",
+                    "removed_kwd"]:
             if key in req and req[key] is not None:
                 condition[key] = req[key]
         return condition
@@ -141,7 +142,8 @@ class Dealer:
                         matchText, _ = self.qryr.question(qst, min_match=0.1)
                         matchDense.extra_options["similarity"] = 0.17
                         res = self.dataStore.search(src, highlightFields, filters, [matchText, matchDense, fusionExpr],
-                                                    orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
+                                                    orderBy, offset, limit, idx_names, kb_ids,
+                                                    rank_feature=rank_feature)
                         total = self.dataStore.get_total(res)
                     logging.debug("Dealer.search 2 TOTAL: {}".format(total))
 
@@ -218,8 +220,9 @@ class Dealer:
         ans_v, _ = embd_mdl.encode(pieces_)
         for i in range(len(chunk_v)):
             if len(ans_v[0]) != len(chunk_v[i]):
-                chunk_v[i] = [0.0]*len(ans_v[0])
-                logging.warning("The dimension of query and chunk do not match: {} vs. {}".format(len(ans_v[0]), len(chunk_v[i])))
+                chunk_v[i] = [0.0] * len(ans_v[0])
+                logging.warning(
+                    "The dimension of query and chunk do not match: {} vs. {}".format(len(ans_v[0]), len(chunk_v[i])))
 
         assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(
             len(ans_v[0]), len(chunk_v[0]))
@@ -273,7 +276,7 @@ class Dealer:
         if not query_rfea:
             return np.array([0 for _ in range(len(search_res.ids))]) + pageranks
 
-        q_denor = np.sqrt(np.sum([s*s for t,s in query_rfea.items() if t != PAGERANK_FLD]))
+        q_denor = np.sqrt(np.sum([s * s for t, s in query_rfea.items() if t != PAGERANK_FLD]))
         for i in search_res.ids:
             nor, denor = 0, 0
             if not search_res.field[i].get(TAG_FLD):
@@ -286,8 +289,8 @@ class Dealer:
             if denor == 0:
                 rank_fea.append(0)
             else:
-                rank_fea.append(nor/np.sqrt(denor)/q_denor)
-        return np.array(rank_fea)*10. + pageranks
+                rank_fea.append(nor / np.sqrt(denor) / q_denor)
+        return np.array(rank_fea) * 10. + pageranks
 
     def rerank(self, sres, query, tkweight=0.3,
                vtweight=0.7, cfield="content_ltks",
@@ -358,21 +361,21 @@ class Dealer:
                                            rag_tokenizer.tokenize(inst).split())
 
     def retrieval(
-        self,
-        question,
-        embd_mdl,
-        tenant_ids,
-        kb_ids,
-        page,
-        page_size,
-        similarity_threshold=0.2,
-        vector_similarity_weight=0.3,
-        top=1024,
-        doc_ids=None,
-        aggs=True,
-        rerank_mdl=None,
-        highlight=False,
-        rank_feature: dict | None = {PAGERANK_FLD: 10},
+            self,
+            question,
+            embd_mdl,
+            tenant_ids,
+            kb_ids,
+            page,
+            page_size,
+            similarity_threshold=0.2,
+            vector_similarity_weight=0.3,
+            top=1024,
+            doc_ids=None,
+            aggs=True,
+            rerank_mdl=None,
+            highlight=False,
+            rank_feature: dict | None = {PAGERANK_FLD: 10},
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
@@ -395,7 +398,8 @@ class Dealer:
         if isinstance(tenant_ids, str):
             tenant_ids = tenant_ids.split(",")
 
-        sres = self.search(req, [index_name(tid) for tid in tenant_ids], kb_ids, embd_mdl, highlight, rank_feature=rank_feature)
+        sres = self.search(req, [index_name(tid) for tid in tenant_ids], kb_ids, embd_mdl, highlight,
+                           rank_feature=rank_feature)
 
         if rerank_mdl and sres.total > 0:
             sim, tsim, vsim = self.rerank_by_model(
@@ -558,13 +562,14 @@ class Dealer:
 
     def tag_content(self, tenant_id: str, kb_ids: list[str], doc, all_tags, topn_tags=3, keywords_topn=30, S=1000):
         idx_nm = index_name(tenant_id)
-        match_txt = self.qryr.paragraph(doc["title_tks"] + " " + doc["content_ltks"], doc.get("important_kwd", []), keywords_topn)
+        match_txt = self.qryr.paragraph(doc["title_tks"] + " " + doc["content_ltks"], doc.get("important_kwd", []),
+                                        keywords_topn)
         res = self.dataStore.search([], [], {}, [match_txt], OrderByExpr(), 0, 0, idx_nm, kb_ids, ["tag_kwd"])
         aggs = self.dataStore.get_aggregation(res, "tag_kwd")
         if not aggs:
             return False
         cnt = np.sum([c for _, c in aggs])
-        tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
+        tag_fea = sorted([(a, round(0.1 * (c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
         doc[TAG_FLD] = {a.replace(".", "_"): c for a, c in tag_fea if c > 0}
         return True
@@ -580,11 +585,11 @@ class Dealer:
         if not aggs:
             return {}
         cnt = np.sum([c for _, c in aggs])
-        tag_fea = sorted([(a, round(0.1*(c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
+        tag_fea = sorted([(a, round(0.1 * (c + 1) / (cnt + S) / max(1e-6, all_tags.get(a, 0.0001)))) for a, c in aggs],
                          key=lambda x: x[1] * -1)[:topn_tags]
         return {a.replace(".", "_"): max(1, c) for a, c in tag_fea}
 
-    def retrieval_by_toc(self, query:str, chunks:list[dict], tenant_ids:list[str], chat_mdl, topn: int=6):
+    def retrieval_by_toc(self, query: str, chunks: list[dict], tenant_ids: list[str], chat_mdl, topn: int = 6):
         if not chunks:
             return []
         idx_nms = [index_name(tid) for tid in tenant_ids]
@@ -594,9 +599,10 @@ class Dealer:
                 ranks[ck["doc_id"]] = 0
             ranks[ck["doc_id"]] += ck["similarity"]
             doc_id2kb_id[ck["doc_id"]] = ck["kb_id"]
-        doc_id = sorted(ranks.items(), key=lambda x: x[1]*-1.)[0][0]
+        doc_id = sorted(ranks.items(), key=lambda x: x[1] * -1.)[0][0]
         kb_ids = [doc_id2kb_id[doc_id]]
-        es_res = self.dataStore.search(["content_with_weight"], [], {"doc_id": doc_id, "toc_kwd": "toc"}, [], OrderByExpr(), 0, 128, idx_nms,
+        es_res = self.dataStore.search(["content_with_weight"], [], {"doc_id": doc_id, "toc_kwd": "toc"}, [],
+                                       OrderByExpr(), 0, 128, idx_nms,
                                        kb_ids)
         toc = []
         dict_chunks = self.dataStore.get_fields(es_res, ["content_with_weight"])
@@ -608,7 +614,7 @@ class Dealer:
         if not toc:
             return chunks
 
-        ids = asyncio.run(relevant_chunks_with_toc(query, toc, chat_mdl, topn*2))
+        ids = asyncio.run(relevant_chunks_with_toc(query, toc, chat_mdl, topn * 2))
         if not ids:
             return chunks
 
@@ -644,9 +650,9 @@ class Dealer:
                     break
             chunks.append(d)
 
-        return sorted(chunks, key=lambda x:x["similarity"]*-1)[:topn]
+        return sorted(chunks, key=lambda x: x["similarity"] * -1)[:topn]
 
-    def retrieval_by_children(self, chunks:list[dict], tenant_ids:list[str]):
+    def retrieval_by_children(self, chunks: list[dict], tenant_ids: list[str]):
         if not chunks:
             return []
         idx_nms = [index_name(tid) for tid in tenant_ids]
@@ -692,4 +698,4 @@ class Dealer:
                     break
             chunks.append(d)
 
-        return sorted(chunks, key=lambda x:x["similarity"]*-1)
+        return sorted(chunks, key=lambda x: x["similarity"] * -1)

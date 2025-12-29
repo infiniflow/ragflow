@@ -46,6 +46,7 @@ class RAGFlowS3:
             # If there is a default bucket, use the default bucket
             actual_bucket = self.bucket if self.bucket else bucket
             return method(self, actual_bucket, *args, **kwargs)
+
         return wrapper
 
     @staticmethod
@@ -57,6 +58,7 @@ class RAGFlowS3:
             if self.prefix_path:
                 fnm = f"{self.prefix_path}/{bucket}/{fnm}"
             return method(self, bucket, fnm, *args, **kwargs)
+
         return wrapper
 
     def __open__(self):
@@ -81,16 +83,16 @@ class RAGFlowS3:
                 s3_params['region_name'] = self.region_name
             if self.endpoint_url:
                 s3_params['endpoint_url'] = self.endpoint_url
-            
+
             # Configure signature_version and addressing_style through Config object
             if self.signature_version:
                 config_kwargs['signature_version'] = self.signature_version
             if self.addressing_style:
                 config_kwargs['s3'] = {'addressing_style': self.addressing_style}
-            
+
             if config_kwargs:
                 s3_params['config'] = Config(**config_kwargs)
-            
+
             self.conn = [boto3.client('s3', **s3_params)]
         except Exception:
             logging.exception(f"Fail to connect at region {self.region_name} or endpoint {self.endpoint_url}")
@@ -184,9 +186,9 @@ class RAGFlowS3:
         for _ in range(10):
             try:
                 r = self.conn[0].generate_presigned_url('get_object',
-                                                     Params={'Bucket': bucket,
-                                                             'Key': fnm},
-                                                     ExpiresIn=expires)
+                                                        Params={'Bucket': bucket,
+                                                                'Key': fnm},
+                                                        ExpiresIn=expires)
 
                 return r
             except Exception:
