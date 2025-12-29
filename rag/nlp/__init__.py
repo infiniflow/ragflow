@@ -92,7 +92,6 @@ def has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list):
     q_reg = r'(\w|\W)*?(?:？|\?|\n|$)+'
     full_reg = reg + q_reg
     has_bull = re.match(full_reg, section)
-    index_str = None
     if has_bull:
         if 'x0' not in last_box:
             last_box['x0'] = box['x0']
@@ -102,7 +101,8 @@ def has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list):
             return None, last_index
         if not last_bull and box['x0'] >= last_box['x0'] and box['top'] - last_box['top'] < 20:
             return None, last_index
-        avg_bull_x0 = 0
+
+        avg_bull_x0: int = 0
         if bull_x0_list:
             avg_bull_x0 = sum(bull_x0_list) / len(bull_x0_list)
         else:

@@ -157,8 +157,8 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
         logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
     except DoesNotExist:
         logging.warning(f"set_progress({task_id}) got exception DoesNotExist")
-    except Exception:
-        logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception")
+    except Exception as e:
+        logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception: {e}")
 
 
 async def collect():
@@ -908,7 +908,7 @@ async def do_handle_task(task):
         error_message = f'Fail to bind embedding model: {str(e)}'
         progress_callback(-1, msg=error_message)
         logging.exception(error_message)
-        raise
+        raise e
 
     init_kb(task, vector_size)
 
@@ -1050,8 +1050,8 @@ async def do_handle_task(task):
     async def _maybe_insert_es(_chunks):
         if has_canceled(task_id):
             return True
-        e = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
-        return bool(e)
+        insert_result = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
+        return bool(insert_result)
 
     try:
         if not await _maybe_insert_es(chunks):
@@ -1101,9 +1101,9 @@ async def do_handle_task(task):
                         search.index_name(task_tenant_id),
                         task_dataset_id,
                     )
-            except Exception:
+            except Exception as e:
                 logging.exception(
-                    f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled."
+                    f"Fail to remove doc({task_doc_id}) from docStore when task({task_id}) canceled. Exception: {e}"
                 )
 
 
@@ -1118,23 +1118,25 @@ async def handle_task():
     pipeline_task_type = TASK_TYPE_TO_PIPELINE_TASK_TYPE.get(task_type,
                                                              PipelineTaskType.PARSE) or PipelineTaskType.PARSE
 
+    task_id = task["task_id"]
     try:
         logging.info(f"handle_task begin for task {json.dumps(task)}")
-        CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
+        CURRENT_TASKS[task_id] = copy.deepcopy(task)
         await do_handle_task(task)
         DONE_TASKS += 1
-        CURRENT_TASKS.pop(task["id"], None)
+        CURRENT_TASKS.pop(task_id, None)
         logging.info(f"handle_task done for task {json.dumps(task)}")
     except Exception as e:
         FAILED_TASKS += 1
-        CURRENT_TASKS.pop(task["id"], None)
+        CURRENT_TASKS.pop(task_id, None)
         try:
             err_msg = str(e)
             while isinstance(e, exceptiongroup.ExceptionGroup):
                 e = e.exceptions[0]
                 err_msg += ' -- ' + str(e)
-            set_progress(task["id"], prog=-1, msg=f"[Exception]: {err_msg}")
-        except Exception:
+            set_progress(task_id, prog=-1, msg=f"[Exception]: {err_msg}")
+        except Exception as e:
+            logging.exception(f"[Exception]: set_progress, {str(e)}")
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     finally:
