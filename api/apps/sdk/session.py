@@ -13,8 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
 import json
+import copy
 import re
 import time
 
@@ -29,10 +29,11 @@ from api.db.services.canvas_service import completion as agent_completion
 from api.db.services.conversation_service import ConversationService
 from api.db.services.conversation_service import async_iframe_completion as iframe_completion
 from api.db.services.conversation_service import async_completion as rag_completion
-from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap, meta_filter
+from api.db.services.dialog_service import DialogService, async_ask, async_chat, gen_mindmap
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
+from common.metadata_utils import apply_meta_data_filter, convert_conditions, meta_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from common.misc_utils import get_uuid
@@ -40,9 +41,10 @@ from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_
     get_result, get_request_json, server_error_response, token_required, validate_request
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
-from rag.prompts.generator import cross_languages, gen_meta_filter, keyword_extraction, chunks_format
+from rag.prompts.generator import cross_languages, keyword_extraction, chunks_format
 from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
+
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
 @token_required
@@ -86,7 +88,7 @@ async def create_agent_session(tenant_id, agent_id):
         cvs.dsl = json.dumps(cvs.dsl, ensure_ascii=False)
 
     session_id = get_uuid()
-    canvas = Canvas(cvs.dsl, tenant_id, agent_id)
+    canvas = Canvas(cvs.dsl, tenant_id, agent_id, canvas_id=cvs.id)
     canvas.reset()
 
     cvs.dsl = json.loads(str(canvas))
@@ -127,11 +129,33 @@ async def chat_completion(tenant_id, chat_id):
         req = {"question": ""}
     if not req.get("session_id"):
         req["question"] = ""
-    if not DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value):
+    dia = DialogService.query(tenant_id=tenant_id, id=chat_id, status=StatusEnum.VALID.value)
+    if not dia:
         return get_error_data_result(f"You don't own the chat {chat_id}")
+    dia = dia[0]
     if req.get("session_id"):
         if not ConversationService.query(id=req["session_id"], dialog_id=chat_id):
             return get_error_data_result(f"You don't own the session {req['session_id']}")
+
+    metadata_condition = req.get("metadata_condition") or {}
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_error_data_result(message="metadata_condition must be an object.")
+
+    if metadata_condition and req.get("question"):
+        metas = DocumentService.get_meta_by_kbs(dia.kb_ids or [])
+        filtered_doc_ids = meta_filter(
+            metas,
+            convert_conditions(metadata_condition),
+            metadata_condition.get("logic", "and"),
+        )
+        if metadata_condition.get("conditions") and not filtered_doc_ids:
+            filtered_doc_ids = ["-999"]
+
+        if filtered_doc_ids:
+            req["doc_ids"] = ",".join(filtered_doc_ids)
+        else:
+            req.pop("doc_ids", None)
+
     if req.get("stream", True):
         resp = Response(rag_completion(tenant_id, chat_id, **req), mimetype="text/event-stream")
         resp.headers.add_header("Cache-control", "no-cache")
@@ -194,7 +218,19 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             {"role": "user", "content": "Can you tell me how to install neovim"},
         ],
         stream=stream,
-        extra_body={"reference": reference}
+        extra_body={
+            "reference": reference,
+            "metadata_condition": {
+                "logic": "and",
+                "conditions": [
+                    {
+                        "name": "author",
+                        "comparison_operator": "is",
+                        "value": "bob"
+                    }
+                ]
+            }
+        }
     )
 
     if stream:
@@ -210,7 +246,11 @@ async def chat_completion_openai_like(tenant_id, chat_id):
     """
     req = await get_request_json()
 
-    need_reference = bool(req.get("reference", False))
+    extra_body = req.get("extra_body") or {}
+    if extra_body and not isinstance(extra_body, dict):
+        return get_error_data_result("extra_body must be an object.")
+
+    need_reference = bool(extra_body.get("reference", False))
 
     messages = req.get("messages", [])
     # To prevent empty [] input
@@ -227,6 +267,22 @@ async def chat_completion_openai_like(tenant_id, chat_id):
     if not dia:
         return get_error_data_result(f"You don't own the chat {chat_id}")
     dia = dia[0]
+
+    metadata_condition = extra_body.get("metadata_condition") or {}
+    if metadata_condition and not isinstance(metadata_condition, dict):
+        return get_error_data_result(message="metadata_condition must be an object.")
+
+    doc_ids_str = None
+    if metadata_condition:
+        metas = DocumentService.get_meta_by_kbs(dia.kb_ids or [])
+        filtered_doc_ids = meta_filter(
+            metas,
+            convert_conditions(metadata_condition),
+            metadata_condition.get("logic", "and"),
+        )
+        if metadata_condition.get("conditions") and not filtered_doc_ids:
+            filtered_doc_ids = ["-999"]
+        doc_ids_str = ",".join(filtered_doc_ids) if filtered_doc_ids else None
 
     # Filter system and non-sense assistant messages
     msg = []
@@ -275,14 +331,17 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             }
 
             try:
-                async for ans in async_chat(dia, msg, True, toolcall_session=toolcall_session, tools=tools, quote=need_reference):
+                chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
+                if doc_ids_str:
+                    chat_kwargs["doc_ids"] = doc_ids_str
+                async for ans in async_chat(dia, msg, True, **chat_kwargs):
                     last_ans = ans
                     answer = ans["answer"]
 
                     reasoning_match = re.search(r"<think>(.*?)</think>", answer, flags=re.DOTALL)
                     if reasoning_match:
                         reasoning_part = reasoning_match.group(1)
-                        content_part = answer[reasoning_match.end():]
+                        content_part = answer[reasoning_match.end() :]
                     else:
                         reasoning_part = ""
                         content_part = answer
@@ -327,8 +386,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             response["choices"][0]["delta"]["content"] = None
             response["choices"][0]["delta"]["reasoning_content"] = None
             response["choices"][0]["finish_reason"] = "stop"
-            response["usage"] = {"prompt_tokens": len(prompt), "completion_tokens": token_used,
-                                 "total_tokens": len(prompt) + token_used}
+            response["usage"] = {"prompt_tokens": len(prompt), "completion_tokens": token_used, "total_tokens": len(prompt) + token_used}
             if need_reference:
                 response["choices"][0]["delta"]["reference"] = chunks_format(last_ans.get("reference", []))
                 response["choices"][0]["delta"]["final_content"] = last_ans.get("answer", "")
@@ -343,7 +401,10 @@ async def chat_completion_openai_like(tenant_id, chat_id):
         return resp
     else:
         answer = None
-        async for ans in async_chat(dia, msg, False, toolcall_session=toolcall_session, tools=tools, quote=need_reference):
+        chat_kwargs = {"toolcall_session": toolcall_session, "tools": tools, "quote": need_reference}
+        if doc_ids_str:
+            chat_kwargs["doc_ids"] = doc_ids_str
+        async for ans in async_chat(dia, msg, False, **chat_kwargs):
             # focus answer content only
             answer = ans
             break
@@ -387,7 +448,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
 @token_required
 async def agents_completion_openai_compatibility(tenant_id, agent_id):
     req = await get_request_json()
-    tiktokenenc = tiktoken.get_encoding("cl100k_base")
+    tiktoken_encode = tiktoken.get_encoding("cl100k_base")
     messages = req.get("messages", [])
     if not messages:
         return get_error_data_result("You must provide at least one message.")
@@ -395,7 +456,7 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
         return get_error_data_result(f"You don't own the agent {agent_id}")
 
     filtered_messages = [m for m in messages if m["role"] in ["user", "assistant"]]
-    prompt_tokens = sum(len(tiktokenenc.encode(m["content"])) for m in filtered_messages)
+    prompt_tokens = sum(len(tiktoken_encode.encode(m["content"])) for m in filtered_messages)
     if not filtered_messages:
         return jsonify(
             get_data_openai(
@@ -403,7 +464,7 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
                 content="No valid messages found (user or assistant).",
                 finish_reason="stop",
                 model=req.get("model", ""),
-                completion_tokens=len(tiktokenenc.encode("No valid messages found (user or assistant).")),
+                completion_tokens=len(tiktoken_encode.encode("No valid messages found (user or assistant).")),
                 prompt_tokens=prompt_tokens,
             )
         )
@@ -440,15 +501,19 @@ async def agents_completion_openai_compatibility(tenant_id, agent_id):
             ):
             return jsonify(response)
 
+        return None
+
 
 @manager.route("/agents/<agent_id>/completions", methods=["POST"])  # noqa: F821
 @token_required
 async def agent_completions(tenant_id, agent_id):
     req = await get_request_json()
+    return_trace = bool(req.get("return_trace", False))
 
     if req.get("stream", True):
 
         async def generate():
+            trace_items = []
             async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
                 if isinstance(answer, str):
                     try:
@@ -456,7 +521,21 @@ async def agent_completions(tenant_id, agent_id):
                     except Exception:
                         continue
 
-                if ans.get("event") not in ["message", "message_end"]:
+                event = ans.get("event")
+                if event == "node_finished":
+                    if return_trace:
+                        data = ans.get("data", {})
+                        trace_items.append(
+                            {
+                                "component_id": data.get("component_id"),
+                                "trace": [copy.deepcopy(data)],
+                            }
+                        )
+                        ans.setdefault("data", {})["trace"] = trace_items
+                        answer = "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+                    yield answer
+
+                if event not in ["message", "message_end"]:
                     continue
 
                 yield answer
@@ -473,6 +552,7 @@ async def agent_completions(tenant_id, agent_id):
     full_content = ""
     reference = {}
     final_ans = ""
+    trace_items = []
     async for answer in agent_completion(tenant_id=tenant_id, agent_id=agent_id, **req):
         try:
             ans = json.loads(answer[5:])
@@ -483,11 +563,22 @@ async def agent_completions(tenant_id, agent_id):
             if ans.get("data", {}).get("reference", None):
                 reference.update(ans["data"]["reference"])
 
+            if return_trace and ans.get("event") == "node_finished":
+                data = ans.get("data", {})
+                trace_items.append(
+                    {
+                        "component_id": data.get("component_id"),
+                        "trace": [copy.deepcopy(data)],
+                    }
+                )
+
             final_ans = ans
         except Exception as e:
             return get_result(data=f"**ERROR**: {str(e)}")
     final_ans["data"]["content"] = full_content
     final_ans["data"]["reference"] = reference
+    if return_trace and final_ans:
+        final_ans["data"]["trace"] = trace_items
     return get_result(data=final_ans)
 
 
@@ -831,6 +922,7 @@ async def chatbot_completions(dialog_id):
     async for answer in iframe_completion(dialog_id, **req):
         return get_result(data=answer)
 
+    return None
 
 @manager.route("/chatbots/<dialog_id>/info", methods=["GET"])  # noqa: F821
 async def chatbots_inputs(dialog_id):
@@ -878,6 +970,7 @@ async def agent_bot_completions(agent_id):
     async for answer in agent_completion(objs[0].tenant_id, agent_id, **req):
         return get_result(data=answer)
 
+    return None
 
 @manager.route("/agentbots/<agent_id>/inputs", methods=["GET"])  # noqa: F821
 async def begin_inputs(agent_id):
@@ -893,7 +986,7 @@ async def begin_inputs(agent_id):
     if not e:
         return get_error_data_result(f"Can't find agent by ID: {agent_id}")
 
-    canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id)
+    canvas = Canvas(json.dumps(cvs.dsl), objs[0].tenant_id, canvas_id=cvs.id)
     return get_result(
         data={"title": cvs.title, "avatar": cvs.avatar, "inputs": canvas.get_component_input_form("begin"),
               "prologue": canvas.get_prologue(), "mode": canvas.get_mode()})
@@ -969,25 +1062,26 @@ async def retrieval_test_embedded():
     if not tenant_id:
         return get_error_data_result(message="permission denined.")
 
-    def _retrieval_sync():
+    async def _retrieval():
         local_doc_ids = list(doc_ids) if doc_ids else []
         tenant_ids = []
         _question = question
 
+        meta_data_filter = {}
+        chat_mdl = None
         if req.get("search_id", ""):
             search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
             meta_data_filter = search_config.get("meta_data_filter", {})
-            metas = DocumentService.get_meta_by_kbs(kb_ids)
-            if meta_data_filter.get("method") == "auto":
+            if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
-                filters: dict = gen_meta_filter(chat_mdl, metas, _question)
-                local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
-                if not local_doc_ids:
-                    local_doc_ids = None
-            elif meta_data_filter.get("method") == "manual":
-                local_doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
-                if meta_data_filter["manual"] and not local_doc_ids:
-                    local_doc_ids = ["-999"]
+        else:
+            meta_data_filter = req.get("meta_data_filter") or {}
+            if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+                chat_mdl = LLMBundle(tenant_id, LLMType.CHAT)
+
+        if meta_data_filter:
+            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, _question, chat_mdl, local_doc_ids)
 
         tenants = UserTenantService.query(user_id=tenant_id)
         for kb_id in kb_ids:
@@ -996,7 +1090,7 @@ async def retrieval_test_embedded():
                     tenant_ids.append(tenant.tenant_id)
                     break
             else:
-                return get_json_result(data=False, message="Only owner of knowledgebase authorized for this operation.",
+                return get_json_result(data=False, message="Only owner of dataset authorized for this operation.",
                                        code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
@@ -1004,7 +1098,7 @@ async def retrieval_test_embedded():
             return get_error_data_result(message="Knowledgebase not found!")
 
         if langs:
-            _question = cross_languages(kb.tenant_id, None, _question, langs)
+            _question = await cross_languages(kb.tenant_id, None, _question, langs)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
@@ -1014,7 +1108,7 @@ async def retrieval_test_embedded():
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
-            _question += keyword_extraction(chat_mdl, _question)
+            _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
         ranks = settings.retriever.retrieval(
@@ -1034,7 +1128,7 @@ async def retrieval_test_embedded():
         return get_json_result(data=ranks)
 
     try:
-        return await asyncio.to_thread(_retrieval_sync)
+        return await _retrieval()
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message="No chunk found! Check the chunk status please!",
@@ -1135,7 +1229,7 @@ async def mindmap():
     search_id = req.get("search_id", "")
     search_app = SearchService.get_detail(search_id) if search_id else {}
 
-    mind_map = gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
+    mind_map =await gen_mindmap(req["question"], req["kb_ids"], tenant_id, search_app.get("search_config", {}))
     if "error" in mind_map:
         return server_error_response(Exception(mind_map["error"]))
     return get_json_result(data=mind_map)

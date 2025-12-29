@@ -121,7 +121,7 @@ class PipelineOperationLogService(CommonService):
         else:
             ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
             if not ok:
-                raise RuntimeError(f"Cannot find knowledge base {document.kb_id} for referred_document {referred_document_id}")
+                raise RuntimeError(f"Cannot find dataset {document.kb_id} for referred_document {referred_document_id}")
 
             tenant_id = kb_info.tenant_id
             title = document.parser_id
@@ -169,11 +169,12 @@ class PipelineOperationLogService(CommonService):
             operation_status=operation_status,
             avatar=avatar,
         )
-        log["create_time"] = current_timestamp()
-        log["create_date"] = datetime_format(datetime.now())
-        log["update_time"] = current_timestamp()
-        log["update_date"] = datetime_format(datetime.now())
-
+        timestamp = current_timestamp()
+        datetime_now = datetime_format(datetime.now())
+        log["create_time"] = timestamp
+        log["create_date"] = datetime_now
+        log["update_time"] = timestamp
+        log["update_date"] = datetime_now
         with DB.atomic():
             obj = cls.save(**log)
 

@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
 import json
 import logging
 from collections import defaultdict
@@ -25,11 +24,11 @@ from common.misc_utils import get_uuid
 from graphrag.query_analyze_prompt import PROMPTS
 from graphrag.utils import get_entity_type2samples, get_llm_cache, set_llm_cache, get_relation
 from common.token_utils import num_tokens_from_string
-from rag.utils.doc_store_conn import OrderByExpr
 
 from rag.nlp.search import Dealer, index_name
 from common.float_utils import get_float
 from common import settings
+from common.doc_store.doc_store_base import OrderByExpr
 
 
 class KGSearch(Dealer):
@@ -44,7 +43,7 @@ class KGSearch(Dealer):
         return response
 
     def query_rewrite(self, llm, question, idxnms, kb_ids):
-        ty2ents = asyncio.run(get_entity_type2samples(idxnms, kb_ids))
+        ty2ents = get_entity_type2samples(idxnms, kb_ids)
         hint_prompt = PROMPTS["minirag_query2kwd"].format(query=question,
                                                           TYPE_POOL=json.dumps(ty2ents, ensure_ascii=False, indent=2))
         result = self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {})

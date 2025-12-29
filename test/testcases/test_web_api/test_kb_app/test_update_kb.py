@@ -111,7 +111,7 @@ class TestDatasetUpdate:
         payload = {"name": name, "description": "", "parser_id": "naive", "kb_id": kb_id}
         res = update_kb(WebApiAuth, payload)
         assert res["code"] == 102, res
-        assert res["message"] == "Duplicated knowledgebase name.", res
+        assert res["message"] == "Duplicated dataset name.", res
 
     @pytest.mark.p3
     def test_name_case_insensitive(self, WebApiAuth, add_datasets_func):
@@ -120,7 +120,7 @@ class TestDatasetUpdate:
         payload = {"name": name, "description": "", "parser_id": "naive", "kb_id": kb_id}
         res = update_kb(WebApiAuth, payload)
         assert res["code"] == 102, res
-        assert res["message"] == "Duplicated knowledgebase name.", res
+        assert res["message"] == "Duplicated dataset name.", res
 
     @pytest.mark.p2
     def test_avatar(self, WebApiAuth, add_dataset_func, tmp_path):

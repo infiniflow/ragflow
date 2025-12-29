@@ -1,4 +1,4 @@
-import { BlockButton } from '@/components/ui/button';
+import { BlockButton, Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
@@ -26,7 +26,7 @@ import { filterDownstreamAgentNodeIds } from '../../utils/filter-downstream-node
 import { ToolPopover } from './tool-popover';
 import { useDeleteAgentNodeMCP } from './tool-popover/use-update-mcp';
 import { useDeleteAgentNodeTools } from './tool-popover/use-update-tools';
-import { useGetAgentMCPIds, useGetAgentToolNames } from './use-get-tools';
+import { useGetAgentMCPIds, useGetNodeTools } from './use-get-tools';
 
 type ToolCardProps = React.HTMLAttributes<HTMLLIElement> &
   PropsWithChildren & {
@@ -79,20 +79,33 @@ function ActionButton<T>({ deleteRecord, record, edit }: ActionButtonProps<T>) {
     deleteRecord(record);
   }, [deleteRecord, record]);
 
+  // Wrapping into buttons to solve the issue that clicking icon occasionally not jumping to corresponding form
   return (
     <div className="flex items-center gap-4 text-text-secondary">
-      <PencilLine
-        className="size-3.5 cursor-pointer"
+      <Button
+        variant="transparent"
+        size="icon"
+        className="size-3.5 !bg-transparent !border-none"
         data-tool={record}
         onClick={edit}
-      />
-      <X className="size-3.5 cursor-pointer" onClick={handleDelete} />
+      >
+        <PencilLine className="size-full" />
+      </Button>
+
+      <Button
+        variant="transparent"
+        size="icon"
+        className="size-3.5 !bg-transparent !border-none"
+        onClick={handleDelete}
+      >
+        <X className="size-full" />
+      </Button>
     </div>
   );
 }
 
 export function AgentTools() {
-  const { toolNames } = useGetAgentToolNames();
+  const tools = useGetNodeTools();
   const { deleteNodeTool } = useDeleteAgentNodeTools();
   const { mcpIds } = useGetAgentMCPIds();
   const { findMcpById } = useFindMcpById();
@@ -105,6 +118,7 @@ export function AgentTools() {
   const handleEdit: MouseEventHandler<SVGSVGElement> = useCallback(
     (e) => {
       const toolNodeId = findAgentToolNodeById(clickedNodeId);
+
       if (toolNodeId) {
         selectNodeIds([toolNodeId]);
         showFormDrawer(e, toolNodeId);
@@ -117,19 +131,20 @@ export function AgentTools() {
     <section className="space-y-2.5">
       <span className="text-text-secondary text-sm">{t('flow.tools')}</span>
       <ul className="space-y-2.5">
-        {toolNames.map((x) => (
-          <ToolCard key={x} isNodeTool={false}>
+        {tools.map(({ id, component_name, name }) => (
+          <ToolCard key={id} isNodeTool={false}>
             <div className="flex gap-2 items-center">
-              <OperatorIcon name={x as Operator}></OperatorIcon>
-              {x}
+              <OperatorIcon name={component_name as Operator}></OperatorIcon>
+              {component_name === Operator.Retrieval ? name : component_name}
             </div>
             <ActionButton
-              record={x}
-              deleteRecord={deleteNodeTool(x)}
+              record={id}
+              deleteRecord={deleteNodeTool(id)}
               edit={handleEdit}
-            ></ActionButton>
+            />
           </ToolCard>
         ))}
+
         {mcpIds.map((id) => (
           <ToolCard key={id} isNodeTool={false}>
             {findMcpById(id)?.name}

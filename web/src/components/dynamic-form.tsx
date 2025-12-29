@@ -11,6 +11,7 @@ import {
   DefaultValues,
   FieldValues,
   SubmitHandler,
+  UseFormTrigger,
   useForm,
   useFormContext,
 } from 'react-hook-form';
@@ -34,6 +35,14 @@ import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import { Loader } from 'lucide-react';
 import { MultiSelect, MultiSelectOptionType } from './ui/multi-select';
+import { Segmented } from './ui/segmented';
+import { Switch } from './ui/switch';
+
+const getNestedValue = (obj: any, path: string) => {
+  return path.split('.').reduce((current, key) => {
+    return current && current[key] !== undefined ? current[key] : undefined;
+  }, obj);
+};
 
 // Field type enumeration
 export enum FormFieldType {
@@ -45,7 +54,9 @@ export enum FormFieldType {
   Select = 'select',
   MultiSelect = 'multi-select',
   Checkbox = 'checkbox',
+  Switch = 'switch',
   Tag = 'tag',
+  Segmented = 'segmented',
   Custom = 'custom',
 }
 
@@ -80,6 +91,7 @@ export interface FormFieldConfig {
   schema?: ZodSchema;
   shouldRender?: (formValues: any) => boolean;
   labelClassName?: string;
+  disabled?: boolean;
 }
 
 // Component props interface
@@ -99,8 +111,9 @@ interface DynamicFormProps<T extends FieldValues> {
 // Form ref interface
 export interface DynamicFormRef {
   submit: () => void;
-  getValues: () => any;
+  getValues: (name?: string) => any;
   reset: (values?: any) => void;
+  trigger: UseFormTrigger<any>;
   watch: (field: string, callback: (value: any) => void) => () => void;
   updateFieldType: (fieldName: string, newType: FormFieldType) => void;
   onFieldUpdate: (
@@ -133,6 +146,9 @@ const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
             });
           }
           break;
+        case FormFieldType.Segmented:
+          fieldSchema = z.string();
+          break;
         case FormFieldType.Number:
           fieldSchema = z.coerce.number();
           if (field.validation?.min !== undefined) {
@@ -151,6 +167,7 @@ const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
           }
           break;
         case FormFieldType.Checkbox:
+        case FormFieldType.Switch:
           fieldSchema = z.boolean();
           break;
         case FormFieldType.Tag:
@@ -190,6 +207,8 @@ const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
     if (
       field.type !== FormFieldType.Number &&
       field.type !== FormFieldType.Checkbox &&
+      field.type !== FormFieldType.Switch &&
+      field.type !== FormFieldType.Custom &&
       field.type !== FormFieldType.Tag &&
       field.required
     ) {
@@ -286,7 +305,10 @@ const generateDefaultValues = <T extends FieldValues>(
       const lastKey = keys[keys.length - 1];
       if (field.defaultValue !== undefined) {
         current[lastKey] = field.defaultValue;
-      } else if (field.type === FormFieldType.Checkbox) {
+      } else if (
+        field.type === FormFieldType.Checkbox ||
+        field.type === FormFieldType.Switch
+      ) {
         current[lastKey] = false;
       } else if (field.type === FormFieldType.Tag) {
         current[lastKey] = [];
@@ -296,7 +318,10 @@ const generateDefaultValues = <T extends FieldValues>(
     } else {
       if (field.defaultValue !== undefined) {
         defaultValues[field.name] = field.defaultValue;
-      } else if (field.type === FormFieldType.Checkbox) {
+      } else if (
+        field.type === FormFieldType.Checkbox ||
+        field.type === FormFieldType.Switch
+      ) {
         defaultValues[field.name] = false;
       } else if (
         field.type === FormFieldType.Tag ||
@@ -310,6 +335,309 @@ const generateDefaultValues = <T extends FieldValues>(
   });
 
   return defaultValues as DefaultValues<T>;
+};
+// Render form fields
+export const RenderField = ({
+  field,
+  labelClassName,
+}: {
+  field: FormFieldConfig;
+  labelClassName?: string;
+}) => {
+  const form = useFormContext();
+  if (field.render) {
+    if (field.type === FormFieldType.Custom && field.hideLabel) {
+      return <div className="w-full">{field.render({})}</div>;
+    }
+    return (
+      <RAGFlowFormItem
+        {...field}
+        labelClassName={labelClassName || field.labelClassName}
+      >
+        {(fieldProps) => {
+          const finalFieldProps = field.onChange
+            ? {
+                ...fieldProps,
+                onChange: (e: any) => {
+                  fieldProps.onChange(e);
+                  field.onChange?.(e.target?.value ?? e);
+                },
+              }
+            : fieldProps;
+          return field.render?.(finalFieldProps);
+        }}
+      </RAGFlowFormItem>
+    );
+  }
+  switch (field.type) {
+    case FormFieldType.Segmented:
+      return (
+        <RAGFlowFormItem
+          {...field}
+          labelClassName={labelClassName || field.labelClassName}
+        >
+          {(fieldProps) => {
+            const finalFieldProps = field.onChange
+              ? {
+                  ...fieldProps,
+                  onChange: (value: any) => {
+                    fieldProps.onChange(value);
+                    field.onChange?.(value);
+                  },
+                }
+              : fieldProps;
+            return (
+              <Segmented
+                {...finalFieldProps}
+                options={field.options || []}
+                className="w-full"
+                itemClassName="flex-1 justify-center"
+                disabled={field.disabled}
+              />
+            );
+          }}
+        </RAGFlowFormItem>
+      );
+    case FormFieldType.Textarea:
+      return (
+        <RAGFlowFormItem
+          {...field}
+          labelClassName={labelClassName || field.labelClassName}
+        >
+          {(fieldProps) => {
+            const finalFieldProps = field.onChange
+              ? {
+                  ...fieldProps,
+                  onChange: (e: any) => {
+                    fieldProps.onChange(e);
+                    field.onChange?.(e.target.value);
+                  },
+                }
+              : fieldProps;
+            return (
+              <Textarea
+                {...finalFieldProps}
+                placeholder={field.placeholder}
+                disabled={field.disabled}
+                // className="resize-none"
+              />
+            );
+          }}
+        </RAGFlowFormItem>
+      );
+
+    case FormFieldType.Select:
+      return (
+        <RAGFlowFormItem
+          {...field}
+          labelClassName={labelClassName || field.labelClassName}
+        >
+          {(fieldProps) => {
+            const finalFieldProps = field.onChange
+              ? {
+                  ...fieldProps,
+                  onChange: (value: string) => {
+                    console.log('select value', value);
+                    if (fieldProps.onChange) {
+                      fieldProps.onChange(value);
+                    }
+                    field.onChange?.(value);
+                  },
+                }
+              : fieldProps;
+            return (
+              <SelectWithSearch
+                triggerClassName="!shrink"
+                {...finalFieldProps}
+                options={field.options}
+                disabled={field.disabled}
+              />
+            );
+          }}
+        </RAGFlowFormItem>
+      );
+
+    case FormFieldType.MultiSelect:
+      return (
+        <RAGFlowFormItem
+          {...field}
+          labelClassName={labelClassName || field.labelClassName}
+        >
+          {(fieldProps) => {
+            console.log('multi select value', fieldProps);
+            const finalFieldProps = {
+              ...fieldProps,
+              onValueChange: (value: string[]) => {
+                if (fieldProps.onChange) {
+                  fieldProps.onChange(value);
+                }
+                field.onChange?.(value);
+              },
+            };
+            return (
+              <MultiSelect
+                variant="inverted"
+                maxCount={100}
+                {...finalFieldProps}
+                // onValueChange={(data) => {
+                //   console.log(data);
+                //   field.onChange?.(data);
+                // }}
+                options={field.options as MultiSelectOptionType[]}
+                disabled={field.disabled}
+              />
+            );
+          }}
+        </RAGFlowFormItem>
+      );
+
+    case FormFieldType.Checkbox:
+      return (
+        <FormField
+          control={form.control}
+          name={field.name as any}
+          render={({ field: formField }) => (
+            <FormItem
+              className={cn('flex items-center w-full', {
+                'flex-row items-center space-x-3 space-y-0': !field.horizontal,
+              })}
+            >
+              {field.label && !field.horizontal && (
+                <div className="space-y-1 leading-none">
+                  <FormLabel
+                    className={cn(
+                      'font-medium',
+                      labelClassName || field.labelClassName,
+                    )}
+                    tooltip={field.tooltip}
+                  >
+                    {field.label}{' '}
+                    {field.required && (
+                      <span className="text-destructive">*</span>
+                    )}
+                  </FormLabel>
+                </div>
+              )}
+              {field.label && field.horizontal && (
+                <div className="space-y-1 leading-none w-1/4">
+                  <FormLabel
+                    className={cn(
+                      'font-medium',
+                      labelClassName || field.labelClassName,
+                    )}
+                    tooltip={field.tooltip}
+                  >
+                    {field.label}{' '}
+                    {field.required && (
+                      <span className="text-destructive">*</span>
+                    )}
+                  </FormLabel>
+                </div>
+              )}
+              <FormControl>
+                <div className={cn({ 'w-full': field.horizontal })}>
+                  <Checkbox
+                    checked={formField.value}
+                    onCheckedChange={(checked) => {
+                      formField.onChange(checked);
+                      field.onChange?.(checked);
+                    }}
+                    disabled={field.disabled}
+                  />
+                </div>
+              </FormControl>
+
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      );
+    case FormFieldType.Switch:
+      return (
+        <RAGFlowFormItem
+          {...field}
+          labelClassName={labelClassName || field.labelClassName}
+        >
+          {(fieldProps) => {
+            const finalFieldProps = field.onChange
+              ? {
+                  ...fieldProps,
+                  onChange: (checked: boolean) => {
+                    fieldProps.onChange(checked);
+                    field.onChange?.(checked);
+                  },
+                }
+              : fieldProps;
+            return (
+              <Switch
+                checked={finalFieldProps.value as boolean}
+                onCheckedChange={(checked) => finalFieldProps.onChange(checked)}
+                disabled={field.disabled}
+              />
+            );
+          }}
+        </RAGFlowFormItem>
+      );
+
+    case FormFieldType.Tag:
+      return (
+        <RAGFlowFormItem
+          {...field}
+          labelClassName={labelClassName || field.labelClassName}
+        >
+          {(fieldProps) => {
+            const finalFieldProps = field.onChange
+              ? {
+                  ...fieldProps,
+                  onChange: (value: string[]) => {
+                    fieldProps.onChange(value);
+                    field.onChange?.(value);
+                  },
+                }
+              : fieldProps;
+            return (
+              //   <TagInput {...fieldProps} placeholder={field.placeholder} />
+              <div className="w-full">
+                <EditTag
+                  {...finalFieldProps}
+                  disabled={field.disabled}
+                ></EditTag>
+              </div>
+            );
+          }}
+        </RAGFlowFormItem>
+      );
+
+    default:
+      return (
+        <RAGFlowFormItem
+          {...field}
+          labelClassName={labelClassName || field.labelClassName}
+        >
+          {(fieldProps) => {
+            const finalFieldProps = field.onChange
+              ? {
+                  ...fieldProps,
+                  onChange: (e: any) => {
+                    fieldProps.onChange(e);
+                    field.onChange?.(e.target.value);
+                  },
+                }
+              : fieldProps;
+            return (
+              <div className="w-full">
+                <Input
+                  {...finalFieldProps}
+                  type={field.type}
+                  placeholder={field.placeholder}
+                  disabled={field.disabled}
+                />
+              </div>
+            );
+          }}
+        </RAGFlowFormItem>
+      );
+  }
 };
 
 // Dynamic form component
@@ -345,17 +673,31 @@ const DynamicForm = {
       // Initialize form
       const form = useForm<T>({
         resolver: async (data, context, options) => {
-          const zodResult = await zodResolver(schema)(data, context, options);
+          // Filter out fields that should not render
+          const activeFields = fields.filter(
+            (field) => !field.shouldRender || field.shouldRender(data),
+          );
+
+          const activeSchema = generateSchema(activeFields);
+          const zodResult = await zodResolver(activeSchema)(
+            data,
+            context,
+            options,
+          );
 
           let combinedErrors = { ...zodResult.errors };
 
           const fieldErrors: Record<string, { type: string; message: string }> =
             {};
           for (const field of fields) {
-            if (field.customValidate && data[field.name] !== undefined) {
+            if (
+              field.customValidate &&
+              getNestedValue(data, field.name) !== undefined &&
+              (!field.shouldRender || field.shouldRender(data))
+            ) {
               try {
                 const result = await field.customValidate(
-                  data[field.name],
+                  getNestedValue(data, field.name),
                   data,
                 );
                 if (typeof result === 'string') {
@@ -439,8 +781,8 @@ const DynamicForm = {
       useImperativeHandle(
         ref,
         () => ({
-          submit: () => form.handleSubmit(onSubmit)(),
-          getValues: () => form.getValues(),
+          submit: form.handleSubmit(onSubmit),
+          getValues: form.getValues,
           reset: (values?: T) => {
             if (values) {
               form.reset(values);

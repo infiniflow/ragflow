@@ -66,6 +66,7 @@ class NotionConnector(LoadConnector, PollConnector):
         self.indexed_pages: set[str] = set()
         self.root_page_id = root_page_id
         self.recursive_index_enabled = recursive_index_enabled or bool(root_page_id)
+        self.page_path_cache: dict[str, str] = {}
 
     @retry(tries=3, delay=1, backoff=2)
     def _fetch_child_blocks(self, block_id: str, cursor: Optional[str] = None) -> dict[str, Any] | None:
@@ -242,6 +243,20 @@ class NotionConnector(LoadConnector, PollConnector):
             logging.warning(f"[Notion]: Failed to download Notion file from {url}: {exc}")
             return None
 
+    def _append_block_id_to_name(self, name: str, block_id: Optional[str]) -> str:
+        """Append the Notion block ID to the filename while keeping the extension."""
+        if not block_id:
+            return name
+
+        path = Path(name)
+        stem = path.stem or name
+        suffix = path.suffix
+
+        if not stem:
+            return name
+
+        return f"{stem}_{block_id}{suffix}" if suffix else f"{stem}_{block_id}"
+
     def _extract_file_metadata(self, result_obj: dict[str, Any], block_id: str) -> tuple[str | None, str, str | None]:
         file_source_type = result_obj.get("type")
         file_source = result_obj.get(file_source_type, {}) if file_source_type else {}
@@ -254,6 +269,8 @@ class NotionConnector(LoadConnector, PollConnector):
         elif not name:
             name = f"notion_file_{block_id}"
 
+        name = self._append_block_id_to_name(name, block_id)
+
         caption = self._extract_rich_text(result_obj.get("caption", [])) if "caption" in result_obj else None
 
         return url, name, caption
@@ -265,6 +282,7 @@ class NotionConnector(LoadConnector, PollConnector):
         name: str,
         caption: Optional[str],
         page_last_edited_time: Optional[str],
+        page_path: Optional[str],
     ) -> Document | None:
         file_bytes = self._download_file(url)
         if file_bytes is None:
@@ -277,7 +295,8 @@ class NotionConnector(LoadConnector, PollConnector):
             extension = ".bin"
 
         updated_at = datetime_from_string(page_last_edited_time) if page_last_edited_time else datetime.now(timezone.utc)
-        semantic_identifier = caption or name or f"Notion file {block_id}"
+        base_identifier = name or caption or (f"Notion file {block_id}" if block_id else "Notion file")
+        semantic_identifier = f"{page_path} / {base_identifier}" if page_path else base_identifier
 
         return Document(
             id=block_id,
@@ -289,7 +308,7 @@ class NotionConnector(LoadConnector, PollConnector):
             doc_updated_at=updated_at,
         )
 
-    def _read_blocks(self, base_block_id: str, page_last_edited_time: Optional[str] = None) -> tuple[list[NotionBlock], list[str], list[Document]]:
+    def _read_blocks(self, base_block_id: str, page_last_edited_time: Optional[str] = None, page_path: Optional[str] = None) -> tuple[list[NotionBlock], list[str], list[Document]]:
         result_blocks: list[NotionBlock] = []
         child_pages: list[str] = []
         attachments: list[Document] = []
@@ -370,11 +389,14 @@ class NotionConnector(LoadConnector, PollConnector):
                             name=file_name,
                             caption=caption,
                             page_last_edited_time=page_last_edited_time,
+                            page_path=page_path,
                         )
                         if attachment_doc:
                             attachments.append(attachment_doc)
 
-                        attachment_label = caption or file_name
+                        attachment_label = file_name
+                        if caption:
+                            attachment_label = f"{file_name} ({caption})"
                         if attachment_label:
                             cur_result_text_arr.append(f"{result_type.capitalize()}: {attachment_label}")
 
@@ -383,7 +405,7 @@ class NotionConnector(LoadConnector, PollConnector):
                         child_pages.append(result_block_id)
                     else:
                         logging.debug(f"[Notion]: Entering sub-block: {result_block_id}")
-                        subblocks, subblock_child_pages, subblock_attachments = self._read_blocks(result_block_id, page_last_edited_time)
+                        subblocks, subblock_child_pages, subblock_attachments = self._read_blocks(result_block_id, page_last_edited_time, page_path)
                         logging.debug(f"[Notion]: Finished sub-block: {result_block_id}")
                         result_blocks.extend(subblocks)
                         child_pages.extend(subblock_child_pages)
@@ -423,6 +445,35 @@ class NotionConnector(LoadConnector, PollConnector):
 
         return None
 
+    def _build_page_path(self, page: NotionPage, visited: Optional[set[str]] = None) -> Optional[str]:
+        """Construct a hierarchical path for a page based on its parent chain."""
+        if page.id in self.page_path_cache:
+            return self.page_path_cache[page.id]
+
+        visited = visited or set()
+        if page.id in visited:
+            logging.warning(f"[Notion]: Detected cycle while building path for page {page.id}")
+            return self._read_page_title(page)
+        visited.add(page.id)
+
+        current_title = self._read_page_title(page) or f"Untitled Page {page.id}"
+
+        parent_info = getattr(page, "parent", None) or {}
+        parent_type = parent_info.get("type")
+        parent_id = parent_info.get(parent_type) if parent_type else None
+
+        parent_path = None
+        if parent_type in {"page_id", "database_id"} and isinstance(parent_id, str):
+            try:
+                parent_page = self._fetch_page(parent_id)
+                parent_path = self._build_page_path(parent_page, visited)
+            except Exception as exc:
+                logging.warning(f"[Notion]: Failed to resolve parent {parent_id} for page {page.id}: {exc}")
+
+        full_path = f"{parent_path} / {current_title}" if parent_path else current_title
+        self.page_path_cache[page.id] = full_path
+        return full_path
+
     def _read_pages(self, pages: list[NotionPage], start: SecondsSinceUnixEpoch | None = None, end: SecondsSinceUnixEpoch | None = None) -> Generator[Document, None, None]:
         """Reads pages for rich text content and generates Documents."""
         all_child_page_ids: list[str] = []
@@ -441,12 +492,17 @@ class NotionConnector(LoadConnector, PollConnector):
                     continue
 
             logging.info(f"[Notion]: Reading page with ID {page.id}, with url {page.url}")
-            page_blocks, child_page_ids, attachment_docs = self._read_blocks(page.id, page.last_edited_time)
+            page_path = self._build_page_path(page)
+            page_blocks, child_page_ids, attachment_docs = self._read_blocks(page.id, page.last_edited_time, page_path)
             all_child_page_ids.extend(child_page_ids)
             self.indexed_pages.add(page.id)
 
             raw_page_title = self._read_page_title(page)
             page_title = raw_page_title or f"Untitled Page with ID {page.id}"
+
+            # Append the page id to help disambiguate duplicate names
+            base_identifier = page_path or page_title
+            semantic_identifier = f"{base_identifier}_{page.id}" if base_identifier else page.id
 
             if not page_blocks:
                 if not raw_page_title:
@@ -469,7 +525,7 @@ class NotionConnector(LoadConnector, PollConnector):
             joined_text = "\n".join(sec.text for sec in sections)
             blob = joined_text.encode("utf-8")
             yield Document(
-                id=page.id, blob=blob, source=DocumentSource.NOTION, semantic_identifier=page_title, extension=".txt", size_bytes=len(blob), doc_updated_at=datetime_from_string(page.last_edited_time)
+                id=page.id, blob=blob, source=DocumentSource.NOTION, semantic_identifier=semantic_identifier, extension=".txt", size_bytes=len(blob), doc_updated_at=datetime_from_string(page.last_edited_time)
             )
 
             for attachment_doc in attachment_docs:

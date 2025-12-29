@@ -28,7 +28,6 @@ from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
 from api.utils import commands
 
-from flask_mail import Mail
 from quart_auth import Unauthorized
 from common import settings
 from api.utils.api_utils import server_error_response
@@ -39,10 +38,8 @@ settings.init_settings()
 
 __all__ = ["app"]
 
-
 app = Quart(__name__)
 app = cors(app, allow_origin="*")
-smtp_mail_server = Mail()
 
 # Add this at the beginning of your file to configure Swagger UI
 swagger_config = {
@@ -105,12 +102,13 @@ from werkzeug.local import LocalProxy
 T = TypeVar("T")
 P = ParamSpec("P")
 
+
 def _load_user():
     jwt = Serializer(secret_key=settings.SECRET_KEY)
     authorization = request.headers.get("Authorization")
     g.user = None
     if not authorization:
-        return
+        return None
 
     try:
         access_token = str(jwt.loads(authorization))
@@ -166,7 +164,7 @@ def login_required(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]
 
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-        if not current_user:# or not session.get("_user_id"):
+        if not current_user:  # or not session.get("_user_id"):
             raise Unauthorized()
         else:
             return await current_app.ensure_async(func)(*args, **kwargs)
@@ -230,6 +228,7 @@ def logout_user():
 
     return True
 
+
 def search_pages_path(page_path):
     app_path_list = [
         path for path in page_path.glob("*_app.py") if not path.name.startswith(".")
@@ -274,6 +273,16 @@ pages_dir = [
 client_urls_prefix = [
     register_page(path) for directory in pages_dir for path in search_pages_path(directory)
 ]
+
+
+@app.errorhandler(404)
+async def not_found(error):
+    error_msg: str = f"The requested URL {request.path} was not found"
+    logging.error(error_msg)
+    return {
+        "error": "Not Found",
+        "message": error_msg,
+    }, 404
 
 
 @app.teardown_request

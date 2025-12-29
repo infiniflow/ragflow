@@ -60,7 +60,7 @@ class TestDocumentCreate:
     def test_invalid_kb_id(self, WebApiAuth):
         res = create_document(WebApiAuth, {"name": "ragflow_test.txt", "kb_id": "invalid_kb_id"})
         assert res["code"] == 102, res
-        assert res["message"] == "Can't find this knowledgebase!", res
+        assert res["message"] == "Can't find this dataset!", res
 
     @pytest.mark.p3
     def test_filename_special_characters(self, WebApiAuth, add_dataset_func):

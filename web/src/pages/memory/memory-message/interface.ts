@@ -14,6 +14,11 @@ export interface IMessageInfo {
 }
 
 export interface IMessageTableProps {
-  messages: { message_list: Array<IMessageInfo>; total: number };
+  messages: { message_list: Array<IMessageInfo>; total_count: number };
   storage_type: string;
+}
+
+export interface IMessageContentProps {
+  content: string;
+  content_embed: string;
 }

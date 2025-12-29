@@ -42,9 +42,9 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { PromptEditor } from '../components/prompt-editor';
 import { QueryVariable } from '../components/query-variable';
+import { SchemaDialog } from '../components/schema-dialog';
+import { SchemaPanel } from '../components/schema-panel';
 import { AgentTools, Agents } from './agent-tools';
-import { StructuredOutputDialog } from './structured-output-dialog';
-import { StructuredOutputPanel } from './structured-output-panel';
 import { useBuildPromptExtraPromptOptions } from './use-build-prompt-options';
 import {
   useHandleShowStructuredOutput,
@@ -242,7 +242,7 @@ function AgentForm({ node }: INextOperatorForm) {
                 name={`delay_after_error`}
                 render={({ field }) => (
                   <FormItem className="flex-1">
-                    <FormLabel>{t('flow.delayEfterError')}</FormLabel>
+                    <FormLabel>{t('flow.delayAfterError')}</FormLabel>
                     <FormControl>
                       <NumberInput {...field} max={5} step={0.1}></NumberInput>
                     </FormControl>
@@ -327,19 +327,17 @@ function AgentForm({ node }: INextOperatorForm) {
                 </Button>
               </div>
 
-              <StructuredOutputPanel
-                value={structuredOutput}
-              ></StructuredOutputPanel>
+              <SchemaPanel value={structuredOutput}></SchemaPanel>
             </section>
           )}
         </FormWrapper>
       </Form>
       {structuredOutputDialogVisible && (
-        <StructuredOutputDialog
+        <SchemaDialog
           hideModal={hideStructuredOutputDialog}
           onOk={handleStructuredOutputDialogOk}
           initialValues={structuredOutput}
-        ></StructuredOutputDialog>
+        ></SchemaDialog>
       )}
     </>
   );

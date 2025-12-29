@@ -6,7 +6,6 @@ from urllib.parse import quote_plus
 from common.config_utils import get_base_config
 from common.decorator import singleton
 
-
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS `{}` (
     `key` VARCHAR(255) PRIMARY KEY,
@@ -36,12 +35,32 @@ def get_opendal_config():
                 "table": opendal_config.get("config", {}).get("oss_table", "opendal_storage"),
                 "max_allowed_packet": str(max_packet)
             }
-            kwargs["connection_string"] = f"mysql://{kwargs['user']}:{quote_plus(kwargs['password'])}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}?max_allowed_packet={max_packet}"
+            kwargs[
+                "connection_string"] = f"mysql://{kwargs['user']}:{quote_plus(kwargs['password'])}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}?max_allowed_packet={max_packet}"
         else:
             scheme = opendal_config.get("scheme")
             config_data = opendal_config.get("config", {})
             kwargs = {"scheme": scheme, **config_data}
-        logging.info("Loaded OpenDAL configuration from yaml: %s", kwargs)
+
+        # Only include non-sensitive keys in logs. Do NOT
+        # add 'password' or any key containing embedded credentials
+        # (like 'connection_string').
+        safe_log_info = {
+            "scheme": kwargs.get("scheme"),
+            "host": kwargs.get("host"),
+            "port": kwargs.get("port"),
+            "database": kwargs.get("database"),
+            "table": kwargs.get("table"),
+            # indicate presence of credentials without logging them
+            "has_credentials": any(k in kwargs for k in ("password", "connection_string")),
+        }
+        logging.info("Loaded OpenDAL configuration (non sensitive fields only): %s", safe_log_info)
+
+        # For safety, explicitly remove sensitive keys from kwargs after use
+        if "password" in kwargs:
+            del kwargs["password"]
+        if "connection_string" in kwargs:
+            del kwargs["connection_string"]
         return kwargs
     except Exception as e:
         logging.error("Failed to load OpenDAL configuration from yaml: %s", str(e))
@@ -79,7 +98,6 @@ class OpenDALStorage:
 
     def obj_exist(self, bucket, fnm, tenant_id=None):
         return self._operator.exists(f"{bucket}/{fnm}")
-
 
     def init_db_config(self):
         try:

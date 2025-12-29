@@ -17,14 +17,14 @@ import asyncio
 import datetime
 import json
 import re
-
+import base64
 import xxhash
 from quart import request
 
-from api.db.services.dialog_service import meta_filter
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
+from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request, \
@@ -32,7 +32,7 @@ from api.utils.api_utils import get_data_error_result, get_json_result, server_e
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
-from rag.prompts.generator import gen_meta_filter, cross_languages, keyword_extraction
+from rag.prompts.generator import cross_languages, keyword_extraction
 from common.string_utils import remove_redundant_spaces
 from common.constants import RetCode, LLMType, ParserType, PAGERANK_FLD
 from common import settings
@@ -76,6 +76,7 @@ async def list_chunk():
                 "image_id": sres.field[id].get("img_id", ""),
                 "available_int": int(sres.field[id].get("available_int", 1)),
                 "positions": sres.field[id].get("position_int", []),
+                "doc_type_kwd": sres.field[id].get("doc_type_kwd")
             }
             assert isinstance(d["positions"], list)
             assert len(d["positions"]) == 0 or (isinstance(d["positions"][0], list) and len(d["positions"][0]) == 5)
@@ -174,6 +175,13 @@ async def set():
             v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
             _d["q_%d_vec" % len(v)] = v.tolist()
             settings.docStoreConn.update({"id": req["chunk_id"]}, _d, search.index_name(tenant_id), doc.kb_id)
+
+            # update image
+            image_base64 = req.get("image_base64", None)
+            if image_base64:
+                bkt, name = req.get("img_id", "-").split("-")
+                image_binary = base64.b64decode(image_base64)
+                settings.STORAGE_IMPL.put(bkt, name, image_binary)
             return get_json_result(data=True)
 
         return await asyncio.to_thread(_set_sync)
@@ -313,24 +321,25 @@ async def retrieval_test():
     langs = req.get("cross_languages", [])
     user_id = current_user.id
 
-    def _retrieval_sync():
+    async def _retrieval():
         local_doc_ids = list(doc_ids) if doc_ids else []
         tenant_ids = []
 
+        meta_data_filter = {}
+        chat_mdl = None
         if req.get("search_id", ""):
             search_config = SearchService.get_detail(req.get("search_id", "")).get("search_config", {})
             meta_data_filter = search_config.get("meta_data_filter", {})
-            metas = DocumentService.get_meta_by_kbs(kb_ids)
-            if meta_data_filter.get("method") == "auto":
+            if meta_data_filter.get("method") in ["auto", "semi_auto"]:
                 chat_mdl = LLMBundle(user_id, LLMType.CHAT, llm_name=search_config.get("chat_id", ""))
-                filters: dict = gen_meta_filter(chat_mdl, metas, question)
-                local_doc_ids.extend(meta_filter(metas, filters["conditions"], filters.get("logic", "and")))
-                if not local_doc_ids:
-                    local_doc_ids = None
-            elif meta_data_filter.get("method") == "manual":
-                local_doc_ids.extend(meta_filter(metas, meta_data_filter["manual"], meta_data_filter.get("logic", "and")))
-                if meta_data_filter["manual"] and not local_doc_ids:
-                    local_doc_ids = ["-999"]
+        else:
+            meta_data_filter = req.get("meta_data_filter") or {}
+            if meta_data_filter.get("method") in ["auto", "semi_auto"]:
+                chat_mdl = LLMBundle(user_id, LLMType.CHAT)
+
+        if meta_data_filter:
+            metas = DocumentService.get_meta_by_kbs(kb_ids)
+            local_doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, local_doc_ids)
 
         tenants = UserTenantService.query(user_id=user_id)
         for kb_id in kb_ids:
@@ -341,7 +350,7 @@ async def retrieval_test():
                     break
             else:
                 return get_json_result(
-                    data=False, message='Only owner of knowledgebase authorized for this operation.',
+                    data=False, message='Only owner of dataset authorized for this operation.',
                     code=RetCode.OPERATING_ERROR)
 
         e, kb = KnowledgebaseService.get_by_id(kb_ids[0])
@@ -350,7 +359,7 @@ async def retrieval_test():
 
         _question = question
         if langs:
-            _question = cross_languages(kb.tenant_id, None, _question, langs)
+            _question = await cross_languages(kb.tenant_id, None, _question, langs)
 
         embd_mdl = LLMBundle(kb.tenant_id, LLMType.EMBEDDING.value, llm_name=kb.embd_id)
 
@@ -360,7 +369,7 @@ async def retrieval_test():
 
         if req.get("keyword", False):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
-            _question += keyword_extraction(chat_mdl, _question)
+            _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
         ranks = settings.retriever.retrieval(_question, embd_mdl, tenant_ids, kb_ids, page, size,
@@ -379,6 +388,7 @@ async def retrieval_test():
                                                    LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
+        ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
 
         for c in ranks["chunks"]:
             c.pop("vector", None)
@@ -387,7 +397,7 @@ async def retrieval_test():
         return get_json_result(data=ranks)
 
     try:
-        return await asyncio.to_thread(_retrieval_sync)
+        return await _retrieval()
     except Exception as e:
         if str(e).find("not_found") > 0:
             return get_json_result(data=False, message='No chunk found! Check the chunk status please!',

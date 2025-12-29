@@ -1,13 +1,16 @@
 import { NodeCollapsible } from '@/components/collapse';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
-import { IRetrievalNode } from '@/interfaces/database/flow';
+import { useFetchAllMemoryList } from '@/hooks/use-memory-request';
+import { BaseNode } from '@/interfaces/database/flow';
 import { NodeProps, Position } from '@xyflow/react';
 import classNames from 'classnames';
 import { get } from 'lodash';
 import { memo } from 'react';
-import { NodeHandleId } from '../../constant';
+import { NodeHandleId, RetrievalFrom } from '../../constant';
+import { RetrievalFormSchemaType } from '../../form/retrieval-form/next';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
+import { LabelCard } from './card';
 import { CommonHandle, LeftEndHandle } from './handle';
 import styles from './index.module.less';
 import NodeHeader from './node-header';
@@ -19,11 +22,16 @@ function InnerRetrievalNode({
   data,
   isConnectable = true,
   selected,
-}: NodeProps<IRetrievalNode>) {
+}: NodeProps<BaseNode<RetrievalFormSchemaType>>) {
   const knowledgeBaseIds: string[] = get(data, 'form.kb_ids', []);
+  const memoryIds: string[] = get(data, 'form.memory_ids', []);
   const { list: knowledgeList } = useFetchKnowledgeList(true);
 
   const { getLabel } = useGetVariableLabelOrTypeByValue({ nodeId: id });
+
+  const isMemory = data.form?.retrieval_from === RetrievalFrom.Memory;
+
+  const memoryList = useFetchAllMemoryList();
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>
@@ -45,8 +53,22 @@ function InnerRetrievalNode({
             [styles.nodeHeader]: knowledgeBaseIds.length > 0,
           })}
         ></NodeHeader>
-        <NodeCollapsible items={knowledgeBaseIds}>
+        <NodeCollapsible items={isMemory ? memoryIds : knowledgeBaseIds}>
           {(id) => {
+            if (isMemory) {
+              const item = memoryList.data?.find((y) => id === y.id);
+              return (
+                <LabelCard key={id} className="flex items-center gap-1.5">
+                  <RAGFlowAvatar
+                    className="size-6 rounded-lg"
+                    avatar={item?.avatar ?? ''}
+                    name={item ? item?.name : id}
+                  />
+                  <span className="flex-1 truncate"> {item?.name}</span>
+                </LabelCard>
+              );
+            }
+
             const item = knowledgeList.find((y) => id === y.id);
             const label = getLabel(id);
 

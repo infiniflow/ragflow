@@ -201,45 +201,10 @@ function ensure_docling() {
       || python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
 }
 
-function ensure_mineru() {
-    [[ "${USE_MINERU}" == "true" ]] || { echo "[mineru] disabled by USE_MINERU"; return 0; }
-
-    export HUGGINGFACE_HUB_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
-
-    local default_prefix="/ragflow/uv_tools"
-    local venv_dir="${default_prefix}/.venv"
-    local exe="${MINERU_EXECUTABLE:-${venv_dir}/bin/mineru}"
-
-    if [[ -x "${exe}" ]]; then
-      echo "[mineru] found: ${exe}"
-      export MINERU_EXECUTABLE="${exe}"
-      return 0
-    fi
-
-    echo "[mineru] not found, bootstrapping with uv ..."
-
-    (
-        set -e
-        mkdir -p "${default_prefix}"
-        cd "${default_prefix}"
-        [[ -d "${venv_dir}" ]] || uv venv "${venv_dir}"
-
-        source "${venv_dir}/bin/activate"
-        uv pip install -U "mineru[core]" -i https://mirrors.aliyun.com/pypi/simple --extra-index-url https://pypi.org/simple
-        deactivate
-    )
-    export MINERU_EXECUTABLE="${exe}"
-    if ! "${MINERU_EXECUTABLE}" --help >/dev/null 2>&1; then
-      echo "[mineru] installation failed: ${MINERU_EXECUTABLE} not working" >&2
-      return 1
-    fi
-    echo "[mineru] installed: ${MINERU_EXECUTABLE}"
-}
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
 ensure_docling
-ensure_mineru
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."

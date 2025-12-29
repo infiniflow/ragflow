@@ -163,6 +163,7 @@ def validate_request(*args, **kwargs):
             if error_arguments:
                 error_string += "required argument values: {}".format(",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
             return error_string
+        return None
 
     def wrapper(func):
         @wraps(func)
@@ -409,7 +410,7 @@ def get_parser_config(chunk_method, parser_config):
     if default_config is None:
         return deep_merge(base_defaults, parser_config)
 
-    # Ensure raptor and graphrag fields have default values if not provided
+    # Ensure raptor and graph_rag fields have default values if not provided
     merged_config = deep_merge(base_defaults, default_config)
     merged_config = deep_merge(merged_config, parser_config)
 
@@ -688,12 +689,7 @@ async def is_strong_enough(chat_model, embedding_model):
 
         if chat_model:
             res = await asyncio.wait_for(
-                asyncio.to_thread(
-                    chat_model.chat,
-                    "Nothing special.",
-                    [{"role": "user", "content": "Are you strong enough!?"}],
-                    {}
-                ),
+                chat_model.async_chat("Nothing special.", [{"role": "user", "content": "Are you strong enough!?"}]),
                 timeout=30
             )
             if "**ERROR**" in res:

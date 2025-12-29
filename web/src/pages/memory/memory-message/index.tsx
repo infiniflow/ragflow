@@ -21,15 +21,16 @@ export default function MemoryMessage() {
         title="Dataset"
         onSearchChange={handleInputChange}
         searchString={searchString}
+        showFilter={false}
         // value={filterValue}
         // onChange={handleFilterSubmit}
         // onOpenChange={onOpenChange}
         // filters={filters}
         leftPanel={
           <div className="items-start">
-            <div className="pb-1">{t('knowledgeDetails.subbarFiles')}</div>
+            <div className="pb-1">{t('memory.sideBar.messages')}</div>
             <div className="text-text-secondary text-sm">
-              {t('knowledgeDetails.datasetDescription')}
+              {t('memory.messages.messageDescription')}
             </div>
           </div>
         }
@@ -38,7 +39,7 @@ export default function MemoryMessage() {
         messages={data?.messages?.message_list ?? []}
         pagination={pagination}
         setPagination={setPagination}
-        total={data?.messages?.total ?? 0}
+        total={data?.messages?.total_count ?? 0}
         // rowSelection={rowSelection}
         // setRowSelection={setRowSelection}
         // loading={loading}

@@ -71,18 +71,17 @@ class Extractor:
         _, system_msg = message_fit_in([{"role": "system", "content": system}], int(self._llm.max_length * 0.92))
         response = ""
         for attempt in range(3):
-
             if task_id:
                 if has_canceled(task_id):
                     logging.info(f"Task {task_id} cancelled during entity resolution candidate processing.")
                     raise TaskCanceledException(f"Task {task_id} was cancelled")
-
             try:
-                response = self._llm.chat(system_msg[0]["content"], hist, conf)
+                response = asyncio.run(self._llm.async_chat(system_msg[0]["content"], hist, conf))
                 response = re.sub(r"^.*</think>", "", response, flags=re.DOTALL)
                 if response.find("**ERROR**") >= 0:
                     raise Exception(response)
                 set_llm_cache(self._llm.llm_name, system, response, history, gen_conf)
+                break
             except Exception as e:
                 logging.exception(e)
                 if attempt == 2:

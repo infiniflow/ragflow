@@ -18,9 +18,12 @@ import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-reques
 import { IModalProps } from '@/interfaces/common';
 import { IParserConfig } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import { MetadataType } from '@/pages/dataset/components/metedata/hooks/use-manage-modal';
 import {
+  AutoMetadata,
   ChunkMethodItem,
   EnableTocToggle,
+  ImageContextWindow,
   ParseTypeItem,
 } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -34,6 +37,7 @@ import {
   AutoKeywordsFormField,
   AutoQuestionsFormField,
 } from '../auto-keywords-form-field';
+import { ChildrenDelimiterForm } from '../children-delimiter-form';
 import { DataFlowSelect } from '../data-pipeline-select';
 import { DelimiterFormField } from '../delimiter-form-field';
 import { EntityTypesFormField } from '../entity-types-form-field';
@@ -41,6 +45,7 @@ import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
 import { FormContainer } from '../form-container';
 import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
+import { MinerUOptionsFormField } from '../mineru-options-form-field';
 import { ButtonLoading } from '../ui/button';
 import { Input } from '../ui/input';
 import { DynamicPageRange } from './dynamic-page-range';
@@ -52,11 +57,10 @@ import {
 
 const FormId = 'ChunkMethodDialogForm';
 
-interface IProps
-  extends IModalProps<{
-    parserId: string;
-    parserConfig: IChangeParserConfigRequestBody;
-  }> {
+interface IProps extends IModalProps<{
+  parserId: string;
+  parserConfig: IChangeParserConfigRequestBody;
+}> {
   loading: boolean;
   parserId: string;
   pipelineId?: string;
@@ -83,6 +87,7 @@ export function ChunkMethodDialog({
   visible,
   parserConfig,
   loading,
+  documentId,
 }: IProps) {
   const { t } = useTranslation();
 
@@ -111,10 +116,17 @@ export function ChunkMethodDialog({
         layout_recognize: z.string().optional(),
         chunk_token_num: z.coerce.number().optional(),
         delimiter: z.string().optional(),
+        enable_children: z.boolean().optional(),
+        children_delimiter: z.string().optional(),
         auto_keywords: z.coerce.number().optional(),
         auto_questions: z.coerce.number().optional(),
         html4excel: z.boolean().optional(),
         toc_extraction: z.boolean().optional(),
+        image_table_context_window: z.coerce.number().optional(),
+        mineru_parse_method: z.enum(['auto', 'txt', 'ocr']).optional(),
+        mineru_formula_enable: z.boolean().optional(),
+        mineru_table_enable: z.boolean().optional(),
+        mineru_lang: z.string().optional(),
         // raptor: z
         //   .object({
         //     use_raptor: z.boolean().optional(),
@@ -132,6 +144,18 @@ export function ChunkMethodDialog({
         pages: z
           .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
           .optional(),
+        metadata: z
+          .array(
+            z
+              .object({
+                key: z.string().optional(),
+                description: z.string().optional(),
+                enum: z.array(z.string().optional()).optional(),
+              })
+              .optional(),
+          )
+          .optional(),
+        enable_metadata: z.boolean().optional(),
       }),
     })
     .superRefine((data, ctx) => {
@@ -163,6 +187,9 @@ export function ChunkMethodDialog({
     name: 'parser_id',
     control: form.control,
   });
+  const isMineruSelected =
+    selectedTag?.toLowerCase().includes('mineru') ||
+    layoutRecognize?.toLowerCase?.()?.includes('mineru');
 
   const isPdf = documentExtension === 'pdf';
 
@@ -192,11 +219,22 @@ export function ChunkMethodDialog({
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
     console.log('🚀 ~ onSubmit ~ data:', data);
+    const parserConfig = data.parser_config;
+    const imageTableContextWindow = Number(
+      parserConfig?.image_table_context_window || 0,
+    );
     const nextData = {
       ...data,
       parser_config: {
-        ...data.parser_config,
-        pages: data.parser_config?.pages?.map((x: any) => [x.from, x.to]) ?? [],
+        ...parserConfig,
+        image_table_context_window: imageTableContextWindow,
+        image_context_size: imageTableContextWindow,
+        table_context_size: imageTableContextWindow,
+        // Unset children delimiter if this option is not enabled
+        children_delimiter: parserConfig.enable_children
+          ? parserConfig.children_delimiter
+          : '',
+        pages: parserConfig?.pages?.map((x: any) => [x.from, x.to]) ?? [],
       },
     };
     console.log('🚀 ~ onSubmit ~ nextData:', nextData);
@@ -217,6 +255,10 @@ export function ChunkMethodDialog({
         parser_config: fillDefaultParserValue({
           pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
           ...omit(parserConfig, 'pages'),
+          image_table_context_window:
+            parserConfig?.image_table_context_window ??
+            parserConfig?.image_context_size ??
+            parserConfig?.table_context_size,
           // graphrag: {
           //   use_graphrag: get(
           //     parserConfig,
@@ -321,7 +363,10 @@ export function ChunkMethodDialog({
                   className="space-y-3"
                 >
                   {showOne && (
-                    <LayoutRecognizeFormField></LayoutRecognizeFormField>
+                    <>
+                      <LayoutRecognizeFormField showMineruOptions={false} />
+                      {isMineruSelected && <MinerUOptionsFormField />}
+                    </>
                   )}
                   {showMaxTokenNumber && (
                     <>
@@ -333,18 +378,30 @@ export function ChunkMethodDialog({
                         }
                       ></MaxTokenNumberFormField>
                       <DelimiterFormField></DelimiterFormField>
+                      <ChildrenDelimiterForm />
                     </>
                   )}
                 </FormContainer>
                 <FormContainer
-                  show={showAutoKeywords(selectedTag) || showExcelToHtml}
+                  show={
+                    isMineruSelected ||
+                    showAutoKeywords(selectedTag) ||
+                    showExcelToHtml
+                  }
                   className="space-y-3"
                 >
                   {selectedTag === DocumentParserType.Naive && (
-                    <EnableTocToggle />
+                    <>
+                      <EnableTocToggle />
+                      <ImageContextWindow />
+                    </>
                   )}
                   {showAutoKeywords(selectedTag) && (
                     <>
+                      <AutoMetadata
+                        type={MetadataType.SingleFileSetting}
+                        otherData={{ documentId }}
+                      />
                       <AutoKeywordsFormField></AutoKeywordsFormField>
                       <AutoQuestionsFormField></AutoQuestionsFormField>
                     </>

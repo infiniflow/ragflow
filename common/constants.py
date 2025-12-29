@@ -54,6 +54,7 @@ class RetCode(IntEnum, CustomEnum):
     SERVER_ERROR = 500
     FORBIDDEN = 403
     NOT_FOUND = 404
+    CONFLICT = 409
 
 
 class StatusEnum(Enum):
@@ -123,8 +124,14 @@ class FileSource(StrEnum):
     WEBDAV = "webdav"
     MOODLE = "moodle"
     DROPBOX = "dropbox"
+    BOX = "box"
+    R2 = "r2"
+    OCI_STORAGE = "oci_storage"
+    GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
+    AIRTABLE = "airtable"
+    ASANA = "asana"
 
-
+    
 class PipelineTaskType(StrEnum):
     PARSE = "Parse"
     DOWNLOAD = "Download"
@@ -150,6 +157,23 @@ class Storage(Enum):
     OSS = 5
     OPENDAL = 6
     GCS = 7
+
+
+class MemoryType(Enum):
+    RAW = 0b0001          # 1 << 0 = 1 (0b00000001)
+    SEMANTIC = 0b0010     # 1 << 1 = 2 (0b00000010)
+    EPISODIC = 0b0100     # 1 << 2 = 4 (0b00000100)
+    PROCEDURAL = 0b1000   # 1 << 3 = 8 (0b00001000)
+
+
+class MemoryStorageType(StrEnum):
+    TABLE = "table"
+    GRAPH = "graph"
+
+
+class ForgettingPolicy(StrEnum):
+    FIFO = "FIFO"
+
 
 # environment
 # ENV_STRONG_TEST_COUNT = "STRONG_TEST_COUNT"

@@ -16,6 +16,7 @@
 import os
 import json
 import logging
+from peewee import IntegrityError
 from langfuse import Langfuse
 from common import settings
 from common.constants import MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, LLMType
@@ -96,7 +97,7 @@ class TenantLLMService(CommonService):
         if llm_type == LLMType.EMBEDDING.value:
             mdlnm = tenant.embd_id if not llm_name else llm_name
         elif llm_type == LLMType.SPEECH2TEXT.value:
-            mdlnm = tenant.asr_id
+            mdlnm = tenant.asr_id if not llm_name else llm_name
         elif llm_type == LLMType.IMAGE2TEXT.value:
             mdlnm = tenant.img2txt_id if not llm_name else llm_name
         elif llm_type == LLMType.CHAT.value:
@@ -274,21 +275,28 @@ class TenantLLMService(CommonService):
         used_names = {item.llm_name for item in saved_mineru_models}
         idx = 1
         base_name = "mineru-from-env"
-        candidate = f"{base_name}-{idx}"
-        while candidate in used_names:
-            idx += 1
+        while True:
             candidate = f"{base_name}-{idx}"
+            if candidate in used_names:
+                idx += 1
+                continue
 
-        cls.save(
-            tenant_id=tenant_id,
-            llm_factory="MinerU",
-            llm_name=candidate,
-            model_type=LLMType.OCR.value,
-            api_key=json.dumps(cfg),
-            api_base="",
-            max_tokens=0,
-        )
-        return candidate
+            try:
+                cls.save(
+                    tenant_id=tenant_id,
+                    llm_factory="MinerU",
+                    llm_name=candidate,
+                    model_type=LLMType.OCR.value,
+                    api_key=json.dumps(cfg),
+                    api_base="",
+                    max_tokens=0,
+                )
+                return candidate
+            except IntegrityError:
+                logging.warning("MinerU env model %s already exists for tenant %s, retry with next name", candidate, tenant_id)
+                used_names.add(candidate)
+                idx += 1
+                continue
 
     @classmethod
     @DB.connection_context()

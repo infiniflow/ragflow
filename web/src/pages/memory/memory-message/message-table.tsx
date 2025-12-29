@@ -12,9 +12,14 @@ import {
 } from '@tanstack/react-table';
 import * as React from 'react';
 
+import {
+  ConfirmDeleteDialog,
+  ConfirmDeleteDialogNode,
+} from '@/components/confirm-delete-dialog';
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -26,10 +31,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Pagination } from '@/interfaces/common';
+import { replaceText } from '@/pages/dataset/process-log-modal';
 import { t } from 'i18next';
 import { pick } from 'lodash';
-import { Eraser, TextSelect } from 'lucide-react';
-import { useMemo } from 'react';
+import { Copy, Eraser, TextSelect } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import CopyToClipboard from 'react-copy-to-clipboard';
+import { useMessageAction } from './hook';
 import { IMessageInfo } from './interface';
 
 export type MemoryTableProps = {
@@ -51,6 +59,20 @@ export function MemoryTable({
   );
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
+  const [copied, setCopied] = useState(false);
+  const {
+    showDeleteDialog,
+    setShowDeleteDialog,
+    handleClickDeleteMessage,
+    selectedMessage,
+    handleDeleteMessage,
+
+    handleClickUpdateMessageState,
+    selectedMessageContent,
+    showMessageContentDialog,
+    setShowMessageContentDialog,
+    handleClickMessageContentDialog,
+  } = useMessageAction();
 
   // Define columns for the memory table
   const columns: ColumnDef<IMessageInfo>[] = useMemo(
@@ -110,7 +132,12 @@ export function MemoryTable({
           const isEnabled = row.getValue('status') as boolean;
           return (
             <div className="flex items-center">
-              <Switch defaultChecked={isEnabled} onChange={() => {}} />
+              <Switch
+                defaultChecked={isEnabled}
+                onCheckedChange={(val) => {
+                  handleClickUpdateMessageState(row.original, val);
+                }}
+              />
             </div>
           );
         },
@@ -169,7 +196,7 @@ export function MemoryTable({
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-222px)]">
+      <Table rootClassName="max-h-[calc(100vh-282px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -210,8 +237,89 @@ export function MemoryTable({
           )}
         </TableBody>
       </Table>
+      {showDeleteDialog && (
+        <ConfirmDeleteDialog
+          onOk={handleDeleteMessage}
+          title={t('memory.messages.forgetMessage')}
+          open={showDeleteDialog}
+          onOpenChange={setShowDeleteDialog}
+          okButtonText={t('common.confirm')}
+          content={{
+            title: t('memory.messages.forgetMessageTip'),
+            node: (
+              <ConfirmDeleteDialogNode
+                // avatar={{ avatar: selectedMessage.avatar, name: selectedMessage.name }}
+                name={
+                  t('memory.messages.sessionId') +
+                  ': ' +
+                  selectedMessage.session_id
+                }
+                warnText={t('memory.messages.delMessageWarn')}
+              />
+            ),
+          }}
+        />
+      )}
 
-      <div className="flex items-center justify-end py-4 absolute bottom-3 right-3">
+      {showMessageContentDialog && (
+        <Modal
+          title={t('memory.messages.content')}
+          open={showMessageContentDialog}
+          onOpenChange={setShowMessageContentDialog}
+          className="!w-[640px]"
+          footer={
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowMessageContentDialog(false)}
+                className={
+                  'px-2 py-1 border border-border-button rounded-md hover:bg-bg-card hover:text-text-primary '
+                }
+              >
+                {t('common.close')}
+              </button>
+            </div>
+          }
+        >
+          <div className="flex flex-col gap-2.5">
+            <div className="text-text-secondary text-sm">
+              {t('memory.messages.sessionId')}:&nbsp;&nbsp;
+              {selectedMessage.session_id}
+            </div>
+            {selectedMessageContent?.content && (
+              <div className="w-full bg-accent-primary-5  whitespace-pre-line text-wrap rounded-lg h-fit max-h-[350px] overflow-y-auto scrollbar-auto px-2.5 py-1">
+                {replaceText(selectedMessageContent?.content || '')}
+              </div>
+            )}
+            {selectedMessageContent?.content_embed && (
+              <div className="flex gap-2 items-center">
+                <CopyToClipboard
+                  text={selectedMessageContent?.content_embed}
+                  onCopy={() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1000);
+                  }}
+                >
+                  <Button
+                    variant={'ghost'}
+                    className="border border-border-button "
+                  >
+                    {t('memory.messages.contentEmbed')}
+                    <Copy />
+                  </Button>
+                </CopyToClipboard>
+                {copied && (
+                  <span className="text-xs text-text-secondary">
+                    {t('memory.messages.copied')}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      <div className="flex items-center justify-end  absolute bottom-3 right-3">
         <RAGFlowPagination
           {...pick(pagination, 'current', 'pageSize')}
           total={total}

@@ -13,7 +13,13 @@ import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
 import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
+import { ReferenceImageList } from '../next-message-item/reference-image-list';
 import { UploadedMessageFiles } from '../next-message-item/uploaded-message-files';
+import {
+  PDFDownloadButton,
+  extractPDFDownloadInfo,
+  removePDFDownloadInfo,
+} from '../pdf-download-button';
 import { RAGFlowAvatar } from '../ragflow-avatar';
 import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
@@ -60,6 +66,20 @@ const MessageItem = ({
   const referenceDocumentList = useMemo(() => {
     return reference?.doc_aggs ?? [];
   }, [reference?.doc_aggs]);
+
+  // Extract PDF download info from message content
+  const pdfDownloadInfo = useMemo(
+    () => extractPDFDownloadInfo(item.content),
+    [item.content],
+  );
+
+  // If we have PDF download info, extract the remaining text
+  const messageContent = useMemo(() => {
+    if (!pdfDownloadInfo) return item.content;
+
+    // Remove the JSON part from the content to avoid showing it
+    return removePDFDownloadInfo(item.content, pdfDownloadInfo);
+  }, [item.content, pdfDownloadInfo]);
 
   const handleRegenerateMessage = useCallback(() => {
     regenerateMessage?.(item);
@@ -121,24 +141,39 @@ const MessageItem = ({
                 sendLoading={sendLoading}
               ></UserGroupButton>
             )}
-
-            <div
-              className={cn(
-                isAssistant
-                  ? theme === 'dark'
-                    ? styles.messageTextDark
-                    : styles.messageText
-                  : styles.messageUserText,
-                { '!bg-bg-card': !isAssistant },
-              )}
-            >
-              <MarkdownContent
-                loading={loading}
-                content={item.content}
-                reference={reference}
-                clickDocumentButton={clickDocumentButton}
-              ></MarkdownContent>
-            </div>
+            {/* Show PDF download button if download info is present */}
+            {pdfDownloadInfo && (
+              <PDFDownloadButton
+                downloadInfo={pdfDownloadInfo}
+                className="mb-2"
+              />
+            )}
+            {/* Show message content if there's any text besides the download */}
+            {messageContent && (
+              <div
+                className={cn(
+                  isAssistant
+                    ? theme === 'dark'
+                      ? styles.messageTextDark
+                      : styles.messageText
+                    : styles.messageUserText,
+                  { '!bg-bg-card': !isAssistant },
+                )}
+              >
+                <MarkdownContent
+                  loading={loading}
+                  content={messageContent}
+                  reference={reference}
+                  clickDocumentButton={clickDocumentButton}
+                ></MarkdownContent>
+              </div>
+            )}
+            {isAssistant && (
+              <ReferenceImageList
+                referenceChunks={reference.chunks}
+                messageContent={messageContent}
+              ></ReferenceImageList>
+            )}
             {isAssistant && referenceDocumentList.length > 0 && (
               <ReferenceDocumentList
                 list={referenceDocumentList}

@@ -34,6 +34,8 @@ from api.db.services.task_service import TaskService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
+from api.db.services.memory_service import MemoryService
+from memory.services.messages import MessageService
 from rag.nlp import search
 from common.constants import ActiveEnum
 from common import settings
@@ -153,7 +155,7 @@ def delete_user_data(user_id: str) -> dict:
             done_msg += "Start to delete owned tenant.\n"
             tenant_id = owned_tenant[0]["tenant_id"]
             kb_ids = KnowledgebaseService.get_kb_ids(usr.id)
-            # step1.1 delete knowledgebase related file and info
+            # step1.1 delete dataset related file and info
             if kb_ids:
                 # step1.1.1 delete files in storage, remove bucket
                 for kb_id in kb_ids:
@@ -182,7 +184,7 @@ def delete_user_data(user_id: str) -> dict:
                                          search.index_name(tenant_id), kb_ids)
                 done_msg += f"- Deleted {r} chunk records.\n"
                 kb_delete_res = KnowledgebaseService.delete_by_ids(kb_ids)
-                done_msg += f"- Deleted {kb_delete_res} knowledgebase records.\n"
+                done_msg += f"- Deleted {kb_delete_res} dataset records.\n"
                 # step1.1.4 delete agents
                 agent_delete_res = delete_user_agents(usr.id)
                 done_msg += f"- Deleted {agent_delete_res['agents_deleted_count']} agent, {agent_delete_res['version_deleted_count']} versions records.\n"
@@ -200,7 +202,16 @@ def delete_user_data(user_id: str) -> dict:
             done_msg += f"- Deleted {llm_delete_res} tenant-LLM records.\n"
             langfuse_delete_res = TenantLangfuseService.delete_ty_tenant_id(tenant_id)
             done_msg += f"- Deleted {langfuse_delete_res} langfuse records.\n"
-            # step1.3 delete own tenant
+            # step1.3 delete memory and messages
+            user_memory = MemoryService.get_by_tenant_id(tenant_id)
+            if user_memory:
+                for memory in user_memory:
+                    if MessageService.has_index(tenant_id, memory.id):
+                        MessageService.delete_index(tenant_id, memory.id)
+                done_msg += " Deleted memory index."
+                memory_delete_res = MemoryService.delete_by_ids([m.id for m in user_memory])
+                done_msg += f"Deleted {memory_delete_res} memory datasets."
+            # step1.4 delete own tenant
             tenant_delete_res = TenantService.delete_by_id(tenant_id)
             done_msg += f"- Deleted {tenant_delete_res} tenant.\n"
         # step2 delete user-tenant relation
@@ -258,7 +269,7 @@ def delete_user_data(user_id: str) -> dict:
                     # step2.1.5 delete document record
                     doc_delete_res = DocumentService.delete_by_ids([d['id'] for d in created_documents])
                     done_msg += f"- Deleted {doc_delete_res} documents.\n"
-                    # step2.1.6 update knowledge base doc&chunk&token cnt
+                    # step2.1.6 update dataset doc&chunk&token cnt
                     for kb_id, doc_num in kb_doc_info.items():
                         KnowledgebaseService.decrease_document_num_in_delete(kb_id, doc_num)
 
@@ -273,7 +284,7 @@ def delete_user_data(user_id: str) -> dict:
 
     except Exception as e:
         logging.exception(e)
-        return {"success": False, "message": f"Error: {str(e)}. Already done:\n{done_msg}"}
+        return {"success": False, "message": "An internal error occurred during user deletion. Some operations may have completed.","details": done_msg}
 
 
 def delete_user_agents(user_id: str) -> dict:

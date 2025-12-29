@@ -1,6 +1,11 @@
 import FileStatusBadge from '@/components/file-status-badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import React, { useMemo } from 'react';
@@ -40,7 +45,14 @@ const InfoItem: React.FC<{
   return (
     <div className={`flex flex-col mb-4 ${className}`}>
       <span className="text-text-secondary text-sm">{label}</span>
-      <span className="text-text-primary mt-1">{value}</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="text-text-primary mt-1 truncate w-full">
+            {value}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{value}</TooltipContent>
+      </Tooltip>
     </div>
   );
 };
@@ -70,9 +82,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
 }) => {
   const { t } = useTranslate('knowledgeDetails');
   const blackKeyList = [''];
-  console.log('logInfo', initData);
   const logInfo = useMemo(() => {
-    console.log('logInfo', initData);
     return initData;
   }, [initData]);
 

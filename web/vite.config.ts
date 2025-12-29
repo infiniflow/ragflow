@@ -105,8 +105,7 @@ export default defineConfig(({ mode, command }) => {
       ),
     },
     assetsInclude: ['**/*.md'],
-    // base: env.VITE_BASE_URL ,
-    base: process.env.NODE_ENV === 'production' ? '/v3/' : '/',
+    base: env.VITE_BASE_URL,
     publicDir: 'public',
     build: {
       outDir: 'dist',
@@ -116,17 +115,8 @@ export default defineConfig(({ mode, command }) => {
       rollupOptions: {
         output: {
           // manualChunks(id) {
-          //   if (id.includes('/components/')) {
-          //     return 'components';
-          //   }
           //   if (id.includes('jsoneditor')) {
           //     return 'jsoneditor';
-          //   }
-          //   if (id.includes('react-dom')) {
-          //     return 'react-dom';
-          //   }
-          //   if (id.includes('react-router')) {
-          //     return 'react-router';
           //   }
           //   if (id.includes('one-light')) {
           //     return 'one-light';
@@ -134,15 +124,10 @@ export default defineConfig(({ mode, command }) => {
           //   if (id.includes('txt-preview')) {
           //     return 'txt-preview';
           //   }
-          //   if (id.includes('node_modules')) {
-          //     return 'node_modules';
-          //   }
           //   if (id.includes('/utils/')) return 'utils';
           //   if (id.includes('/components/')) return 'components';
-
           // },
           // manualChunks: {
-          //   // 将大型库单独打包
           //   vendor: ['react', 'react-dom', 'react-router'],
           //   ui: ['antd', '@ant-design/icons'],
           //   utils: ['lodash', 'moment'],
@@ -166,9 +151,10 @@ export default defineConfig(({ mode, command }) => {
           pure_funcs: ['console.log'], // 删除指定函数调用
         },
         mangle: {
-          properties: {
-            regex: /^_/,
-          },
+          // properties: {
+          //   regex: /^_/,
+          // },
+          properties: false,
         },
         format: {
           comments: false, // 删除注释

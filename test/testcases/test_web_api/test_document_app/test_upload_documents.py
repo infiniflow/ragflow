@@ -136,7 +136,7 @@ class TestDocumentsUpload:
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         res = upload_documents(WebApiAuth, {"kb_id": "invalid_kb_id"}, [fp])
         assert res["code"] == 100, res
-        assert res["message"] == """LookupError("Can't find this knowledgebase!")""", res
+        assert res["message"] == """LookupError("Can't find this dataset!")""", res
 
     @pytest.mark.p2
     def test_duplicate_files(self, WebApiAuth, add_dataset_func, tmp_path):

@@ -32,20 +32,23 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
+from flask import json
+
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.config_utils import show_configs
-from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector, DropboxConnector, WebDAVConnector
+from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector, DropboxConnector, WebDAVConnector, AirtableConnector, AsanaConnector
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.gmail_connector import GmailConnector
+from common.data_source.box_connector import BoxConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
-from common.data_source.utils import load_all_docs_from_checkpoint_connector
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
+from box_sdk_gen import BoxOAuth, OAuthConfig, AccessToken
 
 MAX_CONCURRENT_TASKS = int(os.environ.get("MAX_CONCURRENT_TASKS", "5"))
 task_limiter = asyncio.Semaphore(MAX_CONCURRENT_TASKS)
@@ -93,7 +96,7 @@ class SyncBase:
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
 
-        async for document_batch in document_batch_generator:   # 如果是 async generator
+        for document_batch in document_batch_generator:
             if not document_batch:
                 continue
 
@@ -159,21 +162,63 @@ class SyncBase:
         return ""
 
 
-class S3(SyncBase):
-    SOURCE_NAME: str = FileSource.S3
+class _BlobLikeBase(SyncBase):
+    DEFAULT_BUCKET_TYPE: str = "s3"
 
     async def _generate(self, task: dict):
-        self.connector = BlobStorageConnector(bucket_type=self.conf.get("bucket_type", "s3"), bucket_name=self.conf["bucket_name"], prefix=self.conf.get("prefix", ""))
+        bucket_type = self.conf.get("bucket_type", self.DEFAULT_BUCKET_TYPE)
+
+        self.connector = BlobStorageConnector(
+            bucket_type=bucket_type,
+            bucket_name=self.conf["bucket_name"],
+            prefix=self.conf.get("prefix", ""),
+        )
         self.connector.load_credentials(self.conf["credentials"])
+
         document_batch_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+            else self.connector.poll_source(
+                task["poll_range_start"].timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
         )
 
-        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
-        logging.info("Connect to {}: {}(prefix/{}) {}".format(self.conf.get("bucket_type", "s3"), self.conf["bucket_name"], self.conf.get("prefix", ""), begin_info))
+        begin_info = (
+            "totally"
+            if task["reindex"] == "1" or not task["poll_range_start"]
+            else "from {}".format(task["poll_range_start"])
+        )
+
+        logging.info(
+            "Connect to {}: {}(prefix/{}) {}".format(
+                bucket_type,
+                self.conf["bucket_name"],
+                self.conf.get("prefix", ""),
+                begin_info,
+            )
+        )
         return document_batch_generator
+
+
+class S3(_BlobLikeBase):
+    SOURCE_NAME: str = FileSource.S3
+    DEFAULT_BUCKET_TYPE: str = "s3"
+
+
+class R2(_BlobLikeBase):
+    SOURCE_NAME: str = FileSource.R2
+    DEFAULT_BUCKET_TYPE: str = "r2"
+
+
+class OCI_STORAGE(_BlobLikeBase):
+    SOURCE_NAME: str = FileSource.OCI_STORAGE
+    DEFAULT_BUCKET_TYPE: str = "oci_storage"
+
+
+class GOOGLE_CLOUD_STORAGE(_BlobLikeBase):
+    SOURCE_NAME: str = FileSource.GOOGLE_CLOUD_STORAGE
+    DEFAULT_BUCKET_TYPE: str = "google_cloud_storage"
 
 
 class Confluence(SyncBase):
@@ -209,7 +254,9 @@ class Confluence(SyncBase):
             index_recursively=index_recursively,
         )
 
-        credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"], connector_name=DocumentSource.CONFLUENCE, credential_json=self.conf["credentials"])
+        credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"],
+                                                         connector_name=DocumentSource.CONFLUENCE,
+                                                         credential_json=self.conf["credentials"])
         self.connector.set_credentials_provider(credentials_provider)
 
         # Determine the time range for synchronization based on reindex or poll_range_start
@@ -222,14 +269,49 @@ class Confluence(SyncBase):
 
         end_time = datetime.now(timezone.utc).timestamp()
 
-        document_generator = load_all_docs_from_checkpoint_connector(
-            connector=self.connector,
-            start=start_time,
-            end=end_time,
-        )
+        raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            pending_docs = []
+            iterations = 0
+            iteration_limit = 100_000
+
+            while checkpoint.has_more:
+                wrapper = CheckpointOutputWrapper()
+                doc_generator = wrapper(self.connector.load_from_checkpoint(start_time, end_time, checkpoint))
+                for document, failure, next_checkpoint in doc_generator:
+                    if failure is not None:
+                        logging.warning("Confluence connector failure: %s",
+                                        getattr(failure, "failure_message", failure))
+                        continue
+                    if document is not None:
+                        pending_docs.append(document)
+                        if len(pending_docs) >= batch_size:
+                            yield pending_docs
+                            pending_docs = []
+                    if next_checkpoint is not None:
+                        checkpoint = next_checkpoint
+
+                iterations += 1
+                if iterations > iteration_limit:
+                    raise RuntimeError("Too many iterations while loading Confluence documents.")
+
+            if pending_docs:
+                yield pending_docs
+
+        async def async_wrapper():
+            for batch in document_batches():
+                yield batch
 
         logging.info("Connect to Confluence: {} {}".format(self.conf["wiki_base"], begin_info))
-        return [document_generator]
+        return async_wrapper()
 
 
 class Notion(SyncBase):
@@ -241,10 +323,12 @@ class Notion(SyncBase):
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+            else self.connector.poll_source(task["poll_range_start"].timestamp(),
+                                            datetime.now(timezone.utc).timestamp())
         )
 
-        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
+        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
+            task["poll_range_start"])
         logging.info("Connect to Notion: root({}) {}".format(self.conf["root_page_id"], begin_info))
         return document_generator
 
@@ -267,10 +351,12 @@ class Discord(SyncBase):
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+            else self.connector.poll_source(task["poll_range_start"].timestamp(),
+                                            datetime.now(timezone.utc).timestamp())
         )
 
-        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
+        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
+            task["poll_range_start"])
         logging.info("Connect to Discord: servers({}),  channel({}) {}".format(server_ids, channel_names, begin_info))
         return document_generator
 
@@ -412,7 +498,8 @@ class GoogleDrive(SyncBase):
                 doc_generator = wrapper(self.connector.load_from_checkpoint(start_time, end_time, checkpoint))
                 for document, failure, next_checkpoint in doc_generator:
                     if failure is not None:
-                        logging.warning("Google Drive connector failure: %s", getattr(failure, "failure_message", failure))
+                        logging.warning("Google Drive connector failure: %s",
+                                        getattr(failure, "failure_message", failure))
                         continue
                     if document is not None:
                         pending_docs.append(document)
@@ -573,10 +660,10 @@ class WebDAV(SyncBase):
             remote_path=self.conf.get("remote_path", "/")
         )
         self.connector.load_credentials(self.conf["credentials"])
-        
+
         logging.info(f"Task info: reindex={task['reindex']}, poll_range_start={task['poll_range_start']}")
-        
-        if task["reindex"]=="1" or not task["poll_range_start"]:
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
             logging.info("Using load_from_state (full sync)")
             document_batch_generator = self.connector.load_from_state()
             begin_info = "totally"
@@ -586,14 +673,15 @@ class WebDAV(SyncBase):
             logging.info(f"Polling WebDAV from {task['poll_range_start']} (ts: {start_ts}) to now (ts: {end_ts})")
             document_batch_generator = self.connector.poll_source(start_ts, end_ts)
             begin_info = "from {}".format(task["poll_range_start"])
-            
+
         logging.info("Connect to WebDAV: {}(path: {}) {}".format(
             self.conf["base_url"],
             self.conf.get("remote_path", "/"),
             begin_info
         ))
         return document_batch_generator
-        
+
+
 class Moodle(SyncBase):
     SOURCE_NAME: str = FileSource.MOODLE
 
@@ -602,7 +690,7 @@ class Moodle(SyncBase):
             moodle_url=self.conf["moodle_url"],
             batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE)
         )
-        
+
         self.connector.load_credentials(self.conf["credentials"])
 
         # Determine the time range for synchronization based on reindex or poll_range_start
@@ -616,7 +704,7 @@ class Moodle(SyncBase):
                 begin_info = "totally"
             else:
                 document_generator = self.connector.poll_source(
-                    poll_start.timestamp(), 
+                    poll_start.timestamp(),
                     datetime.now(timezone.utc).timestamp()
                 )
                 begin_info = "from {}".format(poll_start)
@@ -625,8 +713,141 @@ class Moodle(SyncBase):
         return document_generator
 
 
+class BOX(SyncBase):
+    SOURCE_NAME: str = FileSource.BOX
+
+    async def _generate(self, task: dict):
+        self.connector = BoxConnector(
+            folder_id=self.conf.get("folder_id", "0"),
+        )
+
+        credential = json.loads(self.conf['credentials']['box_tokens'])
+
+        auth = BoxOAuth(
+            OAuthConfig(
+                client_id=credential['client_id'],
+                client_secret=credential['client_secret'],
+            )
+        )
+
+        token = AccessToken(
+            access_token=credential['access_token'],
+            refresh_token=credential['refresh_token'],
+        )
+        auth.token_storage.store(token)
+
+        self.connector.load_credentials(auth)
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task["poll_range_start"]
+            if poll_start is None:
+                document_generator = self.connector.load_from_state()
+                begin_info = "totally"
+            else:
+                document_generator = self.connector.poll_source(
+                    poll_start.timestamp(),
+                    datetime.now(timezone.utc).timestamp()
+                )
+                begin_info = "from {}".format(poll_start)
+        logging.info("Connect to Box: folder_id({}) {}".format(self.conf["folder_id"], begin_info))
+        return document_generator
+
+
+class Airtable(SyncBase):
+    SOURCE_NAME: str = FileSource.AIRTABLE
+
+    async def _generate(self, task: dict):
+        """
+        Sync files from Airtable attachments.
+        """
+
+        self.connector = AirtableConnector(
+            base_id=self.conf.get("base_id"),
+            table_name_or_id=self.conf.get("table_name_or_id"),
+        )
+
+        credentials = self.conf.get("credentials", {})
+        if "airtable_access_token" not in credentials:
+            raise ValueError("Missing airtable_access_token in credentials")
+
+        self.connector.load_credentials(
+            {"airtable_access_token": credentials["airtable_access_token"]}
+        )
+
+        if task.get("reindex") == "1" or not task.get("poll_range_start"):
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task.get("poll_range_start")
+            if poll_start is None:
+                document_generator = self.connector.load_from_state()
+                begin_info = "totally"
+            else:
+                document_generator = self.connector.poll_source(
+                    poll_start.timestamp(),
+                    datetime.now(timezone.utc).timestamp(),
+                )
+                begin_info = f"from {poll_start}"
+
+        logging.info(
+            "Connect to Airtable: base_id(%s), table(%s) %s",
+            self.conf.get("base_id"),
+            self.conf.get("table_name_or_id"),
+            begin_info,
+        )
+
+        return document_generator
+
+class Asana(SyncBase):
+    SOURCE_NAME: str = FileSource.ASANA
+
+    async def _generate(self, task: dict):
+        self.connector = AsanaConnector(
+            self.conf.get("asana_workspace_id"),
+            self.conf.get("asana_project_ids"),
+            self.conf.get("asana_team_id"),
+        )
+        credentials = self.conf.get("credentials", {})
+        if "asana_api_token_secret" not in credentials:
+            raise ValueError("Missing asana_api_token_secret in credentials")
+
+        self.connector.load_credentials(
+            {"asana_api_token_secret": credentials["asana_api_token_secret"]}
+        )
+
+        if task.get("reindex") == "1" or not task.get("poll_range_start"):
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task.get("poll_range_start")
+            if poll_start is None:
+                document_generator = self.connector.load_from_state()
+                begin_info = "totally"
+            else:
+                document_generator = self.connector.poll_source(
+                    poll_start.timestamp(),
+                    datetime.now(timezone.utc).timestamp(),
+                )
+                begin_info = f"from {poll_start}"
+
+        logging.info(
+            "Connect to Asana: workspace_id(%s), project_ids(%s), team_id(%s) %s",
+            self.conf.get("asana_workspace_id"),
+            self.conf.get("asana_project_ids"),
+            self.conf.get("asana_team_id"),
+            begin_info,
+        )
+
+        return document_generator
+
+
 func_factory = {
     FileSource.S3: S3,
+    FileSource.R2: R2,
+    FileSource.OCI_STORAGE: OCI_STORAGE,
+    FileSource.GOOGLE_CLOUD_STORAGE: GOOGLE_CLOUD_STORAGE,
     FileSource.NOTION: Notion,
     FileSource.DISCORD: Discord,
     FileSource.CONFLUENCE: Confluence,
@@ -639,6 +860,9 @@ func_factory = {
     FileSource.MOODLE: Moodle,
     FileSource.DROPBOX: Dropbox,
     FileSource.WEBDAV: WebDAV,
+    FileSource.BOX: BOX,
+    FileSource.AIRTABLE: Airtable,
+    FileSource.ASANA: Asana
 }
 
 
@@ -657,7 +881,6 @@ async def dispatch_tasks():
             task["poll_range_start"] = task["poll_range_start"].astimezone(timezone.utc)
         if task["poll_range_end"]:
             task["poll_range_end"] = task["poll_range_end"].astimezone(timezone.utc)
-
         func = func_factory[task["source"]](task["config"])
         tasks.append(asyncio.create_task(func(task)))
 
@@ -714,4 +937,4 @@ async def main():
 if __name__ == "__main__":
     faulthandler.enable()
     init_root_logger(CONSUMER_NAME)
-    asyncio.run(main)
+    asyncio.run(main())

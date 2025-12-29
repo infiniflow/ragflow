@@ -18,6 +18,8 @@ export const fileIconMap = {
   jpg: 'jpg.svg',
   js: 'js.svg',
   json: 'json.svg',
+  md: 'md.svg',
+  mdx: 'mdx.svg',
   mkv: 'mkv.svg',
   mp3: 'mp3.svg',
   mp4: 'mp4.svg',
@@ -99,13 +101,22 @@ export const LanguageTranslationMap = {
   Chinese: 'zh',
   'Traditional Chinese': 'zh-TRADITIONAL',
   Russian: 'ru',
-  Indonesia: 'id',
+  Indonesian: 'id',
   Spanish: 'es',
   Vietnamese: 'vi',
   Japanese: 'ja',
+  Korean: 'ko',
   'Portuguese BR': 'pt-br',
   German: 'de',
   French: 'fr',
+  Italian: 'it',
+  Tamil: 'ta',
+  Telugu: 'te',
+  Kannada: 'ka',
+  Thai: 'th',
+  Greek: 'el',
+  Hindi: 'hi',
+  Ukrainian: 'uk',
 };
 
 export enum FileMimeType {
@@ -129,6 +140,8 @@ export enum FileMimeType {
   Xlsx = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   Mp4 = 'video/mp4',
   Json = 'application/json',
+  Md = 'text/markdown',
+  Mdx = 'text/markdown',
 }
 
 export const Domain = 'demo.ragflow.io';
@@ -148,7 +161,15 @@ export const Images = [
 ];
 
 // Without FileViewer
-export const ExceptiveType = ['xlsx', 'xls', 'pdf', 'docx', 'md', ...Images];
+export const ExceptiveType = [
+  'xlsx',
+  'xls',
+  'pdf',
+  'docx',
+  'md',
+  'mdx',
+  ...Images,
+];
 
 export const SupportedPreviewDocumentTypes = [...ExceptiveType];
 //#endregion

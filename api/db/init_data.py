@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import logging
 import json
 import os
@@ -29,6 +30,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
 from api.db.services.llm_service import LLMService, LLMBundle, get_init_tenant_llm
 from api.db.services.user_service import TenantService, UserTenantService
+from api.db.joint_services.memory_message_service import init_message_id_sequence, init_memory_size_cache
 from common.constants import LLMType
 from common.file_utils import get_project_base_directory
 from common import settings
@@ -73,11 +75,10 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
     logging.info(
-        f"Super user initialized. email: {email}, password: {password}. Changing the password after login is strongly recommended.")
+        f"Super user initialized. email: {email},A default password has been set; changing the password after login is strongly recommended.")
 
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
-    msg = chat_mdl.chat(system="", history=[
-        {"role": "user", "content": "Hello!"}], gen_conf={})
+    msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
     if msg.find("ERROR: ") == 0:
         logging.error(
             "'{}' doesn't work. {}".format(
@@ -169,6 +170,8 @@ def init_web_data():
     #    init_superuser()
 
     add_graph_templates()
+    init_message_id_sequence()
+    init_memory_size_cache()
     logging.info("init web data success:{}".format(time.time() - start_time))
 
 

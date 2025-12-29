@@ -75,6 +75,7 @@ export const useTestRetrieval = () => {
       page,
       size: pageSize,
       doc_ids: filterValue.doc_ids,
+      highlight: true,
     };
   }, [filterValue, knowledgeBaseId, page, pageSize, values]);
 

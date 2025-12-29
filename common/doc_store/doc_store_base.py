@@ -13,7 +13,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import numpy as np
@@ -21,7 +20,6 @@ import numpy as np
 DEFAULT_MATCH_VECTOR_TOPN = 10
 DEFAULT_MATCH_SPARSE_TOPN = 10
 VEC = list | np.ndarray
-
 
 @dataclass
 class SparseVector:
@@ -55,14 +53,13 @@ class SparseVector:
     def __repr__(self):
         return str(self)
 
-
-class MatchTextExpr(ABC):
+class MatchTextExpr:
     def __init__(
         self,
         fields: list[str],
         matching_text: str,
         topn: int,
-        extra_options: dict = dict(),
+        extra_options: dict | None = None,
     ):
         self.fields = fields
         self.matching_text = matching_text
@@ -70,7 +67,7 @@ class MatchTextExpr(ABC):
         self.extra_options = extra_options
 
 
-class MatchDenseExpr(ABC):
+class MatchDenseExpr:
     def __init__(
         self,
         vector_column_name: str,
@@ -78,7 +75,7 @@ class MatchDenseExpr(ABC):
         embedding_data_type: str,
         distance_type: str,
         topn: int = DEFAULT_MATCH_VECTOR_TOPN,
-        extra_options: dict = dict(),
+        extra_options: dict | None = None,
     ):
         self.vector_column_name = vector_column_name
         self.embedding_data = embedding_data
@@ -88,7 +85,7 @@ class MatchDenseExpr(ABC):
         self.extra_options = extra_options
 
 
-class MatchSparseExpr(ABC):
+class MatchSparseExpr:
     def __init__(
         self,
         vector_column_name: str,
@@ -104,7 +101,7 @@ class MatchSparseExpr(ABC):
         self.opt_params = opt_params
 
 
-class MatchTensorExpr(ABC):
+class MatchTensorExpr:
     def __init__(
         self,
         column_name: str,
@@ -120,7 +117,7 @@ class MatchTensorExpr(ABC):
         self.extra_option = extra_option
 
 
-class FusionExpr(ABC):
+class FusionExpr:
     def __init__(self, method: str, topn: int, fusion_params: dict | None = None):
         self.method = method
         self.topn = topn
@@ -129,7 +126,8 @@ class FusionExpr(ABC):
 
 MatchExpr = MatchTextExpr | MatchDenseExpr | MatchSparseExpr | MatchTensorExpr | FusionExpr
 
-class OrderByExpr(ABC):
+
+class OrderByExpr:
     def __init__(self):
         self.fields = list()
     def asc(self, field: str):
@@ -141,13 +139,14 @@ class OrderByExpr(ABC):
     def fields(self):
         return self.fields
 
+
 class DocStoreConnection(ABC):
     """
     Database operations
     """
 
     @abstractmethod
-    def dbType(self) -> str:
+    def db_type(self) -> str:
         """
         Return the type of the database.
         """
@@ -165,21 +164,21 @@ class DocStoreConnection(ABC):
     """
 
     @abstractmethod
-    def createIdx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
+    def create_idx(self, index_name: str, dataset_id: str, vector_size: int):
         """
         Create an index with given name
         """
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def deleteIdx(self, indexName: str, knowledgebaseId: str):
+    def delete_idx(self, index_name: str, dataset_id: str):
         """
         Delete an index with given name
         """
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def indexExist(self, indexName: str, knowledgebaseId: str) -> bool:
+    def index_exist(self, index_name: str, dataset_id: str) -> bool:
         """
         Check if an index with given name exists
         """
@@ -191,16 +190,16 @@ class DocStoreConnection(ABC):
 
     @abstractmethod
     def search(
-        self, selectFields: list[str],
-            highlightFields: list[str],
+        self, select_fields: list[str],
+            highlight_fields: list[str],
             condition: dict,
-            matchExprs: list[MatchExpr],
-            orderBy: OrderByExpr,
+            match_expressions: list[MatchExpr],
+            order_by: OrderByExpr,
             offset: int,
             limit: int,
-            indexNames: str|list[str],
-            knowledgebaseIds: list[str],
-            aggFields: list[str] = [],
+            index_names: str|list[str],
+            dataset_ids: list[str],
+            agg_fields: list[str] | None = None,
             rank_feature: dict | None = None
     ):
         """
@@ -209,28 +208,28 @@ class DocStoreConnection(ABC):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def get(self, chunkId: str, indexName: str, knowledgebaseIds: list[str]) -> dict | None:
+    def get(self, data_id: str, index_name: str, dataset_ids: list[str]) -> dict | None:
         """
         Get single chunk with given id
         """
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def insert(self, rows: list[dict], indexName: str, knowledgebaseId: str = None) -> list[str]:
+    def insert(self, rows: list[dict], index_name: str, dataset_id: str = None) -> list[str]:
         """
         Update or insert a bulk of rows
         """
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def update(self, condition: dict, newValue: dict, indexName: str, knowledgebaseId: str) -> bool:
+    def update(self, condition: dict, new_value: dict, index_name: str, dataset_id: str) -> bool:
         """
         Update rows with given conjunctive equivalent filtering condition
         """
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def delete(self, condition: dict, indexName: str, knowledgebaseId: str) -> int:
+    def delete(self, condition: dict, index_name: str, dataset_id: str) -> int:
         """
         Delete rows with given conjunctive equivalent filtering condition
         """
@@ -245,7 +244,7 @@ class DocStoreConnection(ABC):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def get_chunk_ids(self, res):
+    def get_doc_ids(self, res):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
@@ -253,18 +252,18 @@ class DocStoreConnection(ABC):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def get_highlight(self, res, keywords: list[str], fieldnm: str):
+    def get_highlight(self, res, keywords: list[str], field_name: str):
         raise NotImplementedError("Not implemented")
 
     @abstractmethod
-    def get_aggregation(self, res, fieldnm: str):
+    def get_aggregation(self, res, field_name: str):
         raise NotImplementedError("Not implemented")
 
     """
     SQL
     """
     @abstractmethod
-    def sql(sql: str, fetch_size: int, format: str):
+    def sql(self, sql: str, fetch_size: int, format: str):
         """
         Run the sql generated by text-to-sql
         """

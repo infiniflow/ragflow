@@ -20,9 +20,10 @@ import json
 import re
 import socket
 from urllib.parse import urlparse
-
-from api.apps import smtp_mail_server
-from flask_mail import Message
+import aiosmtplib
+from email.mime.text import MIMEText
+from email.header import Header
+from common import settings
 from quart import render_template_string
 from api.utils.email_templates import EMAIL_TEMPLATES
 from selenium import webdriver
@@ -35,11 +36,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
 
-OTP_LENGTH = 8
-OTP_TTL_SECONDS = 5 * 60
-ATTEMPT_LIMIT = 5
-ATTEMPT_LOCK_SECONDS = 30 * 60
-RESEND_COOLDOWN_SECONDS = 60
+OTP_LENGTH = 4
+OTP_TTL_SECONDS = 5 * 60 # valid for 5 minutes
+ATTEMPT_LIMIT = 5 # maximum attempts
+ATTEMPT_LOCK_SECONDS = 30 * 60 # lock for 30 minutes
+RESEND_COOLDOWN_SECONDS = 60 # cooldown for 1 minute
 
 
 CONTENT_TYPE_MAP = {
@@ -68,6 +69,7 @@ CONTENT_TYPE_MAP = {
     # Web
     "md": "text/markdown",
     "markdown": "text/markdown",
+    "mdx": "text/markdown",
     "htm": "text/html",
     "html": "text/html",
     "json": "application/json",
@@ -183,27 +185,34 @@ def get_float(req: dict, key: str, default: float | int = 10.0) -> float:
         return parsed if parsed > 0 else default
     except (TypeError, ValueError):
         return default
+    
+
+async def send_email_html(to_email: str, subject: str, template_key: str, **context):
+
+    body = await render_template_string(EMAIL_TEMPLATES.get(template_key), **context)
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = Header(subject, "utf-8")
+    msg["From"] = f"{settings.MAIL_DEFAULT_SENDER[0]} <{settings.MAIL_DEFAULT_SENDER[1]}>"
+    msg["To"] = to_email
+
+    smtp = aiosmtplib.SMTP(
+        hostname=settings.MAIL_SERVER,
+        port=settings.MAIL_PORT,
+        use_tls=True,
+        timeout=10,
+    )
+
+    await smtp.connect()
+    await smtp.login(settings.MAIL_USERNAME, settings.MAIL_PASSWORD)
+    await smtp.send_message(msg)
+    await smtp.quit()
 
 
-def send_email_html(subject: str, to_email: str, template_key: str, **context):
-    """Generic HTML email sender using shared templates.
-    template_key must exist in EMAIL_TEMPLATES.
-    """
-    from api.apps import app
-    tmpl = EMAIL_TEMPLATES.get(template_key)
-    if not tmpl:
-        raise ValueError(f"Unknown email template: {template_key}")
-    with app.app_context():
-        msg = Message(subject=subject, recipients=[to_email])
-        msg.html = render_template_string(tmpl, **context)
-        smtp_mail_server.send(msg)
-
-
-def send_invite_email(to_email, invite_url, tenant_id, inviter):
+async def send_invite_email(to_email, invite_url, tenant_id, inviter):
     # Reuse the generic HTML sender with 'invite' template
-    send_email_html(
-        subject="RAGFlow Invitation",
+    await send_email_html(
         to_email=to_email,
+        subject="RAGFlow Invitation",
         template_key="invite",
         email=to_email,
         invite_url=invite_url,

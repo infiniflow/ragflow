@@ -5,7 +5,6 @@ import { getExtension } from '@/utils/document-util';
 import DOMPurify from 'dompurify';
 import { useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
-import reactStringReplace from 'react-string-replace';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
@@ -23,12 +22,11 @@ import {
   preprocessLaTeX,
   replaceTextByOldReg,
   replaceThinkToSection,
-  showImage,
 } from '@/utils/chat';
 import classNames from 'classnames';
 import { omit } from 'lodash';
 import { pipe } from 'lodash/fp';
-import { CircleAlert } from 'lucide-react';
+import reactStringReplace from 'react-string-replace';
 import { Button } from '../ui/button';
 import {
   HoverCard,
@@ -38,6 +36,7 @@ import {
 import styles from './index.module.less';
 
 const getChunkIndex = (match: string) => Number(match);
+
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 const MarkdownContent = ({
   reference,
@@ -187,7 +186,7 @@ const MarkdownContent = ({
                 )}
                 <Button
                   variant="link"
-                  className={'text-wrap p-0'}
+                  className={'text-wrap p-0 flex-1 h-auto'}
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
@@ -211,33 +210,12 @@ const MarkdownContent = ({
       let replacedText = reactStringReplace(text, currentReg, (match, i) => {
         const chunkIndex = getChunkIndex(match);
 
-        const { documentUrl, fileExtension, imageId, chunkItem, documentId } =
-          getReferenceInfo(chunkIndex);
-
-        const docType = chunkItem?.doc_type;
-
-        return showImage(docType) ? (
-          <section>
-            <Image
-              id={imageId}
-              className={styles.referenceInnerChunkImage}
-              onClick={
-                documentId
-                  ? handleDocumentButtonClick(
-                      documentId,
-                      chunkItem,
-                      fileExtension === 'pdf',
-                      documentUrl,
-                    )
-                  : () => {}
-              }
-            ></Image>
-            <span className="text-accent-primary"> {imageId}</span>
-          </section>
-        ) : (
+        return (
           <HoverCard key={i}>
             <HoverCardTrigger>
-              <CircleAlert className="size-4 inline-block" />
+              <span className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap">
+                Fig. {chunkIndex + 1}
+              </span>
             </HoverCardTrigger>
             <HoverCardContent className="max-w-3xl">
               {getPopoverContent(chunkIndex)}
@@ -246,13 +224,9 @@ const MarkdownContent = ({
         );
       });
 
-      // replacedText = reactStringReplace(replacedText, curReg, (match, i) => (
-      //   <span className={styles.cursor} key={i}></span>
-      // ));
-
       return replacedText;
     },
-    [getPopoverContent, getReferenceInfo, handleDocumentButtonClick],
+    [getPopoverContent],
   );
 
   return (

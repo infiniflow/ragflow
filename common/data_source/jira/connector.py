@@ -135,7 +135,7 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
                 except ValueError as exc:
                     raise ConnectorValidationError(str(exc)) from exc
             else:
-                logger.warning(f"[Jira] Scoped token requested but Jira base URL {self.jira_base_url} does not appear to be an Atlassian Cloud domain; scoped token ignored.")
+                logger.warning("[Jira] Scoped token requested but Jira base URL does not appear to be an Atlassian Cloud domain; scoped token ignored.")
 
         user_email = credentials.get("jira_user_email") or credentials.get("username")
         api_token = credentials.get("jira_api_token") or credentials.get("token") or credentials.get("api_token")
@@ -245,7 +245,7 @@ class JiraConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPermSync
         while True:
             attempt += 1
             jql = self._build_jql(attempt_start, end)
-            logger.info(f"[Jira] Executing Jira JQL attempt {attempt} (start={attempt_start}, end={end}, buffered_retry={retried_with_buffer}): {jql}")
+            logger.info(f"[Jira] Executing Jira JQL attempt {attempt} (buffered_retry={retried_with_buffer})[start and end parameters redacted]")
             try:
                 return (yield from self._load_from_checkpoint_internal(jql, checkpoint, start_filter=start))
             except Exception as exc:
@@ -926,9 +926,6 @@ def main(config: dict[str, Any] | None = None) -> None:
 
     base_url = config.get("base_url")
     credentials = config.get("credentials", {})
-
-    print(f"[Jira] {config=}", flush=True)
-    print(f"[Jira] {credentials=}", flush=True)
 
     if not base_url:
         raise RuntimeError("Jira base URL must be provided via config or CLI arguments.")

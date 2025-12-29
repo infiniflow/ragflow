@@ -26,9 +26,9 @@ from networkx.readwrite import json_graph
 from common.misc_utils import get_uuid
 from common.connection_utils import timeout
 from rag.nlp import rag_tokenizer, search
-from rag.utils.doc_store_conn import OrderByExpr
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
+from common.doc_store.doc_store_base import OrderByExpr
 
 GRAPH_FIELD_SEP = "<SEP>"
 
@@ -626,8 +626,8 @@ def merge_tuples(list1, list2):
     return result
 
 
-async def get_entity_type2samples(idxnms, kb_ids: list):
-    es_res = await asyncio.to_thread(settings.retriever.search,{"knowledge_graph_kwd": "ty2ents", "kb_id": kb_ids, "size": 10000, "fields": ["content_with_weight"]},idxnms,kb_ids)
+def get_entity_type2samples(idxnms, kb_ids: list):
+    es_res = settings.retriever.search({"knowledge_graph_kwd": "ty2ents", "kb_id": kb_ids, "size": 10000, "fields": ["content_with_weight"]},idxnms,kb_ids)
 
     res = defaultdict(list)
     for id in es_res.ids:

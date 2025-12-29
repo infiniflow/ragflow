@@ -52,7 +52,9 @@ class DocumentSource(str, Enum):
     MOODLE = "moodle"
     S3_COMPATIBLE = "s3_compatible"
     DROPBOX = "dropbox"
-
+    BOX = "box"
+    AIRTABLE = "airtable"
+    ASANA = "asana"
 
 class FileOrigin(str, Enum):
     """File origins"""
@@ -83,6 +85,7 @@ _PAGE_EXPANSION_FIELDS = [
     "space",
     "metadata.labels",
     "history.lastUpdated",
+    "ancestors",
 ]
 
 
@@ -227,6 +230,7 @@ _DEFAULT_PAGINATION_LIMIT = 1000
 _PROBLEMATIC_EXPANSIONS = "body.storage.value"
 _REPLACEMENT_EXPANSIONS = "body.view.value"
 
+BOX_WEB_OAUTH_REDIRECT_URI = os.environ.get("BOX_WEB_OAUTH_REDIRECT_URI", "http://localhost:9380/v1/connector/box/oauth/web/callback")
 
 class HtmlBasedConnectorTransformLinksStrategy(str, Enum):
     # remove links entirely
@@ -248,6 +252,14 @@ WEB_CONNECTOR_IGNORED_CLASSES = os.environ.get(
 WEB_CONNECTOR_IGNORED_ELEMENTS = os.environ.get(
     "WEB_CONNECTOR_IGNORED_ELEMENTS", "nav,footer,meta,script,style,symbol,aside"
 ).split(",")
+
+AIRTABLE_CONNECTOR_SIZE_THRESHOLD = int(
+    os.environ.get("AIRTABLE_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
+)
+
+ASANA_CONNECTOR_SIZE_THRESHOLD = int(
+    os.environ.get("ASANA_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
+)
 
 _USER_NOT_FOUND = "Unknown Confluence User"
 

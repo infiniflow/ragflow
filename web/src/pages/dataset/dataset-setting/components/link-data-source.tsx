@@ -9,7 +9,7 @@ import {
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IConnector } from '@/interfaces/database/knowledge';
 import { delSourceModal } from '@/pages/user-setting/data-source/component/delete-source-modal';
-import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
+import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { useDataSourceRebuild } from '@/pages/user-setting/data-source/hooks';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { Link, Settings, Unlink } from 'lucide-react';
@@ -41,6 +41,7 @@ interface DataSourceItemProps extends IDataSourceNodeProps {
 }
 
 const DataSourceItem = (props: DataSourceItemProps) => {
+  const { dataSourceInfo } = useDataSourceInfo();
   const { t } = useTranslation();
   const { id, name, icon, source, auto_parse, unbindFunc, handleAutoParse } =
     props;
@@ -56,7 +57,7 @@ const DataSourceItem = (props: DataSourceItemProps) => {
       <div className="flex items-center gap-1">
         <div className="w-6 h-6 flex-shrink-0">{icon}</div>
         <div className="text-base text-text-primary">
-          {DataSourceInfo[source].name}
+          {dataSourceInfo[source].name}
         </div>
         <div>{name}</div>
       </div>
@@ -114,6 +115,7 @@ const DataSourceItem = (props: DataSourceItemProps) => {
               delSourceModal({
                 data: props,
                 type: 'unlink',
+                dataSourceInfo: dataSourceInfo,
                 onOk: (data) => unbindFunc?.(data as DataSourceItemProps),
               });
             }}
@@ -134,6 +136,7 @@ const LinkDataSource = (props: ILinkDataSourceProps) => {
     handleAutoParse,
   } = props;
   const { t } = useTranslation();
+  const { dataSourceInfo } = useDataSourceInfo();
   const [openLinkModal, setOpenLinkModal] = useState(false);
 
   const pipelineNode: IDataSourceNodeProps[] = useMemo(() => {
@@ -144,7 +147,7 @@ const LinkDataSource = (props: ILinkDataSourceProps) => {
           id: item?.id,
           name: item?.name,
           icon:
-            DataSourceInfo[item?.source as keyof typeof DataSourceInfo]?.icon ||
+            dataSourceInfo[item?.source as keyof typeof dataSourceInfo]?.icon ||
             '',
         } as IDataSourceNodeProps;
       });

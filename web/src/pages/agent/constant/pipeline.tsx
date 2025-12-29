@@ -85,6 +85,7 @@ export enum ContextGeneratorFieldName {
   Keywords = 'keywords',
   Questions = 'questions',
   Metadata = 'metadata',
+  TableOfContents = 'toc',
 }
 
 export const FileId = 'File'; // BeginId
@@ -205,6 +206,7 @@ export const initialSplitterValues = {
   chunk_token_size: 512,
   overlapped_percent: 0,
   delimiters: [{ value: '\n' }],
+  image_table_context_window: 0,
 };
 
 export enum Hierarchy {

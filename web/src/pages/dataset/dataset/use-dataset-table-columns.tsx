@@ -11,31 +11,37 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useSetDocumentStatus } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
-import { DataSourceInfo } from '@/pages/user-setting/data-source/contant';
+import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { formatDate } from '@/utils/date';
 import { ColumnDef } from '@tanstack/table-core';
 import { ArrowUpDown, MonitorUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import {
+  MetadataType,
+  util,
+} from '../components/metedata/hooks/use-manage-modal';
+import { ShowManageMetadataModalProps } from '../components/metedata/interface';
 import { DatasetActionCell } from './dataset-action-cell';
 import { ParsingStatusCell } from './parsing-status-cell';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { UseRenameDocumentShowType } from './use-rename-document';
-import { UseSaveMetaShowType } from './use-save-meta';
 
 type UseDatasetTableColumnsType = UseChangeDocumentParserShowType &
-  UseRenameDocumentShowType &
-  UseSaveMetaShowType & { showLog: (record: IDocumentInfo) => void };
+  UseRenameDocumentShowType & {
+    showLog: (record: IDocumentInfo) => void;
+    showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
+  };
 
 export function useDatasetTableColumns({
   showChangeParserModal,
   showRenameModal,
-  showSetMetaModal,
+  showManageMetadataModal,
   showLog,
 }: UseDatasetTableColumnsType) {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
   });
-
+  const { dataSourceInfo } = useDataSourceInfo();
   const { navigateToChunkParsedResult } = useNavigatePage();
   const { setDocumentStatus } = useSetDocumentStatus();
 
@@ -134,8 +140,8 @@ export function useDatasetTableColumns({
           ) : (
             <div className="w-6 h-6 flex items-center justify-center">
               {
-                DataSourceInfo[
-                  row.original.source_type as keyof typeof DataSourceInfo
+                dataSourceInfo[
+                  row.original.source_type as keyof typeof dataSourceInfo
                 ]?.icon
               }
             </div>
@@ -174,7 +180,26 @@ export function useDatasetTableColumns({
           <ParsingStatusCell
             record={row.original}
             showChangeParserModal={showChangeParserModal}
-            showSetMetaModal={showSetMetaModal}
+            showSetMetaModal={(row) =>
+              showManageMetadataModal({
+                metadata: util.JSONToMetaDataTableData(row.meta_fields || {}),
+                isCanAdd: true,
+                type: MetadataType.UpdateSingle,
+                record: row,
+                title: (
+                  <div className="flex flex-col gap-2 w-full">
+                    <div className="text-base font-normal">
+                      {t('metadata.editMetadata')}
+                    </div>
+                    <div className="text-sm text-text-secondary w-full truncate">
+                      {t('metadata.editMetadataForDataset')}
+                      {row.name}
+                    </div>
+                  </div>
+                ),
+                isDeleteSingleValue: true,
+              })
+            }
             showLog={showLog}
           ></ParsingStatusCell>
         );
