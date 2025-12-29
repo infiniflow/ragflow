@@ -54,6 +54,7 @@ class DocumentSource(str, Enum):
     DROPBOX = "dropbox"
     BOX = "box"
     AIRTABLE = "airtable"
+    ASANA = "asana"
     GITHUB = "github"
     GITLAB = "gitlab"
 
@@ -256,6 +257,10 @@ WEB_CONNECTOR_IGNORED_ELEMENTS = os.environ.get(
 
 AIRTABLE_CONNECTOR_SIZE_THRESHOLD = int(
     os.environ.get("AIRTABLE_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
+)
+
+ASANA_CONNECTOR_SIZE_THRESHOLD = int(
+    os.environ.get("ASANA_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
 )
 
 _USER_NOT_FOUND = "Unknown Confluence User"

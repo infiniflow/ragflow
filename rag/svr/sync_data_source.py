@@ -47,7 +47,8 @@ from common.data_source import (
     JiraConnector, 
     DropboxConnector, 
     WebDAVConnector, 
-    AirtableConnector,
+    AirtableConnector, 
+    AsanaConnector,
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -107,7 +108,7 @@ class SyncBase:
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
 
-        for document_batch in document_batch_generator: 
+        for document_batch in document_batch_generator:
             if not document_batch:
                 continue
 
@@ -172,6 +173,7 @@ class SyncBase:
     def _get_source_prefix(self):
         return ""
 
+
 class _BlobLikeBase(SyncBase):
     DEFAULT_BUCKET_TYPE: str = "s3"
 
@@ -210,21 +212,26 @@ class _BlobLikeBase(SyncBase):
         )
         return document_batch_generator
 
+
 class S3(_BlobLikeBase):
     SOURCE_NAME: str = FileSource.S3
     DEFAULT_BUCKET_TYPE: str = "s3"
+
 
 class R2(_BlobLikeBase):
     SOURCE_NAME: str = FileSource.R2
     DEFAULT_BUCKET_TYPE: str = "r2"
 
+
 class OCI_STORAGE(_BlobLikeBase):
     SOURCE_NAME: str = FileSource.OCI_STORAGE
     DEFAULT_BUCKET_TYPE: str = "oci_storage"
 
+
 class GOOGLE_CLOUD_STORAGE(_BlobLikeBase):
     SOURCE_NAME: str = FileSource.GOOGLE_CLOUD_STORAGE
     DEFAULT_BUCKET_TYPE: str = "google_cloud_storage"
+
 
 class Confluence(SyncBase):
     SOURCE_NAME: str = FileSource.CONFLUENCE
@@ -259,7 +266,9 @@ class Confluence(SyncBase):
             index_recursively=index_recursively,
         )
 
-        credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"], connector_name=DocumentSource.CONFLUENCE, credential_json=self.conf["credentials"])
+        credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"],
+                                                         connector_name=DocumentSource.CONFLUENCE,
+                                                         credential_json=self.conf["credentials"])
         self.connector.set_credentials_provider(credentials_provider)
 
         # Determine the time range for synchronization based on reindex or poll_range_start
@@ -291,7 +300,8 @@ class Confluence(SyncBase):
                 doc_generator = wrapper(self.connector.load_from_checkpoint(start_time, end_time, checkpoint))
                 for document, failure, next_checkpoint in doc_generator:
                     if failure is not None:
-                        logging.warning("Confluence connector failure: %s", getattr(failure, "failure_message", failure))
+                        logging.warning("Confluence connector failure: %s",
+                                        getattr(failure, "failure_message", failure))
                         continue
                     if document is not None:
                         pending_docs.append(document)
@@ -311,7 +321,7 @@ class Confluence(SyncBase):
         async def async_wrapper():
             for batch in document_batches():
                 yield batch
-        
+
         logging.info("Connect to Confluence: {} {}".format(self.conf["wiki_base"], begin_info))
         return async_wrapper()
 
@@ -325,10 +335,12 @@ class Notion(SyncBase):
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+            else self.connector.poll_source(task["poll_range_start"].timestamp(),
+                                            datetime.now(timezone.utc).timestamp())
         )
 
-        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
+        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
+            task["poll_range_start"])
         logging.info("Connect to Notion: root({}) {}".format(self.conf["root_page_id"], begin_info))
         return document_generator
 
@@ -351,10 +363,12 @@ class Discord(SyncBase):
         document_generator = (
             self.connector.load_from_state()
             if task["reindex"] == "1" or not task["poll_range_start"]
-            else self.connector.poll_source(task["poll_range_start"].timestamp(), datetime.now(timezone.utc).timestamp())
+            else self.connector.poll_source(task["poll_range_start"].timestamp(),
+                                            datetime.now(timezone.utc).timestamp())
         )
 
-        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(task["poll_range_start"])
+        begin_info = "totally" if task["reindex"] == "1" or not task["poll_range_start"] else "from {}".format(
+            task["poll_range_start"])
         logging.info("Connect to Discord: servers({}),  channel({}) {}".format(server_ids, channel_names, begin_info))
         return document_generator
 
@@ -496,7 +510,8 @@ class GoogleDrive(SyncBase):
                 doc_generator = wrapper(self.connector.load_from_checkpoint(start_time, end_time, checkpoint))
                 for document, failure, next_checkpoint in doc_generator:
                     if failure is not None:
-                        logging.warning("Google Drive connector failure: %s", getattr(failure, "failure_message", failure))
+                        logging.warning("Google Drive connector failure: %s",
+                                        getattr(failure, "failure_message", failure))
                         continue
                     if document is not None:
                         pending_docs.append(document)
@@ -657,10 +672,10 @@ class WebDAV(SyncBase):
             remote_path=self.conf.get("remote_path", "/")
         )
         self.connector.load_credentials(self.conf["credentials"])
-        
+
         logging.info(f"Task info: reindex={task['reindex']}, poll_range_start={task['poll_range_start']}")
-        
-        if task["reindex"]=="1" or not task["poll_range_start"]:
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
             logging.info("Using load_from_state (full sync)")
             document_batch_generator = self.connector.load_from_state()
             begin_info = "totally"
@@ -670,14 +685,15 @@ class WebDAV(SyncBase):
             logging.info(f"Polling WebDAV from {task['poll_range_start']} (ts: {start_ts}) to now (ts: {end_ts})")
             document_batch_generator = self.connector.poll_source(start_ts, end_ts)
             begin_info = "from {}".format(task["poll_range_start"])
-            
+
         logging.info("Connect to WebDAV: {}(path: {}) {}".format(
             self.conf["base_url"],
             self.conf.get("remote_path", "/"),
             begin_info
         ))
         return document_batch_generator
-        
+
+
 class Moodle(SyncBase):
     SOURCE_NAME: str = FileSource.MOODLE
 
@@ -686,7 +702,7 @@ class Moodle(SyncBase):
             moodle_url=self.conf["moodle_url"],
             batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE)
         )
-        
+
         self.connector.load_credentials(self.conf["credentials"])
 
         # Determine the time range for synchronization based on reindex or poll_range_start
@@ -700,7 +716,7 @@ class Moodle(SyncBase):
                 begin_info = "totally"
             else:
                 document_generator = self.connector.poll_source(
-                    poll_start.timestamp(), 
+                    poll_start.timestamp(),
                     datetime.now(timezone.utc).timestamp()
                 )
                 begin_info = "from {}".format(poll_start)
@@ -729,7 +745,7 @@ class BOX(SyncBase):
         token = AccessToken(
             access_token=credential['access_token'],
             refresh_token=credential['refresh_token'],
-        )    
+        )
         auth.token_storage.store(token)
 
         self.connector.load_credentials(auth)
@@ -749,6 +765,7 @@ class BOX(SyncBase):
                 begin_info = "from {}".format(poll_start)
         logging.info("Connect to Box: folder_id({}) {}".format(self.conf["folder_id"], begin_info))
         return document_generator
+
 
 class Airtable(SyncBase):
     SOURCE_NAME: str = FileSource.AIRTABLE
@@ -794,6 +811,49 @@ class Airtable(SyncBase):
         )
 
         return document_generator
+
+class Asana(SyncBase):
+    SOURCE_NAME: str = FileSource.ASANA
+
+    async def _generate(self, task: dict):
+        self.connector = AsanaConnector(
+            self.conf.get("asana_workspace_id"),
+            self.conf.get("asana_project_ids"),
+            self.conf.get("asana_team_id"),
+        )
+        credentials = self.conf.get("credentials", {})
+        if "asana_api_token_secret" not in credentials:
+            raise ValueError("Missing asana_api_token_secret in credentials")
+
+        self.connector.load_credentials(
+            {"asana_api_token_secret": credentials["asana_api_token_secret"]}
+        )
+
+        if task.get("reindex") == "1" or not task.get("poll_range_start"):
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task.get("poll_range_start")
+            if poll_start is None:
+                document_generator = self.connector.load_from_state()
+                begin_info = "totally"
+            else:
+                document_generator = self.connector.poll_source(
+                    poll_start.timestamp(),
+                    datetime.now(timezone.utc).timestamp(),
+                )
+                begin_info = f"from {poll_start}"
+
+        logging.info(
+            "Connect to Asana: workspace_id(%s), project_ids(%s), team_id(%s) %s",
+            self.conf.get("asana_workspace_id"),
+            self.conf.get("asana_project_ids"),
+            self.conf.get("asana_team_id"),
+            begin_info,
+        )
+
+        return document_generator
+
 
 
 class Gitlab(SyncBase):
@@ -856,6 +916,7 @@ func_factory = {
     FileSource.BOX: BOX,
     FileSource.AIRTABLE: Airtable,
     FileSource.GITLAB: Gitlab,
+    FileSource.ASANA: Asana,
 }
 
 
