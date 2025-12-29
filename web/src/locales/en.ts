@@ -112,6 +112,10 @@ export default {
 Semantic Memory: General knowledge and facts about the user and world.
 Episodic Memory: Time-stamped records of specific events and experiences.
 Procedural Memory: Learned skills, habits, and automated procedures.`,
+      raw: 'raw',
+      semantic: 'semantic',
+      episodic: 'episodic',
+      procedural: 'procedural',
       editName: 'Edit name',
       memory: 'Memory',
       createMemory: 'Create memory',
