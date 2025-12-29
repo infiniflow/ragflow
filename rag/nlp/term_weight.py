@@ -1,4 +1,4 @@
-    #
+#
 #  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -108,13 +108,14 @@ class Dealer:
                 if re.match(p, t):
                     tk = "#"
                     break
-            #tk = re.sub(r"([\+\\-])", r"\\\1", tk)
+            # tk = re.sub(r"([\+\\-])", r"\\\1", tk)
             if tk != "#" and tk:
                 res.append(tk)
         return res
 
     def token_merge(self, tks):
-        def one_term(t): return len(t) == 1 or re.match(r"[0-9a-z]{1,2}$", t)
+        def one_term(t):
+            return len(t) == 1 or re.match(r"[0-9a-z]{1,2}$", t)
 
         res, i = [], 0
         while i < len(tks):
@@ -152,8 +153,8 @@ class Dealer:
         tks = []
         for t in re.sub(r"[ \t]+", " ", txt).split():
             if tks and re.match(r".*[a-zA-Z]$", tks[-1]) and \
-               re.match(r".*[a-zA-Z]$", t) and tks and \
-               self.ne.get(t, "") != "func" and self.ne.get(tks[-1], "") != "func":
+                    re.match(r".*[a-zA-Z]$", t) and tks and \
+                    self.ne.get(t, "") != "func" and self.ne.get(tks[-1], "") != "func":
                 tks[-1] = tks[-1] + " " + t
             else:
                 tks.append(t)
@@ -220,14 +221,15 @@ class Dealer:
 
             return 3
 
-        def idf(s, N): return math.log10(10 + ((N - s + 0.5) / (s + 0.5)))
+        def idf(s, N):
+            return math.log10(10 + ((N - s + 0.5) / (s + 0.5)))
 
         tw = []
         if not preprocess:
             idf1 = np.array([idf(freq(t), 10000000) for t in tks])
             idf2 = np.array([idf(df(t), 1000000000) for t in tks])
             wts = (0.3 * idf1 + 0.7 * idf2) * \
-                np.array([ner(t) * postag(t) for t in tks])
+                  np.array([ner(t) * postag(t) for t in tks])
             wts = [s for s in wts]
             tw = list(zip(tks, wts))
         else:
@@ -236,7 +238,7 @@ class Dealer:
                 idf1 = np.array([idf(freq(t), 10000000) for t in tt])
                 idf2 = np.array([idf(df(t), 1000000000) for t in tt])
                 wts = (0.3 * idf1 + 0.7 * idf2) * \
-                    np.array([ner(t) * postag(t) for t in tt])
+                      np.array([ner(t) * postag(t) for t in tt])
                 wts = [s for s in wts]
                 tw.extend(zip(tt, wts))
 

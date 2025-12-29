@@ -21,7 +21,6 @@ Utility functions for Raptor processing decisions.
 import logging
 from typing import Optional
 
-
 # File extensions for structured data types
 EXCEL_EXTENSIONS = {".xls", ".xlsx", ".xlsm", ".xlsb"}
 CSV_EXTENSIONS = {".csv", ".tsv"}
@@ -40,12 +39,12 @@ def is_structured_file_type(file_type: Optional[str]) -> bool:
     """
     if not file_type:
         return False
-    
+
     # Normalize to lowercase and ensure leading dot
     file_type = file_type.lower()
     if not file_type.startswith("."):
         file_type = f".{file_type}"
-    
+
     return file_type in STRUCTURED_EXTENSIONS
 
 
@@ -61,23 +60,23 @@ def is_tabular_pdf(parser_id: str = "", parser_config: Optional[dict] = None) ->
         True if PDF is being parsed as tabular data
     """
     parser_config = parser_config or {}
-    
+
     # If using table parser, it's tabular
     if parser_id and parser_id.lower() == "table":
         return True
-    
+
     # Check if html4excel is enabled (Excel-like table parsing)
     if parser_config.get("html4excel", False):
         return True
-    
+
     return False
 
 
 def should_skip_raptor(
-    file_type: Optional[str] = None,
-    parser_id: str = "",
-    parser_config: Optional[dict] = None,
-    raptor_config: Optional[dict] = None
+        file_type: Optional[str] = None,
+        parser_id: str = "",
+        parser_config: Optional[dict] = None,
+        raptor_config: Optional[dict] = None
 ) -> bool:
     """
     Determine if Raptor should be skipped for a given document.
@@ -97,30 +96,30 @@ def should_skip_raptor(
     """
     parser_config = parser_config or {}
     raptor_config = raptor_config or {}
-    
+
     # Check if auto-disable is explicitly disabled in config
     if raptor_config.get("auto_disable_for_structured_data", True) is False:
         logging.info("Raptor auto-disable is turned off via configuration")
         return False
-    
+
     # Check for Excel/CSV files
     if is_structured_file_type(file_type):
         logging.info(f"Skipping Raptor for structured file type: {file_type}")
         return True
-    
+
     # Check for tabular PDFs
     if file_type and file_type.lower() in [".pdf", "pdf"]:
         if is_tabular_pdf(parser_id, parser_config):
             logging.info(f"Skipping Raptor for tabular PDF (parser_id={parser_id})")
             return True
-    
+
     return False
 
 
 def get_skip_reason(
-    file_type: Optional[str] = None,
-    parser_id: str = "",
-    parser_config: Optional[dict] = None
+        file_type: Optional[str] = None,
+        parser_id: str = "",
+        parser_config: Optional[dict] = None
 ) -> str:
     """
     Get a human-readable reason why Raptor was skipped.
@@ -134,12 +133,12 @@ def get_skip_reason(
         Reason string, or empty string if Raptor should not be skipped
     """
     parser_config = parser_config or {}
-    
+
     if is_structured_file_type(file_type):
         return f"Structured data file ({file_type}) - Raptor auto-disabled"
-    
+
     if file_type and file_type.lower() in [".pdf", "pdf"]:
         if is_tabular_pdf(parser_id, parser_config):
             return f"Tabular PDF (parser={parser_id}) - Raptor auto-disabled"
-    
+
     return ""
