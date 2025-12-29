@@ -747,7 +747,6 @@ export const DataSourceFormDefaultValues = {
     config: {
       bucket_name: '',
       bucket_type: 's3',
-      authMode: 'access_key',
       prefix: '',
       credentials: {
         aws_access_key_id: '',
