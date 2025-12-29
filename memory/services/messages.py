@@ -194,19 +194,18 @@ class MessageService:
         select_fields = ["message_id", "content", "content_embed"]
         _index_name = index_name(uid)
         res = settings.msgStoreConn.get_forgotten_messages(select_fields, _index_name, memory_id)
-        if not res:
-            return []
-        message_list = settings.msgStoreConn.get_fields(res, select_fields)
         current_size = 0
         ids_to_remove = []
-        for message in message_list.values():
-            if current_size < size_to_delete:
-                current_size += cls.calculate_message_size(message)
-                ids_to_remove.append(message["message_id"])
-            else:
+        if res:
+            message_list = settings.msgStoreConn.get_fields(res, select_fields)
+            for message in message_list.values():
+                if current_size < size_to_delete:
+                    current_size += cls.calculate_message_size(message)
+                    ids_to_remove.append(message["message_id"])
+                else:
+                    return ids_to_remove, current_size
+            if current_size >= size_to_delete:
                 return ids_to_remove, current_size
-        if current_size >= size_to_delete:
-            return ids_to_remove, current_size
 
         order_by = OrderByExpr()
         order_by.asc("valid_at")

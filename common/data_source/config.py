@@ -55,6 +55,8 @@ class DocumentSource(str, Enum):
     BOX = "box"
     AIRTABLE = "airtable"
     ASANA = "asana"
+    GITHUB = "github"
+    GITLAB = "gitlab"
 
 class FileOrigin(str, Enum):
     """File origins"""
@@ -231,8 +233,6 @@ _PROBLEMATIC_EXPANSIONS = "body.storage.value"
 _REPLACEMENT_EXPANSIONS = "body.view.value"
 
 BOX_WEB_OAUTH_REDIRECT_URI = os.environ.get("BOX_WEB_OAUTH_REDIRECT_URI", "http://localhost:9380/v1/connector/box/oauth/web/callback")
-
-GITHUB_CONNECTOR_BASE_URL = os.environ.get("GITHUB_CONNECTOR_BASE_URL") or None
 
 class HtmlBasedConnectorTransformLinksStrategy(str, Enum):
     # remove links entirely

@@ -149,8 +149,8 @@ dependencies = [
     #    "cryptography==46.0.3",
     #    "jinja2>=3.1.0",
     "pyairtable>=3.3.0",
-    "pygithub>=2.8.1",
     "asana>=5.2.2",
+    "python-gitlab>=7.0.0",
 ]
 
 [dependency-groups]
