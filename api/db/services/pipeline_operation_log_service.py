@@ -169,11 +169,12 @@ class PipelineOperationLogService(CommonService):
             operation_status=operation_status,
             avatar=avatar,
         )
-        log["create_time"] = current_timestamp()
-        log["create_date"] = datetime_format(datetime.now())
-        log["update_time"] = current_timestamp()
-        log["update_date"] = datetime_format(datetime.now())
-
+        timestamp = current_timestamp()
+        datetime_now = datetime.now()
+        log["create_time"] = timestamp
+        log["create_date"] = datetime_format(datetime_now)
+        log["update_time"] = timestamp
+        log["update_date"] = datetime_format(datetime_now)
         with DB.atomic():
             obj = cls.save(**log)
 
