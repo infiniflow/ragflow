@@ -373,7 +373,7 @@ class Docx(DocxParser):
                     pn += 1
         new_line = [(line[0], reduce(concat_img, line[1]) if line[1] else None) for line in lines]
 
-        tbls = []
+        tables = []
         for i, tb in enumerate(self.doc.tables):
             title = self.__get_nearest_title(i, filename)
             html = "<table>"
@@ -398,8 +398,8 @@ class Docx(DocxParser):
                     logging.warning(f"Error parsing table, ignore: {e}")
                 html += "</tr>"
             html += "</table>"
-            tbls.append(((None, html), ""))
-        return new_line, tbls
+            tables.append(((None, html), ""))
+        return new_line, tables
 
     def to_markdown(self, filename=None, binary=None, inline_images: bool = True):
         """
@@ -478,18 +478,18 @@ class Pdf(PdfParser):
         callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
 
         if separate_tables_figures:
-            tbls, figures = self._extract_table_figure(True, zoomin, True, True, True)
+            tables, figures = self._extract_table_figure(True, zoomin, True, True, True)
             self._concat_downward()
             logging.info("layouts cost: {}s".format(timer() - first_start))
-            return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls, figures
+            return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tables, figures
         else:
-            tbls = self._extract_table_figure(True, zoomin, True, True)
+            tables = self._extract_table_figure(True, zoomin, True, True)
             self._naive_vertical_merge()
             self._concat_downward()
             self._final_reading_order_merge()
             # self._filter_forpages()
             logging.info("layouts cost: {}s".format(timer() - first_start))
-            return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
+            return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tables
 
 
 class Markdown(MarkdownParser):
@@ -620,12 +620,12 @@ class Markdown(MarkdownParser):
             sections.append((content, ""))
             section_images.append(combined_image)
 
-        tbls = []
+        tables = []
         for table in tables:
-            tbls.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
+            tables.append(((None, markdown(table, extensions=['markdown.extensions.tables'])), ""))
         if return_section_images:
-            return sections, tbls, section_images
-        return sections, tbls
+            return sections, tables, section_images
+        return sections, tables
 
 
 def load_from_xml_v2(baseURI, rels_item_xml):

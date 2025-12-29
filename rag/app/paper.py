@@ -58,7 +58,7 @@ class Pdf(PdfParser):
 
         start = timer()
         self._text_merge()
-        tbls = self._extract_table_figure(True, zoomin, True, True)
+        tables = self._extract_table_figure(True, zoomin, True, True)
         column_width = np.median([b["x1"] - b["x0"] for b in self.boxes])
         self._concat_downward()
         self._filter_forpages()
@@ -84,7 +84,7 @@ class Pdf(PdfParser):
                 "abstract": "",
                 "sections": [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", "")) for b in self.boxes if
                              re.match(r"(text|title)", b.get("layoutno", "text"))],
-                "tables": tbls
+                "tables": tables
             }
         # get title and authors
         title = ""
@@ -129,7 +129,7 @@ class Pdf(PdfParser):
                     to_page, self.total_page)))
         for b in self.boxes:
             logging.debug("{} {}".format(b["text"], b.get("layoutno")))
-        logging.debug("{}".format(tbls))
+        logging.debug("{}".format(tables))
 
         return {
             "title": title,
@@ -137,7 +137,7 @@ class Pdf(PdfParser):
             "abstract": abstr,
             "sections": [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", "")) for b in self.boxes[i:] if
                          re.match(r"(text|title)", b.get("layoutno", "text"))],
-            "tables": tbls
+            "tables": tables
         }
 
 
@@ -191,9 +191,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 "tables": tables
             }
 
-        tbls = paper["tables"]
-        tbls = vision_figure_parser_pdf_wrapper(tbls=tbls, callback=callback, **kwargs)
-        paper["tables"] = tbls
+        tables = paper["tables"]
+        tables = vision_figure_parser_pdf_wrapper(tbls=tables, callback=callback, **kwargs)
+        paper["tables"] = tables
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")
 

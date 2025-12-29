@@ -54,13 +54,13 @@ class Pdf(PdfParser):
         start = timer()
         self._text_merge()
         callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
-        tbls = self._extract_table_figure(True, zoomin, True, True)
+        tables = self._extract_table_figure(True, zoomin, True, True)
         self._concat_downward()
 
         sections = [(b["text"], self.get_position(b, zoomin))
                     for i, b in enumerate(self.boxes)]
         return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (
-            x[-1][0][0], x[-1][0][3], x[-1][0][1]))], tbls
+            x[-1][0][0], x[-1][0][3], x[-1][0][1]))], tables
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
@@ -76,10 +76,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections, tbls = naive.Docx()(filename, binary)
-        tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, **kwargs)
+        sections, tables = naive.Docx()(filename, binary)
+        tables = vision_figure_parser_docx_wrapper(sections=sections, tbls=tables, callback=callback, **kwargs)
         sections = [s for s, _ in sections if s]
-        for (_, html), _ in tbls:
+        for (_, html), _ in tables:
             sections.append(html)
         callback(0.8, "Finish parsing.")
 
@@ -95,7 +95,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         parser = PARSERS.get(name, by_plaintext)
         callback(0.1, "Start to parse.")
 
-        sections, tbls, pdf_parser = parser(
+        sections, tables, pdf_parser = parser(
             filename=filename,
             binary=binary,
             from_page=from_page,
@@ -108,7 +108,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             **kwargs
         )
 
-        if not sections and not tbls:
+        if not sections and not tables:
             return []
 
         if name in ["tcadp", "docling", "mineru"]:
@@ -116,7 +116,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         callback(0.8, "Finish parsing.")
 
-        for (img, rows), poss in tbls:
+        for (img, rows), poss in tables:
             if not rows:
                 continue
             sections.append((rows if isinstance(rows, str) else rows[0],

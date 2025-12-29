@@ -62,7 +62,7 @@ class Pdf(PdfParser):
 
         start = timer()
         self._text_merge()
-        tbls = self._extract_table_figure(True, zoomin, True, True)
+        tables = self._extract_table_figure(True, zoomin, True, True)
         self._concat_downward()
         self._filter_forpages()
         callback(0.68, "Text merged ({:.2f}s)".format(timer() - start))
@@ -72,7 +72,7 @@ class Pdf(PdfParser):
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
 
         return [(b["text"], b.get("layoutno", ""), self.get_position(b, zoomin))
-                for i, b in enumerate(self.boxes)], tbls
+                for i, b in enumerate(self.boxes)], tables
 
 
 class Docx(DocxParser):
@@ -159,7 +159,7 @@ class Docx(DocxParser):
             if sum_question:
                 ti_list.append((f'{sum_question}\n{last_answer}', last_image))
 
-        tbls = []
+        tables = []
         for tb in self.doc.tables:
             html = "<table>"
             for r in tb.rows:
@@ -178,8 +178,8 @@ class Docx(DocxParser):
                     html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
                 html += "</tr>"
             html += "</table>"
-            tbls.append(((None, html), ""))
-        return ti_list, tbls
+            tables.append(((None, html), ""))
+        return ti_list, tables
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
@@ -212,7 +212,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         kwargs.pop("parse_method", None)
         kwargs.pop("mineru_llm_name", None)
-        sections, tbls, pdf_parser = pdf_parser(
+        sections, tables, pdf_parser = pdf_parser(
             filename=filename,
             binary=binary,
             from_page=from_page,
@@ -249,7 +249,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         sections = [_normalize_section(sec) for sec in sections]
 
-        if not sections and not tbls:
+        if not sections and not tables:
             return []
 
         if name in ["tcadp", "docling", "mineru"]:
@@ -287,7 +287,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         sections = [(txt, sec_ids[i], poss)
                     for i, (txt, _, poss) in enumerate(sections)]
-        for (img, rows), poss in tbls:
+        for (img, rows), poss in tables:
             if not rows:
                 continue
             sections.append((rows if isinstance(rows, str) else rows[0], -1,
@@ -314,8 +314,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             tk_cnt = num_tokens_from_string(txt)
             if sec_id > -1:
                 last_sid = sec_id
-        tbls = vision_figure_parser_pdf_wrapper(tbls=tbls, callback=callback, **kwargs)
-        res = tokenize_table(tbls, doc, eng)
+        tables = vision_figure_parser_pdf_wrapper(tbls=tables, callback=callback, **kwargs)
+        res = tokenize_table(tables, doc, eng)
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
         table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
         image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
@@ -325,10 +325,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.docx?$", filename, re.IGNORECASE):
         docx_parser = Docx()
-        ti_list, tbls = docx_parser(filename, binary,
+        ti_list, tables = docx_parser(filename, binary,
                                     from_page=0, to_page=10000, callback=callback)
-        tbls = vision_figure_parser_docx_wrapper(sections=ti_list, tbls=tbls, callback=callback, **kwargs)
-        res = tokenize_table(tbls, doc, eng)
+        tables = vision_figure_parser_docx_wrapper(sections=ti_list, tbls=tables, callback=callback, **kwargs)
+        res = tokenize_table(tables, doc, eng)
         for text, image in ti_list:
             d = copy.deepcopy(doc)
             if image:

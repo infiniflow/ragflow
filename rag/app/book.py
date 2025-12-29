@@ -56,14 +56,14 @@ class Pdf(PdfParser):
 
         start = timer()
         self._text_merge()
-        tbls = self._extract_table_figure(True, zoomin, True, True)
+        tables = self._extract_table_figure(True, zoomin, True, True)
         self._naive_vertical_merge()
         self._filter_forpages()
         self._merge_with_same_bullet()
         callback(0.8, "Text extraction ({:.2f}s)".format(timer() - start))
 
         return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", ""))
-                for b in self.boxes], tbls
+                for b in self.boxes], tables
 
 
 def chunk(filename, binary=None, from_page=0, to_page=100000,
@@ -82,17 +82,17 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     }
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
     pdf_parser = None
-    sections, tbls = [], []
+    sections, tables = [], []
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         doc_parser = naive.Docx()
         # TODO: table of contents need to be removed
-        sections, tbls = doc_parser(
+        sections, tables = doc_parser(
             filename, binary=binary, from_page=from_page, to_page=to_page)
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
-        tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, **kwargs)
-        # tbls = [((None, lns), None) for lns in tbls]
+        tables = vision_figure_parser_docx_wrapper(sections=sections, tbls=tables, callback=callback, **kwargs)
+        # tables = [((None, lns), None) for lns in tables]
         sections = [(item[0], item[1] if item[1] is not None else "") for item in sections if
                     not isinstance(item[1], Image.Image)]
         callback(0.8, "Finish parsing.")
@@ -187,7 +187,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     # is_english(random_choices([t for t, _ in sections], k=218))
     eng = lang.lower() == "english"
 
-    res = tokenize_table(tbls, doc, eng)
+    res = tokenize_table(tables, doc, eng)
     res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
     table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))
     image_ctx = max(0, int(parser_config.get("image_context_size", 0) or 0))
