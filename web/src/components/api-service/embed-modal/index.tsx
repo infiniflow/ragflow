@@ -21,7 +21,7 @@ import {
   LanguageAbbreviationMap,
 } from '@/constants/common';
 import { cn } from '@/lib/utils';
-import styles from './index.less';
+import styles from './index.module.less';
 
 const { Paragraph, Link } = Typography;
 

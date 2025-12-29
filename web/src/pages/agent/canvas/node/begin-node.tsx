@@ -15,7 +15,7 @@ import OperatorIcon from '../../operator-icon';
 import { LabelCard } from './card';
 import { CommonHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';
-import styles from './index.less';
+import styles from './index.module.less';
 import { NodeWrapper } from './node-wrapper';
 
 // TODO: do not allow other nodes to connect to this node

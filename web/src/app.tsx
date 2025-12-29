@@ -17,11 +17,14 @@ import localeData from 'dayjs/plugin/localeData';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
 import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
-import React, { ReactNode, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { RouterProvider } from 'react-router';
 import { ThemeProvider, useTheme } from './components/theme-provider';
 import { SidebarProvider } from './components/ui/sidebar';
 import { TooltipProvider } from './components/ui/tooltip';
 import { ThemeEnum } from './constants/common';
+// import { getRouter } from './routes';
+import { routers } from './routes';
 import storage from './utils/authorization-util';
 
 dayjs.extend(customParseFormat);
@@ -41,14 +44,14 @@ const AntLanguageMap = {
   de: deDE,
 };
 
-if (process.env.NODE_ENV === 'development') {
-  const whyDidYouRender = require('@welldone-software/why-did-you-render');
-  whyDidYouRender(React, {
-    trackAllPureComponents: true,
-    trackExtraHooks: [],
-    logOnDifferentValues: true,
-  });
-}
+// if (process.env.NODE_ENV === "development") {
+//   const whyDidYouRender = require("@welldone-software/why-did-you-render");
+//   whyDidYouRender(React, {
+//     trackAllPureComponents: true,
+//     trackExtraHooks: [],
+//     logOnDifferentValues: true,
+//   });
+// }
 
 const queryClient = new QueryClient();
 
@@ -81,7 +84,7 @@ function Root({ children }: React.PropsWithChildren) {
         locale={locale}
       >
         <SidebarProvider className="h-full">
-          <App>{children}</App>
+          <App className="w-full h-dvh relative">{children}</App>
         </SidebarProvider>
         <Sonner position={'top-right'} expand richColors closeButton></Sonner>
         <Toaster />
@@ -113,6 +116,22 @@ const RootProvider = ({ children }: React.PropsWithChildren) => {
     </TooltipProvider>
   );
 };
-export function rootContainer(container: ReactNode) {
-  return <RootProvider>{container}</RootProvider>;
+
+export default function AppContainer() {
+  // const [router, setRouter] = useState<any>(null);
+
+  // useEffect(() => {
+  //   getRouter().then(setRouter);
+  // }, []);
+
+  // if (!router) {
+  //   return <div>Loading...</div>;
+  // }
+
+  return (
+    <RootProvider>
+      <RouterProvider router={routers}></RouterProvider>
+      {/* <RouterProvider router={router}></RouterProvider> */}
+    </RootProvider>
+  );
 }

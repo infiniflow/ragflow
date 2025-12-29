@@ -9,7 +9,7 @@ import {
 import { isEmpty } from 'lodash';
 import trim from 'lodash/trim';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'umi';
+import { useSearchParams } from 'react-router';
 import { AgentDialogueMode } from '../constant';
 
 export const useSendButtonDisabled = (value: string) => {

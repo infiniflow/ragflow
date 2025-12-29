@@ -9,7 +9,7 @@ import { memo } from 'react';
 import { NodeHandleId } from '../../constant';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
 import { CommonHandle, LeftEndHandle } from './handle';
-import styles from './index.less';
+import styles from './index.module.less';
 import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';

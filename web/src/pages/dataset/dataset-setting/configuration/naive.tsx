@@ -10,7 +10,7 @@ import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
-import { EnableTocToggle, OverlappedPercent } from './common-item';
+import { EnableTocToggle } from './common-item';
 
 export function NaiveConfiguration() {
   return (
@@ -20,7 +20,6 @@ export function NaiveConfiguration() {
         <MaxTokenNumberFormField initialValue={512}></MaxTokenNumberFormField>
         <DelimiterFormField></DelimiterFormField>
         <EnableTocToggle />
-        <OverlappedPercent />
       </ConfigurationFormContainer>
       <ConfigurationFormContainer>
         <AutoKeywordsFormField></AutoKeywordsFormField>

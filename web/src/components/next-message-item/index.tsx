@@ -1,4 +1,4 @@
-import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
+import AssistantIcon from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import {
   IMessage,
@@ -28,14 +28,12 @@ import { RAGFlowAvatar } from '../ragflow-avatar';
 import { useTheme } from '../theme-provider';
 import { Button } from '../ui/button';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
-import styles from './index.less';
+import styles from './index.module.less';
 import { ReferenceDocumentList } from './reference-document-list';
 import { UploadedMessageFiles } from './uploaded-message-files';
 
 interface IProps
-  extends Partial<IRemoveMessageById>,
-    IRegenerateMessage,
-    PropsWithChildren {
+  extends Partial<IRemoveMessageById>, IRegenerateMessage, PropsWithChildren {
   item: IMessage;
   conversationId?: string;
   currentEventListWithoutMessageById?: (messageId: string) => INodeEvent[];

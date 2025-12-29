@@ -4,16 +4,16 @@ import { t } from 'i18next';
 
 export const createMemoryFields = [
   {
-    name: 'name',
-    label: t('memories.name'),
-    placeholder: t('memories.memoryNamePlaceholder'),
+    name: 'memory_name',
+    label: t('memory.name'),
+    placeholder: t('memory.memoryNamePlaceholder'),
     required: true,
   },
   {
     name: 'memory_type',
-    label: t('memories.memoryType'),
+    label: t('memory.memoryType'),
     type: FormFieldType.MultiSelect,
-    placeholder: t('memories.descriptionPlaceholder'),
+    placeholder: t('memory.descriptionPlaceholder'),
     options: [
       { label: 'Raw', value: 'raw' },
       { label: 'Semantic', value: 'semantic' },
@@ -23,18 +23,18 @@ export const createMemoryFields = [
     required: true,
   },
   {
-    name: 'embd_id',
-    label: t('memories.embeddingModel'),
-    placeholder: t('memories.selectModel'),
+    name: 'embedding',
+    label: t('memory.embeddingModel'),
+    placeholder: t('memory.selectModel'),
     required: true,
     // hideLabel: true,
     // type: 'custom',
     render: (field) => <EmbeddingSelect field={field} isEdit={false} />,
   },
   {
-    name: 'llm_id',
-    label: t('memories.llm'),
-    placeholder: t('memories.selectModel'),
+    name: 'llm',
+    label: t('memory.llm'),
+    placeholder: t('memory.selectModel'),
     required: true,
     type: FormFieldType.Select,
   },

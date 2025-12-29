@@ -1,3 +1,5 @@
+import React from 'react';
+import { createBrowserRouter, Navigate } from 'react-router';
 import { IS_ENTERPRISE } from './pages/admin/utils';
 
 export enum Routes {
@@ -439,3 +441,73 @@ const routes = [
 ];
 
 export default routes;
+
+const pageModules = import.meta.glob('../pages/*/*.{tsx,jsx,ts,js}');
+const layoutModules = import.meta.glob('../layouts/*/*.{tsx,jsx,ts,js}');
+
+const convertRoutes = async (routes: any[]) => {
+  return await Promise.all(
+    routes.map(async (route) => {
+      let element = undefined;
+      if (route.redirect) {
+        element = <Navigate to={route.redirect} replace />;
+      } else if (route.component) {
+        const componentPath = route.component.replace('@/', './');
+        try {
+          // const LazyComponent = React.lazy(
+          //   () => import(/* @vite-ignore */ componentPath),
+          // );
+          let moduleImporter;
+          console.log('componentPath', componentPath, pageModules);
+          if (componentPath.startsWith('./pages/')) {
+            moduleImporter = pageModules[componentPath];
+          } else if (componentPath.startsWith('./layouts/')) {
+            moduleImporter = layoutModules[componentPath];
+          }
+
+          if (!moduleImporter) {
+            moduleImporter = () => import(/* @vite-ignore */ componentPath);
+          }
+          // element = await moduleImporter();
+          const LazyComponent = React.lazy(moduleImporter);
+
+          element = (
+            <React.Suspense fallback={<div>Loading...</div>}>
+              <LazyComponent />
+            </React.Suspense>
+          );
+
+          // element = import(/* @vite-ignore */ componentPath);
+        } catch (error) {
+          console.error(`Failed to load component at ${componentPath}:`, error);
+        }
+      }
+
+      const convertedRoute: any = {
+        path: route.path,
+        element: element,
+      };
+
+      if (route.routes) {
+        convertedRoute.children = await convertRoutes(route.routes);
+      }
+
+      return convertedRoute;
+    }),
+  );
+};
+
+const createRouter = async () => {
+  const convertedRoutes = await convertRoutes(routes);
+  return createBrowserRouter(convertedRoutes);
+};
+
+let routerPromise: Promise<any> | null = null;
+const getRouter = () => {
+  if (!routerPromise) {
+    routerPromise = createRouter();
+  }
+  return routerPromise;
+};
+
+export { getRouter };

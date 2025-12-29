@@ -1,5 +1,4 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
-import { SliderInputFormField } from '@/components/slider-input-form-field';
 import {
   FormControl,
   FormField,
@@ -12,7 +11,6 @@ import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
-import { t } from 'i18next';
 import { useMemo, useState } from 'react';
 import { FieldValues, useFormContext } from 'react-hook-form';
 import {
@@ -285,16 +283,5 @@ export function EnableTocToggle() {
         </FormItem>
       )}
     />
-  );
-}
-
-export function OverlappedPercent() {
-  return (
-    <SliderInputFormField
-      name="parser_config.overlapped_percent"
-      label={t('flow.filenameEmbeddingWeight')}
-      max={0.5}
-      step={0.01}
-    ></SliderInputFormField>
   );
 }

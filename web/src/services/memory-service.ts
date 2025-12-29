@@ -8,9 +8,6 @@ const {
   deleteMemory,
   getMemoryDetail,
   updateMemorySetting,
-  getMemoryConfig,
-  deleteMemoryMessage,
-  getMessageContent,
   // getMemoryDetailShare,
 } = api;
 const methods = {
@@ -20,21 +17,27 @@ const methods = {
   },
   getMemoryList: {
     url: getMemoryList,
-    method: 'get',
+    method: 'post',
   },
-  deleteMemory: { url: deleteMemory, method: 'delete' },
-  getMemoryConfig: {
-    url: getMemoryConfig,
-    method: 'get',
-  },
-  deleteMemoryMessage: { url: deleteMemoryMessage, method: 'delete' },
-  getMessageContent: { url: getMessageContent, method: 'get' },
+  deleteMemory: { url: deleteMemory, method: 'post' },
+  // getMemoryDetail: {
+  //   url: getMemoryDetail,
+  //   method: 'get',
+  // },
+  // updateMemorySetting: {
+  //   url: updateMemorySetting,
+  //   method: 'post',
+  // },
+  // getMemoryDetailShare: {
+  //   url: getMemoryDetailShare,
+  //   method: 'get',
+  // },
 } as const;
 const memoryService = registerNextServer<keyof typeof methods>(methods);
 export const updateMemoryById = (id: string, data: any) => {
-  return request.put(updateMemorySetting(id), { data });
+  return request.post(updateMemorySetting(id), { data });
 };
 export const getMemoryDetailById = (id: string, data: any) => {
-  return request.get(getMemoryDetail(id), { params: data });
+  return request.post(getMemoryDetail(id), { data });
 };
 export default memoryService;

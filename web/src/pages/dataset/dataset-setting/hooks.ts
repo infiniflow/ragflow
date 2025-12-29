@@ -9,7 +9,7 @@ import { useIsFetching } from '@tanstack/react-query';
 import { pick } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { useParams, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'react-router';
 import { z } from 'zod';
 import { formSchema } from './form-schema';
 

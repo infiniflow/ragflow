@@ -45,7 +45,7 @@ export function ConfirmDeleteDialog({
   const { t } = useTranslation();
 
   if (hidden) {
-    return children || <></>;
+    return children;
   }
 
   return (
@@ -54,7 +54,7 @@ export function ConfirmDeleteDialog({
       open={open}
       defaultOpen={defaultOpen}
     >
-      {children && <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>}
+      <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
       <AlertDialogOverlay
         onClick={(e) => {
           e.stopPropagation();
@@ -109,28 +109,23 @@ export function ConfirmDeleteDialog({
 export const ConfirmDeleteDialogNode = ({
   avatar,
   name,
-  warnText,
   children,
 }: {
   avatar?: { avatar?: string; name?: string; isPerson?: boolean };
   name?: string;
-  warnText?: string;
   children?: React.ReactNode;
 }) => {
   return (
-    <div className="flex flex-col gap-2.5">
-      <div className="flex items-center border-0.5 text-text-secondary border-border-button rounded-lg px-3 py-4">
-        {avatar && (
-          <RAGFlowAvatar
-            className="w-8 h-8"
-            avatar={avatar.avatar}
-            isPerson={avatar.isPerson}
-            name={avatar.name}
-          />
-        )}
-        {name && <div className="ml-3">{name}</div>}
-      </div>
-      {warnText && <div className="text-state-error text-xs">{warnText}</div>}
+    <div className="flex items-center border-0.5 text-text-secondary border-border-button rounded-lg px-3 py-4">
+      {avatar && (
+        <RAGFlowAvatar
+          className="w-8 h-8"
+          avatar={avatar.avatar}
+          isPerson={avatar.isPerson}
+          name={avatar.name}
+        />
+      )}
+      {name && <div className="ml-3">{name}</div>}
       {children}
     </div>
   );

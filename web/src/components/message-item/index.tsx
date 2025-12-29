@@ -1,4 +1,4 @@
-import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
+import AssistantIcon from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import {
   IMessage,
@@ -17,7 +17,7 @@ import { UploadedMessageFiles } from '../next-message-item/uploaded-message-file
 import { RAGFlowAvatar } from '../ragflow-avatar';
 import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
-import styles from './index.less';
+import styles from './index.module.less';
 
 interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   item: IMessage;

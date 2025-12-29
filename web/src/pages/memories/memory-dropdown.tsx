@@ -12,16 +12,15 @@ import {
 import { PenLine, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDeleteMemory } from './hooks';
-import { IMemory } from './interface';
+import { IMemoryAppProps, useDeleteMemory } from './hooks';
 
 export function MemoryDropdown({
   children,
-  memory,
+  dataset,
   showMemoryRenameModal,
 }: PropsWithChildren & {
-  memory: IMemory;
-  showMemoryRenameModal: (memory: IMemory) => void;
+  dataset: IMemoryAppProps;
+  showMemoryRenameModal: (dataset: IMemoryAppProps) => void;
 }) {
   const { t } = useTranslation();
   const { deleteMemory } = useDeleteMemory();
@@ -29,13 +28,13 @@ export function MemoryDropdown({
     useCallback(
       (e) => {
         e.stopPropagation();
-        showMemoryRenameModal(memory);
+        showMemoryRenameModal(dataset);
       },
-      [memory, showMemoryRenameModal],
+      [dataset, showMemoryRenameModal],
     );
   const handleDelete: MouseEventHandler<HTMLDivElement> = useCallback(() => {
-    deleteMemory({ memory_id: memory.id });
-  }, [memory, deleteMemory]);
+    deleteMemory({ search_id: dataset.id });
+  }, [dataset.id, deleteMemory]);
 
   return (
     <DropdownMenu>
@@ -51,9 +50,8 @@ export function MemoryDropdown({
           content={{
             node: (
               <ConfirmDeleteDialogNode
-                avatar={{ avatar: memory.avatar, name: memory.name }}
-                name={memory.name}
-                warnText={t('memories.delMemoryWarn')}
+                avatar={{ avatar: dataset.avatar, name: dataset.name }}
+                name={dataset.name}
               />
             ),
           }}

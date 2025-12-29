@@ -20,7 +20,7 @@ import {
 import { IReferenceObject } from '@/interfaces/database/chat';
 import { useQueryClient } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import { DateRange } from '../../components/originui/calendar/index';
 import {
   Table,

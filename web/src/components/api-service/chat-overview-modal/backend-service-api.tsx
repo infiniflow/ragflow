@@ -1,7 +1,7 @@
 import { Button, Card, Flex, Space, Typography } from 'antd';
 
 import { useTranslate } from '@/hooks/common-hooks';
-import styles from './index.less';
+import styles from './index.module.less';
 
 const { Paragraph } = Typography;
 

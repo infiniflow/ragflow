@@ -1,6 +1,6 @@
 import ListFilterBar from '@/components/list-filter-bar';
 import { t } from 'i18next';
-import { useFetchMemoryMessageList } from './hook';
+import { useFetchMemoryMessageList } from '../hooks/use-memory-messages';
 import { MemoryTable } from './message-table';
 
 export default function MemoryMessage() {

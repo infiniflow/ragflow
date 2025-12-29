@@ -1,4 +1,4 @@
-import { Rect } from '@antv/g';
+// import { Rect } from '@antv/g6';
 import {
   Badge,
   BaseBehavior,
@@ -10,6 +10,7 @@ import {
   Point,
   Polyline,
   PolylineStyleProps,
+  Rect,
   register,
   subStyleProps,
   treeToGraphData,

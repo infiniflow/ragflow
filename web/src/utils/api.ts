@@ -227,15 +227,11 @@ export default {
   retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
 
   // memory
-  createMemory: `${api_host}/memories`,
-  getMemoryList: `${api_host}/memories`,
-  getMemoryConfig: (id: string) => `${api_host}/memories/${id}/config`,
+  createMemory: `${api_host}/memory/create`,
+  getMemoryList: `${api_host}/memory/list`,
   deleteMemory: (id: string) => `${api_host}/memory/rm/${id}`,
-  getMemoryDetail: (id: string) => `${api_host}/memories/${id}`,
-  updateMemorySetting: (id: string) => `${api_host}/memories/${id}`,
-  deleteMemoryMessage: (id: string) => `${api_host}/message/rm/${id}`,
-  getMessageContent: (message_id: string) =>
-    `${api_host}/messages/${message_id}/content`,
+  getMemoryDetail: (id: string) => `${api_host}/memory/detail/${id}`,
+  updateMemorySetting: (id: string) => `${api_host}/memory/update/${id}`,
 
   // data pipeline
   fetchDataflow: (id: string) => `${api_host}/dataflow/get/${id}`,

@@ -7,10 +7,9 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import memoryService, { updateMemoryById } from '@/services/memory-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { omit } from 'lodash';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'react-router';
 import {
   CreateMemoryResponse,
   DeleteMemoryProps,
@@ -74,12 +73,12 @@ export const useFetchMemoryList = () => {
     queryFn: async () => {
       const { data: response } = await memoryService.getMemoryList(
         {
-          data: {
+          params: {
             keywords: debouncedSearchString,
             page_size: pagination.pageSize,
             page: pagination.current,
           },
-          params: {},
+          data: {},
         },
         true,
       );
@@ -154,9 +153,7 @@ export const useDeleteMemory = () => {
   } = useMutation<DeleteMemoryResponse, Error, DeleteMemoryProps>({
     mutationKey: ['deleteMemory'],
     mutationFn: async (props) => {
-      const { data: response } = await memoryService.deleteMemory(
-        props.memory_id,
-      );
+      const { data: response } = await memoryService.deleteMemory(props);
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to delete memory');
       }
@@ -192,8 +189,7 @@ export const useUpdateMemory = () => {
   } = useMutation<any, Error, IMemoryAppDetailProps>({
     mutationKey: ['updateMemory'],
     mutationFn: async (formData) => {
-      const param = omit(formData, ['id']);
-      const { data: response } = await updateMemoryById(formData.id, param);
+      const { data: response } = await updateMemoryById(formData.id, formData);
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to update memory');
       }
@@ -263,7 +259,7 @@ export const useRenameMemory = () => {
           // const { id, created_by, update_time, ...memoryDataTemp } = detail;
           res = await updateMemory({
             // ...memoryDataTemp,
-            name: data.name,
+            name: data.memory_name,
             id: memory?.id,
           } as unknown as IMemoryAppDetailProps);
         } catch (e) {
@@ -272,9 +268,9 @@ export const useRenameMemory = () => {
       } else {
         res = await createMemory(data);
       }
-      // if (res && !memory?.id) {
-      //   navigateToMemory(res?.id)();
-      // }
+      if (res && !memory?.id) {
+        navigateToMemory(res?.id)();
+      }
       callBack?.();
       setLoading(false);
       handleHideModal();
