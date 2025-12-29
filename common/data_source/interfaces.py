@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from enum import IntFlag, auto
 from types import TracebackType
 from typing import Any, Dict, Generator, TypeVar, Generic, Callable, TypeAlias
-
+from collections.abc import Iterator
 from anthropic import BaseModel
 
 from common.data_source.models import (
@@ -16,6 +16,7 @@ from common.data_source.models import (
     SecondsSinceUnixEpoch, GenerateSlimDocumentOutput
 )
 
+GenerateDocumentsOutput = Iterator[list[Document]]
 
 class LoadConnector(ABC):
     """Load connector interface"""
@@ -236,13 +237,16 @@ class BaseConnector(abc.ABC, Generic[CT]):
 
     def validate_perm_sync(self) -> None:
         """
-        Permission-sync validation hook.
-
-        RAGFlow doesn't ship the Onyx EE permission-sync validation package.
-        Connectors that support permission sync should override
-        `validate_connector_settings()` as needed.
+        Don't override this; add a function to perm_sync_valid.py in the ee package
+        to do permission sync validation
         """
-        return None
+        """
+        validate_connector_settings_fn = fetch_ee_implementation_or_noop(
+            "onyx.connectors.perm_sync_valid",
+            "validate_perm_sync",
+            noop_return_value=None,
+        )
+        validate_connector_settings_fn(self)"""
 
     def set_allow_images(self, value: bool) -> None:
         """Implement if the underlying connector wants to skip/allow image downloading

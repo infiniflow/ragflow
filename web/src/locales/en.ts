@@ -932,6 +932,8 @@ Example: Virtual Hosted Style`,
       boxDescription: 'Connect your Box drive to sync files and folders.',
       airtableDescription:
         'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
+      gitlabDescription:
+        'Connect GitLab to sync repositories, issues, merge requests, and related documentation.',
       asanaDescription:
         'Connect to Asana and synchronize files from a specified workspace.',
       dropboxAccessTokenTip:
