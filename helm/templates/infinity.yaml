@@ -32,7 +32,7 @@ spec:
       {{- include "ragflow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: infinity
   {{- with .Values.infinity.deployment.strategy }}
-  strategy:
+  updateStrategy:
     {{- . | toYaml | nindent 4 }}
   {{- end }}
   template:
@@ -43,9 +43,9 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/env.yaml") . | sha256sum }}
     spec:
-      {{- if or .Values.imagePullSecrets .Values.infinity.image.pullSecrets }}
+      {{- if or .Values.global.imagePullSecrets .Values.infinity.image.pullSecrets }}
       imagePullSecrets:
-        {{- with .Values.imagePullSecrets }}
+        {{- with .Values.global.imagePullSecrets }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
         {{- with .Values.infinity.image.pullSecrets }}
@@ -54,7 +54,7 @@ spec:
       {{- end }}
       containers:
       - name: infinity
-        image: {{ .Values.infinity.image.repository }}:{{ .Values.infinity.image.tag }}
+        image: {{ include "ragflow.imageRepo" (dict "root" . "repo" .Values.infinity.image.repository) }}:{{ .Values.infinity.image.tag }}
         {{- with .Values.infinity.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}
