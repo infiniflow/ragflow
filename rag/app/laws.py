@@ -121,8 +121,7 @@ class Pdf(PdfParser):
         start = timer()
         self._layouts_rec(zoomin)
         callback(0.67, "Layout analysis ({:.2f}s)".format(timer() - start))
-        logging.debug("layouts:".format(
-            ))
+        logging.debug("layouts:".format((timer() - start)))
         self._naive_vertical_merge()
 
         callback(0.8, "Text extraction ({:.2f}s)".format(timer() - start))
