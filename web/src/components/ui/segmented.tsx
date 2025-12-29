@@ -71,6 +71,9 @@ export function Segmented({
   const [selectedValue, setSelectedValue] = React.useState<
     SegmentedValue | undefined
   >(value);
+  React.useEffect(() => {
+    setSelectedValue(value);
+  }, [value]);
   const handleOnChange = (e: SegmentedValue) => {
     if (onChange) {
       onChange(e);

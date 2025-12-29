@@ -8,7 +8,7 @@ import { FormLayout } from '@/constants/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { PermissionRole } from '@/constants/permission';
 import { IConnector } from '@/interfaces/database/knowledge';
-import { useDataSourceInfo } from '@/pages/user-setting/data-source/contant';
+import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
