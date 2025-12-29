@@ -38,12 +38,24 @@ from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.config_utils import show_configs
-from common.data_source import BlobStorageConnector, NotionConnector, DiscordConnector, GoogleDriveConnector, MoodleConnector, JiraConnector, DropboxConnector, WebDAVConnector, AirtableConnector, AsanaConnector
+from common.data_source import (
+    BlobStorageConnector, 
+    NotionConnector, 
+    DiscordConnector, 
+    GoogleDriveConnector, 
+    MoodleConnector, 
+    JiraConnector, 
+    DropboxConnector, 
+    WebDAVConnector, 
+    AirtableConnector, 
+    AsanaConnector,
+)
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.gmail_connector import GmailConnector
 from common.data_source.box_connector import BoxConnector
+from common.data_source.gitlab_connector import GitlabConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
@@ -843,6 +855,47 @@ class Asana(SyncBase):
         return document_generator
 
 
+
+class Gitlab(SyncBase):
+    SOURCE_NAME: str = FileSource.GITLAB
+
+    async def _generate(self, task: dict):
+        """
+        Sync files from GitLab attachments.
+        """
+
+        self.connector = GitlabConnector(
+            project_owner= self.conf.get("project_owner"),
+            project_name= self.conf.get("project_name"),
+            include_mrs = self.conf.get("include_mrs", False),
+            include_issues = self.conf.get("include_issues", False),
+            include_code_files=  self.conf.get("include_code_files", False),
+        )
+
+        self.connector.load_credentials(
+            {
+                "gitlab_access_token": self.conf.get("credentials", {}).get("gitlab_access_token"),
+                "gitlab_url": self.conf.get("credentials", {}).get("gitlab_url"),
+            }
+        )
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task["poll_range_start"]
+            if poll_start is None:
+                document_generator = self.connector.load_from_state()
+                begin_info = "totally"
+            else:
+                document_generator = self.connector.poll_source(
+                    poll_start.timestamp(),
+                    datetime.now(timezone.utc).timestamp()
+                )
+                begin_info = "from {}".format(poll_start)
+        logging.info("Connect to Gitlab: ({}) {}".format(self.conf["project_name"], begin_info))
+        return document_generator
+
 func_factory = {
     FileSource.S3: S3,
     FileSource.R2: R2,
@@ -862,7 +915,8 @@ func_factory = {
     FileSource.WEBDAV: WebDAV,
     FileSource.BOX: BOX,
     FileSource.AIRTABLE: Airtable,
-    FileSource.ASANA: Asana
+    FileSource.GITLAB: Gitlab,
+    FileSource.ASANA: Asana,
 }
 
 
