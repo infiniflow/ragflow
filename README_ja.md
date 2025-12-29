@@ -277,6 +277,15 @@ cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
+プロキシ環境下にいる場合は、プロキシ引数を指定できます：
+
+```bash
+docker build --platform linux/amd64 \
+  --build-arg http_proxy=http://YOUR_PROXY:PORT \
+  --build-arg https_proxy=http://YOUR_PROXY:PORT \
+  -f Dockerfile -t infiniflow/ragflow:nightly .
+```
+
 ## 🔨 ソースコードからサービスを起動する方法
 
 1. `uv` と `pre-commit` をインストールする。すでにインストールされている場合は、このステップをスキップしてください:

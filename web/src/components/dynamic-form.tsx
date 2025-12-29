@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -43,6 +44,11 @@ const getNestedValue = (obj: any, path: string) => {
     return current && current[key] !== undefined ? current[key] : undefined;
   }, obj);
 };
+
+/**
+ * Properties of this field will be treated as static attributes and will be filtered out during form submission.
+ */
+export const FilterFormField = 'RAG_DY_STATIC';
 
 // Field type enumeration
 export enum FormFieldType {
@@ -660,7 +666,6 @@ const DynamicForm = {
       useMemo(() => {
         setFields(originFields);
       }, [originFields]);
-      const schema = useMemo(() => generateSchema(fields), [fields]);
 
       const defaultValues = useMemo(() => {
         const value = {
@@ -729,7 +734,6 @@ const DynamicForm = {
             ...fieldErrors,
           } as any;
 
-          console.log('combinedErrors', combinedErrors);
           for (const key in combinedErrors) {
             if (Array.isArray(combinedErrors[key])) {
               combinedErrors[key] = combinedErrors[key][0];
@@ -777,11 +781,61 @@ const DynamicForm = {
         };
       }, [fields, form]);
 
+      const filterActiveValues = useCallback(
+        (allValues: any) => {
+          const filteredValues: any = {};
+
+          fields.forEach((field) => {
+            if (
+              !field.shouldRender ||
+              (field.shouldRender(allValues) &&
+                field.name?.indexOf(FilterFormField) < 0)
+            ) {
+              const keys = field.name.split('.');
+              let current = allValues;
+              let exists = true;
+
+              for (const key of keys) {
+                if (current && current[key] !== undefined) {
+                  current = current[key];
+                } else {
+                  exists = false;
+                  break;
+                }
+              }
+
+              if (exists) {
+                let target = filteredValues;
+                for (let i = 0; i < keys.length - 1; i++) {
+                  const key = keys[i];
+                  if (!target[key]) {
+                    target[key] = {};
+                  }
+                  target = target[key];
+                }
+                target[keys[keys.length - 1]] = getNestedValue(
+                  allValues,
+                  field.name,
+                );
+              }
+            }
+          });
+
+          return filteredValues;
+        },
+        [fields],
+      );
+
       // Expose form methods via ref
       useImperativeHandle(
         ref,
         () => ({
-          submit: form.handleSubmit(onSubmit),
+          submit: () => {
+            form.handleSubmit((values) => {
+              const filteredValues = filterActiveValues(values);
+              onSubmit(filteredValues);
+            })();
+          },
           getValues: form.getValues,
           reset: (values?: T) => {
             if (values) {
@@ -824,9 +878,9 @@ const DynamicForm = {
             // }, 0);
           },
         }),
-        [form],
+        [form, onSubmit, filterActiveValues],
       );
-
+      (form as any).filterActiveValues = filterActiveValues;
       useEffect(() => {
         if (formDefaultValues && Object.keys(formDefaultValues).length > 0) {
           form.reset({
@@ -848,7 +902,10 @@ const DynamicForm = {
             className={`space-y-6 ${className}`}
             onSubmit={(e) => {
               e.preventDefault();
-              form.handleSubmit(onSubmit)(e);
+              form.handleSubmit((values) => {
+                const filteredValues = filterActiveValues(values);
+                onSubmit(filteredValues);
+              })(e);
             }}
           >
             <>
@@ -897,10 +954,23 @@ const DynamicForm = {
             try {
               let beValid = await form.formControl.trigger();
               console.log('form valid', beValid, form, form.formControl);
-              if (beValid) {
+              // if (beValid) {
+              //   form.handleSubmit(async (values) => {
+              //     console.log('form values', values);
+              //     submitFunc?.(values);
+              //   })();
+              // }
+
+              if (beValid && submitFunc) {
                 form.handleSubmit(async (values) => {
-                  console.log('form values', values);
-                  submitFunc?.(values);
+                  const filteredValues = (form as any).filterActiveValues
+                    ? (form as any).filterActiveValues(values)
+                    : values;
+                  console.log(
+                    'filtered form values in saving button',
+                    filteredValues,
+                  );
+                  submitFunc(filteredValues);
                 })();
               }
             } catch (e) {
