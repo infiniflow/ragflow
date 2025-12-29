@@ -1152,8 +1152,8 @@ const DynamicForm = {
         onClick={() => {
           (async () => {
             try {
-              let beValid = await form.formControl.trigger();
-              console.log('form valid', beValid, form, form.formControl);
+              let beValid = await form.trigger();
+              console.log('form valid', beValid, form);
               if (beValid) {
                 form.handleSubmit(async (values) => {
                   console.log('form values', values);
