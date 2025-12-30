@@ -37,6 +37,8 @@ from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 
 # Constants
 MAX_PAGE_NUMBER = 99999  # Maximum page number for MinerU API (effectively unlimited)
+CROP_GAP_PIXELS = 6  # Gap between cropped image segments
+CROP_CONTEXT_LINES = 120  # Number of pixels for context before/after crop
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -243,16 +245,27 @@ class MinerUParser(RAGFlowPdfParser):
         """
         try:
             from pypdf import PdfReader
+            # Use a context manager to ensure file is closed properly
             with open(pdf_path, 'rb') as f:
-                reader = PdfReader(f)
-                total_pages = len(reader.pages)
-                self.logger.info(f"[MinerU] PDF has {total_pages} pages: {pdf_path}")
-                return total_pages
-        except MemoryError as e:
-            self.logger.error(f"[MinerU] Memory error while reading PDF structure: {e}")
+                try:
+                    reader = PdfReader(f)
+                    total_pages = len(reader.pages)
+                    self.logger.info(f"[MinerU] PDF has {total_pages} pages: {pdf_path}")
+                    return total_pages
+                except MemoryError as e:
+                    self.logger.error(f"[MinerU] Memory error while reading PDF structure: {e}")
+                    return 0
+                except Exception as e:
+                    self.logger.warning(f"[MinerU] Failed to get page count from PDF: {e}")
+                    return 0
+        except IOError as e:
+            self.logger.error(f"[MinerU] Failed to open PDF file {pdf_path}: {e}")
+            return 0
+        except ImportError as e:
+            self.logger.error(f"[MinerU] pypdf library not available: {e}")
             return 0
         except Exception as e:
-            self.logger.warning(f"[MinerU] Failed to get total pages: {e}")
+            self.logger.warning(f"[MinerU] Unexpected error getting total pages: {e}")
             return 0
 
     def _run_mineru(
@@ -392,8 +405,6 @@ class MinerUParser(RAGFlowPdfParser):
         output_path = tempfile.mkdtemp(prefix=f"{pdf_file_name}_{options.method}{batch_suffix}_", dir=str(output_dir))
         output_zip_path = os.path.join(str(output_dir), f"{Path(output_path).name}.zip")
 
-        files = {"files": (pdf_file_name + ".pdf", open(pdf_file_path, "rb"), "application/pdf")}
-
         data = {
             "output_dir": "./output",
             "lang_list": options.lang,
@@ -421,12 +432,17 @@ class MinerUParser(RAGFlowPdfParser):
         self.logger.info(f"[MinerU] request {options=}")
 
         headers = {"Accept": "application/json"}
+        
+        # Open file in context manager to ensure proper cleanup
         try:
-            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')} pages={start_page}-{end_page}")
-            if callback:
-                callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse pages={start_page}-{end_page}")
-            response = requests.post(url=f"{self.mineru_api}/file_parse", files=files, data=data, headers=headers,
-                                     timeout=1800)
+            with open(pdf_file_path, "rb") as pdf_file:
+                files = {"files": (pdf_file_name + ".pdf", pdf_file, "application/pdf")}
+                
+                self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')} pages={start_page}-{end_page}")
+                if callback:
+                    callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse pages={start_page}-{end_page}")
+                response = requests.post(url=f"{self.mineru_api}/file_parse", files=files, data=data, headers=headers,
+                                         timeout=1800)
 
             response.raise_for_status()
             if response.headers.get("Content-Type") == "application/zip":
@@ -445,8 +461,16 @@ class MinerUParser(RAGFlowPdfParser):
                     callback(0.40, f"[MinerU] Unzip to {output_path}...")
             else:
                 self.logger.warning(f"[MinerU] not zip returned from api: {response.headers.get('Content-Type')}")
+                raise RuntimeError(f"[MinerU] Unexpected response type: {response.headers.get('Content-Type')}")
+        except requests.exceptions.Timeout as e:
+            raise RuntimeError(f"[MinerU] API request timed out after 1800 seconds: {e}")
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"[MinerU] API request failed: {e}")
+        except IOError as e:
+            raise RuntimeError(f"[MinerU] File I/O error: {e}")
         except Exception as e:
-            raise RuntimeError(f"[MinerU] api failed with exception {e}")
+            raise RuntimeError(f"[MinerU] API failed with exception: {e}")
+        
         self.logger.info("[MinerU] Api completed successfully.")
         return Path(output_path)
 
@@ -477,6 +501,42 @@ class MinerUParser(RAGFlowPdfParser):
 
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join([str(p) for p in pn]), x0, x1, top, bott)
 
+    @staticmethod
+    def _validate_crop_coordinates(left: float, right: float, top: float, bottom: float, tolerance: float = 1e-6) -> bool:
+        """Validate crop coordinates are valid.
+        
+        Args:
+            left, right, top, bottom: Coordinate values
+            tolerance: Tolerance for floating-point comparison
+            
+        Returns:
+            True if coordinates are valid, False otherwise
+        """
+        if left < 0 or right < 0 or top < 0 or bottom < 0:
+            return False
+        # Use tolerance for floating-point comparison
+        if left >= right - tolerance or top >= bottom - tolerance:
+            return False
+        return True
+
+    @staticmethod
+    def _clamp_coordinates_to_image(left: float, right: float, top: float, bottom: float, 
+                                     img_width: int, img_height: int) -> tuple[int, int, int, int]:
+        """Clamp crop coordinates to image bounds.
+        
+        Args:
+            left, right, top, bottom: Coordinate values (may be outside image)
+            img_width, img_height: Image dimensions
+            
+        Returns:
+            Tuple of (x0, y0, x1, y1) clamped to valid image coordinates
+        """
+        x0 = max(0, min(int(left), img_width - 1))
+        y0 = max(0, min(int(top), img_height - 1))
+        x1 = max(x0 + 1, min(int(right), img_width))
+        y1 = max(y0 + 1, min(int(bottom), img_height))
+        return x0, y0, x1, y1
+
     def crop(self, text, ZM=1, need_position=False):
         imgs = []
         poss = self.extract_positions(text)
@@ -498,6 +558,12 @@ class MinerUParser(RAGFlowPdfParser):
             if not pns:
                 self.logger.warning("[MinerU] Empty page index list in crop; skipping this position.")
                 continue
+            
+            # Validate coordinates using helper method
+            if not self._validate_crop_coordinates(left, right, top, bottom):
+                self.logger.warning(f"[MinerU] Invalid coordinates in crop position: left={left}, right={right}, top={top}, bottom={bottom}; skipping.")
+                continue
+                
             valid_pns = [p for p in pns if 0 <= p < page_count]
             if not valid_pns:
                 self.logger.warning(f"[MinerU] All page indices {pns} out of range for {page_count} pages; skipping.")
@@ -511,11 +577,23 @@ class MinerUParser(RAGFlowPdfParser):
                 return None, None
             return
 
-        max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), 6)
-        GAP = 6
+        try:
+            max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), CROP_GAP_PIXELS)
+        except (ValueError, TypeError) as e:
+            self.logger.error(f"[MinerU] Failed to calculate max_width: {e}")
+            if need_position:
+                return None, None
+            return
+            
         pos = poss[0]
         first_page_idx = pos[0][0]
-        poss.insert(0, ([first_page_idx], pos[1], pos[2], max(0, pos[3] - 120), max(pos[3] - GAP, 0)))
+        
+        # Validate first_page_idx before insertion
+        if not (0 <= first_page_idx < page_count):
+            self.logger.warning(f"[MinerU] First page index {first_page_idx} out of range; using fallback.")
+            first_page_idx = 0
+            
+        poss.insert(0, ([first_page_idx], pos[1], pos[2], max(0, pos[3] - CROP_CONTEXT_LINES), max(pos[3] - CROP_GAP_PIXELS, 0)))
         pos = poss[-1]
         last_page_idx = pos[0][-1]
         if not (0 <= last_page_idx < page_count):
@@ -530,8 +608,8 @@ class MinerUParser(RAGFlowPdfParser):
                 [last_page_idx],
                 pos[1],
                 pos[2],
-                min(last_page_height, pos[4] + GAP),
-                min(last_page_height, pos[4] + 120),
+                min(last_page_height, pos[4] + CROP_GAP_PIXELS),
+                min(last_page_height, pos[4] + CROP_CONTEXT_LINES),
             )
         )
 
@@ -555,7 +633,11 @@ class MinerUParser(RAGFlowPdfParser):
                 continue
 
             img0 = self.page_images[pns[0]]
-            x0, y0, x1, y1 = int(left), int(top), int(right), int(min(bottom, img0.size[1]))
+            img_width, img_height = img0.size
+            
+            # Clamp coordinates to image bounds using helper
+            x0, y0, x1, y1 = self._clamp_coordinates_to_image(left, top, right, bottom, img_width, img_height)
+            
             crop0 = img0.crop((x0, y0, x1, y1))
             imgs.append(crop0)
             if 0 < ii < len(poss) - 1:
@@ -568,7 +650,11 @@ class MinerUParser(RAGFlowPdfParser):
                         f"[MinerU] Page index {pn} out of range for {page_count} pages during crop; skipping this page.")
                     continue
                 page = self.page_images[pn]
-                x0, y0, x1, y1 = int(left), 0, int(right), int(min(bottom, page.size[1]))
+                page_width, page_height = page.size
+                
+                # Clamp coordinates to image bounds using helper
+                x0, y0, x1, y1 = self._clamp_coordinates_to_image(left, 0, right, bottom, page_width, page_height)
+                
                 cimgp = page.crop((x0, y0, x1, y1))
                 imgs.append(cimgp)
                 if 0 < ii < len(poss) - 1:
@@ -582,7 +668,7 @@ class MinerUParser(RAGFlowPdfParser):
 
         height = 0
         for img in imgs:
-            height += img.size[1] + GAP
+            height += img.size[1] + CROP_GAP_PIXELS
         height = int(height)
         width = int(np.max([i.size[0] for i in imgs]))
         pic = Image.new("RGB", (width, height), (245, 245, 245))
@@ -594,7 +680,7 @@ class MinerUParser(RAGFlowPdfParser):
                 overlay.putalpha(128)
                 img = Image.alpha_composite(img, overlay).convert("RGB")
             pic.paste(img, (0, int(height)))
-            height += img.size[1] + GAP
+            height += img.size[1] + CROP_GAP_PIXELS
 
         if need_position:
             return pic, positions
@@ -652,13 +738,36 @@ class MinerUParser(RAGFlowPdfParser):
         if not json_file:
             raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
 
-        with open(json_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"[MinerU] Failed to parse JSON output file {json_file}: {e}")
+        except IOError as e:
+            raise RuntimeError(f"[MinerU] Failed to read output file {json_file}: {e}")
+        
+        if not isinstance(data, list):
+            raise RuntimeError(f"[MinerU] Expected list in output file, got {type(data)}")
 
         for item in data:
+            if not isinstance(item, dict):
+                self.logger.warning(f"[MinerU] Unexpected item type in output: {type(item)}")
+                continue
+                
             for key in ("img_path", "table_img_path", "equation_img_path"):
                 if key in item and item[key]:
-                    item[key] = str((subdir / item[key]).resolve())
+                    try:
+                        # Resolve relative paths
+                        img_path = Path(item[key])
+                        if not img_path.is_absolute():
+                            img_path = subdir / item[key]
+                        item[key] = str(img_path.resolve())
+                        
+                        # Check if referenced file exists and log warning if missing
+                        if not img_path.exists():
+                            self.logger.warning(f"[MinerU] Referenced file does not exist: {img_path}")
+                    except Exception as e:
+                        self.logger.warning(f"[MinerU] Failed to resolve path for {key}='{item[key]}': {e}")
         return data
 
     def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None):
@@ -710,20 +819,64 @@ class MinerUParser(RAGFlowPdfParser):
     ) -> tuple:
         import shutil
 
+        # Validate inputs
+        if not filepath and not binary:
+            raise ValueError("[MinerU] Either filepath or binary must be provided")
+        
+        if backend not in [b.value for b in MinerUBackend]:
+            self.logger.warning(f"[MinerU] Unknown backend '{backend}', using 'hybrid-auto-engine'")
+            backend = "hybrid-auto-engine"
+
         temp_pdf = None
         created_tmp_dir = False
 
         parser_cfg = kwargs.get('parser_config', {})
+        if not isinstance(parser_cfg, dict):
+            self.logger.warning(f"[MinerU] parser_config is not a dict (type: {type(parser_cfg)}), using empty dict")
+            parser_cfg = {}
+            
         lang = parser_cfg.get('mineru_lang') or kwargs.get('lang', 'English')
         mineru_lang_code = LANGUAGE_TO_MINERU_MAP.get(lang, 'ch')  # Defaults to Chinese if not matched
         mineru_method_raw_str = parser_cfg.get('mineru_parse_method', 'auto')
+        
+        # Validate parse method
+        if mineru_method_raw_str not in [m.value for m in MinerUParseMethod]:
+            self.logger.warning(f"[MinerU] Invalid parse method '{mineru_method_raw_str}', using 'auto'")
+            mineru_method_raw_str = 'auto'
+            
         enable_formula = parser_cfg.get('mineru_formula_enable', True)
         enable_table = parser_cfg.get('mineru_table_enable', True)
         
-        # Batch processing configuration
+        # Batch processing configuration with validation
         batch_size = parser_cfg.get('mineru_batch_size', 50)  # Default 50 pages per batch
+        try:
+            batch_size = max(1, int(batch_size))  # Ensure at least 1
+        except (ValueError, TypeError):
+            self.logger.warning(f"[MinerU] Invalid batch_size '{batch_size}', using default 50")
+            batch_size = 50
+            
         start_page = parser_cfg.get('mineru_start_page', None)  # Manual pagination (0-based)
         end_page = parser_cfg.get('mineru_end_page', None)  # Manual pagination (0-based)
+        
+        # Validate page numbers if specified
+        if start_page is not None:
+            try:
+                start_page = max(0, int(start_page))
+            except (ValueError, TypeError):
+                self.logger.warning(f"[MinerU] Invalid start_page '{start_page}', ignoring")
+                start_page = None
+                
+        if end_page is not None:
+            try:
+                end_page = max(0, int(end_page))
+            except (ValueError, TypeError):
+                self.logger.warning(f"[MinerU] Invalid end_page '{end_page}', ignoring")
+                end_page = None
+        
+        # Validate page range
+        if start_page is not None and end_page is not None and start_page > end_page:
+            self.logger.warning(f"[MinerU] start_page ({start_page}) > end_page ({end_page}), swapping")
+            start_page, end_page = end_page, start_page
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
