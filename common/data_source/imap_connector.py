@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from common.data_source.config import IMAP_CONNECTOR_SIZE_THRESHOLD, DocumentSource
 from common.data_source.interfaces import CheckpointOutput, CheckpointedConnectorWithPermSync, CredentialsConnector, CredentialsProviderInterface
-from common.data_source.models import BasicExpertInfo, ConnectorCheckpoint, Document, ExternalAccess, SecondsSinceUnixEpoch, TextSection
+from common.data_source.models import BasicExpertInfo, ConnectorCheckpoint, Document, ExternalAccess, SecondsSinceUnixEpoch
 
 _DEFAULT_IMAP_PORT_NUMBER = int(os.environ.get("IMAP_PORT", 993))
 _IMAP_OKAY_STATUS = "OK"
