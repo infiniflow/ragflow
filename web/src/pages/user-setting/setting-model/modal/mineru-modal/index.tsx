@@ -32,11 +32,11 @@ const FormSchema = z.object({
     'hybrid',
     'pipeline',
     'vlm-transformers',
-    'vlm-vllm-engine',
-    'vlm-http-client',
     'vlm-mlx-engine',
+    'vlm-vllm-engine',
     'vlm-vllm-async-engine',
     'vlm-lmdeploy-engine',
+    'vlm-http-client',
   ]),
   mineru_server_url: z.string().url().optional(),
   mineru_delete_output: z.boolean(),
@@ -57,11 +57,11 @@ const MinerUModal = ({
     'hybrid',
     'pipeline',
     'vlm-transformers',
-    'vlm-vllm-engine',
-    'vlm-http-client',
     'vlm-mlx-engine',
+    'vlm-vllm-engine',
     'vlm-vllm-async-engine',
     'vlm-lmdeploy-engine',
+    'vlm-http-client',
   ]);
 
   const form = useForm<MinerUFormValues>({
