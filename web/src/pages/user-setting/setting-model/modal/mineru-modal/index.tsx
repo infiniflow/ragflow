@@ -28,13 +28,15 @@ const FormSchema = z.object({
   mineru_apiserver: z.string().url(),
   mineru_output_dir: z.string().optional(),
   mineru_backend: z.enum([
+    'hybrid-auto-engine',
+    'hybrid',
     'pipeline',
     'vlm-transformers',
-    'vlm-vllm-engine',
-    'vlm-http-client',
     'vlm-mlx-engine',
+    'vlm-vllm-engine',
     'vlm-vllm-async-engine',
     'vlm-lmdeploy-engine',
+    'vlm-http-client',
   ]),
   mineru_server_url: z.string().url().optional(),
   mineru_delete_output: z.boolean(),
@@ -51,19 +53,21 @@ const MinerUModal = ({
   const { t } = useTranslation();
 
   const backendOptions = buildOptions([
+    'hybrid-auto-engine',
+    'hybrid',
     'pipeline',
     'vlm-transformers',
-    'vlm-vllm-engine',
-    'vlm-http-client',
     'vlm-mlx-engine',
+    'vlm-vllm-engine',
     'vlm-vllm-async-engine',
     'vlm-lmdeploy-engine',
+    'vlm-http-client',
   ]);
 
   const form = useForm<MinerUFormValues>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
-      mineru_backend: 'pipeline',
+      mineru_backend: 'hybrid-auto-engine',
       mineru_delete_output: true,
     },
   });

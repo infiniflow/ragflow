@@ -40,14 +40,16 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
 - A third-party visual model from a specific model provider.
 
 :::danger IMPORTANT
-Starting from v0.22.0, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF parser of multiple backends. Please note that RAGFlow acts only as a *remote client* for MinerU, calling the MinerU API to parse documents and reading the returned files. To use this feature:
+Starting from v0.22.0, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF parser of multiple backends. From v0.23.0+, MinerU 2.7.0+ is recommended with improved backends including the new default `hybrid-auto-engine` backend. Please note that RAGFlow acts only as a *remote client* for MinerU, calling the MinerU API to parse documents and reading the returned files. To use this feature:
 :::
 
 1. Prepare a reachable MinerU API service (FastAPI server).
 2. In the **.env** file or from the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
    - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
    - `MINERU_BACKEND`: The MinerU backend:
-      - `"pipeline"` (default)
+      - `"hybrid-auto-engine"` (default, recommended for MinerU 2.7.0+) - Automatically optimized hybrid backend
+      - `"hybrid"` - Hybrid backend combining multiple processing strategies
+      - `"pipeline"` - Traditional multimodel pipeline
       - `"vlm-http-client"`
       - `"vlm-transformers"`
       - `"vlm-vllm-engine"`
