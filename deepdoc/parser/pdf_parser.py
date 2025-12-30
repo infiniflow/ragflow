@@ -1061,8 +1061,8 @@ class RAGFlowPdfParser:
 
                     self.total_page = len(self.pdf.pages)
 
-        except Exception:
-            logging.exception("RAGFlowPdfParser __images__")
+        except Exception as e:
+            logging.exception(f"RAGFlowPdfParser __images__, exception: {e}")
         logging.info(f"__images__ dedupe_chars cost {timer() - start}s")
 
         self.outlines = []
