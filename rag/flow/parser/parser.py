@@ -275,22 +275,30 @@ class Parser(ProcessBase):
                 'mineru_end_page': conf.get("mineru_end_page"),
             }
 
-            lines, _ = pdf_parser.parse_pdf(
-                filepath=name,
-                binary=blob,
-                callback=self.callback,
-                parse_method=conf.get("mineru_parse_method", "raw"),
-                lang=conf.get("lang", "Chinese"),
-                parser_config=parser_config,
-            )
-            bboxes = []
-            for t, poss in lines:
-                box = {
-                    "image": pdf_parser.crop(poss, 1),
-                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
-                    "text": t,
-                }
-                bboxes.append(box)
+            try:
+                lines, _ = pdf_parser.parse_pdf(
+                    filepath=name,
+                    binary=blob,
+                    callback=self.callback,
+                    parse_method=conf.get("mineru_parse_method", "raw"),
+                    lang=conf.get("lang", "Chinese"),
+                    parser_config=parser_config,
+                )
+                bboxes = []
+                for t, poss in lines:
+                    box = {
+                        "image": pdf_parser.crop(poss, 1),
+                        "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
+                        "text": t,
+                    }
+                    bboxes.append(box)
+            except Exception as e:
+                # Fallback to plain text parsing if MinerU fails
+                logging.error(f"MinerU parsing failed: {str(e)}. Falling back to plain text parsing.")
+                if self.callback:
+                    self.callback(0.5, f"MinerU parsing failed, using fallback: {str(e)[:100]}")
+                lines, _ = PlainParser()(blob)
+                bboxes = [{"text": t} for t, _ in lines]
         elif parse_method.lower() == "tcadp parser":
             # ADP is a document parsing tool using Tencent Cloud API
             table_result_type = conf.get("table_result_type", "1")
