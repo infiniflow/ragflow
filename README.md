@@ -233,7 +233,7 @@ releases! 🌟
     * Running on all addresses (0.0.0.0)
    ```
 
-   > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network anormal`
+   > If you skip this confirmation step and directly log in to RAGFlow, your browser may prompt a `network abnormal`
    > error because, at that moment, your RAGFlow may not be fully initialized.
    >
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
