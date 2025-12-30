@@ -129,12 +129,6 @@ export const ReparseDialog = memo(
       }
     }, [formCallbackRef, handleOperationIconClick]);
 
-    // useEffect(() => {
-    //   if (hidden) {
-    //     handleOperationIconClick();
-    //   }
-    // });
-
     return (
       <ConfirmDeleteDialog
         title={t(`knowledgeDetails.parseFile`)}

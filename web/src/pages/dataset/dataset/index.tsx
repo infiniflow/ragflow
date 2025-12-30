@@ -217,7 +217,7 @@ export default function Dataset() {
         {reparseDialogVisible && (
           <ReparseDialog
             // hidden={isZeroChunk || isRunning}
-            hidden={false}
+            hidden={true}
             handleOperationIconClick={handleOperationIconClick}
             chunk_num={chunkNum}
             visible={reparseDialogVisible}

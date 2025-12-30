@@ -27,6 +27,8 @@ export enum DataSourceKey {
   AIRTABLE = 'airtable',
   GITLAB = 'gitlab',
   ASANA = 'asana',
+  IMAP = 'imap',
+  GITHUB = 'github',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -120,6 +122,16 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Asana',
       description: t(`setting.${DataSourceKey.ASANA}Description`),
       icon: <SvgIcon name={'data-source/asana'} width={38} />,
+    },
+    [DataSourceKey.GITHUB]: {
+      name: 'GitHub',
+      description: t(`setting.${DataSourceKey.GITHUB}Description`),
+      icon: <SvgIcon name={'data-source/github'} width={38} />,
+    },
+    [DataSourceKey.IMAP]: {
+      name: 'IMAP',
+      description: t(`setting.${DataSourceKey.IMAP}Description`),
+      icon: <SvgIcon name={'data-source/imap'} width={38} />,
     },
   };
 };
@@ -648,7 +660,7 @@ export const DataSourceFormFields = {
     {
       label: 'Access Token',
       name: 'config.credentials.airtable_access_token',
-      type: FormFieldType.Text,
+      type: FormFieldType.Password,
       required: true,
     },
     {
@@ -716,7 +728,7 @@ export const DataSourceFormFields = {
     {
       label: 'API Token',
       name: 'config.credentials.asana_api_token_secret',
-      type: FormFieldType.Text,
+      type: FormFieldType.Password,
       required: true,
     },
     {
@@ -735,6 +747,78 @@ export const DataSourceFormFields = {
       label: 'Team ID',
       name: 'config.asana_team_id',
       type: FormFieldType.Text,
+      required: false,
+    },
+  ],
+  [DataSourceKey.GITHUB]: [
+    {
+      label: 'Repository Owner',
+      name: 'config.repository_owner',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Repository Name',
+      name: 'config.repository_name',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'GitHub Access Token',
+      name: 'config.credentials.github_access_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Inlcude Pull Requests',
+      name: 'config.include_pull_requests',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: false,
+    },
+    {
+      label: 'Inlcude Issues',
+      name: 'config.include_issues',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: false,
+    },
+  ],
+  [DataSourceKey.IMAP]: [
+    {
+      label: 'Username',
+      name: 'config.credentials.imap_username',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.imap_password',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Host',
+      name: 'config.imap_host',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Port',
+      name: 'config.imap_port',
+      type: FormFieldType.Number,
+      required: true,
+    },
+    {
+      label: 'Mailboxes',
+      name: 'config.imap_mailbox',
+      type: FormFieldType.Tag,
+      required: false,
+    },
+    {
+      label: 'Poll Range',
+      name: 'config.poll_range',
+      type: FormFieldType.Number,
       required: false,
     },
   ],
@@ -961,6 +1045,34 @@ export const DataSourceFormDefaultValues = {
       asana_team_id: '',
       credentials: {
         asana_api_token_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.GITHUB]: {
+    name: '',
+    source: DataSourceKey.GITHUB,
+    config: {
+      repository_owner: '',
+      repository_name: '',
+      include_pull_requests: false,
+      include_issues: false,
+      credentials: {
+        github_access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.IMAP]: {
+    name: '',
+    source: DataSourceKey.IMAP,
+    config: {
+      name: '',
+      imap_host: '',
+      imap_port: 993,
+      imap_mailbox: [],
+      poll_range: 30,
+      credentials: {
+        imap_username: '',
+        imap_password: '',
       },
     },
   },

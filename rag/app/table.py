@@ -42,16 +42,16 @@ class Excel(ExcelParser):
         else:
             wb = Excel._load_excel_to_workbook(BytesIO(binary))
         total = 0
-        for sheetname in wb.sheetnames:
-            total += len(list(wb[sheetname].rows))
+        for sheet_name in wb.sheetnames:
+            total += len(list(wb[sheet_name].rows))
         res, fails, done = [], [], 0
         rn = 0
         flow_images = []
         pending_cell_images = []
         tables = []
-        for sheetname in wb.sheetnames:
-            ws = wb[sheetname]
-            images = Excel._extract_images_from_worksheet(ws, sheetname=sheetname)
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            images = Excel._extract_images_from_worksheet(ws, sheetname=sheet_name)
             if images:
                 image_descriptions = vision_figure_parser_figure_xlsx_wrapper(images=images, callback=callback,
                                                                               **kwargs)
@@ -59,7 +59,7 @@ class Excel(ExcelParser):
                     for i, bf in enumerate(image_descriptions):
                         images[i]["image_description"] = "\n".join(bf[0][1])
                     for img in images:
-                        if (img["span_type"] == "single_cell" and img.get("image_description")):
+                        if img["span_type"] == "single_cell" and img.get("image_description"):
                             pending_cell_images.append(img)
                         else:
                             flow_images.append(img)
@@ -67,7 +67,7 @@ class Excel(ExcelParser):
             try:
                 rows = list(ws.rows)
             except Exception as e:
-                logging.warning(f"Skip sheet '{sheetname}' due to rows access error: {e}")
+                logging.warning(f"Skip sheet '{sheet_name}' due to rows access error: {e}")
                 continue
             if not rows:
                 continue
@@ -303,7 +303,8 @@ class Excel(ExcelParser):
 def trans_datatime(s):
     try:
         return datetime_parse(s.strip()).strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
+    except Exception as e:
+        logging.warning(f"Failed to parse date from {s}, error: {e}")
         pass
 
 
@@ -312,6 +313,7 @@ def trans_bool(s):
         return "yes"
     if re.match(r"(false|no|否|⍻|×)$", str(s).strip(), flags=re.IGNORECASE):
         return "no"
+    return None
 
 
 def column_data_type(arr):
@@ -346,8 +348,9 @@ def column_data_type(arr):
             continue
         try:
             arr[i] = trans[ty](str(arr[i]))
-        except Exception:
+        except Exception as e:
             arr[i] = None
+            logging.warning(f"Column {i}: {e}")
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
