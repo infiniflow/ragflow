@@ -342,21 +342,7 @@ class DocumentService(CommonService):
         cls.clear_chunk_num(doc.id)
         try:
             TaskService.filter_delete([Task.doc_id == doc.id])
-            page = 0
-            page_size = 1000
-            all_chunk_ids = []
-            while True:
-                chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
-                                                      page * page_size, page_size, search.index_name(tenant_id),
-                                                      [doc.kb_id])
-                chunk_ids = settings.docStoreConn.get_doc_ids(chunks)
-                if not chunk_ids:
-                    break
-                all_chunk_ids.extend(chunk_ids)
-                page += 1
-            for cid in all_chunk_ids:
-                if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
-                    settings.STORAGE_IMPL.rm(doc.kb_id, cid)
+            cls.delete_chunk_images(doc, tenant_id)
             if doc.thumbnail and not doc.thumbnail.startswith(IMG_BASE64_PREFIX):
                 if settings.STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
                     settings.STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
@@ -377,6 +363,23 @@ class DocumentService(CommonService):
         except Exception:
             pass
         return cls.delete_by_id(doc.id)
+
+    @classmethod
+    @DB.connection_context()
+    def delete_chunk_images(cls, doc, tenant_id):
+        page = 0
+        page_size = 1000
+        while True:
+            chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
+                                                  page * page_size, page_size, search.index_name(tenant_id),
+                                                  [doc.kb_id])
+            chunk_ids = settings.docStoreConn.get_doc_ids(chunks)
+            if not chunk_ids:
+                break
+            for cid in chunk_ids:
+                if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
+                    settings.STORAGE_IMPL.rm(doc.kb_id, cid)
+            page += 1
 
     @classmethod
     @DB.connection_context()

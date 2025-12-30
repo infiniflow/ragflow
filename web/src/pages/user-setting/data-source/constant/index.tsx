@@ -3,13 +3,12 @@ import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BedrockRegionList } from '../setting-model/constant';
-import BlobTokenField from './component/blob-token-field';
-import BoxTokenField from './component/box-token-field';
-import { ConfluenceIndexingModeField } from './component/confluence-token-field';
-import GmailTokenField from './component/gmail-token-field';
-import GoogleDriveTokenField from './component/google-drive-token-field';
-import { IDataSourceInfoMap } from './interface';
+import BoxTokenField from '../component/box-token-field';
+import { ConfluenceIndexingModeField } from '../component/confluence-token-field';
+import GmailTokenField from '../component/gmail-token-field';
+import GoogleDriveTokenField from '../component/google-drive-token-field';
+import { IDataSourceInfoMap } from '../interface';
+import { S3Constant } from './s3-constant';
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   S3 = 's3',
@@ -26,6 +25,8 @@ export enum DataSourceKey {
   OCI_STORAGE = 'oci_storage',
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   AIRTABLE = 'airtable',
+  GITLAB = 'gitlab',
+  ASANA = 'asana',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -110,13 +111,18 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.AIRTABLE}Description`),
       icon: <SvgIcon name={'data-source/airtable'} width={38} />,
     },
+    [DataSourceKey.GITLAB]: {
+      name: 'GitLab',
+      description: t(`setting.${DataSourceKey.GITLAB}Description`),
+      icon: <SvgIcon name={'data-source/gitlab'} width={38} />,
+    },
+    [DataSourceKey.ASANA]: {
+      name: 'Asana',
+      description: t(`setting.${DataSourceKey.ASANA}Description`),
+      icon: <SvgIcon name={'data-source/asana'} width={38} />,
+    },
   };
 };
-
-const awsRegionOptions = BedrockRegionList.map((r) => ({
-  label: r,
-  value: r,
-}));
 
 export const useDataSourceInfo = () => {
   const { t } = useTranslation();
@@ -234,47 +240,7 @@ export const DataSourceFormFields = {
       required: true,
     },
   ],
-  [DataSourceKey.S3]: [
-    {
-      label: 'Bucket Name',
-      name: 'config.bucket_name',
-      type: FormFieldType.Text,
-      required: true,
-    },
-    {
-      label: 'Region',
-      name: 'config.credentials.region',
-      type: FormFieldType.Select,
-      required: false,
-      options: awsRegionOptions,
-      customValidate: (val: string, formValues: any) => {
-        const credentials = formValues?.config?.credentials || {};
-        const bucketType = formValues?.config?.bucket_type || 's3';
-        const hasAccessKey = Boolean(
-          credentials.aws_access_key_id || credentials.aws_secret_access_key,
-        );
-        if (bucketType === 's3' && hasAccessKey) {
-          return Boolean(val) || 'Region is required when using access key';
-        }
-        return true;
-      },
-    },
-    {
-      label: 'Prefix',
-      name: 'config.prefix',
-      type: FormFieldType.Text,
-      required: false,
-      tooltip: t('setting.s3PrefixTip'),
-    },
-    {
-      label: 'Credentials',
-      name: 'config.credentials.__blob_token',
-      type: FormFieldType.Custom,
-      hideLabel: true,
-      required: false,
-      render: () => <BlobTokenField />,
-    },
-  ],
+  [DataSourceKey.S3]: S3Constant(t),
   [DataSourceKey.NOTION]: [
     {
       label: 'Notion Integration Token',
@@ -698,6 +664,80 @@ export const DataSourceFormFields = {
       required: true,
     },
   ],
+  [DataSourceKey.GITLAB]: [
+    {
+      label: 'Project Owner',
+      name: 'config.project_owner',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Project Name',
+      name: 'config.project_name',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'GitLab Personal Access Token',
+      name: 'config.credentials.gitlab_access_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'GitLab URL',
+      name: 'config.gitlab_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://gitlab.com',
+    },
+    {
+      label: 'include Merge Requests',
+      name: 'config.include_mrs',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+    },
+    {
+      label: 'include Issues',
+      name: 'config.include_issues',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+    },
+    {
+      label: 'include Code Files',
+      name: 'config.include_code_files',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+    },
+  ],
+  [DataSourceKey.ASANA]: [
+    {
+      label: 'API Token',
+      name: 'config.credentials.asana_api_token_secret',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Workspace ID',
+      name: 'config.asana_workspace_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Project IDs',
+      name: 'config.asana_project_ids',
+      type: FormFieldType.Text,
+      required: false,
+    },
+    {
+      label: 'Team ID',
+      name: 'config.asana_team_id',
+      type: FormFieldType.Text,
+      required: false,
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -893,6 +933,34 @@ export const DataSourceFormDefaultValues = {
       table_name_or_id: '',
       credentials: {
         airtable_access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.GITLAB]: {
+    name: '',
+    source: DataSourceKey.GITLAB,
+    config: {
+      project_owner: '',
+      project_name: '',
+      gitlab_url: 'https://gitlab.com',
+      include_mrs: true,
+      include_issues: true,
+      include_code_files: true,
+      credentials: {
+        gitlab_access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.ASANA]: {
+    name: '',
+    source: DataSourceKey.ASANA,
+    config: {
+      name: '',
+      asana_workspace_id: '',
+      asana_project_ids: '',
+      asana_team_id: '',
+      credentials: {
+        asana_api_token_secret: '',
       },
     },
   },
