@@ -36,10 +36,12 @@ class TestDoclingParser:
             pdf_path = Path(f.name)
             # Write some minimal PDF content
             f.write(b'%PDF-1.4\n')
-        yield pdf_path
-        # Cleanup
-        if pdf_path.exists():
-            pdf_path.unlink()
+        try:
+            yield pdf_path
+        finally:
+            # Ensure cleanup happens even if test fails
+            if pdf_path.exists():
+                pdf_path.unlink()
 
     def test_parser_initialization(self, parser):
         """Test that DoclingParser initializes correctly"""

@@ -106,8 +106,6 @@ class DoclingParser(RAGFlowPdfParser):
             if PdfPipelineOptions is not None and PdfFormatOption is not None:
                 # Configure PDF processing options for better compatibility
                 pipeline_options = PdfPipelineOptions()
-                # Set any default options needed
-                # Example: pipeline_options.do_ocr = True
                 
                 converter = DocumentConverter(
                     format_options={
