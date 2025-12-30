@@ -910,8 +910,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             sections = [(_, "") for _ in sections if _]
             callback(0.8, "Finish parsing.")
         else:
-            callback(0.8, f"tika.parser got empty content from {filename}.")
-            logging.warning(f"tika.parser got empty content from {filename}.")
+            error_msg = f"tika.parser got empty content from {filename}."
+            callback(0.8, error_msg)
+            logging.warning(error_msg)
             return []
     else:
         raise NotImplementedError(
