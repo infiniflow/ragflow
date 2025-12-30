@@ -738,10 +738,10 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
                     continue
                 tb = upper_context(page, i) + tb + lower_context(page+1, 0)
                 break
-            (l, t, r, b), txt = blks[i]
+            (_, t, r, b), txt = blks[i]
             if b > top:
                 break
-            (_l, _t, _r, _b), _txt = blks[i+1]
+            (_, _t, _r, _b), _txt = blks[i+1]
             if _t < _bott:
                 i += 1
                 continue
