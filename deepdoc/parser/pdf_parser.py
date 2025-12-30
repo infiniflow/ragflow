@@ -49,6 +49,10 @@ if LOCK_KEY_pdfplumber not in sys.modules:
 
 
 class RAGFlowPdfParser:
+    # Class constants for recursion and safety limits
+    MAX_RECURSION_DEPTH = 100  # Maximum recursion depth for DFS operations
+    DEFAULT_MEAN_WIDTH = 8  # Default fallback value for mean character width
+    
     def __init__(self, **kwargs):
         """
         If you have trouble downloading HuggingFace models, -_^ this might help!!
@@ -321,8 +325,8 @@ class RAGFlowPdfParser:
             m_ht = np.mean([c["height"] for c in b["chars"]])
             for c in Recognizer.sort_Y_firstly(b["chars"], m_ht):
                 if c["text"] == " " and b["text"]:
-                    # Add safety check for empty text before accessing index
-                    if b["text"] and re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
+                    # Safety check: b["text"] is already verified above, just check regex
+                    if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
                         b["text"] += " "
                 else:
                     b["text"] += c["text"]
@@ -534,7 +538,7 @@ class RAGFlowPdfParser:
                 # features for not concating
                 # Safe access to mean_height and mean_width with bounds checking
                 mean_h = self.mean_height[b["page_number"] - 1] if b["page_number"] - 1 < len(self.mean_height) else mh
-                mean_w = self.mean_width[b["page_number"] - 1] if b["page_number"] - 1 < len(self.mean_width) else 8
+                mean_w = self.mean_width[b["page_number"] - 1] if b["page_number"] - 1 < len(self.mean_width) else self.DEFAULT_MEAN_WIDTH
                 feats = [
                     b.get("layoutno", 0) != b_.get("layoutno", 0),
                     b["text"].strip()[-1] in "。？！?",
@@ -614,14 +618,13 @@ class RAGFlowPdfParser:
         # concat between rows
         boxes = deepcopy(self.boxes)
         blocks = []
-        MAX_RECURSION_DEPTH = 100  # Prevent stack overflow
         while boxes:
             chunks = []
 
             def dfs(up, dp, depth=0):
                 # Add recursion depth limit to prevent stack overflow
-                if depth >= MAX_RECURSION_DEPTH:
-                    logging.warning(f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) reached in _concat_downward")
+                if depth >= self.MAX_RECURSION_DEPTH:
+                    logging.warning(f"Maximum recursion depth ({self.MAX_RECURSION_DEPTH}) reached in _concat_downward")
                     chunks.append(up)
                     return
                 
@@ -1019,7 +1022,6 @@ class RAGFlowPdfParser:
             return False
 
         res = []
-        MAX_DFS_DEPTH = 50  # Prevent stack overflow in DFS
         while boxes:
             lines = []
             widths = []
@@ -1042,8 +1044,8 @@ class RAGFlowPdfParser:
             def dfs(line, st, depth=0):
                 nonlocal mh, pw, lines, widths
                 # Add recursion depth limit
-                if depth >= MAX_DFS_DEPTH:
-                    logging.warning(f"Maximum DFS depth ({MAX_DFS_DEPTH}) reached in __filterout_scraps")
+                if depth >= self.MAX_RECURSION_DEPTH:
+                    logging.warning(f"Maximum DFS depth ({self.MAX_RECURSION_DEPTH}) reached in __filterout_scraps")
                     lines.append(line)
                     widths.append(width(line))
                     return
