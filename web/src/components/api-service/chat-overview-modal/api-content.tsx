@@ -1,3 +1,4 @@
+import { useIsDarkTheme } from '@/components/theme-provider';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
 import { LangfuseCard } from '@/pages/user-setting/setting-model/langfuse';
 import apiDoc from '@parent/docs/references/http_api_reference.md';
@@ -28,6 +29,8 @@ const ApiContent = ({
 
   const { handlePreview } = usePreviewChat(idKey);
 
+  const isDarkTheme = useIsDarkTheme();
+
   return (
     <div className="pb-2">
       <Flex vertical gap={'middle'}>
@@ -47,7 +50,10 @@ const ApiContent = ({
         <div style={{ position: 'relative' }}>
           <MarkdownToc content={apiDoc} />
         </div>
-        <MarkdownPreview source={apiDoc}></MarkdownPreview>
+        <MarkdownPreview
+          source={apiDoc}
+          wrapperElement={{ 'data-color-mode': isDarkTheme ? 'dark' : 'light' }}
+        ></MarkdownPreview>
       </Flex>
       {apiKeyVisible && (
         <ChatApiKeyModal
