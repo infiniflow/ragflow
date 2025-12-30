@@ -488,7 +488,12 @@ class RAGFlowPdfParser:
             if not bxs:
                 continue
 
-            mh = self.mean_height[pg - 1] if self.mean_height else np.median([b["bottom"] - b["top"] for b in bxs]) or 10
+            # Add bounds checking for mean_height access
+            if pg - 1 < 0 or (self.mean_height and pg - 1 >= len(self.mean_height)):
+                logging.warning(f"_naive_vertical_merge: page {pg} out of range for mean_height length {len(self.mean_height) if self.mean_height else 0}")
+                mh = np.median([b["bottom"] - b["top"] for b in bxs]) or 10
+            else:
+                mh = self.mean_height[pg - 1] if self.mean_height else np.median([b["bottom"] - b["top"] for b in bxs]) or 10
 
             i = 0
             while i + 1 < len(bxs):
@@ -522,12 +527,15 @@ class RAGFlowPdfParser:
                     b_["text"].strip() and b_["text"].strip()[0] in "。；？！?”）),，、：",
                 ]
                 # features for not concating
+                # Safe access to mean_height and mean_width with bounds checking
+                mean_h = self.mean_height[b["page_number"] - 1] if b["page_number"] - 1 < len(self.mean_height) else mh
+                mean_w = self.mean_width[b["page_number"] - 1] if b["page_number"] - 1 < len(self.mean_width) else 8
                 feats = [
                     b.get("layoutno", 0) != b_.get("layoutno", 0),
                     b["text"].strip()[-1] in "。？！?",
                     self.is_english and b["text"].strip()[-1] in ".!?",
-                    b["page_number"] == b_["page_number"] and b_["top"] - b["bottom"] > self.mean_height[b["page_number"] - 1] * 1.5,
-                    b["page_number"] < b_["page_number"] and abs(b["x0"] - b_["x0"]) > self.mean_width[b["page_number"] - 1] * 4,
+                    b["page_number"] == b_["page_number"] and b_["top"] - b["bottom"] > mean_h * 1.5,
+                    b["page_number"] < b_["page_number"] and abs(b["x0"] - b_["x0"]) > mean_w * 4,
                 ]
                 # split features
                 detach_feats = [b["x1"] < b_["x0"], b["x0"] > b_["x1"]]
@@ -548,6 +556,8 @@ class RAGFlowPdfParser:
                 b["x0"] = min(b["x0"], b_["x0"])
                 b["x1"] = max(b["x1"], b_["x1"])
                 bxs.pop(i + 1)
+                # Don't increment i - check if current box should merge with next one
+                continue
 
             merged_boxes.extend(bxs)
 
@@ -599,17 +609,29 @@ class RAGFlowPdfParser:
         # concat between rows
         boxes = deepcopy(self.boxes)
         blocks = []
+        MAX_RECURSION_DEPTH = 100  # Prevent stack overflow
         while boxes:
             chunks = []
 
-            def dfs(up, dp):
+            def dfs(up, dp, depth=0):
+                # Add recursion depth limit to prevent stack overflow
+                if depth >= MAX_RECURSION_DEPTH:
+                    logging.warning(f"Maximum recursion depth ({MAX_RECURSION_DEPTH}) reached in _concat_downward")
+                    chunks.append(up)
+                    return
+                
                 chunks.append(up)
                 i = dp
                 while i < min(dp + 12, len(boxes)):
                     ydis = self._y_dis(up, boxes[i])
                     smpg = up["page_number"] == boxes[i]["page_number"]
-                    mh = self.mean_height[up["page_number"] - 1]
-                    mw = self.mean_width[up["page_number"] - 1]
+                    # Safe access with bounds checking
+                    up_page_idx = up["page_number"] - 1
+                    if up_page_idx < 0 or up_page_idx >= len(self.mean_height) or up_page_idx >= len(self.mean_width):
+                        logging.warning(f"_concat_downward: page_number {up['page_number']} out of bounds")
+                        break
+                    mh = self.mean_height[up_page_idx]
+                    mw = self.mean_width[up_page_idx]
                     if smpg and ydis > mh * 4:
                         break
                     if not smpg and ydis > mh * 16:
@@ -636,7 +658,7 @@ class RAGFlowPdfParser:
 
                     if i - dp < 5 and up.get("layout_type") == "text":
                         if up.get("layoutno", "1") == down.get("layoutno", "2"):
-                            dfs(down, i + 1)
+                            dfs(down, i + 1, depth + 1)
                             boxes.pop(i)
                             return
                         i += 1
@@ -646,11 +668,11 @@ class RAGFlowPdfParser:
                     if self.updown_cnt_mdl.predict(xgb.DMatrix([fea]))[0] <= 0.5:
                         i += 1
                         continue
-                    dfs(down, i + 1)
+                    dfs(down, i + 1, depth + 1)
                     boxes.pop(i)
                     return
 
-            dfs(boxes[0], 1)
+            dfs(boxes[0], 1, 0)
             boxes.pop(0)
             if chunks:
                 blocks.append(chunks)
@@ -976,22 +998,50 @@ class RAGFlowPdfParser:
         def usefull(b):
             if b.get("layout_type"):
                 return True
-            if width(b) > self.page_images[b["page_number"] - 1].size[0] / ZM / 3:
+            page_num = b["page_number"] - 1
+            # Add bounds checking
+            if page_num < 0 or page_num >= len(self.page_images):
+                logging.warning(f"__filterout_scraps: page_number {b['page_number']} out of range for page_images length {len(self.page_images)}")
+                return False
+            if page_num >= len(self.mean_height):
+                logging.warning(f"__filterout_scraps: page_number {b['page_number']} out of range for mean_height length {len(self.mean_height)}")
+                return False
+            if width(b) > self.page_images[page_num].size[0] / ZM / 3:
                 return True
-            if b["bottom"] - b["top"] > self.mean_height[b["page_number"] - 1]:
+            if b["bottom"] - b["top"] > self.mean_height[page_num]:
                 return True
             return False
 
         res = []
+        MAX_DFS_DEPTH = 50  # Prevent stack overflow in DFS
         while boxes:
             lines = []
             widths = []
-            pw = self.page_images[boxes[0]["page_number"] - 1].size[0] / ZM
-            mh = self.mean_height[boxes[0]["page_number"] - 1]
+            
+            # Add bounds checking before accessing arrays
+            page_num = boxes[0]["page_number"] - 1
+            if page_num < 0 or page_num >= len(self.page_images):
+                logging.warning(f"__filterout_scraps: page_number {boxes[0]['page_number']} out of range for page_images length {len(self.page_images)}")
+                boxes.pop(0)
+                continue
+            if page_num >= len(self.mean_height):
+                logging.warning(f"__filterout_scraps: page_number {boxes[0]['page_number']} out of range for mean_height length {len(self.mean_height)}")
+                boxes.pop(0)
+                continue
+            
+            pw = self.page_images[page_num].size[0] / ZM
+            mh = self.mean_height[page_num]
             mj = self.proj_match(boxes[0]["text"]) or boxes[0].get("layout_type", "") == "title"
 
-            def dfs(line, st):
+            def dfs(line, st, depth=0):
                 nonlocal mh, pw, lines, widths
+                # Add recursion depth limit
+                if depth >= MAX_DFS_DEPTH:
+                    logging.warning(f"Maximum DFS depth ({MAX_DFS_DEPTH}) reached in __filterout_scraps")
+                    lines.append(line)
+                    widths.append(width(line))
+                    return
+                
                 lines.append(line)
                 widths.append(width(line))
                 mmj = self.proj_match(line["text"]) or line.get("layout_type", "") == "title"
@@ -1006,17 +1056,17 @@ class RAGFlowPdfParser:
                     if mmj or (self._x_dis(boxes[i], line) < pw / 10):
                         # and abs(width(boxes[i])-width_mean)/max(width(boxes[i]),width_mean)<0.5):
                         # concat following
-                        dfs(boxes[i], i)
+                        dfs(boxes[i], i, depth + 1)
                         boxes.pop(i)
                         break
 
             try:
                 if usefull(boxes[0]):
-                    dfs(boxes[0], 0)
+                    dfs(boxes[0], 0, 0)
                 else:
                     logging.debug("WASTE: " + boxes[0]["text"])
-            except Exception:
-                pass
+            except Exception as e:
+                logging.warning(f"Error in __filterout_scraps DFS: {e}. Box text: {boxes[0].get('text', 'N/A')[:50]}")
             boxes.pop(0)
             mw = np.mean(widths)
             if mj or mw / pw >= 0.35 or mw > 200:
@@ -1400,11 +1450,25 @@ class RAGFlowPdfParser:
         pn = bx["page_number"]
         top = bx["top"] - self.page_cum_height[pn - 1]
         bott = bx["bottom"] - self.page_cum_height[pn - 1]
+        
+        # Check initial bounds
+        if pn - 1 >= len(self.page_images):
+            logging.warning(f"get_position: page_number {pn} exceeds page_images length {len(self.page_images)}")
+            return poss
+        
         poss.append((pn, bx["x0"], bx["x1"], top, min(bott, self.page_images[pn - 1].size[1] / ZM)))
+        
+        # Add bounds checking for page increment
         while bott * ZM > self.page_images[pn - 1].size[1]:
             bott -= self.page_images[pn - 1].size[1] / ZM
             top = 0
             pn += 1
+            
+            # Check if incremented pn is within bounds
+            if pn - 1 >= len(self.page_images):
+                logging.warning(f"get_position: incremented page_number {pn} exceeds page_images length {len(self.page_images)}")
+                break
+            
             poss.append((pn, bx["x0"], bx["x1"], top, min(bott, self.page_images[pn - 1].size[1] / ZM)))
         return poss
 
