@@ -10,7 +10,7 @@ export const useHandleRunDocumentByIds = (id: string) => {
   const handleRunDocumentByIds = async (
     documentId: string,
     isRunning: boolean,
-    option: { delete: boolean; apply_kb: boolean },
+    option?: { delete: boolean; apply_kb: boolean },
   ) => {
     if (isLoading) {
       return;

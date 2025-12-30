@@ -54,7 +54,7 @@ export function useBulkOperateDataset({
   );
 
   const handleRunClick = useCallback(
-    (option: { delete: boolean; apply_kb: boolean }) => {
+    (option?: { delete: boolean; apply_kb: boolean }) => {
       runDocument(1, option);
     },
     [runDocument],
