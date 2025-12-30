@@ -92,6 +92,7 @@ export const MemoryModelForm = () => {
           label: t('memory.config.memorySize') + ' (Bytes)',
           type: FormFieldType.Number,
           horizontal: true,
+          tooltip: t('memory.config.memorySizeTooltip'),
           // placeholder: t('memory.config.memorySizePlaceholder'),
           required: false,
         }}
