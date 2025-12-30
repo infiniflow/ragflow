@@ -35,6 +35,9 @@ from strenum import StrEnum
 
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 
+# Constants
+MAX_PAGE_NUMBER = 99999  # Maximum page number for MinerU API (effectively unlimited)
+
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
@@ -231,6 +234,10 @@ class MinerUParser(RAGFlowPdfParser):
             
         Returns:
             Total number of pages, or 0 if unable to determine
+            
+        Note:
+            This method uses pypdf which only reads the PDF structure,
+            not the full content, so it's memory-efficient even for large PDFs.
         """
         try:
             from pypdf import PdfReader
@@ -239,6 +246,9 @@ class MinerUParser(RAGFlowPdfParser):
                 total_pages = len(reader.pages)
                 self.logger.info(f"[MinerU] PDF has {total_pages} pages: {pdf_path}")
                 return total_pages
+        except MemoryError as e:
+            self.logger.error(f"[MinerU] Memory error while reading PDF structure: {e}")
+            return 0
         except Exception as e:
             self.logger.warning(f"[MinerU] Failed to get total pages: {e}")
             return 0
@@ -281,7 +291,7 @@ class MinerUParser(RAGFlowPdfParser):
             return self._run_mineru_api_single_batch(
                 input_path, output_dir, options, callback,
                 start_page=options.start_page if options.start_page is not None else 0,
-                end_page=options.end_page if options.end_page is not None else 99999
+                end_page=options.end_page if options.end_page is not None else MAX_PAGE_NUMBER
             )
         
         # Batch processing: split into multiple API calls
@@ -357,7 +367,7 @@ class MinerUParser(RAGFlowPdfParser):
 
     def _run_mineru_api_single_batch(
         self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None,
-        start_page: int = 0, end_page: int = 99999
+        start_page: int = 0, end_page: int = MAX_PAGE_NUMBER
     ) -> Path:
         """Process a single batch (or entire document) via MinerU API.
         
