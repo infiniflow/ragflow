@@ -324,8 +324,8 @@ class RAGFlowPdfParser:
                 continue
             m_ht = np.mean([c["height"] for c in b["chars"]])
             for c in Recognizer.sort_Y_firstly(b["chars"], m_ht):
+                # b["text"] is verified non-empty on line 327, safe to access [-1]
                 if c["text"] == " " and b["text"]:
-                    # Safety check: b["text"] is already verified above, just check regex
                     if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
                         b["text"] += " "
                 else:
@@ -565,7 +565,7 @@ class RAGFlowPdfParser:
                 b["x0"] = min(b["x0"], b_["x0"])
                 b["x1"] = max(b["x1"], b_["x1"])
                 bxs.pop(i + 1)
-                # Don't increment i - check if current box should merge with next one
+                # Skip incrementing i to re-check current position after merge
                 continue
 
             merged_boxes.extend(bxs)
@@ -698,7 +698,7 @@ class RAGFlowPdfParser:
                 if not c["text"]:
                     continue
                 # Add safety check for empty strings before accessing indices
-                if t["text"] and c["text"] and re.match(r"[0-9\.a-zA-Z]+$", t["text"][-1] + c["text"][-1]):
+                if t["text"] and c["text"] and re.match(r"[0-9\\.a-zA-Z]+$", t["text"][-1] + c["text"][-1]):
                     t["text"] += " "
                 t["text"] += c["text"]
                 t["x0"] = min(t["x0"], c["x0"])
@@ -1045,7 +1045,7 @@ class RAGFlowPdfParser:
                 nonlocal mh, pw, lines, widths
                 # Add recursion depth limit
                 if depth >= self.MAX_RECURSION_DEPTH:
-                    logging.warning(f"Maximum DFS depth ({self.MAX_RECURSION_DEPTH}) reached in __filterout_scraps")
+                    logging.warning(f"Maximum DFS depth ({self.MAX_RECURSION_DEPTH}) reached in __filterout_scraps. Line text: {line.get('text', 'N/A')[:50]}")
                     lines.append(line)
                     widths.append(width(line))
                     return
