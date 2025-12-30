@@ -935,6 +935,8 @@ Example: Virtual Hosted Style`,
         'Connect GitHub to sync pull requests and issues for retrieval.',
       airtableDescription:
         'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
+      gitlabDescription:
+        'Connect GitLab to sync repositories, issues, merge requests, and related documentation.',
       asanaDescription:
         'Connect to Asana and synchronize files from a specified workspace.',
       dropboxAccessTokenTip:

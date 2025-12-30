@@ -125,7 +125,7 @@
 
 ### 🍔 **相容各類異質資料來源**
 
-- 支援豐富的文件類型，包括 Word 文件、PPT、excel 表格、txt 檔案、圖片、PDF、影印件、影印件、結構化資料、網頁等。
+- 支援豐富的文件類型，包括 Word 文件、PPT、excel 表格、txt 檔案、圖片、PDF、影印件、複印件、結構化資料、網頁等。
 
 ### 🛀 **全程無憂、自動化的 RAG 工作流程**
 
@@ -237,7 +237,7 @@
     * Running on all addresses (0.0.0.0)
    ```
 
-   > 如果您跳過這一步驟系統確認步驟就登入 RAGFlow，你的瀏覽器有可能會提示 `network anormal` 或 `網路異常`，因為 RAGFlow 可能並未完全啟動成功。
+   > 如果您跳過這一步驟系統確認步驟就登入 RAGFlow，你的瀏覽器有可能會提示 `network abnormal` 或 `網路異常`，因為 RAGFlow 可能並未完全啟動成功。
    >
 5. 在你的瀏覽器中輸入你的伺服器對應的 IP 位址並登入 RAGFlow。
 
@@ -301,6 +301,15 @@ RAGFlow 預設使用 Elasticsearch 儲存文字和向量資料. 如果要切換�
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
+```
+
+若您位於代理環境，可傳遞代理參數：
+
+```bash
+docker build --platform linux/amd64 \
+  --build-arg http_proxy=http://YOUR_PROXY:PORT \
+  --build-arg https_proxy=http://YOUR_PROXY:PORT \
+  -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 以原始碼啟動服務

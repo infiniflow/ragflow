@@ -214,7 +214,7 @@
     * Running on all addresses (0.0.0.0)
    ```
 
-   > 만약 확인 단계를 건너뛰고 바로 RAGFlow에 로그인하면, RAGFlow가 완전히 초기화되지 않았기 때문에 브라우저에서 `network anormal` 오류가 발생할 수 있습니다.
+   > 만약 확인 단계를 건너뛰고 바로 RAGFlow에 로그인하면, RAGFlow가 완전히 초기화되지 않았기 때문에 브라우저에서 `network abnormal` 오류가 발생할 수 있습니다.
 
 2. 웹 브라우저에 서버의 IP 주소를 입력하고 RAGFlow에 로그인하세요.
    > 기본 설정을 사용할 경우, `http://IP_OF_YOUR_MACHINE`만 입력하면 됩니다 (포트 번호는 제외). 기본 HTTP 서비스 포트 `80`은 기본 구성으로 사용할 때 생략할 수 있습니다.
@@ -269,6 +269,15 @@ RAGFlow 는 기본적으로 Elasticsearch 를 사용하여 전체 텍스트 및 
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
+```
+
+프록시 환경인 경우, 프록시 인수를 전달할 수 있습니다：
+
+```bash
+docker build --platform linux/amd64 \
+  --build-arg http_proxy=http://YOUR_PROXY:PORT \
+  --build-arg https_proxy=http://YOUR_PROXY:PORT \
+  -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 소스 코드로 서비스를 시작합니다.

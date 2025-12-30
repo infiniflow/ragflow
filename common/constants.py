@@ -131,6 +131,7 @@ class FileSource(StrEnum):
     AIRTABLE = "airtable"
     ASANA = "asana"
     GITHUB = "github"
+    GITLAB = "gitlab"
     
 class PipelineTaskType(StrEnum):
     PARSE = "Parse"
@@ -138,6 +139,7 @@ class PipelineTaskType(StrEnum):
     RAPTOR = "RAPTOR"
     GRAPH_RAG = "GraphRAG"
     MINDMAP = "Mindmap"
+    MEMORY = "Memory"
 
 
 VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR,

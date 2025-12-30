@@ -56,6 +56,7 @@ class DocumentSource(str, Enum):
     AIRTABLE = "airtable"
     ASANA = "asana"
     GITHUB = "github"
+    GITLAB = "gitlab"
 
     
 class FileOrigin(str, Enum):
