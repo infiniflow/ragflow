@@ -134,7 +134,11 @@ class RAGFlowPdfParser:
         LEN = 6
         tks_down = rag_tokenizer.tokenize(down["text"][:LEN]).split()
         tks_up = rag_tokenizer.tokenize(up["text"][-LEN:]).split()
-        tks_all = up["text"][-LEN:].strip() + (" " if re.match(r"[a-zA-Z0-9]+", up["text"][-1] + down["text"][0]) else "") + down["text"][:LEN].strip()
+        # Add safety check for empty strings before accessing indices
+        space_between = ""
+        if up["text"] and down["text"]:
+            space_between = " " if re.match(r"[a-zA-Z0-9]+", up["text"][-1] + down["text"][0]) else ""
+        tks_all = up["text"][-LEN:].strip() + space_between + down["text"][:LEN].strip()
         tks_all = rag_tokenizer.tokenize(tks_all).split()
         fea = [
             up.get("R", -1) == down.get("R", -1),
@@ -153,9 +157,9 @@ class RAGFlowPdfParser:
             True if re.search(r"[，,][^。.]+$", up["text"]) else False,
             True if re.search(r"[\(（][^\)）]+$", up["text"]) and re.search(r"[\)）]", down["text"]) else False,
             self._match_proj(down),
-            True if re.match(r"[A-Z]", down["text"]) else False,
-            True if re.match(r"[A-Z]", up["text"][-1]) else False,
-            True if re.match(r"[a-z0-9]", up["text"][-1]) else False,
+            True if down["text"] and re.match(r"[A-Z]", down["text"]) else False,
+            True if up["text"] and re.match(r"[A-Z]", up["text"][-1]) else False,
+            True if up["text"] and re.match(r"[a-z0-9]", up["text"][-1]) else False,
             True if re.match(r"[0-9.%,-]+$", down["text"]) else False,
             up["text"].strip()[-2:] == down["text"].strip()[-2:] if len(up["text"].strip()) > 1 and len(down["text"].strip()) > 1 else False,
             up["x0"] > down["x1"],
@@ -317,7 +321,8 @@ class RAGFlowPdfParser:
             m_ht = np.mean([c["height"] for c in b["chars"]])
             for c in Recognizer.sort_Y_firstly(b["chars"], m_ht):
                 if c["text"] == " " and b["text"]:
-                    if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
+                    # Add safety check for empty text before accessing index
+                    if b["text"] and re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
                         b["text"] += " "
                 else:
                     b["text"] += c["text"]
@@ -640,7 +645,7 @@ class RAGFlowPdfParser:
                     if not concat_between_pages and down["page_number"] > up["page_number"]:
                         break
 
-                    if up.get("R", "") != down.get("R", "") and up["text"][-1] != "，":
+                    if up.get("R", "") != down.get("R", "") and up["text"] and up["text"][-1] != "，":
                         i += 1
                         continue
 
@@ -689,7 +694,8 @@ class RAGFlowPdfParser:
                 c["text"] = c["text"].strip()
                 if not c["text"]:
                     continue
-                if t["text"] and re.match(r"[0-9\.a-zA-Z]+$", t["text"][-1] + c["text"][-1]):
+                # Add safety check for empty strings before accessing indices
+                if t["text"] and c["text"] and re.match(r"[0-9\.a-zA-Z]+$", t["text"][-1] + c["text"][-1]):
                     t["text"] += " "
                 t["text"] += c["text"]
                 t["x0"] = min(t["x0"], c["x0"])
