@@ -25,6 +25,7 @@ dependencies = [
     "dashscope==1.20.11",
     "deepl==1.18.0",
     "demjson3==3.0.6",
+    "docling>=2.58.0,<3.0.0",
     "discord-py==2.3.2",
     "dropbox==12.0.2",
     "duckduckgo-search>=7.2.0,<8.0.0",
