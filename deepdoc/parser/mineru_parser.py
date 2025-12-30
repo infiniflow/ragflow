@@ -37,6 +37,8 @@ from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 
 # Constants
 MAX_PAGE_NUMBER = 99999  # Maximum page number for MinerU API (effectively unlimited)
+CROP_GAP_PIXELS = 6  # Gap between cropped image segments
+CROP_CONTEXT_LINES = 120  # Number of pixels for context before/after crop
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -499,6 +501,22 @@ class MinerUParser(RAGFlowPdfParser):
 
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join([str(p) for p in pn]), x0, x1, top, bott)
 
+    @staticmethod
+    def _validate_crop_coordinates(left: float, right: float, top: float, bottom: float) -> bool:
+        """Validate crop coordinates are valid.
+        
+        Args:
+            left, right, top, bottom: Coordinate values
+            
+        Returns:
+            True if coordinates are valid, False otherwise
+        """
+        if left < 0 or right < 0 or top < 0 or bottom < 0:
+            return False
+        if left >= right or top >= bottom:
+            return False
+        return True
+
     def crop(self, text, ZM=1, need_position=False):
         imgs = []
         poss = self.extract_positions(text)
@@ -521,12 +539,9 @@ class MinerUParser(RAGFlowPdfParser):
                 self.logger.warning("[MinerU] Empty page index list in crop; skipping this position.")
                 continue
             
-            # Validate coordinates
-            if left < 0 or right < 0 or top < 0 or bottom < 0:
-                self.logger.warning(f"[MinerU] Negative coordinates in crop position: left={left}, right={right}, top={top}, bottom={bottom}; skipping.")
-                continue
-            if left >= right or top >= bottom:
-                self.logger.warning(f"[MinerU] Invalid coordinate range in crop: left={left}, right={right}, top={top}, bottom={bottom}; skipping.")
+            # Validate coordinates using helper method
+            if not self._validate_crop_coordinates(left, right, top, bottom):
+                self.logger.warning(f"[MinerU] Invalid coordinates in crop position: left={left}, right={right}, top={top}, bottom={bottom}; skipping.")
                 continue
                 
             valid_pns = [p for p in pns if 0 <= p < page_count]
@@ -543,14 +558,13 @@ class MinerUParser(RAGFlowPdfParser):
             return
 
         try:
-            max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), 6)
+            max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), CROP_GAP_PIXELS)
         except (ValueError, TypeError) as e:
             self.logger.error(f"[MinerU] Failed to calculate max_width: {e}")
             if need_position:
                 return None, None
             return
             
-        GAP = 6
         pos = poss[0]
         first_page_idx = pos[0][0]
         
@@ -559,7 +573,7 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.warning(f"[MinerU] First page index {first_page_idx} out of range; using fallback.")
             first_page_idx = 0
             
-        poss.insert(0, ([first_page_idx], pos[1], pos[2], max(0, pos[3] - 120), max(pos[3] - GAP, 0)))
+        poss.insert(0, ([first_page_idx], pos[1], pos[2], max(0, pos[3] - CROP_CONTEXT_LINES), max(pos[3] - CROP_GAP_PIXELS, 0)))
         pos = poss[-1]
         last_page_idx = pos[0][-1]
         if not (0 <= last_page_idx < page_count):
@@ -574,8 +588,8 @@ class MinerUParser(RAGFlowPdfParser):
                 [last_page_idx],
                 pos[1],
                 pos[2],
-                min(last_page_height, pos[4] + GAP),
-                min(last_page_height, pos[4] + 120),
+                min(last_page_height, pos[4] + CROP_GAP_PIXELS),
+                min(last_page_height, pos[4] + CROP_CONTEXT_LINES),
             )
         )
 
@@ -640,7 +654,7 @@ class MinerUParser(RAGFlowPdfParser):
 
         height = 0
         for img in imgs:
-            height += img.size[1] + GAP
+            height += img.size[1] + CROP_GAP_PIXELS
         height = int(height)
         width = int(np.max([i.size[0] for i in imgs]))
         pic = Image.new("RGB", (width, height), (245, 245, 245))
@@ -652,7 +666,7 @@ class MinerUParser(RAGFlowPdfParser):
                 overlay.putalpha(128)
                 img = Image.alpha_composite(img, overlay).convert("RGB")
             pic.paste(img, (0, int(height)))
-            height += img.size[1] + GAP
+            height += img.size[1] + CROP_GAP_PIXELS
 
         if need_position:
             return pic, positions
@@ -735,7 +749,7 @@ class MinerUParser(RAGFlowPdfParser):
                             img_path = subdir / item[key]
                         item[key] = str(img_path.resolve())
                         
-                        # Verify file exists if it's an important path
+                        # Check if referenced file exists and log warning if missing
                         if not img_path.exists():
                             self.logger.warning(f"[MinerU] Referenced file does not exist: {img_path}")
                     except Exception as e:

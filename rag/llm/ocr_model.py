@@ -44,13 +44,10 @@ class MinerUOcrModel(Base, MinerUParser):
                     raw_config = json.loads(key)
                 except json.JSONDecodeError as e:
                     logging.warning(f"[MinerU] Failed to parse key as JSON: {e}. Using empty config.")
-                    raw_config = {}
                 except Exception as e:
                     logging.warning(f"[MinerU] Unexpected error parsing config: {e}. Using empty config.")
-                    raw_config = {}
             else:
                 logging.warning(f"[MinerU] Unexpected key type: {type(key)}. Using empty config.")
-                raw_config = {}
 
         # nested {"api_key": {...}} from UI
         # flat {"MINERU_*": "..."} payload auto-provisioned from env vars
