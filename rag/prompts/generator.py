@@ -729,6 +729,8 @@ TOC_FROM_TEXT_USER = load_prompt("toc_from_text_user")
 
 # Generate TOC from text chunks with text llms
 async def gen_toc_from_text(txt_info: dict, chat_mdl, callback=None):
+    if callback:
+        callback(msg="")
     try:
         ans = await gen_json(
             PROMPT_JINJA_ENV.from_string(TOC_FROM_TEXT_SYSTEM).render(),
@@ -738,8 +740,6 @@ async def gen_toc_from_text(txt_info: dict, chat_mdl, callback=None):
             gen_conf={"temperature": 0.0, "top_p": 0.9}
         )
         txt_info["toc"] = ans if ans and not isinstance(ans, str) else []
-        if callback:
-            callback(msg="")
     except Exception as e:
         logging.exception(e)
 
