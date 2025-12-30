@@ -537,8 +537,15 @@ class RAGFlowPdfParser:
                 ]
                 # features for not concating
                 # Safe access to mean_height and mean_width with bounds checking
+                # Use local mh for consistency when mean_height is out of bounds
                 mean_h = self.mean_height[b["page_number"] - 1] if b["page_number"] - 1 < len(self.mean_height) else mh
-                mean_w = self.mean_width[b["page_number"] - 1] if b["page_number"] - 1 < len(self.mean_width) else self.DEFAULT_MEAN_WIDTH
+                # Calculate width from current boxes if mean_width is out of bounds, otherwise use default
+                if b["page_number"] - 1 < len(self.mean_width):
+                    mean_w = self.mean_width[b["page_number"] - 1]
+                else:
+                    # Try to estimate from current boxes, fallback to default
+                    widths = [box["x1"] - box["x0"] for box in bxs if box.get("x0") and box.get("x1")]
+                    mean_w = np.median(widths) if widths else self.DEFAULT_MEAN_WIDTH
                 feats = [
                     b.get("layoutno", 0) != b_.get("layoutno", 0),
                     b["text"].strip()[-1] in "。？！?",
@@ -624,7 +631,7 @@ class RAGFlowPdfParser:
             def dfs(up, dp, depth=0):
                 # Add recursion depth limit to prevent stack overflow
                 if depth >= self.MAX_RECURSION_DEPTH:
-                    logging.warning(f"Maximum recursion depth ({self.MAX_RECURSION_DEPTH}) reached in _concat_downward")
+                    logging.warning(f"Maximum recursion depth ({self.MAX_RECURSION_DEPTH}) reached in _concat_downward. Text: {up.get('text', 'N/A')[:50]}")
                     chunks.append(up)
                     return
                 
@@ -698,7 +705,7 @@ class RAGFlowPdfParser:
                 if not c["text"]:
                     continue
                 # Add safety check for empty strings before accessing indices
-                if t["text"] and c["text"] and re.match(r"[0-9\\.a-zA-Z]+$", t["text"][-1] + c["text"][-1]):
+                if t["text"] and c["text"] and re.match(r"[0-9.a-zA-Z]+$", t["text"][-1] + c["text"][-1]):
                     t["text"] += " "
                 t["text"] += c["text"]
                 t["x0"] = min(t["x0"], c["x0"])
