@@ -368,13 +368,31 @@ class RAGFlowPdfParser:
                 page_cols[pg] = 1
                 continue
 
-            x0s_raw = np.array([b["x0"] for b in bxs], dtype=float)
-
-            min_x0 = np.min(x0s_raw)
+            min_x0 = np.min([b["x0"] for b in bxs])
             max_x1 = np.max([b["x1"] for b in bxs])
+            page_bottom = max(b["bottom"] for b in bxs)
+            page_top = min(b["top"] for b in bxs)
+            page_height = page_bottom - page_top
             width = max_x1 - min_x0
-
             INDENT_TOL = width * 0.12
+            page_center_x = min_x0 + width / 2
+
+            for b in bxs:
+                span_ratio = (b["x1"] - b["x0"]) / width
+                cx = (b["x0"] + b["x1"]) / 2
+                if (
+                    (span_ratio > 0.6 or abs(cx - page_center_x) < 0.12 * width)
+                    and b["bottom"] - page_top < 0.35 * page_height
+                ):
+                    b["col_id"] = -1
+            cluster_bxs = [b for b in bxs if b.get("col_id", None) != -1]
+
+            if not cluster_bxs:
+                page_cols[pg] = 1
+                continue
+
+            x0s_raw = np.array([b["x0"] for b in cluster_bxs], dtype=float)
+
             x0s = []
             for x in x0s_raw:
                 if abs(x - min_x0) < INDENT_TOL:
@@ -383,7 +401,7 @@ class RAGFlowPdfParser:
                     x0s.append([x])
             x0s = np.array(x0s, dtype=float)
 
-            max_try = min(4, len(bxs))
+            max_try = min(4, len(cluster_bxs))
             if max_try < 2:
                 max_try = 1
             best_k = 1
@@ -412,14 +430,27 @@ class RAGFlowPdfParser:
         global_cols = Counter(page_cols.values()).most_common(1)[0][0]
         logging.info(f"Global column_num decided by majority: {global_cols}")
 
-
         for pg, bxs in by_page.items():
             if not bxs:
                 continue
             k = page_cols[pg]
-            if len(bxs) < k:
+            k = min(k, global_cols)
+            cluster_bxs = [b for b in bxs if b.get("col_id", None) != -1]
+            if len(cluster_bxs) < k:
                 k = 1
-            x0s = np.array([[b["x0"]] for b in bxs], dtype=float)
+            x0s = []
+            min_x0 = np.min([b["x0"] for b in bxs])
+            max_x1 = np.max([b["x1"] for b in bxs])
+            page_height = max(b["bottom"] for b in bxs)
+            width = max_x1 - min_x0
+            INDENT_TOL = width * 0.12
+            for b in cluster_bxs:
+                x = b["x0"]
+                if abs(x - min_x0) < INDENT_TOL:
+                    x0s.append([min_x0])
+                else:
+                    x0s.append([x])
+            x0s = np.array(x0s, dtype=float)
             km = KMeans(n_clusters=k, n_init="auto")
             labels = km.fit_predict(x0s)
 
@@ -428,18 +459,62 @@ class RAGFlowPdfParser:
 
             remap = {orig: new for new, orig in enumerate(order)}
 
-            for b, lb in zip(bxs, labels):
+            for b, lb in zip(cluster_bxs, labels):
                 b["col_id"] = remap[lb]
+
+            body_boxes = [b for b in bxs if b.get("col_id", -1) >= 0]
+            if body_boxes:
+                median_w = np.median([b["x1"] - b["x0"] for b in body_boxes])
+
+                col_centers = {}
+                col_lefts = {}
+                for cid in set(b["col_id"] for b in body_boxes):
+                    cbs = [b for b in body_boxes if b["col_id"] == cid]
+                    col_centers[cid] = np.median(
+                        [(bb["x0"] + bb["x1"]) / 2 for bb in cbs]
+                    )
+                    col_lefts[cid] = np.median(
+                        [bb["x0"] for bb in cbs]
+                    )
+
+                for b in bxs:
+                    if b.get("col_id", -1) < 0:
+                        continue
+
+                    w = b["x1"] - b["x0"]
+                    if w >= 0.25 * median_w:
+                        continue
+
+                    cur_col = b["col_id"]
+                    cur_col_left = col_lefts.get(cur_col)
+                    if cur_col_left is not None:
+                        if abs(b["x0"] - cur_col_left) < 0.15 * median_w:
+                            if (b["x0"] + b["x1"]) >= cur_col_left:
+                                continue
+                    bx = (b["x0"] + b["x1"]) / 2
+                    best_col = min(
+                        col_centers.keys(),
+                        key=lambda cid: abs(bx - col_centers[cid])
+                    )
+                    b["col_id"] = best_col
 
             grouped = defaultdict(list)
             for b in bxs:
                 grouped[b["col_id"]].append(b)
-
         return boxes
 
     def _text_merge(self, zoomin=3):
         # merge adjusted boxes
         bxs = self._assign_column(self.boxes, zoomin)
+        bxs = sorted(
+            bxs,
+            key=lambda b: (
+                b["page_number"],
+                b.get("col_id", 0),
+                b["top"],
+                b["x0"],
+            ),
+        )
 
         def end_with(b, txt):
             txt = txt.strip()
@@ -465,11 +540,23 @@ class RAGFlowPdfParser:
                 continue
 
             if abs(self._y_dis(b, b_)) < self.mean_height[bxs[i]["page_number"] - 1] / 3:
-                # merge
-                bxs[i]["x1"] = b_["x1"]
-                bxs[i]["top"] = (b["top"] + b_["top"]) / 2
-                bxs[i]["bottom"] = (b["bottom"] + b_["bottom"]) / 2
-                bxs[i]["text"] += b_["text"]
+                # --- decide left / right by geometry ---
+                if b["x0"] <= b_["x0"]:
+                    left, right = b, b_
+                else:
+                    left, right = b_, b
+
+                # --- merge text (with space) ---
+                left["text"] = (left["text"].rstrip() + " " + right["text"].lstrip()).strip()
+
+                # --- merge bbox (must update all) ---
+                left["x0"] = min(left["x0"], right["x0"])
+                left["x1"] = max(left["x1"], right["x1"])
+                left["top"] = min(left["top"], right["top"])
+                left["bottom"] = max(left["bottom"], right["bottom"])
+
+                # keep merged box at position i
+                bxs[i] = left
                 bxs.pop(i + 1)
                 continue
             i += 1
@@ -531,7 +618,11 @@ class RAGFlowPdfParser:
                 ]
                 # split features
                 detach_feats = [b["x1"] < b_["x0"], b["x0"] > b_["x1"]]
-                if (any(feats) and not any(concatting_feats)) or any(detach_feats):
+                col_id = b.get("col_id", 0)
+                if (
+                    col_id >= 0
+                    and ((any(feats) and not any(concatting_feats)) or any(detach_feats))
+                ):
                     logging.debug(
                         "{} {} {} {}".format(
                             b["text"],
@@ -550,7 +641,6 @@ class RAGFlowPdfParser:
                 bxs.pop(i + 1)
 
             merged_boxes.extend(bxs)
-
         self.boxes = sorted(merged_boxes, key=lambda x: (x["page_number"], x.get("col_id", 0), x["top"]))
 
     def _final_reading_order_merge(self, zoomin=3):
