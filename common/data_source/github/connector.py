@@ -19,9 +19,8 @@ from github.PaginatedList import PaginatedList
 from github.PullRequest import PullRequest
 from pydantic import BaseModel
 from typing_extensions import override
-from common.data_source.utils import get_file_ext
 from common.data_source.google_util.util import sanitize_filename
-from common.data_source.config import DocumentSource, GITHUB_CONNECTOR_BASE_URL, INDEX_BATCH_SIZE
+from common.data_source.config import DocumentSource, GITHUB_CONNECTOR_BASE_URL
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
     ConnectorValidationError,
@@ -931,8 +930,6 @@ class GithubConnector(CheckpointedConnectorWithPermSyncGH[GithubConnectorCheckpo
 
 
 if __name__ == "__main__":
-    import os
-
     # Initialize the connector
     connector = GithubConnector(
         repo_owner="EvoAgentX",

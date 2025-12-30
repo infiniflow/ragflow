@@ -1,6 +1,4 @@
 import logging
-from collections.abc import Callable
-from typing import cast
 
 from github import Github
 from github.Repository import Repository
