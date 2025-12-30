@@ -1,5 +1,8 @@
 name: release
 
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: '0 13 * * *'  # This schedule runs every 13:00:00Z(21:00:00+08:00)
