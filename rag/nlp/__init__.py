@@ -16,7 +16,7 @@
 
 import logging
 import random
-from collections import Counter
+from collections import Counter, defaultdict
 
 from common.token_utils import num_tokens_from_string
 import re
@@ -665,6 +665,94 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
         chunks[:] = [chunks[i] for i in ordered_indices]
 
     return chunks
+
+
+def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0):
+    from deepdoc.parser import PdfParser
+    if table_context_size <=0:
+        return tabls
+
+    page_bucket = defaultdict(list)
+    for i, (txt, poss) in enumerate(sections):
+        poss = PdfParser.extract_positions(poss)
+        for page, left, right, top, bottom in poss:
+            page = page[0]
+            page_bucket[page].append(((left, top, right, bottom), txt))
+
+    def upper_context(page, i):
+        txt = ""
+        if page not in page_bucket:
+            i = -1
+        while num_tokens_from_string(txt) < table_context_size:
+            if i < 0:
+                page -= 1
+                if page < 0 or page not in page_bucket:
+                    break
+                i = len(page_bucket[page]) -1
+            blks = page_bucket[page]
+            (_, _, _, _), cnt = blks[i]
+            txts = re.split(r"([。!?？；！\n]|\. )", cnt, flags=re.DOTALL)[::-1]
+            for j in range(0, len(txts), 2):
+                txt = (txts[j+1] if j+1<len(txts) else "") + txts[j] + txt
+                if num_tokens_from_string(txt) > table_context_size:
+                    break
+            i -= 1
+        return txt
+
+    def lower_context(page, i):
+        txt = ""
+        if page not in page_bucket:
+            return txt
+        while num_tokens_from_string(txt) < table_context_size:
+            if i >= len(page_bucket[page]):
+                page += 1
+                if page not in page_bucket:
+                    break
+                i = 0
+            blks = page_bucket[page]
+            (_, _, _, _), cnt = blks[i]
+            txts = re.split(r"([。!?？；！\n]|\. )", cnt, flags=re.DOTALL)
+            for j in range(0, len(txts), 2):
+                txt += txts[j] + (txts[j+1] if j+1<len(txts) else "")
+                if num_tokens_from_string(txt) > table_context_size:
+                    break
+            i += 1
+        return txt
+
+    res = []
+    for (img, tb), poss in tabls:
+        page, left, top, right, bott = poss[0]
+        _page, _left, _top, _right, _bott = poss[-1]
+        if isinstance(tb, list):
+            tb = "\n".join(tb)
+
+        i = 0
+        blks = page_bucket.get(page, [])
+        _tb = tb
+        while i < len(blks):
+            if i + 1 >= len(blks):
+                if _page > page:
+                    page += 1
+                    i = 0
+                    blks = page_bucket.get(page, [])
+                    continue
+                tb = upper_context(page, i) + tb + lower_context(page+1, 0)
+                break
+            (_, t, r, b), txt = blks[i]
+            if b > top:
+                break
+            (_, _t, _r, _b), _txt = blks[i+1]
+            if _t < _bott:
+                i += 1
+                continue
+
+            tb = upper_context(page, i) + tb + lower_context(page, i)
+            break
+
+        if _tb == tb:
+            tb = upper_context(page, -1) + tb + lower_context(page+1, 0)
+        res.append(((img, tb), poss))
+    return res
 
 
 def add_positions(d, poss):
