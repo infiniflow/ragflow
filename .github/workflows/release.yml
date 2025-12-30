@@ -1,8 +1,5 @@
 name: release
 
-permissions:
-  contents: write
-
 on:
   schedule:
     - cron: '0 13 * * *'  # This schedule runs every 13:00:00Z(21:00:00+08:00)
@@ -12,6 +9,12 @@ on:
   push:
     tags:
       - "v*.*.*"                  # normal release
+
+permissions:
+  contents: write
+  actions: read
+  checks: read
+  statuses: read
 
 # https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
