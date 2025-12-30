@@ -132,7 +132,8 @@ class FileSource(StrEnum):
     ASANA = "asana"
     GITHUB = "github"
     GITLAB = "gitlab"
-    
+    IMAP = "imap"
+
 class PipelineTaskType(StrEnum):
     PARSE = "Parse"
     DOWNLOAD = "Download"
