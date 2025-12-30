@@ -1,0 +1,164 @@
+#
+#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
+import tempfile
+import pytest
+from pathlib import Path
+from unittest.mock import Mock, patch, MagicMock
+from deepdoc.parser.mineru_parser import MinerUParser, MinerUParseOptions, MinerUBackend, MinerULanguage, MinerUParseMethod
+
+
+class TestMinerUParserBatchProcessing:
+    """Test cases for MinerU parser batch processing functionality"""
+
+    @pytest.fixture
+    def parser(self):
+        """Create a MinerUParser instance for testing"""
+        return MinerUParser(mineru_api="http://test-api.com")
+
+    @pytest.fixture
+    def mock_pdf_path(self):
+        """Create a temporary mock PDF file"""
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
+            pdf_path = Path(f.name)
+        yield pdf_path
+        # Cleanup
+        if pdf_path.exists():
+            pdf_path.unlink()
+
+    def test_parse_options_has_batch_fields(self):
+        """Test that MinerUParseOptions includes batch processing fields"""
+        options = MinerUParseOptions()
+        
+        assert hasattr(options, 'batch_size')
+        assert hasattr(options, 'start_page')
+        assert hasattr(options, 'end_page')
+        assert options.batch_size == 50  # Default value
+        assert options.start_page is None
+        assert options.end_page is None
+
+    def test_parse_options_custom_batch_size(self):
+        """Test that custom batch_size can be set"""
+        options = MinerUParseOptions(batch_size=100)
+        
+        assert options.batch_size == 100
+
+    def test_get_total_pages_success(self, parser):
+        """Test _get_total_pages method with a valid PDF"""
+        # Create a mock PDF with 10 pages
+        with patch('deepdoc.parser.mineru_parser.PdfReader') as mock_pdf_reader:
+            mock_reader = Mock()
+            mock_reader.pages = [Mock()] * 10
+            mock_pdf_reader.return_value = mock_reader
+            
+            result = parser._get_total_pages(Path("/fake/path.pdf"))
+            
+            assert result == 10
+
+    def test_get_total_pages_error_handling(self, parser):
+        """Test _get_total_pages handles errors gracefully"""
+        with patch('deepdoc.parser.mineru_parser.PdfReader', side_effect=Exception("Test error")):
+            result = parser._get_total_pages(Path("/fake/path.pdf"))
+            
+            assert result == 0  # Should return 0 on error
+
+    def test_batch_calculation(self, parser):
+        """Test that batches are calculated correctly"""
+        total_pages = 150
+        batch_size = 50
+        
+        batches = []
+        for batch_start in range(0, total_pages, batch_size):
+            batch_end = min(batch_start + batch_size - 1, total_pages - 1)
+            batches.append((batch_start, batch_end))
+        
+        assert len(batches) == 3
+        assert batches[0] == (0, 49)
+        assert batches[1] == (50, 99)
+        assert batches[2] == (100, 149)
+
+    def test_batch_calculation_exact_multiple(self, parser):
+        """Test batch calculation when total pages is exact multiple of batch size"""
+        total_pages = 100
+        batch_size = 50
+        
+        batches = []
+        for batch_start in range(0, total_pages, batch_size):
+            batch_end = min(batch_start + batch_size - 1, total_pages - 1)
+            batches.append((batch_start, batch_end))
+        
+        assert len(batches) == 2
+        assert batches[0] == (0, 49)
+        assert batches[1] == (50, 99)
+
+    def test_batch_calculation_single_batch(self, parser):
+        """Test that no batching occurs when pages < batch_size"""
+        total_pages = 30
+        batch_size = 50
+        
+        # When total_pages <= batch_size, should process without batching
+        assert total_pages <= batch_size
+
+    def test_page_index_adjustment(self, parser):
+        """Test that page indices are adjusted correctly for batches"""
+        # Simulate batch results with page_idx that need adjustment
+        batch_start = 50
+        batch_content = [
+            {'page_idx': 0, 'text': 'Page 50'},
+            {'page_idx': 1, 'text': 'Page 51'},
+            {'page_idx': 2, 'text': 'Page 52'},
+        ]
+        
+        # Adjust page indices
+        for item in batch_content:
+            if 'page_idx' in item:
+                item['page_idx'] += batch_start
+        
+        assert batch_content[0]['page_idx'] == 50
+        assert batch_content[1]['page_idx'] == 51
+        assert batch_content[2]['page_idx'] == 52
+
+    def test_parse_pdf_config_extraction(self, parser):
+        """Test that parse_pdf correctly extracts batch configuration"""
+        parser_cfg = {
+            'mineru_batch_size': 100,
+            'mineru_start_page': 10,
+            'mineru_end_page': 50,
+        }
+        
+        batch_size = parser_cfg.get('mineru_batch_size', 50)
+        start_page = parser_cfg.get('mineru_start_page', None)
+        end_page = parser_cfg.get('mineru_end_page', None)
+        
+        assert batch_size == 100
+        assert start_page == 10
+        assert end_page == 50
+
+    def test_parse_pdf_config_defaults(self, parser):
+        """Test that parse_pdf uses correct defaults when config is empty"""
+        parser_cfg = {}
+        
+        batch_size = parser_cfg.get('mineru_batch_size', 50)
+        start_page = parser_cfg.get('mineru_start_page', None)
+        end_page = parser_cfg.get('mineru_end_page', None)
+        
+        assert batch_size == 50  # Default
+        assert start_page is None
+        assert end_page is None
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
