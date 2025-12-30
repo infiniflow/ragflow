@@ -210,8 +210,8 @@ class Docx(DocxParser):
             except UnicodeDecodeError:
                 logging.info("The recognized image stream appears to be corrupted. Skipping image.")
                 continue
-            except Exception:
-                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+            except Exception as e:
+                logging.warning(f"The recognized image stream appears to be corrupted. Skipping image, exception: {e}")
                 continue
             try:
                 image = Image.open(BytesIO(image_blob)).convert('RGB')
@@ -219,7 +219,8 @@ class Docx(DocxParser):
                     res_img = image
                 else:
                     res_img = concat_img(res_img, image)
-            except Exception:
+            except Exception as e:
+                logging.warning(f"Fail to open or concat images, exception: {e}")
                 continue
 
         return res_img
@@ -553,7 +554,8 @@ class Markdown(MarkdownParser):
                 if (src, line_no) not in seen:
                     urls.append({"url": src, "line": line_no})
                     seen.add((src, line_no))
-        except Exception:
+        except Exception as e:
+            logging.error("Failed to extract image urls: {}".format(e))
             pass
 
         return urls
@@ -698,8 +700,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                                 **kwargs) or []
                 embed_res.extend(sub_res)
             except Exception as e:
+                error_msg = f"Failed to chunk embed {embed_filename}: {e}"
+                logging.error(error_msg)
                 if callback:
-                    callback(0.05, f"Failed to chunk embed {embed_filename}: {e}")
+                    callback(0.05, error_msg)
                 continue
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
@@ -839,7 +843,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         try:
             vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
             callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
-        except Exception:
+        except Exception as e:
+            logging.warning(f"Failed to detect figure extraction: {e}")
             vision_model = None
 
         if vision_model:
