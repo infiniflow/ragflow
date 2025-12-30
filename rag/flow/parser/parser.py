@@ -291,8 +291,8 @@ class Parser(ProcessBase):
                         "text": t,
                     }
                     bboxes.append(box)
-            except Exception as e:
-                # Fallback to plain text parsing if MinerU fails
+            except (RuntimeError, ConnectionError, TimeoutError, OSError) as e:
+                # Fallback to plain text parsing if MinerU fails due to API, network, or configuration issues
                 logging.error(f"MinerU parsing failed: {str(e)}. Falling back to plain text parsing.")
                 if self.callback:
                     self.callback(0.5, f"MinerU parsing failed, using fallback: {str(e)[:100]}")
