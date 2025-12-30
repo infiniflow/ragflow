@@ -243,16 +243,27 @@ class MinerUParser(RAGFlowPdfParser):
         """
         try:
             from pypdf import PdfReader
+            # Use a context manager to ensure file is closed properly
             with open(pdf_path, 'rb') as f:
-                reader = PdfReader(f)
-                total_pages = len(reader.pages)
-                self.logger.info(f"[MinerU] PDF has {total_pages} pages: {pdf_path}")
-                return total_pages
-        except MemoryError as e:
-            self.logger.error(f"[MinerU] Memory error while reading PDF structure: {e}")
+                try:
+                    reader = PdfReader(f)
+                    total_pages = len(reader.pages)
+                    self.logger.info(f"[MinerU] PDF has {total_pages} pages: {pdf_path}")
+                    return total_pages
+                except MemoryError as e:
+                    self.logger.error(f"[MinerU] Memory error while reading PDF structure: {e}")
+                    return 0
+                except Exception as e:
+                    self.logger.warning(f"[MinerU] Failed to get page count from PDF: {e}")
+                    return 0
+        except IOError as e:
+            self.logger.error(f"[MinerU] Failed to open PDF file {pdf_path}: {e}")
+            return 0
+        except ImportError as e:
+            self.logger.error(f"[MinerU] pypdf library not available: {e}")
             return 0
         except Exception as e:
-            self.logger.warning(f"[MinerU] Failed to get total pages: {e}")
+            self.logger.warning(f"[MinerU] Unexpected error getting total pages: {e}")
             return 0
 
     def _run_mineru(
@@ -392,8 +403,6 @@ class MinerUParser(RAGFlowPdfParser):
         output_path = tempfile.mkdtemp(prefix=f"{pdf_file_name}_{options.method}{batch_suffix}_", dir=str(output_dir))
         output_zip_path = os.path.join(str(output_dir), f"{Path(output_path).name}.zip")
 
-        files = {"files": (pdf_file_name + ".pdf", open(pdf_file_path, "rb"), "application/pdf")}
-
         data = {
             "output_dir": "./output",
             "lang_list": options.lang,
@@ -421,12 +430,17 @@ class MinerUParser(RAGFlowPdfParser):
         self.logger.info(f"[MinerU] request {options=}")
 
         headers = {"Accept": "application/json"}
+        
+        # Open file in context manager to ensure proper cleanup
         try:
-            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')} pages={start_page}-{end_page}")
-            if callback:
-                callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse pages={start_page}-{end_page}")
-            response = requests.post(url=f"{self.mineru_api}/file_parse", files=files, data=data, headers=headers,
-                                     timeout=1800)
+            with open(pdf_file_path, "rb") as pdf_file:
+                files = {"files": (pdf_file_name + ".pdf", pdf_file, "application/pdf")}
+                
+                self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')} pages={start_page}-{end_page}")
+                if callback:
+                    callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse pages={start_page}-{end_page}")
+                response = requests.post(url=f"{self.mineru_api}/file_parse", files=files, data=data, headers=headers,
+                                         timeout=1800)
 
             response.raise_for_status()
             if response.headers.get("Content-Type") == "application/zip":
@@ -445,8 +459,16 @@ class MinerUParser(RAGFlowPdfParser):
                     callback(0.40, f"[MinerU] Unzip to {output_path}...")
             else:
                 self.logger.warning(f"[MinerU] not zip returned from api: {response.headers.get('Content-Type')}")
+                raise RuntimeError(f"[MinerU] Unexpected response type: {response.headers.get('Content-Type')}")
+        except requests.exceptions.Timeout as e:
+            raise RuntimeError(f"[MinerU] API request timed out after 1800 seconds: {e}")
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"[MinerU] API request failed: {e}")
+        except IOError as e:
+            raise RuntimeError(f"[MinerU] File I/O error: {e}")
         except Exception as e:
-            raise RuntimeError(f"[MinerU] api failed with exception {e}")
+            raise RuntimeError(f"[MinerU] API failed with exception: {e}")
+        
         self.logger.info("[MinerU] Api completed successfully.")
         return Path(output_path)
 
@@ -555,7 +577,14 @@ class MinerUParser(RAGFlowPdfParser):
                 continue
 
             img0 = self.page_images[pns[0]]
-            x0, y0, x1, y1 = int(left), int(top), int(right), int(min(bottom, img0.size[1]))
+            img_width, img_height = img0.size
+            
+            # Ensure coordinates are within image bounds
+            x0 = max(0, min(int(left), img_width - 1))
+            y0 = max(0, min(int(top), img_height - 1))
+            x1 = max(x0 + 1, min(int(right), img_width))
+            y1 = max(y0 + 1, min(int(bottom), img_height))
+            
             crop0 = img0.crop((x0, y0, x1, y1))
             imgs.append(crop0)
             if 0 < ii < len(poss) - 1:
@@ -568,7 +597,14 @@ class MinerUParser(RAGFlowPdfParser):
                         f"[MinerU] Page index {pn} out of range for {page_count} pages during crop; skipping this page.")
                     continue
                 page = self.page_images[pn]
-                x0, y0, x1, y1 = int(left), 0, int(right), int(min(bottom, page.size[1]))
+                page_width, page_height = page.size
+                
+                # Ensure coordinates are within image bounds
+                x0 = max(0, min(int(left), page_width - 1))
+                y0 = 0
+                x1 = max(x0 + 1, min(int(right), page_width))
+                y1 = max(1, min(int(bottom), page_height))
+                
                 cimgp = page.crop((x0, y0, x1, y1))
                 imgs.append(cimgp)
                 if 0 < ii < len(poss) - 1:
@@ -652,13 +688,36 @@ class MinerUParser(RAGFlowPdfParser):
         if not json_file:
             raise FileNotFoundError(f"[MinerU] Missing output file, tried: {', '.join(str(p) for p in attempted)}")
 
-        with open(json_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"[MinerU] Failed to parse JSON output file {json_file}: {e}")
+        except IOError as e:
+            raise RuntimeError(f"[MinerU] Failed to read output file {json_file}: {e}")
+        
+        if not isinstance(data, list):
+            raise RuntimeError(f"[MinerU] Expected list in output file, got {type(data)}")
 
         for item in data:
+            if not isinstance(item, dict):
+                self.logger.warning(f"[MinerU] Unexpected item type in output: {type(item)}")
+                continue
+                
             for key in ("img_path", "table_img_path", "equation_img_path"):
                 if key in item and item[key]:
-                    item[key] = str((subdir / item[key]).resolve())
+                    try:
+                        # Resolve relative paths
+                        img_path = Path(item[key])
+                        if not img_path.is_absolute():
+                            img_path = subdir / item[key]
+                        item[key] = str(img_path.resolve())
+                        
+                        # Verify file exists if it's an important path
+                        if not img_path.exists():
+                            self.logger.warning(f"[MinerU] Referenced file does not exist: {img_path}")
+                    except Exception as e:
+                        self.logger.warning(f"[MinerU] Failed to resolve path for {key}='{item[key]}': {e}")
         return data
 
     def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None):

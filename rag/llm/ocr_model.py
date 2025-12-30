@@ -36,26 +36,45 @@ class MinerUOcrModel(Base, MinerUParser):
         Base.__init__(self, key, model_name, **kwargs)
         raw_config = {}
         if key:
-            try:
-                raw_config = json.loads(key)
-            except Exception:
+            # Handle both string JSON and dict inputs
+            if isinstance(key, dict):
+                raw_config = key
+            elif isinstance(key, str):
+                try:
+                    raw_config = json.loads(key)
+                except json.JSONDecodeError as e:
+                    logging.warning(f"[MinerU] Failed to parse key as JSON: {e}. Using empty config.")
+                    raw_config = {}
+                except Exception as e:
+                    logging.warning(f"[MinerU] Unexpected error parsing config: {e}. Using empty config.")
+                    raw_config = {}
+            else:
+                logging.warning(f"[MinerU] Unexpected key type: {type(key)}. Using empty config.")
                 raw_config = {}
 
         # nested {"api_key": {...}} from UI
         # flat {"MINERU_*": "..."} payload auto-provisioned from env vars
         config = raw_config.get("api_key", raw_config)
         if not isinstance(config, dict):
+            logging.warning(f"[MinerU] Config is not a dict (type: {type(config)}). Using empty config.")
             config = {}
 
         def _resolve_config(key: str, env_key: str, default=""):
             # lower-case keys (UI), upper-case MINERU_* (env auto-provision), env vars
             return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
 
-        self.mineru_api = _resolve_config("mineru_apiserver", "MINERU_APISERVER", "")
+        self.mineru_api = _resolve_config("mineru_apiserver", "MINERU_APISERVER", "").rstrip("/")
         self.mineru_output_dir = _resolve_config("mineru_output_dir", "MINERU_OUTPUT_DIR", "")
         self.mineru_backend = _resolve_config("mineru_backend", "MINERU_BACKEND", "hybrid-auto-engine")
-        self.mineru_server_url = _resolve_config("mineru_server_url", "MINERU_SERVER_URL", "")
-        self.mineru_delete_output = bool(int(_resolve_config("mineru_delete_output", "MINERU_DELETE_OUTPUT", 1)))
+        self.mineru_server_url = _resolve_config("mineru_server_url", "MINERU_SERVER_URL", "").rstrip("/")
+        
+        # Safe conversion for delete_output
+        try:
+            delete_output_str = _resolve_config("mineru_delete_output", "MINERU_DELETE_OUTPUT", "1")
+            self.mineru_delete_output = bool(int(delete_output_str))
+        except (ValueError, TypeError) as e:
+            logging.warning(f"[MinerU] Invalid mineru_delete_output value: {e}. Defaulting to True.")
+            self.mineru_delete_output = True
 
         # Redact sensitive config keys before logging
         redacted_config = {}
