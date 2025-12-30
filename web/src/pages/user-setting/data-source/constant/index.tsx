@@ -27,6 +27,7 @@ export enum DataSourceKey {
   AIRTABLE = 'airtable',
   GITLAB = 'gitlab',
   ASANA = 'asana',
+  IMAP = 'imap',
   GITHUB = 'github',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
@@ -126,6 +127,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'GitHub',
       description: t(`setting.${DataSourceKey.GITHUB}Description`),
       icon: <SvgIcon name={'data-source/github'} width={38} />,
+    },
+    [DataSourceKey.IMAP]: {
+      name: 'IMAP',
+      description: t(`setting.${DataSourceKey.IMAP}Description`),
+      icon: <SvgIcon name={'data-source/imap'} width={38} />,
     },
   };
 };
@@ -654,7 +660,7 @@ export const DataSourceFormFields = {
     {
       label: 'Access Token',
       name: 'config.credentials.airtable_access_token',
-      type: FormFieldType.Text,
+      type: FormFieldType.Password,
       required: true,
     },
     {
@@ -722,7 +728,7 @@ export const DataSourceFormFields = {
     {
       label: 'API Token',
       name: 'config.credentials.asana_api_token_secret',
-      type: FormFieldType.Text,
+      type: FormFieldType.Password,
       required: true,
     },
     {
@@ -776,6 +782,44 @@ export const DataSourceFormFields = {
       type: FormFieldType.Checkbox,
       required: false,
       defaultValue: false,
+    },
+  ],
+  [DataSourceKey.IMAP]: [
+    {
+      label: 'Username',
+      name: 'config.credentials.imap_username',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Password',
+      name: 'config.credentials.imap_password',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Host',
+      name: 'config.imap_host',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Port',
+      name: 'config.imap_port',
+      type: FormFieldType.Number,
+      required: true,
+    },
+    {
+      label: 'Mailboxes',
+      name: 'config.imap_mailbox',
+      type: FormFieldType.Tag,
+      required: false,
+    },
+    {
+      label: 'Poll Range',
+      name: 'config.poll_range',
+      type: FormFieldType.Number,
+      required: false,
     },
   ],
 };
@@ -1014,6 +1058,21 @@ export const DataSourceFormDefaultValues = {
       include_issues: false,
       credentials: {
         github_access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.IMAP]: {
+    name: '',
+    source: DataSourceKey.IMAP,
+    config: {
+      name: '',
+      imap_host: '',
+      imap_port: 993,
+      imap_mailbox: [],
+      poll_range: 30,
+      credentials: {
+        imap_username: '',
+        imap_password: '',
       },
     },
   },

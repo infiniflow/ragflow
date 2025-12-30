@@ -57,6 +57,7 @@ class DocumentSource(str, Enum):
     ASANA = "asana"
     GITHUB = "github"
     GITLAB = "gitlab"
+    IMAP = "imap"
 
     
 class FileOrigin(str, Enum):
@@ -264,6 +265,10 @@ AIRTABLE_CONNECTOR_SIZE_THRESHOLD = int(
 
 ASANA_CONNECTOR_SIZE_THRESHOLD = int(
     os.environ.get("ASANA_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
+)
+
+IMAP_CONNECTOR_SIZE_THRESHOLD = int(
+    os.environ.get("IMAP_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
 )
 
 _USER_NOT_FOUND = "Unknown Confluence User"

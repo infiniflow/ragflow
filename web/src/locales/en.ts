@@ -939,6 +939,8 @@ Example: Virtual Hosted Style`,
         'Connect GitLab to sync repositories, issues, merge requests, and related documentation.',
       asanaDescription:
         'Connect to Asana and synchronize files from a specified workspace.',
+      imapDescription:
+        'Connect to your IMAP mailbox to sync emails for knowledge retrieval.',
       dropboxAccessTokenTip:
         'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
       moodleDescription:

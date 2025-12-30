@@ -39,16 +39,17 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.config_utils import show_configs
 from common.data_source import (
-    BlobStorageConnector, 
-    NotionConnector, 
-    DiscordConnector, 
-    GoogleDriveConnector, 
-    MoodleConnector, 
-    JiraConnector, 
-    DropboxConnector, 
-    WebDAVConnector, 
-    AirtableConnector, 
+    BlobStorageConnector,
+    NotionConnector,
+    DiscordConnector,
+    GoogleDriveConnector,
+    MoodleConnector,
+    JiraConnector,
+    DropboxConnector,
+    WebDAVConnector,
+    AirtableConnector,
     AsanaConnector,
+    ImapConnector
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -915,6 +916,70 @@ class Github(SyncBase):
 
         return async_wrapper()
     
+class IMAP(SyncBase):
+    SOURCE_NAME: str = FileSource.IMAP
+
+    async def _generate(self, task):
+        from common.data_source.config import DocumentSource
+        from common.data_source.interfaces import StaticCredentialsProvider
+        self.connector = ImapConnector(
+            host=self.conf.get("imap_host"),
+            port=self.conf.get("imap_port"),
+            mailboxes=self.conf.get("imap_mailbox"),
+        )
+        credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"], connector_name=DocumentSource.IMAP, credential_json=self.conf["credentials"])
+        self.connector.set_credentials_provider(credentials_provider)
+        end_time = datetime.now(timezone.utc).timestamp()
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = end_time - self.conf.get("poll_range",30) * 24 * 60 * 60
+            begin_info = "totally"
+        else:
+            start_time = task["poll_range_start"].timestamp()
+            begin_info = f"from {task['poll_range_start']}"
+        raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            pending_docs = []
+            iterations = 0
+            iteration_limit = 100_000
+            while checkpoint.has_more:
+                wrapper = CheckpointOutputWrapper()
+                doc_generator = wrapper(self.connector.load_from_checkpoint(start_time, end_time, checkpoint))
+                for document, failure, next_checkpoint in doc_generator:
+                    if failure is not None:
+                        logging.warning("IMAP connector failure: %s", getattr(failure, "failure_message", failure))
+                        continue
+                    if document is not None:
+                        pending_docs.append(document)
+                        if len(pending_docs) >= batch_size:
+                            yield pending_docs
+                            pending_docs = []
+                    if next_checkpoint is not None:
+                        checkpoint = next_checkpoint
+
+                iterations += 1
+                if iterations > iteration_limit:
+                    raise RuntimeError("Too many iterations while loading IMAP documents.")
+
+            if pending_docs:
+                yield pending_docs
+
+        logging.info(
+            "Connect to IMAP: host(%s) port(%s) user(%s) folder(%s) %s",
+            self.conf["imap_host"],
+            self.conf["imap_port"],
+            self.conf["credentials"]["imap_username"],
+            self.conf["imap_mailbox"],
+            begin_info
+        )
+        return document_batches()
 
 
 class Gitlab(SyncBase):
@@ -977,6 +1042,7 @@ func_factory = {
     FileSource.BOX: BOX,
     FileSource.AIRTABLE: Airtable,
     FileSource.ASANA: Asana,
+    FileSource.IMAP: IMAP,
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
 }
