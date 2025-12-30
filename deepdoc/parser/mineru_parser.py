@@ -520,6 +520,15 @@ class MinerUParser(RAGFlowPdfParser):
             if not pns:
                 self.logger.warning("[MinerU] Empty page index list in crop; skipping this position.")
                 continue
+            
+            # Validate coordinates
+            if left < 0 or right < 0 or top < 0 or bottom < 0:
+                self.logger.warning(f"[MinerU] Negative coordinates in crop position: left={left}, right={right}, top={top}, bottom={bottom}; skipping.")
+                continue
+            if left >= right or top >= bottom:
+                self.logger.warning(f"[MinerU] Invalid coordinate range in crop: left={left}, right={right}, top={top}, bottom={bottom}; skipping.")
+                continue
+                
             valid_pns = [p for p in pns if 0 <= p < page_count]
             if not valid_pns:
                 self.logger.warning(f"[MinerU] All page indices {pns} out of range for {page_count} pages; skipping.")
@@ -533,10 +542,23 @@ class MinerUParser(RAGFlowPdfParser):
                 return None, None
             return
 
-        max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), 6)
+        try:
+            max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), 6)
+        except (ValueError, TypeError) as e:
+            self.logger.error(f"[MinerU] Failed to calculate max_width: {e}")
+            if need_position:
+                return None, None
+            return
+            
         GAP = 6
         pos = poss[0]
         first_page_idx = pos[0][0]
+        
+        # Validate first_page_idx before insertion
+        if not (0 <= first_page_idx < page_count):
+            self.logger.warning(f"[MinerU] First page index {first_page_idx} out of range; using fallback.")
+            first_page_idx = 0
+            
         poss.insert(0, ([first_page_idx], pos[1], pos[2], max(0, pos[3] - 120), max(pos[3] - GAP, 0)))
         pos = poss[-1]
         last_page_idx = pos[0][-1]
@@ -769,20 +791,64 @@ class MinerUParser(RAGFlowPdfParser):
     ) -> tuple:
         import shutil
 
+        # Validate inputs
+        if not filepath and not binary:
+            raise ValueError("[MinerU] Either filepath or binary must be provided")
+        
+        if backend not in [b.value for b in MinerUBackend]:
+            self.logger.warning(f"[MinerU] Unknown backend '{backend}', using 'hybrid-auto-engine'")
+            backend = "hybrid-auto-engine"
+
         temp_pdf = None
         created_tmp_dir = False
 
         parser_cfg = kwargs.get('parser_config', {})
+        if not isinstance(parser_cfg, dict):
+            self.logger.warning(f"[MinerU] parser_config is not a dict (type: {type(parser_cfg)}), using empty dict")
+            parser_cfg = {}
+            
         lang = parser_cfg.get('mineru_lang') or kwargs.get('lang', 'English')
         mineru_lang_code = LANGUAGE_TO_MINERU_MAP.get(lang, 'ch')  # Defaults to Chinese if not matched
         mineru_method_raw_str = parser_cfg.get('mineru_parse_method', 'auto')
+        
+        # Validate parse method
+        if mineru_method_raw_str not in [m.value for m in MinerUParseMethod]:
+            self.logger.warning(f"[MinerU] Invalid parse method '{mineru_method_raw_str}', using 'auto'")
+            mineru_method_raw_str = 'auto'
+            
         enable_formula = parser_cfg.get('mineru_formula_enable', True)
         enable_table = parser_cfg.get('mineru_table_enable', True)
         
-        # Batch processing configuration
+        # Batch processing configuration with validation
         batch_size = parser_cfg.get('mineru_batch_size', 50)  # Default 50 pages per batch
+        try:
+            batch_size = max(1, int(batch_size))  # Ensure at least 1
+        except (ValueError, TypeError):
+            self.logger.warning(f"[MinerU] Invalid batch_size '{batch_size}', using default 50")
+            batch_size = 50
+            
         start_page = parser_cfg.get('mineru_start_page', None)  # Manual pagination (0-based)
         end_page = parser_cfg.get('mineru_end_page', None)  # Manual pagination (0-based)
+        
+        # Validate page numbers if specified
+        if start_page is not None:
+            try:
+                start_page = max(0, int(start_page))
+            except (ValueError, TypeError):
+                self.logger.warning(f"[MinerU] Invalid start_page '{start_page}', ignoring")
+                start_page = None
+                
+        if end_page is not None:
+            try:
+                end_page = max(0, int(end_page))
+            except (ValueError, TypeError):
+                self.logger.warning(f"[MinerU] Invalid end_page '{end_page}', ignoring")
+                end_page = None
+        
+        # Validate page range
+        if start_page is not None and end_page is not None and start_page > end_page:
+            self.logger.warning(f"[MinerU] start_page ({start_page}) > end_page ({end_page}), swapping")
+            start_page, end_page = end_page, start_page
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
