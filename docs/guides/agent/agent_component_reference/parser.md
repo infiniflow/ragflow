@@ -67,6 +67,26 @@ Starting from v0.22.0, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF p
 All MinerU environment variables are optional. When set, these values are used to auto-provision a MinerU OCR model for the tenant on first use. To avoid auto-provisioning, skip the environment variable settings and only configure MinerU from the **Model providers** page in the UI.
 :::
 
+#### MinerU Advanced Configuration
+
+When using MinerU as the PDF parser, you can configure additional parsing options through the PDF configuration:
+
+- `mineru_parse_method`: Parsing method to use:
+  - `"auto"` (default): Automatically determine the best method.
+  - `"txt"`: Use text extraction method.
+  - `"ocr"`: Use OCR method for image-based PDFs.
+- `mineru_formula_enable`: Enable formula recognition (default: `true`).
+- `mineru_table_enable`: Enable table recognition (default: `true`).
+- `mineru_batch_size`: Number of pages per batch for large PDFs (default: `50`). This enables automatic batch processing for PDFs larger than the batch size.
+- `mineru_start_page`: Starting page for manual pagination (0-based, optional).
+- `mineru_end_page`: Ending page for manual pagination (0-based, optional).
+
+These options allow fine-tuned control over MinerU's parsing behavior and enable efficient processing of large PDF documents through automatic batch processing.
+
+:::tip ERROR HANDLING
+If MinerU parsing fails for any reason (e.g., API unavailable, network issues), RAGFlow automatically falls back to plain text parsing to ensure document processing continues.
+:::
+
 :::caution WARNING
 Third-party visual models are marked **Experimental**, because we have not fully tested these models for the aforementioned data extraction tasks.
 :::

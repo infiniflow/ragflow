@@ -264,21 +264,46 @@ class Parser(ProcessBase):
             ocr_model = LLMBundle(tenant_id, LLMType.OCR, llm_name=parser_model_name, lang=conf.get("lang", "Chinese"))
             pdf_parser = ocr_model.mdl
 
-            lines, _ = pdf_parser.parse_pdf(
-                filepath=name,
-                binary=blob,
-                callback=self.callback,
-                parse_method=conf.get("mineru_parse_method", "raw"),
-                lang=conf.get("lang", "Chinese"),
-            )
-            bboxes = []
-            for t, poss in lines:
-                box = {
-                    "image": pdf_parser.crop(poss, 1),
-                    "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
-                    "text": t,
-                }
-                bboxes.append(box)
+            # Extract MinerU-specific configuration
+            # Note: All configuration is passed via parser_config to ensure consistency
+            # The default for mineru_parse_method is "auto" which lets MinerU automatically
+            # determine the best parsing method (txt or ocr) based on the PDF content
+            parser_config = {
+                'mineru_parse_method': conf.get("mineru_parse_method", "auto"),
+                'mineru_lang': conf.get("lang", "Chinese"),
+                'mineru_formula_enable': conf.get("mineru_formula_enable", True),
+                'mineru_table_enable': conf.get("mineru_table_enable", True),
+                'mineru_batch_size': conf.get("mineru_batch_size", 50),
+                'mineru_start_page': conf.get("mineru_start_page"),
+                'mineru_end_page': conf.get("mineru_end_page"),
+            }
+
+            try:
+                lines, _ = pdf_parser.parse_pdf(
+                    filepath=name,
+                    binary=blob,
+                    callback=self.callback,
+                    parser_config=parser_config,
+                )
+                bboxes = []
+                for t, poss in lines:
+                    box = {
+                        "image": pdf_parser.crop(poss, 1),
+                        "positions": [[pos[0][-1], *pos[1:]] for pos in pdf_parser.extract_positions(poss)],
+                        "text": t,
+                    }
+                    bboxes.append(box)
+            except (RuntimeError, ConnectionError, TimeoutError, OSError) as e:
+                # Fallback to plain text parsing if MinerU fails due to API, network, or configuration issues
+                # RuntimeError: Raised by MinerU for API failures, missing files, or parsing errors
+                # ConnectionError, TimeoutError, OSError: Network and file system issues
+                logging.error(f"MinerU parsing failed: {str(e)}. Falling back to plain text parsing.")
+                if self.callback:
+                    # Report fallback at 50% progress with truncated error message
+                    error_preview = str(e)[:100]
+                    self.callback(0.5, f"MinerU parsing failed, using fallback: {error_preview}")
+                lines, _ = PlainParser()(blob)
+                bboxes = [{"text": t} for t, _ in lines]
         elif parse_method.lower() == "tcadp parser":
             # ADP is a document parsing tool using Tencent Cloud API
             table_result_type = conf.get("table_result_type", "1")
