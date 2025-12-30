@@ -2,12 +2,14 @@ import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import {
   DynamicForm,
   DynamicFormRef,
+  FormFieldConfig,
   FormFieldType,
 } from '@/components/dynamic-form';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DialogProps } from '@radix-ui/react-dialog';
-import { t } from 'i18next';
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { ControllerRenderProps } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 
 export const ReparseDialog = memo(
   ({
@@ -26,18 +28,77 @@ export const ReparseDialog = memo(
     hideModal: () => void;
     hidden?: boolean;
   }) => {
-    // const [formInstance, setFormInstance] = useState<DynamicFormRef | null>(
-    //   null,
-    // );
+    const [defaultValues, setDefaultValues] = useState<any>(null);
+    const [fields, setFields] = useState<FormFieldConfig[]>([]);
+    const { t } = useTranslation();
+    const handleOperationIconClickRef = useRef(handleOperationIconClick);
+    const hiddenRef = useRef(hidden);
 
-    // const formCallbackRef = useCallback((node: DynamicFormRef | null) => {
-    //   if (node) {
-    //     setFormInstance(node);
-    //     console.log('Form instance assigned:', node);
-    //   } else {
-    //     console.log('Form instance removed');
-    //   }
-    // }, []);
+    useEffect(() => {
+      handleOperationIconClickRef.current = handleOperationIconClick;
+      hiddenRef.current = hidden;
+    });
+
+    useEffect(() => {
+      if (hiddenRef.current) {
+        handleOperationIconClickRef.current();
+      }
+    }, []);
+    useEffect(() => {
+      setDefaultValues({
+        delete: chunk_num > 0,
+        apply_kb: false,
+      });
+      const deleteField = {
+        name: 'delete',
+        label: '',
+        type: FormFieldType.Checkbox,
+        render: (fieldProps: ControllerRenderProps) => (
+          <div className="flex items-center text-text-secondary p-5 border border-border-button rounded-lg">
+            <Checkbox
+              {...fieldProps}
+              checked={fieldProps.value}
+              onCheckedChange={(checked: boolean) => {
+                fieldProps.onChange(checked);
+              }}
+            />
+            <span className="ml-2">
+              {chunk_num > 0
+                ? t(`knowledgeDetails.redo`, {
+                    chunkNum: chunk_num,
+                  })
+                : t('knowledgeDetails.redoAll')}
+            </span>
+          </div>
+        ),
+      };
+      const applyKBField = {
+        name: 'apply_kb',
+        label: '',
+        type: FormFieldType.Checkbox,
+        defaultValue: false,
+        render: (fieldProps: ControllerRenderProps) => (
+          <div className="flex items-center text-text-secondary p-5 border border-border-button rounded-lg">
+            <Checkbox
+              {...fieldProps}
+              checked={fieldProps.value}
+              onCheckedChange={(checked: boolean) => {
+                fieldProps.onChange(checked);
+              }}
+            />
+            <span className="ml-2">
+              {t('knowledgeDetails.applyAutoMetadataSettings')}
+            </span>
+          </div>
+        ),
+      };
+      if (chunk_num > 0) {
+        setFields([deleteField, applyKBField]);
+      }
+      if (chunk_num <= 0) {
+        setFields([applyKBField]);
+      }
+    }, [chunk_num, t]);
 
     const formCallbackRef = useRef<DynamicFormRef>(null);
 
@@ -68,11 +129,11 @@ export const ReparseDialog = memo(
       }
     }, [formCallbackRef, handleOperationIconClick]);
 
-    useEffect(() => {
-      if (hidden) {
-        handleOperationIconClick();
-      }
-    }, []);
+    // useEffect(() => {
+    //   if (hidden) {
+    //     handleOperationIconClick();
+    //   }
+    // });
 
     return (
       <ConfirmDeleteDialog
@@ -91,48 +152,8 @@ export const ReparseDialog = memo(
                   console.log('submit', data);
                 }}
                 ref={formCallbackRef}
-                fields={[
-                  {
-                    name: 'delete',
-                    label: '',
-                    type: FormFieldType.Checkbox,
-                    render: (fieldProps) => (
-                      <div className="flex items-center text-text-secondary p-5 border border-border-button rounded-lg">
-                        <Checkbox
-                          {...fieldProps}
-                          onCheckedChange={(checked: boolean) => {
-                            fieldProps.onChange(checked);
-                          }}
-                        />
-                        <span className="ml-2">
-                          {chunk_num > 0
-                            ? t(`knowledgeDetails.redo`, {
-                                chunkNum: chunk_num,
-                              })
-                            : t('knowledgeDetails.redoAll')}
-                        </span>
-                      </div>
-                    ),
-                  },
-                  {
-                    name: 'apply_kb',
-                    label: '',
-                    type: FormFieldType.Checkbox,
-                    render: (fieldProps) => (
-                      <div className="flex items-center text-text-secondary p-5 border border-border-button rounded-lg">
-                        <Checkbox
-                          {...fieldProps}
-                          onCheckedChange={(checked: boolean) => {
-                            fieldProps.onChange(checked);
-                          }}
-                        />
-                        <span className="ml-2">
-                          {t('knowledgeDetails.applyAutoMetadataSettings')}
-                        </span>
-                      </div>
-                    ),
-                  },
-                ]}
+                fields={fields}
+                defaultValues={defaultValues}
               >
                 {/* <DynamicForm.CancelButton
                 handleCancel={() => handleOperationIconClick(false)}
