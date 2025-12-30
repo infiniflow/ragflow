@@ -232,7 +232,7 @@ Experimente nossa demo em [https://demo.ragflow.io](https://demo.ragflow.io).
     * Rodando em todos os endereços (0.0.0.0)
    ```
 
-   > Se você pular essa etapa de confirmação e acessar diretamente o RAGFlow, seu navegador pode exibir um erro `network anormal`, pois, nesse momento, seu RAGFlow pode não estar totalmente inicializado.
+   > Se você pular essa etapa de confirmação e acessar diretamente o RAGFlow, seu navegador pode exibir um erro `network abnormal`, pois, nesse momento, seu RAGFlow pode não estar totalmente inicializado.
    >
 5. No seu navegador, insira o endereço IP do seu servidor e faça login no RAGFlow.
 
@@ -292,6 +292,15 @@ Esta imagem tem cerca de 2 GB de tamanho e depende de serviços externos de LLM 
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
+```
+
+Se você estiver atrás de um proxy, pode passar argumentos de proxy:
+
+```bash
+docker build --platform linux/amd64 \
+  --build-arg http_proxy=http://YOUR_PROXY:PORT \
+  --build-arg https_proxy=http://YOUR_PROXY:PORT \
+  -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 Lançar o serviço a partir do código-fonte para desenvolvimento

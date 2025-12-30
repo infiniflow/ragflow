@@ -233,7 +233,7 @@ Coba demo kami di [https://demo.ragflow.io](https://demo.ragflow.io).
     * Running on all addresses (0.0.0.0)
    ```
 
-   > Jika Anda melewatkan langkah ini dan langsung login ke RAGFlow, browser Anda mungkin menampilkan error `network anormal`
+   > Jika Anda melewatkan langkah ini dan langsung login ke RAGFlow, browser Anda mungkin menampilkan error `network abnormal`
    > karena RAGFlow mungkin belum sepenuhnya siap.
    >
 2. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
@@ -275,6 +275,15 @@ Image ini berukuran sekitar 2 GB dan bergantung pada aplikasi LLM eksternal dan 
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
+```
+
+Jika berada di belakang proxy, Anda dapat melewatkan argumen proxy:
+
+```bash
+docker build --platform linux/amd64 \
+  --build-arg http_proxy=http://YOUR_PROXY:PORT \
+  --build-arg https_proxy=http://YOUR_PROXY:PORT \
+  -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 Menjalankan Aplikasi dari untuk Pengembangan

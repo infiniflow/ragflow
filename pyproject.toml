@@ -150,6 +150,7 @@ dependencies = [
     #    "jinja2>=3.1.0",
     "pyairtable>=3.3.0",
     "asana>=5.2.2",
+    "python-gitlab>=7.0.0",
 ]
 
 [dependency-groups]

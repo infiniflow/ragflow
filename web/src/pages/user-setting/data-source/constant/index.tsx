@@ -25,6 +25,7 @@ export enum DataSourceKey {
   OCI_STORAGE = 'oci_storage',
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   AIRTABLE = 'airtable',
+  GITLAB = 'gitlab',
   ASANA = 'asana',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
@@ -109,6 +110,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Airtable',
       description: t(`setting.${DataSourceKey.AIRTABLE}Description`),
       icon: <SvgIcon name={'data-source/airtable'} width={38} />,
+    },
+    [DataSourceKey.GITLAB]: {
+      name: 'GitLab',
+      description: t(`setting.${DataSourceKey.GITLAB}Description`),
+      icon: <SvgIcon name={'data-source/gitlab'} width={38} />,
     },
     [DataSourceKey.ASANA]: {
       name: 'Asana',
@@ -658,6 +664,54 @@ export const DataSourceFormFields = {
       required: true,
     },
   ],
+  [DataSourceKey.GITLAB]: [
+    {
+      label: 'Project Owner',
+      name: 'config.project_owner',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Project Name',
+      name: 'config.project_name',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'GitLab Personal Access Token',
+      name: 'config.credentials.gitlab_access_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'GitLab URL',
+      name: 'config.gitlab_url',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: 'https://gitlab.com',
+    },
+    {
+      label: 'include Merge Requests',
+      name: 'config.include_mrs',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+    },
+    {
+      label: 'include Issues',
+      name: 'config.include_issues',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+    },
+    {
+      label: 'include Code Files',
+      name: 'config.include_code_files',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: true,
+    },
+  ],
   [DataSourceKey.ASANA]: [
     {
       label: 'API Token',
@@ -693,7 +747,6 @@ export const DataSourceFormDefaultValues = {
     config: {
       bucket_name: '',
       bucket_type: 's3',
-      authMode: 'access_key',
       prefix: '',
       credentials: {
         aws_access_key_id: '',
@@ -880,6 +933,21 @@ export const DataSourceFormDefaultValues = {
       table_name_or_id: '',
       credentials: {
         airtable_access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.GITLAB]: {
+    name: '',
+    source: DataSourceKey.GITLAB,
+    config: {
+      project_owner: '',
+      project_name: '',
+      gitlab_url: 'https://gitlab.com',
+      include_mrs: true,
+      include_issues: true,
+      include_code_files: true,
+      credentials: {
+        gitlab_access_token: '',
       },
     },
   },
