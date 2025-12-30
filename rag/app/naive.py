@@ -40,7 +40,7 @@ from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, \
-    tokenize_chunks, tokenize_chunks_with_images, tokenize_table, attach_media_context
+    tokenize_chunks, tokenize_chunks_with_images, tokenize_table, attach_media_context, append_context2table_image4pdf
 
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None,
@@ -486,7 +486,7 @@ class Pdf(PdfParser):
             tbls = self._extract_table_figure(True, zoomin, True, True)
             self._naive_vertical_merge()
             self._concat_downward()
-            self._final_reading_order_merge()
+            # self._final_reading_order_merge()
             # self._filter_forpages()
             logging.info("layouts cost: {}s".format(timer() - first_start))
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
@@ -772,6 +772,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if not sections and not tables:
             return []
 
+        if table_context_size or image_context_size:
+            tables = append_context2table_image4pdf(sections, tables, image_context_size)
+
         if name in ["tcadp", "docling", "mineru"]:
             parser_config["chunk_token_num"] = 0
 
@@ -1000,8 +1003,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         res.extend(embed_res)
     if url_res:
         res.extend(url_res)
-    if table_context_size or image_context_size:
-        attach_media_context(res, table_context_size, image_context_size)
+    #if table_context_size or image_context_size:
+    #    attach_media_context(res, table_context_size, image_context_size)
     return res
 
 
