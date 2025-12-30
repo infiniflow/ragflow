@@ -493,13 +493,15 @@ See [here](./guides/agent/best_practices/accelerate_agent_question_answering.md)
 
 ### How to use MinerU to parse PDF documents?
 
-From v0.22.0 onwards, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF parser of multiple backends. Please note that RAGFlow acts only as a *remote client* for MinerU, calling the MinerU API to parse PDFs and reading the returned files. To use this feature:
+From v0.22.0 onwards, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF parser of multiple backends. From v0.23.0+, MinerU 2.7.0+ is recommended with improved backends including the new default `hybrid-auto-engine` backend. Please note that RAGFlow acts only as a *remote client* for MinerU, calling the MinerU API to parse PDFs and reading the returned files. To use this feature:
 
 1. Prepare a reachable MinerU API service (FastAPI server).
 2. In the **.env** file or from the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
    - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
    - `MINERU_BACKEND`: The MinerU backend:
-      - `"pipeline"` (default)
+      - `"hybrid-auto-engine"` (default, recommended for MinerU 2.7.0+) - Automatically optimized hybrid backend
+      - `"hybrid"` - Hybrid backend combining multiple processing strategies
+      - `"pipeline"` - Traditional multimodel pipeline
       - `"vlm-http-client"`
       - `"vlm-transformers"`
       - `"vlm-vllm-engine"`
@@ -531,7 +533,7 @@ The table below summarizes the most frequently used MinerU environment variables
 | Environment variable   | Description                        | Default                             | Example                                                                                         |
 | ---------------------- | ---------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `MINERU_APISERVER`     | URL of the MinerU API service      | _unset_                             | `MINERU_APISERVER=http://your-mineru-server:8886`                                              |
-| `MINERU_BACKEND`       | MinerU parsing backend             | `pipeline`                          | `MINERU_BACKEND=pipeline\|vlm-transformers\|vlm-vllm-engine\|vlm-mlx-engine\|vlm-vllm-async-engine\|vlm-http-client` |
+| `MINERU_BACKEND`       | MinerU parsing backend             | `hybrid-auto-engine`                | `MINERU_BACKEND=hybrid-auto-engine\|hybrid\|pipeline\|vlm-transformers\|vlm-vllm-engine\|vlm-mlx-engine\|vlm-vllm-async-engine\|vlm-lmdeploy-engine\|vlm-http-client` |
 | `MINERU_SERVER_URL`    | URL of remote vLLM server (for `vlm-http-client`) | _unset_ | `MINERU_SERVER_URL=http://your-vllm-server-ip:30000`                                           |
 | `MINERU_OUTPUT_DIR`    | Directory for MinerU output files  | System-defined temporary directory  | `MINERU_OUTPUT_DIR=/home/ragflow/mineru/output`                                                |
 | `MINERU_DELETE_OUTPUT` | Whether to delete MinerU output directory when a temp dir is used | `1` (delete temp output) | `MINERU_DELETE_OUTPUT=0`                                                                       |

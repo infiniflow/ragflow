@@ -81,7 +81,9 @@ LANGUAGE_TO_MINERU_MAP = {
 class MinerUBackend(StrEnum):
     """MinerU processing backend options."""
 
-    PIPELINE = "pipeline"  # Traditional multimodel pipeline (default)
+    HYBRID_AUTO_ENGINE = "hybrid-auto-engine"  # Hybrid auto engine with automatic optimization (default in MinerU 2.7.0+)
+    HYBRID = "hybrid"  # Hybrid backend combining multiple processing strategies
+    PIPELINE = "pipeline"  # Traditional multimodel pipeline
     VLM_TRANSFORMERS = "vlm-transformers"  # Vision-language model using HuggingFace Transformers
     VLM_MLX_ENGINE = "vlm-mlx-engine"  # Faster, requires Apple Silicon and macOS 13.5+
     VLM_VLLM_ENGINE = "vlm-vllm-engine"  # Local vLLM engine, requires local GPU
@@ -124,7 +126,7 @@ class MinerUParseMethod(StrEnum):
 class MinerUParseOptions:
     """Options for MinerU PDF parsing."""
 
-    backend: MinerUBackend = MinerUBackend.PIPELINE
+    backend: MinerUBackend = MinerUBackend.HYBRID_AUTO_ENGINE
     lang: Optional[MinerULanguage] = None  # language for OCR (pipeline backend only)
     method: MinerUParseMethod = MinerUParseMethod.AUTO
     server_url: Optional[str] = None
@@ -186,10 +188,10 @@ class MinerUParser(RAGFlowPdfParser):
         except Exception:
             return False
 
-    def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
+    def check_installation(self, backend: str = "hybrid-auto-engine", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
 
-        valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
+        valid_backends = ["hybrid-auto-engine", "hybrid", "pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
         if backend not in valid_backends:
             reason = f"[MinerU] Invalid backend '{backend}'. Valid backends are: {valid_backends}"
             self.logger.warning(reason)

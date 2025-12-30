@@ -53,7 +53,7 @@ class MinerUOcrModel(Base, MinerUParser):
 
         self.mineru_api = _resolve_config("mineru_apiserver", "MINERU_APISERVER", "")
         self.mineru_output_dir = _resolve_config("mineru_output_dir", "MINERU_OUTPUT_DIR", "")
-        self.mineru_backend = _resolve_config("mineru_backend", "MINERU_BACKEND", "pipeline")
+        self.mineru_backend = _resolve_config("mineru_backend", "MINERU_BACKEND", "hybrid-auto-engine")
         self.mineru_server_url = _resolve_config("mineru_server_url", "MINERU_SERVER_URL", "")
         self.mineru_delete_output = bool(int(_resolve_config("mineru_delete_output", "MINERU_DELETE_OUTPUT", 1)))
 
