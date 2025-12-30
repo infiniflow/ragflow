@@ -159,8 +159,8 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
         logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
     except DoesNotExist:
         logging.warning(f"set_progress({task_id}) got exception DoesNotExist")
-    except Exception:
-        logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception")
+    except Exception as e:
+        logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception: {e}")
 
 
 async def collect():
@@ -168,6 +168,7 @@ async def collect():
     global UNACKED_ITERATOR
 
     svr_queue_names = settings.get_svr_queue_names()
+    redis_msg = None
     try:
         if not UNACKED_ITERATOR:
             UNACKED_ITERATOR = REDIS_CONN.get_unacked_iterator(svr_queue_names, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
@@ -178,8 +179,8 @@ async def collect():
                 redis_msg = REDIS_CONN.queue_consumer(svr_queue_name, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
                 if redis_msg:
                     break
-    except Exception:
-        logging.exception("collect got exception")
+    except Exception as e:
+        logging.exception(f"collect got exception: {e}")
         return None, None
 
     if not redis_msg:
@@ -1063,8 +1064,8 @@ async def do_handle_task(task):
     async def _maybe_insert_es(_chunks):
         if has_canceled(task_id):
             return True
-        e = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
-        return bool(e)
+        insert_result = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
+        return bool(insert_result)
 
     try:
         if not await _maybe_insert_es(chunks):
@@ -1114,10 +1115,9 @@ async def do_handle_task(task):
                         search.index_name(task_tenant_id),
                         task_dataset_id,
                     )
-            except Exception:
+            except Exception as e:
                 logging.exception(
-                    f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled."
-                )
+                    f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled, exception: {e}")
 
 
 async def handle_task():
@@ -1130,24 +1130,25 @@ async def handle_task():
     task_type = task["task_type"]
     pipeline_task_type = TASK_TYPE_TO_PIPELINE_TASK_TYPE.get(task_type,
                                                              PipelineTaskType.PARSE) or PipelineTaskType.PARSE
-
+    task_id = task["id"]
     try:
         logging.info(f"handle_task begin for task {json.dumps(task)}")
         CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
         await do_handle_task(task)
         DONE_TASKS += 1
-        CURRENT_TASKS.pop(task["id"], None)
+        CURRENT_TASKS.pop(task_id, None)
         logging.info(f"handle_task done for task {json.dumps(task)}")
     except Exception as e:
         FAILED_TASKS += 1
-        CURRENT_TASKS.pop(task["id"], None)
+        CURRENT_TASKS.pop(task_id, None)
         try:
             err_msg = str(e)
             while isinstance(e, exceptiongroup.ExceptionGroup):
                 e = e.exceptions[0]
                 err_msg += ' -- ' + str(e)
-            set_progress(task["id"], prog=-1, msg=f"[Exception]: {err_msg}")
-        except Exception:
+            set_progress(task_id, prog=-1, msg=f"[Exception]: {err_msg}")
+        except Exception as e:
+            logging.exception(f"[Exception]: {str(e)}")
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     finally:
@@ -1220,8 +1221,8 @@ async def report_status():
                         logging.info(f"{consumer_name} expired, removed")
                         REDIS_CONN.srem("TASKEXE", consumer_name)
                         REDIS_CONN.delete(consumer_name)
-        except Exception:
-            logging.exception("report_status got exception")
+        except Exception as e:
+            logging.exception(f"report_status got exception: {e}")
         finally:
             redis_lock.release()
         await asyncio.sleep(30)
