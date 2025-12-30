@@ -26,6 +26,7 @@ export enum DataSourceKey {
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   AIRTABLE = 'airtable',
   ASANA = 'asana',
+  GITHUB = 'github',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -114,6 +115,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Asana',
       description: t(`setting.${DataSourceKey.ASANA}Description`),
       icon: <SvgIcon name={'data-source/asana'} width={38} />,
+    },
+    [DataSourceKey.GITHUB]: {
+      name: 'GitHub',
+      description: t(`setting.${DataSourceKey.GITHUB}Description`),
+      icon: <SvgIcon name={'data-source/github'} width={38} />,
     },
   };
 };
@@ -684,6 +690,40 @@ export const DataSourceFormFields = {
       required: false,
     },
   ],
+  [DataSourceKey.GITHUB]: [
+    {
+      label: 'Repository Owner',
+      name: 'config.repository_owner',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Repository Name',
+      name: 'config.repository_name',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'GitHub Access Token',
+      name: 'config.credentials.github_access_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Inlcude Pull Requests',
+      name: 'config.include_pull_requests',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: false,
+    },
+    {
+      label: 'Inlcude Issues',
+      name: 'config.include_issues',
+      type: FormFieldType.Checkbox,
+      required: false,
+      defaultValue: false,
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -893,6 +933,19 @@ export const DataSourceFormDefaultValues = {
       asana_team_id: '',
       credentials: {
         asana_api_token_secret: '',
+      },
+    },
+  },
+  [DataSourceKey.GITHUB]: {
+    name: '',
+    source: DataSourceKey.GITHUB,
+    config: {
+      repository_owner: '',
+      repository_name: '',
+      include_pull_requests: false,
+      include_issues: false,
+      credentials: {
+        github_access_token: '',
       },
     },
   },

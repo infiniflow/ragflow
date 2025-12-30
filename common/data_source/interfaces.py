@@ -341,6 +341,17 @@ class CheckpointOutputWrapper(Generic[CT]):
         yield None, None, self.next_checkpoint
 
 
+class CheckpointedConnectorWithPermSyncGH(CheckpointedConnector[CT]):
+    @abc.abstractmethod
+    def load_from_checkpoint_with_perm_sync(
+        self,
+        start: SecondsSinceUnixEpoch,
+        end: SecondsSinceUnixEpoch,
+        checkpoint: CT,
+    ) -> CheckpointOutput[CT]:
+        raise NotImplementedError
+
+
 # Slim connectors retrieve just the ids of documents
 class SlimConnector(BaseConnector):
     @abc.abstractmethod

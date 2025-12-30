@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Any
 from typing import cast
 
-from github import Github
+from github import Github, Auth
 from github import RateLimitExceededException
 from github import Repository
 from github.GithubException import GithubException
@@ -19,8 +19,9 @@ from github.PaginatedList import PaginatedList
 from github.PullRequest import PullRequest
 from pydantic import BaseModel
 from typing_extensions import override
-
-from common.data_source.config import DocumentSource, GITHUB_CONNECTOR_BASE_URL
+from common.data_source.utils import get_file_ext
+from common.data_source.google_util.util import sanitize_filename
+from common.data_source.config import DocumentSource, GITHUB_CONNECTOR_BASE_URL, INDEX_BATCH_SIZE
 from common.data_source.exceptions import (
     ConnectorMissingCredentialError,
     ConnectorValidationError,
@@ -28,7 +29,7 @@ from common.data_source.exceptions import (
     InsufficientPermissionsError,
     UnexpectedValidationError,
 )
-from common.data_source.interfaces import CheckpointedConnectorWithPermSync, CheckpointOutput
+from common.data_source.interfaces import CheckpointedConnectorWithPermSyncGH, CheckpointOutput
 from common.data_source.models import (
     ConnectorCheckpoint,
     ConnectorFailure,
@@ -36,7 +37,6 @@ from common.data_source.models import (
     DocumentFailure,
     ExternalAccess,
     SecondsSinceUnixEpoch,
-    TextSection,
 )
 from common.data_source.connector_runner import ConnectorRunner
 from .models import SerializedRepository
@@ -242,14 +242,15 @@ def _convert_pr_to_document(
 ) -> Document:
     repo_name = pull_request.base.repo.full_name if pull_request.base else ""
     doc_metadata = DocMetadata(repo=repo_name)
+    file_content_byte = pull_request.body.encode('utf-8') if pull_request.body else b""
+    name = sanitize_filename(pull_request.title, "md")
+
     return Document(
         id=pull_request.html_url,
-        sections=[
-            TextSection(link=pull_request.html_url, text=pull_request.body or "")
-        ],
-        external_access=repo_external_access,
+        blob= file_content_byte,
         source=DocumentSource.GITHUB,
-        semantic_identifier=f"{pull_request.number}: {pull_request.title}",
+        external_access=repo_external_access,
+        semantic_identifier=f"{pull_request.number}:{name}",
         # updated_at is UTC time but is timezone unaware, explicitly add UTC
         # as there is logic in indexing to prevent wrong timestamped docs
         # due to local time discrepancies with UTC
@@ -258,7 +259,10 @@ def _convert_pr_to_document(
             if pull_request.updated_at
             else None
         ),
+        extension=".md",
         # this metadata is used in perm sync
+        size_bytes=len(file_content_byte) if file_content_byte else 0,
+        primary_owners=[],
         doc_metadata=doc_metadata.model_dump(),
         metadata={
             k: [str(vi) for vi in v] if isinstance(v, list) else str(v)
@@ -318,16 +322,22 @@ def _convert_issue_to_document(
 ) -> Document:
     repo_name = issue.repository.full_name if issue.repository else ""
     doc_metadata = DocMetadata(repo=repo_name)
+    file_content_byte = issue.body.encode('utf-8') if issue.body else b""
+    name = sanitize_filename(issue.title, "md")
+
     return Document(
         id=issue.html_url,
-        sections=[TextSection(link=issue.html_url, text=issue.body or "")],
+        blob=file_content_byte,
         source=DocumentSource.GITHUB,
+        extension=".md",
         external_access=repo_external_access,
-        semantic_identifier=f"{issue.number}: {issue.title}",
+        semantic_identifier=f"{issue.number}:{name}",
         # updated_at is UTC time but is timezone unaware
         doc_updated_at=issue.updated_at.replace(tzinfo=timezone.utc),
         # this metadata is used in perm sync
         doc_metadata=doc_metadata.model_dump(),
+        size_bytes=len(file_content_byte) if file_content_byte else 0,
+        primary_owners=[_get_userinfo(issue.user) if issue.user else None],
         metadata={
             k: [str(vi) for vi in v] if isinstance(v, list) else str(v)
             for k, v in {
@@ -401,7 +411,7 @@ def make_cursor_url_callback(
     return cursor_url_callback
 
 
-class GithubConnector(CheckpointedConnectorWithPermSync[GithubConnectorCheckpoint]):
+class GithubConnector(CheckpointedConnectorWithPermSyncGH[GithubConnectorCheckpoint]):
     def __init__(
         self,
         repo_owner: str,
@@ -419,15 +429,21 @@ class GithubConnector(CheckpointedConnectorWithPermSync[GithubConnectorCheckpoin
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         # defaults to 30 items per page, can be set to as high as 100
-        self.github_client = (
-            Github(
-                credentials["github_access_token"],
+        token = credentials["github_access_token"]
+        auth = Auth.Token(token)
+
+        if GITHUB_CONNECTOR_BASE_URL:
+            self.github_client = Github(
+                auth=auth,
                 base_url=GITHUB_CONNECTOR_BASE_URL,
                 per_page=ITEMS_PER_PAGE,
             )
-            if GITHUB_CONNECTOR_BASE_URL
-            else Github(credentials["github_access_token"], per_page=ITEMS_PER_PAGE)
-        )
+        else:
+            self.github_client = Github(
+                auth=auth,
+                per_page=ITEMS_PER_PAGE,
+            )
+
         return None
 
     def get_github_repo(
@@ -579,14 +595,19 @@ class GithubConnector(CheckpointedConnectorWithPermSync[GithubConnectorCheckpoin
             done_with_prs = False
             num_prs = 0
             pr = None
+            print("start: ", start)
             for pr in pr_batch:
                 num_prs += 1
-
+                print("-"*40)
+                print("PR name", pr.title)
+                print("updated at", pr.updated_at)
+                print("-"*40)
+                print("\n")
                 # we iterate backwards in time, so at this point we stop processing prs
                 if (
                     start is not None
                     and pr.updated_at
-                    and pr.updated_at.replace(tzinfo=timezone.utc) < start
+                    and pr.updated_at.replace(tzinfo=timezone.utc) <= start
                 ):
                     done_with_prs = True
                     break
@@ -622,7 +643,6 @@ class GithubConnector(CheckpointedConnectorWithPermSync[GithubConnectorCheckpoin
             # In offset mode, while indexing without time constraints, the pr batch
             # will be empty when we're done.
             used_cursor = checkpoint.cursor_url is not None
-            logging.info(f"Fetched {num_prs} PRs for repo: {repo.name}")
             if num_prs > 0 and not done_with_prs and not used_cursor:
                 return checkpoint
 
@@ -650,7 +670,6 @@ class GithubConnector(CheckpointedConnectorWithPermSync[GithubConnectorCheckpoin
                     self.github_client,
                 )
             )
-            logging.info(f"Fetched {len(issue_batch)} issues for repo: {repo.name}")
             checkpoint.curr_page += 1
             done_with_issues = False
             num_issues = 0
@@ -660,7 +679,7 @@ class GithubConnector(CheckpointedConnectorWithPermSync[GithubConnectorCheckpoin
                 # we iterate backwards in time, so at this point we stop processing prs
                 if (
                     start is not None
-                    and issue.updated_at.replace(tzinfo=timezone.utc) < start
+                    and issue.updated_at.replace(tzinfo=timezone.utc) <= start
                 ):
                     done_with_issues = True
                     break
@@ -690,7 +709,6 @@ class GithubConnector(CheckpointedConnectorWithPermSync[GithubConnectorCheckpoin
                     )
                     continue
 
-            logging.info(f"Fetched {num_issues} issues for repo: {repo.name}")
             # if we found any issues on the page, and we're not done, return the checkpoint.
             # don't return if we're using cursor-based pagination to avoid infinite loops
             if num_issues > 0 and not done_with_issues and not checkpoint.cursor_url:
@@ -736,7 +754,9 @@ class GithubConnector(CheckpointedConnectorWithPermSync[GithubConnectorCheckpoin
         # Move start time back by 3 hours, since some Issues/PRs are getting dropped
         # Could be due to delayed processing on GitHub side
         # The non-updated issues since last poll will be shortcut-ed and not embedded
-        adjusted_start_datetime = start_datetime - timedelta(hours=3)
+        # adjusted_start_datetime = start_datetime - timedelta(hours=3)
+
+        adjusted_start_datetime = start_datetime
 
         epoch = datetime.fromtimestamp(0, tz=timezone.utc)
         if adjusted_start_datetime < epoch:
@@ -915,11 +935,13 @@ if __name__ == "__main__":
 
     # Initialize the connector
     connector = GithubConnector(
-        repo_owner=os.environ["REPO_OWNER"],
-        repositories=os.environ.get("REPOSITORIES"),
+        repo_owner="EvoAgentX",
+        repositories="EvoAgentX",
+        include_issues=True,
+        include_prs=False,
     )
     connector.load_credentials(
-        {"github_access_token": os.environ["ACCESS_TOKEN_GITHUB"]}
+        {"github_access_token": "<Your_GitHub_Access_Token>"}
     )
 
     if connector.github_client:

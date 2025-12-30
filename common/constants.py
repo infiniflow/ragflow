@@ -130,7 +130,7 @@ class FileSource(StrEnum):
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
     AIRTABLE = "airtable"
     ASANA = "asana"
-
+    GITHUB = "github"
     
 class PipelineTaskType(StrEnum):
     PARSE = "Parse"

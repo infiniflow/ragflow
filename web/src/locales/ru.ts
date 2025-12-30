@@ -747,6 +747,8 @@ export default {
         'Синхронизируйте страницы и базы данных из Notion для извлечения знаний.',
       boxDescription:
         'Подключите ваш диск Box для синхронизации файлов и папок.',
+      githubDescription:
+        'Подключите GitHub для синхронизации содержимого Pull Request и Issue для поиска.',
       airtableDescription:
         'Подключите Airtable и синхронизируйте файлы из указанной таблицы в заданном рабочем пространстве.',
       asanaDescription:
