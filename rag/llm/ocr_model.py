@@ -65,12 +65,25 @@ class MinerUOcrModel(Base, MinerUParser):
         self.mineru_backend = _resolve_config("mineru_backend", "MINERU_BACKEND", "hybrid-auto-engine")
         self.mineru_server_url = _resolve_config("mineru_server_url", "MINERU_SERVER_URL", "").rstrip("/")
         
-        # Safe conversion for delete_output
+        # Safe conversion for delete_output - handles various formats
+        delete_output_str = _resolve_config("mineru_delete_output", "MINERU_DELETE_OUTPUT", "1")
         try:
-            delete_output_str = _resolve_config("mineru_delete_output", "MINERU_DELETE_OUTPUT", "1")
-            self.mineru_delete_output = bool(int(delete_output_str))
+            # Handle string boolean values
+            if isinstance(delete_output_str, bool):
+                self.mineru_delete_output = delete_output_str
+            elif isinstance(delete_output_str, str):
+                lower_str = delete_output_str.lower().strip()
+                if lower_str in ('true', 'yes', '1', 'on'):
+                    self.mineru_delete_output = True
+                elif lower_str in ('false', 'no', '0', 'off'):
+                    self.mineru_delete_output = False
+                else:
+                    # Try integer conversion as fallback
+                    self.mineru_delete_output = bool(int(delete_output_str))
+            else:
+                self.mineru_delete_output = bool(delete_output_str)
         except (ValueError, TypeError) as e:
-            logging.warning(f"[MinerU] Invalid mineru_delete_output value: {e}. Defaulting to True.")
+            logging.warning(f"[MinerU] Invalid mineru_delete_output value '{delete_output_str}': {e}. Defaulting to True.")
             self.mineru_delete_output = True
 
         # Redact sensitive config keys before logging

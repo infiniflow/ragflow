@@ -502,20 +502,40 @@ class MinerUParser(RAGFlowPdfParser):
         return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join([str(p) for p in pn]), x0, x1, top, bott)
 
     @staticmethod
-    def _validate_crop_coordinates(left: float, right: float, top: float, bottom: float) -> bool:
+    def _validate_crop_coordinates(left: float, right: float, top: float, bottom: float, tolerance: float = 1e-6) -> bool:
         """Validate crop coordinates are valid.
         
         Args:
             left, right, top, bottom: Coordinate values
+            tolerance: Tolerance for floating-point comparison
             
         Returns:
             True if coordinates are valid, False otherwise
         """
         if left < 0 or right < 0 or top < 0 or bottom < 0:
             return False
-        if left >= right or top >= bottom:
+        # Use tolerance for floating-point comparison
+        if left >= right - tolerance or top >= bottom - tolerance:
             return False
         return True
+
+    @staticmethod
+    def _clamp_coordinates_to_image(left: float, right: float, top: float, bottom: float, 
+                                     img_width: int, img_height: int) -> tuple[int, int, int, int]:
+        """Clamp crop coordinates to image bounds.
+        
+        Args:
+            left, right, top, bottom: Coordinate values (may be outside image)
+            img_width, img_height: Image dimensions
+            
+        Returns:
+            Tuple of (x0, y0, x1, y1) clamped to valid image coordinates
+        """
+        x0 = max(0, min(int(left), img_width - 1))
+        y0 = max(0, min(int(top), img_height - 1))
+        x1 = max(x0 + 1, min(int(right), img_width))
+        y1 = max(y0 + 1, min(int(bottom), img_height))
+        return x0, y0, x1, y1
 
     def crop(self, text, ZM=1, need_position=False):
         imgs = []
@@ -615,11 +635,8 @@ class MinerUParser(RAGFlowPdfParser):
             img0 = self.page_images[pns[0]]
             img_width, img_height = img0.size
             
-            # Ensure coordinates are within image bounds
-            x0 = max(0, min(int(left), img_width - 1))
-            y0 = max(0, min(int(top), img_height - 1))
-            x1 = max(x0 + 1, min(int(right), img_width))
-            y1 = max(y0 + 1, min(int(bottom), img_height))
+            # Clamp coordinates to image bounds using helper
+            x0, y0, x1, y1 = self._clamp_coordinates_to_image(left, top, right, bottom, img_width, img_height)
             
             crop0 = img0.crop((x0, y0, x1, y1))
             imgs.append(crop0)
@@ -635,11 +652,8 @@ class MinerUParser(RAGFlowPdfParser):
                 page = self.page_images[pn]
                 page_width, page_height = page.size
                 
-                # Ensure coordinates are within image bounds
-                x0 = max(0, min(int(left), page_width - 1))
-                y0 = 0
-                x1 = max(x0 + 1, min(int(right), page_width))
-                y1 = max(1, min(int(bottom), page_height))
+                # Clamp coordinates to image bounds using helper
+                x0, y0, x1, y1 = self._clamp_coordinates_to_image(left, 0, right, bottom, page_width, page_height)
                 
                 cimgp = page.crop((x0, y0, x1, y1))
                 imgs.append(cimgp)
