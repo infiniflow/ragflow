@@ -266,6 +266,8 @@ class Parser(ProcessBase):
 
             # Extract MinerU-specific configuration
             # Note: All configuration is passed via parser_config to ensure consistency
+            # The default for mineru_parse_method is "auto" which lets MinerU automatically
+            # determine the best parsing method (txt or ocr) based on the PDF content
             parser_config = {
                 'mineru_parse_method': conf.get("mineru_parse_method", "auto"),
                 'mineru_lang': conf.get("lang", "Chinese"),
@@ -293,9 +295,13 @@ class Parser(ProcessBase):
                     bboxes.append(box)
             except (RuntimeError, ConnectionError, TimeoutError, OSError) as e:
                 # Fallback to plain text parsing if MinerU fails due to API, network, or configuration issues
+                # RuntimeError: Raised by MinerU for API failures, missing files, or parsing errors
+                # ConnectionError, TimeoutError, OSError: Network and file system issues
                 logging.error(f"MinerU parsing failed: {str(e)}. Falling back to plain text parsing.")
                 if self.callback:
-                    self.callback(0.5, f"MinerU parsing failed, using fallback: {str(e)[:100]}")
+                    # Report fallback at 50% progress with truncated error message
+                    error_preview = str(e)[:100]
+                    self.callback(0.5, f"MinerU parsing failed, using fallback: {error_preview}")
                 lines, _ = PlainParser()(blob)
                 bboxes = [{"text": t} for t, _ in lines]
         elif parse_method.lower() == "tcadp parser":
