@@ -324,7 +324,7 @@ class RAGFlowPdfParser:
                 continue
             m_ht = np.mean([c["height"] for c in b["chars"]])
             for c in Recognizer.sort_Y_firstly(b["chars"], m_ht):
-                # b["text"] is verified non-empty on line 327, safe to access [-1]
+                # b["text"] is verified non-empty on line 328, safe to access [-1]
                 if c["text"] == " " and b["text"]:
                     if re.match(r"[0-9a-zA-Zа-яА-Я,.?;:!%%]", b["text"][-1]):
                         b["text"] += " "
@@ -498,11 +498,13 @@ class RAGFlowPdfParser:
                 continue
 
             # Add bounds checking for mean_height access
+            # Calculate fallback from actual box heights if needed
+            calculated_mh = np.median([b["bottom"] - b["top"] for b in bxs]) or 10
             if pg - 1 < 0 or (self.mean_height and pg - 1 >= len(self.mean_height)):
                 logging.warning(f"_naive_vertical_merge: page {pg} out of range for mean_height length {len(self.mean_height) if self.mean_height else 0}")
-                mh = np.median([b["bottom"] - b["top"] for b in bxs]) or 10
+                mh = calculated_mh
             else:
-                mh = self.mean_height[pg - 1] if self.mean_height else np.median([b["bottom"] - b["top"] for b in bxs]) or 10
+                mh = self.mean_height[pg - 1] if self.mean_height else calculated_mh
 
             i = 0
             while i + 1 < len(bxs):
