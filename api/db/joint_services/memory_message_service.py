@@ -18,7 +18,6 @@ from typing import List
 
 from api.db.services.task_service import TaskService
 from common import settings
-from common.constants import PipelineTaskType
 from common.time_utils import current_timestamp, timestamp_to_date, format_iso_8601_to_ymd_hms
 from common.constants import MemoryType, LLMType
 from common.doc_store.doc_store_base import FusionExpr
@@ -123,7 +122,7 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
         "status": True
     } for content in extracted_content]
     if not message_list:
-        return True, f"No memory extracted from raw message."
+        return True, "No memory extracted from raw message."
 
     return await embed_and_save(memory, message_list)
 
