@@ -8,6 +8,9 @@ services:
         condition: service_healthy
     profiles:
       - cpu
+    build:
+      context: ..
+      dockerfile: Dockerfile
     image: ${RAGFLOW_IMAGE}
     # Example configuration to set up an MCP server:
     # command:
@@ -57,6 +60,9 @@ services:
         condition: service_healthy
     profiles:
       - gpu
+    build:
+      context: ..
+      dockerfile: Dockerfile
     image: ${RAGFLOW_IMAGE}
     # Example configuration to set up an MCP server:
     # command:
