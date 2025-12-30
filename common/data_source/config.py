@@ -13,6 +13,9 @@ def get_current_tz_offset() -> int:
     return round(time_diff.total_seconds() / 3600)
 
 
+# Default request timeout, mostly used by connectors
+REQUEST_TIMEOUT_SECONDS = int(os.environ.get("REQUEST_TIMEOUT_SECONDS") or 60)
+
 ONE_MINUTE = 60
 ONE_HOUR = 3600
 ONE_DAY = ONE_HOUR * 24
@@ -57,7 +60,7 @@ class DocumentSource(str, Enum):
     ASANA = "asana"
     GITHUB = "github"
     GITLAB = "gitlab"
-
+    BITBUCKET = "bitbucket"
     
 class FileOrigin(str, Enum):
     """File origins"""
