@@ -265,6 +265,7 @@ class Parser(ProcessBase):
             pdf_parser = ocr_model.mdl
 
             # Extract MinerU-specific configuration
+            # Note: All configuration is passed via parser_config to ensure consistency
             parser_config = {
                 'mineru_parse_method': conf.get("mineru_parse_method", "auto"),
                 'mineru_lang': conf.get("lang", "Chinese"),
@@ -280,8 +281,6 @@ class Parser(ProcessBase):
                     filepath=name,
                     binary=blob,
                     callback=self.callback,
-                    parse_method=conf.get("mineru_parse_method", "raw"),
-                    lang=conf.get("lang", "Chinese"),
                     parser_config=parser_config,
                 )
                 bboxes = []
