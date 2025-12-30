@@ -931,6 +931,8 @@ Example: Virtual Hosted Style`,
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
       boxDescription: 'Connect your Box drive to sync files and folders.',
+      githubDescription:
+        'Connect GitHub to sync pull requests and issues for retrieval.',
       airtableDescription:
         'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
       gitlabDescription:
