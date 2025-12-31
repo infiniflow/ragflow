@@ -17,11 +17,7 @@
 from beartype.claw import beartype_this_package
 beartype_this_package()
 
-try:
-    from importlib import metadata
-except ImportError:
-    # Fallback for Python < 3.8
-    import importlib_metadata as metadata
+from importlib import metadata
 
 from .ragflow import RAGFlow
 from .modules.dataset import DataSet
