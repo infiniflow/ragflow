@@ -12,11 +12,18 @@ Key features, improvements and bug fixes in the latest releases.
 
 Released on December 31, 2025.
 
+### Improvements
+
+- Memory: Enhances the stability of memory extraction when all memory types are selected.
+- RAG: Refines the context window extraction strategy for images and tables.
+
+
 ### Fixed issues
 
-- Resolved an issue where the RAGFlow Server would fail to start if an empty memory object existed, and corrected the inability to delete a newly created empty Memory.
-- Improved the stability of memory extraction across all memory types after selection.
-- Fixed MDX file parsing support.
+- Memory: 
+  - The RAGFlow server failed to start if an empty memory object existed.
+  - Unable to delete a newly created empty Memory.
+- RAG: MDX file parsing was not supported.
 
 ### Data sources
 
@@ -50,6 +57,7 @@ Released on December 27, 2025.
 
 ### Improvements
 
+- RAG: Accelerates GraphRAG generation significantly.
 - Bumps RAGFlow's document engine, [Infinity](https://github.com/infiniflow/infinity) to v0.6.15 (backward compatible).
 
 ### Data sources
