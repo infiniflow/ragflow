@@ -133,6 +133,7 @@ class FileSource(StrEnum):
     GITHUB = "github"
     GITLAB = "gitlab"
     IMAP = "imap"
+    BITBUCKET = "bitbucket"
     ZENDESK = "zendesk"
 
 class PipelineTaskType(StrEnum):
