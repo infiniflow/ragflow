@@ -84,20 +84,26 @@ class DoclingParser(RAGFlowPdfParser):
         self.page_to = 10_000
         self.outlines = []
         self._converter = None
+        self._converter_failed = False  # Track initialization failures
     
     def _get_converter(self):
         """
         Get or create a DocumentConverter with optimized configuration.
-        Uses caching to avoid recreating the converter.
+        Uses caching to avoid recreating the converter and repeated failures.
         
         Returns:
             DocumentConverter instance or None if not available
         """
         if self._converter is not None:
             return self._converter
+        
+        # Don't retry if we already failed to create converter
+        if self._converter_failed:
+            return None
             
         if DocumentConverter is None:
             self.logger.warning("[Docling] DocumentConverter not available")
+            self._converter_failed = True
             return None
             
         try:
@@ -124,13 +130,15 @@ class DoclingParser(RAGFlowPdfParser):
                         force_full_page_ocr=False,
                     )
             
-            # Configure format options
+            # Configure format options with backend
             format_options = {}
             if PdfFormatOption is not None and pipeline_options is not None:
+                # Instantiate backend if available
+                backend = PyPdfiumDocumentBackend() if PyPdfiumDocumentBackend is not None else None
                 format_options = {
                     InputFormat.PDF: PdfFormatOption(
                         pipeline_options=pipeline_options,
-                        backend=PyPdfiumDocumentBackend,
+                        backend=backend,
                     )
                 }
             
@@ -145,6 +153,7 @@ class DoclingParser(RAGFlowPdfParser):
             
         except Exception as e:
             self.logger.error(f"[Docling] Failed to initialize DocumentConverter: {e}", exc_info=True)
+            self._converter_failed = True
             return None
         
     def check_installation(self) -> bool:
@@ -464,7 +473,10 @@ class DoclingParser(RAGFlowPdfParser):
             try:
                 tmpdir = Path(output_dir) if output_dir else Path.cwd() / ".docling_tmp"
                 tmpdir.mkdir(parents=True, exist_ok=True)
-                name = Path(filepath).name or "input.pdf"
+                # Sanitize filename to prevent path traversal
+                name = Path(filepath).name if filepath else "input.pdf"
+                # Remove any path separators from the filename
+                name = name.replace("/", "_").replace("\\", "_") or "input.pdf"
                 tmp_pdf = tmpdir / name
                 with open(tmp_pdf, "wb") as f:
                     if isinstance(binary, (bytes, bytearray)):
