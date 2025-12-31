@@ -53,6 +53,7 @@ export default {
       noData: '暂无数据',
       bedrockCredentialsHint:
         '提示：Access Key / Secret Key 可留空，以启用 AWS IAM 自动验证。',
+      zendeskDescription: '连接 Zendesk，同步工单、文章及其他内容。',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
       selected: '已选择',
     },
@@ -864,6 +865,14 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '请上传由 Google Console 生成的 OAuth JSON。如果仅包含 client credentials，请通过浏览器授权一次以获取长期有效的刷新 Token。',
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
+      bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
+      bitbucketTopWorkspaceTip:
+        '要索引的 Bitbucket 工作区（例如：https://bitbucket.org/atlassian/workspace 中的 "atlassian"）',
+      bitbucketWorkspaceTip: '该连接器将索引工作区下的所有仓库。',
+      bitbucketProjectsTip: '用英文逗号分隔的项目 key，例如：PROJ1,PROJ2',
+      bitbucketRepositorySlugsTip:
+        '用英文逗号分隔的仓库 slug，例如：repo-one,repo-two',
+      connectorNameTip: '为连接器命名',
       githubDescription:
         '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
       airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',

@@ -947,6 +947,19 @@ Beispiel: Virtual Hosted Style`,
         'Laden Sie das OAuth-JSON hoch, das von der Google Console generiert wurde. Wenn es nur Client-Anmeldeinformationen enthält, führen Sie die browserbasierte Überprüfung einmal durch, um langlebige Refresh-Token zu erstellen.',
       dropboxDescription:
         'Verbinden Sie Ihre Dropbox, um Dateien und Ordner von einem ausgewählten Konto zu synchronisieren.',
+      bitbucketDescription:
+        'Bitbucket verbinden, um PR-Inhalte zu synchronisieren.',
+      zendeskDescription:
+        'Verbinden Sie Ihr Zendesk, um Tickets, Artikel und andere Inhalte zu synchronisieren.',
+      bitbucketTopWorkspaceTip:
+        'Der zu indizierende Bitbucket-Workspace (z. B. "atlassian" aus https://bitbucket.org/atlassian/workspace )',
+      bitbucketWorkspaceTip:
+        'Dieser Connector indiziert alle Repositories im Workspace.',
+      bitbucketProjectsTip: 'Kommagetrennte Projekt-Keys, z. B.: PROJ1,PROJ2',
+      bitbucketRepositorySlugsTip:
+        'Kommagetrennte Repository-Slugs, z. B.: repo-one,repo-two',
+      connectorNameTip:
+        'Geben Sie einen aussagekräftigen Namen für den Connector an',
       boxDescription:
         'Verbinden Sie Ihr Box-Laufwerk, um Dateien und Ordner zu synchronisieren.',
       githubDescription:

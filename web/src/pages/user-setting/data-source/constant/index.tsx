@@ -4,11 +4,13 @@ import { t, TFunction } from 'i18next';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
-import { ConfluenceIndexingModeField } from '../component/confluence-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
+import { bitbucketConstant } from './bitbucket-constant';
+import { confluenceConstant } from './confluence-constant';
 import { S3Constant } from './s3-constant';
+
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   S3 = 's3',
@@ -29,6 +31,7 @@ export enum DataSourceKey {
   ASANA = 'asana',
   IMAP = 'imap',
   GITHUB = 'github',
+  BITBUCKET = 'bitbucket',
   ZENDESK = 'zendesk',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
@@ -133,6 +136,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'IMAP',
       description: t(`setting.${DataSourceKey.IMAP}Description`),
       icon: <SvgIcon name={'data-source/imap'} width={38} />,
+    },
+    [DataSourceKey.BITBUCKET]: {
+      name: 'Bitbucket',
+      description: t(`setting.${DataSourceKey.BITBUCKET}Description`),
+      icon: <SvgIcon name={'data-source/bitbucket'} width={38} />,
     },
     [DataSourceKey.ZENDESK]: {
       name: 'Zendesk',
@@ -294,67 +302,7 @@ export const DataSourceFormFields = {
     },
   ],
 
-  [DataSourceKey.CONFLUENCE]: [
-    {
-      label: 'Confluence Username',
-      name: 'config.credentials.confluence_username',
-      type: FormFieldType.Text,
-      required: true,
-      tooltip: 'A descriptive name for the connector.',
-    },
-    {
-      label: 'Confluence Access Token',
-      name: 'config.credentials.confluence_access_token',
-      type: FormFieldType.Password,
-      required: true,
-    },
-    {
-      label: 'Wiki Base URL',
-      name: 'config.wiki_base',
-      type: FormFieldType.Text,
-      required: false,
-      tooltip: t('setting.confluenceWikiBaseUrlTip'),
-    },
-    {
-      label: 'Is Cloud',
-      name: 'config.is_cloud',
-      type: FormFieldType.Checkbox,
-      required: false,
-      tooltip: t('setting.confluenceIsCloudTip'),
-    },
-    {
-      label: 'Index Method',
-      name: 'config.index_mode',
-      type: FormFieldType.Text,
-      required: false,
-      horizontal: true,
-      labelClassName: 'self-start pt-4',
-      render: (fieldProps: any) => (
-        <ConfluenceIndexingModeField {...fieldProps} />
-      ),
-    },
-    {
-      label: 'Space Key',
-      name: 'config.space',
-      type: FormFieldType.Text,
-      required: false,
-      hidden: true,
-    },
-    {
-      label: 'Page ID',
-      name: 'config.page_id',
-      type: FormFieldType.Text,
-      required: false,
-      hidden: true,
-    },
-    {
-      label: 'Index Recursively',
-      name: 'config.index_recursively',
-      type: FormFieldType.Checkbox,
-      required: false,
-      hidden: true,
-    },
-  ],
+  [DataSourceKey.CONFLUENCE]: confluenceConstant(t),
   [DataSourceKey.GOOGLE_DRIVE]: [
     {
       label: 'Primary Admin Email',
@@ -828,6 +776,7 @@ export const DataSourceFormFields = {
       required: false,
     },
   ],
+  [DataSourceKey.BITBUCKET]: bitbucketConstant(t),
   [DataSourceKey.ZENDESK]: [
     {
       label: 'Zendesk Domain',
@@ -919,6 +868,7 @@ export const DataSourceFormDefaultValues = {
       wiki_base: '',
       is_cloud: true,
       space: '',
+      page_id: '',
       credentials: {
         confluence_username: '',
         confluence_access_token: '',
@@ -1110,6 +1060,19 @@ export const DataSourceFormDefaultValues = {
         imap_username: '',
         imap_password: '',
       },
+    },
+  },
+  [DataSourceKey.BITBUCKET]: {
+    name: '',
+    source: DataSourceKey.BITBUCKET,
+    config: {
+      workspace: '',
+      index_mode: 'workspace',
+      repository_slugs: '',
+      projects: '',
+    },
+    credentials: {
+      bitbucket_api_token: '',
     },
   },
   [DataSourceKey.ZENDESK]: {
