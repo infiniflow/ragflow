@@ -40,20 +40,21 @@ RAGFlow isn't one-size-fits-all. It is built for flexibility and supports deeper
 - A third-party visual model from a specific model provider.
 
 :::danger IMPORTANT
-Starting from v0.22.0, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF parser of multiple backends. Please note that RAGFlow acts only as a *remote client* for MinerU, calling the MinerU API to parse documents and reading the returned files. To use this feature:
+Starting from v0.22.0, RAGFlow includes MinerU (&ge; 2.7.0) as an optional PDF parser of multiple backends. Please note that RAGFlow acts only as a *remote client* for MinerU, calling the MinerU API to parse documents and reading the returned files. To use this feature:
 :::
 
 1. Prepare a reachable MinerU API service (FastAPI server).
 2. In the **.env** file or from the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
    - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
    - `MINERU_BACKEND`: The MinerU backend:
-      - `"pipeline"` (default)
-      - `"vlm-http-client"`
-      - `"vlm-transformers"`
-      - `"vlm-vllm-engine"`
-      - `"vlm-mlx-engine"`
-      - `"vlm-vllm-async-engine"`
-      - `"vlm-lmdeploy-engine"`.
+      - `"hybrid-auto-engine"` (default for MinerU 2.7.0+) - Hybrid auto engine with optimized performance
+      - `"pipeline"` - Traditional multimodel pipeline
+      - `"vlm-http-client"` - HTTP client for remote vLLM server (CPU only)
+      - `"vlm-transformers"` - Vision-language model using HuggingFace Transformers
+      - `"vlm-vllm-engine"` - Local vLLM engine, requires local GPU
+      - `"vlm-mlx-engine"` - Faster, requires Apple Silicon and macOS 13.5+
+      - `"vlm-vllm-async-engine"` - Asynchronous vLLM engine
+      - `"vlm-lmdeploy-engine"` - LMDeploy engine.
    - `MINERU_SERVER_URL`: (optional) The downstream vLLM HTTP server (e.g., `http://vllm-host:30000`). Applicable when `MINERU_BACKEND` is set to `"vlm-http-client"`. 
    - `MINERU_OUTPUT_DIR`: (optional) The local directory for holding the outputs of the MinerU API service (zip/JSON) before ingestion.
    - `MINERU_DELETE_OUTPUT`: Whether to delete temporary output when a temporary directory is used:
