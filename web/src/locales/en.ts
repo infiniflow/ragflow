@@ -924,7 +924,9 @@ Example: Virtual Hosted Style`,
       google_driveTokenTip:
         'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
       google_drivePrimaryAdminTip:
-        'Email address that has access to the Drive content being synced.',
+        'Email address that has access to the Drive content being synced',
+      zendeskDescription:
+        'Connect your Zendesk to sync tickets, articles, and other content.',
       google_driveMyDriveEmailsTip:
         'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
@@ -944,6 +946,7 @@ Example: Virtual Hosted Style`,
       bitbucketWorkspaceTip:
         'This connector will index all repositories in the workspace.',
       boxDescription: 'Connect your Box drive to sync files and folders.',
+
       githubDescription:
         'Connect GitHub to sync pull requests and issues for retrieval.',
       airtableDescription:

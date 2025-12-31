@@ -750,6 +750,8 @@ export default {
         'Подключите ваш диск Box для синхронизации файлов и папок.',
       bitbucketDescription:
         'Подключите Bitbucket для синхронизации содержимого PR.',
+      zendeskDescription:
+        'Подключите Zendesk для синхронизации тикетов, статей и другого контента.',
       bitbucketTopWorkspaceTip:
         'Рабочее пространство Bitbucket для индексации (например, "atlassian" из https://bitbucket.org/atlassian/workspace )',
       bitbucketWorkspaceTip:

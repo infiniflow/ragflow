@@ -949,6 +949,8 @@ Beispiel: Virtual Hosted Style`,
         'Verbinden Sie Ihre Dropbox, um Dateien und Ordner von einem ausgewählten Konto zu synchronisieren.',
       bitbucketDescription:
         'Bitbucket verbinden, um PR-Inhalte zu synchronisieren.',
+      zendeskDescription:
+        'Verbinden Sie Ihr Zendesk, um Tickets, Artikel und andere Inhalte zu synchronisieren.',
       bitbucketTopWorkspaceTip:
         'Der zu indizierende Bitbucket-Workspace (z. B. "atlassian" aus https://bitbucket.org/atlassian/workspace )',
       bitbucketWorkspaceTip:
