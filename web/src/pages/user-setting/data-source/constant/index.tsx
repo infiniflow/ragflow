@@ -140,6 +140,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.IMAP}Description`),
       icon: <SvgIcon name={'data-source/imap'} width={38} />,
     },
+    [DataSourceKey.ZENDESK]: {
+      name: 'Zendesk',
+      description: t(`setting.${DataSourceKey.ZENDESK}Description`),
+      icon: <SvgIcon name={'data-source/zendesk'} width={38} />,
+    },
   };
 };
 

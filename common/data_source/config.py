@@ -59,8 +59,9 @@ class DocumentSource(str, Enum):
     GITHUB = "github"
     GITLAB = "gitlab"
     IMAP = "imap"
+    ZENDESK = "zendesk"
 
-    
+
 class FileOrigin(str, Enum):
     """File origins"""
     CONNECTOR = "connector"
@@ -271,6 +272,10 @@ ASANA_CONNECTOR_SIZE_THRESHOLD = int(
 IMAP_CONNECTOR_SIZE_THRESHOLD = int(
     os.environ.get("IMAP_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
 )
+
+ZENDESK_CONNECTOR_SKIP_ARTICLE_LABELS = os.environ.get(
+    "ZENDESK_CONNECTOR_SKIP_ARTICLE_LABELS", ""
+).split(",")
 
 _USER_NOT_FOUND = "Unknown Confluence User"
 
