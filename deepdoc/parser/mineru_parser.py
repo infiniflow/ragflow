@@ -886,12 +886,6 @@ class MinerUParser(RAGFlowPdfParser):
                     shutil.rmtree(out_dir)
                 except Exception:
                     pass
-                    pass
-            if delete_output and created_tmp_dir and out_dir.exists():
-                try:
-                    shutil.rmtree(out_dir)
-                except Exception:
-                    pass
 
 
 if __name__ == "__main__":

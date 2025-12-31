@@ -47,7 +47,9 @@ Starting from v0.22.0, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF p
 2. In the **.env** file or from the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
    - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
    - `MINERU_BACKEND`: The MinerU backend:
-      - `"pipeline"` (default)
+      - `"pipeline"` (default, backward compatible)
+      - `"hybrid-auto-engine"` (recommended for MinerU 2.7.0+)
+      - `"hybrid"` (hybrid backend combining multiple strategies)
       - `"vlm-http-client"`
       - `"vlm-transformers"`
       - `"vlm-vllm-engine"`
