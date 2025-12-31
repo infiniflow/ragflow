@@ -127,9 +127,21 @@ const SourceDetailPage = () => {
   }, []);
 
   useEffect(() => {
+    const baseFields = DataSourceFormBaseFields.map((field) => {
+      if (field.name === 'name') {
+        return {
+          ...field,
+          disabled: true,
+        };
+      } else {
+        return {
+          ...field,
+        };
+      }
+    });
     if (detail) {
       const fields = [
-        ...DataSourceFormBaseFields,
+        ...baseFields,
         ...DataSourceFormFields[
           detail.source as keyof typeof DataSourceFormFields
         ],

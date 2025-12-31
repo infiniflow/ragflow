@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/table';
 import { Pagination } from '@/interfaces/common';
 import { replaceText } from '@/pages/dataset/process-log-modal';
+import { MemoryOptions } from '@/pages/memories/constants';
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -99,7 +100,12 @@ export function MemoryTable({
         header: () => <span>{t('memory.messages.type')}</span>,
         cell: ({ row }) => (
           <div className="text-sm font-medium  capitalize">
-            {row.getValue('message_type')}
+            {row.getValue('message_type')
+              ? MemoryOptions(t).find(
+                  (item) =>
+                    item.value === (row.getValue('message_type') as string),
+                )?.label
+              : row.getValue('message_type')}
           </div>
         ),
       },
@@ -117,13 +123,13 @@ export function MemoryTable({
           <div className="text-sm ">{row.getValue('forget_at')}</div>
         ),
       },
-      {
-        accessorKey: 'source_id',
-        header: () => <span>{t('memory.messages.source')}</span>,
-        cell: ({ row }) => (
-          <div className="text-sm ">{row.getValue('source_id')}</div>
-        ),
-      },
+      // {
+      //   accessorKey: 'source_id',
+      //   header: () => <span>{t('memory.messages.source')}</span>,
+      //   cell: ({ row }) => (
+      //     <div className="text-sm ">{row.getValue('source_id')}</div>
+      //   ),
+      // },
       {
         accessorKey: 'status',
         header: () => <span>{t('memory.messages.enable')}</span>,

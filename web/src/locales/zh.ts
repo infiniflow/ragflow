@@ -128,7 +128,7 @@ export default {
         delMessageWarn: `遗忘后，代理将无法检索此消息。`,
         forgetMessage: '遗忘消息',
         sessionId: '会话ID',
-        agent: '代理',
+        agent: '智能体',
         type: '类型',
         validDate: '有效日期',
         forgetAt: '遗忘于',
@@ -173,6 +173,7 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        toMetadataSetting: '生成设置',
         descriptionTip:
           '提供描述或示例来指导大语言模型为此字段提取值。如果留空，将依赖字段名称。',
         restrictTDefinedValuesTip:

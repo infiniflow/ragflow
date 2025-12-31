@@ -25,12 +25,13 @@ import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import { Settings } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ControllerRenderProps,
   FieldValues,
   useFormContext,
 } from 'react-hook-form';
+import { useLocation } from 'umi';
 import {
   MetadataType,
   useManageMetadata,
@@ -368,6 +369,7 @@ export function AutoMetadata({
   otherData?: Record<string, any>;
 }) {
   // get metadata field
+  const location = useLocation();
   const form = useFormContext();
   const {
     manageMetadataVisible,
@@ -376,6 +378,16 @@ export function AutoMetadata({
     tableData,
     config: metadataConfig,
   } = useManageMetadata();
+
+  useEffect(() => {
+    const locationState = location.state as
+      | { openMetadata?: boolean }
+      | undefined;
+    if (locationState?.openMetadata) {
+      showManageMetadataModal();
+      locationState.openMetadata = false;
+    }
+  }, [location, showManageMetadataModal]);
 
   const autoMetadataField: FormFieldConfig = {
     name: 'parser_config.enable_metadata',
