@@ -381,7 +381,7 @@ async def retrieval_test():
                                rank_feature=labels
                                )
         if use_kg:
-            ck = settings.kg_retriever.retrieval(_question,
+            ck = await settings.kg_retriever.retrieval(_question,
                                                    tenant_ids,
                                                    kb_ids,
                                                    embd_mdl,
