@@ -55,6 +55,7 @@ class DocumentSource(str, Enum):
     BOX = "box"
     AIRTABLE = "airtable"
     ASANA = "asana"
+    AXERO = "axero"
     GITHUB = "github"
     GITLAB = "gitlab"
     IMAP = "imap"

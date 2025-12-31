@@ -130,6 +130,7 @@ class FileSource(StrEnum):
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
     AIRTABLE = "airtable"
     ASANA = "asana"
+    AXERO = "axero"
     GITHUB = "github"
     GITLAB = "gitlab"
     IMAP = "imap"

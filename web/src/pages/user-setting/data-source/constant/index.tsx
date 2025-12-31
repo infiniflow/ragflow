@@ -25,10 +25,12 @@ export enum DataSourceKey {
   OCI_STORAGE = 'oci_storage',
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   AIRTABLE = 'airtable',
-  GITLAB = 'gitlab',
   ASANA = 'asana',
-  IMAP = 'imap',
+  AXERO = 'axero',
+  GITLAB = 'gitlab',
   GITHUB = 'github',
+  IMAP = 'imap',
+  ZENDESK = 'zendesk',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -113,15 +115,20 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.AIRTABLE}Description`),
       icon: <SvgIcon name={'data-source/airtable'} width={38} />,
     },
-    [DataSourceKey.GITLAB]: {
-      name: 'GitLab',
-      description: t(`setting.${DataSourceKey.GITLAB}Description`),
-      icon: <SvgIcon name={'data-source/gitlab'} width={38} />,
-    },
     [DataSourceKey.ASANA]: {
       name: 'Asana',
       description: t(`setting.${DataSourceKey.ASANA}Description`),
       icon: <SvgIcon name={'data-source/asana'} width={38} />,
+    },
+    [DataSourceKey.AXERO]: {
+      name: 'Axero',
+      description: t(`setting.${DataSourceKey.AXERO}Description`),
+      icon: <SvgIcon name={'data-source/axero'} width={38} />,
+    },
+    [DataSourceKey.GITLAB]: {
+      name: 'GitLab',
+      description: t(`setting.${DataSourceKey.GITLAB}Description`),
+      icon: <SvgIcon name={'data-source/gitlab'} width={38} />,
     },
     [DataSourceKey.GITHUB]: {
       name: 'GitHub',
@@ -822,6 +829,68 @@ export const DataSourceFormFields = {
       required: false,
     },
   ],
+  [DataSourceKey.ZENDESK]: [
+    {
+      label: 'Zendesk Domain',
+      name: 'config.credentials.zendesk_subdomain',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Zendesk Email',
+      name: 'config.credentials.zendesk_email',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Zendesk Token',
+      name: 'config.credentials.zendesk_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Content',
+      name: 'config.zendesk_content_type',
+      type: FormFieldType.Segmented,
+      required: true,
+      options: [
+        { label: 'Articles', value: 'articles' },
+        { label: 'Tickets', value: 'tickets' },
+      ],
+    },
+  ],
+  [DataSourceKey.AXERO]: [
+    {
+      label: 'Axero Base URL',
+      name: 'config.credentials.base_url',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Axero Api Token',
+      name: 'config.credentials.axero_api_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Axero Content',
+      name: 'config.axero_content_type',
+      type: FormFieldType.MultiSelect,
+      required: true,
+      options: [
+        { label: 'Article', value: 'article' },
+        { label: 'Blog', value: 'blog' },
+        { label: 'Wiki', value: 'wiki' },
+        { label: 'Forums', value: 'forum' },
+      ],
+    },
+    {
+      label: 'Axero Space IDs',
+      name: 'config.axero_space_ids',
+      type: FormFieldType.Tag,
+      required: true,
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1012,11 +1081,22 @@ export const DataSourceFormDefaultValues = {
     name: '',
     source: DataSourceKey.AIRTABLE,
     config: {
-      name: '',
       base_id: '',
       table_name_or_id: '',
       credentials: {
         airtable_access_token: '',
+      },
+    },
+  },
+  [DataSourceKey.ASANA]: {
+    name: '',
+    source: DataSourceKey.ASANA,
+    config: {
+      asana_workspace_id: '',
+      asana_project_ids: '',
+      asana_team_id: '',
+      credentials: {
+        asana_api_token_secret: '',
       },
     },
   },
@@ -1032,19 +1112,6 @@ export const DataSourceFormDefaultValues = {
       include_code_files: true,
       credentials: {
         gitlab_access_token: '',
-      },
-    },
-  },
-  [DataSourceKey.ASANA]: {
-    name: '',
-    source: DataSourceKey.ASANA,
-    config: {
-      name: '',
-      asana_workspace_id: '',
-      asana_project_ids: '',
-      asana_team_id: '',
-      credentials: {
-        asana_api_token_secret: '',
       },
     },
   },
@@ -1065,7 +1132,6 @@ export const DataSourceFormDefaultValues = {
     name: '',
     source: DataSourceKey.IMAP,
     config: {
-      name: '',
       imap_host: '',
       imap_port: 993,
       imap_mailbox: [],
@@ -1073,6 +1139,30 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         imap_username: '',
         imap_password: '',
+      },
+    },
+  },
+  [DataSourceKey.ZENDESK]: {
+    name: '',
+    source: DataSourceKey.ZENDESK,
+    config: {
+      zendesk_content_type: 'articles',
+      credentials: {
+        zendesk_subdomain: '',
+        zendesk_email: '',
+        zendesk_token: '',
+      },
+    },
+  },
+  [DataSourceKey.AXERO]: {
+    name: '',
+    source: DataSourceKey.AXERO,
+    config: {
+      axero_content_type: ['article'],
+      axero_space_ids: [],
+      credentials: {
+        axero_api_token: '',
+        base_url: '',
       },
     },
   },
