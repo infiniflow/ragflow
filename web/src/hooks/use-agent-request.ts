@@ -1,7 +1,7 @@
 import { FileUploadProps } from '@/components/file-upload';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
-import { AgentGlobals } from '@/constants/agent';
+import { AgentGlobals, initialBeginValues } from '@/constants/agent';
 import {
   IAgentLogsRequest,
   IAgentLogsResponse,
@@ -76,6 +76,7 @@ export const EmptyDsl = {
         data: {
           label: 'Begin',
           name: 'begin',
+          form: initialBeginValues,
         },
         sourcePosition: 'left',
         targetPosition: 'right',

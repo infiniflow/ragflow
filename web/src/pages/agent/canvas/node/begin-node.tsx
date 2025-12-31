@@ -13,6 +13,7 @@ import {
 } from '../../constant';
 import { BeginFormSchemaType } from '../../form/begin-form/schema';
 import { useBuildWebhookUrl } from '../../hooks/use-build-webhook-url';
+import { useIsPipeline } from '../../hooks/use-is-pipeline';
 import OperatorIcon from '../../operator-icon';
 import { LabelCard } from './card';
 import { CommonHandle } from './handle';
@@ -34,6 +35,8 @@ function InnerBeginNode({
 
   const url = useBuildWebhookUrl();
 
+  const isPipeline = useIsPipeline();
+
   return (
     <NodeWrapper selected={selected} id={id}>
       <CommonHandle
@@ -45,15 +48,17 @@ function InnerBeginNode({
         id={NodeHandleId.Start}
       ></CommonHandle>
 
-      <section className="flex items-center  gap-2">
+      <section className="flex items-center gap-2">
         <OperatorIcon name={data.label as Operator}></OperatorIcon>
         <div className="truncate text-center font-semibold text-sm">
           {t(`flow.begin`)}
         </div>
       </section>
-      <div className="text-accent-primary mt-2 p-1 bg-bg-accent w-fit rounded-sm text-xs">
-        {t(`flow.${isWebhookMode ? 'webhook.name' : mode}`)}
-      </div>
+      {isPipeline || (
+        <div className="text-accent-primary mt-2 p-1 bg-bg-accent w-fit rounded-sm text-xs">
+          {t(`flow.${isWebhookMode ? 'webhook.name' : mode}`)}
+        </div>
+      )}
       {isWebhookMode ? (
         <LabelCard className="mt-2 flex gap-1 items-center">
           <span className="font-bold">URL</span>
