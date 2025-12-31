@@ -130,7 +130,7 @@ class DoclingParser(RAGFlowPdfParser):
                 format_options = {
                     InputFormat.PDF: PdfFormatOption(
                         pipeline_options=pipeline_options,
-                        backend=PyPdfiumDocumentBackend if PyPdfiumDocumentBackend is not None else None,
+                        backend=PyPdfiumDocumentBackend,
                     )
                 }
             
