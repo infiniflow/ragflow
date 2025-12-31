@@ -164,7 +164,7 @@ class UserService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_all_users(cls):
-        users = cls.model.select()
+        users = cls.model.select().order_by(cls.model.email)
         return list(users)
 
 

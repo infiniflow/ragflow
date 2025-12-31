@@ -32,6 +32,7 @@ export enum DataSourceKey {
   IMAP = 'imap',
   GITHUB = 'github',
   BITBUCKET = 'bitbucket',
+  ZENDESK = 'zendesk',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -140,6 +141,10 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Bitbucket',
       description: t(`setting.${DataSourceKey.BITBUCKET}Description`),
       icon: <SvgIcon name={'data-source/bitbucket'} width={38} />,
+    [DataSourceKey.ZENDESK]: {
+      name: 'Zendesk',
+      description: t(`setting.${DataSourceKey.ZENDESK}Description`),
+      icon: <SvgIcon name={'data-source/zendesk'} width={38} />,
     },
   };
 };
@@ -771,6 +776,36 @@ export const DataSourceFormFields = {
     },
   ],
   [DataSourceKey.BITBUCKET]: bitbucketConstant(t),
+  [DataSourceKey.ZENDESK]: [
+    {
+      label: 'Zendesk Domain',
+      name: 'config.credentials.zendesk_subdomain',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Zendesk Email',
+      name: 'config.credentials.zendesk_email',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Zendesk Token',
+      name: 'config.credentials.zendesk_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Content',
+      name: 'config.zendesk_content_type',
+      type: FormFieldType.Segmented,
+      required: true,
+      options: [
+        { label: 'Articles', value: 'articles' },
+        { label: 'Tickets', value: 'tickets' },
+      ],
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1037,6 +1072,17 @@ export const DataSourceFormDefaultValues = {
     },
     credentials: {
       bitbucket_api_token: '',
+  [DataSourceKey.ZENDESK]: {
+    name: '',
+    source: DataSourceKey.ZENDESK,
+    config: {
+      name: '',
+      zendesk_content_type: 'articles',
+      credentials: {
+        zendesk_subdomain: '',
+        zendesk_email: '',
+        zendesk_token: '',
+      },
     },
   },
 };

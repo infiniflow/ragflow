@@ -124,12 +124,11 @@ export default {
         forgetMessageTip: '确定遗忘吗？',
         messageDescription: '记忆提取使用高级设置中的提示词和温度值进行配置。',
         copied: '已复制！',
-        contentEmbed: '内容嵌入',
         content: '内容',
         delMessageWarn: `遗忘后，代理将无法检索此消息。`,
         forgetMessage: '遗忘消息',
         sessionId: '会话ID',
-        agent: '代理',
+        agent: '智能体',
         type: '类型',
         validDate: '有效日期',
         forgetAt: '遗忘于',
@@ -138,6 +137,8 @@ export default {
         action: '操作',
       },
       config: {
+        memorySizeTooltip: `记录每条消息的内容 + 其嵌入向量（≈ 内容 + 维度 × 8 字节）。
+例如：一条带有 1024 维嵌入的 1 KB 消息大约使用 9 KB。5 MB 的默认限制大约可容纳 500 条此类消息。`,
         avatar: '头像',
         description: '描述',
         memorySize: '记忆大小',
@@ -172,6 +173,8 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        toMetadataSettingTip: '在配置中设置自动元数据',
+        toMetadataSetting: '生成设置',
         descriptionTip:
           '提供描述或示例来指导大语言模型为此字段提取值。如果留空，将依赖字段名称。',
         restrictTDefinedValuesTip:
