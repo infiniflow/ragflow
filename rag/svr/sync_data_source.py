@@ -46,7 +46,6 @@ from common.data_source import (
     MoodleConnector,
     JiraConnector,
     DropboxConnector,
-    WebDAVConnector,
     AirtableConnector,
     AsanaConnector,
     ImapConnector,
@@ -55,6 +54,7 @@ from common.data_source import (
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
 from common.data_source.models import ConnectorFailure
+from common.data_source.webdav_connector import WebDAVConnector
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.gmail_connector import GmailConnector
 from common.data_source.box_connector import BoxConnector
@@ -696,7 +696,12 @@ class WebDAV(SyncBase):
             self.conf.get("remote_path", "/"),
             begin_info
         ))
-        return document_batch_generator
+
+        async def async_wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+                
+        return async_wrapper()
 
 
 class Moodle(SyncBase):

@@ -34,7 +34,6 @@ from .google_drive.connector import GoogleDriveConnector
 from .jira.connector import JiraConnector
 from .sharepoint_connector import SharePointConnector
 from .teams_connector import TeamsConnector
-from .webdav_connector import WebDAVConnector
 from .moodle_connector import MoodleConnector
 from .airtable_connector import AirtableConnector
 from .asana_connector import AsanaConnector
@@ -62,7 +61,6 @@ __all__ = [
     "JiraConnector",
     "SharePointConnector",
     "TeamsConnector",
-    "WebDAVConnector",
     "MoodleConnector",
     "BlobType",
     "DocumentSource",
