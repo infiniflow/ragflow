@@ -22,7 +22,7 @@ from functools import partial
 
 from litellm import logging
 import numpy as np
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -598,7 +598,18 @@ class Parser(ProcessBase):
         conf = self._param.setups["image"]
         self.set_output("output_format", conf["output_format"])
 
-        img = Image.open(io.BytesIO(blob)).convert("RGB")
+        try:
+            img = Image.open(io.BytesIO(blob)).convert("RGB")
+        except UnidentifiedImageError as e:
+            logging.error(f"Failed to open or convert image '{name}': {str(e)}")
+            self.set_output("text", "")
+            return
+        except Exception as e:
+            # Catch other PIL errors (e.g., DecompressionBombError, IOError)
+            # and general exceptions to prevent crashes
+            logging.error(f"Error processing image '{name}': {str(e)}")
+            self.set_output("text", "")
+            return
 
         if conf["parse_method"] == "ocr":
             # use ocr, recognize chars only
