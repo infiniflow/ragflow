@@ -370,7 +370,7 @@ class AdminCLI(Cmd):
                     res_json = response.json()
                     error_code = res_json.get("code", -1)
                     if error_code == 0:
-                        self.session.headers.update({"Content-Type": "application/json", "Authorization": response.headers["Authorization"], "User-Agent": "RAGFlow-CLI/0.23.0"})
+                        self.session.headers.update({"Content-Type": "application/json", "Authorization": response.headers["Authorization"], "User-Agent": "RAGFlow-CLI/0.23.1"})
                         print("Authentication successful.")
                         return True
                     else:
