@@ -7,6 +7,7 @@ import BoxTokenField from '../component/box-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
 import { IDataSourceInfoMap } from '../interface';
+import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
 import { S3Constant } from './s3-constant';
 
@@ -30,6 +31,7 @@ export enum DataSourceKey {
   ASANA = 'asana',
   IMAP = 'imap',
   GITHUB = 'github',
+  BITBUCKET = 'bitbucket',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -133,6 +135,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'IMAP',
       description: t(`setting.${DataSourceKey.IMAP}Description`),
       icon: <SvgIcon name={'data-source/imap'} width={38} />,
+    },
+    [DataSourceKey.BITBUCKET]: {
+      name: 'Bitbucket',
+      description: t(`setting.${DataSourceKey.BITBUCKET}Description`),
+      icon: <SvgIcon name={'data-source/bitbucket'} width={38} />,
     },
   };
 };
@@ -763,6 +770,7 @@ export const DataSourceFormFields = {
       required: false,
     },
   ],
+  [DataSourceKey.BITBUCKET]: bitbucketConstant(t),
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1016,6 +1024,19 @@ export const DataSourceFormDefaultValues = {
         imap_username: '',
         imap_password: '',
       },
+    },
+  },
+  [DataSourceKey.BITBUCKET]: {
+    name: '',
+    source: DataSourceKey.BITBUCKET,
+    config: {
+      workspace: '',
+      index_mode: 'workspace',
+      repository_slugs: '',
+      projects: '',
+    },
+    credentials: {
+      bitbucket_api_token: '',
     },
   },
 };

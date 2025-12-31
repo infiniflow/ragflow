@@ -53,11 +53,13 @@ from common.data_source import (
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
+from common.data_source.models import ConnectorFailure
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.gmail_connector import GmailConnector
 from common.data_source.box_connector import BoxConnector
 from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
+from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
@@ -1022,6 +1024,67 @@ class Gitlab(SyncBase):
         logging.info("Connect to Gitlab: ({}) {}".format(self.conf["project_name"], begin_info))
         return document_generator
 
+
+class Bitbucket(SyncBase):
+    SOURCE_NAME: str = FileSource.BITBUCKET
+
+    async def _generate(self, task: dict):
+        self.connector = BitbucketConnector(
+            workspace=self.conf.get("workspace"),
+            repositories=self.conf.get("repository_slugs"),
+            projects=self.conf.get("projects"),
+        )
+
+        self.connector.load_credentials(
+            {
+            "bitbucket_email": self.conf["credentials"].get("bitbucket_account_email"),
+            "bitbucket_api_token": self.conf["credentials"].get("bitbucket_api_token"),
+            }
+        )
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = datetime.fromtimestamp(0, tz=timezone.utc)
+            begin_info = "totally"
+        else:
+            start_time = task.get("poll_range_start")
+            begin_info = f"from {start_time}"
+        
+        end_time = datetime.now(timezone.utc)
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+
+            while checkpoint.has_more:
+                gen = self.connector.load_from_checkpoint(
+                    start=start_time.timestamp(), 
+                    end=end_time.timestamp(), 
+                    checkpoint=checkpoint)
+                
+                while True:
+                    try:
+                        item = next(gen)
+                        if isinstance(item, ConnectorFailure):
+                            logging.exception(
+                                "Bitbucket connector failure: %s",
+                                item.failure_message)
+                            break
+                        yield [item]
+                    except StopIteration as e:
+                        checkpoint = e.value
+                        break
+        
+        async def async_wrapper():
+            for batch in document_batches():
+                yield batch
+
+        logging.info(
+            "Connect to Bitbucket: workspace(%s), %s",
+            self.conf.get("workspace"),
+            begin_info,
+        )
+
+        return async_wrapper()
+
 func_factory = {
     FileSource.S3: S3,
     FileSource.R2: R2,
@@ -1045,6 +1108,7 @@ func_factory = {
     FileSource.IMAP: IMAP,
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
+    FileSource.BITBUCKET: Bitbucket,
 }
 
 

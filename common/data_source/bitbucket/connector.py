@@ -144,7 +144,7 @@ class BitbucketConnector(
             if lower_epoch is not None and upper_epoch is not None:
                 lower_iso = _iso(lower_epoch)
                 upper_iso = _iso(upper_epoch)
-                return f'(updated_on >= "{lower_iso}" AND updated_on <= "{upper_iso}")'
+                return f'(updated_on > "{lower_iso}" AND updated_on <= "{upper_iso}")'
             return None
 
         params: dict[str, Any] = {"fields": fields, "pagelen": 50}
@@ -346,4 +346,43 @@ class BitbucketConnector(
             )
 
 if __name__ == "__main__":
-    pass
+    bitbucket = BitbucketConnector(
+        workspace="<YOUR_WORKSPACE>"
+    )
+
+    bitbucket.load_credentials({
+        "bitbucket_email": "<YOUR_EMAIL>",
+        "bitbucket_api_token": "<YOUR_API_TOKEN>",
+    })
+
+    bitbucket.validate_connector_settings()
+    print("Credentials validated successfully.")
+
+    start_time = datetime.fromtimestamp(0, tz=timezone.utc)
+    end_time = datetime.now(timezone.utc)
+
+    for doc_batch in bitbucket.retrieve_all_slim_docs_perm_sync(
+        start=start_time.timestamp(),
+        end=end_time.timestamp(),
+    ):
+        for doc in doc_batch:
+            print(doc)
+
+
+    bitbucket_checkpoint = bitbucket.build_dummy_checkpoint()
+    
+    while bitbucket_checkpoint.has_more:
+        gen = bitbucket.load_from_checkpoint(
+            start=start_time.timestamp(),
+            end=end_time.timestamp(),
+            checkpoint=bitbucket_checkpoint,
+        )
+
+        while True:
+            try:
+                doc = next(gen)  
+                print(doc)
+            except StopIteration as e:
+                bitbucket_checkpoint = e.value  
+                break
+        

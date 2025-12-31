@@ -15,7 +15,7 @@ from common.data_source.cross_connector_utils.rate_limit_wrapper import (
     rate_limit_builder,
 )
 from common.data_source.utils import sanitize_filename
-from common.data_source.models import BasicExpertInfo, Document, ImageSection, TextSection
+from common.data_source.models import BasicExpertInfo, Document
 from common.data_source.cross_connector_utils.retry_wrapper import retry_builder
 
 # Fields requested from Bitbucket PR list endpoint to ensure rich PR data
@@ -242,7 +242,7 @@ def map_pr_to_document(pr: dict[str, Any], workspace: str, repo_slug: str) -> Do
         f"- Updated: {updated_date}"
     )
     if description:
-
+        content_text += f"\n\nDescription:\n{description}"
 
     metadata: dict[str, str | list[str]] = {
         "object_type": "PullRequest",
@@ -269,15 +269,18 @@ def map_pr_to_document(pr: dict[str, Any], workspace: str, repo_slug: str) -> Do
         "close_source_branch": str(bool(pr.get("close_source_branch", False))),
     }
 
+    name = sanitize_filename(title, "md")
+
     return Document(
         id=f"{DocumentSource.BITBUCKET.value}:{workspace}:{repo_slug}:pr:{pr_id}",
         blob=content_text.encode("utf-8"),
         source=DocumentSource.BITBUCKET,
-        semantic_identifier=f"#{pr_id}: {title}",
-        title=title,
+        extension=".md",
+        semantic_identifier=f"#{pr_id}: {name}",
+        size_bytes=len(content_text.encode("utf-8")),
         doc_updated_at=updated_dt,
         primary_owners=[primary_owner] if primary_owner else None,
-        secondary_owners=secondary_owners,
+        # secondary_owners=secondary_owners,
         metadata=metadata,
     )
 

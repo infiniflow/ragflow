@@ -731,6 +731,7 @@ export default {
       newDocs: 'Новые документы',
       timeStarted: 'Время начала',
       log: 'Лог',
+      connectorNameTip: 'Укажите понятное имя для коннектора',
       confluenceDescription:
         'Интегрируйте ваше рабочее пространство Confluence для поиска документации.',
       s3Description:
@@ -747,6 +748,16 @@ export default {
         'Синхронизируйте страницы и базы данных из Notion для извлечения знаний.',
       boxDescription:
         'Подключите ваш диск Box для синхронизации файлов и папок.',
+      bitbucketDescription:
+        'Подключите Bitbucket для синхронизации содержимого PR.',
+      bitbucketTopWorkspaceTip:
+        'Рабочее пространство Bitbucket для индексации (например, "atlassian" из https://bitbucket.org/atlassian/workspace )',
+      bitbucketWorkspaceTip:
+        'Этот коннектор проиндексирует все репозитории в рабочем пространстве.',
+      bitbucketProjectsTip:
+        'Ключи проектов через запятую, например: PROJ1,PROJ2',
+      bitbucketRepositorySlugsTip:
+        'Слоги репозиториев через запятую, например: repo-one,repo-two',
       githubDescription:
         'Подключите GitHub для синхронизации содержимого Pull Request и Issue для поиска.',
       airtableDescription:

@@ -7,7 +7,7 @@ export const confluenceConstant = (t: TFunction) => [
     name: 'config.credentials.confluence_username',
     type: FormFieldType.Text,
     required: true,
-    tooltip: 'A descriptive name for the connector.',
+    tooltip: t('setting.connectorNameTip'),
   },
   {
     label: 'Confluence Access Token',
@@ -53,7 +53,6 @@ export const confluenceConstant = (t: TFunction) => [
     },
     shouldRender: (formValues: any) => {
       const index_mode = formValues?.config?.index_mode;
-      console.log('formValues.config', formValues?.config);
       return index_mode === 'page';
     },
   },
