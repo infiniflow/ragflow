@@ -103,7 +103,7 @@ class DoclingParser(RAGFlowPdfParser):
         try:
             # For newer versions of docling (2.0+), we may need to configure pipeline options
             # Try to create with configuration if available, otherwise use default
-            if PdfPipelineOptions is not None and PdfFormatOption is not None:
+            if PdfPipelineOptions is not None and PdfFormatOption is not None and InputFormat is not None:
                 # Configure PDF processing options for better compatibility
                 pipeline_options = PdfPipelineOptions()
                 
