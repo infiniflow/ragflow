@@ -10,6 +10,12 @@ on:
     tags:
       - "v*.*.*"                  # normal release
 
+permissions:
+  contents: write
+  actions: read
+  checks: read
+  statuses: read
+
 # https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
