@@ -15,9 +15,8 @@ Released on December 31, 2025.
 ### Improvements
 
 - Memory: Enhances the stability of memory extraction when all memory types are selected.
-- RAG: 
-  - Refines the context window extraction strategy for images and tables.
-  - Accelerates GraphRAG generation significantly.
+- RAG: Refines the context window extraction strategy for images and tables.
+
 
 ### Fixed issues
 
@@ -58,6 +57,7 @@ Released on December 27, 2025.
 
 ### Improvements
 
+- RAG: Accelerates GraphRAG generation significantly.
 - Bumps RAGFlow's document engine, [Infinity](https://github.com/infiniflow/infinity) to v0.6.15 (backward compatible).
 
 ### Data sources
