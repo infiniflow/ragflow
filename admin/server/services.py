@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
+import os
 import logging
 import re
 from werkzeug.security import check_password_hash
@@ -179,10 +181,14 @@ class ServiceMgr:
 
     @staticmethod
     def get_all_services():
+        doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
         result = []
         configs = SERVICE_CONFIGS.configs
         for service_id, config in enumerate(configs):
             config_dict = config.to_dict()
+            if config_dict['service_type'] == 'retrieval':
+                if config_dict['extra']['retrieval_type'] != doc_engine:
+                    continue
             try:
                 service_detail = ServiceMgr.get_service_details(service_id)
                 if "status" in service_detail:
