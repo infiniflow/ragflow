@@ -1,6 +1,6 @@
 ---
-sidebar_position: 7
-slug: /accessing_admin_ui
+sidebar_position: 1
+slug: /admin_ui
 ---
 
 # Admin UI
