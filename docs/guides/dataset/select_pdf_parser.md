@@ -47,7 +47,9 @@ Starting from v0.22.0, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF p
 2. In the **.env** file or from the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
    - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
    - `MINERU_BACKEND`: The MinerU backend:
-      - `"pipeline"` (default)
+      - `"pipeline"` (default, backward compatible)
+      - `"hybrid-auto-engine"` (recommended for MinerU 2.7.0+)
+      - `"hybrid"` (hybrid backend combining multiple strategies)
       - `"vlm-http-client"`
       - `"vlm-transformers"`
       - `"vlm-vllm-engine"`
@@ -59,6 +61,16 @@ Starting from v0.22.0, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF p
    - `MINERU_DELETE_OUTPUT`: Whether to delete temporary output when a temporary directory is used:
      - `1`: Delete.
      - `0`: Retain.
+
+   **Advanced Configuration (via UI parser_config):**
+   - `mineru_batch_size`: Number of pages per batch for large PDFs (default: 50). Set to 0 to disable batching.
+   - `mineru_start_page`: Starting page for manual pagination (0-based, optional).
+   - `mineru_end_page`: Ending page for manual pagination (0-based, optional).
+   - `mineru_parse_method`: Parse method - `"auto"` (default), `"txt"`, or `"ocr"`.
+   - `mineru_lang`: OCR language - `"English"` (default), `"Chinese"`, etc.
+   - `mineru_formula_enable`: Enable formula recognition (default: true).
+   - `mineru_table_enable`: Enable table recognition (default: true).
+
 3. In the web UI, navigate to your dataset's **Configuration** page and find the **Ingestion pipeline** section:  
    - If you decide to use a chunking method from the **Built-in** dropdown, ensure it supports PDF parsing, then select **MinerU** from the **PDF parser** dropdown.
    - If you use a custom ingestion pipeline instead, select **MinerU** in the **PDF parser** section of the **Parser** component.
