@@ -216,9 +216,9 @@ def map_pr_to_document(pr: dict[str, Any], workspace: str, repo_slug: str) -> Do
             display_name=_get_user_name(author),
         )
 
-    secondary_owners = [ 
-        BasicExpertInfo(display_name=_get_user_name(r)) for r in reviewers
-    ] or None #noqa: F841
+    # secondary_owners = [ 
+    #     BasicExpertInfo(display_name=_get_user_name(r)) for r in reviewers
+    # ] or None 
 
     reviewer_names = [_get_user_name(r) for r in reviewers]
 

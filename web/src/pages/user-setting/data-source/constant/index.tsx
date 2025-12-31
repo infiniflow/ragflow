@@ -141,6 +141,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Bitbucket',
       description: t(`setting.${DataSourceKey.BITBUCKET}Description`),
       icon: <SvgIcon name={'data-source/bitbucket'} width={38} />,
+    },
     [DataSourceKey.ZENDESK]: {
       name: 'Zendesk',
       description: t(`setting.${DataSourceKey.ZENDESK}Description`),
@@ -1072,6 +1073,8 @@ export const DataSourceFormDefaultValues = {
     },
     credentials: {
       bitbucket_api_token: '',
+    },
+  },
   [DataSourceKey.ZENDESK]: {
     name: '',
     source: DataSourceKey.ZENDESK,
