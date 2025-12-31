@@ -123,13 +123,13 @@ export function MemoryTable({
           <div className="text-sm ">{row.getValue('forget_at')}</div>
         ),
       },
-      {
-        accessorKey: 'source_id',
-        header: () => <span>{t('memory.messages.source')}</span>,
-        cell: ({ row }) => (
-          <div className="text-sm ">{row.getValue('source_id')}</div>
-        ),
-      },
+      // {
+      //   accessorKey: 'source_id',
+      //   header: () => <span>{t('memory.messages.source')}</span>,
+      //   cell: ({ row }) => (
+      //     <div className="text-sm ">{row.getValue('source_id')}</div>
+      //   ),
+      // },
       {
         accessorKey: 'status',
         header: () => <span>{t('memory.messages.enable')}</span>,

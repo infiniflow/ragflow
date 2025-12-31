@@ -128,7 +128,7 @@ export default {
         delMessageWarn: `遗忘后，代理将无法检索此消息。`,
         forgetMessage: '遗忘消息',
         sessionId: '会话ID',
-        agent: '代理',
+        agent: '智能体',
         type: '类型',
         validDate: '有效日期',
         forgetAt: '遗忘于',
