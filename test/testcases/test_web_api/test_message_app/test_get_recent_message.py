@@ -44,7 +44,7 @@ class TestGetRecentMessage:
         memory_id = self.memory_id
         res = get_recent_message(WebApiAuth, params={"memory_id": memory_id})
         assert res["code"] == 0, res
-        assert len(res["data"]["messages"]["message_list"]) == 5, res
+        assert len(res["data"]) == 5, res
 
     @pytest.mark.p2
     def test_filter_recent_messages_by_agent(self, WebApiAuth):
@@ -53,7 +53,7 @@ class TestGetRecentMessage:
         agent_id = random.choice(agent_ids)
         res = get_recent_message(WebApiAuth, params={"agent_id": agent_id, "memory_id": memory_id})
         assert res["code"] == 0, res
-        for message in res["data"]["messages"]["message_list"]:
+        for message in res["data"]:
             assert message["agent_id"] == agent_id, message
 
     @pytest.mark.p2
@@ -63,6 +63,6 @@ class TestGetRecentMessage:
         session_id = random.choice(session_ids)
         res = get_recent_message(WebApiAuth, params={"session_id": session_id, "memory_id": memory_id})
         assert res["code"] == 0, res
-        for message in res["data"]["messages"]["message_list"]:
+        for message in res["data"]:
             assert message["session_id"] == session_id, message
 
