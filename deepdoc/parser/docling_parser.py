@@ -71,24 +71,21 @@ class _BBox:
 
 
 class DoclingParser(RAGFlowPdfParser):
-    def __init__(self, use_heron: bool = False, enable_vlm: bool = False):
+    def __init__(self):
         """
-        Initialize DoclingParser with advanced configuration options.
+        Initialize DoclingParser with RAGFlow-compatible configuration.
         
-        Args:
-            use_heron: Whether to use Heron layout model for better accuracy (default: False)
-            enable_vlm: Whether to enable Vision Language Model enhancements (default: False)
+        Note: Advanced features like Heron layout model and VLM enhancements
+        are available in docling library but not yet integrated into RAGFlow.
         """
         self.logger = logging.getLogger(self.__class__.__name__)
         self.page_images: list[Image.Image] = []
         self.page_from = 0
         self.page_to = 10_000
         self.outlines = []
-        self.use_heron = use_heron
-        self.enable_vlm = enable_vlm
         self._converter = None
     
-    def _get_converter(self) -> Optional[Any]:
+    def _get_converter(self):
         """
         Get or create a DocumentConverter with optimized configuration.
         Uses caching to avoid recreating the converter.
@@ -436,8 +433,7 @@ class DoclingParser(RAGFlowPdfParser):
         lang: Optional[str] = None,        
         method: str = "auto",             
         delete_output: bool = True,
-        parse_method: str = "raw",
-        output_format: str = "default"  # Support for different output formats: "default", "doctags", "markdown"
+        parse_method: str = "raw"
     ):
         """
         Parse a PDF file using Docling with advanced configuration.
@@ -451,7 +447,6 @@ class DoclingParser(RAGFlowPdfParser):
             method: Parsing method (currently not used)
             delete_output: Whether to delete temporary files
             parse_method: RAGFlow parsing method ("raw", "manual", "paper")
-            output_format: Output format ("default", "doctags", "markdown")
             
         Returns:
             Tuple of (sections, tables) compatible with RAGFlow pipeline
