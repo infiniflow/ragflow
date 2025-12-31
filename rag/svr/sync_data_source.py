@@ -49,16 +49,17 @@ from common.data_source import (
     WebDAVConnector,
     AirtableConnector,
     AsanaConnector,
-    ImapConnector
+    ImapConnector,
+    ZendeskConnector,
 )
 from common.constants import FileSource, TaskStatus
-from common.data_source.config import INDEX_BATCH_SIZE
+from common.data_source.config import INDEX_BATCH_SIZE, DocumentSource
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.gmail_connector import GmailConnector
 from common.data_source.box_connector import BoxConnector
 from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
-from common.data_source.interfaces import CheckpointOutputWrapper
+from common.data_source.interfaces import CheckpointOutputWrapper, StaticCredentialsProvider
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.versions import get_ragflow_version
@@ -915,7 +916,7 @@ class Github(SyncBase):
         )
 
         return async_wrapper()
-    
+
 class IMAP(SyncBase):
     SOURCE_NAME: str = FileSource.IMAP
 
@@ -971,6 +972,10 @@ class IMAP(SyncBase):
             if pending_docs:
                 yield pending_docs
 
+        async def async_wrapper():
+            for batch in document_batches():
+                yield batch
+
         logging.info(
             "Connect to IMAP: host(%s) port(%s) user(%s) folder(%s) %s",
             self.conf["imap_host"],
@@ -979,7 +984,87 @@ class IMAP(SyncBase):
             self.conf["imap_mailbox"],
             begin_info
         )
-        return document_batches()
+        return async_wrapper()
+
+class Zendesk(SyncBase):
+
+    SOURCE_NAME: str = FileSource.ZENDESK
+    async def _generate(self, task: dict):
+        self.connector = ZendeskConnector(content_type=self.conf.get("zendesk_content_type"))
+        self.connector.load_credentials(self.conf["credentials"])
+
+        end_time = datetime.now(timezone.utc).timestamp()
+        if task["reindex"] == "1" or not task.get("poll_range_start"):
+            start_time = 0
+            begin_info = "totally"
+        else:
+            start_time = task["poll_range_start"].timestamp()
+            begin_info = f"from {task['poll_range_start']}"
+
+        raw_batch_size = (
+            self.conf.get("sync_batch_size")
+            or self.conf.get("batch_size")
+            or INDEX_BATCH_SIZE
+        )
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            pending_docs = []
+            iterations = 0
+            iteration_limit = 100_000
+
+            while checkpoint.has_more:
+                wrapper = CheckpointOutputWrapper()
+                doc_generator = wrapper(
+                    self.connector.load_from_checkpoint(
+                        start_time, end_time, checkpoint
+                    )
+                )
+
+                for document, failure, next_checkpoint in doc_generator:
+                    if failure is not None:
+                        logging.warning(
+                            "Zendesk connector failure: %s",
+                            getattr(failure, "failure_message", failure),
+                        )
+                        continue
+
+                    if document is not None:
+                        pending_docs.append(document)
+                        if len(pending_docs) >= batch_size:
+                            yield pending_docs
+                            pending_docs = []
+
+                    if next_checkpoint is not None:
+                        checkpoint = next_checkpoint
+
+                iterations += 1
+                if iterations > iteration_limit:
+                    raise RuntimeError(
+                        "Too many iterations while loading Zendesk documents."
+                    )
+
+            if pending_docs:
+                yield pending_docs
+
+        async def async_wrapper():
+            for batch in document_batches():
+                yield batch
+
+        logging.info(
+            "Connect to Zendesk: subdomain(%s) %s",
+            self.conf['credentials'].get("zendesk_subdomain"),
+            begin_info,
+        )
+
+        return async_wrapper()
 
 
 class Gitlab(SyncBase):
@@ -1043,6 +1128,7 @@ func_factory = {
     FileSource.AIRTABLE: Airtable,
     FileSource.ASANA: Asana,
     FileSource.IMAP: IMAP,
+    FileSource.ZENDESK: Zendesk,
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
 }
