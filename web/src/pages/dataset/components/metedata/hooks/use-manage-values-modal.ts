@@ -126,19 +126,20 @@ export const useManageValues = (props: IManageValuesProps) => {
 
   // Handle blur event, synchronize to main state
   const handleValueBlur = useCallback(() => {
-    // addUpdateValue(metaData.field, [...new Set([...tempValues])]);
-    tempValues.forEach((newValue, index) => {
-      if (index < data.values.length) {
-        const originalValue = data.values[index];
-        if (originalValue !== newValue) {
-          addUpdateValue(metaData.field, originalValue, newValue);
+    if (data.values.length > 0) {
+      tempValues.forEach((newValue, index) => {
+        if (index < data.values.length) {
+          const originalValue = data.values[index];
+          if (originalValue !== newValue) {
+            addUpdateValue(metaData.field, originalValue, newValue);
+          }
+        } else {
+          if (newValue) {
+            addUpdateValue(metaData.field, '', newValue);
+          }
         }
-      } else {
-        if (newValue) {
-          addUpdateValue(metaData.field, '', newValue);
-        }
-      }
-    });
+      });
+    }
     handleChange('values', [...new Set([...tempValues])]);
   }, [handleChange, tempValues, metaData, data, addUpdateValue]);
 

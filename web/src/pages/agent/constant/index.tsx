@@ -15,18 +15,14 @@ import {
   initialLlmBaseValues,
 } from '@/constants/agent';
 export {
+  AgentDialogueMode,
   AgentStructuredOutputField,
   JsonSchemaDataType,
   Operator,
+  initialBeginValues,
 } from '@/constants/agent';
 
 export * from './pipeline';
-
-export enum AgentDialogueMode {
-  Conversational = 'conversational',
-  Task = 'task',
-  Webhook = 'Webhook',
-}
 
 import { ModelVariableType } from '@/constants/knowledge';
 import { t } from 'i18next';
@@ -79,6 +75,11 @@ export const DataOperationsOperatorOptions = [
 
 export const SwitchElseTo = 'end_cpn_ids';
 
+export enum RetrievalFrom {
+  Dataset = 'dataset',
+  Memory = 'memory',
+}
+
 export const initialRetrievalValues = {
   query: AgentGlobalsSysQueryWithBrace,
   top_n: 8,
@@ -91,6 +92,7 @@ export const initialRetrievalValues = {
   use_kg: false,
   toc_enhance: false,
   cross_languages: [],
+  retrieval_from: RetrievalFrom.Dataset,
   outputs: {
     formalized_content: {
       type: 'string',
@@ -101,11 +103,6 @@ export const initialRetrievalValues = {
       value: [],
     },
   },
-};
-
-export const initialBeginValues = {
-  mode: AgentDialogueMode.Conversational,
-  prologue: `Hi! I'm your assistant. What can I do for you?`,
 };
 
 export const initialRewriteQuestionValues = {
@@ -744,6 +741,8 @@ export const NodeMap = {
   [Operator.Loop]: 'loopNode',
   [Operator.LoopStart]: 'loopStartNode',
   [Operator.ExitLoop]: 'exitLoopNode',
+  [Operator.ExcelProcessor]: 'ragNode',
+  [Operator.PDFGenerator]: 'ragNode',
 };
 
 export enum BeginQueryType {

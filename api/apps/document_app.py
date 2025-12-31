@@ -607,10 +607,17 @@ async def run():
                 DocumentService.update_by_id(id, info)
                 if req.get("delete", False):
                     TaskService.filter_delete([Task.doc_id == id])
-                    if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+                    if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
                         settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
 
                 if str(req["run"]) == TaskStatus.RUNNING.value:
+                    if req.get("apply_kb"):
+                        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
+                        if not e:
+                            raise LookupError("Can't find this dataset!")
+                        doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
+                        doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
+                        DocumentService.update_parser_config(doc.id, doc.parser_config)
                     doc_dict = doc.to_dict()
                     DocumentService.run(tenant_id, doc_dict, kb_table_num_map)
 
@@ -658,7 +665,7 @@ async def rename():
                 "title_tks": title_tks,
                 "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
             }
-            if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+            if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
                 settings.docStoreConn.update(
                     {"doc_id": req["doc_id"]},
                     es_body,
@@ -739,7 +746,8 @@ async def change_parser():
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
-            if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+            DocumentService.delete_chunk_images(doc, tenant_id)
+            if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
                 settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
         return None
 

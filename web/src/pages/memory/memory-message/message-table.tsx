@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/table';
 import { Pagination } from '@/interfaces/common';
 import { replaceText } from '@/pages/dataset/process-log-modal';
+import { MemoryOptions } from '@/pages/memories/constants';
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -99,7 +100,12 @@ export function MemoryTable({
         header: () => <span>{t('memory.messages.type')}</span>,
         cell: ({ row }) => (
           <div className="text-sm font-medium  capitalize">
-            {row.getValue('message_type')}
+            {row.getValue('message_type')
+              ? MemoryOptions(t).find(
+                  (item) =>
+                    item.value === (row.getValue('message_type') as string),
+                )?.label
+              : row.getValue('message_type')}
           </div>
         ),
       },
@@ -117,13 +123,13 @@ export function MemoryTable({
           <div className="text-sm ">{row.getValue('forget_at')}</div>
         ),
       },
-      {
-        accessorKey: 'source_id',
-        header: () => <span>{t('memory.messages.source')}</span>,
-        cell: ({ row }) => (
-          <div className="text-sm ">{row.getValue('source_id')}</div>
-        ),
-      },
+      // {
+      //   accessorKey: 'source_id',
+      //   header: () => <span>{t('memory.messages.source')}</span>,
+      //   cell: ({ row }) => (
+      //     <div className="text-sm ">{row.getValue('source_id')}</div>
+      //   ),
+      // },
       {
         accessorKey: 'status',
         header: () => <span>{t('memory.messages.enable')}</span>,
@@ -204,7 +210,7 @@ export function MemoryTable({
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-222px)]">
+      <Table rootClassName="max-h-[calc(100vh-282px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -251,7 +257,9 @@ export function MemoryTable({
           title={t('memory.messages.forgetMessage')}
           open={showDeleteDialog}
           onOpenChange={setShowDeleteDialog}
+          okButtonText={t('common.confirm')}
           content={{
+            title: t('memory.messages.forgetMessageTip'),
             node: (
               <ConfirmDeleteDialogNode
                 // avatar={{ avatar: selectedMessage.avatar, name: selectedMessage.name }}
@@ -325,7 +333,7 @@ export function MemoryTable({
         </Modal>
       )}
 
-      <div className="flex items-center justify-end py-4 absolute bottom-3 right-3">
+      <div className="flex items-center justify-end  absolute bottom-3 right-3">
         <RAGFlowPagination
           {...pick(pagination, 'current', 'pageSize')}
           total={total}

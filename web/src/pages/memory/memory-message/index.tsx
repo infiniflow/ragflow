@@ -39,7 +39,7 @@ export default function MemoryMessage() {
         messages={data?.messages?.message_list ?? []}
         pagination={pagination}
         setPagination={setPagination}
-        total={data?.messages?.total ?? 0}
+        total={data?.messages?.total_count ?? 0}
         // rowSelection={rowSelection}
         // setRowSelection={setRowSelection}
         // loading={loading}

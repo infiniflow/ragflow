@@ -33,6 +33,7 @@ except Exception:
     except Exception:
         REDIS = {}
 
+
 class RedisMsg:
     def __init__(self, consumer, queue_name, group_name, msg_id, message):
         self.__consumer = consumer
@@ -271,6 +272,56 @@ class RedisDB:
             )
             self.__open__()
         return None
+
+    def incrby(self, key: str, increment: int):
+        return self.REDIS.incrby(key, increment)
+
+    def decrby(self, key: str, decrement: int):
+        return self.REDIS.decrby(key, decrement)
+
+    def generate_auto_increment_id(self, key_prefix: str = "id_generator", namespace: str = "default",
+                                   increment: int = 1, ensure_minimum: int | None = None) -> int:
+        redis_key = f"{key_prefix}:{namespace}"
+
+        try:
+            # Use pipeline for atomicity
+            pipe = self.REDIS.pipeline()
+
+            # Check if key exists
+            pipe.exists(redis_key)
+
+            # Get/Increment
+            if ensure_minimum is not None:
+                # Ensure minimum value
+                pipe.get(redis_key)
+                results = pipe.execute()
+
+                if results[0] == 0:  # Key doesn't exist
+                    start_id = max(1, ensure_minimum)
+                    pipe.set(redis_key, start_id)
+                    pipe.execute()
+                    return start_id
+                else:
+                    current = int(results[1])
+                    if current < ensure_minimum:
+                        pipe.set(redis_key, ensure_minimum)
+                        pipe.execute()
+                        return ensure_minimum
+
+            # Increment operation
+            next_id = self.REDIS.incrby(redis_key, increment)
+
+            # If it's the first time, set a reasonable initial value
+            if next_id == increment:
+                self.REDIS.set(redis_key, 1 + increment)
+                return 1 + increment
+
+            return next_id
+
+        except Exception as e:
+            logging.warning("RedisDB.generate_auto_increment_id got exception: " + str(e))
+            self.__open__()
+        return -1
 
     def transaction(self, key, value, exp=3600):
         try:

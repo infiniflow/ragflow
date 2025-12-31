@@ -93,7 +93,7 @@ export default {
       search: '搜索',
       welcome: '欢迎来到',
       dataset: '知识库',
-      Memories: '记忆',
+      memories: '记忆',
     },
     memories: {
       llmTooltip: '分析对话内容，提取关键信息，并生成结构化的记忆摘要。',
@@ -104,6 +104,10 @@ export default {
 语义记忆: 关于用户和世界的通用知识和事实。
 情景记忆: 带时间戳的特定事件和经历记录。
 程序记忆: 学习的技能、习惯和自动化程序。`,
+      raw: '原始',
+      semantic: '语义',
+      episodic: '情景',
+      procedural: '程序',
       editName: '编辑名称',
       memory: '记忆',
       createMemory: '创建记忆',
@@ -117,15 +121,14 @@ export default {
     },
     memory: {
       messages: {
-        messageDescription:
-          '记忆检索已在高级设置中配置相似度阈值、关键词相似度权重和前N个结果。',
+        forgetMessageTip: '确定遗忘吗？',
+        messageDescription: '记忆提取使用高级设置中的提示词和温度值进行配置。',
         copied: '已复制！',
-        contentEmbed: '内容嵌入',
         content: '内容',
         delMessageWarn: `遗忘后，代理将无法检索此消息。`,
         forgetMessage: '遗忘消息',
         sessionId: '会话ID',
-        agent: '代理',
+        agent: '智能体',
         type: '类型',
         validDate: '有效日期',
         forgetAt: '遗忘于',
@@ -134,6 +137,8 @@ export default {
         action: '操作',
       },
       config: {
+        memorySizeTooltip: `记录每条消息的内容 + 其嵌入向量（≈ 内容 + 维度 × 8 字节）。
+例如：一条带有 1024 维嵌入的 1 KB 消息大约使用 9 KB。5 MB 的默认限制大约可容纳 500 条此类消息。`,
         avatar: '头像',
         description: '描述',
         memorySize: '记忆大小',
@@ -168,6 +173,8 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        toMetadataSettingTip: '在配置中设置自动元数据',
+        toMetadataSetting: '生成设置',
         descriptionTip:
           '提供描述或示例来指导大语言模型为此字段提取值。如果留空，将依赖字段名称。',
         restrictTDefinedValuesTip:
@@ -201,6 +208,10 @@ export default {
         deleteSettingFieldWarn: `此字段将被删除；现有元数据不会受到影响。`,
         deleteSettingValueWarn: `此值将被删除；现有元数据不会受到影响。`,
       },
+      redoAll: '清除现有分块',
+      applyAutoMetadataSettings: '应用全局自动元数据设置',
+      parseFileTip: '您确定要解析吗？',
+      parseFile: '解析文件',
       emptyMetadata: '无元数据',
       localUpload: '本地上传',
       fileSize: '文件大小',
@@ -405,7 +416,7 @@ export default {
       fileFilter: '正则匹配表达式',
       setDefaultTip: '',
       setDefault: '设置默认',
-      eidtLinkDataPipeline: '编辑pipeline',
+      editLinkDataPipeline: '编辑pipeline',
       linkPipelineSetTip: '管理与此数据集的数据管道链接',
       default: '默认',
       dataPipeline: 'Ingestion pipeline',
@@ -418,7 +429,7 @@ export default {
       parseType: '解析方法',
       manualSetup: '选择pipeline',
       builtIn: '内置',
-      titleDescription: '在这里更新您的知识库详细信息，尤其是切片方法。',
+      titleDescription: '在这里更新您的记忆配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
       photoTip: '你可以上传4MB的文件',
@@ -544,10 +555,10 @@ export default {
 注意您需要指定的条目类型。</p>`,
       tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
 <p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
-<p>标签集中的每个文本分块是都是相互独立的标签和标签描述的文本对。</p>
+<p>标签集中的每个文本分块都是相互独立的标签和标签描述的文本对。</p>
 
 <p>Tag 分块方法支持<b>XLSX</b>和<b>CSV/TXT</b>文件格式。</p>
-<p>如果文件为<b>XLSX</b>格式，则它应该包含两列无标题：一列用于标签描述，另一列用于标签，标签描述列位于标签列之前。支持多个工作表，只要列结构正确即可。</p>
+<p>如果文件为<b>XLSX</b>格式，则它应该包含无标题的两列：一列用于标签描述，另一列用于标签，标签描述列位于标签列之前。支持多个工作表，只要列结构正确即可。</p>
 <p>如果文件为 <b>CSV/TXT</b> 格式，则必须使用 UTF-8 编码并以 TAB 作为分隔符来分隔内容和标签。</p>
 <p>在标签列中，标签之间使用英文逗号分隔。</p>
 <i>不符合上述规则的文本行将被忽略。</i>
@@ -820,7 +831,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '可选：指定空间键以限制同步到特定空间。留空则同步所有可访问的空间。多个空间请用逗号分隔（例如：DEV,DOCS,HR）',
       s3PrefixTip: `指定 S3 存储桶内的文件夹路径，用于读取文件。
 示例：general/v2/`,
-      addDataSourceModalTital: '创建你的 {{name}} 链接',
+      addDataSourceModalTitle: '创建你的 {{name}} 链接',
       deleteSourceModalTitle: '删除数据源链接',
       deleteSourceModalContent: `
       <p>您确定要删除此数据源链接吗？</p>`,
@@ -853,6 +864,14 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '请上传由 Google Console 生成的 OAuth JSON。如果仅包含 client credentials，请通过浏览器授权一次以获取长期有效的刷新 Token。',
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
+      githubDescription:
+        '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
+      airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',
+      gitlabDescription:
+        '连接 GitLab，同步仓库、Issue、合并请求（MR）及相关文档内容。',
+      asanaDescription: '连接 Asana，同步工作区中的文件。',
+      imapDescription:
+        '连接你的 IMAP 邮箱，同步指定mailboxes中的邮件，用于知识检索与分析',
       r2Description: '连接你的 Cloudflare R2 存储桶以导入和同步文件。',
       dropboxAccessTokenTip:
         '请在 Dropbox App Console 生成 Access Token，并勾选 files.metadata.read、files.content.read、sharing.read 等必要权限。',
@@ -1201,14 +1220,14 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       search: '搜索',
       communication: '通信',
       developer: '开发者',
-      typeCommandOrsearch: '输入命令或或搜索...',
+      typeCommandORsearch: '输入命令或或搜索...',
       builtIn: '内置',
       goto: '异常分支',
       comment: '默认值',
       ExceptionDefaultValue: '异常处理默认值',
       exceptionMethod: '异常处理方法',
       maxRounds: '最大反思轮数',
-      delayEfterError: '错误后延迟',
+      delayAfterError: '错误后延迟',
       maxRetries: '最大重试轮数',
       advancedSettings: '高级设置',
       addTools: '添加工具',
@@ -1245,7 +1264,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       dialog: '对话',
       flow: '工作流',
       noMoreData: '没有更多数据了',
-      historyversion: '历史版本',
+      historyVersion: '历史版本',
       version: {
         details: '版本详情',
         download: '下载',
@@ -1969,7 +1988,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         agentStatus: '智能体状态：',
       },
       saveToMemory: '保存到Memory',
-      memory: 'Memory',
+      retrievalFrom: '检索来源',
     },
     footer: {
       profile: 'All rights reserved @ React',

@@ -33,6 +33,8 @@ from common.connection_utils import timeout
 from common.misc_utils import get_uuid
 from common import settings
 
+from api.db.joint_services.memory_message_service import queue_save_to_memory_task
+
 
 class MessageParam(ComponentParamBase):
     """
@@ -166,6 +168,7 @@ class Message(ComponentBase):
 
         self.set_output("content", all_content)
         self._convert_content(all_content)
+        await self._save_to_memory(all_content)
 
     def _is_jinjia2(self, content:str) -> bool:
         patt = [
@@ -198,6 +201,7 @@ class Message(ComponentBase):
 
         self.set_output("content", content)
         self._convert_content(content)
+        self._save_to_memory(content)
 
     def thoughts(self) -> str:
         return ""
@@ -421,3 +425,16 @@ class Message(ComponentBase):
 
         except Exception as e:
             logging.error(f"Error converting content to {self._param.output_format}: {e}")
+
+    async def _save_to_memory(self, content):
+        if not hasattr(self._param, "memory_ids") or not self._param.memory_ids:
+            return True, "No memory selected."
+
+        message_dict = {
+            "user_id": self._canvas._tenant_id,
+            "agent_id": self._canvas._id,
+            "session_id": self._canvas.task_id,
+            "user_input": self._canvas.get_sys_query(),
+            "agent_response": content
+        }
+        return await queue_save_to_memory_task(self._param.memory_ids, message_dict)

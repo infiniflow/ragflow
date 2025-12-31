@@ -417,7 +417,7 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       fileFilter: 'Dateifilter',
       setDefaultTip: '',
       setDefault: 'Als Standard festlegen',
-      eidtLinkDataPipeline: 'Ingestion-Pipeline bearbeiten',
+      editLinkDataPipeline: 'Ingestion-Pipeline bearbeiten',
       linkPipelineSetTip:
         'Verknüpfung der Ingestion-Pipeline mit diesem Datensatz verwalten',
       default: 'Standard',
@@ -900,7 +900,7 @@ Beispiel: general/v2/`,
 Beispiel: https://fsn1.your-objectstorage.com`,
       S3CompatibleAddressingStyleTip: `Erforderlich für S3-kompatible Storage Box. Geben Sie den S3-kompatiblen Adressierungsstil an.
 Beispiel: Virtual Hosted Style`,
-      addDataSourceModalTital: 'Erstellen Sie Ihren {{name}} Connector',
+      addDataSourceModalTitle: 'Erstellen Sie Ihren {{name}} Connector',
       deleteSourceModalTitle: 'Datenquelle löschen',
       deleteSourceModalContent: `
       <p>Sind Sie sicher, dass Sie diese Datenquellenverknüpfung löschen möchten?</p>`,
@@ -929,6 +929,8 @@ Beispiel: Virtual Hosted Style`,
         'Verbinden Sie Ihr Gmail über OAuth, um E-Mails zu synchronisieren.',
       webdavDescription:
         'Verbinden Sie sich mit WebDAV-Servern, um Dateien zu synchronisieren.',
+      gitlabDescription:
+        'Verbinden Sie GitLab, um Repositories, Issues, Merge Requests und zugehörige Dokumentation zu synchronisieren.',
       webdavRemotePathTip:
         'Optional: Geben Sie einen Ordnerpfad auf dem WebDAV-Server an (z.B. /Dokumente). Lassen Sie das Feld leer, um vom Stammverzeichnis aus zu synchronisieren.',
       google_driveTokenTip:
@@ -947,6 +949,8 @@ Beispiel: Virtual Hosted Style`,
         'Verbinden Sie Ihre Dropbox, um Dateien und Ordner von einem ausgewählten Konto zu synchronisieren.',
       boxDescription:
         'Verbinden Sie Ihr Box-Laufwerk, um Dateien und Ordner zu synchronisieren.',
+      githubDescription:
+        'Verbinden Sie GitHub, um Pull Requests und Issues zur Recherche zu synchronisieren.',
       dropboxAccessTokenTip:
         'Generieren Sie ein langlebiges Zugriffstoken in der Dropbox App Console mit den Bereichen files.metadata.read, files.content.read und sharing.read.',
       moodleDescription:
@@ -1357,12 +1361,12 @@ Beispiel: Virtual Hosted Style`,
       search: 'Suchen',
       communication: 'Kommunikation',
       developer: 'Entwickler',
-      typeCommandOrsearch: 'Geben Sie einen Befehl ein oder suchen Sie...',
+      typeCommandORsearch: 'Geben Sie einen Befehl ein oder suchen Sie...',
       builtIn: 'Eingebaut',
       ExceptionDefaultValue: 'Ausnahme-Standardwert',
       exceptionMethod: 'Ausnahmemethode',
       maxRounds: 'Maximale Reflexionsrunden',
-      delayEfterError: 'Verzögerung nach Fehler',
+      delayAfterError: 'Verzögerung nach Fehler',
       maxRetries: 'Maximale Wiederholungsrunden',
       advancedSettings: 'Erweiterte Einstellungen',
       addTools: 'Tools hinzufügen',
@@ -1882,7 +1886,7 @@ Beispiel: Virtual Hosted Style`,
       }`,
       datatype: 'MIME-Typ der HTTP-Anfrage',
       insertVariableTip: 'Eingabe / Variablen einfügen',
-      historyversion: 'Versionsverlauf',
+      historyVersion: 'Versionsverlauf',
       version: {
         created: 'Erstellt',
         details: 'Versionsdetails',

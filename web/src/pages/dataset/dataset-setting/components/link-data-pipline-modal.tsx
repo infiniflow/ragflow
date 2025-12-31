@@ -52,7 +52,7 @@ const LinkDataPipelineModal = ({
       title={
         !isEdit
           ? t('knowledgeConfiguration.linkDataPipeline')
-          : t('knowledgeConfiguration.eidtLinkDataPipeline')
+          : t('knowledgeConfiguration.editLinkDataPipeline')
       }
       open={open}
       onOpenChange={setOpen}

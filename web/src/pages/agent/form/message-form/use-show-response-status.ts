@@ -7,18 +7,20 @@ import {
   WebhookExecutionMode,
 } from '../../constant';
 import useGraphStore from '../../store';
-import { BeginFormSchemaType } from '../begin-form/schema';
 
 export function useShowWebhookResponseStatus(form: UseFormReturn<any>) {
   const getNode = useGraphStore((state) => state.getNode);
 
+  const formData = getNode(BeginId)?.data.form;
+
+  const isWebhookMode = formData?.mode === AgentDialogueMode.Webhook;
+
   const showWebhookResponseStatus = useMemo(() => {
-    const formData: BeginFormSchemaType = getNode(BeginId)?.data.form;
     return (
-      formData?.mode === AgentDialogueMode.Webhook &&
+      isWebhookMode &&
       formData?.execution_mode === WebhookExecutionMode.Streaming
     );
-  }, [getNode]);
+  }, [formData?.execution_mode, isWebhookMode]);
 
   useEffect(() => {
     if (showWebhookResponseStatus && isEmpty(form.getValues('status'))) {
@@ -26,5 +28,5 @@ export function useShowWebhookResponseStatus(form: UseFormReturn<any>) {
     }
   }, [form, showWebhookResponseStatus]);
 
-  return showWebhookResponseStatus;
+  return { showWebhookResponseStatus, isWebhookMode };
 }

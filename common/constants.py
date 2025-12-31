@@ -128,14 +128,19 @@ class FileSource(StrEnum):
     R2 = "r2"
     OCI_STORAGE = "oci_storage"
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
+    AIRTABLE = "airtable"
+    ASANA = "asana"
+    GITHUB = "github"
+    GITLAB = "gitlab"
+    IMAP = "imap"
 
-    
 class PipelineTaskType(StrEnum):
     PARSE = "Parse"
     DOWNLOAD = "Download"
     RAPTOR = "RAPTOR"
     GRAPH_RAG = "GraphRAG"
     MINDMAP = "Mindmap"
+    MEMORY = "Memory"
 
 
 VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR,
@@ -170,7 +175,7 @@ class MemoryStorageType(StrEnum):
 
 
 class ForgettingPolicy(StrEnum):
-    FIFO = "fifo"
+    FIFO = "FIFO"
 
 
 # environment

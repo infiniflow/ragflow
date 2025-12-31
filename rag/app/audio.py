@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
+import logging
 import os
 import re
 import tempfile
@@ -28,13 +28,14 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
 
     # is it English
-    eng = lang.lower() == "english"  # is_english(sections)
+    is_english = lang.lower() == "english"  # is_english(sections)
     try:
         _, ext = os.path.splitext(filename)
         if not ext:
             raise RuntimeError("No extension detected.")
 
-        if ext not in [".da", ".wave", ".wav", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma", ".realaudio", ".vqf", ".oggvorbis", ".aac", ".ape"]:
+        if ext not in [".da", ".wave", ".wav", ".mp3", ".wav", ".aac", ".flac", ".ogg", ".aiff", ".au", ".midi", ".wma",
+                       ".realaudio", ".vqf", ".oggvorbis", ".aac", ".ape"]:
             raise RuntimeError(f"Extension {ext} is not supported yet.")
 
         tmp_path = ""
@@ -48,7 +49,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         ans = seq2txt_mdl.transcription(tmp_path)
         callback(0.8, "Sequence2Txt LLM respond: %s ..." % ans[:32])
 
-        tokenize(doc, ans, eng)
+        tokenize(doc, ans, is_english)
         return [doc]
     except Exception as e:
         callback(prog=-1, msg=str(e))
@@ -56,6 +57,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)
-            except Exception:
+            except Exception as e:
+                logging.exception(f"Failed to remove temporary file: {tmp_path}, exception: {e}")
                 pass
     return []

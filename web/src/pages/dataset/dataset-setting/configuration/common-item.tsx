@@ -25,12 +25,13 @@ import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import { Settings } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ControllerRenderProps,
   FieldValues,
   useFormContext,
 } from 'react-hook-form';
+import { useLocation } from 'umi';
 import {
   MetadataType,
   useManageMetadata,
@@ -368,6 +369,7 @@ export function AutoMetadata({
   otherData?: Record<string, any>;
 }) {
   // get metadata field
+  const location = useLocation();
   const form = useFormContext();
   const {
     manageMetadataVisible,
@@ -376,6 +378,29 @@ export function AutoMetadata({
     tableData,
     config: metadataConfig,
   } = useManageMetadata();
+
+  const handleClickOpenMetadata = useCallback(() => {
+    const metadata = form.getValues('parser_config.metadata');
+    const tableMetaData = util.metaDataSettingJSONToMetaDataTableData(metadata);
+    showManageMetadataModal({
+      metadata: tableMetaData,
+      isCanAdd: true,
+      type: type,
+      record: otherData,
+    });
+  }, [form, otherData, showManageMetadataModal, type]);
+
+  useEffect(() => {
+    const locationState = location.state as
+      | { openMetadata?: boolean }
+      | undefined;
+    if (locationState?.openMetadata) {
+      setTimeout(() => {
+        handleClickOpenMetadata();
+      }, 100);
+      locationState.openMetadata = false;
+    }
+  }, [location, handleClickOpenMetadata]);
 
   const autoMetadataField: FormFieldConfig = {
     name: 'parser_config.enable_metadata',
@@ -386,21 +411,7 @@ export function AutoMetadata({
     tooltip: t('knowledgeConfiguration.autoMetadataTip'),
     render: (fieldProps: ControllerRenderProps) => (
       <div className="flex items-center justify-between">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => {
-            const metadata = form.getValues('parser_config.metadata');
-            const tableMetaData =
-              util.metaDataSettingJSONToMetaDataTableData(metadata);
-            showManageMetadataModal({
-              metadata: tableMetaData,
-              isCanAdd: true,
-              type: type,
-              record: otherData,
-            });
-          }}
-        >
+        <Button type="button" variant="ghost" onClick={handleClickOpenMetadata}>
           <div className="flex items-center gap-2">
             <Settings />
             {t('knowledgeConfiguration.settings')}

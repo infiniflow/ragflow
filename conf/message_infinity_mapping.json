@@ -1,0 +1,19 @@
+{
+  "id": {"type": "varchar", "default": ""},
+  "message_id": {"type": "integer", "default": 0},
+  "message_type_kwd": {"type": "varchar", "default": ""},
+  "source_id": {"type":  "integer", "default": 0},
+  "memory_id": {"type": "varchar", "default": ""},
+  "user_id": {"type": "varchar", "default": ""},
+  "agent_id": {"type": "varchar", "default": ""},
+  "session_id": {"type": "varchar", "default": ""},
+  "valid_at": {"type":  "varchar", "default": ""},
+  "valid_at_flt": {"type": "float", "default": 0.0},
+  "invalid_at": {"type":  "varchar", "default": ""},
+  "invalid_at_flt": {"type": "float", "default": 0.0},
+  "forget_at": {"type":  "varchar", "default": ""},
+  "forget_at_flt": {"type": "float", "default": 0.0},
+  "status_int": {"type": "integer", "default": 1},
+  "zone_id": {"type": "integer", "default": 0},
+  "content": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"], "comment": "content_ltks"}
+}
