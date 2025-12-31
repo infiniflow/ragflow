@@ -133,8 +133,14 @@ class DoclingParser(RAGFlowPdfParser):
             # Configure format options with backend
             format_options = {}
             if PdfFormatOption is not None and pipeline_options is not None:
-                # Instantiate backend if available
-                backend = PyPdfiumDocumentBackend() if PyPdfiumDocumentBackend is not None else None
+                # Instantiate backend if available and callable
+                backend = None
+                if PyPdfiumDocumentBackend is not None:
+                    try:
+                        backend = PyPdfiumDocumentBackend()
+                    except Exception as e:
+                        self.logger.warning(f"[Docling] Failed to instantiate PyPdfiumDocumentBackend: {e}")
+                        
                 format_options = {
                     InputFormat.PDF: PdfFormatOption(
                         pipeline_options=pipeline_options,
@@ -473,10 +479,14 @@ class DoclingParser(RAGFlowPdfParser):
             try:
                 tmpdir = Path(output_dir) if output_dir else Path.cwd() / ".docling_tmp"
                 tmpdir.mkdir(parents=True, exist_ok=True)
-                # Sanitize filename to prevent path traversal
-                name = Path(filepath).name if filepath else "input.pdf"
-                # Remove any path separators from the filename
-                name = name.replace("/", "_").replace("\\", "_") or "input.pdf"
+                # Sanitize filename to prevent path traversal - use only the basename
+                if filepath:
+                    name = Path(filepath).name
+                    # Additional safety: ensure no path components remain
+                    if not name or "/" in name or "\\" in name or name.startswith("."):
+                        name = "input.pdf"
+                else:
+                    name = "input.pdf"
                 tmp_pdf = tmpdir / name
                 with open(tmp_pdf, "wb") as f:
                     if isinstance(binary, (bytes, bytearray)):
