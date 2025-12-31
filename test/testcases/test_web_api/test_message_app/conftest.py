@@ -32,7 +32,7 @@ def add_memory_with_multiple_message_func(request, WebApiAuth):
     request.addfinalizer(cleanup)
 
     payload = {
-        "name": f"test_memory_0",
+        "name": "test_memory_0",
         "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(1, 3)),
         "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
         "llm_id": "glm-4-flash@ZHIPU-AI"
@@ -70,7 +70,7 @@ def add_memory_with_5_raw_message_func(request, WebApiAuth):
     request.addfinalizer(cleanup)
 
     payload = {
-        "name": f"test_memory_0",
+        "name": "test_memory_1",
         "memory_type": ["raw"],
         "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
         "llm_id": "glm-4-flash@ZHIPU-AI"
