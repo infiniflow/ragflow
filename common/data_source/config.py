@@ -13,6 +13,9 @@ def get_current_tz_offset() -> int:
     return round(time_diff.total_seconds() / 3600)
 
 
+# Default request timeout, mostly used by connectors
+REQUEST_TIMEOUT_SECONDS = int(os.environ.get("REQUEST_TIMEOUT_SECONDS") or 60)
+
 ONE_MINUTE = 60
 ONE_HOUR = 3600
 ONE_DAY = ONE_HOUR * 24
@@ -57,6 +60,10 @@ class DocumentSource(str, Enum):
     ASANA = "asana"
     GITHUB = "github"
     GITLAB = "gitlab"
+    IMAP = "imap"
+    BITBUCKET = "bitbucket"
+    ZENDESK = "zendesk"
+
 
 class FileOrigin(str, Enum):
     """File origins"""
@@ -234,6 +241,8 @@ _REPLACEMENT_EXPANSIONS = "body.view.value"
 
 BOX_WEB_OAUTH_REDIRECT_URI = os.environ.get("BOX_WEB_OAUTH_REDIRECT_URI", "http://localhost:9380/v1/connector/box/oauth/web/callback")
 
+GITHUB_CONNECTOR_BASE_URL = os.environ.get("GITHUB_CONNECTOR_BASE_URL") or None
+
 class HtmlBasedConnectorTransformLinksStrategy(str, Enum):
     # remove links entirely
     STRIP = "strip"
@@ -262,6 +271,14 @@ AIRTABLE_CONNECTOR_SIZE_THRESHOLD = int(
 ASANA_CONNECTOR_SIZE_THRESHOLD = int(
     os.environ.get("ASANA_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
 )
+
+IMAP_CONNECTOR_SIZE_THRESHOLD = int(
+    os.environ.get("IMAP_CONNECTOR_SIZE_THRESHOLD", 10 * 1024 * 1024)
+)
+
+ZENDESK_CONNECTOR_SKIP_ARTICLE_LABELS = os.environ.get(
+    "ZENDESK_CONNECTOR_SKIP_ARTICLE_LABELS", ""
+).split(",")
 
 _USER_NOT_FOUND = "Unknown Confluence User"
 

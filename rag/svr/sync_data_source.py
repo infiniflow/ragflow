@@ -39,23 +39,28 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from common import settings
 from common.config_utils import show_configs
 from common.data_source import (
-    BlobStorageConnector, 
-    NotionConnector, 
-    DiscordConnector, 
-    GoogleDriveConnector, 
-    MoodleConnector, 
-    JiraConnector, 
-    DropboxConnector, 
-    WebDAVConnector, 
-    AirtableConnector, 
+    BlobStorageConnector,
+    NotionConnector,
+    DiscordConnector,
+    GoogleDriveConnector,
+    MoodleConnector,
+    JiraConnector,
+    DropboxConnector,
+    AirtableConnector,
     AsanaConnector,
+    ImapConnector,
+    ZendeskConnector,
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
+from common.data_source.models import ConnectorFailure
+from common.data_source.webdav_connector import WebDAVConnector
 from common.data_source.confluence_connector import ConfluenceConnector
 from common.data_source.gmail_connector import GmailConnector
 from common.data_source.box_connector import BoxConnector
+from common.data_source.github.connector import GithubConnector
 from common.data_source.gitlab_connector import GitlabConnector
+from common.data_source.bitbucket.connector import BitbucketConnector
 from common.data_source.interfaces import CheckpointOutputWrapper
 from common.log_utils import init_root_logger
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
@@ -108,7 +113,7 @@ class SyncBase:
         if task["poll_range_start"]:
             next_update = task["poll_range_start"]
 
-        for document_batch in document_batch_generator:
+        async for document_batch in document_batch_generator:
             if not document_batch:
                 continue
 
@@ -691,7 +696,12 @@ class WebDAV(SyncBase):
             self.conf.get("remote_path", "/"),
             begin_info
         ))
-        return document_batch_generator
+
+        async def async_wrapper():
+            for document_batch in document_batch_generator:
+                yield document_batch
+                
+        return async_wrapper()
 
 
 class Moodle(SyncBase):
@@ -706,20 +716,17 @@ class Moodle(SyncBase):
         self.connector.load_credentials(self.conf["credentials"])
 
         # Determine the time range for synchronization based on reindex or poll_range_start
-        if task["reindex"] == "1" or not task.get("poll_range_start"):
+        poll_start = task.get("poll_range_start")
+
+        if task["reindex"] == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             begin_info = "totally"
         else:
-            poll_start = task["poll_range_start"]
-            if poll_start is None:
-                document_generator = self.connector.load_from_state()
-                begin_info = "totally"
-            else:
-                document_generator = self.connector.poll_source(
-                    poll_start.timestamp(),
-                    datetime.now(timezone.utc).timestamp()
-                )
-                begin_info = "from {}".format(poll_start)
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+            begin_info = f"from {poll_start}"
 
         logging.info("Connect to Moodle: {} {}".format(self.conf["moodle_url"], begin_info))
         return document_generator
@@ -749,20 +756,17 @@ class BOX(SyncBase):
         auth.token_storage.store(token)
 
         self.connector.load_credentials(auth)
-        if task["reindex"] == "1" or not task["poll_range_start"]:
+        poll_start = task["poll_range_start"]
+
+        if task["reindex"] == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             begin_info = "totally"
         else:
-            poll_start = task["poll_range_start"]
-            if poll_start is None:
-                document_generator = self.connector.load_from_state()
-                begin_info = "totally"
-            else:
-                document_generator = self.connector.poll_source(
-                    poll_start.timestamp(),
-                    datetime.now(timezone.utc).timestamp()
-                )
-                begin_info = "from {}".format(poll_start)
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+            begin_info = f"from {poll_start}"
         logging.info("Connect to Box: folder_id({}) {}".format(self.conf["folder_id"], begin_info))
         return document_generator
 
@@ -788,20 +792,17 @@ class Airtable(SyncBase):
             {"airtable_access_token": credentials["airtable_access_token"]}
         )
 
-        if task.get("reindex") == "1" or not task.get("poll_range_start"):
+        poll_start = task.get("poll_range_start")
+
+        if task.get("reindex") == "1" or poll_start is None:
             document_generator = self.connector.load_from_state()
             begin_info = "totally"
         else:
-            poll_start = task.get("poll_range_start")
-            if poll_start is None:
-                document_generator = self.connector.load_from_state()
-                begin_info = "totally"
-            else:
-                document_generator = self.connector.poll_source(
-                    poll_start.timestamp(),
-                    datetime.now(timezone.utc).timestamp(),
-                )
-                begin_info = f"from {poll_start}"
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                datetime.now(timezone.utc).timestamp(),
+            )
+            begin_info = f"from {poll_start}"
 
         logging.info(
             "Connect to Airtable: base_id(%s), table(%s) %s",
@@ -854,6 +855,223 @@ class Asana(SyncBase):
 
         return document_generator
 
+class Github(SyncBase):
+    SOURCE_NAME: str = FileSource.GITHUB
+
+    async def _generate(self, task: dict):
+        """
+        Sync files from Github repositories.
+        """
+        from common.data_source.connector_runner import ConnectorRunner
+
+        self.connector = GithubConnector(
+            repo_owner=self.conf.get("repository_owner"),
+            repositories=self.conf.get("repository_name"),
+            include_prs=self.conf.get("include_pull_requests", False),
+            include_issues=self.conf.get("include_issues", False),
+        )
+
+        credentials = self.conf.get("credentials", {})
+        if "github_access_token" not in credentials:
+            raise ValueError("Missing github_access_token in credentials")
+
+        self.connector.load_credentials(
+            {"github_access_token": credentials["github_access_token"]}
+        )
+
+        if task.get("reindex") == "1" or not task.get("poll_range_start"):
+            start_time = datetime.fromtimestamp(0, tz=timezone.utc)
+            begin_info = "totally"
+        else:
+            start_time = task.get("poll_range_start")
+            begin_info = f"from {start_time}"
+
+        end_time = datetime.now(timezone.utc)
+
+        runner = ConnectorRunner(
+            connector=self.connector,
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            include_permissions=False,
+            time_range=(start_time, end_time)
+        )
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+
+            while checkpoint.has_more:
+                for doc_batch, failure, next_checkpoint in runner.run(checkpoint):
+                    if failure is not None:
+                        logging.warning(
+                            "Github connector failure: %s",
+                            getattr(failure, "failure_message", failure),
+                        )
+                        continue
+                    if doc_batch is not None:
+                        yield doc_batch
+                    if next_checkpoint is not None:
+                        checkpoint = next_checkpoint
+
+        async def async_wrapper():
+            for batch in document_batches():
+                yield batch
+
+        logging.info(
+            "Connect to Github: org_name(%s), repo_names(%s) for %s",
+            self.conf.get("repository_owner"),
+            self.conf.get("repository_name"),
+            begin_info,
+        )
+
+        return async_wrapper()
+
+class IMAP(SyncBase):
+    SOURCE_NAME: str = FileSource.IMAP
+
+    async def _generate(self, task):
+        from common.data_source.config import DocumentSource
+        from common.data_source.interfaces import StaticCredentialsProvider
+        self.connector = ImapConnector(
+            host=self.conf.get("imap_host"),
+            port=self.conf.get("imap_port"),
+            mailboxes=self.conf.get("imap_mailbox"),
+        )
+        credentials_provider = StaticCredentialsProvider(tenant_id=task["tenant_id"], connector_name=DocumentSource.IMAP, credential_json=self.conf["credentials"])
+        self.connector.set_credentials_provider(credentials_provider)
+        end_time = datetime.now(timezone.utc).timestamp()
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = end_time - self.conf.get("poll_range",30) * 24 * 60 * 60
+            begin_info = "totally"
+        else:
+            start_time = task["poll_range_start"].timestamp()
+            begin_info = f"from {task['poll_range_start']}"
+        raw_batch_size = self.conf.get("sync_batch_size") or self.conf.get("batch_size") or INDEX_BATCH_SIZE
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            pending_docs = []
+            iterations = 0
+            iteration_limit = 100_000
+            while checkpoint.has_more:
+                wrapper = CheckpointOutputWrapper()
+                doc_generator = wrapper(self.connector.load_from_checkpoint(start_time, end_time, checkpoint))
+                for document, failure, next_checkpoint in doc_generator:
+                    if failure is not None:
+                        logging.warning("IMAP connector failure: %s", getattr(failure, "failure_message", failure))
+                        continue
+                    if document is not None:
+                        pending_docs.append(document)
+                        if len(pending_docs) >= batch_size:
+                            yield pending_docs
+                            pending_docs = []
+                    if next_checkpoint is not None:
+                        checkpoint = next_checkpoint
+
+                iterations += 1
+                if iterations > iteration_limit:
+                    raise RuntimeError("Too many iterations while loading IMAP documents.")
+
+            if pending_docs:
+                yield pending_docs
+
+        async def async_wrapper():
+            for batch in document_batches():
+                yield batch
+
+        logging.info(
+            "Connect to IMAP: host(%s) port(%s) user(%s) folder(%s) %s",
+            self.conf["imap_host"],
+            self.conf["imap_port"],
+            self.conf["credentials"]["imap_username"],
+            self.conf["imap_mailbox"],
+            begin_info
+        )
+        return async_wrapper()
+
+class Zendesk(SyncBase):
+
+    SOURCE_NAME: str = FileSource.ZENDESK
+    async def _generate(self, task: dict):
+        self.connector = ZendeskConnector(content_type=self.conf.get("zendesk_content_type"))
+        self.connector.load_credentials(self.conf["credentials"])
+
+        end_time = datetime.now(timezone.utc).timestamp()
+        if task["reindex"] == "1" or not task.get("poll_range_start"):
+            start_time = 0
+            begin_info = "totally"
+        else:
+            start_time = task["poll_range_start"].timestamp()
+            begin_info = f"from {task['poll_range_start']}"
+
+        raw_batch_size = (
+            self.conf.get("sync_batch_size")
+            or self.conf.get("batch_size")
+            or INDEX_BATCH_SIZE
+        )
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+            pending_docs = []
+            iterations = 0
+            iteration_limit = 100_000
+
+            while checkpoint.has_more:
+                wrapper = CheckpointOutputWrapper()
+                doc_generator = wrapper(
+                    self.connector.load_from_checkpoint(
+                        start_time, end_time, checkpoint
+                    )
+                )
+
+                for document, failure, next_checkpoint in doc_generator:
+                    if failure is not None:
+                        logging.warning(
+                            "Zendesk connector failure: %s",
+                            getattr(failure, "failure_message", failure),
+                        )
+                        continue
+
+                    if document is not None:
+                        pending_docs.append(document)
+                        if len(pending_docs) >= batch_size:
+                            yield pending_docs
+                            pending_docs = []
+
+                    if next_checkpoint is not None:
+                        checkpoint = next_checkpoint
+
+                iterations += 1
+                if iterations > iteration_limit:
+                    raise RuntimeError(
+                        "Too many iterations while loading Zendesk documents."
+                    )
+
+            if pending_docs:
+                yield pending_docs
+
+        async def async_wrapper():
+            for batch in document_batches():
+                yield batch
+
+        logging.info(
+            "Connect to Zendesk: subdomain(%s) %s",
+            self.conf['credentials'].get("zendesk_subdomain"),
+            begin_info,
+        )
+
+        return async_wrapper()
 
 
 class Gitlab(SyncBase):
@@ -896,6 +1114,67 @@ class Gitlab(SyncBase):
         logging.info("Connect to Gitlab: ({}) {}".format(self.conf["project_name"], begin_info))
         return document_generator
 
+
+class Bitbucket(SyncBase):
+    SOURCE_NAME: str = FileSource.BITBUCKET
+
+    async def _generate(self, task: dict):
+        self.connector = BitbucketConnector(
+            workspace=self.conf.get("workspace"),
+            repositories=self.conf.get("repository_slugs"),
+            projects=self.conf.get("projects"),
+        )
+
+        self.connector.load_credentials(
+            {
+            "bitbucket_email": self.conf["credentials"].get("bitbucket_account_email"),
+            "bitbucket_api_token": self.conf["credentials"].get("bitbucket_api_token"),
+            }
+        )
+
+        if task["reindex"] == "1" or not task["poll_range_start"]:
+            start_time = datetime.fromtimestamp(0, tz=timezone.utc)
+            begin_info = "totally"
+        else:
+            start_time = task.get("poll_range_start")
+            begin_info = f"from {start_time}"
+        
+        end_time = datetime.now(timezone.utc)
+
+        def document_batches():
+            checkpoint = self.connector.build_dummy_checkpoint()
+
+            while checkpoint.has_more:
+                gen = self.connector.load_from_checkpoint(
+                    start=start_time.timestamp(), 
+                    end=end_time.timestamp(), 
+                    checkpoint=checkpoint)
+                
+                while True:
+                    try:
+                        item = next(gen)
+                        if isinstance(item, ConnectorFailure):
+                            logging.exception(
+                                "Bitbucket connector failure: %s",
+                                item.failure_message)
+                            break
+                        yield [item]
+                    except StopIteration as e:
+                        checkpoint = e.value
+                        break
+        
+        async def async_wrapper():
+            for batch in document_batches():
+                yield batch
+
+        logging.info(
+            "Connect to Bitbucket: workspace(%s), %s",
+            self.conf.get("workspace"),
+            begin_info,
+        )
+
+        return async_wrapper()
+
 func_factory = {
     FileSource.S3: S3,
     FileSource.R2: R2,
@@ -915,8 +1194,12 @@ func_factory = {
     FileSource.WEBDAV: WebDAV,
     FileSource.BOX: BOX,
     FileSource.AIRTABLE: Airtable,
-    FileSource.GITLAB: Gitlab,
     FileSource.ASANA: Asana,
+    FileSource.IMAP: IMAP,
+    FileSource.ZENDESK: Zendesk,
+    FileSource.GITHUB: Github,
+    FileSource.GITLAB: Gitlab,
+    FileSource.BITBUCKET: Bitbucket,
 }
 
 

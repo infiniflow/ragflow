@@ -159,7 +159,8 @@ async def delete_memory(memory_id):
         return get_json_result(message=True, code=RetCode.NOT_FOUND)
     try:
         MemoryService.delete_memory(memory_id)
-        MessageService.delete_message({"memory_id": memory_id}, memory.tenant_id, memory_id)
+        if MessageService.has_index(memory.tenant_id, memory_id):
+            MessageService.delete_message({"memory_id": memory_id}, memory.tenant_id, memory_id)
         return get_json_result(message=True)
     except Exception as e:
         logging.error(e)

@@ -40,7 +40,7 @@ from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.parser_config_utils import normalize_layout_recognizer
 from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, \
-    tokenize_chunks, tokenize_chunks_with_images, tokenize_table, attach_media_context
+    tokenize_chunks, tokenize_chunks_with_images, tokenize_table, attach_media_context, append_context2table_image4pdf
 
 
 def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", callback=None, pdf_cls=None,
@@ -210,8 +210,8 @@ class Docx(DocxParser):
             except UnicodeDecodeError:
                 logging.info("The recognized image stream appears to be corrupted. Skipping image.")
                 continue
-            except Exception:
-                logging.info("The recognized image stream appears to be corrupted. Skipping image.")
+            except Exception as e:
+                logging.warning(f"The recognized image stream appears to be corrupted. Skipping image, exception: {e}")
                 continue
             try:
                 image = Image.open(BytesIO(image_blob)).convert('RGB')
@@ -219,7 +219,8 @@ class Docx(DocxParser):
                     res_img = image
                 else:
                     res_img = concat_img(res_img, image)
-            except Exception:
+            except Exception as e:
+                logging.warning(f"Fail to open or concat images, exception: {e}")
                 continue
 
         return res_img
@@ -486,7 +487,7 @@ class Pdf(PdfParser):
             tbls = self._extract_table_figure(True, zoomin, True, True)
             self._naive_vertical_merge()
             self._concat_downward()
-            self._final_reading_order_merge()
+            # self._final_reading_order_merge()
             # self._filter_forpages()
             logging.info("layouts cost: {}s".format(timer() - first_start))
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
@@ -553,7 +554,8 @@ class Markdown(MarkdownParser):
                 if (src, line_no) not in seen:
                     urls.append({"url": src, "line": line_no})
                     seen.add((src, line_no))
-        except Exception:
+        except Exception as e:
+            logging.error("Failed to extract image urls: {}".format(e))
             pass
 
         return urls
@@ -698,8 +700,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                                 **kwargs) or []
                 embed_res.extend(sub_res)
             except Exception as e:
+                error_msg = f"Failed to chunk embed {embed_filename}: {e}"
+                logging.error(error_msg)
                 if callback:
-                    callback(0.05, f"Failed to chunk embed {embed_filename}: {e}")
+                    callback(0.05, error_msg)
                 continue
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
@@ -772,6 +776,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         if not sections and not tables:
             return []
 
+        if table_context_size or image_context_size:
+            tables = append_context2table_image4pdf(sections, tables, image_context_size)
+
         if name in ["tcadp", "docling", "mineru"]:
             parser_config["chunk_token_num"] = 0
 
@@ -839,7 +846,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         try:
             vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
             callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
-        except Exception:
+        except Exception as e:
+            logging.warning(f"Failed to detect figure extraction: {e}")
             vision_model = None
 
         if vision_model:
@@ -905,8 +913,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
             sections = [(_, "") for _ in sections if _]
             callback(0.8, "Finish parsing.")
         else:
-            callback(0.8, f"tika.parser got empty content from {filename}.")
-            logging.warning(f"tika.parser got empty content from {filename}.")
+            error_msg = f"tika.parser got empty content from {filename}."
+            callback(0.8, error_msg)
+            logging.warning(error_msg)
             return []
     else:
         raise NotImplementedError(
@@ -1000,8 +1009,8 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
         res.extend(embed_res)
     if url_res:
         res.extend(url_res)
-    if table_context_size or image_context_size:
-        attach_media_context(res, table_context_size, image_context_size)
+    #if table_context_size or image_context_size:
+    #    attach_media_context(res, table_context_size, image_context_size)
     return res
 
 
