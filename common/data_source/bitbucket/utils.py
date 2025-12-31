@@ -14,7 +14,8 @@ from common.data_source.config import REQUEST_TIMEOUT_SECONDS, DocumentSource
 from common.data_source.cross_connector_utils.rate_limit_wrapper import (
     rate_limit_builder,
 )
-from common.data_source.models import BasicExpertInfo, Document, ImageSection
+from common.data_source.utils import sanitize_filename
+from common.data_source.models import BasicExpertInfo, Document, ImageSection, TextSection
 from common.data_source.cross_connector_utils.retry_wrapper import retry_builder
 
 # Fields requested from Bitbucket PR list endpoint to ensure rich PR data
@@ -241,10 +242,7 @@ def map_pr_to_document(pr: dict[str, Any], workspace: str, repo_slug: str) -> Do
         f"- Updated: {updated_date}"
     )
     if description:
-        content_text += f"\n\nDescription:\n{description}"
-    sections: list[TextSection | ImageSection] = [
-        TextSection(link=link, text=content_text)
-    ]
+
 
     metadata: dict[str, str | list[str]] = {
         "object_type": "PullRequest",
@@ -273,7 +271,7 @@ def map_pr_to_document(pr: dict[str, Any], workspace: str, repo_slug: str) -> Do
 
     return Document(
         id=f"{DocumentSource.BITBUCKET.value}:{workspace}:{repo_slug}:pr:{pr_id}",
-        sections=sections,
+        blob=content_text.encode("utf-8"),
         source=DocumentSource.BITBUCKET,
         semantic_identifier=f"#{pr_id}: {title}",
         title=title,
