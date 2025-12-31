@@ -39,12 +39,17 @@ def get_ragflow_version() -> str:
 
 def get_closest_tag_and_count():
     try:
-        # Get the current commit hash
+        # Get the current commit hash with timeout to prevent hanging
         version_info = (
-            subprocess.check_output(["git", "describe", "--tags", "--match=v*", "--first-parent", "--always"])
+            subprocess.check_output(
+                ["git", "describe", "--tags", "--match=v*", "--first-parent", "--always"],
+                timeout=30
+            )
             .strip()
             .decode("utf-8")
         )
         return version_info
+    except subprocess.TimeoutExpired:
+        return "unknown"
     except Exception:
         return "unknown"

@@ -598,7 +598,16 @@ class Parser(ProcessBase):
         conf = self._param.setups["image"]
         self.set_output("output_format", conf["output_format"])
 
-        img = Image.open(io.BytesIO(blob)).convert("RGB")
+        try:
+            img = Image.open(io.BytesIO(blob)).convert("RGB")
+        except (Image.UnidentifiedImageError, Image.DecompressionBombError) as e:
+            logging.error(f"Failed to open or convert image '{name}': {str(e)}")
+            self.set_output("text", "")
+            return
+        except Exception as e:
+            logging.error(f"Unexpected error processing image '{name}': {str(e)}")
+            self.set_output("text", "")
+            return
 
         if conf["parse_method"] == "ocr":
             # use ocr, recognize chars only
