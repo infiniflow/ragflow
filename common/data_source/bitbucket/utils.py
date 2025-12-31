@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-import logging
 from collections.abc import Callable
 from collections.abc import Iterator
 from datetime import datetime
@@ -217,9 +216,9 @@ def map_pr_to_document(pr: dict[str, Any], workspace: str, repo_slug: str) -> Do
             display_name=_get_user_name(author),
         )
 
-    secondary_owners = [
+    secondary_owners = [ 
         BasicExpertInfo(display_name=_get_user_name(r)) for r in reviewers
-    ] or None
+    ] or None #noqa: F841
 
     reviewer_names = [_get_user_name(r) for r in reviewers]
 
