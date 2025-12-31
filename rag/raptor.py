@@ -93,7 +93,6 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         max_clusters = min(self._max_cluster, len(embeddings))
         n_clusters = np.arange(1, max_clusters)
         bics = []
-        
         for n in n_clusters:
             if task_id:
                 if has_canceled(task_id):
@@ -111,12 +110,10 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             except Exception as e:
                 logging.error(f"Unexpected error during GMM fitting for n_components={n}: {str(e)}. Skipping this cluster count.")
                 bics.append(float('inf'))
-        
         # If all attempts failed, return 1 as safe default
         if all(bic == float('inf') for bic in bics):
             logging.warning("All GMM fitting attempts failed. Using fallback cluster count of 1.")
             return 1
-            
         optimal_clusters = n_clusters[np.argmin(bics)]
         return optimal_clusters
 
