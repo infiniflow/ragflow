@@ -130,6 +130,8 @@ class MinerUParseOptions:
     parse_method: str = "raw"
     formula_enable: bool = True
     table_enable: bool = True
+    start_page_id: int = 0  # Start page for pagination (0-indexed)
+    end_page_id: int = 99999  # End page for pagination (inclusive)
 
 
 class MinerUParser(RAGFlowPdfParser):
@@ -254,8 +256,8 @@ class MinerUParser(RAGFlowPdfParser):
             "return_content_list": True,
             "return_images": True,
             "response_format_zip": True,
-            "start_page_id": 0,
-            "end_page_id": 99999,
+            "start_page_id": options.start_page_id,
+            "end_page_id": options.end_page_id,
         }
 
         if options.server_url:
@@ -572,6 +574,8 @@ class MinerUParser(RAGFlowPdfParser):
             server_url: Optional[str] = None,
             delete_output: bool = True,
             parse_method: str = "raw",
+            from_page: int = 0,
+            to_page: int = 100000,
             **kwargs,
     ) -> tuple:
         import shutil
@@ -624,6 +628,11 @@ class MinerUParser(RAGFlowPdfParser):
         self.__images__(pdf, zoomin=1)
 
         try:
+            # Convert from_page/to_page to 0-indexed start_page_id/end_page_id
+            # MinerU API uses 0-indexed page IDs
+            start_page_id = max(0, from_page)
+            end_page_id = min(to_page, 99999)
+            
             options = MinerUParseOptions(
                 backend=MinerUBackend(backend),
                 lang=MinerULanguage(mineru_lang_code),
@@ -633,10 +642,12 @@ class MinerUParser(RAGFlowPdfParser):
                 parse_method=parse_method,
                 formula_enable=enable_formula,
                 table_enable=enable_table,
+                start_page_id=start_page_id,
+                end_page_id=end_page_id,
             )
             final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
-            self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
+            self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF (pages {start_page_id} to {end_page_id}).")
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
 
