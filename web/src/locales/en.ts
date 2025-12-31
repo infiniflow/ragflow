@@ -184,7 +184,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     knowledgeDetails: {
       metadata: {
         toMetadataSetting: 'Generation settings',
-        toMetadataSettingTip: 'Set auto-metadata in Configuration.',
         descriptionTip:
           'Provide descriptions or examples to guide LLM extract values for this field. If left empty, it will rely on the field name.',
         restrictTDefinedValuesTip:
