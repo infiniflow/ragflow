@@ -158,6 +158,36 @@ def alter_user_activate_status(username):
         return error_response(str(e), 500)
 
 
+@admin_bp.route('/users/<username>/admin', methods=['PUT'])
+@login_required
+@check_admin_auth
+def grant_admin(username):
+    try:
+        if current_user.email == username:
+            return error_response(f"can't grant current user: {username}", 409)
+        msg = UserMgr.grant_admin(username)
+        return success_response(None, msg)
+
+    except AdminException as e:
+        return error_response(e.message, e.code)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+@admin_bp.route('/users/<username>/admin', methods=['DELETE'])
+@login_required
+@check_admin_auth
+def revoke_admin(username):
+    try:
+        if current_user.email == username:
+            return error_response(f"can't grant current user: {username}", 409)
+        msg = UserMgr.revoke_admin(username)
+        return success_response(None, msg)
+
+    except AdminException as e:
+        return error_response(e.message, e.code)
+    except Exception as e:
+        return error_response(str(e), 500)
+
 @admin_bp.route('/users/<username>', methods=['GET'])
 @login_required
 @check_admin_auth
