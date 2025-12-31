@@ -29,8 +29,14 @@ from PIL import Image
 
 try:
     from docling.document_converter import DocumentConverter
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.document_converter import PdfFormatOption
 except Exception:
-    DocumentConverter = None  
+    DocumentConverter = None
+    InputFormat = None
+    PdfPipelineOptions = None
+    PdfFormatOption = None  
 
 try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
@@ -65,15 +71,63 @@ class DoclingParser(RAGFlowPdfParser):
    
         
     def check_installation(self) -> bool:
+        """Check if docling library is properly installed and can be initialized.
+        
+        Returns:
+            bool: True if docling is available and can be initialized, False otherwise.
+        """
         if DocumentConverter is None:
             self.logger.warning("[Docling] 'docling' is not importable, please: pip install docling")
             return False
         try:
-            _ = DocumentConverter()
+            # Try to initialize DocumentConverter to verify it's working
+            # For newer versions of docling, we may need to pass configuration
+            _ = self._create_converter()
             return True
         except Exception as e:
-            self.logger.error(f"[Docling] init DocumentConverter failed: {e}")
+            self.logger.error(f"[Docling] Failed to initialize DocumentConverter: {e}", exc_info=True)
             return False
+    
+    def _create_converter(self) -> "DocumentConverter":
+        """Create and configure a DocumentConverter instance.
+        
+        Returns:
+            DocumentConverter: Configured document converter instance.
+            
+        Raises:
+            RuntimeError: If DocumentConverter cannot be created.
+        """
+        if DocumentConverter is None:
+            raise RuntimeError("DocumentConverter is not available. Please install docling.")
+        
+        try:
+            # For newer versions of docling (2.0+), we may need to configure pipeline options
+            # Try to create with configuration if available, otherwise use default
+            if PdfPipelineOptions is not None and PdfFormatOption is not None:
+                # Configure PDF processing options for better compatibility
+                pipeline_options = PdfPipelineOptions()
+                
+                converter = DocumentConverter(
+                    format_options={
+                        InputFormat.PDF: PdfFormatOption(
+                            pipeline_options=pipeline_options
+                        )
+                    }
+                )
+            else:
+                # Fallback for older versions without configuration
+                converter = DocumentConverter()
+            
+            return converter
+        except TypeError as e:
+            # If configuration parameters are not recognized, try without them
+            self.logger.warning(f"[Docling] Failed to create converter with configuration, trying default: {e}")
+            try:
+                return DocumentConverter()
+            except Exception as fallback_error:
+                raise RuntimeError(f"Failed to create DocumentConverter: {fallback_error}") from fallback_error
+        except Exception as e:
+            raise RuntimeError(f"Failed to create DocumentConverter: {e}") from e
 
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
         self.page_from = page_from
@@ -297,54 +351,127 @@ class DoclingParser(RAGFlowPdfParser):
         delete_output: bool = True,
         parse_method: str = "raw"     
     ):
+        """Parse a PDF file using docling library.
+        
+        Args:
+            filepath: Path to the PDF file or filename
+            binary: Binary content of the PDF (bytes or BytesIO)
+            callback: Optional callback function for progress updates
+            output_dir: Directory for temporary files
+            lang: Language hint for parsing (currently unused by docling)
+            method: Parsing method (currently unused, kept for compatibility)
+            delete_output: Whether to delete temporary files after parsing
+            parse_method: Output format method ("raw", "manual", "paper")
+            
+        Returns:
+            tuple: (sections, tables) where sections is a list of text sections 
+                   and tables is a list of table data
+                   
+        Raises:
+            RuntimeError: If docling is not available
+            FileNotFoundError: If the PDF file is not found
+            Exception: If parsing fails
+        """
 
         if not self.check_installation():
             raise RuntimeError("Docling not available, please install `docling`")
 
+        # Handle binary input by writing to temporary file
         if binary is not None:
             tmpdir = Path(output_dir) if output_dir else Path.cwd() / ".docling_tmp"
             tmpdir.mkdir(parents=True, exist_ok=True)
             name = Path(filepath).name or "input.pdf"
             tmp_pdf = tmpdir / name
-            with open(tmp_pdf, "wb") as f:
-                if isinstance(binary, (bytes, bytearray)):
-                    f.write(binary)
-                else:
-                    f.write(binary.getbuffer())
-            src_path = tmp_pdf
+            
+            try:
+                with open(tmp_pdf, "wb") as f:
+                    if isinstance(binary, (bytes, bytearray)):
+                        f.write(binary)
+                    else:
+                        f.write(binary.getbuffer())
+                src_path = tmp_pdf
+            except Exception as e:
+                self.logger.error(f"[Docling] Failed to write temporary PDF file: {e}")
+                raise RuntimeError(f"Failed to write temporary PDF file: {e}") from e
         else:
             src_path = Path(filepath)
             if not src_path.exists():
                 raise FileNotFoundError(f"PDF not found: {src_path}")
 
         if callback:
-            callback(0.1, f"[Docling] Converting: {src_path}")
+            callback(0.1, f"[Docling] Converting: {src_path.name}")
 
+        # Try to render pages for image extraction
         try:
             self.__images__(str(src_path), zoomin=1)
+            if callback:
+                callback(0.3, "[Docling] Page images rendered")
         except Exception as e:
-            self.logger.warning(f"[Docling] render pages failed: {e}")
+            self.logger.warning(f"[Docling] Failed to render pages: {e}")
+            # Continue anyway, docling may still be able to extract content
 
-        conv = DocumentConverter()  
-        conv_res = conv.convert(str(src_path))
-        doc = conv_res.document
-        if callback:
-            callback(0.7, f"[Docling] Parsed doc: {getattr(doc, 'num_pages', 'n/a')} pages")
+        # Convert the PDF using docling
+        try:
+            if callback:
+                callback(0.4, "[Docling] Initializing converter...")
+            
+            conv = self._create_converter()
+            
+            if callback:
+                callback(0.5, f"[Docling] Converting document: {src_path.name}")
+            
+            conv_res = conv.convert(str(src_path))
+            doc = conv_res.document
+            
+            num_pages = getattr(doc, 'num_pages', 'n/a')
+            if callback:
+                callback(0.7, f"[Docling] Parsed {num_pages} page(s)")
+            
+        except Exception as e:
+            self.logger.error(f"[Docling] Document conversion failed: {e}", exc_info=True)
+            # Clean up temporary file on error
+            if binary is not None and delete_output:
+                try:
+                    Path(src_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
+            raise RuntimeError(f"Docling conversion failed: {e}") from e
 
-        sections = self._transfer_to_sections(doc, parse_method=parse_method)
-        tables = self._transfer_to_tables(doc)
+        # Extract sections and tables from the document
+        try:
+            if callback:
+                callback(0.8, "[Docling] Extracting sections...")
+            
+            sections = self._transfer_to_sections(doc, parse_method=parse_method)
+            
+            if callback:
+                callback(0.9, "[Docling] Extracting tables...")
+            
+            tables = self._transfer_to_tables(doc)
 
-        if callback:
-            callback(0.95, f"[Docling] Sections: {len(sections)}, Tables: {len(tables)}")
+            if callback:
+                callback(0.95, f"[Docling] Extracted {len(sections)} section(s), {len(tables)} table(s)")
+                
+        except Exception as e:
+            self.logger.error(f"[Docling] Failed to extract content: {e}", exc_info=True)
+            # Clean up temporary file on error
+            if binary is not None and delete_output:
+                try:
+                    Path(src_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
+            raise RuntimeError(f"Failed to extract content from document: {e}") from e
 
+        # Clean up temporary file if requested
         if binary is not None and delete_output:
             try:
                 Path(src_path).unlink(missing_ok=True)
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.warning(f"[Docling] Failed to delete temporary file: {e}")
 
         if callback:
-            callback(1.0, "[Docling] Done.")
+            callback(1.0, "[Docling] Parsing complete")
+            
         return sections, tables
 
 

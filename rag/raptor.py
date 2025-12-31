@@ -99,9 +99,21 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     logging.info(f"Task {task_id} cancelled during get optimal clusters.")
                     raise TaskCanceledException(f"Task {task_id} was cancelled")
 
-            gm = GaussianMixture(n_components=n, random_state=random_state)
-            gm.fit(embeddings)
-            bics.append(gm.bic(embeddings))
+            try:
+                gm = GaussianMixture(n_components=n, random_state=random_state)
+                gm.fit(embeddings)
+                bics.append(gm.bic(embeddings))
+            except (ValueError, RuntimeError) as e:
+                logging.warning(f"GMM fitting failed for n_components={n}: {str(e)}. Skipping this cluster count.")
+                # Add a high penalty value so this cluster count won't be selected
+                bics.append(float('inf'))
+            except Exception as e:
+                logging.error(f"Unexpected error during GMM fitting for n_components={n}: {str(e)}. Skipping this cluster count.")
+                bics.append(float('inf'))
+        # If all attempts failed, return 1 as safe default
+        if all(bic == float('inf') for bic in bics):
+            logging.warning("All GMM fitting attempts failed. Using fallback cluster count of 1.")
+            return 1
         optimal_clusters = n_clusters[np.argmin(bics)]
         return optimal_clusters
 

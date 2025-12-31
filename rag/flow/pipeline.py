@@ -154,7 +154,17 @@ class Pipeline(Graph):
 
             tasks = []
             tasks.append(asyncio.create_task(invoke()))
-            await asyncio.gather(*tasks)
+            try:
+                await asyncio.gather(*tasks)
+            except Exception as e:
+                logging.error(f"Error during task execution: {e}")
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                self.error = "[ERROR]Task execution failed: " + str(e)
+                self.callback(cpn_obj._id, -1, self.error)
+                break
 
             if cpn_obj.error():
                 self.error = "[ERROR]" + cpn_obj.error()

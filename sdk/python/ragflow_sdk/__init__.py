@@ -17,7 +17,7 @@
 from beartype.claw import beartype_this_package
 beartype_this_package()
 
-import importlib.metadata
+from importlib import metadata
 
 from .ragflow import RAGFlow
 from .modules.dataset import DataSet
@@ -27,7 +27,7 @@ from .modules.document import Document
 from .modules.chunk import Chunk
 from .modules.agent import Agent
 
-__version__ = importlib.metadata.version("ragflow_sdk")
+__version__ = metadata.version("ragflow_sdk")
 
 __all__ = [
     "RAGFlow",
