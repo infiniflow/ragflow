@@ -78,7 +78,8 @@ LANGUAGE_TO_MINERU_MAP = {
 class MinerUBackend(StrEnum):
     """MinerU processing backend options."""
 
-    PIPELINE = "pipeline"  # Traditional multimodel pipeline (default)
+    HYBRID_AUTO_ENGINE = "hybrid-auto-engine"  # Hybrid auto engine for MinerU 2.7.0+ (default)
+    PIPELINE = "pipeline"  # Traditional multimodel pipeline
     VLM_TRANSFORMERS = "vlm-transformers"  # Vision-language model using HuggingFace Transformers
     VLM_MLX_ENGINE = "vlm-mlx-engine"  # Faster, requires Apple Silicon and macOS 13.5+
     VLM_VLLM_ENGINE = "vlm-vllm-engine"  # Local vLLM engine, requires local GPU
@@ -121,7 +122,7 @@ class MinerUParseMethod(StrEnum):
 class MinerUParseOptions:
     """Options for MinerU PDF parsing."""
 
-    backend: MinerUBackend = MinerUBackend.PIPELINE
+    backend: MinerUBackend = MinerUBackend.HYBRID_AUTO_ENGINE
     lang: Optional[MinerULanguage] = None  # language for OCR (pipeline backend only)
     method: MinerUParseMethod = MinerUParseMethod.AUTO
     server_url: Optional[str] = None
@@ -129,6 +130,8 @@ class MinerUParseOptions:
     parse_method: str = "raw"
     formula_enable: bool = True
     table_enable: bool = True
+    start_page_id: int = 0  # Start page for pagination (0-indexed)
+    end_page_id: int = 99999  # End page for pagination (inclusive)
 
 
 class MinerUParser(RAGFlowPdfParser):
@@ -180,10 +183,10 @@ class MinerUParser(RAGFlowPdfParser):
         except Exception:
             return False
 
-    def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
+    def check_installation(self, backend: str = "hybrid-auto-engine", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
 
-        valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
+        valid_backends = ["hybrid-auto-engine", "pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
         if backend not in valid_backends:
             reason = f"[MinerU] Invalid backend '{backend}'. Valid backends are: {valid_backends}"
             self.logger.warning(reason)
@@ -253,8 +256,8 @@ class MinerUParser(RAGFlowPdfParser):
             "return_content_list": True,
             "return_images": True,
             "response_format_zip": True,
-            "start_page_id": 0,
-            "end_page_id": 99999,
+            "start_page_id": options.start_page_id,
+            "end_page_id": options.end_page_id,
         }
 
         if options.server_url:
@@ -307,6 +310,26 @@ class MinerUParser(RAGFlowPdfParser):
             self.page_images = None
             self.total_page = 0
             self.logger.exception(e)
+
+    def _get_total_pages(self, fnm) -> int:
+        """
+        Get the total number of pages in a PDF document.
+        
+        This method provides an optimized way to retrieve page count without loading
+        the entire document, useful for batch processing and pagination.
+        
+        Args:
+            fnm: File path or file-like object for the PDF
+            
+        Returns:
+            Total number of pages in the PDF
+        """
+        try:
+            with pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm)) as pdf:
+                return len(pdf.pages)
+        except Exception as e:
+            self.logger.warning(f"[MinerU] Failed to get total pages: {e}")
+            return 0
 
     def _line_tag(self, bx):
         pn = [bx["page_idx"] + 1]
@@ -547,10 +570,12 @@ class MinerUParser(RAGFlowPdfParser):
             callback: Optional[Callable] = None,
             *,
             output_dir: Optional[str] = None,
-            backend: str = "pipeline",
+            backend: str = "hybrid-auto-engine",
             server_url: Optional[str] = None,
             delete_output: bool = True,
             parse_method: str = "raw",
+            from_page: int = 0,
+            to_page: int = 100000,
             **kwargs,
     ) -> tuple:
         import shutil
@@ -603,6 +628,11 @@ class MinerUParser(RAGFlowPdfParser):
         self.__images__(pdf, zoomin=1)
 
         try:
+            # Convert from_page/to_page to 0-indexed start_page_id/end_page_id
+            # MinerU API uses 0-indexed page IDs
+            start_page_id = max(0, from_page)
+            end_page_id = min(to_page, 99999)
+            
             options = MinerUParseOptions(
                 backend=MinerUBackend(backend),
                 lang=MinerULanguage(mineru_lang_code),
@@ -612,10 +642,12 @@ class MinerUParser(RAGFlowPdfParser):
                 parse_method=parse_method,
                 formula_enable=enable_formula,
                 table_enable=enable_table,
+                start_page_id=start_page_id,
+                end_page_id=end_page_id,
             )
             final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
-            self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
+            self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF (pages {start_page_id} to {end_page_id}).")
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
 
