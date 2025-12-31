@@ -5,7 +5,7 @@ import styles from './index.module.less';
 const ApiPage = () => {
   return (
     <div className={styles.apiWrapper}>
-      <ApiContent idKey="dialogId" hideChatPreviewCard></ApiContent>
+      <ApiContent idKey="dialogId"></ApiContent>
     </div>
   );
 };
