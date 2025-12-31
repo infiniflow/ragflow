@@ -29,6 +29,7 @@ export enum DataSourceKey {
   ASANA = 'asana',
   IMAP = 'imap',
   GITHUB = 'github',
+  ZENDESK = 'zendesk',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -132,6 +133,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'IMAP',
       description: t(`setting.${DataSourceKey.IMAP}Description`),
       icon: <SvgIcon name={'data-source/imap'} width={38} />,
+    },
+    [DataSourceKey.ZENDESK]: {
+      name: 'Zendesk',
+      description: t(`setting.${DataSourceKey.ZENDESK}Description`),
+      icon: <SvgIcon name={'data-source/zendesk'} width={38} />,
     },
   };
 };
@@ -822,6 +828,36 @@ export const DataSourceFormFields = {
       required: false,
     },
   ],
+  [DataSourceKey.ZENDESK]: [
+    {
+      label: 'Zendesk Domain',
+      name: 'config.credentials.zendesk_subdomain',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Zendesk Email',
+      name: 'config.credentials.zendesk_email',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Zendesk Token',
+      name: 'config.credentials.zendesk_token',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Content',
+      name: 'config.zendesk_content_type',
+      type: FormFieldType.Segmented,
+      required: true,
+      options: [
+        { label: 'Articles', value: 'articles' },
+        { label: 'Tickets', value: 'tickets' },
+      ],
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1073,6 +1109,19 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         imap_username: '',
         imap_password: '',
+      },
+    },
+  },
+  [DataSourceKey.ZENDESK]: {
+    name: '',
+    source: DataSourceKey.ZENDESK,
+    config: {
+      name: '',
+      zendesk_content_type: 'articles',
+      credentials: {
+        zendesk_subdomain: '',
+        zendesk_email: '',
+        zendesk_token: '',
       },
     },
   },
