@@ -93,7 +93,6 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         max_clusters = min(self._max_cluster, len(embeddings))
         n_clusters = np.arange(1, max_clusters)
         bics = []
-        failed_clusters = []
         
         for n in n_clusters:
             if task_id:
@@ -107,12 +106,10 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 bics.append(gm.bic(embeddings))
             except (ValueError, RuntimeError) as e:
                 logging.warning(f"GMM fitting failed for n_components={n}: {str(e)}. Skipping this cluster count.")
-                failed_clusters.append(n)
                 # Add a high penalty value so this cluster count won't be selected
                 bics.append(float('inf'))
             except Exception as e:
                 logging.error(f"Unexpected error during GMM fitting for n_components={n}: {str(e)}. Skipping this cluster count.")
-                failed_clusters.append(n)
                 bics.append(float('inf'))
         
         # If all attempts failed, return 1 as safe default

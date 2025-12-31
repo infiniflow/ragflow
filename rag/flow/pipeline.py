@@ -162,7 +162,7 @@ class Pipeline(Graph):
                     if not t.done():
                         t.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
-                self.error = f"[ERROR] Task execution failed: {str(e)}"
+                self.error = "[ERROR]Task execution failed: " + str(e)
                 self.callback(cpn_obj._id, -1, self.error)
                 break
 
