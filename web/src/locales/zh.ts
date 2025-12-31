@@ -173,6 +173,7 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        toMetadataSettingTip: '在配置中设置自动元数据',
         toMetadataSetting: '生成设置',
         descriptionTip:
           '提供描述或示例来指导大语言模型为此字段提取值。如果留空，将依赖字段名称。',
