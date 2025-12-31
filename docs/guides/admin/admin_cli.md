@@ -1,43 +1,11 @@
 ---
-sidebar_position: 6
-slug: /manage_users_and_services
+sidebar_position: 2
+slug: /admin_cli
 ---
 
+# Admin CLI
 
-# Admin CLI and Admin Service
-
-
-
-The Admin CLI and Admin Service form a client-server architectural suite for RAGFlow system administration. The Admin CLI serves as an interactive command-line interface that receives instructions and displays execution results from the Admin Service in real-time. This duo enables real-time monitoring of system operational status, supporting visibility into RAGFlow Server services and dependent components including MySQL, Elasticsearch, Redis, and MinIO. In administrator mode, they provide user management capabilities that allow viewing users and performing critical operations—such as user creation, password updates, activation status changes, and comprehensive user data deletion—even when corresponding web interface functionalities are disabled.
-
-
-
-## Starting the Admin Service
-
-### Launching from source code
-
-1. Before start Admin Service, please make sure RAGFlow system is already started.
-
-2. Launch from source code:
-
-   ```bash
-   python admin/server/admin_server.py
-   ```
-
-   The service will start and listen for incoming connections from the CLI on the configured port. 
-
-### Using docker image
-
-1. Before startup, please configure the `docker_compose.yml`  file to enable admin server:
-
-   ```bash
-   command:
-     - --enable-adminserver
-   ```
-
-2. Start the containers, the service will start and listen for incoming connections from the CLI on the configured port.
-
-
+The RAGFlow Admin CLI is a command-line-based system administration tool that offers administrators an efficient and flexible method for system interaction and control. Operating on a client-server architecture, it communicates in real-time with the Admin Service, receiving administrator commands and dynamically returning execution results.
 
 ## Using the Admin CLI
 
@@ -46,7 +14,7 @@ The Admin CLI and Admin Service form a client-server architectural suite for RAG
 2. Install ragflow-cli.
 
    ```bash
-   pip install ragflow-cli==0.23.0
+   pip install ragflow-cli==0.23.1
    ```
 
 3. Launch the CLI client:

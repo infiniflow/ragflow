@@ -731,6 +731,7 @@ export default {
       newDocs: 'Новые документы',
       timeStarted: 'Время начала',
       log: 'Лог',
+      connectorNameTip: 'Укажите понятное имя для коннектора',
       confluenceDescription:
         'Интегрируйте ваше рабочее пространство Confluence для поиска документации.',
       s3Description:
@@ -747,12 +748,28 @@ export default {
         'Синхронизируйте страницы и базы данных из Notion для извлечения знаний.',
       boxDescription:
         'Подключите ваш диск Box для синхронизации файлов и папок.',
+      bitbucketDescription:
+        'Подключите Bitbucket для синхронизации содержимого PR.',
+      zendeskDescription:
+        'Подключите Zendesk для синхронизации тикетов, статей и другого контента.',
+      bitbucketTopWorkspaceTip:
+        'Рабочее пространство Bitbucket для индексации (например, "atlassian" из https://bitbucket.org/atlassian/workspace )',
+      bitbucketWorkspaceTip:
+        'Этот коннектор проиндексирует все репозитории в рабочем пространстве.',
+      bitbucketProjectsTip:
+        'Ключи проектов через запятую, например: PROJ1,PROJ2',
+      bitbucketRepositorySlugsTip:
+        'Слоги репозиториев через запятую, например: repo-one,repo-two',
+      githubDescription:
+        'Подключите GitHub для синхронизации содержимого Pull Request и Issue для поиска.',
       airtableDescription:
         'Подключите Airtable и синхронизируйте файлы из указанной таблицы в заданном рабочем пространстве.',
       gitlabDescription:
         'Подключите GitLab для синхронизации репозиториев, задач, merge requests и связанной документации.',
       asanaDescription:
         'Подключите Asana и синхронизируйте файлы из рабочего пространства.',
+      imapDescription:
+        'Подключите почтовый ящик IMAP для синхронизации писем из указанных почтовых ящиков (mailboxes) с целью поиска и анализа знаний.',
       google_driveDescription:
         'Подключите ваш Google Drive через OAuth и синхронизируйте определенные папки или диски.',
       gmailDescription:

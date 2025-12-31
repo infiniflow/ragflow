@@ -278,7 +278,7 @@ export const useRunDocument = () => {
       const ret = await kbService.document_run({
         doc_ids: documentIds,
         run,
-        ...option,
+        ...(option || {}),
       });
       const code = get(ret, 'data.code');
       if (code === 0) {

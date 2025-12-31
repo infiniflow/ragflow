@@ -1,4 +1,4 @@
-import { FormFieldType } from '@/components/dynamic-form';
+import { FilterFormField, FormFieldType } from '@/components/dynamic-form';
 import { TFunction } from 'i18next';
 import { BedrockRegionList } from '../../setting-model/constant';
 
@@ -50,7 +50,7 @@ export const S3Constant = (t: TFunction) => [
   },
   {
     label: 'Authentication',
-    name: 'config.authMode',
+    name: 'config.credentials.authentication_method',
     type: FormFieldType.Segmented,
     options: [
       { label: 'Access Key', value: 'access_key' },
@@ -67,7 +67,7 @@ export const S3Constant = (t: TFunction) => [
     label: 'AWS Access Key ID',
     type: FormFieldType.Text,
     customValidate: (val: string, formValues: any) => {
-      const authMode = formValues?.config?.authMode;
+      const authMode = formValues?.config?.credentials?.authentication_method;
       const bucketType = formValues?.config?.bucket_type;
       console.log('authMode', authMode, val);
       if (
@@ -79,7 +79,7 @@ export const S3Constant = (t: TFunction) => [
       return true;
     },
     shouldRender: (formValues: any) => {
-      const authMode = formValues?.config?.authMode;
+      const authMode = formValues?.config?.credentials?.authentication_method;
       const bucketType = formValues?.config?.bucket_type;
       return authMode === 'access_key' || bucketType === 's3_compatible';
     },
@@ -89,7 +89,7 @@ export const S3Constant = (t: TFunction) => [
     label: 'AWS Secret Access Key',
     type: FormFieldType.Password,
     customValidate: (val: string, formValues: any) => {
-      const authMode = formValues?.config?.authMode;
+      const authMode = formValues?.config?.credentials?.authentication_method;
       const bucketType = formValues?.config?.bucket_type;
       if (authMode === 'access_key' || bucketType === 's3_compatible') {
         return Boolean(val) || '"AWS Secret Access Key" is required';
@@ -97,7 +97,7 @@ export const S3Constant = (t: TFunction) => [
       return true;
     },
     shouldRender: (formValues: any) => {
-      const authMode = formValues?.config?.authMode;
+      const authMode = formValues?.config?.credentials?.authentication_method;
       const bucketType = formValues?.config?.bucket_type;
       return authMode === 'access_key' || bucketType === 's3_compatible';
     },
@@ -109,7 +109,7 @@ export const S3Constant = (t: TFunction) => [
     type: FormFieldType.Text,
     placeholder: 'arn:aws:iam::123456789012:role/YourRole',
     customValidate: (val: string, formValues: any) => {
-      const authMode = formValues?.config?.authMode;
+      const authMode = formValues?.config?.credentials?.authentication_method;
       const bucketType = formValues?.config?.bucket_type;
       if (authMode === 'iam_role' || bucketType === 's3') {
         return Boolean(val) || '"AWS Secret Access Key" is required';
@@ -117,17 +117,17 @@ export const S3Constant = (t: TFunction) => [
       return true;
     },
     shouldRender: (formValues: any) => {
-      const authMode = formValues?.config?.authMode;
+      const authMode = formValues?.config?.credentials?.authentication_method;
       const bucketType = formValues?.config?.bucket_type;
       return authMode === 'iam_role' && bucketType === 's3';
     },
   },
   {
-    name: 'static.tip',
+    name: FilterFormField + '.tip',
     label: ' ',
     type: FormFieldType.Custom,
     shouldRender: (formValues: any) => {
-      const authMode = formValues?.config?.authMode;
+      const authMode = formValues?.config?.credentials?.authentication_method;
       const bucketType = formValues?.config?.bucket_type;
       return authMode === 'assume_role' && bucketType === 's3';
     },

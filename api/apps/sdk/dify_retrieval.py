@@ -150,7 +150,7 @@ async def retrieval(tenant_id):
         )
 
         if use_kg:
-            ck = settings.kg_retriever.retrieval(question,
+            ck = await settings.kg_retriever.retrieval(question,
                                                  [tenant_id],
                                                  [kb_id],
                                                  embd_mdl,

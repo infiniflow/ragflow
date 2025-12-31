@@ -130,14 +130,19 @@ class FileSource(StrEnum):
     GOOGLE_CLOUD_STORAGE = "google_cloud_storage"
     AIRTABLE = "airtable"
     ASANA = "asana"
+    GITHUB = "github"
     GITLAB = "gitlab"
-    
+    IMAP = "imap"
+    BITBUCKET = "bitbucket"
+    ZENDESK = "zendesk"
+
 class PipelineTaskType(StrEnum):
     PARSE = "Parse"
     DOWNLOAD = "Download"
     RAPTOR = "RAPTOR"
     GRAPH_RAG = "GraphRAG"
     MINDMAP = "Mindmap"
+    MEMORY = "Memory"
 
 
 VALID_PIPELINE_TASK_TYPES = {PipelineTaskType.PARSE, PipelineTaskType.DOWNLOAD, PipelineTaskType.RAPTOR,

@@ -26,6 +26,7 @@ import time
 from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+from api.db.joint_services.memory_message_service import handle_save_to_memory_task
 from common.connection_utils import timeout
 from common.metadata_utils import update_metadata_to, metadata_schema
 from rag.utils.base64_image import image2id
@@ -96,6 +97,7 @@ TASK_TYPE_TO_PIPELINE_TASK_TYPE = {
     "raptor": PipelineTaskType.RAPTOR,
     "graphrag": PipelineTaskType.GRAPH_RAG,
     "mindmap": PipelineTaskType.MINDMAP,
+    "memory": PipelineTaskType.MEMORY,
 }
 
 UNACKED_ITERATOR = None
@@ -157,8 +159,8 @@ def set_progress(task_id, from_page=0, to_page=-1, prog=None, msg="Processing...
         logging.info(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}")
     except DoesNotExist:
         logging.warning(f"set_progress({task_id}) got exception DoesNotExist")
-    except Exception:
-        logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception")
+    except Exception as e:
+        logging.exception(f"set_progress({task_id}), progress: {prog}, progress_msg: {msg}, got exception: {e}")
 
 
 async def collect():
@@ -166,6 +168,7 @@ async def collect():
     global UNACKED_ITERATOR
 
     svr_queue_names = settings.get_svr_queue_names()
+    redis_msg = None
     try:
         if not UNACKED_ITERATOR:
             UNACKED_ITERATOR = REDIS_CONN.get_unacked_iterator(svr_queue_names, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
@@ -176,8 +179,8 @@ async def collect():
                 redis_msg = REDIS_CONN.queue_consumer(svr_queue_name, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
                 if redis_msg:
                     break
-    except Exception:
-        logging.exception("collect got exception")
+    except Exception as e:
+        logging.exception(f"collect got exception: {e}")
         return None, None
 
     if not redis_msg:
@@ -196,6 +199,9 @@ async def collect():
             if task:
                 task["doc_id"] = msg["doc_id"]
                 task["doc_ids"] = msg.get("doc_ids", []) or []
+    elif msg.get("task_type") == PipelineTaskType.MEMORY.lower():
+        _, task_obj = TaskService.get_by_id(msg["id"])
+        task = task_obj.to_dict()
     else:
         task = TaskService.get_task(msg["id"])
 
@@ -214,6 +220,10 @@ async def collect():
         task["tenant_id"] = msg["tenant_id"]
         task["dataflow_id"] = msg["dataflow_id"]
         task["kb_id"] = msg.get("kb_id", "")
+    if task_type[:6] == "memory":
+        task["memory_id"] = msg["memory_id"]
+        task["source_id"] = msg["source_id"]
+        task["message_dict"] = msg["message_dict"]
     return redis_msg, task
 
 
@@ -322,6 +332,9 @@ async def build_chunks(task, progress_callback):
         async def doc_keyword_extraction(chat_mdl, d, topn):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "keywords", {"topn": topn})
             if not cached:
+                if has_canceled(task["id"]):
+                    progress_callback(-1, msg="Task has been canceled.")
+                    return
                 async with chat_limiter:
                     cached = await keyword_extraction(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
@@ -352,6 +365,9 @@ async def build_chunks(task, progress_callback):
         async def doc_question_proposal(chat_mdl, d, topn):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "question", {"topn": topn})
             if not cached:
+                if has_canceled(task["id"]):
+                    progress_callback(-1, msg="Task has been canceled.")
+                    return
                 async with chat_limiter:
                     cached = await question_proposal(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "question", {"topn": topn})
@@ -382,6 +398,9 @@ async def build_chunks(task, progress_callback):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], "metadata",
                                    task["parser_config"]["metadata"])
             if not cached:
+                if has_canceled(task["id"]):
+                    progress_callback(-1, msg="Task has been canceled.")
+                    return
                 async with chat_limiter:
                     cached = await gen_metadata(chat_mdl,
                                                 metadata_schema(task["parser_config"]["metadata"]),
@@ -447,6 +466,9 @@ async def build_chunks(task, progress_callback):
         async def doc_content_tagging(chat_mdl, d, topn_tags):
             cached = get_llm_cache(chat_mdl.llm_name, d["content_with_weight"], all_tags, {"topn": topn_tags})
             if not cached:
+                if has_canceled(task["id"]):
+                    progress_callback(-1, msg="Task has been canceled.")
+                    return
                 picked_examples = random.choices(examples, k=2) if len(examples) > 2 else examples
                 if not picked_examples:
                     picked_examples.append({"content": "This is an example", TAG_FLD: {'example': 1}})
@@ -865,6 +887,10 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
 async def do_handle_task(task):
     task_type = task.get("task_type", "")
 
+    if task_type == "memory":
+        await handle_save_to_memory_task(task)
+        return
+
     if task_type == "dataflow" and task.get("doc_id", "") == CANVAS_DEBUG_DOC_ID:
         await run_dataflow(task)
         return
@@ -876,6 +902,7 @@ async def do_handle_task(task):
     task_embedding_id = task["embd_id"]
     task_language = task["language"]
     task_llm_id = task["parser_config"].get("llm_id") or task["llm_id"]
+    task["llm_id"] = task_llm_id
     task_dataset_id = task["kb_id"]
     task_doc_id = task["doc_id"]
     task_document_name = task["name"]
@@ -1050,8 +1077,8 @@ async def do_handle_task(task):
     async def _maybe_insert_es(_chunks):
         if has_canceled(task_id):
             return True
-        e = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
-        return bool(e)
+        insert_result = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
+        return bool(insert_result)
 
     try:
         if not await _maybe_insert_es(chunks):
@@ -1101,10 +1128,9 @@ async def do_handle_task(task):
                         search.index_name(task_tenant_id),
                         task_dataset_id,
                     )
-            except Exception:
+            except Exception as e:
                 logging.exception(
-                    f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled."
-                )
+                    f"Remove doc({task_doc_id}) from docStore failed when task({task_id}) canceled, exception: {e}")
 
 
 async def handle_task():
@@ -1117,24 +1143,25 @@ async def handle_task():
     task_type = task["task_type"]
     pipeline_task_type = TASK_TYPE_TO_PIPELINE_TASK_TYPE.get(task_type,
                                                              PipelineTaskType.PARSE) or PipelineTaskType.PARSE
-
+    task_id = task["id"]
     try:
         logging.info(f"handle_task begin for task {json.dumps(task)}")
         CURRENT_TASKS[task["id"]] = copy.deepcopy(task)
         await do_handle_task(task)
         DONE_TASKS += 1
-        CURRENT_TASKS.pop(task["id"], None)
+        CURRENT_TASKS.pop(task_id, None)
         logging.info(f"handle_task done for task {json.dumps(task)}")
     except Exception as e:
         FAILED_TASKS += 1
-        CURRENT_TASKS.pop(task["id"], None)
+        CURRENT_TASKS.pop(task_id, None)
         try:
             err_msg = str(e)
             while isinstance(e, exceptiongroup.ExceptionGroup):
                 e = e.exceptions[0]
                 err_msg += ' -- ' + str(e)
-            set_progress(task["id"], prog=-1, msg=f"[Exception]: {err_msg}")
-        except Exception:
+            set_progress(task_id, prog=-1, msg=f"[Exception]: {err_msg}")
+        except Exception as e:
+            logging.exception(f"[Exception]: {str(e)}")
             pass
         logging.exception(f"handle_task got exception for task {json.dumps(task)}")
     finally:
@@ -1207,8 +1234,8 @@ async def report_status():
                         logging.info(f"{consumer_name} expired, removed")
                         REDIS_CONN.srem("TASKEXE", consumer_name)
                         REDIS_CONN.delete(consumer_name)
-        except Exception:
-            logging.exception("report_status got exception")
+        except Exception as e:
+            logging.exception(f"report_status got exception: {e}")
         finally:
             redis_lock.release()
         await asyncio.sleep(30)
