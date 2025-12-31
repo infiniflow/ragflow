@@ -15,6 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useSetModalState } from '@/hooks/common-hooks';
+import { Routes } from '@/routes';
 import {
   ColumnDef,
   flexRender,
@@ -27,6 +28,7 @@ import {
 import { Plus, Settings, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useHandleMenuClick } from '../../sidebar/hooks';
 import {
   MetadataDeleteMap,
   MetadataType,
@@ -78,7 +80,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     addUpdateValue,
     addDeleteValue,
   } = useManageMetaDataModal(originalTableData, metadataType, otherData);
-
+  const { handleMenuClick } = useHandleMenuClick();
   const {
     visible: manageValuesVisible,
     showModal: showManageValuesModal,
@@ -338,10 +340,23 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <div>{t('knowledgeDetails.metadata.metadata')}</div>
+            {metadataType === MetadataType.Manage && (
+              <Button
+                variant={'ghost'}
+                className="border border-border-button"
+                type="button"
+                onClick={handleMenuClick(Routes.DataSetSetting, {
+                  openMetadata: true,
+                })}
+              >
+                {t('knowledgeDetails.metadata.toMetadataSetting')}
+              </Button>
+            )}
             {isCanAdd && (
               <Button
                 variant={'ghost'}
                 className="border border-border-button"
+                type="button"
                 onClick={handAddValueRow}
               >
                 <Plus />
