@@ -22,7 +22,7 @@ from functools import partial
 
 from litellm import logging
 import numpy as np
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -600,12 +600,14 @@ class Parser(ProcessBase):
 
         try:
             img = Image.open(io.BytesIO(blob)).convert("RGB")
-        except (Image.UnidentifiedImageError, Image.DecompressionBombError) as e:
+        except UnidentifiedImageError as e:
             logging.error(f"Failed to open or convert image '{name}': {str(e)}")
             self.set_output("text", "")
             return
         except Exception as e:
-            logging.error(f"Unexpected error processing image '{name}': {str(e)}")
+            # Catch other PIL errors (e.g., DecompressionBombError, IOError)
+            # and general exceptions to prevent crashes
+            logging.error(f"Error processing image '{name}': {str(e)}")
             self.set_output("text", "")
             return
 
