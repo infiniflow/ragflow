@@ -15,7 +15,9 @@ Released on December 31, 2025.
 ### Improvements
 
 - Memory: Enhances the stability of memory extraction when all memory types are selected.
-- RAG: Refines the context window extraction strategy for images and tables.
+- RAG: 
+  - Refines the context window extraction strategy for images and tables.
+  - Accelerates GraphRAG generation significantly.
 
 ### Fixed issues
 
