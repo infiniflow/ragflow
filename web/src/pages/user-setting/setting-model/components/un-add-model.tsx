@@ -7,7 +7,12 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectLlmList } from '@/hooks/use-llm-request';
 import { ArrowUpRight, Plus } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
-
+export const mapModelKey = {
+  IMAGE2TEXT: 'VLM',
+  'TEXT EMBEDDING': 'Embedding',
+  SPEECH2TEXT: 'ASR',
+  'TEXT RE-RANK': 'Rerank',
+};
 type TagType =
   | 'LLM'
   | 'TEXT EMBEDDING'
@@ -62,7 +67,13 @@ export const AvailableModels: FC<{
   const allTags = useMemo(() => {
     const tagsSet = new Set<string>();
     factoryList.forEach((model) => {
-      model.tags.split(',').forEach((tag) => tagsSet.add(tag.trim()));
+      model.tags
+        .split(',')
+        .forEach((tag) =>
+          tagsSet.add(
+            mapModelKey[tag.trim() as keyof typeof mapModelKey] || tag.trim(),
+          ),
+        );
     });
     return Array.from(tagsSet).sort();
   }, [factoryList]);
@@ -162,7 +173,9 @@ export const AvailableModels: FC<{
                   key={index}
                   className="px-1 flex items-center h-5 text-xs bg-bg-card text-text-secondary rounded-md"
                 >
-                  {tag}
+                  {/* {tag} */}
+                  {mapModelKey[tag.trim() as keyof typeof mapModelKey] ||
+                    tag.trim()}
                 </span>
               ))}
             </div>
