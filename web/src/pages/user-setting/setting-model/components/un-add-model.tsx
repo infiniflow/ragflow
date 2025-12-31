@@ -7,7 +7,21 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useSelectLlmList } from '@/hooks/use-llm-request';
 import { ArrowUpRight, Plus } from 'lucide-react';
 import { FC, useMemo, useState } from 'react';
-
+export const mapModelKey = {
+  IMAGE2TEXT: 'VLM',
+  'TEXT EMBEDDING': 'Embedding',
+  SPEECH2TEXT: 'ASR',
+  'TEXT RE-RANK': 'Rerank',
+};
+const orderMap: Record<TagType, number> = {
+  LLM: 1,
+  'TEXT EMBEDDING': 2,
+  'TEXT RE-RANK': 3,
+  TTS: 4,
+  SPEECH2TEXT: 5,
+  IMAGE2TEXT: 6,
+  MODERATION: 7,
+};
 type TagType =
   | 'LLM'
   | 'TEXT EMBEDDING'
@@ -18,16 +32,6 @@ type TagType =
   | 'MODERATION';
 
 const sortTags = (tags: string) => {
-  const orderMap: Record<TagType, number> = {
-    LLM: 1,
-    'TEXT EMBEDDING': 2,
-    'TEXT RE-RANK': 3,
-    TTS: 4,
-    SPEECH2TEXT: 5,
-    IMAGE2TEXT: 6,
-    MODERATION: 7,
-  };
-
   return tags
     .split(',')
     .map((tag) => tag.trim())
@@ -64,7 +68,10 @@ export const AvailableModels: FC<{
     factoryList.forEach((model) => {
       model.tags.split(',').forEach((tag) => tagsSet.add(tag.trim()));
     });
-    return Array.from(tagsSet).sort();
+    return Array.from(tagsSet).sort(
+      (a, b) =>
+        (orderMap[a as TagType] || 999) - (orderMap[b as TagType] || 999),
+    );
   }, [factoryList]);
 
   const handleTagClick = (tag: string) => {
@@ -114,7 +121,7 @@ export const AvailableModels: FC<{
                 : 'text-text-secondary  border-none bg-bg-card'
             }`}
           >
-            {tag}
+            {mapModelKey[tag.trim() as keyof typeof mapModelKey] || tag.trim()}
           </Button>
         ))}
       </div>
@@ -162,7 +169,9 @@ export const AvailableModels: FC<{
                   key={index}
                   className="px-1 flex items-center h-5 text-xs bg-bg-card text-text-secondary rounded-md"
                 >
-                  {tag}
+                  {/* {tag} */}
+                  {mapModelKey[tag.trim() as keyof typeof mapModelKey] ||
+                    tag.trim()}
                 </span>
               ))}
             </div>

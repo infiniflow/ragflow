@@ -183,7 +183,7 @@ export function ParsingStatusCell({
       )}
       {reparseDialogVisible && (
         <ReparseDialog
-          hidden={isZeroChunk || isRunning}
+          hidden={isRunning}
           // hidden={false}
           handleOperationIconClick={handleOperationIconClick}
           chunk_num={chunk_num}
