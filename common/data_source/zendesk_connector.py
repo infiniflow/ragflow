@@ -4,7 +4,6 @@ import time
 from collections.abc import Callable
 from collections.abc import Iterator
 from typing import Any
-from typing import cast
 
 import requests
 from pydantic import BaseModel
@@ -15,7 +14,7 @@ from common.data_source.config import ZENDESK_CONNECTOR_SKIP_ARTICLE_LABELS, Doc
 from common.data_source.exceptions import ConnectorValidationError, CredentialExpiredError, InsufficientPermissionsError
 from common.data_source.html_utils import parse_html_page_basic
 from common.data_source.interfaces import CheckpointOutput, CheckpointOutputWrapper, CheckpointedConnector, IndexingHeartbeatInterface, SlimConnectorWithPermSync
-from common.data_source.models import BasicExpertInfo, ConnectorCheckpoint, ConnectorFailure, Document, DocumentFailure, GenerateSlimDocumentOutput, SecondsSinceUnixEpoch, SlimDocument, TextSection
+from common.data_source.models import BasicExpertInfo, ConnectorCheckpoint, ConnectorFailure, Document, DocumentFailure, GenerateSlimDocumentOutput, SecondsSinceUnixEpoch, SlimDocument
 from common.data_source.utils import retry_builder, time_str_to_utc,rate_limit_builder
 
 MAX_PAGE_SIZE = 30  # Zendesk API maximum
@@ -274,7 +273,6 @@ def _ticket_to_document(
     ticket: dict[str, Any],
     author_map: dict[str, BasicExpertInfo],
     client: ZendeskClient,
-    default_subdomain: str,
 ) -> tuple[dict[str, BasicExpertInfo] | None, Document]:
     submitter_id = ticket.get("submitter")
     if not submitter_id:
@@ -321,16 +319,6 @@ def _ticket_to_document(
     subject = ticket.get("subject")
     full_text = f"Ticket Subject:\n{subject}\n\nComments:\n{comments_text}"
 
-    ticket_url = ticket.get("url")
-    subdomain = (
-        ticket_url.split("//")[1].split(".zendesk.com")[0]
-        if ticket_url
-        else default_subdomain
-    )
-
-    ticket_display_url = (
-        f"https://{subdomain}.zendesk.com/agent/tickets/{ticket.get('id')}"
-    )
     blob = full_text.encode("utf-8", errors="replace")
     return new_author_mapping, Document(
         id=f"zendesk_ticket_{ticket['id']}",
@@ -518,7 +506,6 @@ class ZendeskConnector(
                     ticket=ticket,
                     author_map=author_map,
                     client=self.client,
-                    default_subdomain=self.subdomain,
                 )
             except Exception as e:
                 logging.error(f"Error processing ticket {ticket['id']}: {e}")
