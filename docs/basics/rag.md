@@ -1,6 +1,6 @@
 ---
 sidebar_position: 1
-slug: /what_is_rag
+slug: /what-is-rag
 ---
 
 # What is Retreival-Augmented-Generation (RAG)？
