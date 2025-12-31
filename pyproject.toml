@@ -26,6 +26,7 @@ dependencies = [
     "deepl==1.18.0",
     "demjson3==3.0.6",
     "discord-py==2.3.2",
+    "docling>=2.60.0,<3.0.0",
     "dropbox==12.0.2",
     "duckduckgo-search>=7.2.0,<8.0.0",
     "editdistance==0.8.1",
