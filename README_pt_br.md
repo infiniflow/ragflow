@@ -37,7 +37,7 @@
 
 <h4 align="center">
   <a href="https://ragflow.io/docs/dev/">Documentação</a> |
-  <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
+  <a href="https://github.com/infiniflow/ragflow/issues/12241">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
   <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
@@ -385,7 +385,7 @@ docker build --platform linux/amd64 \
 
 ## 📜 Roadmap
 
-Veja o [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214)
+Veja o [RAGFlow Roadmap 2026](https://github.com/infiniflow/ragflow/issues/12241)
 
 ## 🏄 Comunidade
 
