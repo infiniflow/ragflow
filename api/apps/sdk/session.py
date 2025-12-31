@@ -60,7 +60,7 @@ async def create(tenant_id, chat_id):
         "name": req.get("name", "New session"),
         "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue")}],
         "user_id": req.get("user_id", ""),
-        "reference": [{}],
+        "reference": [],
     }
     if not conv.get("name"):
         return get_error_data_result(message="`name` can not be empty.")
