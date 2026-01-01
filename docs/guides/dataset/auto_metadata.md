@@ -34,7 +34,7 @@ Enabling TOC extraction requires significant memory, computational resources, an
 
 ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/auto_metadata_settings.png)
 
-3. Click **+** to add new fields and enter the congiruation page.
+3. Click **+** to add new fields and enter the configuration page.
 
 ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/metadata_field_settings.png)
 

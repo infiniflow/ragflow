@@ -95,7 +95,7 @@ export const AdvancedSettingsForm = () => {
               // placeholder: t('memory.config.storageTypePlaceholder'),
               options: [
                 // { label: 'LRU', value: 'LRU' },
-                { label: 'FIFO', value: 'fifo' },
+                { label: 'FIFO', value: 'FIFO' },
               ],
               required: false,
             }}

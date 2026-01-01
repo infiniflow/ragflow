@@ -6,7 +6,6 @@ from urllib.parse import quote_plus
 from common.config_utils import get_base_config
 from common.decorator import singleton
 
-
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS `{}` (
     `key` VARCHAR(255) PRIMARY KEY,
@@ -36,7 +35,8 @@ def get_opendal_config():
                 "table": opendal_config.get("config", {}).get("oss_table", "opendal_storage"),
                 "max_allowed_packet": str(max_packet)
             }
-            kwargs["connection_string"] = f"mysql://{kwargs['user']}:{quote_plus(kwargs['password'])}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}?max_allowed_packet={max_packet}"
+            kwargs[
+                "connection_string"] = f"mysql://{kwargs['user']}:{quote_plus(kwargs['password'])}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}?max_allowed_packet={max_packet}"
         else:
             scheme = opendal_config.get("scheme")
             config_data = opendal_config.get("config", {})
@@ -61,7 +61,7 @@ def get_opendal_config():
             del kwargs["password"]
         if "connection_string" in kwargs:
             del kwargs["connection_string"]
-        return kwargs   
+        return kwargs
     except Exception as e:
         logging.error("Failed to load OpenDAL configuration from yaml: %s", str(e))
         raise
@@ -98,7 +98,6 @@ class OpenDALStorage:
 
     def obj_exist(self, bucket, fnm, tenant_id=None):
         return self._operator.exists(f"{bucket}/{fnm}")
-
 
     def init_db_config(self):
         try:

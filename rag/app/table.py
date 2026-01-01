@@ -42,23 +42,24 @@ class Excel(ExcelParser):
         else:
             wb = Excel._load_excel_to_workbook(BytesIO(binary))
         total = 0
-        for sheetname in wb.sheetnames:
-            total += len(list(wb[sheetname].rows))
+        for sheet_name in wb.sheetnames:
+            total += len(list(wb[sheet_name].rows))
         res, fails, done = [], [], 0
         rn = 0
         flow_images = []
         pending_cell_images = []
         tables = []
-        for sheetname in wb.sheetnames:
-            ws = wb[sheetname]
-            images = Excel._extract_images_from_worksheet(ws,sheetname=sheetname)
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            images = Excel._extract_images_from_worksheet(ws, sheetname=sheet_name)
             if images:
-                image_descriptions = vision_figure_parser_figure_xlsx_wrapper(images=images, callback=callback, **kwargs)
+                image_descriptions = vision_figure_parser_figure_xlsx_wrapper(images=images, callback=callback,
+                                                                              **kwargs)
                 if image_descriptions and len(image_descriptions) == len(images):
                     for i, bf in enumerate(image_descriptions):
                         images[i]["image_description"] = "\n".join(bf[0][1])
                     for img in images:
-                        if (img["span_type"] == "single_cell"and img.get("image_description")):
+                        if img["span_type"] == "single_cell" and img.get("image_description"):
                             pending_cell_images.append(img)
                         else:
                             flow_images.append(img)
@@ -66,7 +67,7 @@ class Excel(ExcelParser):
             try:
                 rows = list(ws.rows)
             except Exception as e:
-                logging.warning(f"Skip sheet '{sheetname}' due to rows access error: {e}")
+                logging.warning(f"Skip sheet '{sheet_name}' due to rows access error: {e}")
                 continue
             if not rows:
                 continue
@@ -113,16 +114,17 @@ class Excel(ExcelParser):
             tables.append(
                 (
                     (
-                        img["image"],   # Image.Image
-                        [img["image_description"]]     # description list (must be list)
+                        img["image"],  # Image.Image
+                        [img["image_description"]]  # description list (must be list)
                     ),
                     [
-                        (0, 0, 0, 0, 0)   # dummy position
+                        (0, 0, 0, 0, 0)  # dummy position
                     ]
                 )
             )
-        callback(0.3, ("Extract records: {}~{}".format(from_page + 1, min(to_page, from_page + rn)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
-        return res,tables
+        callback(0.3, ("Extract records: {}~{}".format(from_page + 1, min(to_page, from_page + rn)) + (
+            f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        return res, tables
 
     def _parse_headers(self, ws, rows):
         if len(rows) == 0:
@@ -301,7 +303,8 @@ class Excel(ExcelParser):
 def trans_datatime(s):
     try:
         return datetime_parse(s.strip()).strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
+    except Exception as e:
+        logging.warning(f"Failed to parse date from {s}, error: {e}")
         pass
 
 
@@ -310,19 +313,21 @@ def trans_bool(s):
         return "yes"
     if re.match(r"(false|no|否|⍻|×)$", str(s).strip(), flags=re.IGNORECASE):
         return "no"
+    return None
 
 
 def column_data_type(arr):
     arr = list(arr)
     counts = {"int": 0, "float": 0, "text": 0, "datetime": 0, "bool": 0}
-    trans = {t: f for f, t in [(int, "int"), (float, "float"), (trans_datatime, "datetime"), (trans_bool, "bool"), (str, "text")]}
+    trans = {t: f for f, t in
+             [(int, "int"), (float, "float"), (trans_datatime, "datetime"), (trans_bool, "bool"), (str, "text")]}
     float_flag = False
     for a in arr:
         if a is None:
             continue
         if re.match(r"[+-]?[0-9]+$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
             counts["int"] += 1
-            if int(str(a)) > 2**63 - 1:
+            if int(str(a)) > 2 ** 63 - 1:
                 float_flag = True
                 break
         elif re.match(r"[+-]?[0-9.]{,19}$", str(a).replace("%%", "")) and not str(a).replace("%%", "").startswith("0"):
@@ -343,8 +348,9 @@ def column_data_type(arr):
             continue
         try:
             arr[i] = trans[ty](str(arr[i]))
-        except Exception:
+        except Exception as e:
             arr[i] = None
+            logging.warning(f"Column {i}: {e}")
     # if ty == "text":
     #    if len(arr) > 128 and uni / len(arr) < 0.1:
     #        ty = "keyword"
@@ -370,7 +376,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
     if re.search(r"\.xlsx?$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         excel_parser = Excel()
-        dfs,tbls = excel_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback, **kwargs)
+        dfs, tbls = excel_parser(filename, binary, from_page=from_page, to_page=to_page, callback=callback, **kwargs)
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
@@ -389,7 +395,8 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                 continue
             rows.append(row)
 
-        callback(0.3, ("Extract records: {}~{}".format(from_page, min(len(lines), to_page)) + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.3, ("Extract records: {}~{}".format(from_page, min(len(lines), to_page)) + (
+            f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         dfs = [pd.DataFrame(np.array(rows), columns=headers)]
     elif re.search(r"\.csv$", filename, re.IGNORECASE):
@@ -406,7 +413,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
         fails = []
         rows = []
 
-        for i, row in enumerate(all_rows[1 + from_page : 1 + to_page]):
+        for i, row in enumerate(all_rows[1 + from_page: 1 + to_page]):
             if len(row) != len(headers):
                 fails.append(str(i + from_page))
                 continue
@@ -415,7 +422,7 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
         callback(
             0.3,
             (f"Extract records: {from_page}~{from_page + len(rows)}" +
-            (f"{len(fails)} failure, line: {','.join(fails[:3])}..." if fails else ""))
+             (f"{len(fails)} failure, line: {','.join(fails[:3])}..." if fails else ""))
         )
 
         dfs = [pd.DataFrame(rows, columns=headers)]
@@ -445,7 +452,8 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             df[clmns[j]] = cln
             if ty == "text":
                 txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in range(len(clmns))]
+        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in
+                     range(len(clmns))]
 
         eng = lang.lower() == "english"  # is_english(txts)
         for ii, row in df.iterrows():
@@ -477,7 +485,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
 
     chunk(sys.argv[1], callback=dummy)

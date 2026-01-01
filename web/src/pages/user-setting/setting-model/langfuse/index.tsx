@@ -45,11 +45,7 @@ export function LangfuseCard() {
                 <Eye /> {t('setting.view')}
               </Button>
             )}
-            <Button
-              size={'sm'}
-              onClick={showSaveLangfuseConfigurationModal}
-              className="bg-blue-500 hover:bg-blue-400"
-            >
+            <Button size={'sm'} onClick={showSaveLangfuseConfigurationModal}>
               <Settings2 />
               {t('setting.configuration')}
             </Button>

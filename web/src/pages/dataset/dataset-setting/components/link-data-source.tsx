@@ -9,7 +9,7 @@ import {
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IConnector } from '@/interfaces/database/knowledge';
 import { delSourceModal } from '@/pages/user-setting/data-source/component/delete-source-modal';
-import { useDataSourceInfo } from '@/pages/user-setting/data-source/contant';
+import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { useDataSourceRebuild } from '@/pages/user-setting/data-source/hooks';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { Link, Settings, Unlink } from 'lucide-react';

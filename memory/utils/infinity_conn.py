@@ -22,7 +22,6 @@ from infinity.errors import ErrorCode
 
 from common.decorator import singleton
 import pandas as pd
-from common.constants import PAGERANK_FLD, TAG_FLD
 from common.doc_store.doc_store_base import MatchExpr, MatchTextExpr, MatchDenseExpr, FusionExpr, OrderByExpr
 from common.doc_store.infinity_conn_base import InfinityConnectionBase
 from common.time_utils import date_string_to_timestamp
@@ -150,8 +149,6 @@ class InfinityConnection(InfinityConnectionBase):
         if match_expressions:
             if score_func not in output:
                 output.append(score_func)
-            if PAGERANK_FLD not in output:
-                output.append(PAGERANK_FLD)
         output = [f for f in output if f != "_score"]
         if limit <= 0:
             # ElasticSearch default limit is 10000
@@ -192,17 +189,6 @@ class InfinityConnection(InfinityConnectionBase):
                     str_minimum_should_match = str(int(minimum_should_match * 100)) + "%"
                     matchExpr.extra_options["minimum_should_match"] = str_minimum_should_match
 
-                # Add rank_feature support
-                if rank_feature and "rank_features" not in matchExpr.extra_options:
-                    # Convert rank_feature dict to Infinity's rank_features string format
-                    # Format: "field^feature_name^weight,field^feature_name^weight"
-                    rank_features_list = []
-                    for feature_name, weight in rank_feature.items():
-                        # Use TAG_FLD as the field containing rank features
-                        rank_features_list.append(f"{TAG_FLD}^{feature_name}^{weight}")
-                    if rank_features_list:
-                        matchExpr.extra_options["rank_features"] = ",".join(rank_features_list)
-
                 for k, v in matchExpr.extra_options.items():
                     if not isinstance(v, str):
                         matchExpr.extra_options[k] = str(v)
@@ -225,14 +211,13 @@ class InfinityConnection(InfinityConnectionBase):
                 self.logger.debug(f"INFINITY search FusionExpr: {json.dumps(matchExpr.__dict__)}")
 
         order_by_expr_list = list()
-        # todo use order_by after infinity fixed bug
-        # if order_by.fields:
-        #     for order_field in order_by.fields:
-        #         order_field_name = self.convert_condition_and_order_field(order_field[0])
-        #         if order_field[1] == 0:
-        #             order_by_expr_list.append((order_field_name, SortType.Asc))
-        #         else:
-        #             order_by_expr_list.append((order_field_name, SortType.Desc))
+        if order_by.fields:
+            for order_field in order_by.fields:
+                order_field_name = self.convert_condition_and_order_field(order_field[0])
+                if order_field[1] == 0:
+                    order_by_expr_list.append((order_field_name, SortType.Asc))
+                else:
+                    order_by_expr_list.append((order_field_name, SortType.Desc))
 
         total_hits_count = 0
         # Scatter search tables and gather the results
@@ -284,7 +269,7 @@ class InfinityConnection(InfinityConnectionBase):
         self.connPool.release_conn(inf_conn)
         res = self.concat_dataframes(df_list, output)
         if match_expressions:
-            res["_score"] = res[score_column] + res[PAGERANK_FLD]
+            res["_score"] = res[score_column]
             res = res.sort_values(by="_score", ascending=False).reset_index(drop=True)
             res = res.head(limit)
         self.logger.debug(f"INFINITY search final result: {str(res)}")

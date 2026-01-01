@@ -26,7 +26,8 @@ from opensearchpy import UpdateByQuery, Q, Search, Index
 from opensearchpy import ConnectionTimeout
 from common.decorator import singleton
 from common.file_utils import get_project_base_directory
-from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, FusionExpr
+from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
+    FusionExpr
 from rag.nlp import is_english, rag_tokenizer
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common import settings
@@ -189,7 +190,7 @@ class OSConnection(DocStoreConnection):
                                    minimum_should_match=minimum_should_match,
                                    boost=1))
                 bqry.boost = 1.0 - vector_similarity_weight
-                
+
             # Elasticsearch has the encapsulation of KNN_search in python sdk
             # while the Python SDK for OpenSearch does not provide encapsulation for KNN_search,
             # the following codes implement KNN_search in OpenSearch using DSL
@@ -216,7 +217,7 @@ class OSConnection(DocStoreConnection):
         if bqry:
             s = s.query(bqry)
         for field in highlightFields:
-            s = s.highlight(field,force_source=True,no_match_size=30,require_field_match=False)
+            s = s.highlight(field, force_source=True, no_match_size=30, require_field_match=False)
 
         if orderBy:
             orders = list()
@@ -239,10 +240,10 @@ class OSConnection(DocStoreConnection):
             s = s[offset:offset + limit]
         q = s.to_dict()
         logger.debug(f"OSConnection.search {str(indexNames)} query: " + json.dumps(q))
-        
+
         if use_knn:
             del q["query"]
-            q["query"] = {"knn" : knn_query}
+            q["query"] = {"knn": knn_query}
 
         for i in range(ATTEMPT_TIME):
             try:
@@ -328,7 +329,7 @@ class OSConnection(DocStoreConnection):
             chunkId = condition["id"]
             for i in range(ATTEMPT_TIME):
                 try:
-                    self.os.update(index=indexName, id=chunkId, body={"doc":doc})
+                    self.os.update(index=indexName, id=chunkId, body={"doc": doc})
                     return True
                 except Exception as e:
                     logger.exception(
@@ -435,7 +436,7 @@ class OSConnection(DocStoreConnection):
         logger.debug("OSConnection.delete query: " + json.dumps(qry.to_dict()))
         for _ in range(ATTEMPT_TIME):
             try:
-                #print(Search().query(qry).to_dict(), flush=True)
+                # print(Search().query(qry).to_dict(), flush=True)
                 res = self.os.delete_by_query(
                     index=indexName,
                     body=Search().query(qry).to_dict(),

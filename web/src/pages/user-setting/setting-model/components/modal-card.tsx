@@ -14,6 +14,7 @@ import { ChevronsDown, ChevronsUp, Trash2 } from 'lucide-react';
 import { FC } from 'react';
 import { isLocalLlmFactory } from '../../utils';
 import { useHandleDeleteFactory, useHandleEnableLlm } from '../hooks';
+import { mapModelKey } from './un-add-model';
 
 interface IModelCardProps {
   item: LlmItem;
@@ -145,7 +146,8 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
                 key={index}
                 className="px-2 py-1 text-xs bg-bg-card text-text-secondary rounded-md"
               >
-                {tag}
+                {mapModelKey[tag.trim() as keyof typeof mapModelKey] ||
+                  tag.trim()}
               </span>
             ))}
           </div>

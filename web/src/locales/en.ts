@@ -147,6 +147,8 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         action: 'Action',
       },
       config: {
+        memorySizeTooltip: `Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). 
+Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.`,
         avatar: 'Avatar',
         description: 'Description',
         memorySize: 'Memory size',
@@ -181,6 +183,8 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
     },
     knowledgeDetails: {
       metadata: {
+        toMetadataSetting: 'Generation settings',
+        toMetadataSettingTip: 'Set auto-metadata in Configuration.',
         descriptionTip:
           'Provide descriptions or examples to guide LLM extract values for this field. If left empty, it will rely on the field name.',
         restrictTDefinedValuesTip:
@@ -875,6 +879,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       cropImage: 'Crop image',
       selectModelPlaceholder: 'Select model',
       configureModelTitle: 'Configure model',
+      connectorNameTip: 'A descriptive name for the connector',
       confluenceIsCloudTip:
         'Check if this is a Confluence Cloud instance, uncheck for Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
@@ -919,7 +924,9 @@ Example: Virtual Hosted Style`,
       google_driveTokenTip:
         'Upload the OAuth token JSON generated from the OAuth helper or Google Cloud Console. You may also upload a client_secret JSON from an "installed" or "web" application. If this is your first sync, a browser window will open to complete the OAuth consent. If the JSON already contains a refresh token, it will be reused automatically.',
       google_drivePrimaryAdminTip:
-        'Email address that has access to the Drive content being synced.',
+        'Email address that has access to the Drive content being synced',
+      zendeskDescription:
+        'Connect your Zendesk to sync tickets, articles, and other content.',
       google_driveMyDriveEmailsTip:
         'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
@@ -930,9 +937,26 @@ Example: Virtual Hosted Style`,
         'Upload the OAuth JSON generated from Google Console. If it only contains client credentials, run the browser-based verification once to mint long-lived refresh tokens.',
       dropboxDescription:
         'Connect your Dropbox to sync files and folders from a chosen account.',
+      bitbucketDescription: 'Connect Bitbucket to sync PR content.',
+      bitbucketTopWorkspaceTip:
+        'The Bitbucket workspace to index (e.g., "atlassian" from https://bitbucket.org/atlassian/workspace ).',
+      bitbucketRepositorySlugsTip:
+        'Comma separated repository slugs. E.g., repo-one,repo-two',
+      bitbucketProjectsTip: 'Comma separated project keys. E.g., PROJ1,PROJ2',
+      bitbucketWorkspaceTip:
+        'This connector will index all repositories in the workspace.',
       boxDescription: 'Connect your Box drive to sync files and folders.',
+
+      githubDescription:
+        'Connect GitHub to sync pull requests and issues for retrieval.',
       airtableDescription:
         'Connect to Airtable and synchronize files from a specified table within a designated workspace.',
+      gitlabDescription:
+        'Connect GitLab to sync repositories, issues, merge requests, and related documentation.',
+      asanaDescription:
+        'Connect to Asana and synchronize files from a specified workspace.',
+      imapDescription:
+        'Connect to your IMAP mailbox to sync emails for knowledge retrieval.',
       dropboxAccessTokenTip:
         'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
       moodleDescription:

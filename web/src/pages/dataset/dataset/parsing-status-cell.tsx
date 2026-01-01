@@ -72,7 +72,7 @@ export function ParsingStatusCell({
   const isRunning = isParserRunning(run);
   const isZeroChunk = chunk_num === 0;
 
-  const handleOperationIconClick = (option: {
+  const handleOperationIconClick = (option?: {
     delete: boolean;
     apply_kb: boolean;
   }) => {
@@ -183,8 +183,8 @@ export function ParsingStatusCell({
       )}
       {reparseDialogVisible && (
         <ReparseDialog
-          // hidden={isZeroChunk || isRunning}
-          hidden={false}
+          hidden={isRunning}
+          // hidden={false}
           handleOperationIconClick={handleOperationIconClick}
           chunk_num={chunk_num}
           visible={reparseDialogVisible}

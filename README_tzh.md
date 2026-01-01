@@ -22,7 +22,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Online-Demo-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.22.1">
+        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.23.1">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -37,7 +37,7 @@
 
 <h4 align="center">
   <a href="https://ragflow.io/docs/dev/">Document</a> |
-  <a href="https://github.com/infiniflow/ragflow/issues/4214">Roadmap</a> |
+  <a href="https://github.com/infiniflow/ragflow/issues/12241">Roadmap</a> |
   <a href="https://twitter.com/infiniflowai">Twitter</a> |
   <a href="https://discord.gg/NjYzJD3GM3">Discord</a> |
   <a href="https://demo.ragflow.io">Demo</a>
@@ -72,7 +72,7 @@
 
 ## 💡 RAGFlow 是什麼？
 
-[RAGFlow](https://ragflow.io/) 是一款領先的開源 RAG（Retrieval-Augmented Generation）引擎，通過融合前沿的 RAG 技術與 Agent 能力，為大型語言模型提供卓越的上下文層。它提供可適配任意規模企業的端到端 RAG 工作流，憑藉融合式上下文引擎與預置的 Agent 模板，助力開發者以極致效率與精度將複雜數據轉化為高可信、生產級的人工智能系統。
+[RAGFlow](https://ragflow.io/) 是一款領先的開源 [RAG](https://ragflow.io/basics/what-is-rag)（Retrieval-Augmented Generation）引擎，通過融合前沿的 RAG 技術與 Agent 能力，為大型語言模型提供卓越的上下文層。它提供可適配任意規模企業的端到端 RAG 工作流，憑藉融合式[上下文引擎](https://ragflow.io/basics/what-is-agent-context-engine)與預置的 Agent 模板，助力開發者以極致效率與精度將複雜數據轉化為高可信、生產級的人工智能系統。
 
 ## 🎮 Demo 試用
 
@@ -85,15 +85,16 @@
 
 ## 🔥 近期更新
 
-- 2025-11-19 支援 Gemini 3 Pro.
+- 2025-12-26 支援AI代理的「記憶」功能。
+- 2025-11-19 支援 Gemini 3 Pro。
 - 2025-11-12 支援從 Confluence、S3、Notion、Discord、Google Drive 進行資料同步。
 - 2025-10-23 支援 MinerU 和 Docling 作為文件解析方法。
 - 2025-10-15 支援可編排的資料管道。
 - 2025-08-08 支援 OpenAI 最新的 GPT-5 系列模型。
-- 2025-08-01 支援 agentic workflow 和 MCP
+- 2025-08-01 支援 agentic workflow 和 MCP。
 - 2025-05-23 為 Agent 新增 Python/JS 程式碼執行器元件。
 - 2025-05-05 支援跨語言查詢。
-- 2025-03-19 PDF和DOCX中的圖支持用多模態大模型去解析得到描述.
+- 2025-03-19 PDF和DOCX中的圖支持用多模態大模型去解析得到描述。
 - 2024-12-18 升級了 DeepDoc 的文檔佈局分析模型。
 - 2024-08-22 支援用 RAG 技術實現從自然語言到 SQL 語句的轉換。
 
@@ -124,7 +125,7 @@
 
 ### 🍔 **相容各類異質資料來源**
 
-- 支援豐富的文件類型，包括 Word 文件、PPT、excel 表格、txt 檔案、圖片、PDF、影印件、影印件、結構化資料、網頁等。
+- 支援豐富的文件類型，包括 Word 文件、PPT、excel 表格、txt 檔案、圖片、PDF、影印件、複印件、結構化資料、網頁等。
 
 ### 🛀 **全程無憂、自動化的 RAG 工作流程**
 
@@ -186,12 +187,12 @@
 > 所有 Docker 映像檔都是為 x86 平台建置的。目前，我們不提供 ARM64 平台的 Docker 映像檔。
 > 如果您使用的是 ARM64 平台，請使用 [這份指南](https://ragflow.io/docs/dev/build_docker_image) 來建置適合您系統的 Docker 映像檔。
 
-> 執行以下指令會自動下載 RAGFlow Docker 映像 `v0.22.1`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.22.1` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。
+> 執行以下指令會自動下載 RAGFlow Docker 映像 `v0.23.1`。請參考下表查看不同 Docker 發行版的說明。如需下載不同於 `v0.23.1` 的 Docker 映像，請在執行 `docker compose` 啟動服務之前先更新 **docker/.env** 檔案內的 `RAGFLOW_IMAGE` 變數。
 
 ```bash
    $ cd ragflow/docker
-   
-   # git checkout v0.22.1
+
+   # git checkout v0.23.1
    # 可選：使用穩定版標籤（查看發佈：https://github.com/infiniflow/ragflow/releases）
    # 此步驟確保程式碼中的 entrypoint.sh 檔案與 Docker 映像版本一致。
 
@@ -236,7 +237,7 @@
     * Running on all addresses (0.0.0.0)
    ```
 
-   > 如果您跳過這一步驟系統確認步驟就登入 RAGFlow，你的瀏覽器有可能會提示 `network anormal` 或 `網路異常`，因為 RAGFlow 可能並未完全啟動成功。
+   > 如果您跳過這一步驟系統確認步驟就登入 RAGFlow，你的瀏覽器有可能會提示 `network abnormal` 或 `網路異常`，因為 RAGFlow 可能並未完全啟動成功。
    >
 5. 在你的瀏覽器中輸入你的伺服器對應的 IP 位址並登入 RAGFlow。
 
@@ -300,6 +301,15 @@ RAGFlow 預設使用 Elasticsearch 儲存文字和向量資料. 如果要切換�
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
+```
+
+若您位於代理環境，可傳遞代理參數：
+
+```bash
+docker build --platform linux/amd64 \
+  --build-arg http_proxy=http://YOUR_PROXY:PORT \
+  --build-arg https_proxy=http://YOUR_PROXY:PORT \
+  -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
 ## 🔨 以原始碼啟動服務
@@ -389,7 +399,7 @@ docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly 
 
 ## 📜 路線圖
 
-詳見 [RAGFlow Roadmap 2025](https://github.com/infiniflow/ragflow/issues/4214) 。
+詳見 [RAGFlow Roadmap 2026](https://github.com/infiniflow/ragflow/issues/12241) 。
 
 ## 🏄 開源社群
 

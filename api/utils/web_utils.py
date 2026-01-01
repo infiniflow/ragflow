@@ -69,6 +69,7 @@ CONTENT_TYPE_MAP = {
     # Web
     "md": "text/markdown",
     "markdown": "text/markdown",
+    "mdx": "text/markdown",
     "htm": "text/html",
     "html": "text/html",
     "json": "application/json",

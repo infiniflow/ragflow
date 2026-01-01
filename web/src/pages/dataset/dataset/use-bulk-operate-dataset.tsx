@@ -10,7 +10,7 @@ import {
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { Ban, CircleCheck, CircleX, Play, Trash2 } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { DocumentType, RunningStatus } from './constant';
@@ -32,6 +32,16 @@ export function useBulkOperateDataset({
   const { setDocumentStatus } = useSetDocumentStatus();
   const { removeDocument } = useRemoveDocument();
   const { visible, showModal, hideModal } = useSetModalState();
+
+  const chunkNum = useMemo(() => {
+    if (!documents.length) {
+      return 0;
+    }
+    return documents.reduce((acc, cur) => {
+      return acc + cur.chunk_num;
+    }, 0);
+  }, [documents]);
+
   const runDocument = useCallback(
     async (run: number, option?: { delete: boolean; apply_kb: boolean }) => {
       const nonVirtualKeys = selectedRowKeys.filter(
@@ -54,7 +64,7 @@ export function useBulkOperateDataset({
   );
 
   const handleRunClick = useCallback(
-    (option: { delete: boolean; apply_kb: boolean }) => {
+    (option?: { delete: boolean; apply_kb: boolean }) => {
       runDocument(1, option);
     },
     [runDocument],
@@ -132,5 +142,5 @@ export function useBulkOperateDataset({
     },
   ];
 
-  return { list, visible, hideModal, showModal, handleRunClick };
+  return { chunkNum, list, visible, hideModal, showModal, handleRunClick };
 }

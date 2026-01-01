@@ -78,14 +78,21 @@ class DoclingParser(RAGFlowPdfParser):
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
         self.page_from = page_from
         self.page_to = page_to
+        bytes_io = None
         try:
-            opener = pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm))
+            if not isinstance(fnm, (str, PathLike)):
+                bytes_io = BytesIO(fnm)
+
+            opener = pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(bytes_io)
             with opener as pdf:
                 pages = pdf.pages[page_from:page_to]
                 self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original for p in pages]
         except Exception as e:
             self.page_images = []
             self.logger.exception(e)
+        finally:
+            if bytes_io:
+                bytes_io.close()
 
     def _make_line_tag(self,bbox: _BBox) -> str:
         if bbox is None:

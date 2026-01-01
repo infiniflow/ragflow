@@ -476,11 +476,13 @@ class RAGFlowPdfParser:
         self.boxes = bxs
 
     def _naive_vertical_merge(self, zoomin=3):
-        bxs = self._assign_column(self.boxes, zoomin)
+        #bxs = self._assign_column(self.boxes, zoomin)
+        bxs = self.boxes
 
         grouped = defaultdict(list)
         for b in bxs:
-            grouped[(b["page_number"], b.get("col_id", 0))].append(b)
+            # grouped[(b["page_number"], b.get("col_id", 0))].append(b)
+            grouped[(b["page_number"], "x")].append(b)
 
         merged_boxes = []
         for (pg, col), bxs in grouped.items():
@@ -551,7 +553,7 @@ class RAGFlowPdfParser:
 
             merged_boxes.extend(bxs)
 
-        self.boxes = sorted(merged_boxes, key=lambda x: (x["page_number"], x.get("col_id", 0), x["top"]))
+        #self.boxes = sorted(merged_boxes, key=lambda x: (x["page_number"], x.get("col_id", 0), x["top"]))
 
     def _final_reading_order_merge(self, zoomin=3):
         if not self.boxes:
@@ -1061,8 +1063,8 @@ class RAGFlowPdfParser:
 
                     self.total_page = len(self.pdf.pages)
 
-        except Exception:
-            logging.exception("RAGFlowPdfParser __images__")
+        except Exception as e:
+            logging.exception(f"RAGFlowPdfParser __images__, exception: {e}")
         logging.info(f"__images__ dedupe_chars cost {timer() - start}s")
 
         self.outlines = []
@@ -1206,7 +1208,7 @@ class RAGFlowPdfParser:
         start = timer()
         self._text_merge()
         self._concat_downward()
-        #self._naive_vertical_merge(zoomin)
+        self._naive_vertical_merge(zoomin)
         if callback:
             callback(0.92, "Text merged ({:.2f}s)".format(timer() - start))
 

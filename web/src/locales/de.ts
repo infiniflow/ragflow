@@ -929,6 +929,8 @@ Beispiel: Virtual Hosted Style`,
         'Verbinden Sie Ihr Gmail über OAuth, um E-Mails zu synchronisieren.',
       webdavDescription:
         'Verbinden Sie sich mit WebDAV-Servern, um Dateien zu synchronisieren.',
+      gitlabDescription:
+        'Verbinden Sie GitLab, um Repositories, Issues, Merge Requests und zugehörige Dokumentation zu synchronisieren.',
       webdavRemotePathTip:
         'Optional: Geben Sie einen Ordnerpfad auf dem WebDAV-Server an (z.B. /Dokumente). Lassen Sie das Feld leer, um vom Stammverzeichnis aus zu synchronisieren.',
       google_driveTokenTip:
@@ -945,8 +947,23 @@ Beispiel: Virtual Hosted Style`,
         'Laden Sie das OAuth-JSON hoch, das von der Google Console generiert wurde. Wenn es nur Client-Anmeldeinformationen enthält, führen Sie die browserbasierte Überprüfung einmal durch, um langlebige Refresh-Token zu erstellen.',
       dropboxDescription:
         'Verbinden Sie Ihre Dropbox, um Dateien und Ordner von einem ausgewählten Konto zu synchronisieren.',
+      bitbucketDescription:
+        'Bitbucket verbinden, um PR-Inhalte zu synchronisieren.',
+      zendeskDescription:
+        'Verbinden Sie Ihr Zendesk, um Tickets, Artikel und andere Inhalte zu synchronisieren.',
+      bitbucketTopWorkspaceTip:
+        'Der zu indizierende Bitbucket-Workspace (z. B. "atlassian" aus https://bitbucket.org/atlassian/workspace )',
+      bitbucketWorkspaceTip:
+        'Dieser Connector indiziert alle Repositories im Workspace.',
+      bitbucketProjectsTip: 'Kommagetrennte Projekt-Keys, z. B.: PROJ1,PROJ2',
+      bitbucketRepositorySlugsTip:
+        'Kommagetrennte Repository-Slugs, z. B.: repo-one,repo-two',
+      connectorNameTip:
+        'Geben Sie einen aussagekräftigen Namen für den Connector an',
       boxDescription:
         'Verbinden Sie Ihr Box-Laufwerk, um Dateien und Ordner zu synchronisieren.',
+      githubDescription:
+        'Verbinden Sie GitHub, um Pull Requests und Issues zur Recherche zu synchronisieren.',
       dropboxAccessTokenTip:
         'Generieren Sie ein langlebiges Zugriffstoken in der Dropbox App Console mit den Bereichen files.metadata.read, files.content.read und sharing.read.',
       moodleDescription:

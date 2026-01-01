@@ -1,6 +1,5 @@
 import os
 
-
 PROMPT_DIR = os.path.dirname(__file__)
 
 _loaded_prompts = {}

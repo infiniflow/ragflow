@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'umi';
 
@@ -12,7 +12,12 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 
 import {
   LucideClipboardList,
@@ -125,12 +130,14 @@ function AdminUserManagement() {
     queryFn: async () => (await listRoles()).data.data.roles,
     enabled: IS_ENTERPRISE,
     retry: false,
+    placeholderData: keepPreviousData,
   });
 
   const { data: usersList } = useQuery({
     queryKey: ['admin/listUsers'],
     queryFn: async () => (await listUsers()).data.data,
     retry: false,
+    placeholderData: keepPreviousData,
   });
 
   // Delete user mutation
@@ -354,7 +361,15 @@ function AdminUserManagement() {
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+
+    autoResetPageIndex: false,
   });
+
+  useLayoutEffect(() => {
+    if (table.getState().pagination.pageIndex > table.getPageCount()) {
+      table.setPageIndex(Math.max(0, table.getPageCount() - 1));
+    }
+  }, [usersList, table]);
 
   return (
     <>
@@ -538,7 +553,7 @@ function AdminUserManagement() {
 
           <CardFooter className="flex items-center justify-end">
             <RAGFlowPagination
-              total={usersList?.length ?? 0}
+              total={table.getFilteredRowModel().rows.length}
               current={table.getState().pagination.pageIndex + 1}
               pageSize={table.getState().pagination.pageSize}
               onChange={(page, pageSize) => {

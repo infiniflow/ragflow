@@ -3,13 +3,16 @@ import { CopyToClipboardWithText } from '@/components/copy-to-clipboard';
 import NumberInput from '@/components/originui/number-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Label } from '@/components/ui/label';
 import { MultiSelect } from '@/components/ui/multi-select';
+import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
+import { useBuildWebhookUrl } from '@/pages/agent/hooks/use-build-webhook-url';
 import { buildOptions } from '@/utils/form';
+import { upperFirst } from 'lodash';
 import { useCallback } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'umi';
 import {
   RateLimitPerList,
   WebhookMaxBodySize,
@@ -22,7 +25,10 @@ import { Auth } from './auth';
 import { WebhookRequestSchema } from './request-schema';
 import { WebhookResponse } from './response';
 
-const RateLimitPerOptions = buildOptions(RateLimitPerList);
+const RateLimitPerOptions = RateLimitPerList.map((x) => ({
+  value: x,
+  label: upperFirst(x),
+}));
 
 const RequestLimitMap = {
   [WebhookRateLimitPer.Second]: 100,
@@ -33,7 +39,6 @@ const RequestLimitMap = {
 
 export function WebHook() {
   const { t } = useTranslation();
-  const { id } = useParams();
   const form = useFormContext();
 
   const rateLimitPer = useWatch({
@@ -45,7 +50,7 @@ export function WebHook() {
     return RequestLimitMap[rateLimitPer as keyof typeof RequestLimitMap] ?? 100;
   }, []);
 
-  const text = `${location.protocol}//${location.host}/api/v1/webhook/${id}`;
+  const text = useBuildWebhookUrl();
 
   return (
     <>
@@ -74,33 +79,36 @@ export function WebHook() {
             ></SelectWithSearch>
           </RAGFlowFormItem>
           <Auth></Auth>
-          <RAGFlowFormItem
-            name="security.rate_limit.limit"
-            label={t('flow.webhook.limit')}
-          >
-            <NumberInput
-              max={getLimitRateLimitPerMax(rateLimitPer)}
-              className="w-full"
-            ></NumberInput>
-          </RAGFlowFormItem>
-          <RAGFlowFormItem
-            name="security.rate_limit.per"
-            label={t('flow.webhook.per')}
-          >
-            {(field) => (
-              <SelectWithSearch
-                options={RateLimitPerOptions}
-                value={field.value}
-                onChange={(val) => {
-                  field.onChange(val);
-                  form.setValue(
-                    'security.rate_limit.limit',
-                    getLimitRateLimitPerMax(val),
-                  );
-                }}
-              ></SelectWithSearch>
-            )}
-          </RAGFlowFormItem>
+          <section>
+            <Label>{t('flow.webhook.limit')}</Label>
+            <div className="flex items-center mt-1 gap-2">
+              <RAGFlowFormItem
+                name="security.rate_limit.limit"
+                className="flex-1"
+              >
+                <NumberInput
+                  max={getLimitRateLimitPerMax(rateLimitPer)}
+                  className="w-full"
+                ></NumberInput>
+              </RAGFlowFormItem>
+              <Separator className="w-2" />
+              <RAGFlowFormItem name="security.rate_limit.per">
+                {(field) => (
+                  <SelectWithSearch
+                    options={RateLimitPerOptions}
+                    value={field.value}
+                    onChange={(val) => {
+                      field.onChange(val);
+                      form.setValue(
+                        'security.rate_limit.limit',
+                        getLimitRateLimitPerMax(val),
+                      );
+                    }}
+                  ></SelectWithSearch>
+                )}
+              </RAGFlowFormItem>
+            </div>
+          </section>
           <RAGFlowFormItem
             name="security.max_body_size"
             label={t('flow.webhook.maxBodySize')}

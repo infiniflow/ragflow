@@ -318,8 +318,7 @@ export function useFilterQueryVariableOptionsByTypes({
                 isAgentStructured(
                   y.value,
                   y.value.slice(-AgentStructuredOutputField.length),
-                ) ||
-                y.value.startsWith(BeginId), // begin node outputs
+                ),
             ),
           };
         })

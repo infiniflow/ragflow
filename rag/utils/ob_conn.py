@@ -37,7 +37,8 @@ from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.decorator import singleton
 from common.float_utils import get_float
-from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr, FusionExpr, MatchTextExpr, MatchDenseExpr
+from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr, FusionExpr, MatchTextExpr, \
+    MatchDenseExpr
 from rag.nlp import rag_tokenizer
 
 ATTEMPT_TIME = 2
@@ -719,19 +720,19 @@ class OBConnection(DocStoreConnection):
     """
 
     def search(
-        self,
-        selectFields: list[str],
-        highlightFields: list[str],
-        condition: dict,
-        matchExprs: list[MatchExpr],
-        orderBy: OrderByExpr,
-        offset: int,
-        limit: int,
-        indexNames: str | list[str],
-        knowledgebaseIds: list[str],
-        aggFields: list[str] = [],
-        rank_feature: dict | None = None,
-        **kwargs,
+            self,
+            selectFields: list[str],
+            highlightFields: list[str],
+            condition: dict,
+            matchExprs: list[MatchExpr],
+            orderBy: OrderByExpr,
+            offset: int,
+            limit: int,
+            indexNames: str | list[str],
+            knowledgebaseIds: list[str],
+            aggFields: list[str] = [],
+            rank_feature: dict | None = None,
+            **kwargs,
     ):
         if isinstance(indexNames, str):
             indexNames = indexNames.split(",")
@@ -1546,7 +1547,7 @@ class OBConnection(DocStoreConnection):
                     flags=re.IGNORECASE | re.MULTILINE,
                 )
             if len(re.findall(r'</em><em>', highlighted_txt)) > 0 or len(
-                re.findall(r'</em>\s*<em>', highlighted_txt)) > 0:
+                    re.findall(r'</em>\s*<em>', highlighted_txt)) > 0:
                 return highlighted_txt
             else:
                 return None
@@ -1565,9 +1566,9 @@ class OBConnection(DocStoreConnection):
             if token_pos != -1:
                 if token in keywords:
                     highlighted_txt = (
-                        highlighted_txt[:token_pos] +
-                        f'<em>{token}</em>' +
-                        highlighted_txt[token_pos + len(token):]
+                            highlighted_txt[:token_pos] +
+                            f'<em>{token}</em>' +
+                            highlighted_txt[token_pos + len(token):]
                     )
                 last_pos = token_pos
         return re.sub(r'</em><em>', '', highlighted_txt)

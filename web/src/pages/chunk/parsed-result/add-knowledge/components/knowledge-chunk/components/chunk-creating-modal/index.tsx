@@ -22,6 +22,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useFetchChunk } from '@/hooks/use-chunk-request';
 import { IModalProps } from '@/interfaces/common';
+import type { ChunkDocType } from '@/interfaces/database/knowledge';
 import React, { useCallback, useEffect, useState } from 'react';
 import { FieldValues, FormProvider, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -151,20 +152,25 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
             <FormField
               control={form.control}
               name="doc_type_kwd"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t(`chunk.type`)}</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="text"
-                      value={t(
-                        `chunk.docType.${field.value ? String(field.value).toLowerCase() : 'text'}`,
-                      )}
-                      readOnly
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
+              render={({ field }) => {
+                const chunkType =
+                  ((field.value &&
+                    String(field.value)?.toLowerCase()) as ChunkDocType) ||
+                  'text';
+
+                return (
+                  <FormItem>
+                    <FormLabel>{t(`chunk.type`)}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="text"
+                        value={t(`chunk.docType.${chunkType}`)}
+                        readOnly
+                      />
+                    </FormControl>
+                  </FormItem>
+                );
+              }}
             />
           )}
 

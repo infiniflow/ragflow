@@ -7,8 +7,8 @@ export const useHandleMenuClick = () => {
   const { id } = useParams();
 
   const handleMenuClick = useCallback(
-    (key: Routes) => () => {
-      navigate(`${Routes.DatasetBase}${key}/${id}`);
+    (key: Routes, data?: any) => () => {
+      navigate(`${Routes.DatasetBase}${key}/${id}`, { state: data });
     },
     [id, navigate],
   );

@@ -42,8 +42,10 @@ class RAGFlowAzureSpnBlob:
             pass
 
         try:
-            credentials = ClientSecretCredential(tenant_id=self.tenant_id, client_id=self.client_id, client_secret=self.secret, authority=AzureAuthorityHosts.AZURE_CHINA)
-            self.conn = FileSystemClient(account_url=self.account_url, file_system_name=self.container_name, credential=credentials)
+            credentials = ClientSecretCredential(tenant_id=self.tenant_id, client_id=self.client_id,
+                                                 client_secret=self.secret, authority=AzureAuthorityHosts.AZURE_CHINA)
+            self.conn = FileSystemClient(account_url=self.account_url, file_system_name=self.container_name,
+                                         credential=credentials)
         except Exception:
             logging.exception("Fail to connect %s" % self.account_url)
 

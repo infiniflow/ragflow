@@ -16,11 +16,13 @@
 
 import logging
 from common.crypto_utils import CryptoUtil
+
+
 # from common.decorator import singleton
 
 class EncryptedStorageWrapper:
     """Encrypted storage wrapper that wraps existing storage implementations to provide transparent encryption"""
-    
+
     def __init__(self, storage_impl, algorithm="aes-256-cbc", key=None, iv=None):
         """
         Initialize encrypted storage wrapper
@@ -34,16 +36,16 @@ class EncryptedStorageWrapper:
         self.storage_impl = storage_impl
         self.crypto = CryptoUtil(algorithm=algorithm, key=key, iv=iv)
         self.encryption_enabled = True
-        
+
         # Check if storage implementation has required methods
         # todo: Consider abstracting a storage base class to ensure these methods exist
         required_methods = ["put", "get", "rm", "obj_exist", "health"]
         for method in required_methods:
             if not hasattr(storage_impl, method):
                 raise AttributeError(f"Storage implementation missing required method: {method}")
-                
+
         logging.info(f"EncryptedStorageWrapper initialized with algorithm: {algorithm}")
-    
+
     def put(self, bucket, fnm, binary, tenant_id=None):
         """
         Encrypt and store data
@@ -59,15 +61,15 @@ class EncryptedStorageWrapper:
         """
         if not self.encryption_enabled:
             return self.storage_impl.put(bucket, fnm, binary, tenant_id)
-            
+
         try:
             encrypted_binary = self.crypto.encrypt(binary)
-            
+
             return self.storage_impl.put(bucket, fnm, encrypted_binary, tenant_id)
         except Exception as e:
             logging.exception(f"Failed to encrypt and store data: {bucket}/{fnm}, error: {str(e)}")
             raise
-    
+
     def get(self, bucket, fnm, tenant_id=None):
         """
         Retrieve and decrypt data
@@ -83,21 +85,21 @@ class EncryptedStorageWrapper:
         try:
             # Get encrypted data
             encrypted_binary = self.storage_impl.get(bucket, fnm, tenant_id)
-            
+
             if encrypted_binary is None:
                 return None
-                
+
             if not self.encryption_enabled:
                 return encrypted_binary
-                
+
             # Decrypt data
             decrypted_binary = self.crypto.decrypt(encrypted_binary)
             return decrypted_binary
-            
+
         except Exception as e:
             logging.exception(f"Failed to get and decrypt data: {bucket}/{fnm}, error: {str(e)}")
             raise
-    
+
     def rm(self, bucket, fnm, tenant_id=None):
         """
         Delete data (same as original storage implementation, no decryption needed)
@@ -111,7 +113,7 @@ class EncryptedStorageWrapper:
             Deletion result
         """
         return self.storage_impl.rm(bucket, fnm, tenant_id)
-    
+
     def obj_exist(self, bucket, fnm, tenant_id=None):
         """
         Check if object exists (same as original storage implementation, no decryption needed)
@@ -125,7 +127,7 @@ class EncryptedStorageWrapper:
             Whether the object exists
         """
         return self.storage_impl.obj_exist(bucket, fnm, tenant_id)
-    
+
     def health(self):
         """
         Health check (uses the original storage implementation's method)
@@ -134,7 +136,7 @@ class EncryptedStorageWrapper:
             Health check result
         """
         return self.storage_impl.health()
-    
+
     def bucket_exists(self, bucket):
         """
         Check if bucket exists (if the original storage implementation has this method)
@@ -148,7 +150,7 @@ class EncryptedStorageWrapper:
         if hasattr(self.storage_impl, "bucket_exists"):
             return self.storage_impl.bucket_exists(bucket)
         return False
-    
+
     def get_presigned_url(self, bucket, fnm, expires, tenant_id=None):
         """
         Get presigned URL (if the original storage implementation has this method)
@@ -165,7 +167,7 @@ class EncryptedStorageWrapper:
         if hasattr(self.storage_impl, "get_presigned_url"):
             return self.storage_impl.get_presigned_url(bucket, fnm, expires, tenant_id)
         return None
-    
+
     def scan(self, bucket, fnm, tenant_id=None):
         """
         Scan objects (if the original storage implementation has this method)
@@ -181,7 +183,7 @@ class EncryptedStorageWrapper:
         if hasattr(self.storage_impl, "scan"):
             return self.storage_impl.scan(bucket, fnm, tenant_id)
         return None
-    
+
     def copy(self, src_bucket, src_path, dest_bucket, dest_path):
         """
         Copy object (if the original storage implementation has this method)
@@ -198,7 +200,7 @@ class EncryptedStorageWrapper:
         if hasattr(self.storage_impl, "copy"):
             return self.storage_impl.copy(src_bucket, src_path, dest_bucket, dest_path)
         return False
-    
+
     def move(self, src_bucket, src_path, dest_bucket, dest_path):
         """
         Move object (if the original storage implementation has this method)
@@ -215,7 +217,7 @@ class EncryptedStorageWrapper:
         if hasattr(self.storage_impl, "move"):
             return self.storage_impl.move(src_bucket, src_path, dest_bucket, dest_path)
         return False
-    
+
     def remove_bucket(self, bucket):
         """
         Remove bucket (if the original storage implementation has this method)
@@ -229,16 +231,17 @@ class EncryptedStorageWrapper:
         if hasattr(self.storage_impl, "remove_bucket"):
             return self.storage_impl.remove_bucket(bucket)
         return False
-    
+
     def enable_encryption(self):
         """Enable encryption"""
         self.encryption_enabled = True
         logging.info("Encryption enabled")
-    
+
     def disable_encryption(self):
         """Disable encryption"""
         self.encryption_enabled = False
         logging.info("Encryption disabled")
+
 
 # Create singleton wrapper function
 def create_encrypted_storage(storage_impl, algorithm=None, key=None, encryption_enabled=True):
@@ -255,12 +258,12 @@ def create_encrypted_storage(storage_impl, algorithm=None, key=None, encryption_
         Encrypted storage wrapper instance
     """
     wrapper = EncryptedStorageWrapper(storage_impl, algorithm=algorithm, key=key)
-    
+
     wrapper.encryption_enabled = encryption_enabled
-    
+
     if encryption_enabled:
         logging.info("Encryption enabled in storage wrapper")
     else:
         logging.info("Encryption disabled in storage wrapper")
-    
+
     return wrapper

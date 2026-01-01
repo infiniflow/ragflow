@@ -24,8 +24,6 @@ export const FormSchema = z.object(VariableAssignerSchema);
 
 export type VariableAssignerFormSchemaType = z.infer<typeof FormSchema>;
 
-// const outputList = buildOutputList(initialVariableAssignerValues.outputs);
-
 function VariableAssignerForm({ node }: INextOperatorForm) {
   const defaultValues = useFormValues(initialDataOperationsValues, node);
 
@@ -41,10 +39,7 @@ function VariableAssignerForm({ node }: INextOperatorForm) {
     <Form {...form}>
       <FormWrapper>
         <DynamicVariables name="variables" label="Variables"></DynamicVariables>
-        {/* <Output list={outputList} isFormRequired></Output> */}
       </FormWrapper>
-      {/* <DevTool control={form.control} placement="top-left" /> */}
-      {/* set up the dev tool */}
     </Form>
   );
 }
