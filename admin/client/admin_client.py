@@ -300,6 +300,43 @@ def encode_to_base64(input_string):
     return base64_encoded.decode("utf-8")
 
 
+def show_help():
+    """Help info"""
+    help_text = """
+Commands:
+LIST SERVICES
+SHOW SERVICE <service>
+STARTUP SERVICE <service>
+SHUTDOWN SERVICE <service>
+RESTART SERVICE <service>
+LIST USERS
+SHOW USER <user>
+DROP USER <user>
+CREATE USER <user> <password>
+ALTER USER PASSWORD <user> <new_password>
+ALTER USER ACTIVE <user> <on/off>
+LIST DATASETS OF <user>
+LIST AGENTS OF <user>
+CREATE ROLE <role>
+DROP ROLE <role>
+ALTER ROLE <role> SET DESCRIPTION <description>
+LIST ROLES
+SHOW ROLE <role>
+GRANT <action_list> ON <function> TO ROLE <role>
+REVOKE <action_list> ON <function> TO ROLE <role>
+ALTER USER <user> SET ROLE <role>
+SHOW USER PERMISSION <user>
+SHOW VERSION
+GRANT ADMIN <user>
+REVOKE ADMIN <user>
+
+Meta Commands:
+\\?, \\h, \\help     Show this help
+\\q, \\quit, \\exit   Quit the CLI
+    """
+    print(help_text)
+
+
 class AdminCLI(Cmd):
     def __init__(self):
         super().__init__()
@@ -918,35 +955,11 @@ class AdminCLI(Cmd):
         args = command.get("args", [])
 
         if meta_command in ["?", "h", "help"]:
-            self.show_help()
+            show_help()
         elif meta_command in ["q", "quit", "exit"]:
             print("Goodbye!")
         else:
             print(f"Meta command '{meta_command}' with args {args}")
-
-    def show_help(self):
-        """Help info"""
-        help_text = """
-Commands:
-  LIST SERVICES
-  SHOW SERVICE <service>
-  STARTUP SERVICE <service>
-  SHUTDOWN SERVICE <service>
-  RESTART SERVICE <service>
-  LIST USERS
-  SHOW USER <user>
-  DROP USER <user>
-  CREATE USER <user> <password>
-  ALTER USER PASSWORD <user> <new_password>
-  ALTER USER ACTIVE <user> <on/off>
-  LIST DATASETS OF <user>
-  LIST AGENTS OF <user>
-
-Meta Commands:
-  \\?, \\h, \\help     Show this help
-  \\q, \\quit, \\exit   Quit the CLI
-        """
-        print(help_text)
 
 
 def main():
