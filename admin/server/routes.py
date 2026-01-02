@@ -15,8 +15,11 @@
 #
 
 import secrets
+from typing import Any
 
-from flask import Blueprint, request
+from common.time_utils import current_timestamp, datetime_format
+from datetime import datetime
+from flask import Blueprint, Response, request
 from flask_login import current_user, login_required, logout_user
 
 from auth import login_verify, login_admin, check_admin_auth
@@ -25,8 +28,9 @@ from services import UserMgr, ServiceMgr, UserServiceMgr
 from roles import RoleMgr
 from api.common.exceptions import AdminException
 from common.versions import get_ragflow_version
+from api.utils.api_utils import generate_confirmation_token
 
-admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
+admin_bp = Blueprint("admin", __name__, url_prefix="/api/v1/admin")
 
 
 @admin_bp.route('/ping', methods=['GET'])
@@ -34,10 +38,10 @@ def ping():
     return success_response('PONG')
 
 
-@admin_bp.route('/login', methods=['POST'])
+@admin_bp.route("/login", methods=["POST"])
 def login():
     if not request.json:
-        return error_response('Authorize admin failed.' ,400)
+        return error_response("Authorize admin failed.", 400)
     try:
         email = request.json.get("email", "")
         password = request.json.get("password", "")
@@ -46,7 +50,7 @@ def login():
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/logout', methods=['GET'])
+@admin_bp.route("/logout", methods=["GET"])
 @login_required
 def logout():
     try:
@@ -58,7 +62,7 @@ def logout():
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/auth', methods=['GET'])
+@admin_bp.route("/auth", methods=["GET"])
 @login_verify
 def auth_admin():
     try:
@@ -67,7 +71,7 @@ def auth_admin():
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/users', methods=['GET'])
+@admin_bp.route("/users", methods=["GET"])
 @login_required
 @check_admin_auth
 def list_users():
@@ -78,18 +82,18 @@ def list_users():
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/users', methods=['POST'])
+@admin_bp.route("/users", methods=["POST"])
 @login_required
 @check_admin_auth
 def create_user():
     try:
         data = request.get_json()
-        if not data or 'username' not in data or 'password' not in data:
+        if not data or "username" not in data or "password" not in data:
             return error_response("Username and password are required", 400)
 
-        username = data['username']
-        password = data['password']
-        role = data.get('role', 'user')
+        username = data["username"]
+        password = data["password"]
+        role = data.get("role", "user")
 
         res = UserMgr.create_user(username, password, role)
         if res["success"]:
@@ -105,7 +109,7 @@ def create_user():
         return error_response(str(e))
 
 
-@admin_bp.route('/users/<username>', methods=['DELETE'])
+@admin_bp.route("/users/<username>", methods=["DELETE"])
 @login_required
 @check_admin_auth
 def delete_user(username):
@@ -122,16 +126,16 @@ def delete_user(username):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/users/<username>/password', methods=['PUT'])
+@admin_bp.route("/users/<username>/password", methods=["PUT"])
 @login_required
 @check_admin_auth
 def change_password(username):
     try:
         data = request.get_json()
-        if not data or 'new_password' not in data:
+        if not data or "new_password" not in data:
             return error_response("New password is required", 400)
 
-        new_password = data['new_password']
+        new_password = data["new_password"]
         msg = UserMgr.update_user_password(username, new_password)
         return success_response(None, msg)
 
@@ -141,15 +145,15 @@ def change_password(username):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/users/<username>/activate', methods=['PUT'])
+@admin_bp.route("/users/<username>/activate", methods=["PUT"])
 @login_required
 @check_admin_auth
 def alter_user_activate_status(username):
     try:
         data = request.get_json()
-        if not data or 'activate_status' not in data:
+        if not data or "activate_status" not in data:
             return error_response("Activation status is required", 400)
-        activate_status = data['activate_status']
+        activate_status = data["activate_status"]
         msg = UserMgr.update_user_activate_status(username, activate_status)
         return success_response(None, msg)
     except AdminException as e:
@@ -188,7 +192,7 @@ def revoke_admin(username):
     except Exception as e:
         return error_response(str(e), 500)
 
-@admin_bp.route('/users/<username>', methods=['GET'])
+@admin_bp.route("/users/<username>", methods=["GET"])
 @login_required
 @check_admin_auth
 def get_user_details(username):
@@ -202,7 +206,7 @@ def get_user_details(username):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/users/<username>/datasets', methods=['GET'])
+@admin_bp.route("/users/<username>/datasets", methods=["GET"])
 @login_required
 @check_admin_auth
 def get_user_datasets(username):
@@ -216,7 +220,7 @@ def get_user_datasets(username):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/users/<username>/agents', methods=['GET'])
+@admin_bp.route("/users/<username>/agents", methods=["GET"])
 @login_required
 @check_admin_auth
 def get_user_agents(username):
@@ -230,7 +234,7 @@ def get_user_agents(username):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/services', methods=['GET'])
+@admin_bp.route("/services", methods=["GET"])
 @login_required
 @check_admin_auth
 def get_services():
@@ -241,7 +245,7 @@ def get_services():
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/service_types/<service_type>', methods=['GET'])
+@admin_bp.route("/service_types/<service_type>", methods=["GET"])
 @login_required
 @check_admin_auth
 def get_services_by_type(service_type_str):
@@ -252,7 +256,7 @@ def get_services_by_type(service_type_str):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/services/<service_id>', methods=['GET'])
+@admin_bp.route("/services/<service_id>", methods=["GET"])
 @login_required
 @check_admin_auth
 def get_service(service_id):
@@ -263,7 +267,7 @@ def get_service(service_id):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/services/<service_id>', methods=['DELETE'])
+@admin_bp.route("/services/<service_id>", methods=["DELETE"])
 @login_required
 @check_admin_auth
 def shutdown_service(service_id):
@@ -274,7 +278,7 @@ def shutdown_service(service_id):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/services/<service_id>', methods=['PUT'])
+@admin_bp.route("/services/<service_id>", methods=["PUT"])
 @login_required
 @check_admin_auth
 def restart_service(service_id):
@@ -285,38 +289,38 @@ def restart_service(service_id):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/roles', methods=['POST'])
+@admin_bp.route("/roles", methods=["POST"])
 @login_required
 @check_admin_auth
 def create_role():
     try:
         data = request.get_json()
-        if not data or 'role_name' not in data:
+        if not data or "role_name" not in data:
             return error_response("Role name is required", 400)
-        role_name: str = data['role_name']
-        description: str = data['description']
+        role_name: str = data["role_name"]
+        description: str = data["description"]
         res = RoleMgr.create_role(role_name, description)
         return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/roles/<role_name>', methods=['PUT'])
+@admin_bp.route("/roles/<role_name>", methods=["PUT"])
 @login_required
 @check_admin_auth
 def update_role(role_name: str):
     try:
         data = request.get_json()
-        if not data or 'description' not in data:
+        if not data or "description" not in data:
             return error_response("Role description is required", 400)
-        description: str = data['description']
+        description: str = data["description"]
         res = RoleMgr.update_role_description(role_name, description)
         return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/roles/<role_name>', methods=['DELETE'])
+@admin_bp.route("/roles/<role_name>", methods=["DELETE"])
 @login_required
 @check_admin_auth
 def delete_role(role_name: str):
@@ -327,7 +331,7 @@ def delete_role(role_name: str):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/roles', methods=['GET'])
+@admin_bp.route("/roles", methods=["GET"])
 @login_required
 @check_admin_auth
 def list_roles():
@@ -338,7 +342,7 @@ def list_roles():
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/roles/<role_name>/permission', methods=['GET'])
+@admin_bp.route("/roles/<role_name>/permission", methods=["GET"])
 @login_required
 @check_admin_auth
 def get_role_permission(role_name: str):
@@ -349,54 +353,54 @@ def get_role_permission(role_name: str):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/roles/<role_name>/permission', methods=['POST'])
+@admin_bp.route("/roles/<role_name>/permission", methods=["POST"])
 @login_required
 @check_admin_auth
 def grant_role_permission(role_name: str):
     try:
         data = request.get_json()
-        if not data or 'actions' not in data or 'resource' not in data:
+        if not data or "actions" not in data or "resource" not in data:
             return error_response("Permission is required", 400)
-        actions: list = data['actions']
-        resource: str = data['resource']
+        actions: list = data["actions"]
+        resource: str = data["resource"]
         res = RoleMgr.grant_role_permission(role_name, actions, resource)
         return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/roles/<role_name>/permission', methods=['DELETE'])
+@admin_bp.route("/roles/<role_name>/permission", methods=["DELETE"])
 @login_required
 @check_admin_auth
 def revoke_role_permission(role_name: str):
     try:
         data = request.get_json()
-        if not data or 'actions' not in data or 'resource' not in data:
+        if not data or "actions" not in data or "resource" not in data:
             return error_response("Permission is required", 400)
-        actions: list = data['actions']
-        resource: str = data['resource']
+        actions: list = data["actions"]
+        resource: str = data["resource"]
         res = RoleMgr.revoke_role_permission(role_name, actions, resource)
         return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/users/<user_name>/role', methods=['PUT'])
+@admin_bp.route("/users/<user_name>/role", methods=["PUT"])
 @login_required
 @check_admin_auth
 def update_user_role(user_name: str):
     try:
         data = request.get_json()
-        if not data or 'role_name' not in data:
+        if not data or "role_name" not in data:
             return error_response("Role name is required", 400)
-        role_name: str = data['role_name']
+        role_name: str = data["role_name"]
         res = RoleMgr.update_user_role(user_name, role_name)
         return success_response(res)
     except Exception as e:
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/users/<user_name>/permission', methods=['GET'])
+@admin_bp.route("/users/<user_name>/permission", methods=["GET"])
 @login_required
 @check_admin_auth
 def get_user_permission(user_name: str):
@@ -406,7 +410,53 @@ def get_user_permission(user_name: str):
     except Exception as e:
         return error_response(str(e), 500)
 
-@admin_bp.route('/version', methods=['GET'])
+
+@admin_bp.route("/users/<username>/new_token", methods=["POST"])
+@login_required
+@check_admin_auth
+def generate_user_api_key(username: str) -> tuple[Response, int]:
+    try:
+        user_details: list[dict[str, Any]] = UserMgr.get_user_details(username)
+        if not user_details:
+            return error_response("User not found!", 400)
+        tenants: list[dict[str, Any]] = UserServiceMgr.get_user_tenants(username)
+        if not tenants:
+            return error_response("Tenant not found!", 400)
+        tenant_id: str = tenants[0]["tenant_id"]
+        token: str = generate_confirmation_token()
+        obj: dict[str, Any] = {
+            "tenant_id": tenant_id,
+            "token": token,
+            "beta": generate_confirmation_token().replace("ragflow-", "")[:32],
+            "create_time": current_timestamp(),
+            "create_date": datetime_format(datetime.now()),
+            "update_time": None,
+            "update_date": None,
+        }
+
+        if not UserMgr.save_api_token(obj):
+            return error_response("Failed to generate API key!", 500)
+        return success_response(obj, "API key generated successfully")
+    except AdminException as e:
+        return error_response(e.message, e.code)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route("/users/<username>/token_list", methods=["GET"])
+@login_required
+@check_admin_auth
+def get_user_api_keys(username: str) -> tuple[Response, int]:
+    try:
+        api_keys: list[dict[str, Any]] = UserMgr.get_user_api_key(username)
+        return success_response(api_keys, "Get user API keys")
+    except AdminException as e:
+        return error_response(e.message, e.code)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route("/version", methods=["GET"])
 @login_required
 @check_admin_auth
 def show_version():
