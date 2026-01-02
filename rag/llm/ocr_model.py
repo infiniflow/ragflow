@@ -60,10 +60,10 @@ class MinerUOcrModel(Base, MinerUParser):
             # lower-case keys (UI), upper-case MINERU_* (env auto-provision), env vars
             return config.get(key, config.get(env_key, os.environ.get(env_key, default)))
 
-        self.mineru_api = _resolve_config("mineru_apiserver", "MINERU_APISERVER", "").rstrip("/")
+        self.mineru_api = str(_resolve_config("mineru_apiserver", "MINERU_APISERVER", "")).rstrip("/")
         self.mineru_output_dir = _resolve_config("mineru_output_dir", "MINERU_OUTPUT_DIR", "")
         self.mineru_backend = _resolve_config("mineru_backend", "MINERU_BACKEND", "hybrid-auto-engine")
-        self.mineru_server_url = _resolve_config("mineru_server_url", "MINERU_SERVER_URL", "").rstrip("/")
+        self.mineru_server_url = str(_resolve_config("mineru_server_url", "MINERU_SERVER_URL", "")).rstrip("/")
         
         # Safe conversion for delete_output - handles various formats
         delete_output_str = _resolve_config("mineru_delete_output", "MINERU_DELETE_OUTPUT", "1")
