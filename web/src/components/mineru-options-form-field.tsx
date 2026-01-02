@@ -160,7 +160,7 @@ export function MinerUOptionsFormField({
             min={1}
             max={500}
             value={field.value ?? 50}
-            onChange={(e) => field.onChange(parseInt(e.target.value) || 50)}
+            onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 50)}
             placeholder="50"
           />
         )}
@@ -180,7 +180,7 @@ export function MinerUOptionsFormField({
             type="number"
             min={0}
             value={field.value ?? ''}
-            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : null)}
+            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
             placeholder="Optional"
           />
         )}
@@ -200,7 +200,7 @@ export function MinerUOptionsFormField({
             type="number"
             min={0}
             value={field.value ?? ''}
-            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : null)}
+            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)}
             placeholder="Optional"
           />
         )}
