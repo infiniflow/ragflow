@@ -22,7 +22,6 @@ import tempfile
 import threading
 import zipfile
 from dataclasses import dataclass, field
-from enum import Enum
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
@@ -216,8 +215,10 @@ class MinerUParser(RAGFlowPdfParser):
                 elif 400 <= status_code < 500:
                     return BatchErrorType.CLIENT_ERROR_4XX
             return BatchErrorType.UNKNOWN
-        elif isinstance(exception, (requests.exceptions.ConnectionError, 
-                                     requests.exceptions.RequestException)):
+        elif isinstance(exception, requests.exceptions.ConnectionError):
+            return BatchErrorType.NETWORK_ERROR
+        elif isinstance(exception, requests.exceptions.RequestException):
+            # Other request exceptions (not ConnectionError, not HTTPError, not Timeout)
             return BatchErrorType.NETWORK_ERROR
         else:
             return BatchErrorType.UNKNOWN
