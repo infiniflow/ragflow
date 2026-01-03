@@ -1,4 +1,4 @@
->            parser_model_name = resolve_mineru_llm_name()
+            parser_model_name = resolve_mineru_llm_name()
             if not parser_model_name:
                 raise RuntimeError("MinerU model not configured. Please add MinerU in Model Providers or set MINERU_* env.")
 
