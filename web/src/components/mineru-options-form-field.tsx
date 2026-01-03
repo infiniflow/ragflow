@@ -150,7 +150,7 @@ export function MinerUOptionsFormField({
         label={t('knowledgeConfiguration.mineruBatchSize', 'Batch Size')}
         tooltip={t(
           'knowledgeConfiguration.mineruBatchSizeTip',
-          'Number of pages to process per batch for large PDFs. Larger values use more memory but may be faster. Default is 50.',
+          'Number of pages to process per batch for large PDFs. Larger values use more memory but may be faster. Default is 30.',
         )}
         horizontal={true}
       >
@@ -159,9 +159,9 @@ export function MinerUOptionsFormField({
             type="number"
             min={1}
             max={500}
-            value={field.value ?? 50}
-            onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 50)}
-            placeholder="50"
+            value={field.value ?? 30}
+            onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 30)}
+            placeholder="30"
           />
         )}
       </RAGFlowFormItem>
