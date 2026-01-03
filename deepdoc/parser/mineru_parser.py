@@ -175,7 +175,7 @@ class MinerUParseOptions:
     batch_size: int = 30  # Number of pages per batch for large PDFs
     start_page: Optional[int] = None  # Starting page (0-based, for manual pagination)
     end_page: Optional[int] = None  # Ending page (0-based, for manual pagination)
-    strict_mode: bool = True  # If True, all batches must succeed; if False, allow partial success
+    strict_mode: bool = True  # If True (default), all batches must succeed; if False, allow partial success with warnings
 
 
 @dataclass
@@ -249,6 +249,18 @@ class MinerUParser(RAGFlowPdfParser):
             Delay in seconds
         """
         return RETRY_BACKOFF_BASE ** retry_count
+
+    def _format_failed_batches_summary(self, failed_batches: list[BatchInfo]) -> str:
+        """Format a summary of failed batches.
+        
+        Args:
+            failed_batches: List of failed BatchInfo objects
+            
+        Returns:
+            Formatted string describing failed batches
+        """
+        return ", ".join([f"batch {fb.batch_idx + 1} (pages {fb.start_page}-{fb.end_page}): {fb.error_type}" 
+                         for fb in failed_batches])
 
     def get_batch_processing_result(self) -> Optional[BatchProcessingResult]:
         """Get the result of the last batch processing operation.
@@ -511,6 +523,7 @@ class MinerUParser(RAGFlowPdfParser):
                         if callback:
                             callback(progress, f"[MinerU] Retrying batch {batch_idx + 1}/{len(batches)} after error (attempt {batch_info.retry_count})")
                         
+                        # Use blocking sleep for synchronous retry logic
                         time.sleep(delay)
                         continue  # Retry
                     else:
@@ -562,8 +575,7 @@ class MinerUParser(RAGFlowPdfParser):
         # In strict mode, raise error if any batch failed (all batches must succeed)
         # In permissive mode, allow partial success if at least one batch succeeded
         if failed_batches and options.strict_mode:
-            failed_summary = ", ".join([f"batch {fb.batch_idx + 1} (pages {fb.start_page}-{fb.end_page}): {fb.error_type}" 
-                                       for fb in failed_batches])
+            failed_summary = self._format_failed_batches_summary(failed_batches)
             error_msg = (f"[MinerU] Partial failure in strict mode: {len(failed_batches)}/{len(batches)} batches failed. "
                         f"Failed batches: {failed_summary}. "
                         f"Extracted {len(merged_content_list)} blocks from {successful_batches} successful batches.")
@@ -575,8 +587,7 @@ class MinerUParser(RAGFlowPdfParser):
             raise RuntimeError(error_msg)
         elif failed_batches:
             # Permissive mode: log warning but don't fail
-            failed_summary = ", ".join([f"batch {fb.batch_idx + 1} (pages {fb.start_page}-{fb.end_page}): {fb.error_type}" 
-                                       for fb in failed_batches])
+            failed_summary = self._format_failed_batches_summary(failed_batches)
             warning_msg = (f"[MinerU] Partial success in permissive mode: {len(failed_batches)}/{len(batches)} batches failed. "
                           f"Failed batches: {failed_summary}. "
                           f"Extracted {len(merged_content_list)} blocks from {successful_batches} successful batches.")
