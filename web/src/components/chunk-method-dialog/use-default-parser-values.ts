@@ -1,4 +1,4 @@
->import { IParserConfig } from '@/interfaces/database/document';
+import { IParserConfig } from '@/interfaces/database/document';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ParseDocumentType } from '../layout-recognize-form-field';
