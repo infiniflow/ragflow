@@ -136,7 +136,7 @@ class MinerUParseOptions:
     parse_method: str = "raw"
     formula_enable: bool = True
     table_enable: bool = True
-    batch_size: int = 50  # Number of pages per batch for large PDFs
+    batch_size: int = 30  # Number of pages per batch for large PDFs
     start_page: Optional[int] = None  # Starting page (0-based, for manual pagination)
     end_page: Optional[int] = None  # Ending page (0-based, for manual pagination)
 
@@ -175,6 +175,7 @@ class MinerUParser(RAGFlowPdfParser):
                     path = path[root_len:]
 
                 full_path = os.path.join(extract_to, path)
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
                 if member.is_dir():
                     os.makedirs(full_path, exist_ok=True)
                 else:
@@ -442,7 +443,7 @@ class MinerUParser(RAGFlowPdfParser):
                 if callback:
                     callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse pages={start_page}-{end_page}")
                 response = requests.post(url=f"{self.mineru_api}/file_parse", files=files, data=data, headers=headers,
-                                         timeout=1800)
+                                          timeout=1800)
 
             response.raise_for_status()
             if response.headers.get("Content-Type") == "application/zip":
@@ -584,7 +585,7 @@ class MinerUParser(RAGFlowPdfParser):
             if need_position:
                 return None, None
             return
-            
+             
         pos = poss[0]
         first_page_idx = pos[0][0]
         
@@ -658,7 +659,7 @@ class MinerUParser(RAGFlowPdfParser):
                 cimgp = page.crop((x0, y0, x1, y1))
                 imgs.append(cimgp)
                 if 0 < ii < len(poss) - 1:
-                    positions.append((pn + self.page_from, x0, x1, y0, y1))
+                positions.append((pn + self.page_from, x0, x1, y0, y1))
                 bottom -= page.size[1]
 
         if not imgs:
@@ -689,7 +690,7 @@ class MinerUParser(RAGFlowPdfParser):
     @staticmethod
     def extract_positions(txt: str):
         poss = []
-        for tag in re.findall(r"@@[0-9-]+\t[0-9.\t]+##", txt):
+        for tag in re.findall(r"@@[0-9-]+	[0-9.	]+##", txt):
             pn, left, right, top, bottom = tag.strip("#").strip("@").split("\t")
             left, right, top, bottom = float(left), float(right), float(top), float(bottom)
             poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
@@ -703,7 +704,7 @@ class MinerUParser(RAGFlowPdfParser):
 
         # mirror MinerU's sanitize_filename to align ZIP naming
         def _sanitize_filename(name: str) -> str:
-            sanitized = re.sub(r"[/\\\.]{2,}|[/\\]", "", name)
+            sanitized = re.sub(r"[/\\.]{2,}|[/\\]", "", name)
             sanitized = re.sub(r"[^\w.-]", "_", sanitized, flags=re.UNICODE)
             if sanitized.startswith("."):
                 sanitized = "_" + sanitized[1:]
@@ -848,12 +849,12 @@ class MinerUParser(RAGFlowPdfParser):
         enable_table = parser_cfg.get('mineru_table_enable', True)
         
         # Batch processing configuration with validation
-        batch_size = parser_cfg.get('mineru_batch_size', 50)  # Default 50 pages per batch
+        batch_size = parser_cfg.get('mineru_batch_size', 30)  # Default 30 pages per batch
         try:
             batch_size = max(1, int(batch_size))  # Ensure at least 1
         except (ValueError, TypeError):
-            self.logger.warning(f"[MinerU] Invalid batch_size '{batch_size}', using default 50")
-            batch_size = 50
+            self.logger.warning(f"[MinerU] Invalid batch_size '{batch_size}', using default 30")
+            batch_size = 30
             
         start_page = parser_cfg.get('mineru_start_page', None)  # Manual pagination (0-based)
         end_page = parser_cfg.get('mineru_end_page', None)  # Manual pagination (0-based)
@@ -875,8 +876,8 @@ class MinerUParser(RAGFlowPdfParser):
         
         # Validate page range
         if start_page is not None and end_page is not None and start_page > end_page:
-            self.logger.warning(f"[MinerU] start_page ({start_page}) > end_page ({end_page}), swapping")
-            start_page, end_page = end_page, start_page
+                self.logger.warning(f"[MinerU] start_page ({start_page}) > end_page ({end_page}), swapping")
+                start_page, end_page = end_page, start_page
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
