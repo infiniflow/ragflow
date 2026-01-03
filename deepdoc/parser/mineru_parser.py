@@ -659,7 +659,7 @@ class MinerUParser(RAGFlowPdfParser):
                 cimgp = page.crop((x0, y0, x1, y1))
                 imgs.append(cimgp)
                 if 0 < ii < len(poss) - 1:
-                positions.append((pn + self.page_from, x0, x1, y0, y1))
+                    positions.append((pn + self.page_from, x0, x1, y0, y1))
                 bottom -= page.size[1]
 
         if not imgs:
