@@ -176,6 +176,7 @@ class MinerUParseOptions:
     batch_size: int = 30  # Number of pages per batch for large PDFs
     start_page: Optional[int] = None  # Starting page (0-based, for manual pagination)
     end_page: Optional[int] = None  # Ending page (0-based, for manual pagination)
+    strict_mode: bool = True  # If True, all batches must succeed; if False, allow partial success
 
 
 @dataclass
@@ -501,8 +502,9 @@ class MinerUParser(RAGFlowPdfParser):
                     
                     # Determine if we should retry
                     if self._should_retry(error_type, batch_info.retry_count):
+                        # Calculate delay before incrementing retry count for clarity
+                        delay = self._calculate_backoff_delay(batch_info.retry_count)
                         batch_info.retry_count += 1
-                        delay = self._calculate_backoff_delay(batch_info.retry_count - 1)
                         self.logger.info(f"[MinerU] Retrying batch {batch_idx + 1} after {delay}s delay (attempt {batch_info.retry_count}/{MAX_RETRIES_5XX})")
                         
                         if callback:
@@ -556,19 +558,32 @@ class MinerUParser(RAGFlowPdfParser):
         if successful_batches == 0:
             raise RuntimeError(f"[MinerU] All {len(batches)} batches failed. No content extracted.")
         
-        # Raise error if any batch failed (strict mode - all batches must succeed)
-        if failed_batches:
+        # In strict mode, raise error if any batch failed (all batches must succeed)
+        # In permissive mode, allow partial success if at least one batch succeeded
+        if failed_batches and options.strict_mode:
             failed_summary = ", ".join([f"batch {fb.batch_idx + 1} (pages {fb.start_page}-{fb.end_page}): {fb.error_type}" 
                                        for fb in failed_batches])
-            error_msg = (f"[MinerU] Partial failure: {len(failed_batches)}/{len(batches)} batches failed. "
+            error_msg = (f"[MinerU] Partial failure in strict mode: {len(failed_batches)}/{len(batches)} batches failed. "
                         f"Failed batches: {failed_summary}. "
                         f"Extracted {len(merged_content_list)} blocks from {successful_batches} successful batches.")
             
             if callback:
-                callback(0.70, f"[MinerU] ⚠ Warning: {len(failed_batches)} batches failed")
+                callback(0.70, f"[MinerU] ⚠ Error: {len(failed_batches)} batches failed (strict mode)")
             
             self.logger.error(error_msg)
             raise RuntimeError(error_msg)
+        elif failed_batches:
+            # Permissive mode: log warning but don't fail
+            failed_summary = ", ".join([f"batch {fb.batch_idx + 1} (pages {fb.start_page}-{fb.end_page}): {fb.error_type}" 
+                                       for fb in failed_batches])
+            warning_msg = (f"[MinerU] Partial success in permissive mode: {len(failed_batches)}/{len(batches)} batches failed. "
+                          f"Failed batches: {failed_summary}. "
+                          f"Extracted {len(merged_content_list)} blocks from {successful_batches} successful batches.")
+            
+            if callback:
+                callback(0.70, f"[MinerU] ⚠ Warning: {len(failed_batches)} batches failed (permissive mode)")
+            
+            self.logger.warning(warning_msg)
         
         # Write merged content_list to output directory
         merged_json_path = Path(output_path) / f"{pdf_file_name}_content_list.json"
@@ -1056,6 +1071,19 @@ class MinerUParser(RAGFlowPdfParser):
         except (ValueError, TypeError):
             self.logger.warning(f"[MinerU] Invalid batch_size '{batch_size}', using default 30")
             batch_size = 30
+        
+        # Strict mode configuration - default True (all batches must succeed)
+        strict_mode = parser_cfg.get('mineru_strict_mode', True)
+        if not isinstance(strict_mode, bool):
+            try:
+                # Handle string boolean values
+                if isinstance(strict_mode, str):
+                    strict_mode = strict_mode.lower().strip() in ('true', 'yes', '1', 'on')
+                else:
+                    strict_mode = bool(strict_mode)
+            except (ValueError, TypeError):
+                self.logger.warning(f"[MinerU] Invalid strict_mode '{strict_mode}', using default True")
+                strict_mode = True
             
         start_page = parser_cfg.get('mineru_start_page', None)  # Manual pagination (0-based)
         end_page = parser_cfg.get('mineru_end_page', None)  # Manual pagination (0-based)
@@ -1130,6 +1158,7 @@ class MinerUParser(RAGFlowPdfParser):
                 batch_size=batch_size,
                 start_page=start_page,
                 end_page=end_page,
+                strict_mode=strict_mode,
             )
             final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
