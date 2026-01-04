@@ -100,6 +100,12 @@ class Base(ABC):
         return LLMErrorCode.ERROR_GENERIC
 
     def _clean_conf(self, gen_conf):
+        model_name_lower = (self.model_name or "").lower()
+        # gpt-5 and gpt-5.1 endpoints have inconsistent parameter support, clear custom generation params to prevent unexpected issues
+        if "gpt-5" in model_name_lower:
+            gen_conf = {}
+            return gen_conf
+        
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
 
@@ -127,12 +133,6 @@ class Base(ABC):
         }
 
         gen_conf = {k: v for k, v in gen_conf.items() if k in allowed_conf}
-
-        model_name_lower = (self.model_name or "").lower()
-        # gpt-5 and gpt-5.1 endpoints have inconsistent parameter support, clear custom generation params to prevent unexpected issues
-        if "gpt-5" in model_name_lower:
-            gen_conf = {}
-
         return gen_conf
 
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
