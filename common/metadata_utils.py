@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import ast
 import logging
 from typing import Any, Callable, Dict
 
@@ -49,8 +50,8 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
                 try:
                     if isinstance(input, list):
                         input = input[0]
-                    input = float(input)
-                    value = float(value)
+                    input = ast.literal_eval(input)
+                    value = ast.literal_eval(value)
                 except Exception:
                     pass
             if isinstance(input, str):
@@ -58,28 +59,41 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
             if isinstance(value, str):
                 value = value.lower()
 
-            for conds in [
-                (operator == "contains", input in value if not isinstance(input, list) else all([i in value for i in input])),
-                (operator == "not contains", input not in value if not isinstance(input, list) else all([i not in value for i in input])),
-                (operator == "in", input in value if not isinstance(input, list) else all([i in value for i in input])),
-                (operator == "not in", input not in value if not isinstance(input, list) else all([i not in value for i in input])),
-                (operator == "start with", str(input).lower().startswith(str(value).lower())  if not isinstance(input, list) else "".join([str(i).lower() for i in input]).startswith(str(value).lower())),
-                (operator == "end with", str(input).lower().endswith(str(value).lower())  if not isinstance(input, list) else "".join([str(i).lower() for i in input]).endswith(str(value).lower())),
-                (operator == "empty", not input),
-                (operator == "not empty", input),
-                (operator == "=", input == value),
-                (operator == "≠", input != value),
-                (operator == ">", input > value),
-                (operator == "<", input < value),
-                (operator == "≥", input >= value),
-                (operator == "≤", input <= value),
-            ]:
-                try:
-                    if all(conds):
-                        ids.extend(docids)
-                        break
-                except Exception:
-                    pass
+            matched = False
+            try:
+                if operator == "contains":
+                    matched = input in value if not isinstance(input, list) else all(i in value for i in input)
+                elif operator == "not contains":
+                    matched = input not in value if not isinstance(input, list) else all(i not in value for i in input)
+                elif operator == "in":
+                    matched = input in value if not isinstance(input, list) else all(i in value for i in input)
+                elif operator == "not in":
+                    matched = input not in value if not isinstance(input, list) else all(i not in value for i in input)
+                elif operator == "start with":
+                    matched = str(input).lower().startswith(str(value).lower()) if not isinstance(input, list) else "".join([str(i).lower() for i in input]).startswith(str(value).lower())
+                elif operator == "end with":
+                    matched = str(input).lower().endswith(str(value).lower()) if not isinstance(input, list) else "".join([str(i).lower() for i in input]).endswith(str(value).lower())
+                elif operator == "empty":
+                    matched = not input
+                elif operator == "not empty":
+                    matched = bool(input)
+                elif operator == "=":
+                    matched = input == value
+                elif operator == "≠":
+                    matched = input != value
+                elif operator == ">":
+                    matched = input > value
+                elif operator == "<":
+                    matched = input < value
+                elif operator == "≥":
+                    matched = input >= value
+                elif operator == "≤":
+                    matched = input <= value
+            except Exception:
+                pass
+
+            if matched:
+                ids.extend(docids)
         return ids
 
     for k, v2docs in metas.items():

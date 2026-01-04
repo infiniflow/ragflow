@@ -53,6 +53,7 @@ export default {
       noData: '暂无数据',
       bedrockCredentialsHint:
         '提示：Access Key / Secret Key 可留空，以启用 AWS IAM 自动验证。',
+      zendeskDescription: '连接 Zendesk，同步工单、文章及其他内容。',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
       selected: '已选择',
     },
@@ -99,7 +100,7 @@ export default {
       llmTooltip: '分析对话内容，提取关键信息，并生成结构化的记忆摘要。',
       embeddingModelTooltip:
         '将文本转换为数值向量，用于语义相似度搜索和记忆检索。',
-      embeddingModelError: '记忆类型为必填项，且"row"类型不可删除。',
+      embeddingModelError: '记忆类型为必填项，且"原始"类型不可删除。',
       memoryTypeTooltip: `原始: 用户与代理之间的原始对话内容（默认必需）。
 语义记忆: 关于用户和世界的通用知识和事实。
 情景记忆: 带时间戳的特定事件和经历记录。
@@ -124,12 +125,11 @@ export default {
         forgetMessageTip: '确定遗忘吗？',
         messageDescription: '记忆提取使用高级设置中的提示词和温度值进行配置。',
         copied: '已复制！',
-        contentEmbed: '内容嵌入',
         content: '内容',
         delMessageWarn: `遗忘后，代理将无法检索此消息。`,
         forgetMessage: '遗忘消息',
         sessionId: '会话ID',
-        agent: '代理',
+        agent: '智能体',
         type: '类型',
         validDate: '有效日期',
         forgetAt: '遗忘于',
@@ -138,6 +138,8 @@ export default {
         action: '操作',
       },
       config: {
+        memorySizeTooltip: `记录每条消息的内容 + 其嵌入向量（≈ 内容 + 维度 × 8 字节）。
+例如：一条带有 1024 维嵌入的 1 KB 消息大约使用 9 KB。5 MB 的默认限制大约可容纳 500 条此类消息。`,
         avatar: '头像',
         description: '描述',
         memorySize: '记忆大小',
@@ -172,6 +174,8 @@ export default {
     },
     knowledgeDetails: {
       metadata: {
+        toMetadataSettingTip: '在配置中设置自动元数据',
+        toMetadataSetting: '生成设置',
         descriptionTip:
           '提供描述或示例来指导大语言模型为此字段提取值。如果留空，将依赖字段名称。',
         restrictTDefinedValuesTip:
@@ -552,10 +556,10 @@ export default {
 注意您需要指定的条目类型。</p>`,
       tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
 <p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
-<p>标签集中的每个文本分块是都是相互独立的标签和标签描述的文本对。</p>
+<p>标签集中的每个文本分块都是相互独立的标签和标签描述的文本对。</p>
 
 <p>Tag 分块方法支持<b>XLSX</b>和<b>CSV/TXT</b>文件格式。</p>
-<p>如果文件为<b>XLSX</b>格式，则它应该包含两列无标题：一列用于标签描述，另一列用于标签，标签描述列位于标签列之前。支持多个工作表，只要列结构正确即可。</p>
+<p>如果文件为<b>XLSX</b>格式，则它应该包含无标题的两列：一列用于标签描述，另一列用于标签，标签描述列位于标签列之前。支持多个工作表，只要列结构正确即可。</p>
 <p>如果文件为 <b>CSV/TXT</b> 格式，则必须使用 UTF-8 编码并以 TAB 作为分隔符来分隔内容和标签。</p>
 <p>在标签列中，标签之间使用英文逗号分隔。</p>
 <i>不符合上述规则的文本行将被忽略。</i>
@@ -861,7 +865,22 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '请上传由 Google Console 生成的 OAuth JSON。如果仅包含 client credentials，请通过浏览器授权一次以获取长期有效的刷新 Token。',
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
       boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
+      bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
+      bitbucketTopWorkspaceTip:
+        '要索引的 Bitbucket 工作区（例如：https://bitbucket.org/atlassian/workspace 中的 "atlassian"）',
+      bitbucketWorkspaceTip: '该连接器将索引工作区下的所有仓库。',
+      bitbucketProjectsTip: '用英文逗号分隔的项目 key，例如：PROJ1,PROJ2',
+      bitbucketRepositorySlugsTip:
+        '用英文逗号分隔的仓库 slug，例如：repo-one,repo-two',
+      connectorNameTip: '为连接器命名',
+      githubDescription:
+        '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
       airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',
+      gitlabDescription:
+        '连接 GitLab，同步仓库、Issue、合并请求（MR）及相关文档内容。',
+      asanaDescription: '连接 Asana，同步工作区中的文件。',
+      imapDescription:
+        '连接你的 IMAP 邮箱，同步指定mailboxes中的邮件，用于知识检索与分析',
       r2Description: '连接你的 Cloudflare R2 存储桶以导入和同步文件。',
       dropboxAccessTokenTip:
         '请在 Dropbox App Console 生成 Access Token，并勾选 files.metadata.read、files.content.read、sharing.read 等必要权限。',

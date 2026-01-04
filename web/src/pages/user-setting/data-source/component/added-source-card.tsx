@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { Settings, Trash2 } from 'lucide-react';
-import { useDataSourceInfo } from '../contant';
+import { useDataSourceInfo } from '../constant';
 import { useDeleteDataSource } from '../hooks';
 import { IDataSorceInfo, IDataSourceBase } from '../interface';
 import { delSourceModal } from './delete-source-modal';

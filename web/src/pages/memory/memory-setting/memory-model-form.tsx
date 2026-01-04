@@ -89,9 +89,10 @@ export const MemoryModelForm = () => {
       <RenderField
         field={{
           name: 'memory_size',
-          label: t('memory.config.memorySize'),
+          label: t('memory.config.memorySize') + ' (Bytes)',
           type: FormFieldType.Number,
           horizontal: true,
+          tooltip: t('memory.config.memorySizeTooltip'),
           // placeholder: t('memory.config.memorySizePlaceholder'),
           required: false,
         }}

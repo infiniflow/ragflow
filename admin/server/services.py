@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
+import os
 import logging
 import re
 from werkzeug.security import check_password_hash
@@ -135,6 +137,38 @@ class UserMgr:
         UserService.update_user(usr.id, {"is_active": target_status})
         return f"Turn {_activate_status} user activate status successfully!"
 
+    @staticmethod
+    def grant_admin(username: str):
+        # use email to find user. check exist and unique.
+        user_list = UserService.query_user_by_email(username)
+        if not user_list:
+            raise UserNotFoundError(username)
+        elif len(user_list) > 1:
+            raise AdminException(f"Exist more than 1 user: {username}!")
+        # check activate status different from new
+        usr = user_list[0]
+        if usr.is_superuser:
+            return f"{usr} is already superuser!"
+        # update is_active
+        UserService.update_user(usr.id, {"is_superuser": True})
+        return "Grant successfully!"
+
+    @staticmethod
+    def revoke_admin(username: str):
+        # use email to find user. check exist and unique.
+        user_list = UserService.query_user_by_email(username)
+        if not user_list:
+            raise UserNotFoundError(username)
+        elif len(user_list) > 1:
+            raise AdminException(f"Exist more than 1 user: {username}!")
+        # check activate status different from new
+        usr = user_list[0]
+        if not usr.is_superuser:
+            return f"{usr} isn't superuser, yet!"
+        # update is_active
+        UserService.update_user(usr.id, {"is_superuser": False})
+        return "Revoke successfully!"
+
 
 class UserServiceMgr:
 
@@ -179,10 +213,14 @@ class ServiceMgr:
 
     @staticmethod
     def get_all_services():
+        doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
         result = []
         configs = SERVICE_CONFIGS.configs
         for service_id, config in enumerate(configs):
             config_dict = config.to_dict()
+            if config_dict['service_type'] == 'retrieval':
+                if config_dict['extra']['retrieval_type'] != doc_engine:
+                    continue
             try:
                 service_detail = ServiceMgr.get_service_details(service_id)
                 if "status" in service_detail:

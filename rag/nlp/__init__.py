@@ -16,7 +16,7 @@
 
 import logging
 import random
-from collections import Counter
+from collections import Counter, defaultdict
 
 from common.token_utils import num_tokens_from_string
 import re
@@ -273,7 +273,7 @@ def tokenize(d, txt, eng):
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
 
 
-def split_with_pattern(d, pattern:str, content:str, eng) -> list:
+def split_with_pattern(d, pattern: str, content: str, eng) -> list:
     docs = []
     txts = [txt for txt in re.split(r"(%s)" % pattern, content, flags=re.DOTALL)]
     for j in range(0, len(txts), 2):
@@ -281,7 +281,7 @@ def split_with_pattern(d, pattern:str, content:str, eng) -> list:
         if not txt:
             continue
         if j + 1 < len(txts):
-            txt += txts[j+1]
+            txt += txts[j + 1]
         dd = copy.deepcopy(d)
         tokenize(dd, txt, eng)
         docs.append(dd)
@@ -304,7 +304,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
             except NotImplementedError:
                 pass
         else:
-            add_positions(d, [[ii]*5])
+            add_positions(d, [[ii] * 5])
 
         if child_delimiters_pattern:
             d["mom_with_weight"] = ck
@@ -325,7 +325,7 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
         logging.debug("-- {}".format(ck))
         d = copy.deepcopy(doc)
         d["image"] = image
-        add_positions(d, [[ii]*5])
+        add_positions(d, [[ii] * 5])
         if child_delimiters_pattern:
             d["mom_with_weight"] = ck
             res.extend(split_with_pattern(d, child_delimiters_pattern, ck, eng))
@@ -376,6 +376,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
     order chunks before collecting context; otherwise keep original order.
     """
     from . import rag_tokenizer
+
     if not chunks or (table_context_size <= 0 and image_context_size <= 0):
         return chunks
 
@@ -418,6 +419,51 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
             sentences.append(buf)
         return sentences
 
+    def get_bounds_by_page(ck):
+        bounds = {}
+        try:
+            if ck.get("position_int"):
+                for pos in ck["position_int"]:
+                    if not pos or len(pos) < 5:
+                        continue
+                    pn, _, _, top, bottom = pos
+                    if pn is None or top is None:
+                        continue
+                    top_val = float(top)
+                    bottom_val = float(bottom) if bottom is not None else top_val
+                    if bottom_val < top_val:
+                        top_val, bottom_val = bottom_val, top_val
+                    pn = int(pn)
+                    if pn in bounds:
+                        bounds[pn] = (min(bounds[pn][0], top_val), max(bounds[pn][1], bottom_val))
+                    else:
+                        bounds[pn] = (top_val, bottom_val)
+            else:
+                pn = None
+                if ck.get("page_num_int"):
+                    pn = ck["page_num_int"][0]
+                elif ck.get("page_number") is not None:
+                    pn = ck.get("page_number")
+                if pn is None:
+                    return bounds
+                top = None
+                if ck.get("top_int"):
+                    top = ck["top_int"][0]
+                elif ck.get("top") is not None:
+                    top = ck.get("top")
+                if top is None:
+                    return bounds
+                bottom = ck.get("bottom")
+                pn = int(pn)
+                top_val = float(top)
+                bottom_val = float(bottom) if bottom is not None else top_val
+                if bottom_val < top_val:
+                    top_val, bottom_val = bottom_val, top_val
+                bounds[pn] = (top_val, bottom_val)
+        except Exception:
+            return {}
+        return bounds
+
     def trim_to_tokens(text, token_budget, from_tail=False):
         if token_budget <= 0 or not text:
             return ""
@@ -441,6 +487,55 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
         if from_tail:
             collected = list(reversed(collected))
         return "".join(collected)
+
+    def find_mid_sentence_index(sentences):
+        if not sentences:
+            return 0
+        total = sum(max(0, num_tokens_from_string(s)) for s in sentences)
+        if total <= 0:
+            return max(0, len(sentences) // 2)
+        target = total / 2.0
+        best_idx = 0
+        best_diff = None
+        cum = 0
+        for i, s in enumerate(sentences):
+            cum += max(0, num_tokens_from_string(s))
+            diff = abs(cum - target)
+            if best_diff is None or diff < best_diff:
+                best_diff = diff
+                best_idx = i
+        return best_idx
+
+    def collect_context_from_sentences(sentences, boundary_idx, token_budget):
+        prev_ctx = []
+        remaining_prev = token_budget
+        for s in reversed(sentences[:boundary_idx + 1]):
+            if remaining_prev <= 0:
+                break
+            tks = num_tokens_from_string(s)
+            if tks <= 0:
+                continue
+            if tks > remaining_prev:
+                s = trim_to_tokens(s, remaining_prev, from_tail=True)
+                tks = num_tokens_from_string(s)
+            prev_ctx.append(s)
+            remaining_prev -= tks
+        prev_ctx.reverse()
+
+        next_ctx = []
+        remaining_next = token_budget
+        for s in sentences[boundary_idx + 1:]:
+            if remaining_next <= 0:
+                break
+            tks = num_tokens_from_string(s)
+            if tks <= 0:
+                continue
+            if tks > remaining_next:
+                s = trim_to_tokens(s, remaining_next, from_tail=False)
+                tks = num_tokens_from_string(s)
+            next_ctx.append(s)
+            remaining_next -= tks
+        return prev_ctx, next_ctx
 
     def extract_position(ck):
         pn = None
@@ -481,7 +576,14 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
     else:
         ordered_indices = [idx for idx, _ in indexed]
 
-    total = len(ordered_indices)
+    text_bounds = []
+    for idx, ck in indexed:
+        if not is_text_chunk(ck):
+            continue
+        bounds = get_bounds_by_page(ck)
+        if bounds:
+            text_bounds.append((idx, bounds))
+
     for sorted_pos, idx in enumerate(ordered_indices):
         ck = chunks[idx]
         token_budget = image_context_size if is_image_chunk(ck) else table_context_size if is_table_chunk(ck) else 0
@@ -489,45 +591,51 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
             continue
 
         prev_ctx = []
-        remaining_prev = token_budget
-        for prev_idx in range(sorted_pos - 1, -1, -1):
-            if remaining_prev <= 0:
-                break
-            neighbor_idx = ordered_indices[prev_idx]
-            if not is_text_chunk(chunks[neighbor_idx]):
-                break
-            txt = get_text(chunks[neighbor_idx])
-            if not txt:
-                continue
-            tks = num_tokens_from_string(txt)
-            if tks <= 0:
-                continue
-            if tks > remaining_prev:
-                txt = trim_to_tokens(txt, remaining_prev, from_tail=True)
-                tks = num_tokens_from_string(txt)
-            prev_ctx.append(txt)
-            remaining_prev -= tks
-        prev_ctx.reverse()
-
         next_ctx = []
-        remaining_next = token_budget
-        for next_idx in range(sorted_pos + 1, total):
-            if remaining_next <= 0:
-                break
-            neighbor_idx = ordered_indices[next_idx]
-            if not is_text_chunk(chunks[neighbor_idx]):
-                break
-            txt = get_text(chunks[neighbor_idx])
-            if not txt:
-                continue
-            tks = num_tokens_from_string(txt)
-            if tks <= 0:
-                continue
-            if tks > remaining_next:
-                txt = trim_to_tokens(txt, remaining_next, from_tail=False)
-                tks = num_tokens_from_string(txt)
-            next_ctx.append(txt)
-            remaining_next -= tks
+        media_bounds = get_bounds_by_page(ck)
+        best_idx = None
+        best_dist = None
+        candidate_count = 0
+        if media_bounds and text_bounds:
+            for text_idx, bounds in text_bounds:
+                for pn, (t_top, t_bottom) in bounds.items():
+                    if pn not in media_bounds:
+                        continue
+                    m_top, m_bottom = media_bounds[pn]
+                    if m_bottom < t_top or m_top > t_bottom:
+                        continue
+                    candidate_count += 1
+                    m_mid = (m_top + m_bottom) / 2.0
+                    t_mid = (t_top + t_bottom) / 2.0
+                    dist = abs(m_mid - t_mid)
+                    if best_dist is None or dist < best_dist:
+                        best_dist = dist
+                        best_idx = text_idx
+        if best_idx is None and media_bounds:
+            media_page = min(media_bounds.keys())
+            page_order = []
+            for ordered_idx in ordered_indices:
+                pn, _, _ = extract_position(chunks[ordered_idx])
+                if pn == media_page:
+                    page_order.append(ordered_idx)
+            if page_order and idx in page_order:
+                pos_in_page = page_order.index(idx)
+                if pos_in_page == 0:
+                    for neighbor in page_order[pos_in_page + 1:]:
+                        if is_text_chunk(chunks[neighbor]):
+                            best_idx = neighbor
+                            break
+                elif pos_in_page == len(page_order) - 1:
+                    for neighbor in reversed(page_order[:pos_in_page]):
+                        if is_text_chunk(chunks[neighbor]):
+                            best_idx = neighbor
+                            break
+        if best_idx is not None:
+            base_text = get_text(chunks[best_idx])
+            sentences = split_sentences(base_text)
+            if sentences:
+                boundary_idx = find_mid_sentence_index(sentences)
+                prev_ctx, next_ctx = collect_context_from_sentences(sentences, boundary_idx, token_budget)
 
         if not prev_ctx and not next_ctx:
             continue
@@ -550,12 +658,101 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
             if "content_ltks" in ck:
                 ck["content_ltks"] = rag_tokenizer.tokenize(combined)
             if "content_sm_ltks" in ck:
-                ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(ck.get("content_ltks", rag_tokenizer.tokenize(combined)))
+                ck["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(
+                    ck.get("content_ltks", rag_tokenizer.tokenize(combined)))
 
     if positioned_indices:
         chunks[:] = [chunks[i] for i in ordered_indices]
 
     return chunks
+
+
+def append_context2table_image4pdf(sections: list, tabls: list, table_context_size=0):
+    from deepdoc.parser import PdfParser
+    if table_context_size <=0:
+        return tabls
+
+    page_bucket = defaultdict(list)
+    for i, (txt, poss) in enumerate(sections):
+        poss = PdfParser.extract_positions(poss)
+        for page, left, right, top, bottom in poss:
+            page = page[0]
+            page_bucket[page].append(((left, top, right, bottom), txt))
+
+    def upper_context(page, i):
+        txt = ""
+        if page not in page_bucket:
+            i = -1
+        while num_tokens_from_string(txt) < table_context_size:
+            if i < 0:
+                page -= 1
+                if page < 0 or page not in page_bucket:
+                    break
+                i = len(page_bucket[page]) -1
+            blks = page_bucket[page]
+            (_, _, _, _), cnt = blks[i]
+            txts = re.split(r"([。!?？；！\n]|\. )", cnt, flags=re.DOTALL)[::-1]
+            for j in range(0, len(txts), 2):
+                txt = (txts[j+1] if j+1<len(txts) else "") + txts[j] + txt
+                if num_tokens_from_string(txt) > table_context_size:
+                    break
+            i -= 1
+        return txt
+
+    def lower_context(page, i):
+        txt = ""
+        if page not in page_bucket:
+            return txt
+        while num_tokens_from_string(txt) < table_context_size:
+            if i >= len(page_bucket[page]):
+                page += 1
+                if page not in page_bucket:
+                    break
+                i = 0
+            blks = page_bucket[page]
+            (_, _, _, _), cnt = blks[i]
+            txts = re.split(r"([。!?？；！\n]|\. )", cnt, flags=re.DOTALL)
+            for j in range(0, len(txts), 2):
+                txt += txts[j] + (txts[j+1] if j+1<len(txts) else "")
+                if num_tokens_from_string(txt) > table_context_size:
+                    break
+            i += 1
+        return txt
+
+    res = []
+    for (img, tb), poss in tabls:
+        page, left, top, right, bott = poss[0]
+        _page, _left, _top, _right, _bott = poss[-1]
+        if isinstance(tb, list):
+            tb = "\n".join(tb)
+
+        i = 0
+        blks = page_bucket.get(page, [])
+        _tb = tb
+        while i < len(blks):
+            if i + 1 >= len(blks):
+                if _page > page:
+                    page += 1
+                    i = 0
+                    blks = page_bucket.get(page, [])
+                    continue
+                tb = upper_context(page, i) + tb + lower_context(page+1, 0)
+                break
+            (_, t, r, b), txt = blks[i]
+            if b > top:
+                break
+            (_, _t, _r, _b), _txt = blks[i+1]
+            if _t < _bott:
+                i += 1
+                continue
+
+            tb = upper_context(page, i) + tb + lower_context(page, i)
+            break
+
+        if _tb == tb:
+            tb = upper_context(page, -1) + tb + lower_context(page+1, 0)
+        res.append(((img, tb), poss))
+    return res
 
 
 def add_positions(d, poss):
@@ -656,8 +853,8 @@ def not_title(txt):
         return True
     return re.search(r"[,;，。；！!]", txt)
 
-def tree_merge(bull, sections, depth):
 
+def tree_merge(bull, sections, depth):
     if not sections or bull < 0:
         return sections
     if isinstance(sections[0], type("")):
@@ -669,16 +866,17 @@ def tree_merge(bull, sections, depth):
 
     def get_level(bull, section):
         text, layout = section
-        text = re.sub(r"\u3000", " ",   text).strip()
+        text = re.sub(r"\u3000", " ", text).strip()
 
         for i, title in enumerate(BULLET_PATTERN[bull]):
             if re.match(title, text.strip()):
-                return i+1, text
+                return i + 1, text
         else:
             if re.search(r"(title|head)", layout) and not not_title(text):
-                return len(BULLET_PATTERN[bull])+1, text
+                return len(BULLET_PATTERN[bull]) + 1, text
             else:
-                return len(BULLET_PATTERN[bull])+2, text
+                return len(BULLET_PATTERN[bull]) + 2, text
+
     level_set = set()
     lines = []
     for section in sections:
@@ -704,8 +902,8 @@ def tree_merge(bull, sections, depth):
 
     return [element for element in root.get_tree() if element]
 
-def hierarchical_merge(bull, sections, depth):
 
+def hierarchical_merge(bull, sections, depth):
     if not sections or bull < 0:
         return []
     if isinstance(sections[0], type("")):
@@ -814,10 +1012,10 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent)/100.:
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent) / 100.:
             if cks:
                 overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
-                t = overlapped[int(len(overlapped)*(100-overlapped_percent)/100.):] + t
+                t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.):] + t
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)
@@ -849,7 +1047,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
         return cks
 
     for sec, pos in sections:
-        add_chunk("\n"+sec, pos)
+        add_chunk("\n" + sec, pos)
 
     return cks
 
@@ -870,10 +1068,10 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         if tnum < 8:
             pos = ""
         # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent)/100.:
+        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent) / 100.:
             if cks:
                 overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
-                t = overlapped[int(len(overlapped)*(100-overlapped_percent)/100.):] + t
+                t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.):] + t
             if t.find(pos) < 0:
                 t += pos
             cks.append(t)
@@ -917,9 +1115,9 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         if isinstance(text, tuple):
             text_str = text[0]
             text_pos = text[1] if len(text) > 1 else ""
-            add_chunk("\n"+text_str, image, text_pos)
+            add_chunk("\n" + text_str, image, text_pos)
         else:
-            add_chunk("\n"+text, image)
+            add_chunk("\n" + text, image)
 
     return cks, result_images
 
@@ -934,7 +1132,7 @@ def docx_question_level(p, bull=-1):
         for j, title in enumerate(BULLET_PATTERN[bull]):
             if re.match(title, txt):
                 return j + 1, txt
-    return len(BULLET_PATTERN[bull])+1, txt
+    return len(BULLET_PATTERN[bull]) + 1, txt
 
 
 def concat_img(img1, img2):
@@ -1103,7 +1301,7 @@ class Node:
         child = node.get_children()
 
         if level == 0 and texts:
-            tree_list.append("\n".join(titles+texts))
+            tree_list.append("\n".join(titles + texts))
 
         # Titles within configured depth are accumulated into the current path
         if 1 <= level <= self.depth:

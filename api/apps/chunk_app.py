@@ -260,8 +260,6 @@ async def create():
     d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
     if "tag_feas" in req:
         d["tag_feas"] = req["tag_feas"]
-    if "tag_feas" in req:
-        d["tag_feas"] = req["tag_feas"]
 
     try:
         def _create_sync():
@@ -381,7 +379,7 @@ async def retrieval_test():
                                rank_feature=labels
                                )
         if use_kg:
-            ck = settings.kg_retriever.retrieval(_question,
+            ck = await settings.kg_retriever.retrieval(_question,
                                                    tenant_ids,
                                                    kb_ids,
                                                    embd_mdl,
