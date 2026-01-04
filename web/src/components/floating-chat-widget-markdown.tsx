@@ -35,7 +35,7 @@ import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { visitParents } from 'unist-util-visit-parents';
-import styles from './floating-chat-widget-markdown.less';
+import styles from './floating-chat-widget-markdown.module.less';
 import { useIsDarkTheme } from './theme-provider';
 
 const getChunkIndex = (match: string) => Number(match.replace(/\[|\]/g, ''));

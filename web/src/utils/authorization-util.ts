@@ -59,5 +59,6 @@ export default storage;
 
 // Will not jump to the login page
 export function redirectToLogin() {
-  window.location.href = location.origin + `/login`;
+  const env = import.meta.env;
+  window.location.href = location.origin + env.VITE_BASE_URL + `/login`;
 }

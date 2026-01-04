@@ -8,7 +8,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'umi';
+import { useSearchParams } from 'react-router';
 import { AddOrEditModal } from './add-or-edit-modal';
 import { defaultMemoryFields } from './constants';
 import { useFetchMemoryList, useRenameMemory } from './hooks';

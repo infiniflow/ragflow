@@ -10,7 +10,7 @@ import { IMessage } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { trim } from 'lodash';
 import { useCallback, useEffect } from 'react';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
 import { useCreateConversationBeforeSendMessage } from './use-chat-url';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
@@ -100,7 +100,7 @@ export const useSendMessage = (controller: AbortController) => {
           messages: [
             ...(Array.isArray(messages) && messages?.length > 0
               ? messages
-              : derivedMessages ?? []),
+              : (derivedMessages ?? [])),
             message,
           ],
         },
