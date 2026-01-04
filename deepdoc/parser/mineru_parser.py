@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
 from os import PathLike
-from pathlib import Path
+
 from typing import Any, Callable, List, Optional
 
 import requests
@@ -164,6 +164,10 @@ class MinerUParser:
         try:
             if binary:
                 files = {'file': ('document.pdf', BytesIO(binary), 'application/pdf')}
+                response = requests.post(upload_url, files=files, timeout=60)
+                response.raise_for_status()
+                result = response.json()
+                return result.get('file_id', result.get('id', ''))
             else:
                 with open(filepath, 'rb') as f:
                     files = {'file': (os.path.basename(filepath), f, 'application/pdf')}
@@ -171,11 +175,6 @@ class MinerUParser:
                     response.raise_for_status()
                     result = response.json()
                     return result.get('file_id', result.get('id', ''))
-            
-            response = requests.post(upload_url, files=files, timeout=60)
-            response.raise_for_status()
-            result = response.json()
-            return result.get('file_id', result.get('id', ''))
             
         except Exception as e:
             self.logger.error(f"[MinerU] Failed to upload file: {e}")
