@@ -547,6 +547,8 @@ export default {
       avatar: '头像',
       avatarTip: '這會在你的個人主頁展示',
       profileDescription: '在此更新您的照片和個人詳細信息。',
+      gitlabDescription:
+        '連接 GitLab，同步儲存庫、Issue、合併請求（MR）及相關文件內容。',
       bedrockCredentialsHint:
         '提示：Access Key / Secret Key 可留空，以啟用 AWS IAM 自動驗證。',
       awsAuthModeAccessKeySecret: 'Access Key 和 Secret',
@@ -724,6 +726,16 @@ export default {
       view: '查看',
       modelsToBeAddedTooltip:
         '若您的模型供應商未列於此處，但宣稱與 OpenAI 相容，可透過選擇「OpenAI-API-compatible」卡片來設定相關模型。',
+      dropboxDescription: '連接 Dropbox，同步指定帳號下的文件與文件夾。',
+      bitbucketDescription: '連接 Bitbucket，同步 PR 內容。',
+      zendeskDescription: '連接 Zendesk，同步工單、文章及其他內容。',
+      bitbucketTopWorkspaceTip:
+        '要索引的 Bitbucket 工作區（例如：https://bitbucket.org/atlassian/workspace 中的 "atlassian"）',
+      bitbucketWorkspaceTip: '此連接器將索引工作區下的所有倉庫。',
+      bitbucketRepositorySlugsTip:
+        '以英文逗號分隔的倉庫 slug，例如：repo-one,repo-two',
+      bitbucketProjectsTip: '以英文逗號分隔的項目鍵，例如：PROJ1,PROJ2',
+      connectorNameTip: '為連接器填寫一個有意義的名稱',
     },
     message: {
       registered: '註冊成功',

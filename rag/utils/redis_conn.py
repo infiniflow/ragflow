@@ -33,6 +33,7 @@ except Exception:
     except Exception:
         REDIS = {}
 
+
 class RedisMsg:
     def __init__(self, consumer, queue_name, group_name, msg_id, message):
         self.__consumer = consumer
@@ -272,13 +273,25 @@ class RedisDB:
             self.__open__()
         return None
 
+    def zremrangebyscore(self, key: str, min: float, max: float):
+        try:
+            res = self.REDIS.zremrangebyscore(key, min, max)
+            return res
+        except Exception as e:
+            logging.warning(
+                f"RedisDB.zremrangebyscore {key} got exception: {e}"
+            )
+            self.__open__()
+        return 0
+
     def incrby(self, key: str, increment: int):
         return self.REDIS.incrby(key, increment)
 
     def decrby(self, key: str, decrement: int):
         return self.REDIS.decrby(key, decrement)
 
-    def generate_auto_increment_id(self, key_prefix: str = "id_generator", namespace: str = "default", increment: int = 1, ensure_minimum: int | None = None) -> int:
+    def generate_auto_increment_id(self, key_prefix: str = "id_generator", namespace: str = "default",
+                                   increment: int = 1, ensure_minimum: int | None = None) -> int:
         redis_key = f"{key_prefix}:{namespace}"
 
         try:

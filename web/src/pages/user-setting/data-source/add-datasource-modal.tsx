@@ -8,7 +8,7 @@ import {
   DataSourceFormBaseFields,
   DataSourceFormDefaultValues,
   DataSourceFormFields,
-} from './contant';
+} from './constant';
 import { IDataSorceInfo } from './interface';
 
 const AddDataSourceModal = ({

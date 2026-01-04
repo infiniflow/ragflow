@@ -1,11 +1,11 @@
 import opendal
 import logging
 import pymysql
+import re
 from urllib.parse import quote_plus
 
 from common.config_utils import get_base_config
 from common.decorator import singleton
-
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS `{}` (
@@ -36,7 +36,8 @@ def get_opendal_config():
                 "table": opendal_config.get("config", {}).get("oss_table", "opendal_storage"),
                 "max_allowed_packet": str(max_packet)
             }
-            kwargs["connection_string"] = f"mysql://{kwargs['user']}:{quote_plus(kwargs['password'])}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}?max_allowed_packet={max_packet}"
+            kwargs[
+                "connection_string"] = f"mysql://{kwargs['user']}:{quote_plus(kwargs['password'])}@{kwargs['host']}:{kwargs['port']}/{kwargs['database']}?max_allowed_packet={max_packet}"
         else:
             scheme = opendal_config.get("scheme")
             config_data = opendal_config.get("config", {})
@@ -61,7 +62,7 @@ def get_opendal_config():
             del kwargs["password"]
         if "connection_string" in kwargs:
             del kwargs["connection_string"]
-        return kwargs   
+        return kwargs
     except Exception as e:
         logging.error("Failed to load OpenDAL configuration from yaml: %s", str(e))
         raise
@@ -99,7 +100,6 @@ class OpenDALStorage:
     def obj_exist(self, bucket, fnm, tenant_id=None):
         return self._operator.exists(f"{bucket}/{fnm}")
 
-
     def init_db_config(self):
         try:
             conn = pymysql.connect(
@@ -111,7 +111,8 @@ class OpenDALStorage:
             )
             cursor = conn.cursor()
             max_packet = self._kwargs.get('max_allowed_packet', 4194304)  # Default to 4MB if not specified
-            cursor.execute(SET_MAX_ALLOWED_PACKET_SQL.format(max_packet))
+            # Ensure max_packet is a valid integer to prevent SQL injection
+            cursor.execute(SET_MAX_ALLOWED_PACKET_SQL.format(int(max_packet)))
             conn.commit()
             cursor.close()
             conn.close()
@@ -121,6 +122,11 @@ class OpenDALStorage:
             raise
 
     def init_opendal_mysql_table(self):
+        table_name = self._kwargs['table']
+        # Validate table name to prevent SQL injection
+        if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
+            raise ValueError(f"Invalid table name: {table_name}")
+
         conn = pymysql.connect(
             host=self._kwargs['host'],
             port=int(self._kwargs['port']),
@@ -129,8 +135,8 @@ class OpenDALStorage:
             database=self._kwargs['database']
         )
         cursor = conn.cursor()
-        cursor.execute(CREATE_TABLE_SQL.format(self._kwargs['table']))
+        cursor.execute(CREATE_TABLE_SQL.format(table_name))
         conn.commit()
         cursor.close()
         conn.close()
-        logging.info(f"Table `{self._kwargs['table']}` initialized.")
+        logging.info(f"Table `{table_name}` initialized.")

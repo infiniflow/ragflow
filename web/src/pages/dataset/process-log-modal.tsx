@@ -38,21 +38,27 @@ interface ProcessLogModalProps {
 }
 
 const InfoItem: React.FC<{
+  overflowTip?: boolean;
   label: string;
   value: string | React.ReactNode;
   className?: string;
-}> = ({ label, value, className = '' }) => {
+}> = ({ label, value, className = '', overflowTip = false }) => {
   return (
     <div className={`flex flex-col mb-4 ${className}`}>
       <span className="text-text-secondary text-sm">{label}</span>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="text-text-primary mt-1 truncate w-full">
-            {value}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>{value}</TooltipContent>
-      </Tooltip>
+      {overflowTip && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="text-text-primary mt-1 truncate w-full">
+              {value}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{value}</TooltipContent>
+        </Tooltip>
+      )}
+      {!overflowTip && (
+        <span className="text-text-primary mt-1 truncate w-full">{value}</span>
+      )}
     </div>
   );
 };
@@ -139,6 +145,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
             return (
               <div className="w-1/2" key={key}>
                 <InfoItem
+                  overflowTip={true}
                   label={t(key)}
                   value={logInfo[key as keyof typeof logInfo]}
                 />

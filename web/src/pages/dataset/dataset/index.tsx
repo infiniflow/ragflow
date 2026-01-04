@@ -79,6 +79,7 @@ export default function Dataset() {
     useRowSelection();
 
   const {
+    chunkNum,
     list,
     visible: reparseDialogVisible,
     hideModal: hideReparseDialogModal,
@@ -218,7 +219,7 @@ export default function Dataset() {
             // hidden={isZeroChunk || isRunning}
             hidden={false}
             handleOperationIconClick={handleOperationIconClick}
-            chunk_num={0}
+            chunk_num={chunkNum}
             visible={reparseDialogVisible}
             hideModal={hideReparseDialogModal}
           ></ReparseDialog>
