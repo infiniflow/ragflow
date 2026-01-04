@@ -1,7 +1,7 @@
 [project]
 name = "ragflow"
 version = "0.23.1"
-description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of all sizes, containing full process of RAG. It also provides a user-friendly web UI for data management and application creation."
+description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses[...]"
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
 readme = "README.md"
@@ -40,7 +40,7 @@ dependencies = [
     "flask-session==0.8.0",
     "google-auth-oauthlib>=1.2.0,<2.0.0",
     "google-genai>=0.41.0,<2.0.0",
-    "google-generativeai>=0.8.1,<0.9.0", # Needed for cv_model and embedding_model
+    "google-generativeai>=0.8.1,<0.9.0",
     "google-search-results==2.4.2",
     "graspologic @ git+https://github.com/yuzhichang/graspologic.git@38e680cab72bc9fb68a7992c3bcc2d53b24e42fd",
     "groq==0.9.0",
@@ -174,7 +174,6 @@ test = [
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 [tool.setuptools]
-packages = { find = {} }
 
 [tool.setuptools.packages.find]
 where = ["."]
