@@ -56,6 +56,7 @@ Key Point of Confusion: The naming differs by region. In North America, "coriand
     add_message(WebApiAuth, message_payload)
     request.cls.memory_id = memory_id
     request.cls.agent_id = agent_id
+    time.sleep(2)  # make sure refresh to index before search
     return memory_id
 
 
