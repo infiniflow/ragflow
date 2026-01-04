@@ -467,7 +467,6 @@ class MinerUParser(RAGFlowPdfParser):
                 callback(progress, f"[MinerU] Processing batch {batch_idx + 1}/{len(batches)}: pages {batch_start}-{batch_end}")
             
             # Retry loop for this batch
-            batch_succeeded = False
             while True:
                 try:
                     # Process this batch
@@ -489,7 +488,6 @@ class MinerUParser(RAGFlowPdfParser):
                     merged_content_list.extend(batch_content_list)
                     batch_info.content_count = len(batch_content_list)
                     batch_info.status = BatchStatus.SUCCESS
-                    batch_succeeded = True
                     successful_batches += 1
                     
                     self.logger.info(f"[MinerU] Batch {batch_idx + 1} succeeded: {len(batch_content_list)} blocks extracted")
@@ -563,7 +561,7 @@ class MinerUParser(RAGFlowPdfParser):
                         f"{len(failed_batches)} failed, {len(merged_content_list)} total blocks")
         
         if failed_batches:
-            self.logger.warning(f"[MinerU] Failed batches details:")
+            self.logger.warning("[MinerU] Failed batches details:")
             for fb in failed_batches:
                 self.logger.warning(f"  - Batch {fb.batch_idx + 1} (pages {fb.start_page}-{fb.end_page}): "
                                   f"status={fb.status}, error_type={fb.error_type}, retries={fb.retry_count}")
