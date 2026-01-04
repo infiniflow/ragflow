@@ -125,8 +125,9 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
       embeddingModel: 'Embedding model',
       selectModel: 'Select model',
       llm: 'LLM',
+      delMemoryWarn: `After deletion, all messages in this memory will be deleted and cannot be retrieved by agents.`,
     },
-    memoryDetail: {
+    memory: {
       messages: {
         forgetMessageTip: 'Are you sure you want to forget?',
         messageDescription:
