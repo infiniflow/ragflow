@@ -53,6 +53,8 @@ sql_command: list_services
            | alter_user_role
            | show_user_permission
            | show_version
+           | grant_admin
+           | revoke_admin
 
 // meta command definition
 meta_command: "\\" meta_command_name [meta_args]
@@ -77,6 +79,7 @@ DROP: "DROP"i
 USER: "USER"i
 ALTER: "ALTER"i
 ACTIVE: "ACTIVE"i
+ADMIN: "ADMIN"i
 PASSWORD: "PASSWORD"i
 DATASETS: "DATASETS"i
 OF: "OF"i
@@ -122,6 +125,9 @@ grant_permission: GRANT action_list ON identifier TO ROLE identifier ";"
 revoke_permission: REVOKE action_list ON identifier FROM ROLE identifier ";"
 alter_user_role: ALTER USER quoted_string SET ROLE identifier ";"
 show_user_permission: SHOW USER PERMISSION quoted_string ";"
+
+grant_admin: GRANT ADMIN quoted_string ";"
+revoke_admin: REVOKE ADMIN quoted_string ";"
 
 show_version: SHOW VERSION ";"
 
@@ -249,6 +255,14 @@ class AdminTransformer(Transformer):
     def show_version(self, items):
         return {"type": "show_version"}
 
+    def grant_admin(self, items):
+        user_name = items[2]
+        return {"type": "grant_admin", "user_name": user_name}
+
+    def revoke_admin(self, items):
+        user_name = items[2]
+        return {"type": "revoke_admin", "user_name": user_name}
+
     def action_list(self, items):
         return items
 
@@ -284,6 +298,43 @@ def encrypt(input_string):
 def encode_to_base64(input_string):
     base64_encoded = base64.b64encode(input_string.encode("utf-8"))
     return base64_encoded.decode("utf-8")
+
+
+def show_help():
+    """Help info"""
+    help_text = """
+Commands:
+LIST SERVICES
+SHOW SERVICE <service>
+STARTUP SERVICE <service>
+SHUTDOWN SERVICE <service>
+RESTART SERVICE <service>
+LIST USERS
+SHOW USER <user>
+DROP USER <user>
+CREATE USER <user> <password>
+ALTER USER PASSWORD <user> <new_password>
+ALTER USER ACTIVE <user> <on/off>
+LIST DATASETS OF <user>
+LIST AGENTS OF <user>
+CREATE ROLE <role>
+DROP ROLE <role>
+ALTER ROLE <role> SET DESCRIPTION <description>
+LIST ROLES
+SHOW ROLE <role>
+GRANT <action_list> ON <function> TO ROLE <role>
+REVOKE <action_list> ON <function> TO ROLE <role>
+ALTER USER <user> SET ROLE <role>
+SHOW USER PERMISSION <user>
+SHOW VERSION
+GRANT ADMIN <user>
+REVOKE ADMIN <user>
+
+Meta Commands:
+\\?, \\h, \\help     Show this help
+\\q, \\quit, \\exit   Quit the CLI
+    """
+    print(help_text)
 
 
 class AdminCLI(Cmd):
@@ -566,6 +617,10 @@ class AdminCLI(Cmd):
                 self._show_user_permission(command_dict)
             case "show_version":
                 self._show_version(command_dict)
+            case "grant_admin":
+                self._grant_admin(command_dict)
+            case "revoke_admin":
+                self._revoke_admin(command_dict)
             case "meta":
                 self._handle_meta_command(command_dict)
             case _:
@@ -697,6 +752,33 @@ class AdminCLI(Cmd):
                 print(f"Fail to alter activate status, code: {res_json['code']}, message: {res_json['message']}")
         else:
             print(f"Unknown activate status: {activate_status}.")
+
+
+    def _grant_admin(self, command):
+        user_name_tree: Tree = command["user_name"]
+        user_name: str = user_name_tree.children[0].strip("'\"")
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/admin"
+        # print(f"Grant admin: {url}")
+        # return
+        response = self.session.put(url)
+        res_json = response.json()
+        if response.status_code == 200:
+            print(res_json["message"])
+        else:
+            print(f"Fail to grant {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _revoke_admin(self, command):
+        user_name_tree: Tree = command["user_name"]
+        user_name: str = user_name_tree.children[0].strip("'\"")
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/admin"
+        # print(f"Revoke admin: {url}")
+        # return
+        response = self.session.delete(url)
+        res_json = response.json()
+        if response.status_code == 200:
+            print(res_json["message"])
+        else:
+            print(f"Fail to revoke {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_list_datasets(self, command):
         username_tree: Tree = command["user_name"]
@@ -873,35 +955,11 @@ class AdminCLI(Cmd):
         args = command.get("args", [])
 
         if meta_command in ["?", "h", "help"]:
-            self.show_help()
+            show_help()
         elif meta_command in ["q", "quit", "exit"]:
             print("Goodbye!")
         else:
             print(f"Meta command '{meta_command}' with args {args}")
-
-    def show_help(self):
-        """Help info"""
-        help_text = """
-Commands:
-  LIST SERVICES
-  SHOW SERVICE <service>
-  STARTUP SERVICE <service>
-  SHUTDOWN SERVICE <service>
-  RESTART SERVICE <service>
-  LIST USERS
-  SHOW USER <user>
-  DROP USER <user>
-  CREATE USER <user> <password>
-  ALTER USER PASSWORD <user> <new_password>
-  ALTER USER ACTIVE <user> <on/off>
-  LIST DATASETS OF <user>
-  LIST AGENTS OF <user>
-
-Meta Commands:
-  \\?, \\h, \\help     Show this help
-  \\q, \\quit, \\exit   Quit the CLI
-        """
-        print(help_text)
 
 
 def main():
