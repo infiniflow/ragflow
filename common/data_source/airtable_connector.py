@@ -75,7 +75,6 @@ class AirtableConnector(LoadConnector, PollConnector):
         batch: list[Document] = []
 
         for record in records:
-            print(record)
             record_id = record.get("id")
             fields = record.get("fields", {})
             created_time = record.get("createdTime")
