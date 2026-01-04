@@ -27,7 +27,7 @@ import { isEmpty } from 'lodash';
 import { ArrowUpRight, LogOut, Send } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { ChatSettings } from './app-settings/chat-settings';
 import { MultipleChatBox } from './chat-box/multiple-chat-box';

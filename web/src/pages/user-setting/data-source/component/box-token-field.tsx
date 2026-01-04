@@ -98,8 +98,8 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
     () =>
       Boolean(
         parsed?.access_token ||
-          parsed?.refresh_token ||
-          parsed?.authorization_code,
+        parsed?.refresh_token ||
+        parsed?.authorization_code,
       ),
     [parsed],
   );

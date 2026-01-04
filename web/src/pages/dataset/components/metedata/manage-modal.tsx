@@ -341,7 +341,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <div>{t('knowledgeDetails.metadata.metadata')}</div>
-              {metadataType === MetadataType.Manage && false && (
+              {metadataType === MetadataType.Manage && (
                 <Button
                   variant={'ghost'}
                   className="border border-border-button"

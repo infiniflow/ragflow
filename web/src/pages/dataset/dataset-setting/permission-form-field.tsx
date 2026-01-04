@@ -14,18 +14,16 @@ export function PermissionFormField() {
   }, [t]);
 
   return (
-    <div className="items-center">
-      <RAGFlowFormItem
-        name="permission"
-        label={t('knowledgeConfiguration.permissions')}
-        tooltip={t('knowledgeConfiguration.permissionsTip')}
-        horizontal={true}
-      >
-        <SelectWithSearch
-          options={teamOptions}
-          triggerClassName="w-full"
-        ></SelectWithSearch>
-      </RAGFlowFormItem>
-    </div>
+    <RAGFlowFormItem
+      name="permission"
+      label={t('knowledgeConfiguration.permissions')}
+      tooltip={t('knowledgeConfiguration.permissionsTip')}
+      horizontal
+    >
+      <SelectWithSearch
+        options={teamOptions}
+        triggerClassName="w-full"
+      ></SelectWithSearch>
+    </RAGFlowFormItem>
   );
 }

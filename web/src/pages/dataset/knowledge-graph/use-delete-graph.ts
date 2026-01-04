@@ -1,7 +1,7 @@
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useRemoveKnowledgeGraph } from '@/hooks/use-knowledge-request';
 import { useCallback } from 'react';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 
 export function useDeleteKnowledgeGraph() {
   const { removeKnowledgeGraph, loading } = useRemoveKnowledgeGraph();
