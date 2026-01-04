@@ -178,8 +178,9 @@ async def set():
 
             # update image
             image_base64 = req.get("image_base64", None)
-            if image_base64:
-                bkt, name = req.get("img_id", "-").split("-")
+            img_id = req.get("img_id", "")
+            if image_base64 and img_id and "-" in img_id:
+                bkt, name = img_id.split("-", 1)
                 image_binary = base64.b64decode(image_base64)
                 settings.STORAGE_IMPL.put(bkt, name, image_binary)
             return get_json_result(data=True)
