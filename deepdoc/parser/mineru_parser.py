@@ -1141,6 +1141,24 @@ class MinerUParser(RAGFlowPdfParser):
                 if callback:
                     callback(-1, f"[MinerU] PDF not found: {pdf}")
                 raise FileNotFoundError(f"[MinerU] PDF not found: {pdf}")
+        
+        # If start_page or end_page are provided, validate and clamp them to valid range
+        if start_page is not None or end_page is not None:
+            total_pages = self._get_total_pages(pdf)
+            if total_pages > 0:
+                # Clamp to valid range [0, total_pages-1]
+                if start_page is not None:
+                    original_start = start_page
+                    start_page = max(0, min(start_page, total_pages - 1))
+                    if start_page != original_start:
+                        self.logger.warning(f"[MinerU] Clamped start_page from {original_start} to {start_page} (total_pages={total_pages})")
+                if end_page is not None:
+                    original_end = end_page
+                    end_page = max(0, min(end_page, total_pages - 1))
+                    if end_page != original_end:
+                        self.logger.warning(f"[MinerU] Clamped end_page from {original_end} to {end_page} (total_pages={total_pages})")
+            else:
+                self.logger.warning(f"[MinerU] Could not determine total_pages, allowing processing with unclamped page range (start={start_page}, end={end_page})")
 
         if output_dir:
             out_dir = Path(output_dir)
