@@ -260,8 +260,6 @@ async def create():
     d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
     if "tag_feas" in req:
         d["tag_feas"] = req["tag_feas"]
-    if "tag_feas" in req:
-        d["tag_feas"] = req["tag_feas"]
 
     try:
         def _create_sync():
