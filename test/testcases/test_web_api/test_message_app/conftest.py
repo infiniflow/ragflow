@@ -70,6 +70,7 @@ def add_2_multiple_type_memory(request, WebApiAuth):
         exist_memory_ids = [memory["id"] for memory in memory_list_res["data"]["memory_list"]]
         for _memory_id in exist_memory_ids:
             delete_memory(WebApiAuth, _memory_id)
+
     request.addfinalizer(cleanup)
     memory_ids = []
     for i in range(2):
