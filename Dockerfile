@@ -168,9 +168,11 @@ RUN version_info=$(git describe --tags --match=v* --first-parent --always); \
 
 # production stage
 FROM base AS production
-USER root
-
+RUN useradd -m -u 1001 ragflow
 WORKDIR /ragflow
+RUN chown -R ragflow:ragflow /ragflow
+
+USER ragflow
 
 # Copy Python environment and packages
 ENV VIRTUAL_ENV=/ragflow/.venv
