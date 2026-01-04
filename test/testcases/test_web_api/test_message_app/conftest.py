@@ -22,7 +22,27 @@ from test_web_api.common import create_memory, list_memory, add_message, delete_
 
 
 @pytest.fixture(scope="class")
-def add_memory_with_multiple_message_func(request, WebApiAuth):
+def add_empty_raw_type_memory(request, WebApiAuth):
+    def cleanup():
+        memory_list_res = list_memory(WebApiAuth)
+        exist_memory_ids = [memory["id"] for memory in memory_list_res["data"]["memory_list"]]
+        for _memory_id in exist_memory_ids:
+            delete_memory(WebApiAuth, _memory_id)
+    request.addfinalizer(cleanup)
+    payload = {
+        "name": "test_memory_0",
+        "memory_type": ["raw"],
+        "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
+        "llm_id": "glm-4-flash@ZHIPU-AI"
+    }
+    res = create_memory(WebApiAuth, payload)
+    memory_id = res["data"]["id"]
+    request.cls.memory_id = memory_id
+    return memory_id
+
+
+@pytest.fixture(scope="class")
+def add_memory_with_multiple_type_message_func(request, WebApiAuth):
     def cleanup():
         memory_list_res = list_memory(WebApiAuth)
         exist_memory_ids = [memory["id"] for memory in memory_list_res["data"]["memory_list"]]
@@ -56,6 +76,7 @@ Key Point of Confusion: The naming differs by region. In North America, "coriand
     add_message(WebApiAuth, message_payload)
     request.cls.memory_id = memory_id
     request.cls.agent_id = agent_id
+    time.sleep(2)  # make sure refresh to index before search
     return memory_id
 
 
