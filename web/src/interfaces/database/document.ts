@@ -51,6 +51,9 @@ export interface IParserConfig {
   mineru_formula_enable?: boolean;
   mineru_table_enable?: boolean;
   mineru_lang?: string;
+  mineru_batch_size?: number;
+  mineru_start_page?: number;
+  mineru_end_page?: number;
   entity_types?: string[];
   metadata?: Array<{
     key?: string;

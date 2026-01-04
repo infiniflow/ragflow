@@ -29,6 +29,8 @@ const FormSchema = z.object({
   mineru_output_dir: z.string().optional(),
   mineru_backend: z.enum([
     'pipeline',
+    'hybrid-auto-engine',
+    'hybrid',
     'vlm-transformers',
     'vlm-vllm-engine',
     'vlm-http-client',
@@ -52,6 +54,8 @@ const MinerUModal = ({
 
   const backendOptions = buildOptions([
     'pipeline',
+    'hybrid-auto-engine',
+    'hybrid',
     'vlm-transformers',
     'vlm-vllm-engine',
     'vlm-http-client',
