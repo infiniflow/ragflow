@@ -1197,6 +1197,13 @@ class Memory(DataBaseModel):
     class Meta:
         db_table = "memory"
 
+class SystemSettings(DataBaseModel):
+    name = CharField(max_length=128, primary_key=True)
+    setting_type = CharField(max_length=32, null=False, index=False)
+    data_type = CharField(max_length=32, null=False, index=False)
+    value = CharField(max_length=1024, null=False, index=False)
+    class Meta:
+        db_table = "system_settings"
 
 def migrate_db():
     logging.disable(logging.ERROR)
