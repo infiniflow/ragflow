@@ -405,18 +405,18 @@ Revoke successfully!
 ```
 admin> list vars;
 +-----------+---------------------+--------------+-----------+
-| data_type | name                | setting_type | value     |
+| data_type | name                | source       | value     |
 +-----------+---------------------+--------------+-----------+
-| string    | default_role        | config       | user      |
-| bool      | enable_whitelist    | config       | true      |
-| string    | mail.default_sender | config       |           |
-| string    | mail.password       | config       |           |
-| integer   | mail.port           | config       | 15        |
-| string    | mail.server         | config       | localhost |
-| integer   | mail.timeout        | config       | 10        |
-| bool      | mail.use_ssl        | config       | true      |
-| bool      | mail.use_tls        | config       | false     |
-| string    | mail.username       | config       |           |
+| string    | default_role        | variable     | user      |
+| bool      | enable_whitelist    | variable     | true      |
+| string    | mail.default_sender | variable     |           |
+| string    | mail.password       | variable     |           |
+| integer   | mail.port           | variable     | 15        |
+| string    | mail.server         | variable     | localhost |
+| integer   | mail.timeout        | variable     | 10        |
+| bool      | mail.use_ssl        | variable     | true      |
+| bool      | mail.use_tls        | variable     | false     |
+| string    | mail.username       | variable     |           |
 +-----------+---------------------+--------------+-----------+
 ```
 
@@ -427,9 +427,9 @@ admin> list vars;
 ```
 admin> show var mail.server;
 +-----------+-------------+--------------+-----------+
-| data_type | name        | setting_type | value     |
+| data_type | name        | source       | value     |
 +-----------+-------------+--------------+-----------+
-| string    | mail.server | config       | localhost |
+| string    | mail.server | variable     | localhost |
 +-----------+-------------+--------------+-----------+
 ```
 
