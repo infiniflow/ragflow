@@ -438,10 +438,4 @@ const routers = createBrowserRouter(routeConfig, {
   basename: import.meta.env.VITE_BASE_URL || '/',
 });
 
-// const routers = createRouter({
-//   history: createWebHashHistory(), // 使用哈希模式
-//   routeConfig, {
-//   basename: import.meta.env.VITE_BASE_URL,
-// });
-
 export { routers };

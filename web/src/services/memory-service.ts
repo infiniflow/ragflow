@@ -21,7 +21,7 @@ const methods = {
   },
   getMemoryList: {
     url: getMemoryList,
-    method: 'post',
+    method: 'get',
   },
   deleteMemory: { url: deleteMemory, method: 'delete' },
   getMemoryConfig: {
@@ -37,6 +37,6 @@ export const updateMemoryById = (id: string, data: any) => {
   return request.put(updateMemorySetting(id), { ...data });
 };
 export const getMemoryDetailById = (id: string, data: any) => {
-  return request.post(getMemoryDetail(id), { data });
+  return request.get(getMemoryDetail(id), { params: data });
 };
 export default memoryService;
