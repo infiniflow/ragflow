@@ -467,7 +467,6 @@ class MinerUParser(RAGFlowPdfParser):
                 callback(progress, f"[MinerU] Processing batch {batch_idx + 1}/{len(batches)}: pages {batch_start}-{batch_end}")
             
             # Retry loop for this batch
-            batch_succeeded = False
             while True:
                 try:
                     # Process this batch
@@ -489,7 +488,6 @@ class MinerUParser(RAGFlowPdfParser):
                     merged_content_list.extend(batch_content_list)
                     batch_info.content_count = len(batch_content_list)
                     batch_info.status = BatchStatus.SUCCESS
-                    batch_succeeded = True
                     successful_batches += 1
                     
                     self.logger.info(f"[MinerU] Batch {batch_idx + 1} succeeded: {len(batch_content_list)} blocks extracted")
@@ -563,7 +561,7 @@ class MinerUParser(RAGFlowPdfParser):
                         f"{len(failed_batches)} failed, {len(merged_content_list)} total blocks")
         
         if failed_batches:
-            self.logger.warning(f"[MinerU] Failed batches details:")
+            self.logger.warning("[MinerU] Failed batches details:")
             for fb in failed_batches:
                 self.logger.warning(f"  - Batch {fb.batch_idx + 1} (pages {fb.start_page}-{fb.end_page}): "
                                   f"status={fb.status}, error_type={fb.error_type}, retries={fb.retry_count}")
@@ -1143,6 +1141,24 @@ class MinerUParser(RAGFlowPdfParser):
                 if callback:
                     callback(-1, f"[MinerU] PDF not found: {pdf}")
                 raise FileNotFoundError(f"[MinerU] PDF not found: {pdf}")
+        
+        # If start_page or end_page are provided, validate and clamp them to valid range
+        if start_page is not None or end_page is not None:
+            total_pages = self._get_total_pages(pdf)
+            if total_pages > 0:
+                # Clamp to valid range [0, total_pages-1]
+                if start_page is not None:
+                    original_start = start_page
+                    start_page = max(0, min(start_page, total_pages - 1))
+                    if start_page != original_start:
+                        self.logger.warning(f"[MinerU] Clamped start_page from {original_start} to {start_page} (total_pages={total_pages})")
+                if end_page is not None:
+                    original_end = end_page
+                    end_page = max(0, min(end_page, total_pages - 1))
+                    if end_page != original_end:
+                        self.logger.warning(f"[MinerU] Clamped end_page from {original_end} to {end_page} (total_pages={total_pages})")
+            else:
+                self.logger.warning(f"[MinerU] Could not determine total_pages, allowing processing with unclamped page range (start={start_page}, end={end_page})")
 
         if output_dir:
             out_dir = Path(output_dir)
