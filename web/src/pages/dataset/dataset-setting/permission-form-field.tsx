@@ -22,7 +22,7 @@ export function PermissionFormField() {
     >
       <SelectWithSearch
         options={teamOptions}
-        triggerClassName="w-3/4"
+        triggerClassName="w-full"
       ></SelectWithSearch>
     </RAGFlowFormItem>
   );

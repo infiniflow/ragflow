@@ -31,27 +31,6 @@ export default defineConfig(({ mode, command }) => {
           },
         },
       }),
-      // svgLoader({
-      //   svgo: true, // 启用SVGO压缩
-      //   svgoConfig: {
-      //     plugins: [
-      //       { name: 'removeViewBox', active:false }, // 保留viewBox属性
-      //       { name: 'removeComments', active: true }, // 移除注释
-      //       { name: 'removeEmptyAttrs', active: true }, // 移除空属性
-      //       { name: 'removeHiddenElems', active: true }, // 移除隐藏元素
-      //       { name: 'removeMetadata', active: true }, // 移除元数据
-      //       { name: 'removeUselessDefs', active: true }, // 移除无用定义
-      //       { name: 'removeXMLProcInst', active: true }, // 移除XML处理指令
-      //       { name: 'removeTitle', active: true }, // 移除标题
-      //       { name: 'removeDesc', active: true }, // 移除描述
-      //       { name: 'removeDimensions', active: true }, // 移除宽高属性
-      //       { name: 'removeStyleElement', active: true }, // 移除style标签
-      //       { name: 'removeScriptElement', active: true }, // 移除script标签
-      //       { name: 'removeOffCanvasPaths', active: true }, // 移除离屏路径
-      //       { name: 'removeAttrs', params: { attrs: ['data-name'] } }, // 移除自定义属性
-      //     ],
-      //   },
-      // }),
     ],
     resolve: {
       alias: {
@@ -81,7 +60,7 @@ export default defineConfig(({ mode, command }) => {
       port: 9222,
       proxy: {
         '/api/v1/admin': {
-          target: 'http://127.0.0.1:9381/',
+          target: 'http://192.168.1.24:9381/',
           changeOrigin: true,
           ws: true,
         },
@@ -114,41 +93,18 @@ export default defineConfig(({ mode, command }) => {
       experimentalMinChunkSize: 30 * 1024,
       rollupOptions: {
         output: {
-          // manualChunks(id) {
-          //   if (id.includes('jsoneditor')) {
-          //     return 'jsoneditor';
-          //   }
-          //   if (id.includes('one-light')) {
-          //     return 'one-light';
-          //   }
-          //   if (id.includes('txt-preview')) {
-          //     return 'txt-preview';
-          //   }
-          //   if (id.includes('/utils/')) return 'utils';
-          //   if (id.includes('/components/')) return 'components';
-          // },
-          // manualChunks: {
-          //   vendor: ['react', 'react-dom', 'react-router'],
-          //   ui: ['antd', '@ant-design/icons'],
-          //   utils: ['lodash', 'moment'],
-          // },
           chunkFileNames: 'chunk/js/[name]-[hash].js',
           entryFileNames: 'entry/js/[name]-[hash].js',
           assetFileNames: 'assets/[ext]/[name]-[hash].[ext]',
         },
         plugins: [],
       },
-      // minify: 'esbuild', // 使用 esbuild 进行代码压缩
-      // esbuildOptions: {
-      //   minify: true,
-      //   drop: ['console', 'debugger'], // 移除 console.log 和 debugger
-      // },
       minify: 'terser',
       terserOptions: {
         compress: {
-          drop_console: true, // 删除 console 语句
-          drop_debugger: true, // 删除 debugger 语句
-          pure_funcs: ['console.log'], // 删除指定函数调用
+          drop_console: true, // delete console
+          drop_debugger: true, // delete debugger
+          pure_funcs: ['console.log'],
         },
         mangle: {
           // properties: {
@@ -157,7 +113,7 @@ export default defineConfig(({ mode, command }) => {
           properties: false,
         },
         format: {
-          comments: false, // 删除注释
+          comments: false, // Delete comments
         },
       },
       sourcemap: true,
