@@ -1,4 +1,4 @@
-import { Outlet } from 'umi';
+import { Outlet } from 'react-router';
 
 const AdminRootLayout = () => {
   return <Outlet />;

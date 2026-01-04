@@ -10,7 +10,7 @@ import { useDebounce } from 'ahooks';
 import { omit } from 'lodash';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'react-router';
 import {
   CreateMemoryResponse,
   DeleteMemoryProps,

@@ -5,7 +5,7 @@ import { formatDate } from '@/utils/date';
 import camelCase from 'lodash/camelCase';
 import { useSelectChartStatsList } from '../hooks';
 
-import styles from './index.less';
+import styles from './index.module.less';
 
 const StatsLineChart = ({ statsType }: { statsType: keyof IStats }) => {
   const { t } = useTranslate('chat');

@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'umi';
+import { useNavigate } from 'react-router';
 
 import {
   createColumnHelper,

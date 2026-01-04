@@ -12,7 +12,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { TFunction } from 'i18next';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import {
   IMetaDataReturnJSONSettings,
   IMetaDataReturnJSONType,

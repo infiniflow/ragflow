@@ -28,7 +28,7 @@ import { isEmpty, omit } from 'lodash';
 import { ListCheck, Plus, Trash2 } from 'lucide-react';
 import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import { z } from 'zod';
 import {
   useGetSendButtonDisabled,

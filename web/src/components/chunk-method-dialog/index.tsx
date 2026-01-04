@@ -57,11 +57,10 @@ import {
 
 const FormId = 'ChunkMethodDialogForm';
 
-interface IProps
-  extends IModalProps<{
-    parserId: string;
-    parserConfig: IChangeParserConfigRequestBody;
-  }> {
+interface IProps extends IModalProps<{
+  parserId: string;
+  parserConfig: IChangeParserConfigRequestBody;
+}> {
   loading: boolean;
   parserId: string;
   pipelineId?: string;

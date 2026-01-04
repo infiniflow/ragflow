@@ -1,7 +1,7 @@
 import { useIsDarkTheme } from '@/components/theme-provider';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { LangfuseCard } from '@/pages/user-setting/setting-model/langfuse';
-import apiDoc from '@parent/docs/references/http_api_reference.md';
+import apiDoc from '@parent/docs/references/http_api_reference.md?raw';
 import MarkdownPreview from '@uiw/react-markdown-preview';
 import ChatApiKeyModal from '../chat-api-key-modal';
 import BackendServiceApi from './backend-service-api';

@@ -6,7 +6,7 @@ import { Segmented, SegmentedValue } from '@/components/ui/segmented';
 import { Routes } from '@/routes';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'umi';
+import { useNavigate } from 'react-router';
 import { Agents } from './agent-list';
 import { SeeAllAppCard } from './application-card';
 import { ChatList } from './chat-list';

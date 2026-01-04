@@ -1,5 +1,5 @@
 import { trim } from 'lodash';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 
 export const useGetSendButtonDisabled = () => {
   const { id: dialogId } = useParams();

@@ -2,7 +2,7 @@ import { type AxiosResponseHeaders } from 'axios';
 import { useEffect, useId } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'umi';
+import { useNavigate } from 'react-router';
 
 import { useMutation } from '@tanstack/react-query';
 

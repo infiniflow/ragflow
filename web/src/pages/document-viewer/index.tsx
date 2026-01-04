@@ -1,6 +1,6 @@
 import { Images } from '@/constants/common';
 import { api_host } from '@/utils/api';
-import { useParams, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'react-router';
 // import Docx from './docx';
 // import Excel from './excel';
 // import Image from './image';

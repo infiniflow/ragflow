@@ -1,6 +1,6 @@
 import ApiContent from '@/components/api-service/chat-overview-modal/api-content';
 
-import styles from './index.less';
+import styles from './index.module.less';
 
 const ApiPage = () => {
   return (

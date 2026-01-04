@@ -16,7 +16,7 @@ import {
 import { Routes } from '@/routes';
 import { EllipsisVertical, Save } from 'lucide-react';
 import { useMemo } from 'react';
-import { Outlet, useLocation } from 'umi';
+import { Outlet, useLocation } from 'react-router';
 
 export default function ChunkPage() {
   const { navigateToDataset, getQueryString, navigateToChunk } =

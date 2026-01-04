@@ -3,7 +3,7 @@ import { useUpdateKnowledge } from '@/hooks/use-knowledge-request';
 import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 
 export function GeneralSavingButton() {
   const form = useFormContext();

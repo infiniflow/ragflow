@@ -4,7 +4,7 @@ import memoryService, { getMemoryDetailById } from '@/services/memory-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { useCallback, useState } from 'react';
-import { useParams, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'react-router';
 import { MemoryApiAction } from '../constant';
 import {
   IMessageContentProps,

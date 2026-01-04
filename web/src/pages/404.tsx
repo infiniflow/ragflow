@@ -1,7 +1,7 @@
 import { Routes } from '@/routes';
+import { history } from '@/utils/simple-history-util';
 import { Button, Result } from 'antd';
-import { history, useLocation } from 'umi';
-
+import { useLocation } from 'react-router';
 const NoFoundPage = () => {
   const location = useLocation();
 

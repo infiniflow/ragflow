@@ -17,7 +17,7 @@ import { t } from 'i18next';
 import { pick } from 'lodash';
 import { Clipboard, ClipboardPlus, FileInput, Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
-import { useSearchParams } from 'umi';
+import { useSearchParams } from 'react-router';
 import { AgentCard } from './agent-card';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
