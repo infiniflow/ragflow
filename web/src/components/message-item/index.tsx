@@ -1,4 +1,3 @@
-import AssistantIcon from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import {
   IMessage,
@@ -21,6 +20,7 @@ import {
   removePDFDownloadInfo,
 } from '../pdf-download-button';
 import { RAGFlowAvatar } from '../ragflow-avatar';
+import SvgIcon from '../svg-icon';
 import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.module.less';
@@ -117,7 +117,11 @@ const MessageItem = ({
                 isPerson
               />
             ) : (
-              <AssistantIcon />
+              <SvgIcon
+                name={'assistant'}
+                width={'100%'}
+                className={cn('size-10 fill-current')}
+              ></SvgIcon>
             ))}
 
           <section className="flex gap-2 flex-1 flex-col">
