@@ -4,7 +4,7 @@ import Icon, { UserOutlined } from '@ant-design/icons';
 import { IconComponentProps } from '@ant-design/icons/lib/components/Icon';
 import { Avatar } from 'antd';
 import { AvatarSize } from 'antd/es/avatar/AvatarContext';
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { IconFontFill } from './icon-font';
 import { useIsDarkTheme } from './theme-provider';
 
@@ -45,23 +45,25 @@ interface IProps extends IconComponentProps {
   imgClass?: string;
 }
 
-const SvgIcon = ({ name, width, height, imgClass, ...restProps }: IProps) => {
-  const ListItem = routeList.find((item) => item.name === name);
-  return (
-    <Icon
-      component={() => (
-        <img
-          src={ListItem?.value}
-          alt=""
-          width={width}
-          height={height}
-          className={cn(imgClass, 'max-w-full')}
-        />
-      )}
-      {...(restProps as any)}
-    />
-  );
-};
+const SvgIcon = memo(
+  ({ name, width, height, imgClass, ...restProps }: IProps) => {
+    const ListItem = routeList.find((item) => item.name === name);
+    return (
+      <Icon
+        component={() => (
+          <img
+            src={ListItem?.value}
+            alt=""
+            width={width}
+            height={height}
+            className={cn(imgClass, 'max-w-full')}
+          />
+        )}
+        {...(restProps as any)}
+      />
+    );
+  },
+);
 
 export const LlmIcon = ({
   name,
