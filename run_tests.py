@@ -97,6 +97,10 @@ EXAMPLES:
         """Build the pytest command arguments"""
         cmd = ["pytest", str(self.ut_dir)]
 
+        # Add pythonpath to ensure project root is in PYTHONPATH
+        cmd.extend(["--rootdir", str(self.project_root)])
+        cmd.extend(["-o", f"pythonpath={self.project_root}"])
+
         # Add test path
 
         # Add markers
