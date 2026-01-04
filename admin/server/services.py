@@ -274,7 +274,7 @@ class SettingsMgr:
         for setting in settings:
             result.append({
                 'name': setting.name,
-                'setting_type': setting.setting_type,
+                'source': setting.source,
                 'data_type': setting.data_type,
                 'value': setting.value,
             })
@@ -289,7 +289,7 @@ class SettingsMgr:
         for setting in settings:
             result.append({
                 'name': setting.name,
-                'setting_type': setting.setting_type,
+                'source': setting.source,
                 'data_type': setting.data_type,
                 'value': setting.value,
             })

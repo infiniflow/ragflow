@@ -2,61 +2,61 @@
   "system_settings": [
     {
       "name": "enable_whitelist",
-      "setting_type": "config",
+      "source": "variable",
       "data_type": "bool",
       "value": "true"
     },
     {
       "name": "default_role",
-      "setting_type": "config",
+      "source": "variable",
       "data_type": "string",
       "value": ""
     },
     {
       "name": "mail.server",
-      "setting_type": "config",
+      "source": "variable",
       "data_type": "string",
       "value": ""
     },
     {
       "name": "mail.port",
-      "setting_type": "config",
+      "source": "variable",
       "data_type": "integer",
       "value": ""
     },
     {
       "name": "mail.use_ssl",
-      "setting_type": "config",
+      "source": "variable",
       "data_type": "bool",
       "value": "false"
     },
     {
       "name": "mail.use_tls",
-      "setting_type": "config",
+      "source": "variable",
       "data_type": "bool",
       "value": "false"
     },
     {
       "name": "mail.username",
-      "setting_type": "config",
+      "source": "variable",
       "data_type": "string",
       "value": ""
     },
     {
       "name": "mail.password",
-      "setting_type": "config",
+      "source": "variable",
       "data_type": "string",
       "value": ""
     },
     {
       "name": "mail.timeout",
-      "setting_type": "config",
+      "source": "variable",
       "data_type": "integer",
       "value": "10"
     },
     {
       "name": "mail.default_sender",
-      "setting_type": "config",
+      "source": "variable",
       "data_type": "string",
       "value": ""
     }

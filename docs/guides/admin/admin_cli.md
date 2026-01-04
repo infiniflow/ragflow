@@ -405,7 +405,7 @@ Revoke successfully!
 ```
 admin> list vars;
 +-----------+---------------------+--------------+-----------+
-| data_type | name                | setting_type | value     |
+| data_type | name                | source | value     |
 +-----------+---------------------+--------------+-----------+
 | string    | default_role        | config       | user      |
 | bool      | enable_whitelist    | config       | true      |
@@ -427,7 +427,7 @@ admin> list vars;
 ```
 admin> show var mail.server;
 +-----------+-------------+--------------+-----------+
-| data_type | name        | setting_type | value     |
+| data_type | name        | source | value     |
 +-----------+-------------+--------------+-----------+
 | string    | mail.server | config       | localhost |
 +-----------+-------------+--------------+-----------+
