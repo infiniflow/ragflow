@@ -103,6 +103,32 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 - Lists the agents associated with the specified user.
 - [Example](#example-list-agents-of-user)
 
+### System info
+
+`SHOW VERSION;`
+- Display the current RAGFlow version.
+- [Example](#example-show-version)
+
+`GRANT ADMIN <username>`
+- Grant administrator privileges to the specified user.
+- [Example](#example-grant-admin)
+
+`REVOKE ADMIN <username>`
+- Revoke administrator privileges from the specified user.
+- [Example](#example-revoke-admin)
+
+`LIST VARS`
+- List all system configurations and settings.
+- [Example](#example-list-vars)
+
+`SHOW VAR <var_name>`
+- Display the content of a specific system configuration/setting by its name or name prefix.
+- [Example](#example-show-var)
+
+`SET VAR <var_name> <var_value>`
+- Set the value for a specified configuration item.
+- [Example](#example-set-var)
+
 ### Meta-Commands
 
 - \? or \help
@@ -339,6 +365,83 @@ Listing all agents of user: lynn_inf@hotmail.com
 | agent           | None        | team       | research_helper |
 +-----------------+-------------+------------+-----------------+
 ```
+
+<span id="example-show-version"></span>
+
+- Display the current RAGFlow version.
+
+```
+admin> show version;
+show_version
++-----------------------+
+| version               |
++-----------------------+
+| v0.23.1-24-g6f60e9f9e |
++-----------------------+
+```
+
+<span id="example-grant-admin"></span>
+
+- Grant administrator privileges to the specified user.
+
+```
+admin> grant admin "anakin.skywalker@ragflow.io";
+Grant successfully!
+```
+
+<span id="example-revoke-admin"></span>
+
+- Revoke administrator privileges from the specified user.
+
+```
+admin> revoke admin "anakin.skywalker@ragflow.io";
+Revoke successfully!
+```
+
+<span id="example-list-vars"></span>
+
+- List all system configurations and settings.
+
+```
+admin> list vars;
++-----------+---------------------+--------------+-----------+
+| data_type | name                | setting_type | value     |
++-----------+---------------------+--------------+-----------+
+| string    | default_role        | config       | user      |
+| bool      | enable_whitelist    | config       | true      |
+| string    | mail.default_sender | config       |           |
+| string    | mail.password       | config       |           |
+| integer   | mail.port           | config       | 15        |
+| string    | mail.server         | config       | localhost |
+| integer   | mail.timeout        | config       | 10        |
+| bool      | mail.use_ssl        | config       | true      |
+| bool      | mail.use_tls        | config       | false     |
+| string    | mail.username       | config       |           |
++-----------+---------------------+--------------+-----------+
+```
+
+<span id="example-show-var"></span>
+
+- Display the content of a specific system configuration/setting by its name or name prefix.
+
+```
+admin> show var mail.server;
++-----------+-------------+--------------+-----------+
+| data_type | name        | setting_type | value     |
++-----------+-------------+--------------+-----------+
+| string    | mail.server | config       | localhost |
++-----------+-------------+--------------+-----------+
+```
+
+<span id="example-set-var"></span>
+
+- Set the value for a specified configuration item.
+
+```
+admin> set var mail.server 127.0.0.1;
+Set variable successfully
+```
+
 
 <span id="example-meta-commands"></span>
 
