@@ -109,7 +109,7 @@ Are you asking about the fruit itself, or its use in a specific context?
 
 
 @pytest.mark.usefixtures("add_2_multiple_type_memory")
-class TestAddMultipleTypeMessage:
+class TestAddToMultipleMemory:
 
     @pytest.mark.p1
     def test_add_to_multiple_memory(self, WebApiAuth):
