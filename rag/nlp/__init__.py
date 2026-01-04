@@ -702,7 +702,7 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
         for page, left, right, top, bottom in poss:
             if isinstance(page, list):
                 page = page[0] if page else 0
-            page_bucket[page].append(((left, top, right, bottom), txt))
+            page_bucket[page].append(((left, right, top, bottom), txt))
 
     def upper_context(page, i):
         txt = ""
@@ -747,8 +747,8 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
     res = []
     contexts = []
     for (img, tb), poss in tabls:
-        page, left, top, right, bott = poss[0]
-        _page, _left, _top, _right, _bott = poss[-1]
+        page, left, right, top, bott = poss[0]
+        _page, _left, _right, _top, _bott = poss[-1]
         if isinstance(tb, list):
             tb = "\n".join(tb)
 
@@ -767,10 +767,10 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
                 tb = upper + tb + lower
                 contexts.append((upper.strip(), lower.strip()))
                 break
-            (_, t, r, b), txt = blks[i]
+            (_, _, t, b), txt = blks[i]
             if b > top:
                 break
-            (_, _t, _r, _b), _txt = blks[i+1]
+            (_, _, _t, _b), _txt = blks[i+1]
             if _t < _bott:
                 i += 1
                 continue
