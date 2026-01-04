@@ -42,7 +42,6 @@ class TestGetMessageContent:
     def test_get_message_content(self, WebApiAuth):
         memory_id = self.memory_id
         recent_messages = get_recent_message(WebApiAuth, {"memory_id": memory_id})
-        print(recent_messages)
         assert len(recent_messages["data"]) > 0, recent_messages
         message_id = recent_messages["data"][0]["message_id"]
         content_res = get_message_content(WebApiAuth, memory_id, message_id)
