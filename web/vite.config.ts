@@ -1,3 +1,4 @@
+import { inspectorServer } from '@react-dev-inspector/vite-plugin';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
@@ -31,6 +32,7 @@ export default defineConfig(({ mode, command }) => {
           },
         },
       }),
+      inspectorServer(),
     ],
     resolve: {
       alias: {
@@ -65,14 +67,12 @@ export default defineConfig(({ mode, command }) => {
           ws: true,
         },
         '/api': {
-          // target: 'http://127.0.0.1:9380/',
-          target: 'http://192.168.1.24:9380/',
+          target: 'http://127.0.0.1:9380/',
           changeOrigin: true,
           ws: true,
         },
         '/v1': {
-          // target: 'http://127.0.0.1:9380/',
-          target: 'http://192.168.1.24:9380/',
+          target: 'http://127.0.0.1:9380/',
           changeOrigin: true,
           ws: true,
         },
