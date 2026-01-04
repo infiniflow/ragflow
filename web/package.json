@@ -67,6 +67,7 @@
     "@tanstack/react-table": "^8.20.5",
     "@types/papaparse": "^5.5.1",
     "@uiw/react-markdown-preview": "^5.1.3",
+    "@welldone-software/why-did-you-render": "^8.0.3",
     "@xyflow/react": "^12.3.6",
     "ahooks": "^3.7.10",
     "ajv": "^8.17.1",
