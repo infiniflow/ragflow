@@ -595,6 +595,21 @@ def fill_db_model_object(model_object, human_model_dict):
     return model_object
 
 
+class UserSession(DataBaseModel):
+    """User session table, supports multiple login sessions"""
+    id = CharField(max_length=32, primary_key=True)
+    user_id = CharField(max_length=32, null=False, index=True)
+    access_token = CharField(max_length=255, null=False, index=True)
+    device_name = CharField(max_length=255, null=True, help_text="Device name or browser info")
+    ip_address = CharField(max_length=45, null=True, help_text="IP address")
+    is_active = CharField(max_length=1, null=False, default="1", index=True)
+    last_activity_time = BigIntegerField(null=True, index=True)
+    expires_at = BigIntegerField(null=True, index=True, help_text="Session expiration time")
+    
+    class Meta:
+        db_table = "user_session"
+
+
 class User(DataBaseModel, AuthUser):
     id = CharField(max_length=32, primary_key=True)
     access_token = CharField(max_length=255, null=True, index=True)

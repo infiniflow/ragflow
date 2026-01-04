@@ -151,9 +151,35 @@ done
 # -----------------------------------------------------------------------------
 # Replace env variables in the service_conf.yaml file
 # -----------------------------------------------------------------------------
-CONF_DIR="/ragflow/conf"
+# Automatically detect whether in Docker container or local development environment
+if [ -d "/ragflow/conf" ]; then
+    CONF_DIR="/ragflow/conf"
+    PROJECT_ROOT="/ragflow"
+    IN_DOCKER=1
+else
+    # Local development environment, use relative paths
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PROJECT_ROOT="${SCRIPT_DIR}/.."
+    CONF_DIR="${PROJECT_ROOT}/conf"
+    IN_DOCKER=0
+fi
+
+# Switch to project root directory
+cd "${PROJECT_ROOT}"
+
 TEMPLATE_FILE="${CONF_DIR}/service_conf.yaml.template"
 CONF_FILE="${CONF_DIR}/service_conf.yaml"
+
+# Check if template file exists
+if [ ! -f "${TEMPLATE_FILE}" ]; then
+    echo "Error: Template file not found: ${TEMPLATE_FILE}"
+    echo "Trying alternative location: docker/service_conf.yaml.template"
+    TEMPLATE_FILE="$(dirname "${BASH_SOURCE[0]}")/service_conf.yaml.template"
+    if [ ! -f "${TEMPLATE_FILE}" ]; then
+        echo "Error: Template file not found at alternative location either"
+        exit 1
+    fi
+fi
 
 rm -f "${CONF_FILE}"
 while IFS= read -r line || [[ -n "$line" ]]; do
@@ -208,7 +234,7 @@ ensure_docling
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
-    /usr/sbin/nginx
+    # /usr/sbin/nginx
 
     echo "Starting ragflow_server..."
     while true; do

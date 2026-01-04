@@ -25,6 +25,7 @@ import base64
 
 from quart import make_response, redirect, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
+from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 
 from api.apps.auth import get_auth_client
 from api.db import FileType, UserTenantRole
@@ -33,6 +34,7 @@ from api.db.services.file_service import FileService
 from api.db.services.llm_service import get_init_tenant_llm
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
+from api.db.services.user_session_service import UserSessionService
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.misc_utils import download_img, get_uuid
 from common.constants import RetCode
@@ -125,14 +127,42 @@ async def login():
         )
     elif user:
         response_data = user.to_json()
-        user.access_token = get_uuid()
         login_user(user)
         user.update_time = current_timestamp()
         user.update_date = datetime_format(datetime.now())
-        user.save()
+        
+        # Create session record (supports multiple login sessions)
+        auth_token = None
+        try:
+            device_name = request.headers.get("User-Agent", "Unknown Device")
+            ip_address = request.headers.get("X-Forwarded-For") or request.remote_addr
+            success, session_data = UserSessionService.create_session(
+                user_id=user.id,
+                device_name=device_name[:255] if device_name else "Unknown Device",
+                ip_address=ip_address[:45] if ip_address else "Unknown IP"
+            )
+            
+            if success:
+                # Use UserSession's token
+                session_token = session_data.get("access_token")
+                # Update user.access_token to the same value for consistency
+                user.access_token = session_token
+                user.save()
+                # Update access_token in response data
+                response_data["access_token"] = session_token
+                auth_token = user.get_id()  # Return JWT encoded token
+        except Exception as e:
+            # UserSession table may not exist, use old method
+            logging.debug(f"UserSession creation failed, using old token method: {e}")
+        
+        # If UserSession creation failed, use old method
+        if not auth_token:
+            user.access_token = get_uuid()
+            user.save()
+            auth_token = user.get_id()
+        
         msg = "Welcome back!"
-
-        return await construct_response(data=response_data, auth=user.get_id(), message=msg)
+        return await construct_response(data=response_data, auth=auth_token, message=msg)
     else:
         return get_json_result(
             data=False,
@@ -487,7 +517,7 @@ async def user_info_from_github(access_token):
     return user_info
 
 
-@manager.route("/logout", methods=["GET"])  # noqa: F821
+@manager.route("/logout", methods=["POST"])  # noqa: F821
 @login_required
 async def log_out():
     """
@@ -497,16 +527,128 @@ async def log_out():
       - User
     security:
       - ApiKeyAuth: []
+    parameters:
+      - in: body
+        name: body
+        required: false
+        schema:
+          type: object
+          properties:
+            logout_all:
+              type: boolean
+              description: Whether to logout all sessions, default false
     responses:
       200:
         description: Logout successful.
         schema:
           type: object
     """
+    # Get current token
+    jwt = Serializer(secret_key=settings.SECRET_KEY)
+    authorization = request.headers.get("Authorization")
+    access_token = str(jwt.loads(authorization)) if authorization else None
+    
+    # Check if logout all sessions is requested
+    logout_all = False
+    if request.content_length:
+        request_data = await get_request_json()
+        logout_all = request_data.get("logout_all", False)
+    
+    if logout_all:
+        # Logout all user sessions
+        count = UserSessionService.logout_all_sessions(current_user.id)
+        logging.info(f"User {current_user.email} logged out from {count} sessions")
+    else:
+        # Logout only current session
+        if access_token:
+            UserSessionService.logout_session(access_token)
+    
+    # Invalidate old access_token
     current_user.access_token = f"INVALID_{secrets.token_hex(16)}"
     current_user.save()
     logout_user()
     return get_json_result(data=True)
+
+
+@manager.route("/sessions", methods=["GET"])  # noqa: F821
+@login_required
+async def get_user_sessions():
+    """
+    Get all active sessions for the user
+    ---
+    tags:
+      - User
+    security:
+      - ApiKeyAuth: []
+    responses:
+      200:
+        description: Session list retrieved successfully
+        schema:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+    """
+    sessions = UserSessionService.get_user_sessions(current_user.id)
+    return get_json_result(data=sessions)
+
+
+@manager.route("/sessions/<session_id>", methods=["DELETE"])  # noqa: F821
+@login_required
+async def delete_session(session_id):
+    """
+    Delete a specific session
+    ---
+    tags:
+      - User
+    security:
+      - ApiKeyAuth: []
+    parameters:
+      - in: path
+        name: session_id
+        required: true
+        type: string
+        description: Session ID
+    responses:
+      200:
+        description: Session deleted successfully
+        schema:
+          type: object
+    """
+    # Get session info and validate ownership
+    from api.db.db_models import UserSession, DB
+    try:
+        session_obj = UserSession.select().where(
+            (UserSession.id == session_id) &
+            (UserSession.user_id == current_user.id)
+        ).first()
+        
+        if not session_obj:
+            return get_json_result(
+                data=False,
+                code=RetCode.OPERATING_ERROR,
+                message="Session not found or access denied"
+            )
+        
+        # Logout this session
+        success = UserSessionService.logout_session(session_obj.access_token)
+        if success:
+            return get_json_result(data=True)
+        else:
+            return get_json_result(
+                data=False,
+                code=RetCode.OPERATING_ERROR,
+                message="Failed to delete session"
+            )
+    except Exception as e:
+        logging.exception(e)
+        return get_json_result(
+            data=False,
+            code=RetCode.EXCEPTION_ERROR,
+            message=str(e)
+        )
 
 
 @manager.route("/setting", methods=["POST"])  # noqa: F821

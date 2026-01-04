@@ -136,7 +136,7 @@ class RedisDB:
             password = self.config.get("password")
             if password:
                 conn_params["password"] = password
-
+            conn_params["username"] = self.config.get("username", "default")
             self.REDIS = redis.StrictRedis(**conn_params)
 
             self.register_scripts()

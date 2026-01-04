@@ -25,6 +25,7 @@ from quart_cors import cors
 from common.constants import StatusEnum
 from api.db.db_models import close_connection, APIToken
 from api.db.services import UserService
+from api.db.services.user_session_service import UserSessionService
 from api.utils.json_encode import CustomJSONEncoder
 from api.utils import commands
 
@@ -122,6 +123,23 @@ def _load_user():
             logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
             return None
 
+        # Try to get user from UserSession first (supports multiple login sessions)
+        try:
+            session_obj = UserSessionService.get_session_by_token(access_token)
+            if session_obj:
+                # Update last activity time
+                UserSessionService.update_last_activity(access_token)
+                user = UserService.query(
+                    id=session_obj.get("user_id"), status=StatusEnum.VALID.value
+                )
+                if user:
+                    g.user = user[0]
+                    return user[0]
+        except Exception as session_err:
+            # UserSession table may not exist yet, or query failed, continue with old method
+            pass  # Silent failure to avoid log clutter
+        
+        # Fallback to old method (check user.access_token directly)
         user = UserService.query(
             access_token=access_token, status=StatusEnum.VALID.value
         )
@@ -137,6 +155,7 @@ def _load_user():
             return user[0]
     except Exception as e:
         logging.warning(f"load_user got exception {e}")
+        return None
 
 
 current_user = LocalProxy(_load_user)
