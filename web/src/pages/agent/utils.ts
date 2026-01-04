@@ -836,7 +836,7 @@ export function buildBeginQueryWithObject(
 }
 
 export function getArrayElementType(type: string) {
-  return typeof type === 'string' ? type.match(/<([^>]+)>/)?.at(1) ?? '' : '';
+  return typeof type === 'string' ? (type.match(/<([^>]+)>/)?.at(1) ?? '') : '';
 }
 
 export function buildConversationVariableSelectOptions() {

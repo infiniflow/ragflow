@@ -10,7 +10,7 @@ import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'umi';
+import { useSearchParams } from 'react-router';
 import { ChatCard } from './chat-card';
 import { useRenameChat } from './hooks/use-rename-chat';
 

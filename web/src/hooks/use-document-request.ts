@@ -23,7 +23,7 @@ import { useDebounce } from 'ahooks';
 import { get } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,

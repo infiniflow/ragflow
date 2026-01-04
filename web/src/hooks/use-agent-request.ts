@@ -31,7 +31,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get, set } from 'lodash';
 import { useCallback, useState } from 'react';
-import { useParams, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,

@@ -23,6 +23,7 @@ import { LlmModelType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
+import { history } from '@/utils/simple-history-util';
 import { t } from 'i18next';
 import { Settings } from 'lucide-react';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -31,7 +32,7 @@ import {
   FieldValues,
   useFormContext,
 } from 'react-hook-form';
-import { history, useLocation } from 'umi';
+import { useLocation } from 'react-router';
 import { DataSetContext } from '..';
 import {
   MetadataType,

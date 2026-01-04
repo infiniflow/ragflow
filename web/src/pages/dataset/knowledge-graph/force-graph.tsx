@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { buildNodesAndCombos } from './util';
 
 import { useIsDarkTheme } from '@/components/theme-provider';
-import styles from './index.less';
+import styles from './index.module.less';
 
 const TooltipColorMap = {
   combo: 'red',
