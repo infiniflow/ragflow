@@ -375,6 +375,7 @@ class MinerUParser:
             self.mineru_server_url = server_url
         
         temp_file = None
+        binary_content = None
         
         try:
             # Handle input file
@@ -407,7 +408,7 @@ class MinerUParser:
             if callback:
                 callback(0.1, "[MinerU] Uploading file to MinerU service")
             
-            file_id = self._upload_file_to_mineru(file_path, binary_content if binary else None)
+            file_id = self._upload_file_to_mineru(file_path, binary_content)
             self.logger.info(f"[MinerU] File uploaded with ID: {file_id}")
             
             if callback:
