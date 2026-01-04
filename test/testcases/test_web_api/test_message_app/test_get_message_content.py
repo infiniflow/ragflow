@@ -35,7 +35,7 @@ class TestAuthorization:
         assert res["message"] == expected_message, res
 
 
-@pytest.mark.usefixtures("add_memory_with_multiple_message_func")
+@pytest.mark.usefixtures("add_memory_with_multiple_type_message_func")
 class TestGetMessageContent:
 
     @pytest.mark.p1
@@ -43,7 +43,8 @@ class TestGetMessageContent:
         memory_id = self.memory_id
         recent_messages = get_recent_message(WebApiAuth, {"memory_id": memory_id})
         assert len(recent_messages["data"]) > 0, recent_messages
-        message_id = recent_messages["data"][0]["message_id"]
+        message = random.choice(recent_messages["data"])
+        message_id = message["message_id"]
         content_res = get_message_content(WebApiAuth, memory_id, message_id)
         for field in ["content", "content_embed"]:
             assert field in content_res["data"]
