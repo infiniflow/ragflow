@@ -35,6 +35,7 @@ API_TIMEOUT_SECONDS = 7200  # 2 hours
 MAX_RETRIES_5XX = 3
 RETRY_BACKOFF_BASE = 2
 DEFAULT_BATCH_SIZE = 30  # Pages per batch
+MAX_PAGES_DEFAULT = 10000  # Default maximum pages to process
 
 
 class BatchStatus(Enum):
@@ -162,19 +163,19 @@ class MinerUParser:
         upload_url = f"{api_url.rstrip('/')}/upload"
         
         try:
+            # Prepare file for upload
             if binary:
                 files = {'file': ('document.pdf', BytesIO(binary), 'application/pdf')}
-                response = requests.post(upload_url, files=files, timeout=60)
-                response.raise_for_status()
-                result = response.json()
-                return result.get('file_id', result.get('id', ''))
             else:
                 with open(filepath, 'rb') as f:
-                    files = {'file': (os.path.basename(filepath), f, 'application/pdf')}
-                    response = requests.post(upload_url, files=files, timeout=60)
-                    response.raise_for_status()
-                    result = response.json()
-                    return result.get('file_id', result.get('id', ''))
+                    file_content = f.read()
+                files = {'file': (os.path.basename(filepath), BytesIO(file_content), 'application/pdf')}
+            
+            # Upload to MinerU
+            response = requests.post(upload_url, files=files, timeout=60)
+            response.raise_for_status()
+            result = response.json()
+            return result.get('file_id', result.get('id', ''))
             
         except Exception as e:
             self.logger.error(f"[MinerU] Failed to upload file: {e}")
@@ -374,17 +375,22 @@ class MinerUParser:
             self.mineru_server_url = server_url
         
         temp_file = None
-        created_tmp_dir = False
         
         try:
             # Handle input file
             if binary:
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+                # Handle both BytesIO and raw bytes
                 if isinstance(binary, BytesIO):
-                    temp_file.write(binary.getvalue())
+                    binary_content = binary.getvalue()
                 else:
-                    temp_file.write(binary)
-                temp_file.close()
+                    binary_content = binary
+                    
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+                try:
+                    temp_file.write(binary_content)
+                finally:
+                    temp_file.close()
+                    
                 file_path = temp_file.name
                 self.logger.info(f"[MinerU] Using binary PDF data")
                 if callback:
@@ -401,7 +407,7 @@ class MinerUParser:
             if callback:
                 callback(0.1, "[MinerU] Uploading file to MinerU service")
             
-            file_id = self._upload_file_to_mineru(file_path, binary if isinstance(binary, bytes) else None)
+            file_id = self._upload_file_to_mineru(file_path, binary_content if binary else None)
             self.logger.info(f"[MinerU] File uploaded with ID: {file_id}")
             
             if callback:
@@ -413,7 +419,7 @@ class MinerUParser:
             batch_info = BatchInfo(
                 batch_idx=0,
                 start_page=0,
-                end_page=10000,  # Process all pages
+                end_page=MAX_PAGES_DEFAULT,  # Process all pages
                 status=BatchStatus.PENDING
             )
             
@@ -481,18 +487,12 @@ class MinerUParser:
             return sections, tables
             
         finally:
-            # Cleanup
+            # Cleanup temporary file
             if temp_file and os.path.exists(temp_file.name):
                 try:
                     os.unlink(temp_file.name)
                 except Exception as e:
                     self.logger.warning(f"[MinerU] Failed to delete temp file: {e}")
-            
-            if created_tmp_dir and output_dir and delete_output:
-                try:
-                    shutil.rmtree(output_dir)
-                except Exception as e:
-                    self.logger.warning(f"[MinerU] Failed to delete temp directory: {e}")
 
     def get_batch_processing_result(self) -> Optional[BatchProcessingResult]:
         """Get the result of the last batch processing operation"""
