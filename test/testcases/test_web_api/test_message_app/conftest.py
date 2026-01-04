@@ -38,7 +38,51 @@ def add_empty_raw_type_memory(request, WebApiAuth):
     res = create_memory(WebApiAuth, payload)
     memory_id = res["data"]["id"]
     request.cls.memory_id = memory_id
+    request.cls.memory_type = payload["memory_type"]
     return memory_id
+
+
+@pytest.fixture(scope="class")
+def add_empty_multiple_type_memory(request, WebApiAuth):
+    def cleanup():
+        memory_list_res = list_memory(WebApiAuth)
+        exist_memory_ids = [memory["id"] for memory in memory_list_res["data"]["memory_list"]]
+        for _memory_id in exist_memory_ids:
+            delete_memory(WebApiAuth, _memory_id)
+    request.addfinalizer(cleanup)
+    payload = {
+        "name": "test_memory_0",
+        "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(1, 3)),
+        "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
+        "llm_id": "glm-4-flash@ZHIPU-AI"
+    }
+    res = create_memory(WebApiAuth, payload)
+    memory_id = res["data"]["id"]
+    request.cls.memory_id = memory_id
+    request.cls.memory_type = payload["memory_type"]
+    return memory_id
+
+
+@pytest.fixture(scope="class")
+def add_2_multiple_type_memory(request, WebApiAuth):
+    def cleanup():
+        memory_list_res = list_memory(WebApiAuth)
+        exist_memory_ids = [memory["id"] for memory in memory_list_res["data"]["memory_list"]]
+        for _memory_id in exist_memory_ids:
+            delete_memory(WebApiAuth, _memory_id)
+    request.addfinalizer(cleanup)
+    memory_ids = []
+    for i in range(2):
+        payload = {
+            "name": f"test_memory_{i}",
+            "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(1, 3)),
+            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
+            "llm_id": "glm-4-flash@ZHIPU-AI"
+        }
+        res = create_memory(WebApiAuth, payload)
+        memory_ids.append(res["data"]["id"])
+    request.cls.memory_ids = memory_ids
+    return memory_ids
 
 
 @pytest.fixture(scope="class")
