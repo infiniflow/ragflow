@@ -62,7 +62,7 @@ export default defineConfig(({ mode, command }) => {
       port: 9222,
       proxy: {
         '/api/v1/admin': {
-          target: 'http://192.168.1.24:9381/',
+          target: 'http://127.0.0.1:9381/',
           changeOrigin: true,
           ws: true,
         },
