@@ -14,10 +14,11 @@
 #  limitations under the License.
 #
 
+from __future__ import annotations
+
 import json
 import logging
 import os
-import shutil
 import tempfile
 import time
 import zipfile
@@ -415,12 +416,17 @@ class MinerUParser:
                 callback(0.2, "[MinerU] File uploaded successfully")
             
             # Determine page range and create batches
-            # For simplicity, process entire document as single batch
-            # In production, you'd determine total pages and create batches
+            # Note: This implementation processes the entire document as a single batch.
+            # MinerU API uses 0-based page indexing where start_page=0, end_page=MAX_PAGES_DEFAULT
+            # means pages 0 through 9999 (or until document end, whichever comes first).
+            # For production use with very large documents, consider implementing:
+            # 1. Page count detection
+            # 2. Splitting into multiple batches
+            # 3. Parallel batch processing
             batch_info = BatchInfo(
                 batch_idx=0,
                 start_page=0,
-                end_page=MAX_PAGES_DEFAULT,  # Process all pages
+                end_page=MAX_PAGES_DEFAULT,  # Process all pages up to this limit
                 status=BatchStatus.PENDING
             )
             
