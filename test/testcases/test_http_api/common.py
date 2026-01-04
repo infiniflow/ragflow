@@ -60,7 +60,7 @@ def batch_create_datasets(auth, num):
 
 
 # FILE MANAGEMENT WITHIN DATASET
-def upload_documents(auth, dataset_id, files_path=None):
+def upload_documents(auth, dataset_id, files_path=None, replace_existing=False):
     url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
 
     if files_path is None:
@@ -74,6 +74,8 @@ def upload_documents(auth, dataset_id, files_path=None):
             f = p.open("rb")
             fields.append(("file", (p.name, f)))
             file_objects.append(f)
+        if replace_existing:
+            fields.append(("replace_existing", "true"))
         m = MultipartEncoder(fields=fields)
 
         res = requests.post(

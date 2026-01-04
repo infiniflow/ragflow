@@ -428,7 +428,7 @@ class FileService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def upload_document(self, kb, file_objs, user_id, src="local", parent_path: str | None = None):
+    def upload_document(self, kb, file_objs, user_id, src="local", parent_path: str | None = None, replace_existing: bool = False):
         root_folder = self.get_root_folder(user_id)
         pf_id = root_folder["id"]
         self.init_knowledgebase_docs(pf_id, user_id)
@@ -441,7 +441,28 @@ class FileService(CommonService):
         for file in file_objs:
             try:
                 DocumentService.check_doc_health(kb.tenant_id, file.filename)
-                filename = duplicate_name(DocumentService.query, name=file.filename, kb_id=kb.id)
+
+                if replace_existing:
+                    # Find and delete existing documents with the same name in this KB
+                    existing_docs = list(DocumentService.query(kb_id=kb.id, name=file.filename))
+                    for old_doc in existing_docs:
+                        try:
+                            logging.info(
+                                f"[Upload] Replacing existing document: {file.filename} "
+                                f"(id: {old_doc.id}, location: {old_doc.location})"
+                            )
+                            # Delete storage file first
+                            if old_doc.location and settings.STORAGE_IMPL.obj_exist(kb.id, old_doc.location):
+                                settings.STORAGE_IMPL.rm(kb.id, old_doc.location)
+                            DocumentService.remove_document(old_doc, user_id)
+                        except Exception as e:
+                            logging.error(f"Failed to delete old document {old_doc.id}: {e}")
+                            # Continue with upload even if delete fails
+                    # Use original filename (no duplicate suffix)
+                    filename = file.filename
+                else:
+                    # Existing behavior: append (1), (2), etc. if duplicate
+                    filename = duplicate_name(DocumentService.query, name=file.filename, kb_id=kb.id)
                 filetype = filename_type(filename)
                 if filetype == FileType.OTHER.value:
                     raise RuntimeError("This type of file has not been supported yet!")
