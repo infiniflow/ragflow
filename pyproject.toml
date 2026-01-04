@@ -1,7 +1,7 @@
 [project]
 name = "ragflow"
 version = "0.23.1"
-description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
+description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of all sizes, containing full process of RAG. It also provides a user-friendly web UI for data management and application creation."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
 readme = "README.md"
@@ -39,7 +39,7 @@ dependencies = [
     "flask-mail>=0.10.0",
     "flask-session==0.8.0",
     "google-auth-oauthlib>=1.2.0,<2.0.0",
-    "google-genai>=1.41.0,<2.0.0",
+    "google-genai>=0.41.0,<2.0.0",
     "google-generativeai>=0.8.1,<0.9.0", # Needed for cv_model and embedding_model
     "google-search-results==2.4.2",
     "graspologic @ git+https://github.com/yuzhichang/graspologic.git@38e680cab72bc9fb68a7992c3bcc2d53b24e42fd",
@@ -142,12 +142,12 @@ dependencies = [
     #    "trio>=0.17.0,<0.29.0",
     #    "debugpy>=1.8.13",
     #    "click>=8.1.8",
-    #    "litellm>=1.74.15.post1",
-    #    "lark>=1.2.2",
-    #    "pip>=25.2",
-    #    "imageio-ffmpeg>=0.6.0",
-    #    "cryptography==46.0.3",
-    #    "jinja2>=3.1.0",
+    "litellm>=1.74.15.post1",
+    "lark>=1.2.2",
+    "pip>=25.2",
+    "imageio-ffmpeg>=0.6.0",
+    "cryptography==46.0.3",
+    "jinja2>=3.1.0",
     "pyairtable>=3.3.0",
     "pygithub>=2.8.1",
     "asana>=5.2.2",
@@ -174,17 +174,7 @@ test = [
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 [tool.setuptools]
-packages = [
-    'agent',
-    'agentic_reasoning',
-    'api',
-    'deepdoc',
-    'graphrag',
-    'intergrations.chatgpt-on-wechat.plugins',
-    'mcp.server',
-    'rag',
-    'sdk.python.ragflow_sdk',
-]
+packages = find:
 
 [tool.ruff]
 line-length = 200
