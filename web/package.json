@@ -7,7 +7,7 @@
   "scripts": {
     "build": "vite build --mode production",
     "build-storybook": "storybook build",
-    "dev": "vite",
+    "dev": "vite --host",
     "lint": "eslint src --ext .ts,.tsx --report-unused-disable-directives --max-warnings 0",
     "prepare": "cd .. && husky web/.husky",
     "preview": "vite preview",
