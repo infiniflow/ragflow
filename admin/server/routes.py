@@ -21,7 +21,7 @@ from flask_login import current_user, login_required, logout_user
 
 from auth import login_verify, login_admin, check_admin_auth
 from responses import success_response, error_response
-from services import UserMgr, ServiceMgr, UserServiceMgr, SettingsMgr
+from services import UserMgr, ServiceMgr, UserServiceMgr, SettingsMgr, ConfigMgr, EnvironmentsMgr
 from roles import RoleMgr
 from api.common.exceptions import AdminException
 from common.versions import get_ragflow_version
@@ -443,6 +443,30 @@ def get_variable():
             return error_response("Var name is required", 400)
         var_name: str = data['var_name']
         res = SettingsMgr.get_by_name(var_name)
+        return success_response(res)
+    except AdminException as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+@admin_bp.route('/configs', methods=['GET'])
+@login_required
+@check_admin_auth
+def get_config():
+    try:
+        res = list(ConfigMgr.get_all())
+        return success_response(res)
+    except AdminException as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+@admin_bp.route('/environments', methods=['GET'])
+@login_required
+@check_admin_auth
+def get_environments():
+    try:
+        res = list(EnvironmentsMgr.get_all())
         return success_response(res)
     except AdminException as e:
         return error_response(str(e), 400)

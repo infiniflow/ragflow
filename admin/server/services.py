@@ -306,5 +306,37 @@ class SettingsMgr:
         elif len(settings) > 1:
             raise AdminException(f"Can't update more than 1 setting: {name}")
         else:
-            raise AdminException(f"No sett"
-                                 f"ing: {name}")
+            raise AdminException(f"No setting: {name}")
+
+class ConfigMgr:
+
+    @staticmethod
+    def get_all():
+        result = []
+        configs = SERVICE_CONFIGS.configs
+        for config in configs:
+            config_dict = config.to_dict()
+            result.append(config_dict)
+        return result
+
+class EnvironmentsMgr:
+    @staticmethod
+    def get_all():
+        result = []
+
+        env_kv = {"env": "DOC_ENGINE", "value": os.getenv('DOC_ENGINE')}
+        result.append(env_kv)
+
+        env_kv = {"env": "DEFAULT_SUPERUSER_EMAIL", "value": os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")}
+        result.append(env_kv)
+
+        env_kv = {"env": "DB_TYPE", "value": os.getenv("DB_TYPE", "mysql")}
+        result.append(env_kv)
+
+        env_kv = {"env": "DEVICE", "value": os.getenv("DEVICE", "cpu")}
+        result.append(env_kv)
+
+        env_kv = {"env": "STORAGE_IMPL", "value": os.getenv("STORAGE_IMPL", "MINIO")}
+        result.append(env_kv)
+
+        return result
