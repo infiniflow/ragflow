@@ -383,7 +383,7 @@ class MinerUParser:
             if binary:
                 # Handle both BytesIO and raw bytes
                 if isinstance(binary, BytesIO):
-                binary_content = binary.getvalue()
+                    binary_content = binary.getvalue()
                 else:
                     binary_content = binary
                     
