@@ -1,6 +1,6 @@
 import { Routes } from '@/routes';
 import authorizationUtil from '@/utils/authorization-util';
-import { Navigate, Outlet } from 'umi';
+import { Navigate, Outlet } from 'react-router';
 
 export default function AuthorizedAdminWrapper() {
   const isLogin = !!authorizationUtil.getAuthorization();

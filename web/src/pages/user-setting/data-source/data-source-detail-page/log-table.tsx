@@ -32,7 +32,7 @@ import { t } from 'i18next';
 import { pick } from 'lodash';
 import { Eye } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
-import { useNavigate } from 'umi';
+import { useNavigate } from 'react-router';
 import { useLogListDataSource } from '../hooks';
 
 const columns = ({

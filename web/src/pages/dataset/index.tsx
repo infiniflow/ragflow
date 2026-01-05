@@ -10,7 +10,7 @@ import {
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { useTranslation } from 'react-i18next';
-import { Outlet } from 'umi';
+import { Outlet } from 'react-router';
 import { SideBar } from './sidebar';
 
 export default function DatasetWrapper() {

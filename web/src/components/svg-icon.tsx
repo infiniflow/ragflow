@@ -4,26 +4,39 @@ import Icon, { UserOutlined } from '@ant-design/icons';
 import { IconComponentProps } from '@ant-design/icons/lib/components/Icon';
 import { Avatar } from 'antd';
 import { AvatarSize } from 'antd/es/avatar/AvatarContext';
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { IconFontFill } from './icon-font';
 import { useIsDarkTheme } from './theme-provider';
 
-const importAll = (requireContext: __WebpackModuleApi.RequireContext) => {
-  const list = requireContext.keys().map((key) => {
-    const name = key.replace(/\.\/(.*)\.\w+$/, '$1');
-    return { name, value: requireContext(key) };
-  });
-  return list;
-};
+// const importAll = (requireContext: __WebpackModuleApi.RequireContext) => {
+//   const list = requireContext.keys().map((key) => {
+//     const name = key.replace(/\.\/(.*)\.\w+$/, '$1');
+//     return { name, value: requireContext(key) };
+//   });
+//   return list;
+// };
 
-let routeList: { name: string; value: string }[] = [];
+// let routeList: { name: string; value: string }[] = [];
 
-try {
-  routeList = importAll(require.context('@/assets/svg', true, /\.svg$/));
-} catch (error) {
-  console.warn(error);
-  routeList = [];
-}
+// try {
+//   routeList = importAll(require.context('@/assets/svg', true, /\.svg$/));
+// } catch (error) {
+//   console.warn(error);
+//   routeList = [];
+// }
+
+const svgModules = import.meta.glob('@/assets/svg/**/*.svg', {
+  eager: true,
+  query: '?url',
+});
+
+const routeList: { name: string; value: string }[] = Object.entries(
+  svgModules,
+).map(([path, module]) => {
+  const name = path.replace(/^.*\/assets\/svg\//, '').replace(/\.[^/.]+$/, '');
+  // @ts-ignore
+  return { name, value: module.default || module };
+});
 
 interface IProps extends IconComponentProps {
   name: string;
@@ -32,23 +45,25 @@ interface IProps extends IconComponentProps {
   imgClass?: string;
 }
 
-const SvgIcon = ({ name, width, height, imgClass, ...restProps }: IProps) => {
-  const ListItem = routeList.find((item) => item.name === name);
-  return (
-    <Icon
-      component={() => (
-        <img
-          src={ListItem?.value}
-          alt=""
-          width={width}
-          height={height}
-          className={cn(imgClass, 'max-w-full')}
-        />
-      )}
-      {...(restProps as any)}
-    />
-  );
-};
+const SvgIcon = memo(
+  ({ name, width, height, imgClass, ...restProps }: IProps) => {
+    const ListItem = routeList.find((item) => item.name === name);
+    return (
+      <Icon
+        component={() => (
+          <img
+            src={ListItem?.value}
+            alt=""
+            width={width}
+            height={height}
+            className={cn(imgClass, 'max-w-full')}
+          />
+        )}
+        {...(restProps as any)}
+      />
+    );
+  },
+);
 
 export const LlmIcon = ({
   name,

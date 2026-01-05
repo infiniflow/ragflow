@@ -55,9 +55,12 @@ def by_deepdoc(filename, binary=None, from_page=0, to_page=100000, lang="Chinese
         callback=callback
     )
 
-    tables = vision_figure_parser_pdf_wrapper(tbls=tables,
-                                              callback=callback,
-                                              **kwargs)
+    tables = vision_figure_parser_pdf_wrapper(
+        tbls=tables,
+        sections=sections,
+        callback=callback,
+        **kwargs,
+    )
     return sections, tables, pdf_parser
 
 
