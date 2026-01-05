@@ -11,10 +11,11 @@
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
-#  limitations under the License.
+# limitations under the License.
 #
 
 import secrets
+import logging
 
 from flask import Blueprint, request
 from flask_login import current_user, login_required, logout_user
@@ -43,6 +44,7 @@ def login():
         password = request.json.get("password", "")
         return login_admin(email, password)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -55,6 +57,7 @@ def logout():
         logout_user()
         return success_response(True)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -64,6 +67,7 @@ def auth_admin():
     try:
         return success_response(None, "Admin is authorized", 0)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -75,6 +79,7 @@ def list_users():
         users = UserMgr.get_all_users()
         return success_response(users, "Get all users", 0)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -102,7 +107,8 @@ def create_user():
     except AdminException as e:
         return error_response(e.message, e.code)
     except Exception as e:
-        return error_response(str(e))
+        logging.exception(e)
+        return error_response("Internal Server Error", 500)
 
 
 @admin_bp.route('/users/<username>', methods=['DELETE'])
@@ -119,6 +125,7 @@ def delete_user(username):
     except AdminException as e:
         return error_response(e.message, e.code)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -138,6 +145,7 @@ def change_password(username):
     except AdminException as e:
         return error_response(e.message, e.code)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -155,6 +163,7 @@ def alter_user_activate_status(username):
     except AdminException as e:
         return error_response(e.message, e.code)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -171,6 +180,7 @@ def grant_admin(username):
     except AdminException as e:
         return error_response(e.message, e.code)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 @admin_bp.route('/users/<username>/admin', methods=['DELETE'])
@@ -186,6 +196,7 @@ def revoke_admin(username):
     except AdminException as e:
         return error_response(e.message, e.code)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 @admin_bp.route('/users/<username>', methods=['GET'])
@@ -199,6 +210,7 @@ def get_user_details(username):
     except AdminException as e:
         return error_response(e.message, e.code)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -213,6 +225,7 @@ def get_user_datasets(username):
     except AdminException as e:
         return error_response(e.message, e.code)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -227,6 +240,7 @@ def get_user_agents(username):
     except AdminException as e:
         return error_response(e.message, e.code)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -238,6 +252,7 @@ def get_services():
         services = ServiceMgr.get_all_services()
         return success_response(services, "Get all services", 0)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -249,6 +264,7 @@ def get_services_by_type(service_type_str):
         services = ServiceMgr.get_services_by_type(service_type_str)
         return success_response(services)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -260,6 +276,7 @@ def get_service(service_id):
         services = ServiceMgr.get_service_details(service_id)
         return success_response(services)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -271,6 +288,7 @@ def shutdown_service(service_id):
         services = ServiceMgr.shutdown_service(service_id)
         return success_response(services)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -282,6 +300,7 @@ def restart_service(service_id):
         services = ServiceMgr.restart_service(service_id)
         return success_response(services)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -298,6 +317,7 @@ def create_role():
         res = RoleMgr.create_role(role_name, description)
         return success_response(res)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -313,6 +333,7 @@ def update_role(role_name: str):
         res = RoleMgr.update_role_description(role_name, description)
         return success_response(res)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -324,6 +345,7 @@ def delete_role(role_name: str):
         res = RoleMgr.delete_role(role_name)
         return success_response(res)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -335,6 +357,7 @@ def list_roles():
         res = RoleMgr.list_roles()
         return success_response(res)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -346,6 +369,7 @@ def get_role_permission(role_name: str):
         res = RoleMgr.get_role_permission(role_name)
         return success_response(res)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -362,6 +386,7 @@ def grant_role_permission(role_name: str):
         res = RoleMgr.grant_role_permission(role_name, actions, resource)
         return success_response(res)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -378,6 +403,7 @@ def revoke_role_permission(role_name: str):
         res = RoleMgr.revoke_role_permission(role_name, actions, resource)
         return success_response(res)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -393,6 +419,7 @@ def update_user_role(user_name: str):
         res = RoleMgr.update_user_role(user_name, role_name)
         return success_response(res)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 
@@ -404,6 +431,7 @@ def get_user_permission(user_name: str):
         res = RoleMgr.get_user_permission(user_name)
         return success_response(res)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 @admin_bp.route('/variables', methods=['PUT'])
@@ -425,6 +453,7 @@ def set_variable():
     except AdminException as e:
         return error_response(str(e), 400)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 @admin_bp.route('/variables', methods=['GET'])
@@ -447,6 +476,7 @@ def get_variable():
     except AdminException as e:
         return error_response(str(e), 400)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
 
 @admin_bp.route('/configs', methods=['GET'])
@@ -481,4 +511,5 @@ def show_version():
         res = {"version": get_ragflow_version()}
         return success_response(res)
     except Exception as e:
+        logging.exception(e)
         return error_response("Internal Server Error", 500)
