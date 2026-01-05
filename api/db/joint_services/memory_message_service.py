@@ -16,7 +16,6 @@
 import logging
 from typing import List
 
-from api.db.services.task_service import TaskService
 from common import settings
 from common.time_utils import current_timestamp, timestamp_to_date, format_iso_8601_to_ymd_hms
 from common.constants import MemoryType, LLMType
@@ -24,6 +23,7 @@ from common.doc_store.doc_store_base import FusionExpr
 from common.misc_utils import get_uuid
 from api.db.db_utils import bulk_insert_into_db
 from api.db.db_models import Task
+from api.db.services.task_service import TaskService
 from api.db.services.memory_service import MemoryService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.llm_service import LLMBundle

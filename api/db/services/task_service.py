@@ -184,8 +184,8 @@ class TaskService(CommonService):
     def get_tasks_progress_by_doc_ids(cls, doc_ids: list[str]):
         """Retrieve all tasks associated with specific documents.
 
-        This method fetches all processing tasks for given document ids, ordered by page
-        number and creation time. It includes task progress and chunk information.
+        This method fetches all processing tasks for given document ids, ordered by
+        creation time. It includes task progress and chunk information.
 
         Args:
             doc_ids (str): The unique identifier of the document.
@@ -196,14 +196,16 @@ class TaskService(CommonService):
         """
         fields = [
             cls.model.id,
+            cls.model.doc_id,
             cls.model.from_page,
             cls.model.progress,
             cls.model.progress_msg,
             cls.model.digest,
             cls.model.chunk_ids,
+            cls.model.create_time
         ]
         tasks = (
-            cls.model.select(*fields).order_by(cls.model.from_page.asc(), cls.model.create_time.desc())
+            cls.model.select(*fields).order_by(cls.model.create_time.desc())
             .where(cls.model.doc_id.in_(doc_ids))
         )
         tasks = list(tasks.dicts())
