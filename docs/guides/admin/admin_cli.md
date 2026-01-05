@@ -118,7 +118,7 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 - [Example](#example-revoke-admin)
 
 `LIST VARS`
-- List all system configurations and settings.
+- List all system settings.
 - [Example](#example-list-vars)
 
 `SHOW VAR <var_name>`
@@ -128,6 +128,14 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 `SET VAR <var_name> <var_value>`
 - Set the value for a specified configuration item.
 - [Example](#example-set-var)
+
+`LIST CONFIGS`
+- List all system configurations.
+- [Example](#example-list-configs)
+
+`LIST ENVS`
+- List all system environments which can accessed by Admin service.
+- [Example](#example-list-environments)
 
 ### Meta-Commands
 
@@ -400,7 +408,7 @@ Revoke successfully!
 
 <span id="example-list-vars"></span>
 
-- List all system configurations and settings.
+- List all system settings.
 
 ```
 admin> list vars;
@@ -440,6 +448,43 @@ admin> show var mail.server;
 ```
 admin> set var mail.server 127.0.0.1;
 Set variable successfully
+```
+
+
+<span id="example-list-configs"></span>
+
+- List all system configurations.
+
+```
+admin> list configs;
++-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
+| extra                                                                                     | host      | id | name          | port  | service_type   |
++-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
+| {}                                                                                        | 0.0.0.0   | 0  | ragflow_0     | 9380  | ragflow_server |
+| {'meta_type': 'mysql', 'password': 'infini_rag_flow', 'username': 'root'}                 | localhost | 1  | mysql         | 5455  | meta_data      |
+| {'password': 'infini_rag_flow', 'store_type': 'minio', 'user': 'rag_flow'}                | localhost | 2  | minio         | 9000  | file_store     |
+| {'password': 'infini_rag_flow', 'retrieval_type': 'elasticsearch', 'username': 'elastic'} | localhost | 3  | elasticsearch | 1200  | retrieval      |
+| {'db_name': 'default_db', 'retrieval_type': 'infinity'}                                   | localhost | 4  | infinity      | 23817 | retrieval      |
+| {'database': 1, 'mq_type': 'redis', 'password': 'infini_rag_flow'}                        | localhost | 5  | redis         | 6379  | message_queue  |
+| {'message_queue_type': 'redis'}                                                           |           | 6  | task_executor | 0     | task_executor  |
++-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
+```
+
+<span id="example-list-environments"></span>
+
+- List all system environments which can accessed by Admin service.
+
+```
+admin> list envs;
++-------------------------+------------------+
+| env                     | value            |
++-------------------------+------------------+
+| DOC_ENGINE              | elasticsearch    |
+| DEFAULT_SUPERUSER_EMAIL | admin@ragflow.io |
+| DB_TYPE                 | mysql            |
+| DEVICE                  | cpu              |
+| STORAGE_IMPL            | MINIO            |
++-------------------------+------------------+
 ```
 
 
