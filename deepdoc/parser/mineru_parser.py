@@ -383,7 +383,7 @@ class MinerUParser:
             if binary:
                 # Handle both BytesIO and raw bytes
                 if isinstance(binary, BytesIO):
-                    binary_content = binary.getvalue()
+                binary_content = binary.getvalue()
                 else:
                     binary_content = binary
                     
@@ -394,7 +394,7 @@ class MinerUParser:
                     temp_file.close()
                     
                 file_path = temp_file.name
-                self.logger.info(f"[MinerU] Using binary PDF data")
+                self.logger.info("[MinerU] Using binary PDF data")
                 if callback:
                     callback(0.05, "[MinerU] Processing binary PDF data")
             else:
