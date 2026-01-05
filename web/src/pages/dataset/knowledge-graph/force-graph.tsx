@@ -1,7 +1,7 @@
 import { ElementDatum, Graph, IElementEvent } from '@antv/g6';
 import isEmpty from 'lodash/isEmpty';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { buildNodesAndCombos } from './util';
+import { buildNodesAndCombos, defaultComboLabel } from './util';
 
 import { useIsDarkTheme } from '@/components/theme-provider';
 import styles from './index.module.less';
@@ -27,7 +27,7 @@ const ForceGraph = ({ data, show }: IProps) => {
       const mi = buildNodesAndCombos(graphData.nodes);
       return { edges: graphData.edges, ...mi };
     }
-    return { nodes: [], edges: [] };
+    return { nodes: [], edges: [], combos: [] };
   }, [data]);
 
   const render = useCallback(() => {
@@ -111,6 +111,20 @@ const ForceGraph = ({ data, show }: IProps) => {
             lineDash: [10, 10],
             lineWidth: lineWeight > 8 ? 8 : lineWeight,
           };
+        },
+      },
+      combo: {
+        style: (e) => {
+          if (e.label === defaultComboLabel) {
+            return {
+              stroke: 'rgba(0,0,0,0)',
+              fill: 'rgba(0,0,0,0)',
+            };
+          } else {
+            return {
+              stroke: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+            };
+          }
         },
       },
     });

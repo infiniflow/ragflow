@@ -232,7 +232,7 @@ const Chunk = () => {
               <div className="h-[100px] flex flex-col justify-end pb-[5px]">
                 <div>
                   <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
-                  <div className="text-[14px] text-[#979AAB]">
+                  <div className="text-[14px] text-text-secondary">
                     {t('chunk.chunkResultTip')}
                   </div>
                 </div>
