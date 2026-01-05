@@ -274,11 +274,12 @@ export const useSendMessageWithSse = (
                 const val = JSON.parse(value?.data || '');
                 const d = val?.data;
                 if (typeof d !== 'boolean') {
-                  setAnswer({
+                  setAnswer((prev) => ({
                     ...d,
+                    answer: (prev.answer || '') + (d.answer || ''),
                     conversationId: body?.conversation_id,
                     chatBoxId: body.chatBoxId,
-                  });
+                  }));
                 }
               } catch (e) {
                 // Swallow parse errors silently
