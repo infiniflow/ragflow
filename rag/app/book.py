@@ -87,10 +87,15 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
         doc_parser = naive.Docx()
         # TODO: table of contents need to be removed
-        sections, tbls = doc_parser(
+        sections = doc_parser(
             filename, binary=binary, from_page=from_page, to_page=to_page)
+        
+        sections = [(text, image) for text, image, _ in sections]
+        tbls = [((None, html), "") for _, _, html in tbls]
+    
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
+
         tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, **kwargs)
         # tbls = [((None, lns), None) for lns in tbls]
         sections = [(item[0], item[1] if item[1] is not None else "") for item in sections if

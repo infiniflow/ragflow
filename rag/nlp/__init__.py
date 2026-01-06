@@ -1450,58 +1450,6 @@ def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？", 
 
     return cks, images
 
-# need to delete before pr
-def naive_merge_docx_(sections, chunk_token_num=128, delimiter="\n。；！？"):
-    if not sections:
-        return [], []
-
-    cks = []
-    images = []
-    tk_nums = []
-
-    def add_chunk(t, image, pos=""):
-        nonlocal cks, images, tk_nums
-        tnum = num_tokens_from_string(t)
-        if tnum < 8:
-            pos = ""
-
-        if not cks or tk_nums[-1] > chunk_token_num:
-            # new chunk
-            if pos and t.find(pos) < 0:
-                t += pos
-            cks.append(t)
-            images.append(image)
-            tk_nums.append(tnum)
-        else:
-            # add to last chunk
-            if pos and cks[-1].find(pos) < 0:
-                t += pos
-            cks[-1] += t
-            images[-1] = concat_img(images[-1], image)
-            tk_nums[-1] += tnum
-
-    custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
-    has_custom = bool(custom_delimiters)
-    if has_custom:
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
-        cks, images, tk_nums = [], [], []
-        pattern = r"(%s)" % custom_pattern
-        for sec, image in sections:
-            split_sec = re.split(pattern, sec)
-            for sub_sec in split_sec:
-                if not sub_sec or re.fullmatch(custom_pattern, sub_sec):
-                    continue
-                text_seg = "\n" + sub_sec
-                cks.append(text_seg)
-                images.append(image)
-                tk_nums.append(num_tokens_from_string(text_seg))
-        return cks, images
-
-    for sec, image in sections:
-        add_chunk("\n" + sec, image, "")
-
-    return cks, images
-
 
 def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
     pattern = re.escape(start_tag) + r"(.*?)" + re.escape(end_tag)

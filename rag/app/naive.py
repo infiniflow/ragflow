@@ -35,7 +35,7 @@ from api.db.services.llm_service import LLMBundle
 from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
 from deepdoc.parser import DocxParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, \
     PdfParser, TxtParser
-from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper, \
+from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, \
     vision_figure_parser_pdf_wrapper
 from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
@@ -789,7 +789,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
                 "chunk_token_num", 128)), parser_config.get(
                 "delimiter", "\n!?。；！？"), table_context_size, image_context_size)
         
-        vision_figure_parser_docx_wrapper(chunks=chunks, idx_lst=images, callback=callback, **kwargs)
+        vision_figure_parser_docx_wrapper_naive(chunks=chunks, idx_lst=images, callback=callback, **kwargs)
 
         callback(0.8, "Finish parsing.")
         st = timer()
