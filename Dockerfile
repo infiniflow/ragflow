@@ -202,6 +202,9 @@ COPY --from=builder --chown=ragflow:ragflow /ragflow/web/dist /ragflow/web/dist
 
 COPY --from=builder --chown=ragflow:ragflow /ragflow/VERSION /ragflow/VERSION
 
+RUN touch /run/nginx.pid && \
+    chown -R ragflow:ragflow /var/lib/nginx /var/log/nginx /etc/nginx /run/nginx.pid
+
 RUN chown -R ragflow:ragflow /ragflow
 USER ragflow
 
