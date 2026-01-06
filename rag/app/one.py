@@ -80,10 +80,11 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         sections = []
         tbls = []
         for text, image, html in main_sections:
-            sections.append((text, image))
-            tbls.append(((None, html), ""))
+            if text:
+                sections.append(str(text))
+            if html:
+                tbls.append(((None, html), ""))
         tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, **kwargs)
-        sections = [s for s, _ in sections if s]
         for (_, html), _ in tbls:
             sections.append(html)
         callback(0.8, "Finish parsing.")
