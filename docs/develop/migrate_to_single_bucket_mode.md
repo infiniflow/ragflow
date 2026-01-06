@@ -1,4 +1,3 @@
-
 ---
 sidebar_position: 20
 slug: /migrate_to_single_bucket_mode
