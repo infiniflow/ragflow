@@ -335,10 +335,8 @@ def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=N
                 continue
         elif ck.get("ck_type") == "image":
             d["doc_type_kwd"] = "image"
-            text = ck.get("context_above","") + text + ck.get("context_below","")
         elif ck.get("ck_type") == "table":
             d["doc_type_kwd"] = "table"
-            text = ck.get("context_above","") + text + ck.get("context_below","")
         tokenize(d, text, eng)
         res.append(d)
     return res
@@ -1233,224 +1231,6 @@ def concat_img(img1, img2):
     new_image.paste(img2, (0, height1))
     return new_image
 
-def naive_merge_docx(sections, chunk_token_num=128, delimiter="\n。；！？", table_context_size=0, image_context_size=0):
-# Input:
-#   sections: ordered sections extracted from the document,
-#             <text, image, table>
-#
-# Output:
-#   chunks list[dict]: normalized chunk units, each with:
-#       - content: string
-#       - image: img
-#       - ck_type: text/image/table
-    if not sections:
-        return []
-
-    cks = []
-    
-    # store index for context size
-    tables = []
-    images = []
-    cur_ck = 0
-    prev_text = -1
-    def add_chunks(text, image, table, pos=""):
-        nonlocal cks, tables, images, prev_text, cur_ck
-
-        tnum = 0 
-
-        if table:
-            text += table
-            ck_type = "table"
-            tables.append(cur_ck)
-        elif image:
-            ck_type = "image"
-            images.append(cur_ck)
-        else:
-            ck_type = "text"
-            tnum = num_tokens_from_string(text)
-            if tnum < 8:
-                pos = ""
-            
-            if not cks or prev_text < 0 or cks[prev_text].get("tk_nums", 0) > chunk_token_num:
-                # new chunk
-                if pos and text.find(pos) < 0:
-                    text += pos
-            else:
-                # add to prev chunk
-                if cks[prev_text]['text'].find(pos) < 0 and pos:
-                    text += pos
-                cks[prev_text]['text'] += text
-                cks[prev_text]['tk_nums'] += tnum
-                return
-            
-            prev_text = cur_ck
-
-
-        cks.append(
-            {
-                "text":text,
-                "image": image,
-                "ck_type": ck_type,
-                "tk_nums": tnum
-            }
-        )
-        cur_ck += 1
-
-
-    custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
-    has_custom = bool(custom_delimiters)
-    if has_custom:
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
-        pattern = r"(%s)" % custom_pattern
-        for text, image, table, in sections:
-            if table:
-                text += table
-                ck_type = "table"
-                if table_context_size > 0:
-                    tables.append(cur_ck)
-            elif image:
-                ck_type = "image"
-                if image_context_size > 0:
-                    images.append(cur_ck)
-            else:
-                split_sec = re.split(pattern, text)
-                for sub_sec in split_sec:
-                    if not sub_sec or re.fullmatch(custom_pattern, sub_sec):
-                        continue
-                    text_seg = "\n" + sub_sec
-
-                    cks.append(
-                        {
-                            "text":text_seg,
-                            "image": image,
-                            "ck_type": "text",
-                            "tk_nums": num_tokens_from_string(text_seg)
-                        }
-                    )
-                    cur_ck += 1
-                continue
-
-            cks.append(
-                {
-                    "text":text,
-                    "image":image,
-                    "ck_type":ck_type,
-                    "tk_nums":num_tokens_from_string(text)
-                }
-            )
-            cur_ck += 1
-        return cks
-
-
-    for text, image, table in sections:
-        if not text:
-            text = "\n"
-        else:
-            text = "\n" + text
-        add_chunks(text, image, table, "")
-
-
-    def add_contex(idx, context_size):
-        nonlocal cks
-
-        prev = idx - 1
-        after = idx + 1
-
-        # context budget
-        remain_above = context_size
-        remain_below = context_size
-
-        cks[idx]["context_above"] = ""
-        cks[idx]["context_below"] = ""
-
-        # Sentence splitter (capturing delimiters)
-        split_pat = r"([。!?？；！\n]|\. )"
-
-        def take_sentences_from_end(cnt, need_tokens):
-            """
-            Take complete sentences from the END of cnt until tokens >= need_tokens.
-            """
-            txts = re.split(split_pat, cnt, flags=re.DOTALL)
-            # rebuild sentences: txts[0]+txts[1], txts[2]+txts[3], ...
-            sents = []
-            for j in range(0, len(txts), 2):
-                sents.append(txts[j] + (txts[j + 1] if j + 1 < len(txts) else ""))
-
-            acc = ""
-            # take from end (nearest first)
-            for s in reversed(sents):
-                acc = s + acc
-                if num_tokens_from_string(acc) >= need_tokens:
-                    break
-            return acc
-
-        def take_sentences_from_start(cnt, need_tokens):
-            """
-            Take complete sentences from the START of cnt until tokens >= need_tokens.
-            """
-            txts = re.split(split_pat, cnt, flags=re.DOTALL)
-            acc = ""
-            for j in range(0, len(txts), 2):
-                acc += txts[j] + (txts[j + 1] if j + 1 < len(txts) else "")
-                if num_tokens_from_string(acc) >= need_tokens:
-                    break
-            return acc
-
-        # -------- context above --------
-        parts_above = []
-        while prev >= 0 and remain_above > 0:
-            if cks[prev]["ck_type"] == "text":
-                tk = cks[prev]["tk_nums"]
-
-                if tk >= remain_above:
-                    # Only now do sentence-level matching (take from end)
-                    piece = take_sentences_from_end(cks[prev]["text"], remain_above)
-                    parts_above.insert(0, piece)
-                    remain_above = 0
-                    break
-                else:
-                    # Take the whole chunk
-                    parts_above.insert(0, cks[prev]["text"])
-                    remain_above -= tk
-
-            prev -= 1
-
-        if parts_above:
-            cks[idx]["context_above"] = "".join(parts_above)
-
-        # -------- context below --------
-        parts_below = []
-        while after < len(cks) and remain_below > 0:
-            if cks[after]["ck_type"] == "text":
-                tk = cks[after]["tk_nums"]
-
-                if tk >= remain_below:
-                    # Only now do sentence-level matching (take from start)
-                    piece = take_sentences_from_start(cks[after]["text"], remain_below)
-                    parts_below.append(piece)
-                    remain_below = 0
-                    break
-                else:
-                    # Take the whole chunk
-                    parts_below.append(cks[after]["text"])
-                    remain_below -= tk
-
-            after += 1
-
-        if parts_below:
-            cks[idx]["context_below"] = "".join(parts_below)
-
-    if table_context_size > 0:
-        for i in tables:
-            add_contex(i, table_context_size)
-
-    if image_context_size > 0:
-        for i in images:
-            add_contex(i, image_context_size)
-
-    return cks, images
-
-
 def _build_cks(sections, delimiter):
     cks = []
     tables = []
@@ -1502,6 +1282,9 @@ def _build_cks(sections, delimiter):
 
 
 def _add_context(cks, idx, context_size):
+    if cks[idx]["ck_type"] not in ("image", "table"):
+        return
+
     prev = idx - 1
     after = idx + 1
     remain_above = context_size
@@ -1512,15 +1295,14 @@ def _add_context(cks, idx, context_size):
 
     split_pat = r"([。!?？；！\n]|\. )"
 
-    if cks[idx]["ck_type"] not in ("image", "table"):
-        return
+    picked_above = []
+    picked_below = []
 
     def take_sentences_from_end(cnt, need_tokens):
         txts = re.split(split_pat, cnt, flags=re.DOTALL)
         sents = []
         for j in range(0, len(txts), 2):
             sents.append(txts[j] + (txts[j + 1] if j + 1 < len(txts) else ""))
-
         acc = ""
         for s in reversed(sents):
             acc = s + acc
@@ -1543,15 +1325,16 @@ def _add_context(cks, idx, context_size):
         if cks[prev]["ck_type"] == "text":
             tk = cks[prev]["tk_nums"]
             if tk >= remain_above:
-                parts_above.insert(0, take_sentences_from_end(cks[prev]["text"], remain_above))
+                piece = take_sentences_from_end(cks[prev]["text"], remain_above)
+                parts_above.insert(0, piece)
+                picked_above.append((prev, "tail", remain_above, tk, piece[:80]))
                 remain_above = 0
                 break
             else:
                 parts_above.insert(0, cks[prev]["text"])
+                picked_above.append((prev, "full", remain_above, tk, (cks[prev]["text"] or "")[:80]))
                 remain_above -= tk
         prev -= 1
-    if parts_above:
-        cks[idx]["context_above"] = "".join(parts_above)
 
     # below
     parts_below = []
@@ -1559,15 +1342,19 @@ def _add_context(cks, idx, context_size):
         if cks[after]["ck_type"] == "text":
             tk = cks[after]["tk_nums"]
             if tk >= remain_below:
-                parts_below.append(take_sentences_from_start(cks[after]["text"], remain_below))
+                piece = take_sentences_from_start(cks[after]["text"], remain_below)
+                parts_below.append(piece)
+                picked_below.append((after, "head", remain_below, tk, piece[:80]))
                 remain_below = 0
                 break
             else:
                 parts_below.append(cks[after]["text"])
+                picked_below.append((after, "full", remain_below, tk, (cks[after]["text"] or "")[:80]))
                 remain_below -= tk
         after += 1
-    if parts_below:
-        cks[idx]["context_below"] = "".join(parts_below)
+
+    cks[idx]["context_above"] = "".join(parts_above) if parts_above else ""
+    cks[idx]["context_below"] = "".join(parts_below) if parts_below else ""
 
 
 def _merge_cks(cks, chunk_token_num):

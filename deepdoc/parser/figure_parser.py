@@ -138,9 +138,6 @@ def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kw
             context_above = ck.get("context_above", "")
             context_below = ck.get("context_below", "")
             if context_above or context_below:
-                print("Yes here we are")
-                print("context above", context_above)
-                print("context below: ", context_below)
                 prompt = vision_llm_figure_describe_prompt_with_context(
                     # context_above + caption if any
                     context_above=ck.get("context_above") + ck.get("text", ""),
