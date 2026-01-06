@@ -67,7 +67,7 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
     tar xzf /deps/uv-x86_64-unknown-linux-gnu.tar.gz \
     && cp uv-x86_64-unknown-linux-gnu/* /usr/local/bin/ \
     && rm -rf uv-x86_64-unknown-linux-gnu \
-    && uv python install 3.11
+    && uv python install 3.12
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 ENV PATH=/root/.local/bin:$PATH
