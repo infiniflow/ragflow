@@ -44,23 +44,23 @@ def total_token_count_from_response(resp):
     if resp is None:
         return 0
 
-    if hasattr(resp, "usage") and hasattr(resp.usage, "total_tokens"):
-        try:
+    try:
+        if hasattr(resp, "usage") and hasattr(resp.usage, "total_tokens"):
             return resp.usage.total_tokens
-        except Exception:
-            pass
+    except Exception:
+        pass
 
-    if hasattr(resp, "usage_metadata") and hasattr(resp.usage_metadata, "total_tokens"):
-        try:
+    try:
+        if hasattr(resp, "usage_metadata") and hasattr(resp.usage_metadata, "total_tokens"):
             return resp.usage_metadata.total_tokens
-        except Exception:
-            pass
+    except Exception:
+        pass
 
-    if hasattr(resp, "meta") and hasattr(resp.meta, "billed_units") and hasattr(resp.meta.billed_units, "input_tokens"):
-        try:
-            return resp.meta.billed_units.input_tokens 
-        except Exception:
-            pass
+    try:
+        if hasattr(resp, "meta") and hasattr(resp.meta, "billed_units") and hasattr(resp.meta.billed_units, "input_tokens"):
+            return resp.meta.billed_units.input_tokens
+    except Exception:
+        pass
 
     if isinstance(resp, dict) and 'usage' in resp and 'total_tokens' in resp['usage']:
         try:
@@ -85,4 +85,3 @@ def total_token_count_from_response(resp):
 def truncate(string: str, max_len: int) -> str:
     """Returns truncated text if the length of text exceed max_len."""
     return encoder.decode(encoder.encode(string)[:max_len])
-

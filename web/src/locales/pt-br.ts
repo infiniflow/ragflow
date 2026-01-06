@@ -201,6 +201,9 @@ export default {
       metaData: 'Metadados',
     },
     knowledgeConfiguration: {
+      imageTableContextWindow: 'Janela de contexto de imagem e tabela',
+      imageTableContextWindowTip:
+        'Captura N tokens de texto acima e abaixo da imagem e da tabela para fornecer um contexto de fundo mais rico.',
       titleDescription:
         'Atualize a configuração da sua base de conhecimento aqui, especialmente o método de fragmentação.',
       name: 'Nome da base de conhecimento',

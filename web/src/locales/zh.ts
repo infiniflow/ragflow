@@ -53,6 +53,7 @@ export default {
       noData: '暂无数据',
       bedrockCredentialsHint:
         '提示：Access Key / Secret Key 可留空，以启用 AWS IAM 自动验证。',
+      zendeskDescription: '连接 Zendesk，同步工单、文章及其他内容。',
       promptPlaceholder: '请输入或使用 / 快速插入变量。',
       selected: '已选择',
     },
@@ -93,6 +94,72 @@ export default {
       search: '搜索',
       welcome: '欢迎来到',
       dataset: '知识库',
+      memories: '记忆',
+    },
+    memories: {
+      llmTooltip: '分析对话内容，提取关键信息，并生成结构化的记忆摘要。',
+      embeddingModelTooltip:
+        '将文本转换为数值向量，用于语义相似度搜索和记忆检索。',
+      embeddingModelError: '记忆类型为必填项，且"原始"类型不可删除。',
+      memoryTypeTooltip: `原始: 用户与代理之间的原始对话内容（默认必需）。
+语义记忆: 关于用户和世界的通用知识和事实。
+情景记忆: 带时间戳的特定事件和经历记录。
+程序记忆: 学习的技能、习惯和自动化程序。`,
+      raw: '原始',
+      semantic: '语义',
+      episodic: '情景',
+      procedural: '程序',
+      editName: '编辑名称',
+      memory: '记忆',
+      createMemory: '创建记忆',
+      name: '名称',
+      memoryNamePlaceholder: '记忆名称',
+      memoryType: '记忆类型',
+      embeddingModel: '嵌入模型',
+      selectModel: '选择模型',
+      llm: '大语言模型',
+      delMemoryWarn: `删除后，此记忆中的所有消息都将被删除，代理将无法检索。`,
+    },
+    memory: {
+      messages: {
+        forgetMessageTip: '确定遗忘吗？',
+        messageDescription: '记忆提取使用高级设置中的提示词和温度值进行配置。',
+        copied: '已复制！',
+        content: '内容',
+        delMessageWarn: `遗忘后，代理将无法检索此消息。`,
+        forgetMessage: '遗忘消息',
+        sessionId: '会话ID',
+        agent: '智能体',
+        type: '类型',
+        validDate: '有效日期',
+        forgetAt: '遗忘于',
+        source: '来源',
+        enable: '启用',
+        action: '操作',
+      },
+      config: {
+        memorySizeTooltip: `记录每条消息的内容 + 其嵌入向量（≈ 内容 + 维度 × 8 字节）。
+例如：一条带有 1024 维嵌入的 1 KB 消息大约使用 9 KB。5 MB 的默认限制大约可容纳 500 条此类消息。`,
+        avatar: '头像',
+        description: '描述',
+        memorySize: '记忆大小',
+        advancedSettings: '高级设置',
+        permission: '权限',
+        onlyMe: '仅自己',
+        team: '团队',
+        storageType: '存储类型',
+        storageTypePlaceholder: '请选择存储类型',
+        forgetPolicy: '遗忘策略',
+        temperature: '温度',
+        systemPrompt: '系统提示词',
+        systemPromptPlaceholder: '请输入系统提示词',
+        userPrompt: '用户提示词',
+        userPromptPlaceholder: '请输入用户提示词',
+      },
+      sideBar: {
+        messages: '消息',
+        configuration: '配置',
+      },
     },
     knowledgeList: {
       welcome: '欢迎回来',
@@ -106,6 +173,47 @@ export default {
       parserRequired: '分块方法必填',
     },
     knowledgeDetails: {
+      metadata: {
+        toMetadataSettingTip: '在配置中设置自动元数据',
+        toMetadataSetting: '生成设置',
+        descriptionTip:
+          '提供描述或示例来指导大语言模型为此字段提取值。如果留空，将依赖字段名称。',
+        restrictTDefinedValuesTip:
+          '枚举模式：限制大语言模型提取的值只能匹配预设值。在下方定义值。',
+        valueExists: '值已存在。确认合并重复项并组合所有关联文件。',
+        fieldNameExists: '字段名已存在。确认合并重复项并组合所有关联文件。',
+        valueSingleExists: '值已存在。确认合并重复项。',
+        fieldSingleNameExists: '字段名已存在。确认合并重复项。',
+        fieldExists: '字段名已存在。',
+        fieldSetting: '字段设置',
+        changesAffectNewParses: '更改仅影响新的解析。',
+        editMetadataForDataset: '查看和编辑元数据 ',
+        restrictDefinedValues: '限制为已定义的值',
+        metadataGenerationSettings: '元数据生成设置',
+        manageMetadataForDataset: '管理此数据集的元数据',
+        manageMetadata: '管理元数据',
+        metadata: '元数据',
+        values: '值',
+        value: '值',
+        action: '操作',
+        field: '字段',
+        description: '描述',
+        fieldName: '字段名称',
+        editMetadata: '编辑元数据',
+        deleteWarn: '此 {{field}} 将从所有关联文件中移除',
+        deleteManageFieldAllWarn:
+          '此字段及其所有对应值将从所有关联的文件中删除。',
+        deleteManageValueAllWarn: '此值将从所有关联的文件中删除。',
+        deleteManageFieldSingleWarn: '此字段及其所有对应值将从此文件中删除。',
+        deleteManageValueSingleWarn: '此值将从此文件中删除。',
+        deleteSettingFieldWarn: `此字段将被删除；现有元数据不会受到影响。`,
+        deleteSettingValueWarn: `此值将被删除；现有元数据不会受到影响。`,
+      },
+      redoAll: '清除现有分块',
+      applyAutoMetadataSettings: '应用全局自动元数据设置',
+      parseFileTip: '您确定要解析吗？',
+      parseFile: '解析文件',
+      emptyMetadata: '无元数据',
       localUpload: '本地上传',
       fileSize: '文件大小',
       fileType: '文件类型',
@@ -234,9 +342,9 @@ export default {
       html4excel: '表格转HTML',
       html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dev/enable_excel2html。`,
       autoKeywords: '自动关键词提取',
-      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用“系统模型设置”中设置的默认聊天模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
+      autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
       autoQuestions: '自动问题提取',
-      autoQuestionsTip: `利用“系统模型设置”中设置的 chat model 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
+      autoQuestionsTip: `利用在“配置”中指定的索引模型 对知识库的每个文本块提取 N 个问题以提高其排名得分。请注意，开启后将消耗额外的 token。您可以在块列表中查看、编辑结果。如果自动问题提取发生错误，不会妨碍整个分块过程，只会将空结果添加到原始文本块。详情请见 https://ragflow.io/docs/dev/autokeyword_autoquestion。`,
       redo: '是否清空已有 {{chunkNum}}个 chunk？',
       setMetaData: '设置元数据',
       pleaseInputJson: '请输入JSON',
@@ -267,6 +375,11 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      settings: '设置',
+      imageTableContextWindow: '图像与表格上下文窗口',
+      imageTableContextWindowTip:
+        '抓取图像与表格上下方的 N 个 token，为该 chunk 提供更丰富的背景上下文。',
+      autoMetadata: '自动元数据',
       mineruOptions: 'MinerU 选项',
       mineruParseMethod: '解析方法',
       mineruParseMethodTip:
@@ -304,7 +417,7 @@ export default {
       fileFilter: '正则匹配表达式',
       setDefaultTip: '',
       setDefault: '设置默认',
-      eidtLinkDataPipeline: '编辑pipeline',
+      editLinkDataPipeline: '编辑pipeline',
       linkPipelineSetTip: '管理与此数据集的数据管道链接',
       default: '默认',
       dataPipeline: 'Ingestion pipeline',
@@ -317,7 +430,7 @@ export default {
       parseType: '解析方法',
       manualSetup: '选择pipeline',
       builtIn: '内置',
-      titleDescription: '在这里更新您的知识库详细信息，尤其是切片方法。',
+      titleDescription: '在这里更新您的记忆配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
       photoTip: '你可以上传4MB的文件',
@@ -443,10 +556,10 @@ export default {
 注意您需要指定的条目类型。</p>`,
       tag: `<p>使用“Tag”分块方法的知识库用作标签集.其他知识库可以把标签集当中的标签按照相似度匹配到自己对应的文本块中，对这些知识库的查询也将根据此标签集对自己进行标记。</p>
 <p>标签集<b>不会</b>直接参与 RAG 检索过程。</p>
-<p>标签集中的每个文本分块是都是相互独立的标签和标签描述的文本对。</p>
+<p>标签集中的每个文本分块都是相互独立的标签和标签描述的文本对。</p>
 
 <p>Tag 分块方法支持<b>XLSX</b>和<b>CSV/TXT</b>文件格式。</p>
-<p>如果文件为<b>XLSX</b>格式，则它应该包含两列无标题：一列用于标签描述，另一列用于标签，标签描述列位于标签列之前。支持多个工作表，只要列结构正确即可。</p>
+<p>如果文件为<b>XLSX</b>格式，则它应该包含无标题的两列：一列用于标签描述，另一列用于标签，标签描述列位于标签列之前。支持多个工作表，只要列结构正确即可。</p>
 <p>如果文件为 <b>CSV/TXT</b> 格式，则必须使用 UTF-8 编码并以 TAB 作为分隔符来分隔内容和标签。</p>
 <p>在标签列中，标签之间使用英文逗号分隔。</p>
 <i>不符合上述规则的文本行将被忽略。</i>
@@ -719,7 +832,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         '可选：指定空间键以限制同步到特定空间。留空则同步所有可访问的空间。多个空间请用逗号分隔（例如：DEV,DOCS,HR）',
       s3PrefixTip: `指定 S3 存储桶内的文件夹路径，用于读取文件。
 示例：general/v2/`,
-      addDataSourceModalTital: '创建你的 {{name}} 链接',
+      addDataSourceModalTitle: '创建你的 {{name}} 链接',
       deleteSourceModalTitle: '删除数据源链接',
       deleteSourceModalContent: `
       <p>您确定要删除此数据源链接吗？</p>`,
@@ -730,8 +843,12 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       log: '日志',
       confluenceDescription: '连接你的 Confluence 工作区以搜索文档内容。',
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
+      google_cloud_storageDescription:
+        '连接你的 Google Cloud Storage 存储桶以导入和同步文件。',
       discordDescription: ' 连接你的 Discord 服务器以访问和分析聊天数据。',
       notionDescription: ' 同步 Notion 页面与数据库，用于知识检索。',
+      oci_storageDescription:
+        '连接你的 Oracle Cloud Object Storage 存储桶以导入和同步文件。',
       google_driveDescription:
         '通过 OAuth 连接 Google Drive，并同步指定的文件夹或云端硬盘。',
       gmailDescription: '通过 OAuth 连接 Gmail，用于同步邮件。',
@@ -747,6 +864,24 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       gmailTokenTip:
         '请上传由 Google Console 生成的 OAuth JSON。如果仅包含 client credentials，请通过浏览器授权一次以获取长期有效的刷新 Token。',
       dropboxDescription: '连接 Dropbox，同步指定账号下的文件与文件夹。',
+      boxDescription: '连接你的 Box 云盘以同步文件和文件夹。',
+      bitbucketDescription: '连接 Bitbucket，同步 PR 内容。',
+      bitbucketTopWorkspaceTip:
+        '要索引的 Bitbucket 工作区（例如：https://bitbucket.org/atlassian/workspace 中的 "atlassian"）',
+      bitbucketWorkspaceTip: '该连接器将索引工作区下的所有仓库。',
+      bitbucketProjectsTip: '用英文逗号分隔的项目 key，例如：PROJ1,PROJ2',
+      bitbucketRepositorySlugsTip:
+        '用英文逗号分隔的仓库 slug，例如：repo-one,repo-two',
+      connectorNameTip: '为连接器命名',
+      githubDescription:
+        '连接 GitHub，可同步 Pull Request 与 Issue 内容用于检索。',
+      airtableDescription: '连接 Airtable，同步指定工作区下指定表格中的文件。',
+      gitlabDescription:
+        '连接 GitLab，同步仓库、Issue、合并请求（MR）及相关文档内容。',
+      asanaDescription: '连接 Asana，同步工作区中的文件。',
+      imapDescription:
+        '连接你的 IMAP 邮箱，同步指定mailboxes中的邮件，用于知识检索与分析',
+      r2Description: '连接你的 Cloudflare R2 存储桶以导入和同步文件。',
       dropboxAccessTokenTip:
         '请在 Dropbox App Console 生成 Access Token，并勾选 files.metadata.read、files.content.read、sharing.read 等必要权限。',
       jiraDescription: '接入 Jira 工作区，持续同步Issues、评论与附件。',
@@ -876,6 +1011,15 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       bedrockAKMessage: '请输入 ACCESS KEY',
       addBedrockSK: 'SECRET KEY',
       bedrockSKMessage: '请输入 SECRET KEY',
+      awsAuthModeAccessKeySecret: 'Access Key 和 Secret',
+      awsAuthModeIamRole: 'IAM Role',
+      awsAuthModeAssumeRole: 'Assume Role',
+      awsAccessKeyId: 'AWS Access Key ID',
+      awsSecretAccessKey: 'AWS Secret Access Key',
+      awsRoleArn: 'AWS Role ARN',
+      awsRoleArnMessage: '请输入 AWS Role ARN',
+      awsAssumeRoleTip:
+        '选择此模式后，EC2 实例将使用其已有的 IAM Role 访问 AWS 服务，无需额外的凭证。',
       bedrockRegion: 'AWS Region',
       bedrockRegionMessage: '请选择！',
       'us-east-1': '美国东部 (弗吉尼亚北部)',
@@ -950,6 +1094,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       mcp: 'MCP',
       mineru: {
         modelNameRequired: '模型名称为必填项',
+        apiServerRequired: 'MinerU API服务器配置为必填项',
+        serverUrlBackendLimit: '仅在backend 为vlm-http-client 时可填写',
         apiserver: 'MinerU API服务器配置',
         outputDir: 'MinerU输出目录路径',
         backend: 'MinerU处理后端类型',
@@ -961,6 +1107,9 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
           vlmTransformers: '基于Transformers的视觉语言模型',
           vlmVllmEngine: '基于vLLM引擎的视觉语言模型',
           vlmHttpClient: '通过HTTP客户端连接的视觉语言模型',
+          vlmMlxEngine: '基于MLX引擎的视觉语言模型',
+          vlmVllmAsyncEngine: '基于vLLM异步引擎的视觉语言模型（实验性）',
+          vlmLmdeployEngine: '基于LMDeploy引擎的视觉语言模型（实验性）',
         },
       },
     },
@@ -1080,14 +1229,14 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       search: '搜索',
       communication: '通信',
       developer: '开发者',
-      typeCommandOrsearch: '输入命令或或搜索...',
+      typeCommandORsearch: '输入命令或或搜索...',
       builtIn: '内置',
       goto: '异常分支',
       comment: '默认值',
       ExceptionDefaultValue: '异常处理默认值',
       exceptionMethod: '异常处理方法',
       maxRounds: '最大反思轮数',
-      delayEfterError: '错误后延迟',
+      delayAfterError: '错误后延迟',
       maxRetries: '最大重试轮数',
       advancedSettings: '高级设置',
       addTools: '添加工具',
@@ -1124,7 +1273,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       dialog: '对话',
       flow: '工作流',
       noMoreData: '没有更多数据了',
-      historyversion: '历史版本',
+      historyVersion: '历史版本',
       version: {
         details: '版本详情',
         download: '下载',
@@ -1403,6 +1552,8 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
         endWith: '结束是',
         empty: '为空',
         notEmpty: '不为空',
+        is: '是',
+        isNot: '不是',
       },
       switchLogicOperatorOptions: {
         and: '与',
@@ -1714,6 +1865,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       keywords: '关键词',
       questions: '问题',
       metadata: '元数据',
+      toc: '目录',
       fieldName: '结果目的地',
       prompts: {
         system: {
@@ -1813,6 +1965,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         schema: '模式',
         response: '响应',
         executionMode: '执行模式',
+        executionModeTip:
+          'Accepted Response：请求校验通过后立即返回接收成功响应，工作流在后台异步执行；Final Response：系统在工作流执行完成后返回最终处理结果',
         authMethods: '认证方法',
         authType: '认证类型',
         limit: '请求限制',
@@ -1838,7 +1992,12 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         queryParameters: '查询参数',
         headerParameters: '请求头参数',
         requestBodyParameters: '请求体参数',
+        overview: '概述',
+        logs: '日志',
+        agentStatus: '智能体状态：',
       },
+      saveToMemory: '保存到Memory',
+      retrievalFrom: '检索来源',
     },
     footer: {
       profile: 'All rights reserved @ React',

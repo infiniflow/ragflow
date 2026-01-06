@@ -18,9 +18,12 @@ import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-reques
 import { IModalProps } from '@/interfaces/common';
 import { IParserConfig } from '@/interfaces/database/document';
 import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
+import { MetadataType } from '@/pages/dataset/components/metedata/hooks/use-manage-modal';
 import {
+  AutoMetadata,
   ChunkMethodItem,
   EnableTocToggle,
+  ImageContextWindow,
   ParseTypeItem,
 } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -54,11 +57,10 @@ import {
 
 const FormId = 'ChunkMethodDialogForm';
 
-interface IProps
-  extends IModalProps<{
-    parserId: string;
-    parserConfig: IChangeParserConfigRequestBody;
-  }> {
+interface IProps extends IModalProps<{
+  parserId: string;
+  parserConfig: IChangeParserConfigRequestBody;
+}> {
   loading: boolean;
   parserId: string;
   pipelineId?: string;
@@ -85,6 +87,7 @@ export function ChunkMethodDialog({
   visible,
   parserConfig,
   loading,
+  documentId,
 }: IProps) {
   const { t } = useTranslation();
 
@@ -119,6 +122,7 @@ export function ChunkMethodDialog({
         auto_questions: z.coerce.number().optional(),
         html4excel: z.boolean().optional(),
         toc_extraction: z.boolean().optional(),
+        image_table_context_window: z.coerce.number().optional(),
         mineru_parse_method: z.enum(['auto', 'txt', 'ocr']).optional(),
         mineru_formula_enable: z.boolean().optional(),
         mineru_table_enable: z.boolean().optional(),
@@ -140,6 +144,18 @@ export function ChunkMethodDialog({
         pages: z
           .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
           .optional(),
+        metadata: z
+          .array(
+            z
+              .object({
+                key: z.string().optional(),
+                description: z.string().optional(),
+                enum: z.array(z.string().optional()).optional(),
+              })
+              .optional(),
+          )
+          .optional(),
+        enable_metadata: z.boolean().optional(),
       }),
     })
     .superRefine((data, ctx) => {
@@ -203,15 +219,22 @@ export function ChunkMethodDialog({
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
     console.log('🚀 ~ onSubmit ~ data:', data);
+    const parserConfig = data.parser_config;
+    const imageTableContextWindow = Number(
+      parserConfig?.image_table_context_window || 0,
+    );
     const nextData = {
       ...data,
       parser_config: {
-        ...data.parser_config,
+        ...parserConfig,
+        image_table_context_window: imageTableContextWindow,
+        image_context_size: imageTableContextWindow,
+        table_context_size: imageTableContextWindow,
         // Unset children delimiter if this option is not enabled
-        children_delimiter: data.parser_config.enable_children
-          ? data.parser_config.children_delimiter
+        children_delimiter: parserConfig.enable_children
+          ? parserConfig.children_delimiter
           : '',
-        pages: data.parser_config?.pages?.map((x: any) => [x.from, x.to]) ?? [],
+        pages: parserConfig?.pages?.map((x: any) => [x.from, x.to]) ?? [],
       },
     };
     console.log('🚀 ~ onSubmit ~ nextData:', nextData);
@@ -232,6 +255,10 @@ export function ChunkMethodDialog({
         parser_config: fillDefaultParserValue({
           pages: pages.length > 0 ? pages : [{ from: 1, to: 1024 }],
           ...omit(parserConfig, 'pages'),
+          image_table_context_window:
+            parserConfig?.image_table_context_window ??
+            parserConfig?.image_context_size ??
+            parserConfig?.table_context_size,
           // graphrag: {
           //   use_graphrag: get(
           //     parserConfig,
@@ -364,10 +391,17 @@ export function ChunkMethodDialog({
                   className="space-y-3"
                 >
                   {selectedTag === DocumentParserType.Naive && (
-                    <EnableTocToggle />
+                    <>
+                      <EnableTocToggle />
+                      <ImageContextWindow />
+                    </>
                   )}
                   {showAutoKeywords(selectedTag) && (
                     <>
+                      <AutoMetadata
+                        type={MetadataType.SingleFileSetting}
+                        otherData={{ documentId }}
+                      />
                       <AutoKeywordsFormField></AutoKeywordsFormField>
                       <AutoQuestionsFormField></AutoQuestionsFormField>
                     </>

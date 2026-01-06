@@ -1,4 +1,3 @@
-import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import {
   IMessage,
@@ -31,17 +30,17 @@ import {
   removePDFDownloadInfo,
 } from '../pdf-download-button';
 import { RAGFlowAvatar } from '../ragflow-avatar';
+import SvgIcon from '../svg-icon';
 import { useTheme } from '../theme-provider';
 import { Button } from '../ui/button';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
-import styles from './index.less';
+import styles from './index.module.less';
 import { ReferenceDocumentList } from './reference-document-list';
+import { ReferenceImageList } from './reference-image-list';
 import { UploadedMessageFiles } from './uploaded-message-files';
 
 interface IProps
-  extends Partial<IRemoveMessageById>,
-    IRegenerateMessage,
-    PropsWithChildren {
+  extends Partial<IRemoveMessageById>, IRegenerateMessage, PropsWithChildren {
   item: IMessage;
   conversationId?: string;
   currentEventListWithoutMessageById?: (messageId: string) => INodeEvent[];
@@ -134,6 +133,51 @@ function MessageItem({
     },
     [currentEventListWithoutMessageById, loading],
   );
+
+  const renderContent = useCallback(() => {
+    /* Show message content if there's any text besides the download */
+
+    if (pdfDownloadInfo) {
+      return null;
+    }
+
+    return (
+      <div
+        className={cn({
+          [theme === 'dark' ? styles.messageTextDark : styles.messageText]:
+            isAssistant,
+          [styles.messageUserText]: !isAssistant,
+          'bg-bg-card': !isAssistant,
+        })}
+      >
+        {item.data ? (
+          children
+        ) : sendLoading && isEmpty(messageContent) ? (
+          <>{!isShare && 'running...'}</>
+        ) : (
+          <MarkdownContent
+            loading={loading}
+            content={messageContent}
+            reference={reference}
+            clickDocumentButton={clickDocumentButton}
+          ></MarkdownContent>
+        )}
+      </div>
+    );
+  }, [
+    children,
+    clickDocumentButton,
+    isAssistant,
+    isShare,
+    item.data,
+    loading,
+    messageContent,
+    pdfDownloadInfo,
+    reference,
+    sendLoading,
+    theme,
+  ]);
+
   return (
     <div
       className={classNames(styles.messageItem, {
@@ -162,7 +206,11 @@ function MessageItem({
                 isPerson
               />
             ) : (
-              <AssistantIcon />
+              <SvgIcon
+                name={'assistant'}
+                width={'100%'}
+                className={cn('size-10 fill-current')}
+              ></SvgIcon>
             ))}
           <section className="flex-col gap-2 flex-1">
             <div className="flex justify-between items-center">
@@ -239,6 +287,7 @@ function MessageItem({
                   />
                 </div>
               )}
+
             {/* Show PDF download button if download info is present */}
             {pdfDownloadInfo && (
               <PDFDownloadButton
@@ -247,31 +296,15 @@ function MessageItem({
               />
             )}
 
-            {/* Show message content if there's any text besides the download */}
-            {messageContent && (
-              <div
-                className={cn({
-                  [theme === 'dark'
-                    ? styles.messageTextDark
-                    : styles.messageText]: isAssistant,
-                  [styles.messageUserText]: !isAssistant,
-                  'bg-bg-card': !isAssistant,
-                })}
-              >
-                {item.data ? (
-                  children
-                ) : sendLoading && isEmpty(messageContent) ? (
-                  <>{!isShare && 'running...'}</>
-                ) : (
-                  <MarkdownContent
-                    loading={loading}
-                    content={messageContent}
-                    reference={reference}
-                    clickDocumentButton={clickDocumentButton}
-                  ></MarkdownContent>
-                )}
-              </div>
+            {renderContent()}
+
+            {isAssistant && (
+              <ReferenceImageList
+                referenceChunks={reference?.chunks}
+                messageContent={messageContent}
+              ></ReferenceImageList>
             )}
+
             {isAssistant && referenceDocuments.length > 0 && (
               <ReferenceDocumentList
                 list={referenceDocuments}

@@ -42,7 +42,7 @@ import {
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import styles from './index.less';
+import styles from './index.module.less';
 
 const Chunk = () => {
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
@@ -55,6 +55,7 @@ const Chunk = () => {
     handleInputChange,
     available,
     handleSetAvailable,
+    dataUpdatedAt,
   } = useFetchNextChunkList();
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
   const isPdf = documentInfo?.type === 'pdf';
@@ -171,6 +172,7 @@ const Chunk = () => {
       case 'docx':
       case 'txt':
       case 'md':
+      case 'mdx':
       case 'pdf':
         return documentInfo?.type;
     }
@@ -230,7 +232,7 @@ const Chunk = () => {
               <div className="h-[100px] flex flex-col justify-end pb-[5px]">
                 <div>
                   <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
-                  <div className="text-[14px] text-[#979AAB]">
+                  <div className="text-[14px] text-text-secondary">
                     {t('chunk.chunkResultTip')}
                   </div>
                 </div>
@@ -277,6 +279,7 @@ const Chunk = () => {
                         clickChunkCard={handleChunkCardClick}
                         selected={item.chunk_id === selectedChunkId}
                         textMode={textMode}
+                        t={dataUpdatedAt}
                       ></ChunkCard>
                     ))}
                   </div>

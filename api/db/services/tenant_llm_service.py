@@ -97,7 +97,7 @@ class TenantLLMService(CommonService):
         if llm_type == LLMType.EMBEDDING.value:
             mdlnm = tenant.embd_id if not llm_name else llm_name
         elif llm_type == LLMType.SPEECH2TEXT.value:
-            mdlnm = tenant.asr_id
+            mdlnm = tenant.asr_id if not llm_name else llm_name
         elif llm_type == LLMType.IMAGE2TEXT.value:
             mdlnm = tenant.img2txt_id if not llm_name else llm_name
         elif llm_type == LLMType.CHAT.value:

@@ -39,6 +39,9 @@ from rag.utils.oss_conn import RAGFlowOSS
 
 from rag.nlp import search
 
+import memory.utils.es_conn as memory_es_conn
+import memory.utils.infinity_conn as memory_infinity_conn
+
 LLM = None
 LLM_FACTORY = None
 LLM_BASE_URL = None
@@ -79,6 +82,7 @@ DOC_ENGINE_INFINITY = (DOC_ENGINE.lower() == "infinity")
 
 
 docStoreConn = None
+msgStoreConn = None
 
 retriever = None
 kg_retriever = None
@@ -166,7 +170,7 @@ def init_settings():
     global DATABASE_TYPE, DATABASE
     DATABASE_TYPE = os.getenv("DB_TYPE", "mysql")
     DATABASE = decrypt_database_config(name=DATABASE_TYPE)
-
+    
     global ALLOWED_LLM_FACTORIES, LLM_FACTORY, LLM_BASE_URL
     llm_settings = get_base_config("user_default_llm", {}) or {}
     llm_default_models = llm_settings.get("default_models", {}) or {}
@@ -256,6 +260,15 @@ def init_settings():
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
+    global msgStoreConn
+    # use the same engine for message store
+    if DOC_ENGINE == "elasticsearch":
+        ES = get_base_config("es", {})
+        msgStoreConn = memory_es_conn.ESConnection()
+    elif DOC_ENGINE == "infinity":
+        INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
+        msgStoreConn = memory_infinity_conn.InfinityConnection()
+
     global AZURE, S3, MINIO, OSS, GCS
     if STORAGE_IMPL_TYPE in ['AZURE_SPN', 'AZURE_SAS']:
         AZURE = get_base_config("azure", {})
@@ -320,6 +333,9 @@ def init_settings():
     DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
     DOC_BULK_SIZE = int(os.environ.get("DOC_BULK_SIZE", 4))
     EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", 16))
+
+    os.environ["DOTNET_SYSTEM_GLOBALIZATION_INVARIANT"] = "1"
+
 
 def check_and_install_torch():
     global PARALLEL_DEVICES

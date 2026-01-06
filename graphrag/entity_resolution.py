@@ -132,8 +132,8 @@ class EntityResolution(Extractor):
                                 f"{remain_candidates_to_resolve} remain."
                         )
 
-                except Exception as e:
-                    logging.error(f"Error resolving candidate batch: {e}")
+                except Exception as exception:
+                    logging.error(f"Error resolving candidate batch: {exception}")
 
 
         tasks = []
@@ -251,7 +251,7 @@ class EntityResolution(Extractor):
         ans_list = []
         records = [r.strip() for r in results.split(record_delimiter)]
         for record in records:
-            pattern_int = f"{re.escape(entity_index_delimiter)}(\d+){re.escape(entity_index_delimiter)}"
+            pattern_int = fr"{re.escape(entity_index_delimiter)}(\d+){re.escape(entity_index_delimiter)}"
             match_int = re.search(pattern_int, record)
             res_int = int(str(match_int.group(1) if match_int else '0'))
             if res_int > records_length:

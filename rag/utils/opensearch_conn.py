@@ -26,7 +26,7 @@ from opensearchpy import UpdateByQuery, Q, Search, Index
 from opensearchpy import ConnectionTimeout
 from common.decorator import singleton
 from common.file_utils import get_project_base_directory
-from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
+from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr, MatchTextExpr, MatchDenseExpr, \
     FusionExpr
 from rag.nlp import is_english, rag_tokenizer
 from common.constants import PAGERANK_FLD, TAG_FLD
@@ -79,7 +79,7 @@ class OSConnection(DocStoreConnection):
     Database operations
     """
 
-    def dbType(self) -> str:
+    def db_type(self) -> str:
         return "opensearch"
 
     def health(self) -> dict:
@@ -91,8 +91,8 @@ class OSConnection(DocStoreConnection):
     Table operations
     """
 
-    def createIdx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
-        if self.indexExist(indexName, knowledgebaseId):
+    def create_idx(self, indexName: str, knowledgebaseId: str, vectorSize: int):
+        if self.index_exist(indexName, knowledgebaseId):
             return True
         try:
             from opensearchpy.client import IndicesClient
@@ -101,7 +101,7 @@ class OSConnection(DocStoreConnection):
         except Exception:
             logger.exception("OSConnection.createIndex error %s" % (indexName))
 
-    def deleteIdx(self, indexName: str, knowledgebaseId: str):
+    def delete_idx(self, indexName: str, knowledgebaseId: str):
         if len(knowledgebaseId) > 0:
             # The index need to be alive after any kb deletion since all kb under this tenant are in one index.
             return
@@ -112,7 +112,7 @@ class OSConnection(DocStoreConnection):
         except Exception:
             logger.exception("OSConnection.deleteIdx error %s" % (indexName))
 
-    def indexExist(self, indexName: str, knowledgebaseId: str = None) -> bool:
+    def index_exist(self, indexName: str, knowledgebaseId: str = None) -> bool:
         s = Index(indexName, self.os)
         for i in range(ATTEMPT_TIME):
             try:
@@ -190,7 +190,7 @@ class OSConnection(DocStoreConnection):
                                    minimum_should_match=minimum_should_match,
                                    boost=1))
                 bqry.boost = 1.0 - vector_similarity_weight
-                
+
             # Elasticsearch has the encapsulation of KNN_search in python sdk
             # while the Python SDK for OpenSearch does not provide encapsulation for KNN_search,
             # the following codes implement KNN_search in OpenSearch using DSL
@@ -217,7 +217,7 @@ class OSConnection(DocStoreConnection):
         if bqry:
             s = s.query(bqry)
         for field in highlightFields:
-            s = s.highlight(field,force_source=True,no_match_size=30,require_field_match=False)
+            s = s.highlight(field, force_source=True, no_match_size=30, require_field_match=False)
 
         if orderBy:
             orders = list()
@@ -240,10 +240,10 @@ class OSConnection(DocStoreConnection):
             s = s[offset:offset + limit]
         q = s.to_dict()
         logger.debug(f"OSConnection.search {str(indexNames)} query: " + json.dumps(q))
-        
+
         if use_knn:
             del q["query"]
-            q["query"] = {"knn" : knn_query}
+            q["query"] = {"knn": knn_query}
 
         for i in range(ATTEMPT_TIME):
             try:
@@ -329,7 +329,7 @@ class OSConnection(DocStoreConnection):
             chunkId = condition["id"]
             for i in range(ATTEMPT_TIME):
                 try:
-                    self.os.update(index=indexName, id=chunkId, body={"doc":doc})
+                    self.os.update(index=indexName, id=chunkId, body={"doc": doc})
                     return True
                 except Exception as e:
                     logger.exception(
@@ -436,7 +436,7 @@ class OSConnection(DocStoreConnection):
         logger.debug("OSConnection.delete query: " + json.dumps(qry.to_dict()))
         for _ in range(ATTEMPT_TIME):
             try:
-                #print(Search().query(qry).to_dict(), flush=True)
+                # print(Search().query(qry).to_dict(), flush=True)
                 res = self.os.delete_by_query(
                     index=indexName,
                     body=Search().query(qry).to_dict(),
@@ -460,7 +460,7 @@ class OSConnection(DocStoreConnection):
             return res["hits"]["total"]["value"]
         return res["hits"]["total"]
 
-    def get_chunk_ids(self, res):
+    def get_doc_ids(self, res):
         return [d["_id"] for d in res["hits"]["hits"]]
 
     def __getSource(self, res):

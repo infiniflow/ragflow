@@ -216,12 +216,6 @@ const Generate: React.FC<GenerateProps> = (props) => {
                 ? graphRunData
                 : raptorRunData
             ) as ITraceInfo;
-            console.log(
-              name,
-              'data',
-              data,
-              !data || (!data.progress && data.progress !== 0),
-            );
             return (
               <div key={name}>
                 <MenuItem

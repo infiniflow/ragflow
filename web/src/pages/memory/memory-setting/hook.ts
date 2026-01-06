@@ -15,9 +15,9 @@ export const useUpdateMemoryConfig = () => {
         try {
           const params = omit(data, [
             'id',
-            'memory_type',
-            'embd_id',
-            'storage_type',
+            // 'memory_type',
+            // 'embd_id',
+            // 'storage_type',
           ]);
           res = await updateMemory({
             // ...memoryDataTemp,

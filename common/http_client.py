@@ -16,7 +16,7 @@ import logging
 import os
 import time
 from typing import Any, Dict, Optional
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse
 
 from common import settings
 import httpx
@@ -58,21 +58,34 @@ def _get_delay(backoff_factor: float, attempt: int) -> float:
 _SENSITIVE_QUERY_KEYS = {"client_secret", "secret", "code", "access_token", "refresh_token", "password", "token", "app_secret"}
 
 def _redact_sensitive_url_params(url: str) -> str:
+    """
+    Return a version of the URL that is safe to log.
+
+    We intentionally drop query parameters and userinfo to avoid leaking
+    credentials or tokens via logs. Only scheme, host, port and path
+    are preserved.
+    """
     try:
         parsed = urlparse(url)
-        if not parsed.query:
-            return url
-        clean_query = []
-        for k, v in parse_qsl(parsed.query, keep_blank_values=True):
-            if k.lower() in _SENSITIVE_QUERY_KEYS:
-                clean_query.append((k, "***REDACTED***"))
-            else:
-                clean_query.append((k, v))
-        new_query = urlencode(clean_query, doseq=True)
-        redacted_url = urlunparse(parsed._replace(query=new_query))
-        return redacted_url
+        # Remove any potential userinfo (username:password@)
+        netloc = parsed.hostname or ""
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        # Reconstruct URL without query, params, fragment, or userinfo.
+        safe_url = urlunparse(
+            (
+                parsed.scheme,
+                netloc,
+                parsed.path,
+                "",  # params
+                "",  # query
+                "",  # fragment
+            )
+        )
+        return safe_url
     except Exception:
-        return url
+        # If parsing fails, fall back to omitting the URL entirely.
+        return "<redacted-url>"
 
 def _is_sensitive_url(url: str) -> bool:
     """Return True if URL is one of the configured OAuth endpoints."""
@@ -153,14 +166,20 @@ async def async_request(
                 if attempt >= retries:
                     if not _is_sensitive_url(url):
                         log_url = _redact_sensitive_url_params(url)
-                        logger.warning(f"async_request exhausted retries for {method} {log_url}")
+                        logger.warning(f"async_request exhausted retries for {method}")
                     raise
                 delay = _get_delay(backoff_factor, attempt)
                 if not _is_sensitive_url(url):
                     log_url = _redact_sensitive_url_params(url)
                     logger.warning(
-                        f"async_request attempt {attempt + 1}/{retries + 1} failed for {method} {log_url}; retrying in {delay:.2f}s"
+                        f"async_request attempt {attempt + 1}/{retries + 1} failed for {method}; retrying in {delay:.2f}s"
                     )
+                    raise
+                delay = _get_delay(backoff_factor, attempt)
+                # Avoid including the (potentially sensitive) URL in retry logs.
+                logger.warning(
+                    f"async_request attempt {attempt + 1}/{retries + 1} failed for {method}; retrying in {delay:.2f}s"
+                )
                 await asyncio.sleep(delay)
         raise last_exc  # pragma: no cover
 

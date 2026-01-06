@@ -22,6 +22,7 @@ export interface IChunkListResult {
   setPagination?: (pagination: { page: number; pageSize: number }) => void;
   available: number | undefined;
   handleSetAvailable: (available: number | undefined) => void;
+  dataUpdatedAt?: number; // Timestamp when data was last updated - useful for cache busting
 }
 
 export const useSelectChunkList = () => {
@@ -118,7 +119,11 @@ export const useFetchNextChunkList = (
   const [available, setAvailable] = useState<number | undefined>();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
-  const { data, isFetching: loading } = useQuery({
+  const {
+    data,
+    isFetching: loading,
+    dataUpdatedAt,
+  } = useQuery({
     queryKey: [
       'fetchChunkList',
       documentId,
@@ -183,6 +188,7 @@ export const useFetchNextChunkList = (
     handleInputChange: onInputChange,
     available,
     handleSetAvailable,
+    dataUpdatedAt, // Timestamp when data was last updated - useful for cache busting
   };
 };
 

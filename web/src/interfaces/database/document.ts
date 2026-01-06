@@ -43,6 +43,21 @@ export interface IParserConfig {
   task_page_size?: number;
   raptor?: Raptor;
   graphrag?: GraphRag;
+  image_context_window?: number;
+  image_table_context_window?: number;
+  image_context_size?: number;
+  table_context_size?: number;
+  mineru_parse_method?: 'auto' | 'txt' | 'ocr';
+  mineru_formula_enable?: boolean;
+  mineru_table_enable?: boolean;
+  mineru_lang?: string;
+  entity_types?: string[];
+  metadata?: Array<{
+    key?: string;
+    description?: string;
+    enum?: string[];
+  }>;
+  enable_metadata?: boolean;
 }
 
 interface Raptor {
@@ -60,4 +75,5 @@ interface GraphRag {
 export type IDocumentInfoFilter = {
   run_status: Record<number, number>;
   suffix: Record<string, number>;
+  metadata: Record<string, Record<string, number>>;
 };

@@ -254,18 +254,21 @@ def create_s3_client(bucket_type: BlobType, credentials: dict[str, Any], europea
     elif bucket_type == BlobType.S3:
         authentication_method = credentials.get("authentication_method", "access_key")
 
+        region_name = credentials.get("region") or None
+
         if authentication_method == "access_key":
             session = boto3.Session(
                 aws_access_key_id=credentials["aws_access_key_id"],
                 aws_secret_access_key=credentials["aws_secret_access_key"],
+                region_name=region_name,
             )
-            return session.client("s3")
+            return session.client("s3", region_name=region_name)
 
         elif authentication_method == "iam_role":
             role_arn = credentials["aws_role_arn"]
 
             def _refresh_credentials() -> dict[str, str]:
-                sts_client = boto3.client("sts")
+                sts_client = boto3.client("sts", region_name=credentials.get("region") or None)
                 assumed_role_object = sts_client.assume_role(
                     RoleArn=role_arn,
                     RoleSessionName=f"onyx_blob_storage_{int(datetime.now().timestamp())}",
@@ -285,11 +288,11 @@ def create_s3_client(bucket_type: BlobType, credentials: dict[str, Any], europea
             )
             botocore_session = get_session()
             botocore_session._credentials = refreshable
-            session = boto3.Session(botocore_session=botocore_session)
-            return session.client("s3")
+            session = boto3.Session(botocore_session=botocore_session, region_name=region_name)
+            return session.client("s3", region_name=region_name)
 
         elif authentication_method == "assume_role":
-            return boto3.client("s3")
+            return boto3.client("s3", region_name=region_name)
 
         else:
             raise ValueError("Invalid authentication method for S3.")
@@ -1146,3 +1149,137 @@ def parallel_yield(gens: list[Iterator[R]], max_workers: int = 10) -> Iterator[R
                     future_to_index[executor.submit(_next_or_none, ind, gens[ind])] = next_ind
                     next_ind += 1
                 del future_to_index[future]
+
+
+def sanitize_filename(name: str, extension: str = "txt") -> str:
+    """
+    Soft sanitize for MinIO/S3:
+    - Replace only prohibited characters with a space.
+    - Preserve readability (no ugly underscores).
+    - Collapse multiple spaces.
+    """
+    if name is None:
+        return f"file.{extension}"
+
+    name = str(name).strip()
+
+    # Characters that MUST NOT appear in S3/MinIO object keys
+    # Replace them with a space (not underscore)
+    forbidden = r'[\\\?\#\%\*\:\|\<\>"]'
+    name = re.sub(forbidden, " ", name)
+
+    # Replace slashes "/" (S3 interprets as folder) with space
+    name = name.replace("/", " ")
+
+    # Collapse multiple spaces into one
+    name = re.sub(r"\s+", " ", name)
+
+    # Trim both ends
+    name = name.strip()
+
+    # Enforce reasonable max length
+    if len(name) > 200:
+        base, ext = os.path.splitext(name)
+        name = base[:180].rstrip() + ext
+
+    if not os.path.splitext(name)[1]:
+        name += f".{extension}"
+
+    return name
+F = TypeVar("F", bound=Callable[..., Any])
+
+class _RateLimitDecorator:
+    """Builds a generic wrapper/decorator for calls to external APIs that
+    prevents making more than `max_calls` requests per `period`
+
+    Implementation inspired by the `ratelimit` library:
+    https://github.com/tomasbasham/ratelimit.
+
+    NOTE: is not thread safe.
+    """
+
+    def __init__(
+        self,
+        max_calls: int,
+        period: float,  # in seconds
+        sleep_time: float = 2,  # in seconds
+        sleep_backoff: float = 2,  # applies exponential backoff
+        max_num_sleep: int = 0,
+    ):
+        self.max_calls = max_calls
+        self.period = period
+        self.sleep_time = sleep_time
+        self.sleep_backoff = sleep_backoff
+        self.max_num_sleep = max_num_sleep
+
+        self.call_history: list[float] = []
+        self.curr_calls = 0
+
+    def __call__(self, func: F) -> F:
+        @wraps(func)
+        def wrapped_func(*args: list, **kwargs: dict[str, Any]) -> Any:
+            # cleanup calls which are no longer relevant
+            self._cleanup()
+
+            # check if we've exceeded the rate limit
+            sleep_cnt = 0
+            while len(self.call_history) == self.max_calls:
+                sleep_time = self.sleep_time * (self.sleep_backoff**sleep_cnt)
+                logging.warning(
+                    f"Rate limit exceeded for function {func.__name__}. "
+                    f"Waiting {sleep_time} seconds before retrying."
+                )
+                time.sleep(sleep_time)
+                sleep_cnt += 1
+                if self.max_num_sleep != 0 and sleep_cnt >= self.max_num_sleep:
+                    raise RateLimitTriedTooManyTimesError(
+                        f"Exceeded '{self.max_num_sleep}' retries for function '{func.__name__}'"
+                    )
+
+                self._cleanup()
+
+            # add the current call to the call history
+            self.call_history.append(time.monotonic())
+            return func(*args, **kwargs)
+
+        return cast(F, wrapped_func)
+
+    def _cleanup(self) -> None:
+        curr_time = time.monotonic()
+        time_to_expire_before = curr_time - self.period
+        self.call_history = [
+            call_time
+            for call_time in self.call_history
+            if call_time > time_to_expire_before
+        ]
+
+rate_limit_builder = _RateLimitDecorator
+
+def retry_builder(
+    tries: int = 20,
+    delay: float = 0.1,
+    max_delay: float | None = 60,
+    backoff: float = 2,
+    jitter: tuple[float, float] | float = 1,
+    exceptions: type[Exception] | tuple[type[Exception], ...] = (Exception,),
+) -> Callable[[F], F]:
+    """Builds a generic wrapper/decorator for calls to external APIs that
+    may fail due to rate limiting, flakes, or other reasons. Applies exponential
+    backoff with jitter to retry the call."""
+
+    def retry_with_default(func: F) -> F:
+        @retry(
+            tries=tries,
+            delay=delay,
+            max_delay=max_delay,
+            backoff=backoff,
+            jitter=jitter,
+            logger=logging.getLogger(__name__),
+            exceptions=exceptions,
+        )
+        def wrapped_func(*args: list, **kwargs: dict[str, Any]) -> Any:
+            return func(*args, **kwargs)
+
+        return cast(F, wrapped_func)
+
+    return retry_with_default

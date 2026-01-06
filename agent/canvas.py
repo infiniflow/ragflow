@@ -278,7 +278,7 @@ class Graph:
 
 class Canvas(Graph):
 
-    def __init__(self, dsl: str, tenant_id=None, task_id=None):
+    def __init__(self, dsl: str, tenant_id=None, task_id=None, canvas_id=None):
         self.globals = {
             "sys.query": "",
             "sys.user_id": tenant_id,
@@ -287,6 +287,7 @@ class Canvas(Graph):
         }
         self.variables = {}
         super().__init__(dsl, tenant_id, task_id)
+        self._id = canvas_id
 
     def load(self):
         super().load()
@@ -540,6 +541,8 @@ class Canvas(Graph):
                         cite = re.search(r"\[ID:[ 0-9]+\]",  cpn_obj.output("content"))
 
                     message_end = {}
+                    if cpn_obj.get_param("status"):
+                        message_end["status"] = cpn_obj.get_param("status")
                     if isinstance(cpn_obj.output("attachment"), dict):
                         message_end["attachment"] = cpn_obj.output("attachment")
                     if cite:
@@ -718,6 +721,9 @@ class Canvas(Graph):
 
     def get_mode(self):
         return self.components["begin"]["obj"]._param.mode
+
+    def get_sys_query(self):
+        return self.globals.get("sys.query", "")
 
     def set_global_param(self, **kwargs):
         self.globals.update(kwargs)

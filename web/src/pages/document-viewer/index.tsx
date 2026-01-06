@@ -1,6 +1,6 @@
 import { Images } from '@/constants/common';
 import { api_host } from '@/utils/api';
-import { useParams, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'react-router';
 // import Docx from './docx';
 // import Excel from './excel';
 // import Image from './image';
@@ -40,7 +40,9 @@ const DocumentViewer = () => {
           <ImagePreviewer className="w-full !h-dvh p-5" url={api} />
         </div>
       )}
-      {ext === 'md' && <Md url={api} className="!h-dvh p-5"></Md>}
+      {(ext === 'md' || ext === 'mdx') && (
+        <Md url={api} className="!h-dvh p-5"></Md>
+      )}
       {ext === 'txt' && <TxtPreviewer url={api}></TxtPreviewer>}
 
       {ext === 'pdf' && (

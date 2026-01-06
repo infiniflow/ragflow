@@ -20,7 +20,8 @@ import re
 
 from deepdoc.parser.figure_parser import vision_figure_parser_pdf_wrapper
 from common.constants import ParserType
-from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, tokenize_chunks, attach_media_context
+from rag.nlp import rag_tokenizer, tokenize, tokenize_table, add_positions, bullets_category, title_frequency, \
+    tokenize_chunks, attach_media_context
 from deepdoc.parser import PdfParser
 import numpy as np
 from rag.app.naive import by_plaintext, PARSERS
@@ -66,7 +67,7 @@ class Pdf(PdfParser):
         # clean mess
         if column_width < self.page_images[0].size[0] / zoomin / 2:
             logging.debug("two_column................... {} {}".format(column_width,
-                  self.page_images[0].size[0] / zoomin / 2))
+                                                                       self.page_images[0].size[0] / zoomin / 2))
             self.boxes = self.sort_X_by_page(self.boxes, column_width / 2)
         for b in self.boxes:
             b["text"] = re.sub(r"([\t 　]|\u3000){2,}", " ", b["text"].strip())
@@ -89,7 +90,7 @@ class Pdf(PdfParser):
         title = ""
         authors = []
         i = 0
-        while i < min(32, len(self.boxes)-1):
+        while i < min(32, len(self.boxes) - 1):
             b = self.boxes[i]
             i += 1
             if b.get("layoutno", "").find("title") >= 0:
@@ -165,6 +166,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             pdf_parser = Pdf()
             paper = pdf_parser(filename if not binary else binary,
                                from_page=from_page, to_page=to_page, callback=callback)
+            sections = paper.get("sections", [])
         else:
             kwargs.pop("parse_method", None)
             kwargs.pop("mineru_llm_name", None)
@@ -190,8 +192,13 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 "tables": tables
             }
 
-        tbls=paper["tables"]
-        tbls=vision_figure_parser_pdf_wrapper(tbls=tbls,callback=callback,**kwargs)
+        tbls = paper["tables"]
+        tbls = vision_figure_parser_pdf_wrapper(
+            tbls=tbls,
+            sections=sections,
+            callback=callback,
+            **kwargs,
+        )
         paper["tables"] = tbls
     else:
         raise NotImplementedError("file type not supported yet(pdf supported)")
@@ -329,6 +336,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
+
     chunk(sys.argv[1], callback=dummy)

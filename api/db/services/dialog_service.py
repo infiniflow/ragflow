@@ -406,7 +406,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     dialog.vector_similarity_weight,
                     doc_ids=attachments,
                     top=dialog.top_k,
-                    aggs=False,
+                    aggs=True,
                     rerank_mdl=rerank_mdl,
                     rank_feature=label_question(" ".join(questions), kbs),
                 )
@@ -421,7 +421,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 kbinfos["chunks"].extend(tav_res["chunks"])
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
             if prompt_config.get("use_kg"):
-                ck = settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
+                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
                                                        LLMBundle(dialog.tenant_id, LLMType.CHAT))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
@@ -769,7 +769,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         vector_similarity_weight=search_config.get("vector_similarity_weight", 0.3),
         top=search_config.get("top_k", 1024),
         doc_ids=doc_ids,
-        aggs=False,
+        aggs=True,
         rerank_mdl=rerank_mdl,
         rank_feature=label_question(question, kbs)
     )

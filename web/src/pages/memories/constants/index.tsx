@@ -1,5 +1,8 @@
 import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
-import { EmbeddingSelect } from '@/pages/dataset/dataset-setting/configuration/common-item';
+import {
+  EmbeddingSelect,
+  LLMSelect,
+} from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { TFunction } from 'i18next';
 export enum MemoryType {
   Raw = 'raw',
@@ -7,6 +10,12 @@ export enum MemoryType {
   Episodic = 'episodic',
   Procedural = 'procedural',
 }
+export const MemoryOptions = (t: TFunction) => [
+  { label: t('memories.raw'), value: MemoryType.Raw },
+  { label: t('memories.semantic'), value: MemoryType.Semantic },
+  { label: t('memories.episodic'), value: MemoryType.Episodic },
+  { label: t('memories.procedural'), value: MemoryType.Procedural },
+];
 export const createMemoryFields = (t: TFunction) =>
   [
     {
@@ -21,12 +30,7 @@ export const createMemoryFields = (t: TFunction) =>
       type: FormFieldType.MultiSelect,
       placeholder: t('memories.descriptionPlaceholder'),
       tooltip: t('memories.memoryTypeTooltip'),
-      options: [
-        { label: 'Raw', value: MemoryType.Raw },
-        { label: 'Semantic', value: MemoryType.Semantic },
-        { label: 'Episodic', value: MemoryType.Episodic },
-        { label: 'Procedural', value: MemoryType.Procedural },
-      ],
+      options: MemoryOptions(t),
       required: true,
       customValidate: (value) => {
         if (!value.includes(MemoryType.Raw) || !value.length) {
@@ -52,6 +56,7 @@ export const createMemoryFields = (t: TFunction) =>
       required: true,
       type: FormFieldType.Select,
       tooltip: t('memories.llmTooltip'),
+      render: (field) => <LLMSelect field={field} isEdit={false} />,
     },
   ] as FormFieldConfig[];
 

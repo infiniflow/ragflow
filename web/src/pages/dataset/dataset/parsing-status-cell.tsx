@@ -1,4 +1,3 @@
-import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { IconFontFill } from '@/components/icon-font';
 import {
   DropdownMenu,
@@ -19,6 +18,7 @@ import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DocumentType, RunningStatus } from './constant';
 import { ParsingCard } from './parsing-card';
+import { ReparseDialog } from './reparse-dialog';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
 import { UseSaveMetaShowType } from './use-save-meta';
@@ -63,15 +63,21 @@ export function ParsingStatusCell({
   } = record;
   const operationIcon = IconMap[run];
   const p = Number((progress * 100).toFixed(2));
-  const { handleRunDocumentByIds } = useHandleRunDocumentByIds(id);
+  const {
+    handleRunDocumentByIds,
+    visible: reparseDialogVisible,
+    showModal: showReparseDialogModal,
+    hideModal: hideReparseDialogModal,
+  } = useHandleRunDocumentByIds(id);
   const isRunning = isParserRunning(run);
   const isZeroChunk = chunk_num === 0;
 
-  const handleOperationIconClick =
-    (shouldDelete: boolean = false) =>
-    () => {
-      handleRunDocumentByIds(record.id, isRunning, shouldDelete);
-    };
+  const handleOperationIconClick = (option?: {
+    delete: boolean;
+    apply_kb: boolean;
+  }) => {
+    handleRunDocumentByIds(record.id, isRunning, option);
+  };
 
   const handleShowChangeParserModal = useCallback(() => {
     showChangeParserModal(record);
@@ -129,23 +135,20 @@ export function ParsingStatusCell({
         <div className="flex items-center gap-3">
           <Separator orientation="vertical" className="h-2.5" />
           {!isParserRunning(run) && (
-            <ConfirmDeleteDialog
-              title={t(`knowledgeDetails.redo`, { chunkNum: chunk_num })}
-              hidden={isZeroChunk || isRunning}
-              onOk={handleOperationIconClick(true)}
-              onCancel={handleOperationIconClick(false)}
+            // <ReparseDialog
+            //   hidden={isZeroChunk || isRunning}
+            //   handleOperationIconClick={handleOperationIconClick}
+            //   chunk_num={chunk_num}
+            // >
+            <div
+              className="cursor-pointer flex items-center gap-3"
+              onClick={() => {
+                showReparseDialogModal();
+              }}
             >
-              <div
-                className="cursor-pointer flex items-center gap-3"
-                onClick={
-                  isZeroChunk || isRunning
-                    ? handleOperationIconClick(false)
-                    : () => {}
-                }
-              >
-                {!isParserRunning(run) && operationIcon}
-              </div>
-            </ConfirmDeleteDialog>
+              {!isParserRunning(run) && operationIcon}
+            </div>
+            // {/* </ReparseDialog> */}
           )}
           {isParserRunning(run) ? (
             <>
@@ -158,11 +161,14 @@ export function ParsingStatusCell({
               </div>
               <div
                 className="cursor-pointer flex items-center gap-3"
-                onClick={
-                  isZeroChunk || isRunning
-                    ? handleOperationIconClick(false)
-                    : () => {}
-                }
+                onClick={() => {
+                  showReparseDialogModal();
+                }}
+                // onClick={
+                //   isZeroChunk || isRunning
+                //     ? handleOperationIconClick(false)
+                //     : () => {}
+                // }
               >
                 {operationIcon}
               </div>
@@ -174,6 +180,16 @@ export function ParsingStatusCell({
             ></ParsingCard>
           )}
         </div>
+      )}
+      {reparseDialogVisible && (
+        <ReparseDialog
+          hidden={isRunning}
+          // hidden={false}
+          handleOperationIconClick={handleOperationIconClick}
+          chunk_num={chunk_num}
+          visible={reparseDialogVisible}
+          hideModal={hideReparseDialogModal}
+        ></ReparseDialog>
       )}
     </section>
   );

@@ -181,6 +181,40 @@ class TaskService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_tasks_progress_by_doc_ids(cls, doc_ids: list[str]):
+        """Retrieve all tasks associated with specific documents.
+
+        This method fetches all processing tasks for given document ids, ordered by
+        creation time. It includes task progress and chunk information.
+
+        Args:
+            doc_ids (str): The unique identifier of the document.
+
+        Returns:
+            list[dict]: List of task dictionaries containing task details.
+                       Returns None if no tasks are found.
+        """
+        fields = [
+            cls.model.id,
+            cls.model.doc_id,
+            cls.model.from_page,
+            cls.model.progress,
+            cls.model.progress_msg,
+            cls.model.digest,
+            cls.model.chunk_ids,
+            cls.model.create_time
+        ]
+        tasks = (
+            cls.model.select(*fields).order_by(cls.model.create_time.desc())
+            .where(cls.model.doc_id.in_(doc_ids))
+        )
+        tasks = list(tasks.dicts())
+        if not tasks:
+            return None
+        return tasks
+
+    @classmethod
+    @DB.connection_context()
     def update_chunk_ids(cls, id: str, chunk_ids: str):
         """Update the chunk IDs associated with a task.
 

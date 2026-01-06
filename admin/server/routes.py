@@ -21,12 +21,17 @@ from flask_login import current_user, login_required, logout_user
 
 from auth import login_verify, login_admin, check_admin_auth
 from responses import success_response, error_response
-from services import UserMgr, ServiceMgr, UserServiceMgr
+from services import UserMgr, ServiceMgr, UserServiceMgr, SettingsMgr, ConfigMgr, EnvironmentsMgr
 from roles import RoleMgr
 from api.common.exceptions import AdminException
 from common.versions import get_ragflow_version
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/v1/admin')
+
+
+@admin_bp.route('/ping', methods=['GET'])
+def ping():
+    return success_response('PONG')
 
 
 @admin_bp.route('/login', methods=['POST'])
@@ -152,6 +157,36 @@ def alter_user_activate_status(username):
     except Exception as e:
         return error_response(str(e), 500)
 
+
+@admin_bp.route('/users/<username>/admin', methods=['PUT'])
+@login_required
+@check_admin_auth
+def grant_admin(username):
+    try:
+        if current_user.email == username:
+            return error_response(f"can't grant current user: {username}", 409)
+        msg = UserMgr.grant_admin(username)
+        return success_response(None, msg)
+
+    except AdminException as e:
+        return error_response(e.message, e.code)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+@admin_bp.route('/users/<username>/admin', methods=['DELETE'])
+@login_required
+@check_admin_auth
+def revoke_admin(username):
+    try:
+        if current_user.email == username:
+            return error_response(f"can't grant current user: {username}", 409)
+        msg = UserMgr.revoke_admin(username)
+        return success_response(None, msg)
+
+    except AdminException as e:
+        return error_response(e.message, e.code)
+    except Exception as e:
+        return error_response(str(e), 500)
 
 @admin_bp.route('/users/<username>', methods=['GET'])
 @login_required
@@ -368,6 +403,73 @@ def get_user_permission(user_name: str):
     try:
         res = RoleMgr.get_user_permission(user_name)
         return success_response(res)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+@admin_bp.route('/variables', methods=['PUT'])
+@login_required
+@check_admin_auth
+def set_variable():
+    try:
+        data = request.get_json()
+        if not data and 'var_name' not in data:
+            return error_response("Var name is required", 400)
+
+        if 'var_value' not in data:
+            return error_response("Var value is required", 400)
+        var_name: str = data['var_name']
+        var_value: str = data['var_value']
+
+        SettingsMgr.update_by_name(var_name, var_value)
+        return success_response(None, "Set variable successfully")
+    except AdminException as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+@admin_bp.route('/variables', methods=['GET'])
+@login_required
+@check_admin_auth
+def get_variable():
+    try:
+        if request.content_length is None or request.content_length == 0:
+            # list variables
+            res = list(SettingsMgr.get_all())
+            return success_response(res)
+
+        # get var
+        data = request.get_json()
+        if not data and 'var_name' not in data:
+            return error_response("Var name is required", 400)
+        var_name: str = data['var_name']
+        res = SettingsMgr.get_by_name(var_name)
+        return success_response(res)
+    except AdminException as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+@admin_bp.route('/configs', methods=['GET'])
+@login_required
+@check_admin_auth
+def get_config():
+    try:
+        res = list(ConfigMgr.get_all())
+        return success_response(res)
+    except AdminException as e:
+        return error_response(str(e), 400)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+@admin_bp.route('/environments', methods=['GET'])
+@login_required
+@check_admin_auth
+def get_environments():
+    try:
+        res = list(EnvironmentsMgr.get_all())
+        return success_response(res)
+    except AdminException as e:
+        return error_response(str(e), 400)
     except Exception as e:
         return error_response(str(e), 500)
 

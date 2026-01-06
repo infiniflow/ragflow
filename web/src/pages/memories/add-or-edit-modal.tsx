@@ -1,5 +1,4 @@
 import { DynamicForm } from '@/components/dynamic-form';
-import { useModelOptions } from '@/components/llm-setting-items/llm-form-field';
 import { HomeIcon } from '@/components/svg-icon';
 import { Modal } from '@/components/ui/modal/modal';
 import { memo, useMemo } from 'react';
@@ -18,7 +17,7 @@ type IProps = {
 export const AddOrEditModal = memo((props: IProps) => {
   const { open, onClose, onSubmit, initialMemory, isCreate } = props;
   const { t } = useTranslation();
-  const { modelOptions } = useModelOptions();
+  // const { modelOptions } = useModelOptions();
 
   const fields = useMemo(() => {
     if (!isCreate) {
@@ -26,21 +25,22 @@ export const AddOrEditModal = memo((props: IProps) => {
         (field: any) => field.name === 'name',
       );
     } else {
-      const tempFields = createMemoryFields(t).map((field: any) => {
-        if (field.name === 'llm_id') {
-          return {
-            ...field,
-            options: modelOptions,
-          };
-        } else {
-          return {
-            ...field,
-          };
-        }
-      });
-      return tempFields;
+      // const tempFields = createMemoryFields(t).map((field: any) => {
+      //   if (field.name === 'llm_id') {
+      //     return {
+      //       ...field,
+      //       options: modelOptions,
+      //     };
+      //   } else {
+      //     return {
+      //       ...field,
+      //     };
+      //   }
+      // });
+      // return tempFields;
+      return createMemoryFields(t);
     }
-  }, [modelOptions, isCreate]);
+  }, [isCreate, t]);
 
   return (
     <Modal

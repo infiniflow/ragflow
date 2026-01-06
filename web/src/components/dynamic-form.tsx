@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -35,6 +36,19 @@ import { cn } from '@/lib/utils';
 import { t } from 'i18next';
 import { Loader } from 'lucide-react';
 import { MultiSelect, MultiSelectOptionType } from './ui/multi-select';
+import { Segmented } from './ui/segmented';
+import { Switch } from './ui/switch';
+
+const getNestedValue = (obj: any, path: string) => {
+  return path.split('.').reduce((current, key) => {
+    return current && current[key] !== undefined ? current[key] : undefined;
+  }, obj);
+};
+
+/**
+ * Properties of this field will be treated as static attributes and will be filtered out during form submission.
+ */
+export const FilterFormField = 'RAG_DY_STATIC';
 
 // Field type enumeration
 export enum FormFieldType {
@@ -46,7 +60,9 @@ export enum FormFieldType {
   Select = 'select',
   MultiSelect = 'multi-select',
   Checkbox = 'checkbox',
+  Switch = 'switch',
   Tag = 'tag',
+  Segmented = 'segmented',
   Custom = 'custom',
 }
 
@@ -136,6 +152,9 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
             });
           }
           break;
+        case FormFieldType.Segmented:
+          fieldSchema = z.string();
+          break;
         case FormFieldType.Number:
           fieldSchema = z.coerce.number();
           if (field.validation?.min !== undefined) {
@@ -154,6 +173,7 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
           }
           break;
         case FormFieldType.Checkbox:
+        case FormFieldType.Switch:
           fieldSchema = z.boolean();
           break;
         case FormFieldType.Tag:
@@ -167,20 +187,23 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
 
     // Handle required fields
     if (field.required) {
+      const requiredMessage =
+        field.validation?.message || `${field.label} is required`;
+
       if (field.type === FormFieldType.Checkbox) {
         fieldSchema = (fieldSchema as z.ZodBoolean).refine(
           (val) => val === true,
           {
-            message: `${field.label} is required`,
+            message: requiredMessage,
           },
         );
       } else if (field.type === FormFieldType.Tag) {
         fieldSchema = (fieldSchema as z.ZodArray<z.ZodString>).min(1, {
-          message: `${field.label} is required`,
+          message: requiredMessage,
         });
       } else {
         fieldSchema = (fieldSchema as z.ZodString).min(1, {
-          message: `${field.label} is required`,
+          message: requiredMessage,
         });
       }
     }
@@ -193,6 +216,8 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
     if (
       field.type !== FormFieldType.Number &&
       field.type !== FormFieldType.Checkbox &&
+      field.type !== FormFieldType.Switch &&
+      field.type !== FormFieldType.Custom &&
       field.type !== FormFieldType.Tag &&
       field.required
     ) {
@@ -289,7 +314,10 @@ const generateDefaultValues = <T extends FieldValues>(
       const lastKey = keys[keys.length - 1];
       if (field.defaultValue !== undefined) {
         current[lastKey] = field.defaultValue;
-      } else if (field.type === FormFieldType.Checkbox) {
+      } else if (
+        field.type === FormFieldType.Checkbox ||
+        field.type === FormFieldType.Switch
+      ) {
         current[lastKey] = false;
       } else if (field.type === FormFieldType.Tag) {
         current[lastKey] = [];
@@ -299,7 +327,10 @@ const generateDefaultValues = <T extends FieldValues>(
     } else {
       if (field.defaultValue !== undefined) {
         defaultValues[field.name] = field.defaultValue;
-      } else if (field.type === FormFieldType.Checkbox) {
+      } else if (
+        field.type === FormFieldType.Checkbox ||
+        field.type === FormFieldType.Switch
+      ) {
         defaultValues[field.name] = false;
       } else if (
         field.type === FormFieldType.Tag ||
@@ -348,6 +379,34 @@ export const RenderField = ({
     );
   }
   switch (field.type) {
+    case FormFieldType.Segmented:
+      return (
+        <RAGFlowFormItem
+          {...field}
+          labelClassName={labelClassName || field.labelClassName}
+        >
+          {(fieldProps) => {
+            const finalFieldProps = field.onChange
+              ? {
+                  ...fieldProps,
+                  onChange: (value: any) => {
+                    fieldProps.onChange(value);
+                    field.onChange?.(value);
+                  },
+                }
+              : fieldProps;
+            return (
+              <Segmented
+                {...finalFieldProps}
+                options={field.options || []}
+                className="w-full"
+                itemClassName="flex-1 justify-center"
+                disabled={field.disabled}
+              />
+            );
+          }}
+        </RAGFlowFormItem>
+      );
     case FormFieldType.Textarea:
       return (
         <RAGFlowFormItem
@@ -502,6 +561,32 @@ export const RenderField = ({
           )}
         />
       );
+    case FormFieldType.Switch:
+      return (
+        <RAGFlowFormItem
+          {...field}
+          labelClassName={labelClassName || field.labelClassName}
+        >
+          {(fieldProps) => {
+            const finalFieldProps = field.onChange
+              ? {
+                  ...fieldProps,
+                  onChange: (checked: boolean) => {
+                    fieldProps.onChange(checked);
+                    field.onChange?.(checked);
+                  },
+                }
+              : fieldProps;
+            return (
+              <Switch
+                checked={finalFieldProps.value as boolean}
+                onCheckedChange={(checked) => finalFieldProps.onChange(checked)}
+                disabled={field.disabled}
+              />
+            );
+          }}
+        </RAGFlowFormItem>
+      );
 
     case FormFieldType.Tag:
       return (
@@ -584,7 +669,6 @@ const DynamicForm = {
       useMemo(() => {
         setFields(originFields);
       }, [originFields]);
-      const schema = useMemo(() => generateSchema(fields), [fields]);
 
       const defaultValues = useMemo(() => {
         const value = {
@@ -597,17 +681,31 @@ const DynamicForm = {
       // Initialize form
       const form = useForm<T>({
         resolver: async (data, context, options) => {
-          const zodResult = await zodResolver(schema)(data, context, options);
+          // Filter out fields that should not render
+          const activeFields = fields.filter(
+            (field) => !field.shouldRender || field.shouldRender(data),
+          );
+
+          const activeSchema = generateSchema(activeFields);
+          const zodResult = await zodResolver(activeSchema)(
+            data,
+            context,
+            options,
+          );
 
           let combinedErrors = { ...zodResult.errors };
 
           const fieldErrors: Record<string, { type: string; message: string }> =
             {};
           for (const field of fields) {
-            if (field.customValidate && data[field.name] !== undefined) {
+            if (
+              field.customValidate &&
+              getNestedValue(data, field.name) !== undefined &&
+              (!field.shouldRender || field.shouldRender(data))
+            ) {
               try {
                 const result = await field.customValidate(
-                  data[field.name],
+                  getNestedValue(data, field.name),
                   data,
                 );
                 if (typeof result === 'string') {
@@ -639,7 +737,6 @@ const DynamicForm = {
             ...fieldErrors,
           } as any;
 
-          console.log('combinedErrors', combinedErrors);
           for (const key in combinedErrors) {
             if (Array.isArray(combinedErrors[key])) {
               combinedErrors[key] = combinedErrors[key][0];
@@ -687,11 +784,61 @@ const DynamicForm = {
         };
       }, [fields, form]);
 
+      const filterActiveValues = useCallback(
+        (allValues: any) => {
+          const filteredValues: any = {};
+
+          fields.forEach((field) => {
+            if (
+              !field.shouldRender ||
+              (field.shouldRender(allValues) &&
+                field.name?.indexOf(FilterFormField) < 0)
+            ) {
+              const keys = field.name.split('.');
+              let current = allValues;
+              let exists = true;
+
+              for (const key of keys) {
+                if (current && current[key] !== undefined) {
+                  current = current[key];
+                } else {
+                  exists = false;
+                  break;
+                }
+              }
+
+              if (exists) {
+                let target = filteredValues;
+                for (let i = 0; i < keys.length - 1; i++) {
+                  const key = keys[i];
+                  if (!target[key]) {
+                    target[key] = {};
+                  }
+                  target = target[key];
+                }
+                target[keys[keys.length - 1]] = getNestedValue(
+                  allValues,
+                  field.name,
+                );
+              }
+            }
+          });
+
+          return filteredValues;
+        },
+        [fields],
+      );
+
       // Expose form methods via ref
       useImperativeHandle(
         ref,
         () => ({
-          submit: form.handleSubmit,
+          submit: () => {
+            form.handleSubmit((values) => {
+              const filteredValues = filterActiveValues(values);
+              onSubmit(filteredValues);
+            })();
+          },
           getValues: form.getValues,
           reset: (values?: T) => {
             if (values) {
@@ -734,9 +881,9 @@ const DynamicForm = {
             // }, 0);
           },
         }),
-        [form],
+        [form, onSubmit, filterActiveValues],
       );
-
+      (form as any).filterActiveValues = filterActiveValues;
       useEffect(() => {
         if (formDefaultValues && Object.keys(formDefaultValues).length > 0) {
           form.reset({
@@ -758,7 +905,10 @@ const DynamicForm = {
             className={`space-y-6 ${className}`}
             onSubmit={(e) => {
               e.preventDefault();
-              form.handleSubmit(onSubmit)(e);
+              form.handleSubmit((values) => {
+                const filteredValues = filterActiveValues(values);
+                onSubmit(filteredValues);
+              })(e);
             }}
           >
             <>
@@ -805,12 +955,25 @@ const DynamicForm = {
         onClick={() => {
           (async () => {
             try {
-              let beValid = await form.formControl.trigger();
-              console.log('form valid', beValid, form, form.formControl);
-              if (beValid) {
+              let beValid = await form.trigger();
+              console.log('form valid', beValid, form);
+              // if (beValid) {
+              //   form.handleSubmit(async (values) => {
+              //     console.log('form values', values);
+              //     submitFunc?.(values);
+              //   })();
+              // }
+
+              if (beValid && submitFunc) {
                 form.handleSubmit(async (values) => {
-                  console.log('form values', values);
-                  submitFunc?.(values);
+                  const filteredValues = (form as any).filterActiveValues
+                    ? (form as any).filterActiveValues(values)
+                    : values;
+                  console.log(
+                    'filtered form values in saving button',
+                    filteredValues,
+                  );
+                  submitFunc(filteredValues);
                 })();
               }
             } catch (e) {

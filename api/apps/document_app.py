@@ -234,6 +234,10 @@ async def list_docs():
 
     req = await get_request_json()
 
+    return_empty_metadata = req.get("return_empty_metadata", False)
+    if isinstance(return_empty_metadata, str):
+        return_empty_metadata = return_empty_metadata.lower() == "true"
+
     run_status = req.get("run_status", [])
     if run_status:
         invalid_status = {s for s in run_status if s not in VALID_TASK_STATUS}
@@ -248,18 +252,73 @@ async def list_docs():
 
     suffix = req.get("suffix", [])
     metadata_condition = req.get("metadata_condition", {}) or {}
-    if metadata_condition and not isinstance(metadata_condition, dict):
-        return get_data_error_result(message="metadata_condition must be an object.")
+    metadata = req.get("metadata", {}) or {}
+    if isinstance(metadata, dict) and metadata.get("empty_metadata"):
+        return_empty_metadata = True
+        metadata = {k: v for k, v in metadata.items() if k != "empty_metadata"}
+    if return_empty_metadata:
+        metadata_condition = {}
+        metadata = {}
+    else:
+        if metadata_condition and not isinstance(metadata_condition, dict):
+            return get_data_error_result(message="metadata_condition must be an object.")
+        if metadata and not isinstance(metadata, dict):
+            return get_data_error_result(message="metadata must be an object.")
 
     doc_ids_filter = None
-    if metadata_condition:
+    metas = None
+    if metadata_condition or metadata:
         metas = DocumentService.get_flatted_meta_by_kbs([kb_id])
-        doc_ids_filter = meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and"))
+
+    if metadata_condition:
+        doc_ids_filter = set(meta_filter(metas, convert_conditions(metadata_condition), metadata_condition.get("logic", "and")))
         if metadata_condition.get("conditions") and not doc_ids_filter:
             return get_json_result(data={"total": 0, "docs": []})
 
+    if metadata:
+        metadata_doc_ids = None
+        for key, values in metadata.items():
+            if not values:
+                continue
+            if not isinstance(values, list):
+                values = [values]
+            values = [str(v) for v in values if v is not None and str(v).strip()]
+            if not values:
+                continue
+            key_doc_ids = set()
+            for value in values:
+                key_doc_ids.update(metas.get(key, {}).get(value, []))
+            if metadata_doc_ids is None:
+                metadata_doc_ids = key_doc_ids
+            else:
+                metadata_doc_ids &= key_doc_ids
+            if not metadata_doc_ids:
+                return get_json_result(data={"total": 0, "docs": []})
+        if metadata_doc_ids is not None:
+            if doc_ids_filter is None:
+                doc_ids_filter = metadata_doc_ids
+            else:
+                doc_ids_filter &= metadata_doc_ids
+            if not doc_ids_filter:
+                return get_json_result(data={"total": 0, "docs": []})
+
+    if doc_ids_filter is not None:
+        doc_ids_filter = list(doc_ids_filter)
+
     try:
-        docs, tol = DocumentService.get_by_kb_id(kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix, doc_ids_filter)
+        docs, tol = DocumentService.get_by_kb_id(
+            kb_id,
+            page_number,
+            items_per_page,
+            orderby,
+            desc,
+            keywords,
+            run_status,
+            types,
+            suffix,
+            doc_ids_filter,
+            return_empty_metadata=return_empty_metadata,
+        )
 
         if create_time_from or create_time_to:
             filtered_docs = []
@@ -411,6 +470,26 @@ async def metadata_update():
     return get_json_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
 
+@manager.route("/update_metadata_setting", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("doc_id", "metadata")
+async def update_metadata_setting():
+    req = await get_request_json()
+    if not DocumentService.accessible(req["doc_id"], current_user.id):
+        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+
+    e, doc = DocumentService.get_by_id(req["doc_id"])
+    if not e:
+        return get_data_error_result(message="Document not found!")
+
+    DocumentService.update_parser_config(doc.id, {"metadata": req["metadata"]})
+    e, doc = DocumentService.get_by_id(doc.id)
+    if not e:
+        return get_data_error_result(message="Document not found!")
+
+    return get_json_result(data=doc.to_dict())
+
+
 @manager.route("/thumbnails", methods=["GET"])  # noqa: F821
 # @login_required
 def thumbnails():
@@ -528,10 +607,17 @@ async def run():
                 DocumentService.update_by_id(id, info)
                 if req.get("delete", False):
                     TaskService.filter_delete([Task.doc_id == id])
-                    if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+                    if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
                         settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
 
                 if str(req["run"]) == TaskStatus.RUNNING.value:
+                    if req.get("apply_kb"):
+                        e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
+                        if not e:
+                            raise LookupError("Can't find this dataset!")
+                        doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
+                        doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
+                        DocumentService.update_parser_config(doc.id, doc.parser_config)
                     doc_dict = doc.to_dict()
                     DocumentService.run(tenant_id, doc_dict, kb_table_num_map)
 
@@ -579,7 +665,7 @@ async def rename():
                 "title_tks": title_tks,
                 "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
             }
-            if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+            if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
                 settings.docStoreConn.update(
                     {"doc_id": req["doc_id"]},
                     es_body,
@@ -660,7 +746,8 @@ async def change_parser():
             tenant_id = DocumentService.get_tenant_id(req["doc_id"])
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
-            if settings.docStoreConn.indexExist(search.index_name(tenant_id), doc.kb_id):
+            DocumentService.delete_chunk_images(doc, tenant_id)
+            if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
                 settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
         return None
 

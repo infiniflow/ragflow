@@ -1,3 +1,4 @@
+import MarkdownContent from '@/components/next-markdown-content';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Form,
@@ -234,7 +235,14 @@ const DebugContent = ({
   return (
     <>
       <section>
-        {message?.data?.tips && <div className="mb-2">{message.data.tips}</div>}
+        {message?.data?.tips && (
+          <div className="mb-2">
+            <MarkdownContent
+              content={message?.data?.tips}
+              loading={false}
+            ></MarkdownContent>
+          </div>
+        )}
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             {parameters.map((x, idx) => {

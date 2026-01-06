@@ -162,6 +162,7 @@ async def webhook(agent_id: str):
         return get_data_error_result(code=RetCode.BAD_REQUEST,message="Invalid DSL format."),RetCode.BAD_REQUEST
 
     # 4. Check webhook configuration in DSL
+    webhook_cfg = {}
     components = dsl.get("components", {})
     for k, _ in components.items():
         cpn_obj = components[k]["obj"]
@@ -326,7 +327,6 @@ async def webhook(agent_id: str):
         secret = jwt_cfg.get("secret")
         if not secret:
             raise Exception("JWT secret not configured")
-        required_claims = jwt_cfg.get("required_claims", [])
 
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
@@ -395,7 +395,7 @@ async def webhook(agent_id: str):
     if not isinstance(cvs.dsl, str):
         dsl = json.dumps(cvs.dsl, ensure_ascii=False)
     try:
-        canvas = Canvas(dsl, cvs.user_id, agent_id)
+        canvas = Canvas(dsl, cvs.user_id, agent_id, canvas_id=agent_id)
     except Exception as e:
         resp=get_data_error_result(code=RetCode.BAD_REQUEST,message=str(e))
         resp.status_code = RetCode.BAD_REQUEST
@@ -750,7 +750,7 @@ async def webhook(agent_id: str):
         async def sse():
             nonlocal canvas
             contents: list[str] = []
-
+            status = 200
             try:
                 async for ans in canvas.run(
                     query="",
@@ -765,6 +765,8 @@ async def webhook(agent_id: str):
                             content = "</think>"
                         if content:
                             contents.append(content)
+                    if ans["event"] == "message_end":
+                        status = int(ans["data"].get("status", status))
                     if is_test:
                         append_webhook_trace(
                             agent_id,
@@ -782,7 +784,11 @@ async def webhook(agent_id: str):
                         }
                     )
                 final_content = "".join(contents)
-                yield json.dumps(final_content, ensure_ascii=False)
+                return {
+                    "message": final_content,
+                    "success": True,
+                    "code":  status,
+                }
 
             except Exception as e:
                 if is_test:
@@ -804,10 +810,14 @@ async def webhook(agent_id: str):
                             "success": False,
                         }
                     )
-                yield json.dumps({"code": 500, "message": str(e)}, ensure_ascii=False)
+                return {"code": 400, "message": str(e),"success":False}
 
-        resp = Response(sse(), mimetype="application/json")
-        return resp
+        result = await sse()
+        return Response(
+            json.dumps(result),
+            status=result["code"],
+            mimetype="application/json",
+        )
 
 
 @manager.route("/webhook_trace/<agent_id>", methods=["GET"])  # noqa: F821

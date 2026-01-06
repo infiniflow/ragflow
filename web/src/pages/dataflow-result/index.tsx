@@ -35,7 +35,7 @@ import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import TimelineDataFlow from './components/time-line';
 import { TimelineNodeType } from './constant';
-import styles from './index.less';
+import styles from './index.module.less';
 import { IDslComponent, IPipelineFileLogDetail } from './interface';
 import ParserContainer from './parser';
 
@@ -87,6 +87,7 @@ const Chunk = () => {
       case 'docx':
       case 'txt':
       case 'md':
+      case 'mdx':
       case 'pdf':
         return documentInfo?.type;
     }

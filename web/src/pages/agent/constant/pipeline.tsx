@@ -206,6 +206,7 @@ export const initialSplitterValues = {
   chunk_token_size: 512,
   overlapped_percent: 0,
   delimiters: [{ value: '\n' }],
+  image_table_context_window: 0,
 };
 
 export enum Hierarchy {

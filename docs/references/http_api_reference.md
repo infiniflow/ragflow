@@ -48,6 +48,7 @@ This API follows the same request and response format as OpenAI's API. It allows
   - `"model"`: `string`
   - `"messages"`: `object list`
   - `"stream"`: `boolean`
+  - `"extra_body"`: `object` (optional)
 
 ##### Request example
 
@@ -59,7 +60,20 @@ curl --request POST \
      --data '{
         "model": "model",
         "messages": [{"role": "user", "content": "Say this is a test!"}],
-        "stream": true
+        "stream": true,
+        "extra_body": {
+          "reference": true,
+          "metadata_condition": {
+            "logic": "and",
+            "conditions": [
+              {
+                "name": "author",
+                "comparison_operator": "is",
+                "value": "bob"
+              }
+            ]
+          }
+        }
       }'
 ```
 
@@ -73,6 +87,11 @@ curl --request POST \
 
 - `stream` (*Body parameter*) `boolean`  
   Whether to receive the response as a stream. Set this to `false` explicitly if you prefer to receive the entire response in one go instead of as a stream.
+
+- `extra_body` (*Body parameter*) `object`  
+  Extra request parameters:  
+  - `reference`: `boolean` - include reference in the final chunk (stream) or in the final message (non-stream).
+  - `metadata_condition`: `object` - metadata filter conditions applied to retrieval results.
 
 #### Response
 
@@ -3185,6 +3204,7 @@ Asks a specified chat assistant a question to start an AI-powered conversation.
   - `"stream"`: `boolean`
   - `"session_id"`: `string` (optional)
   - `"user_id`: `string` (optional)
+  - `"metadata_condition"`: `object` (optional)
 
 ##### Request example
 
@@ -3207,7 +3227,17 @@ curl --request POST \
      {
           "question": "Who are you",
           "stream": true,
-          "session_id":"9fa7691cb85c11ef9c5f0242ac120005"
+          "session_id":"9fa7691cb85c11ef9c5f0242ac120005",
+          "metadata_condition": {
+            "logic": "and",
+            "conditions": [
+              {
+                "name": "author",
+                "comparison_operator": "is",
+                "value": "bob"
+              }
+            ]
+          }
      }'
 ```
 
@@ -3225,6 +3255,13 @@ curl --request POST \
   The ID of session. If it is not provided, a new session will be generated.
 - `"user_id"`: (*Body parameter*), `string`  
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
+- `"metadata_condition"`: (*Body parameter*), `object`  
+  Optional metadata filter conditions applied to retrieval results.  
+  - `logic`: `string`, one of `and` / `or`
+  - `conditions`: `list[object]` where each condition contains:
+    - `name`: `string` metadata key
+    - `comparison_operator`: `string` (e.g. `is`, `not is`, `contains`, `not contains`, `start with`, `end with`, `empty`, `not empty`, `>`, `<`, `≥`, `≤`)
+    - `value`: `string|number|boolean` (optional for `empty`/`not empty`)
 
 #### Response
 

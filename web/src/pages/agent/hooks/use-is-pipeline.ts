@@ -1,5 +1,5 @@
 import { AgentCategory, AgentQuery } from '@/constants/agent';
-import { useSearchParams } from 'umi';
+import { useSearchParams } from 'react-router';
 
 export function useIsPipeline() {
   const [queryParameters] = useSearchParams();

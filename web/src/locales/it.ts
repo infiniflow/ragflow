@@ -291,6 +291,9 @@ export default {
       reRankModelWaring: 'Il modello re-rank richiede molto tempo.',
     },
     knowledgeConfiguration: {
+      imageTableContextWindow: 'Finestra di contesto immagine e tabella',
+      imageTableContextWindowTip:
+        "Cattura N token di testo sopra e sotto l'immagine e la tabella per fornire un contesto più ricco.",
       generationScopeTip:
         "Determina se RAPTOR viene generato per l'intero dataset o per un singolo file.",
       scopeDataset: 'Dataset',
@@ -322,7 +325,7 @@ export default {
       fileFilter: 'Filtro file',
       setDefaultTip: '',
       setDefault: 'Imposta come predefinito',
-      eidtLinkDataPipeline: 'Modifica pipeline di ingestione',
+      editLinkDataPipeline: 'Modifica pipeline di ingestione',
       linkPipelineSetTip:
         'Gestisci il collegamento della pipeline di ingestione con questo dataset',
       default: 'Predefinito',

@@ -22,7 +22,7 @@ from deepdoc.parser.utils import get_text
 from rag.app import naive
 from rag.app.naive import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
-from rag.nlp import bullets_category, is_english,remove_contents_table, \
+from rag.nlp import bullets_category, is_english, remove_contents_table, \
     hierarchical_merge, make_colon_as_title, naive_merge, random_choices, tokenize_table, \
     tokenize_chunks, attach_media_context
 from rag.nlp import rag_tokenizer
@@ -91,9 +91,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             filename, binary=binary, from_page=from_page, to_page=to_page)
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))
-        tbls=vision_figure_parser_docx_wrapper(sections=sections,tbls=tbls,callback=callback,**kwargs)
+        tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, **kwargs)
         # tbls = [((None, lns), None) for lns in tbls]
-        sections=[(item[0],item[1] if item[1] is not None else "") for item in sections if not isinstance(item[1], Image.Image)]
+        sections = [(item[0], item[1] if item[1] is not None else "") for item in sections if
+                    not isinstance(item[1], Image.Image)]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
@@ -109,14 +110,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
 
         sections, tables, pdf_parser = parser(
-            filename = filename,
-            binary = binary,
-            from_page = from_page,
-            to_page = to_page,
-            lang = lang,
-            callback = callback,
-            pdf_cls = Pdf,
-            layout_recognizer = layout_recognizer,
+            filename=filename,
+            binary=binary,
+            from_page=from_page,
+            to_page=to_page,
+            lang=lang,
+            callback=callback,
+            pdf_cls=Pdf,
+            layout_recognizer=layout_recognizer,
             mineru_llm_name=parser_model_name,
             **kwargs
         )
@@ -126,7 +127,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         if name in ["tcadp", "docling", "mineru"]:
             parser_config["chunk_token_num"] = 0
-        
+
         callback(0.8, "Finish parsing.")
     elif re.search(r"\.txt$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
@@ -147,9 +148,16 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        with BytesIO(binary) as binary:
-            binary = BytesIO(binary)
-            doc_parsed = parser.from_buffer(binary)
+        try:
+            from tika import parser as tika_parser
+        except Exception as e:
+            callback(0.8, f"tika not available: {e}. Unsupported .doc parsing.")
+            logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
+            return []
+
+        binary = BytesIO(binary)
+        doc_parsed = tika_parser.from_buffer(binary)
+        if doc_parsed.get('content', None) is not None:
             sections = doc_parsed['content'].split('\n')
             sections = [(line, "") for line in sections if line]
             remove_contents_table(sections, eng=is_english(
@@ -168,7 +176,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                   for ck in hierarchical_merge(bull, sections, 5)]
     else:
         sections = [s.split("@") for s, _ in sections]
-        sections = [(pr[0], "@" + pr[1]) if len(pr) == 2 else (pr[0], '') for pr in sections ]
+        sections = [(pr[0], "@" + pr[1]) if len(pr) == 2 else (pr[0], '') for pr in sections]
         chunks = naive_merge(
             sections,
             parser_config.get("chunk_token_num", 256),
@@ -192,6 +200,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
+
     chunk(sys.argv[1], from_page=1, to_page=10, callback=dummy)

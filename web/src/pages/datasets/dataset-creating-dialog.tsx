@@ -16,18 +16,11 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { LanguageTranslationMap } from '@/constants/common';
 import { FormLayout } from '@/constants/form';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -41,13 +34,7 @@ const FormId = 'dataset-creating-form';
 
 export function InputForm({ onOk }: IModalProps<any>) {
   const { t } = useTranslation();
-
-  const languageOptions = useMemo(() => {
-    return Object.keys(LanguageTranslationMap).map((x) => ({
-      label: x,
-      value: x,
-    }));
-  }, []);
+  const { data: tenantInfo } = useFetchTenantInfo();
 
   const FormSchema = z
     .object({
@@ -66,7 +53,6 @@ export function InputForm({ onOk }: IModalProps<any>) {
         .trim(),
       parser_id: z.string().optional(),
       pipeline_id: z.string().optional(),
-      language: z.string().optional(),
     })
     .superRefine((data, ctx) => {
       // When parseType === 1, parser_id is required
@@ -80,8 +66,6 @@ export function InputForm({ onOk }: IModalProps<any>) {
           path: ['parser_id'],
         });
       }
-
-      console.log('form-data', data);
       // When parseType === 1, pipline_id required
       if (data.parseType === 2 && !data.pipeline_id) {
         ctx.addIssue({
@@ -98,8 +82,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
       name: '',
       parseType: 1,
       parser_id: '',
-      embd_id: '',
-      language: 'English',
+      embd_id: tenantInfo?.embd_id,
     },
   });
 
@@ -142,33 +125,6 @@ export function InputForm({ onOk }: IModalProps<any>) {
                   {...field}
                 />
               </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="language"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('common.language')}</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={t('common.languagePlaceholder')}
-                    />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {languageOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
               <FormMessage />
             </FormItem>
           )}

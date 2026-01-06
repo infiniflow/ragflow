@@ -1,5 +1,6 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Docagg } from '@/interfaces/database/chat';
+import { middleEllipsis } from '@/utils/common-util';
 import FileIcon from '../file-icon';
 import NewDocumentLink from '../new-document-link';
 
@@ -17,7 +18,7 @@ export function ReferenceDocumentList({ list }: { list: Docagg[] }) {
               link={item.url}
               className="text-text-sub-title-invert"
             >
-              {item.doc_name}
+              {middleEllipsis(item.doc_name)}
             </NewDocumentLink>
           </CardContent>
         </Card>

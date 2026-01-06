@@ -1,4 +1,4 @@
-import { WebhookAlgorithmList } from '@/constants/agent';
+import { WebhookJWTAlgorithmList } from '@/constants/agent';
 import { z } from 'zod';
 
 export const BeginFormSchema = z.object({
@@ -30,7 +30,14 @@ export const BeginFormSchema = z.object({
       max_body_size: z.string(),
       jwt: z
         .object({
-          algorithm: z.string().default(WebhookAlgorithmList[0]).optional(),
+          algorithm: z.string().default(WebhookJWTAlgorithmList[0]).optional(),
+          required_claims: z.array(z.object({ value: z.string() })),
+        })
+        .optional(),
+      hmac: z
+        .object({
+          header: z.string().optional(),
+          secret: z.string().optional(),
         })
         .optional(),
     })

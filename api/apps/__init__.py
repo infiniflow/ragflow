@@ -38,7 +38,6 @@ settings.init_settings()
 
 __all__ = ["app"]
 
-
 app = Quart(__name__)
 app = cors(app, allow_origin="*")
 
@@ -103,12 +102,13 @@ from werkzeug.local import LocalProxy
 T = TypeVar("T")
 P = ParamSpec("P")
 
+
 def _load_user():
     jwt = Serializer(secret_key=settings.SECRET_KEY)
     authorization = request.headers.get("Authorization")
     g.user = None
     if not authorization:
-        return
+        return None
 
     try:
         access_token = str(jwt.loads(authorization))
@@ -125,18 +125,28 @@ def _load_user():
         user = UserService.query(
             access_token=access_token, status=StatusEnum.VALID.value
         )
-        if not user and len(authorization.split()) == 2:
-            objs = APIToken.query(token=authorization.split()[1])
-            if objs:
-                user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
         if user:
             if not user[0].access_token or not user[0].access_token.strip():
                 logging.warning(f"User {user[0].email} has empty access_token in database")
                 return None
             g.user = user[0]
             return user[0]
-    except Exception as e:
-        logging.warning(f"load_user got exception {e}")
+    except Exception as e_auth:
+        logging.warning(f"load_user got exception {e_auth}")
+        try:
+            authorization = request.headers.get("Authorization")
+            if len(authorization.split()) == 2:
+                objs = APIToken.query(token=authorization.split()[1])
+                if objs:
+                    user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
+                    if user:
+                        if not user[0].access_token or not user[0].access_token.strip():
+                            logging.warning(f"User {user[0].email} has empty access_token in database")
+                            return None
+                        g.user = user[0]
+                        return user[0]
+        except Exception as e_api_token:
+            logging.warning(f"load_user got exception {e_api_token}")
 
 
 current_user = LocalProxy(_load_user)
@@ -164,7 +174,7 @@ def login_required(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]
 
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-        if not current_user:# or not session.get("_user_id"):
+        if not current_user:  # or not session.get("_user_id"):
             raise Unauthorized()
         else:
             return await current_app.ensure_async(func)(*args, **kwargs)
@@ -228,6 +238,7 @@ def logout_user():
 
     return True
 
+
 def search_pages_path(page_path):
     app_path_list = [
         path for path in page_path.glob("*_app.py") if not path.name.startswith(".")
@@ -272,6 +283,16 @@ pages_dir = [
 client_urls_prefix = [
     register_page(path) for directory in pages_dir for path in search_pages_path(directory)
 ]
+
+
+@app.errorhandler(404)
+async def not_found(error):
+    error_msg: str = f"The requested URL {request.path} was not found"
+    logging.error(error_msg)
+    return {
+        "error": "Not Found",
+        "message": error_msg,
+    }, 404
 
 
 @app.teardown_request

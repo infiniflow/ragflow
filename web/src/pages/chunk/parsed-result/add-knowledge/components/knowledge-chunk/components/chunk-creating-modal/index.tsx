@@ -15,12 +15,14 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
+import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
 import Space from '@/components/ui/space';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useFetchChunk } from '@/hooks/use-chunk-request';
 import { IModalProps } from '@/interfaces/common';
+import type { ChunkDocType } from '@/interfaces/database/knowledge';
 import React, { useCallback, useEffect, useState } from 'react';
 import { FieldValues, FormProvider, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -76,6 +78,7 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
   const { removeChunk } = useDeleteChunkByIds();
   const { data } = useFetchChunk(chunkId);
   const { t } = useTranslation();
+  const isEditMode = !!chunkId;
 
   const isTagParser = parserId === 'tag';
   const onSubmit = useCallback(
@@ -144,42 +147,72 @@ const ChunkCreatingModal: React.FC<IModalProps<any> & kFProps> = ({
             )}
           />
 
-          <FormField
-            control={form.control}
-            name="image"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="gap-1">{t('chunk.image')}</FormLabel>
+          {/* Do not display the type field in create mode */}
+          {isEditMode && (
+            <FormField
+              control={form.control}
+              name="doc_type_kwd"
+              render={({ field }) => {
+                const chunkType =
+                  ((field.value &&
+                    String(field.value)?.toLowerCase()) as ChunkDocType) ||
+                  'text';
 
-                <div className="grid grid-cols-2 gap-4 items-start">
-                  {data?.data?.img_id && (
-                    <Image
-                      id={data?.data?.img_id}
-                      className="w-full object-contain"
-                    />
-                  )}
-
-                  <div className="col-start-2 col-end-3 only:col-span-2">
+                return (
+                  <FormItem>
+                    <FormLabel>{t(`chunk.type`)}</FormLabel>
                     <FormControl>
-                      <FileUploader
-                        className="h-48"
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        accept={{
-                          'image/png': [],
-                          'image/jpeg': [],
-                          'image/webp': [],
-                        }}
-                        maxFileCount={1}
-                        title={t('chunk.imageUploaderTitle')}
-                        description={<></>}
+                      <Input
+                        type="text"
+                        value={t(`chunk.docType.${chunkType}`)}
+                        readOnly
                       />
                     </FormControl>
+                  </FormItem>
+                );
+              }}
+            />
+          )}
+
+          {isEditMode && form.getValues('doc_type_kwd') === 'image' && (
+            <FormField
+              control={form.control}
+              name="image"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="gap-1">{t('chunk.image')}</FormLabel>
+
+                  <div className="space-y-4">
+                    {data?.data?.img_id && (
+                      <Image
+                        id={data?.data?.img_id}
+                        className="mx-auto w-auto max-w-full object-contain max-h-[800px]"
+                      />
+                    )}
+
+                    <div className="col-start-2 col-end-3 only:col-span-2">
+                      <FormControl>
+                        <FileUploader
+                          className="h-auto p-6"
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          accept={{
+                            'image/png': [],
+                            'image/jpeg': [],
+                            'image/webp': [],
+                          }}
+                          maxFileCount={1}
+                          hideDropzoneOnMaxFileCount
+                          title={t('chunk.imageUploaderTitle')}
+                          description={<></>}
+                        />
+                      </FormControl>
+                    </div>
                   </div>
-                </div>
-              </FormItem>
-            )}
-          />
+                </FormItem>
+              )}
+            />
+          )}
 
           <FormField
             control={form.control}

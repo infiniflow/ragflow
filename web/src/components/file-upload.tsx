@@ -287,11 +287,10 @@ function useFileUploadContext(consumerName: string) {
   return context;
 }
 
-interface FileUploadRootProps
-  extends Omit<
-    React.ComponentPropsWithoutRef<'div'>,
-    'defaultValue' | 'onChange'
-  > {
+interface FileUploadRootProps extends Omit<
+  React.ComponentPropsWithoutRef<'div'>,
+  'defaultValue' | 'onChange'
+> {
   value?: File[];
   defaultValue?: File[];
   onValueChange?: (files: File[]) => void;
@@ -639,8 +638,7 @@ function FileUploadRoot(props: FileUploadRootProps) {
   );
 }
 
-interface FileUploadDropzoneProps
-  extends React.ComponentPropsWithoutRef<'div'> {
+interface FileUploadDropzoneProps extends React.ComponentPropsWithoutRef<'div'> {
   asChild?: boolean;
 }
 
@@ -836,8 +834,7 @@ function FileUploadDropzone(props: FileUploadDropzoneProps) {
   );
 }
 
-interface FileUploadTriggerProps
-  extends React.ComponentPropsWithoutRef<'button'> {
+interface FileUploadTriggerProps extends React.ComponentPropsWithoutRef<'button'> {
   asChild?: boolean;
 }
 
@@ -1028,7 +1025,7 @@ function getFileIcon(file: File) {
 
   if (
     type.startsWith('text/') ||
-    ['txt', 'md', 'rtf', 'pdf'].includes(extension)
+    ['txt', 'md', 'mdx', 'rtf', 'pdf'].includes(extension)
   ) {
     return <FileTextIcon />;
   }
@@ -1069,8 +1066,7 @@ function getFileIcon(file: File) {
   return <FileIcon />;
 }
 
-interface FileUploadItemPreviewProps
-  extends React.ComponentPropsWithoutRef<'div'> {
+interface FileUploadItemPreviewProps extends React.ComponentPropsWithoutRef<'div'> {
   render?: (file: File) => React.ReactNode;
   asChild?: boolean;
 }
@@ -1122,8 +1118,7 @@ function FileUploadItemPreview(props: FileUploadItemPreviewProps) {
   );
 }
 
-interface FileUploadItemMetadataProps
-  extends React.ComponentPropsWithoutRef<'div'> {
+interface FileUploadItemMetadataProps extends React.ComponentPropsWithoutRef<'div'> {
   asChild?: boolean;
   size?: 'default' | 'sm';
 }
@@ -1184,8 +1179,7 @@ function FileUploadItemMetadata(props: FileUploadItemMetadataProps) {
     </ItemMetadataPrimitive>
   );
 }
-interface FileUploadItemProgressProps
-  extends React.ComponentPropsWithoutRef<'div'> {
+interface FileUploadItemProgressProps extends React.ComponentPropsWithoutRef<'div'> {
   variant?: 'linear' | 'circular' | 'fill';
   size?: number;
   asChild?: boolean;
@@ -1315,8 +1309,7 @@ function FileUploadItemProgress(props: FileUploadItemProgressProps) {
   }
 }
 
-interface FileUploadItemDeleteProps
-  extends React.ComponentPropsWithoutRef<'button'> {
+interface FileUploadItemDeleteProps extends React.ComponentPropsWithoutRef<'button'> {
   asChild?: boolean;
 }
 
@@ -1356,8 +1349,7 @@ function FileUploadItemDelete(props: FileUploadItemDeleteProps) {
   );
 }
 
-interface FileUploadClearProps
-  extends React.ComponentPropsWithoutRef<'button'> {
+interface FileUploadClearProps extends React.ComponentPropsWithoutRef<'button'> {
   forceMount?: boolean;
   asChild?: boolean;
 }

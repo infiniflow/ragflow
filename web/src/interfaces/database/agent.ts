@@ -170,6 +170,7 @@ export interface IAgentForm {
   tools: Array<{
     name: string;
     component_name: string;
+    id: string;
     params: Record<string, any>;
   }>;
   mcp: Array<{
@@ -290,4 +291,11 @@ export interface GlobalVariableType {
   value: any;
   description: string;
   type: string;
+}
+
+export interface IWebhookTrace {
+  webhook_id: null;
+  events: any[];
+  next_since_ts: number;
+  finished: boolean;
 }

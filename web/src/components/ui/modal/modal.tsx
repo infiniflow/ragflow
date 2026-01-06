@@ -31,6 +31,7 @@ export interface ModalProps {
   cancelButtonClassName?: string;
   disabled?: boolean;
   style?: React.CSSProperties;
+  zIndex?: number;
 }
 export interface ModalType extends FC<ModalProps> {
   show: typeof modalIns.show;
@@ -63,6 +64,7 @@ const Modal: ModalType = ({
   cancelButtonClassName,
   disabled = false,
   style,
+  zIndex = 50,
 }) => {
   const sizeClasses = {
     small: 'max-w-md',
@@ -170,8 +172,9 @@ const Modal: ModalType = ({
     <DialogPrimitive.Root open={open} onOpenChange={handleChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay
-          className="fixed inset-0 z-50 bg-bg-card backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[1000] bg-bg-card backdrop-blur-[1px] flex items-center justify-center p-4"
           onClick={() => maskClosable && onOpenChange?.(false)}
+          style={{ zIndex: zIndex }}
         >
           <DialogPrimitive.Content
             className={cn(
@@ -195,7 +198,7 @@ const Modal: ModalType = ({
                 )}
               >
                 {title && (
-                  <DialogPrimitive.Title className="text-lg font-medium text-foreground">
+                  <DialogPrimitive.Title className="text-lg font-medium text-foreground w-full">
                     {title}
                   </DialogPrimitive.Title>
                 )}

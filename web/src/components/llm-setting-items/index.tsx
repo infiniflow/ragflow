@@ -11,7 +11,7 @@ import { useComposeLlmOptionsByModelTypes } from '@/hooks/use-llm-request';
 import { setChatVariableEnabledFieldValuePage } from '@/utils/chat';
 import { QuestionCircleOutlined } from '@ant-design/icons';
 import { useCallback, useMemo } from 'react';
-import styles from './index.less';
+import styles from './index.module.less';
 
 interface IProps {
   prefix?: string;

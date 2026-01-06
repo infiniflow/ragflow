@@ -34,6 +34,8 @@ from api.db.services.task_service import TaskService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
+from api.db.services.memory_service import MemoryService
+from memory.services.messages import MessageService
 from rag.nlp import search
 from common.constants import ActiveEnum
 from common import settings
@@ -200,7 +202,16 @@ def delete_user_data(user_id: str) -> dict:
             done_msg += f"- Deleted {llm_delete_res} tenant-LLM records.\n"
             langfuse_delete_res = TenantLangfuseService.delete_ty_tenant_id(tenant_id)
             done_msg += f"- Deleted {langfuse_delete_res} langfuse records.\n"
-            # step1.3 delete own tenant
+            # step1.3 delete memory and messages
+            user_memory = MemoryService.get_by_tenant_id(tenant_id)
+            if user_memory:
+                for memory in user_memory:
+                    if MessageService.has_index(tenant_id, memory.id):
+                        MessageService.delete_index(tenant_id, memory.id)
+                done_msg += " Deleted memory index."
+                memory_delete_res = MemoryService.delete_by_ids([m.id for m in user_memory])
+                done_msg += f"Deleted {memory_delete_res} memory datasets."
+            # step1.4 delete own tenant
             tenant_delete_res = TenantService.delete_by_id(tenant_id)
             done_msg += f"- Deleted {tenant_delete_res} tenant.\n"
         # step2 delete user-tenant relation

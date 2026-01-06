@@ -1,4 +1,4 @@
-import { ReactComponent as FilterIcon } from '@/assets/filter.svg';
+import FilterIcon from '@/assets/filter.svg';
 import { KnowledgeRouteKey } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
@@ -32,16 +32,15 @@ import {
   Typography,
 } from 'antd';
 import { useCallback, useMemo, useState } from 'react';
-import { Link } from 'umi';
+import { Link } from 'react-router';
 import { ChunkTextMode } from '../../constant';
 
 const { Text } = Typography;
 
-interface IProps
-  extends Pick<
-    IChunkListResult,
-    'searchString' | 'handleInputChange' | 'available' | 'handleSetAvailable'
-  > {
+interface IProps extends Pick<
+  IChunkListResult,
+  'searchString' | 'handleInputChange' | 'available' | 'handleSetAvailable'
+> {
   checked: boolean;
   selectAllChunk: (checked: boolean) => void;
   createChunk: () => void;

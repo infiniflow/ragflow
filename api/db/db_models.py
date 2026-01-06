@@ -1189,7 +1189,7 @@ class Memory(DataBaseModel):
     permissions = CharField(max_length=16, null=False, index=True, help_text="me|team", default="me")
     description = TextField(null=True, help_text="description")
     memory_size = IntegerField(default=5242880, null=False, index=False)
-    forgetting_policy = CharField(max_length=32, null=False, default="fifo", index=False, help_text="lru|fifo")
+    forgetting_policy = CharField(max_length=32, null=False, default="FIFO", index=False, help_text="LRU|FIFO")
     temperature = FloatField(default=0.5, index=False)
     system_prompt = TextField(null=True, help_text="system prompt", index=False)
     user_prompt = TextField(null=True, help_text="user prompt", index=False)
@@ -1197,6 +1197,13 @@ class Memory(DataBaseModel):
     class Meta:
         db_table = "memory"
 
+class SystemSettings(DataBaseModel):
+    name = CharField(max_length=128, primary_key=True)
+    source = CharField(max_length=32, null=False, index=False)
+    data_type = CharField(max_length=32, null=False, index=False)
+    value = CharField(max_length=1024, null=False, index=False)
+    class Meta:
+        db_table = "system_settings"
 
 def migrate_db():
     logging.disable(logging.ERROR)

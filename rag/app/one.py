@@ -26,6 +26,7 @@ from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper
 from rag.app.naive import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
 
+
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0,
                  to_page=100000, zoomin=3, callback=None):
@@ -76,7 +77,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         sections, tbls = naive.Docx()(filename, binary)
-        tbls=vision_figure_parser_docx_wrapper(sections=sections,tbls=tbls,callback=callback,**kwargs)
+        tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, **kwargs)
         sections = [s for s, _ in sections if s]
         for (_, html), _ in tbls:
             sections.append(html)
@@ -95,14 +96,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
 
         sections, tbls, pdf_parser = parser(
-            filename = filename,
-            binary = binary,
-            from_page = from_page,
-            to_page = to_page,
-            lang = lang,
-            callback = callback,
-            pdf_cls = Pdf,
-            layout_recognizer = layout_recognizer,
+            filename=filename,
+            binary=binary,
+            from_page=from_page,
+            to_page=to_page,
+            lang=lang,
+            callback=callback,
+            pdf_cls=Pdf,
+            layout_recognizer=layout_recognizer,
             mineru_llm_name=parser_model_name,
             **kwargs
         )
@@ -112,9 +113,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
         if name in ["tcadp", "docling", "mineru"]:
             parser_config["chunk_token_num"] = 0
-        
+
         callback(0.8, "Finish parsing.")
-        
+
         for (img, rows), poss in tbls:
             if not rows:
                 continue
@@ -127,7 +128,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         excel_parser = ExcelParser()
         sections = excel_parser.html(binary, 1000000000)
 
-    elif re.search(r"\.(txt|md|markdown)$", filename, re.IGNORECASE):
+    elif re.search(r"\.(txt|md|markdown|mdx)$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         sections = txt.split("\n")
@@ -142,10 +143,18 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     elif re.search(r"\.doc$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
+        try:
+            from tika import parser as tika_parser
+        except Exception as e:
+            callback(0.8, f"tika not available: {e}. Unsupported .doc parsing.")
+            logging.warning(f"tika not available: {e}. Unsupported .doc parsing for {filename}.")
+            return []
+
         binary = BytesIO(binary)
-        doc_parsed = parser.from_buffer(binary)
-        sections = doc_parsed['content'].split('\n')
-        sections = [s for s in sections if s]
+        doc_parsed = tika_parser.from_buffer(binary)
+        if doc_parsed.get('content', None) is not None:
+            sections = doc_parsed['content'].split('\n')
+            sections = [s for s in sections if s]
         callback(0.8, "Finish parsing.")
 
     else:
@@ -164,7 +173,9 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 if __name__ == "__main__":
     import sys
 
+
     def dummy(prog=None, msg=""):
         pass
+
 
     chunk(sys.argv[1], from_page=0, to_page=10, callback=dummy)

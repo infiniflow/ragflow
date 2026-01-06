@@ -7,6 +7,87 @@ slug: /release_notes
 
 Key features, improvements and bug fixes in the latest releases.
 
+
+## v0.23.1
+
+Released on December 31, 2025.
+
+### Improvements
+
+- Memory: Enhances the stability of memory extraction when all memory types are selected.
+- RAG: Refines the context window extraction strategy for images and tables.
+
+
+### Fixed issues
+
+- Memory: 
+  - The RAGFlow server failed to start if an empty memory object existed.
+  - Unable to delete a newly created empty Memory.
+- RAG: MDX file parsing was not supported.
+
+### Data sources
+
+- GitHub
+- Gitlab
+- Asana
+- IMAP
+
+## v0.23.0
+
+Released on December 27, 2025.
+
+### New features
+
+- Memory
+   - Implements a **Memory** interface for managing memory.
+   - Supports configuring context via the **Retrieval** or **Message** component.
+- Agent
+   - Improves the **Agent** component's performance by refactoring the underlying architecture.
+   - The **Agent** component can now output structured data for use in downstream components.
+   - Supports using webhook to trigger agent execution.
+   - Supports voice input/output.
+   - Supports configuring multiple **Retrieval** components per **Agent** component.
+- Ingestion pipeline
+  - Supports extracting table of contents in the **Transformer** component to improve long-context RAG performance.
+- Dataset
+   - Supports configuring context window for images and tables.
+   - Introduces parent-child chunking strategy.
+   - Supports auto-generation of metadata during file parsing.
+- Chat: Supports voice input.
+
+### Improvements
+
+- RAG: Accelerates GraphRAG generation significantly.
+- Bumps RAGFlow's document engine, [Infinity](https://github.com/infiniflow/infinity) to v0.6.15 (backward compatible).
+
+### Data sources
+
+- Google Cloud Storage
+- Gmail
+- Dropbox
+- WebDAV
+- Airtable
+
+### Model support
+
+- GPT-5.2
+- GPT-5.2 Pro
+- GPT-5.1
+- GPT-5.1 Instant
+- Claude Opus 4.5
+- MiniMax M2
+- GLM-4.7.
+- A MinerU configuration interface.
+- AI Badgr (model provider).
+
+### API changes
+
+#### HTTP API
+
+- [Converse with Agent](./references/http_api_reference.md#converse-with-agent) returns complete execution trace logs.
+- [Create chat completion](./references/http_api_reference.md#create-chat-completion) supports metadata-based filtering.
+- [Converse with chat assistant](./references/http_api_reference.md#converse-with-chat-assistant) supports metadata-based filtering.
+
 ## v0.22.1
 
 Released on November 19, 2025.

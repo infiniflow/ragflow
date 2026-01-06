@@ -1,4 +1,3 @@
-import { ReactComponent as AssistantIcon } from '@/assets/svg/assistant.svg';
 import { MessageType } from '@/constants/chat';
 import {
   IMessage,
@@ -13,6 +12,7 @@ import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
 import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
+import { ReferenceImageList } from '../next-message-item/reference-image-list';
 import { UploadedMessageFiles } from '../next-message-item/uploaded-message-files';
 import {
   PDFDownloadButton,
@@ -20,9 +20,10 @@ import {
   removePDFDownloadInfo,
 } from '../pdf-download-button';
 import { RAGFlowAvatar } from '../ragflow-avatar';
+import SvgIcon from '../svg-icon';
 import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
-import styles from './index.less';
+import styles from './index.module.less';
 
 interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   item: IMessage;
@@ -116,7 +117,11 @@ const MessageItem = ({
                 isPerson
               />
             ) : (
-              <AssistantIcon />
+              <SvgIcon
+                name={'assistant'}
+                width={'100%'}
+                className={cn('size-10 fill-current')}
+              ></SvgIcon>
             ))}
 
           <section className="flex gap-2 flex-1 flex-col">
@@ -140,7 +145,6 @@ const MessageItem = ({
                 sendLoading={sendLoading}
               ></UserGroupButton>
             )}
-
             {/* Show PDF download button if download info is present */}
             {pdfDownloadInfo && (
               <PDFDownloadButton
@@ -148,7 +152,6 @@ const MessageItem = ({
                 className="mb-2"
               />
             )}
-
             {/* Show message content if there's any text besides the download */}
             {messageContent && (
               <div
@@ -168,6 +171,12 @@ const MessageItem = ({
                   clickDocumentButton={clickDocumentButton}
                 ></MarkdownContent>
               </div>
+            )}
+            {isAssistant && (
+              <ReferenceImageList
+                referenceChunks={reference.chunks}
+                messageContent={messageContent}
+              ></ReferenceImageList>
             )}
             {isAssistant && referenceDocumentList.length > 0 && (
               <ReferenceDocumentList

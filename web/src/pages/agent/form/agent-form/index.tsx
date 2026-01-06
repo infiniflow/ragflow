@@ -242,7 +242,7 @@ function AgentForm({ node }: INextOperatorForm) {
                 name={`delay_after_error`}
                 render={({ field }) => (
                   <FormItem className="flex-1">
-                    <FormLabel>{t('flow.delayEfterError')}</FormLabel>
+                    <FormLabel>{t('flow.delayAfterError')}</FormLabel>
                     <FormControl>
                       <NumberInput {...field} max={5} step={0.1}></NumberInput>
                     </FormControl>

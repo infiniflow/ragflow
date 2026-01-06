@@ -16,7 +16,7 @@ import { IModalProps } from '@/interfaces/common';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { LLMHeader } from '../../components/llm-header';
@@ -25,15 +25,18 @@ const FormSchema = z.object({
   llm_name: z.string().min(1, {
     message: t('setting.mineru.modelNameRequired'),
   }),
-  mineru_apiserver: z.string().optional(),
+  mineru_apiserver: z.string().url(),
   mineru_output_dir: z.string().optional(),
   mineru_backend: z.enum([
     'pipeline',
     'vlm-transformers',
     'vlm-vllm-engine',
     'vlm-http-client',
+    'vlm-mlx-engine',
+    'vlm-vllm-async-engine',
+    'vlm-lmdeploy-engine',
   ]),
-  mineru_server_url: z.string().optional(),
+  mineru_server_url: z.string().url().optional(),
   mineru_delete_output: z.boolean(),
 });
 
@@ -52,6 +55,9 @@ const MinerUModal = ({
     'vlm-transformers',
     'vlm-vllm-engine',
     'vlm-http-client',
+    'vlm-mlx-engine',
+    'vlm-vllm-async-engine',
+    'vlm-lmdeploy-engine',
   ]);
 
   const form = useForm<MinerUFormValues>({
@@ -60,6 +66,11 @@ const MinerUModal = ({
       mineru_backend: 'pipeline',
       mineru_delete_output: true,
     },
+  });
+
+  const backend = useWatch({
+    control: form.control,
+    name: 'mineru_backend',
   });
 
   const handleOk = async (values: MinerUFormValues) => {
@@ -93,6 +104,7 @@ const MinerUModal = ({
             <RAGFlowFormItem
               name="mineru_apiserver"
               label={t('setting.mineru.apiserver')}
+              required
             >
               <Input placeholder="http://host.docker.internal:9987" />
             </RAGFlowFormItem>
@@ -109,18 +121,25 @@ const MinerUModal = ({
               {(field) => (
                 <RAGFlowSelect
                   value={field.value}
-                  onChange={field.onChange}
+                  onChange={(value) => {
+                    field.onChange(value);
+                    if (value !== 'vlm-http-client') {
+                      form.setValue('mineru_server_url', undefined);
+                    }
+                  }}
                   options={backendOptions}
                   placeholder={t('setting.mineru.selectBackend')}
                 />
               )}
             </RAGFlowFormItem>
-            <RAGFlowFormItem
-              name="mineru_server_url"
-              label={t('setting.mineru.serverUrl')}
-            >
-              <Input placeholder="http://your-vllm-server:30000" />
-            </RAGFlowFormItem>
+            {backend === 'vlm-http-client' && (
+              <RAGFlowFormItem
+                name="mineru_server_url"
+                label={t('setting.mineru.serverUrl')}
+              >
+                <Input placeholder="http://your-vllm-server:30000" />
+              </RAGFlowFormItem>
+            )}
             <RAGFlowFormItem
               name="mineru_delete_output"
               label={t('setting.mineru.deleteOutput')}

@@ -33,12 +33,13 @@ from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTena
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from common.metadata_utils import dedupe_list
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
 from common.constants import LLMType, ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME
 from rag.nlp import rag_tokenizer, search
 from rag.utils.redis_conn import REDIS_CONN
-from rag.utils.doc_store_conn import OrderByExpr
+from common.doc_store.doc_store_base import OrderByExpr
 from common import settings
 
 
@@ -124,26 +125,26 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_kb_id(cls, kb_id, page_number, items_per_page,
-                     orderby, desc, keywords, run_status, types, suffix, doc_ids=None):
+    def get_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix, doc_ids=None, return_empty_metadata=False):
         fields = cls.get_cls_model_fields()
         if keywords:
-            docs = cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name"), User.nickname])\
-                .join(File2Document, on=(File2Document.document_id == cls.model.id))\
-                .join(File, on=(File.id == File2Document.file_id))\
-                .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
-                .join(User, on=(cls.model.created_by == User.id), join_type=JOIN.LEFT_OUTER)\
-                .where(
-                    (cls.model.kb_id == kb_id),
-                    (fn.LOWER(cls.model.name).contains(keywords.lower()))
-                )
+            docs = (
+                cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name"), User.nickname])
+                .join(File2Document, on=(File2Document.document_id == cls.model.id))
+                .join(File, on=(File.id == File2Document.file_id))
+                .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)
+                .join(User, on=(cls.model.created_by == User.id), join_type=JOIN.LEFT_OUTER)
+                .where((cls.model.kb_id == kb_id), (fn.LOWER(cls.model.name).contains(keywords.lower())))
+            )
         else:
-            docs = cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name"), User.nickname])\
-                .join(File2Document, on=(File2Document.document_id == cls.model.id))\
-                .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)\
-                .join(File, on=(File.id == File2Document.file_id))\
-                .join(User, on=(cls.model.created_by == User.id), join_type=JOIN.LEFT_OUTER)\
+            docs = (
+                cls.model.select(*[*fields, UserCanvas.title.alias("pipeline_name"), User.nickname])
+                .join(File2Document, on=(File2Document.document_id == cls.model.id))
+                .join(UserCanvas, on=(cls.model.pipeline_id == UserCanvas.id), join_type=JOIN.LEFT_OUTER)
+                .join(File, on=(File.id == File2Document.file_id))
+                .join(User, on=(cls.model.created_by == User.id), join_type=JOIN.LEFT_OUTER)
                 .where(cls.model.kb_id == kb_id)
+            )
 
         if doc_ids:
             docs = docs.where(cls.model.id.in_(doc_ids))
@@ -153,13 +154,14 @@ class DocumentService(CommonService):
             docs = docs.where(cls.model.type.in_(types))
         if suffix:
             docs = docs.where(cls.model.suffix.in_(suffix))
+        if return_empty_metadata:
+            docs = docs.where(fn.COALESCE(fn.JSON_LENGTH(cls.model.meta_fields), 0) == 0)
 
         count = docs.count()
         if desc:
             docs = docs.order_by(cls.model.getter_by(orderby).desc())
         else:
             docs = docs.order_by(cls.model.getter_by(orderby).asc())
-
 
         if page_number and items_per_page:
             docs = docs.paginate(page_number, items_per_page)
@@ -179,6 +181,16 @@ class DocumentService(CommonService):
             "run_status": {
              "1": 2,
              "2": 2
+            }
+            "metadata": {
+                "key1": {
+                 "key1_value1": 1,
+                 "key1_value2": 2,
+                },
+                "key2": {
+                 "key2_value1": 2,
+                 "key2_value2": 1,
+                },
             }
         }, total
         where "1" => RUNNING, "2" => CANCEL
@@ -200,19 +212,42 @@ class DocumentService(CommonService):
         if suffix:
             query = query.where(cls.model.suffix.in_(suffix))
 
-        rows = query.select(cls.model.run, cls.model.suffix)
+        rows = query.select(cls.model.run, cls.model.suffix, cls.model.meta_fields)
         total = rows.count()
 
         suffix_counter = {}
         run_status_counter = {}
+        metadata_counter = {}
+        empty_metadata_count = 0
 
         for row in rows:
             suffix_counter[row.suffix] = suffix_counter.get(row.suffix, 0) + 1
             run_status_counter[str(row.run)] = run_status_counter.get(str(row.run), 0) + 1
+            meta_fields = row.meta_fields or {}
+            if not meta_fields:
+                empty_metadata_count += 1
+                continue
+            has_valid_meta = False
+            for key, value in meta_fields.items():
+                values = value if isinstance(value, list) else [value]
+                for vv in values:
+                    if vv is None:
+                        continue
+                    if isinstance(vv, str) and not vv.strip():
+                        continue
+                    sv = str(vv)
+                    if key not in metadata_counter:
+                        metadata_counter[key] = {}
+                    metadata_counter[key][sv] = metadata_counter[key].get(sv, 0) + 1
+                    has_valid_meta = True
+            if not has_valid_meta:
+                empty_metadata_count += 1
 
+        metadata_counter["empty_metadata"] = {"true": empty_metadata_count}
         return {
             "suffix": suffix_counter,
-            "run_status": run_status_counter
+            "run_status": run_status_counter,
+            "metadata": metadata_counter,
         }, total
 
     @classmethod
@@ -307,21 +342,7 @@ class DocumentService(CommonService):
         cls.clear_chunk_num(doc.id)
         try:
             TaskService.filter_delete([Task.doc_id == doc.id])
-            page = 0
-            page_size = 1000
-            all_chunk_ids = []
-            while True:
-                chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
-                                                      page * page_size, page_size, search.index_name(tenant_id),
-                                                      [doc.kb_id])
-                chunk_ids = settings.docStoreConn.get_chunk_ids(chunks)
-                if not chunk_ids:
-                    break
-                all_chunk_ids.extend(chunk_ids)
-                page += 1
-            for cid in all_chunk_ids:
-                if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
-                    settings.STORAGE_IMPL.rm(doc.kb_id, cid)
+            cls.delete_chunk_images(doc, tenant_id)
             if doc.thumbnail and not doc.thumbnail.startswith(IMG_BASE64_PREFIX):
                 if settings.STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
                     settings.STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
@@ -342,6 +363,23 @@ class DocumentService(CommonService):
         except Exception:
             pass
         return cls.delete_by_id(doc.id)
+
+    @classmethod
+    @DB.connection_context()
+    def delete_chunk_images(cls, doc, tenant_id):
+        page = 0
+        page_size = 1000
+        while True:
+            chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
+                                                  page * page_size, page_size, search.index_name(tenant_id),
+                                                  [doc.kb_id])
+            chunk_ids = settings.docStoreConn.get_doc_ids(chunks)
+            if not chunk_ids:
+                break
+            for cid in chunk_ids:
+                if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
+                    settings.STORAGE_IMPL.rm(doc.kb_id, cid)
+            page += 1
 
     @classmethod
     @DB.connection_context()
@@ -665,10 +703,14 @@ class DocumentService(CommonService):
             for k,v in r.meta_fields.items():
                 if k not in meta:
                     meta[k] = {}
-                v = str(v)
-                if v not in meta[k]:
-                    meta[k][v] = []
-                meta[k][v].append(doc_id)
+                if not isinstance(v, list):
+                    v = [v]
+                for vv in v:
+                    if vv not in meta[k]:
+                        if isinstance(vv, list) or isinstance(vv, dict):
+                            continue
+                        meta[k][vv] = []
+                    meta[k][vv].append(doc_id)
         return meta
 
     @classmethod
@@ -766,7 +808,10 @@ class DocumentService(CommonService):
                 match_provided = "match" in upd
                 if isinstance(meta[key], list):
                     if not match_provided:
-                        meta[key] = new_value
+                        if isinstance(new_value, list):
+                            meta[key] = dedupe_list(new_value)
+                        else:
+                            meta[key] = new_value
                         changed = True
                     else:
                         match_value = upd.get("match")
@@ -779,7 +824,7 @@ class DocumentService(CommonService):
                             else:
                                 new_list.append(item)
                         if replaced:
-                            meta[key] = new_list
+                            meta[key] = dedupe_list(new_list)
                             changed = True
                 else:
                     if not match_provided:
@@ -1199,8 +1244,8 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             d["q_%d_vec" % len(v)] = v
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
-                if not settings.docStoreConn.indexExist(idxnm, kb_id):
-                    settings.docStoreConn.createIdx(idxnm, kb_id, len(vectors[0]))
+                if not settings.docStoreConn.index_exist(idxnm, kb_id):
+                    settings.docStoreConn.create_idx(idxnm, kb_id, len(vectors[0]))
                 try_create_idx = False
             settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 

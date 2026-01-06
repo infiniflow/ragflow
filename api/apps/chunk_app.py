@@ -76,6 +76,7 @@ async def list_chunk():
                 "image_id": sres.field[id].get("img_id", ""),
                 "available_int": int(sres.field[id].get("available_int", 1)),
                 "positions": sres.field[id].get("position_int", []),
+                "doc_type_kwd": sres.field[id].get("doc_type_kwd")
             }
             assert isinstance(d["positions"], list)
             assert len(d["positions"]) == 0 or (isinstance(d["positions"][0], list) and len(d["positions"][0]) == 5)
@@ -176,10 +177,10 @@ async def set():
             settings.docStoreConn.update({"id": req["chunk_id"]}, _d, search.index_name(tenant_id), doc.kb_id)
 
             # update image
-            image_id = req.get("img_id")
-            bkt, name = image_id.split("-")
             image_base64 = req.get("image_base64", None)
-            if image_base64:
+            img_id = req.get("img_id", "")
+            if image_base64 and img_id and "-" in img_id:
+                bkt, name = img_id.split("-", 1)
                 image_binary = base64.b64decode(image_base64)
                 settings.STORAGE_IMPL.put(bkt, name, image_binary)
             return get_json_result(data=True)
@@ -258,8 +259,6 @@ async def create():
     d["question_tks"] = rag_tokenizer.tokenize("\n".join(d["question_kwd"]))
     d["create_time"] = str(datetime.datetime.now()).replace("T", " ")[:19]
     d["create_timestamp_flt"] = datetime.datetime.now().timestamp()
-    if "tag_feas" in req:
-        d["tag_feas"] = req["tag_feas"]
     if "tag_feas" in req:
         d["tag_feas"] = req["tag_feas"]
 
@@ -381,7 +380,7 @@ async def retrieval_test():
                                rank_feature=labels
                                )
         if use_kg:
-            ck = settings.kg_retriever.retrieval(_question,
+            ck = await settings.kg_retriever.retrieval(_question,
                                                    tenant_ids,
                                                    kb_ids,
                                                    embd_mdl,
