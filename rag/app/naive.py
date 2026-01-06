@@ -41,7 +41,7 @@ from deepdoc.parser.pdf_parser import PlainParser, VisionParser
 from deepdoc.parser.docling_parser import DoclingParser
 from deepdoc.parser.tcadp_parser import TCADPParser
 from common.parser_config_utils import normalize_layout_recognizer
-from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, naive_merge_docx, rag_tokenizer, \
+from rag.nlp import concat_img, find_codec, naive_merge, naive_merge_with_images, _naive_merge_docx, rag_tokenizer, \
     tokenize_chunks, doc_tokenize_chunks_with_images, tokenize_table, append_context2table_image4pdf, tokenize_chunks_with_images, \
     attach_media_context  # noqa: F401
 
@@ -784,7 +784,7 @@ def chunk(filename, binary=None, from_page=0, to_page=100000, lang="Chinese", ca
 
         # chunks list[dict]
         # images list - index of image chunk in chunks
-        chunks, images = naive_merge_docx(
+        chunks, images = _naive_merge_docx(
             sections, int(parser_config.get(
                 "chunk_token_num", 128)), parser_config.get(
                 "delimiter", "\n!?。；！？"), table_context_size, image_context_size)
