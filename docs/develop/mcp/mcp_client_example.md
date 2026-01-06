@@ -1,6 +1,9 @@
 ---
 sidebar_position: 3
 slug: /mcp_client
+sidebar_custom_props: {
+  categoryIcon: LucideBookMarked
+}
 
 ---
 
@@ -36,11 +39,11 @@ When interacting with the MCP server via HTTP requests, follow this initializati
 
 1. **The client sends an `initialize` request** with protocol version and capabilities.
 2. **The server replies with an `initialize` response**, including the supported protocol and capabilities.
-3. **The client confirms readiness with an `initialized` notification**.  
+3. **The client confirms readiness with an `initialized` notification**.
    _The connection is established between the client and the server, and further operations (such as tool listing) may proceed._
 
 :::tip NOTE
-For more information about this initialization process, see [here](https://modelcontextprotocol.io/docs/concepts/architecture#1-initialization). 
+For more information about this initialization process, see [here](https://modelcontextprotocol.io/docs/concepts/architecture#1-initialization).
 :::
 
 In the following sections, we will walk you through a complete tool calling process.
