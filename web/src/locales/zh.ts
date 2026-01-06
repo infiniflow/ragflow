@@ -101,7 +101,7 @@ export default {
       embeddingModelTooltip:
         '将文本转换为数值向量，用于语义相似度搜索和记忆检索。',
       embeddingModelError: '记忆类型为必填项，且"原始"类型不可删除。',
-      memoryTypeTooltip: `原始: 用户与代理之间的原始对话内容（默认必需）。
+      memoryTypeTooltip: `原始: 用户与智能体之间的原始对话内容（默认必需）。
 语义记忆: 关于用户和世界的通用知识和事实。
 情景记忆: 带时间戳的特定事件和经历记录。
 程序记忆: 学习的技能、习惯和自动化程序。`,
@@ -118,15 +118,16 @@ export default {
       embeddingModel: '嵌入模型',
       selectModel: '选择模型',
       llm: '大语言模型',
-      delMemoryWarn: `删除后，此记忆中的所有消息都将被删除，代理将无法检索。`,
+      delMemoryWarn: `删除后，此记忆中的所有消息都将被删除，智能体将无法检索。`,
     },
     memory: {
       messages: {
+        forget: '遗忘',
         forgetMessageTip: '确定遗忘吗？',
         messageDescription: '记忆提取使用高级设置中的提示词和温度值进行配置。',
         copied: '已复制！',
         content: '内容',
-        delMessageWarn: `遗忘后，代理将无法检索此消息。`,
+        delMessageWarn: `遗忘后，智能体将无法检索此消息。`,
         forgetMessage: '遗忘消息',
         sessionId: '会话ID',
         agent: '智能体',
@@ -2138,6 +2139,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       delFilesContent: '已选择 {{count}} 个文件',
       delChat: '删除聊天',
       delMember: '删除成员',
+      delMemory: '删除记忆',
     },
 
     empty: {

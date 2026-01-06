@@ -30,7 +30,9 @@ export const AdvancedSettingsForm = () => {
   return (
     <>
       <div
-        className="flex items-center gap-1 w-full cursor-pointer"
+        className={cn('flex items-center gap-1 w-full cursor-pointer', {
+          'text-primary': showAdvancedSettings,
+        })}
         onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
       >
         {showAdvancedSettings ? (
@@ -134,6 +136,7 @@ export const AdvancedSettingsForm = () => {
           />
           <RenderField
             field={{
+              className: '!items-start',
               name: 'system_prompt',
               label: t('memory.config.systemPrompt'),
               type: FormFieldType.Textarea,
@@ -144,6 +147,7 @@ export const AdvancedSettingsForm = () => {
           />
           <RenderField
             field={{
+              className: '!items-start',
               name: 'user_prompt',
               label: t('memory.config.userPrompt'),
               type: FormFieldType.Textarea,

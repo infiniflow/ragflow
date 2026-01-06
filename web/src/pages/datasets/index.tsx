@@ -95,7 +95,7 @@ export default function Datasets() {
               icon={'datasets'}
             >
               <Button onClick={showModal}>
-                <Plus className=" size-2.5" />
+                <Plus className="h-4 w-4" />
                 {t('knowledgeList.createKnowledgeBase')}
               </Button>
             </ListFilterBar>
