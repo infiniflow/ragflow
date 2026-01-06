@@ -87,11 +87,14 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
         callback(0.1, "Start to parse.")
         doc_parser = naive.Docx()
         # TODO: table of contents need to be removed
-        sections = doc_parser(
+        main_sections = doc_parser(
             filename, binary=binary, from_page=from_page, to_page=to_page)
         
-        sections = [(text, image) for text, image, _ in sections]
-        tbls = [((None, html), "") for _, _, html in tbls]
+        sections = []
+        tbls = []
+        for text, image, html in main_sections:
+            sections.append((text, image))
+            tbls.append(((None, html), ""))
     
         remove_contents_table(sections, eng=is_english(
             random_choices([t for t, _ in sections], k=200)))

@@ -76,9 +76,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        sections = naive.Docx()(filename, binary)
-        sections = [(text, image) for text, image, _ in sections]
-        tbls = [((None, html), "") for _, _, html in sections]
+        main_sections = naive.Docx()(filename, binary)
+        sections = []
+        tbls = []
+        for text, image, html in main_sections:
+            sections.append((text, image))
+            tbls.append(((None, html), ""))
         tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, **kwargs)
         sections = [s for s, _ in sections if s]
         for (_, html), _ in tbls:
