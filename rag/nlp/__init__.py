@@ -1383,7 +1383,7 @@ def _merge_cks(cks, chunk_token_num):
     return merged, image_idxs
 
 
-def _naive_merge_docx(
+def naive_merge_docx(
     sections, 
     chunk_token_num = 128, 
     delimiter="\n。；！？",
