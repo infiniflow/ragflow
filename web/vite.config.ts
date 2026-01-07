@@ -74,11 +74,6 @@ export default defineConfig(({ mode, command }) => {
         },
       },
     },
-    define: {
-      'process.env.UMI_APP_RAGFLOW_ENTERPRISE': JSON.stringify(
-        env.UMI_APP_RAGFLOW_ENTERPRISE,
-      ),
-    },
     assetsInclude: ['**/*.md'],
     base: env.VITE_BASE_URL,
     publicDir: 'public',
