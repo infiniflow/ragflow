@@ -91,9 +91,10 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
                 image_idxs.append(len(cks))
 
             cks.append({"text": text, "image": image, "ck_type": ck_type})
-        
-        vision_figure_parser_docx_wrapper_naive(cks, image_idxs, callback)
 
+        vision_figure_parser_docx_wrapper_naive(cks, image_idxs, callback, **kwargs)
+        for ck in cks:
+            print(ck)
         sections = [ck["text"] for ck in cks if ck.get("text")]
         callback(0.8, "Finish parsing.")
 

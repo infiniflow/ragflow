@@ -124,14 +124,18 @@ def vision_figure_parser_pdf_wrapper(tbls, callback=None, **kwargs):
 
 
 def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kwargs):
+
+    print("\n\n hello here i am \n\n")
+
     if not chunks:
         return []
     try:
         vision_model = LLMBundle(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
         callback(0.7, "Visual model detected. Attempting to enhance figure extraction...")
+        print(" \n\n Yes vision model \n\n")
     except Exception:
         vision_model = None
-    
+        print(" \n\n No vision model \n\n")
     if vision_model:
         @timeout(30, 3)
         def worker(idx, ck):
@@ -167,7 +171,6 @@ def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, **kw
             for future in as_completed(futures):
                 idx, description = future.result()
                 chunks[idx]['text'] += description
-    
     
 shared_executor = ThreadPoolExecutor(max_workers=10)    
 
