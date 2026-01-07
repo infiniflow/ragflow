@@ -104,12 +104,13 @@ async def update_message(memory_id: str, message_id: int):
 @login_required
 async def search_message():
     args = request.args
-    print(args, flush=True)
     empty_fields = [f for f in ["memory_id", "query"] if not args.get(f)]
     if empty_fields:
         return get_error_argument_result(f"{', '.join(empty_fields)} can't be empty.")
 
     memory_ids = args.getlist("memory_id")
+    if len(memory_ids) == 1 and ',' in memory_ids[0]:
+        memory_ids = memory_ids[0].split(',')
     query = args.get("query")
     similarity_threshold = float(args.get("similarity_threshold", 0.2))
     keywords_similarity_weight = float(args.get("keywords_similarity_weight", 0.7))
@@ -137,6 +138,8 @@ async def search_message():
 async def get_messages():
     args = request.args
     memory_ids = args.getlist("memory_id")
+    if len(memory_ids) == 1 and ',' in memory_ids[0]:
+        memory_ids = memory_ids[0].split(',')
     agent_id = args.get("agent_id", "")
     session_id = args.get("session_id", "")
     limit = int(args.get("limit", 10))
