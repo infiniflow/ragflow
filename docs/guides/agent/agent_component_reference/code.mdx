@@ -1,6 +1,9 @@
 ---
 sidebar_position: 13
 slug: /code_component
+sidebar_custom_props: {
+  categoryIcon: LucideCodeXml
+}
 ---
 
 # Code component
@@ -33,7 +36,7 @@ If your RAGFlow Sandbox is not working, please be sure to consult the [Troublesh
 
 ### 3. (Optional) Install necessary dependencies
 
-If you need to import your own Python or JavaScript packages into Sandbox, please follow the commands provided in the [How to import my own Python or JavaScript packages into Sandbox?](#how-to-import-my-own-python-or-javascript-packages-into-sandbox) section to install the additional dependencies. 
+If you need to import your own Python or JavaScript packages into Sandbox, please follow the commands provided in the [How to import my own Python or JavaScript packages into Sandbox?](#how-to-import-my-own-python-or-javascript-packages-into-sandbox) section to install the additional dependencies.
 
 ### 4. Enable Sandbox-specific settings in RAGFlow
 
@@ -43,11 +46,11 @@ Ensure all Sandbox-specific settings are enabled in **ragflow/docker/.env**.
 
 Any changes to the configuration or environment *require* a full service restart to take effect.
 
-## Configurations 
+## Configurations
 
 ### Input
 
-You can specify multiple input sources for the **Code** component. Click **+ Add variable** in the **Input variables** section to include the desired input variables. 
+You can specify multiple input sources for the **Code** component. Click **+ Add variable** in the **Input variables** section to include the desired input variables.
 
 ### Code
 
@@ -59,7 +62,7 @@ If your code implementation includes defined variables, whether input or output 
 
 #### A Python code example
 
-```Python 
+```Python
     def main(arg1: str, arg2: str) -> dict:
         return {
             "result": arg1 + arg2,
@@ -102,7 +105,7 @@ The defined output variable(s) will be auto-populated here.
 
 ### `HTTPConnectionPool(host='sandbox-executor-manager', port=9385): Read timed out.`
 
-**Root cause**  
+**Root cause**
 
 - You did not properly install gVisor and `runsc` was not recognized as a valid Docker runtime.
 - You did not pull the required base images for the runners and no runner was started.
@@ -144,11 +147,11 @@ docker build -t sandbox-executor-manager:latest ./sandbox/executor_manager
 
 ### `HTTPConnectionPool(host='none', port=9385): Max retries exceeded.`
 
-**Root cause**  
+**Root cause**
 
 `sandbox-executor-manager` is not mapped in `/etc/hosts`.
 
-**Solution**  
+**Solution**
 
 Add a new entry to `/etc/hosts`:
 
@@ -156,11 +159,11 @@ Add a new entry to `/etc/hosts`:
 
 ### `Container pool is busy`
 
-**Root cause**  
+**Root cause**
 
-All runners are currently in use, executing tasks. 
+All runners are currently in use, executing tasks.
 
-**Solution**  
+**Solution**
 
 Please try again shortly or increase the pool size in the configuration to improve availability and reduce waiting times.
 
@@ -205,7 +208,7 @@ To import your JavaScript packages, navigate to `sandbox_base_image/nodejs` and 
 
 (ragflow) ➜ ragflow/sandbox main ✓ cd sandbox_base_image/nodejs
 
-(ragflow) ➜ ragflow/sandbox/sandbox_base_image/nodejs main ✓ npm install lodash 
+(ragflow) ➜ ragflow/sandbox/sandbox_base_image/nodejs main ✓ npm install lodash
 
 (ragflow) ➜ ragflow/sandbox/sandbox_base_image/nodejs main ✓ cd ../.. # go back to sandbox root directory
 

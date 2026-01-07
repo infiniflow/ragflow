@@ -97,6 +97,7 @@ export interface FormFieldConfig {
   schema?: ZodSchema;
   shouldRender?: (formValues: any) => boolean;
   labelClassName?: string;
+  className?: string;
   disabled?: boolean;
 }
 

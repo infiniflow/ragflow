@@ -21,6 +21,7 @@ from api.db import TenantPermission
 from api.db.services.memory_service import MemoryService
 from api.db.services.user_service import UserTenantService
 from api.db.services.canvas_service import UserCanvasService
+from api.db.services.task_service import TaskService
 from api.db.joint_services.memory_message_service import get_memory_size_cache, judge_system_prompt_is_default
 from api.utils.api_utils import validate_request, get_request_json, get_error_argument_result, get_json_result
 from api.utils.memory_utils import format_ret_data_from_memory, get_memory_type_human
@@ -179,13 +180,18 @@ async def list_memory():
         page = int(args.get("page", 1))
         page_size = int(args.get("page_size", 50))
         # make filter dict
-        filter_dict = {"memory_type": memory_types, "storage_type": storage_type}
+        filter_dict: dict = {"storage_type": storage_type}
         if not tenant_ids:
             # restrict to current user's tenants
             user_tenants = UserTenantService.get_user_tenant_relation_by_user_id(current_user.id)
             filter_dict["tenant_id"] = [tenant["tenant_id"] for tenant in user_tenants]
         else:
+            if len(tenant_ids) == 1 and ',' in tenant_ids[0]:
+                tenant_ids = tenant_ids[0].split(',')
             filter_dict["tenant_id"] = tenant_ids
+        if memory_types and len(memory_types) == 1 and ',' in memory_types[0]:
+            memory_types = memory_types[0].split(',')
+        filter_dict["memory_type"] = memory_types
 
         memory_list, count = MemoryService.get_by_filter(filter_dict, keywords, page, page_size)
         [memory.update({"memory_type": get_memory_type_human(memory["memory_type"])}) for memory in memory_list]
@@ -210,6 +216,8 @@ async def get_memory_config(memory_id):
 async def get_memory_detail(memory_id):
     args = request.args
     agent_ids = args.getlist("agent_id")
+    if len(agent_ids) == 1 and ',' in agent_ids[0]:
+        agent_ids = agent_ids[0].split(',')
     keywords = args.get("keywords", "")
     keywords = keywords.strip()
     page = int(args.get("page", 1))
@@ -220,9 +228,17 @@ async def get_memory_detail(memory_id):
     messages = MessageService.list_message(
         memory.tenant_id, memory_id, agent_ids, keywords, page, page_size)
     agent_name_mapping = {}
+    extract_task_mapping = {}
     if messages["message_list"]:
         agent_list = UserCanvasService.get_basic_info_by_canvas_ids([message["agent_id"] for message in messages["message_list"]])
         agent_name_mapping = {agent["id"]: agent["title"] for agent in agent_list}
+        task_list = TaskService.get_tasks_progress_by_doc_ids([memory_id])
+        if task_list:
+            task_list.sort(key=lambda t: t["create_time"]) # asc, use newer when exist more than one task
+            for task in task_list:
+                # the 'digest' field carries the source_id when a task is created, so use 'digest' as key
+                extract_task_mapping.update({int(task["digest"]): task})
     for message in messages["message_list"]:
         message["agent_name"] = agent_name_mapping.get(message["agent_id"], "Unknown")
+        message["task"] = extract_task_mapping.get(message["message_id"], {})
     return get_json_result(data={"messages": messages, "storage_type": memory.storage_type}, message=True)
