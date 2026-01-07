@@ -5,7 +5,6 @@ RUN grep -rl 'deb.debian.org' /etc/apt/ | xargs sed -i 's|http[s]*://deb.debian.
     apt-get install -y curl gcc && \
     rm -rf /var/lib/apt/lists/*
 
-# 根据架构下载对应的 Docker CLI
 ARG TARGETARCH
 ARG TARGETVARIANT
 
@@ -23,7 +22,7 @@ RUN set -eux; \
         *) echo "Unsupported architecture: ${TARGETARCH}${TARGETVARIANT}" && exit 1 ;; \
     esac; \
     echo "Downloading Docker for architecture: ${DOCKER_ARCH}"; \
-    curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-27.0.3.tgz" | \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-29.1.0.tgz" | \
     tar xz -C /usr/local/bin --strip-components=1 docker/docker; \
     ln -sf /usr/local/bin/docker /usr/bin/docker
 
