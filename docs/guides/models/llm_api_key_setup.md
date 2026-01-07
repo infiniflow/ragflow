@@ -1,6 +1,9 @@
 ---
 sidebar_position: 1
 slug: /llm_api_key_setup
+sidebar_custom_props: {
+  categoryIcon: LucideKey
+}
 ---
 
 # Configure model API key
@@ -30,7 +33,7 @@ You have two options for configuring your model API key:
    - Update `api_key` with yours.
    - Update `base_url` if you use a proxy to connect to the remote service.
 3. Reboot your system for your changes to take effect.
-4. Log into RAGFlow.  
+4. Log into RAGFlow.
    _After logging into RAGFlow, you will find your chosen model appears under **Added models** on the **Model providers** page._
 
 ### Configure model API key after logging into RAGFlow

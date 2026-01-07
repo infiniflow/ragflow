@@ -1,6 +1,9 @@
 ---
 sidebar_position: 40
 slug: /indexer_component
+sidebar_custom_props: {
+  categoryIcon: LucideListPlus
+}
 ---
 
 # Indexer component

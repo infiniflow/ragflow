@@ -4,5 +4,8 @@
   "link": {
     "type": "generated-index",
     "description": "Best practices on chat assistant configuration."
+  },
+  "customProps": {
+    "categoryIcon": "LucideStar"
   }
 }

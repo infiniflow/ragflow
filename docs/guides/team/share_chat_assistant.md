@@ -1,6 +1,9 @@
 ---
 sidebar_position: 5
 slug: /share_chat_assistant
+sidebar_custom_props: {
+  categoryIcon: LucideShare2
+}
 ---
 
 # Share chat assistant
