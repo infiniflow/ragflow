@@ -241,4 +241,6 @@ async def get_memory_detail(memory_id):
     for message in messages["message_list"]:
         message["agent_name"] = agent_name_mapping.get(message["agent_id"], "Unknown")
         message["task"] = extract_task_mapping.get(message["message_id"], {})
+        for extract_msg in message["extract"]:
+            extract_msg["agent_name"] = agent_name_mapping.get(extract_msg["agent_id"], "Unknown")
     return get_json_result(data={"messages": messages, "storage_type": memory.storage_type}, message=True)
