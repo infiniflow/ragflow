@@ -210,7 +210,7 @@ export function MemoryTable({
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-282px)]">
+      <Table rootClassName="max-h-[calc(100vh-292px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -257,7 +257,7 @@ export function MemoryTable({
           title={t('memory.messages.forgetMessage')}
           open={showDeleteDialog}
           onOpenChange={setShowDeleteDialog}
-          okButtonText={t('common.confirm')}
+          okButtonText={t('memory.messages.forget')}
           content={{
             title: t('memory.messages.forgetMessageTip'),
             node: (
