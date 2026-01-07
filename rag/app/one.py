@@ -22,7 +22,7 @@ from deepdoc.parser.utils import get_text
 from rag.app import naive
 from rag.nlp import rag_tokenizer, tokenize
 from deepdoc.parser import PdfParser, ExcelParser, HtmlParser
-from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper
+from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper_naive
 from rag.app.naive import by_plaintext, PARSERS
 from common.parser_config_utils import normalize_layout_recognizer
 
@@ -76,17 +76,25 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
 
     if re.search(r"\.docx$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
-        main_sections = naive.Docx()(filename, binary)
-        sections = []
-        tbls = []
-        for text, image, html in main_sections:
-            if text:
-                sections.append(str(text))
-            if html:
-                tbls.append(((None, html), ""))
-        tbls = vision_figure_parser_docx_wrapper(sections=sections, tbls=tbls, callback=callback, **kwargs)
-        for (_, html), _ in tbls:
-            sections.append(html)
+        sections = naive.Docx()(filename, binary)
+        cks = []
+        image_idxs = []
+
+        for text, image, table in sections:
+            if table is not None:
+                text = (text or "") + str(table)
+                ck_type = "table"
+            else:
+                ck_type = "image" if image is not None else "text"
+
+            if ck_type == "image":
+                image_idxs.append(len(cks))
+
+            cks.append({"text": text, "image": image, "ck_type": ck_type})
+        
+        vision_figure_parser_docx_wrapper_naive(cks, image_idxs, callback)
+
+        sections = [ck["text"] for ck in cks if ck.get("text")]
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
