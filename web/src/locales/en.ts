@@ -129,6 +129,7 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
     },
     memory: {
       messages: {
+        forget: 'Forget',
         forgetMessageTip: 'Are you sure you want to forget?',
         messageDescription:
           'Memory extract is configured with Prompts and Temperature from Advanced Settings.',
