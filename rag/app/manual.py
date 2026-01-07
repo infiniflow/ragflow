@@ -314,7 +314,12 @@ def chunk(filename, binary=None, from_page=0, to_page=100000,
             tk_cnt = num_tokens_from_string(txt)
             if sec_id > -1:
                 last_sid = sec_id
-        tbls = vision_figure_parser_pdf_wrapper(tbls=tbls, callback=callback, **kwargs)
+        tbls = vision_figure_parser_pdf_wrapper(
+            tbls=tbls,
+            sections=sections,
+            callback=callback,
+            **kwargs,
+        )
         res = tokenize_table(tbls, doc, eng)
         res.extend(tokenize_chunks(chunks, doc, eng, pdf_parser))
         table_ctx = max(0, int(parser_config.get("table_context_size", 0) or 0))

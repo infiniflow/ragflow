@@ -512,19 +512,29 @@ def build_TOC(task, docs, progress_callback):
     toc: list[dict] = asyncio.run(
         run_toc_from_text([d["content_with_weight"] for d in docs], chat_mdl, progress_callback))
     logging.info("------------ T O C -------------\n" + json.dumps(toc, ensure_ascii=False, indent='  '))
-    ii = 0
-    while ii < len(toc):
+    for ii, item in enumerate(toc):
         try:
-            idx = int(toc[ii]["chunk_id"])
-            del toc[ii]["chunk_id"]
-            toc[ii]["ids"] = [docs[idx]["id"]]
-            if ii == len(toc) - 1:
-                break
-            for jj in range(idx + 1, int(toc[ii + 1]["chunk_id"]) + 1):
-                toc[ii]["ids"].append(docs[jj]["id"])
+            chunk_val = item.pop("chunk_id", None)
+            if chunk_val is None or str(chunk_val).strip() == "":
+                logging.warning(f"Index {ii}: chunk_id is missing or empty. Skipping.")
+                continue
+            curr_idx = int(chunk_val)
+            if curr_idx >= len(docs):
+                logging.error(f"Index {ii}: chunk_id {curr_idx} exceeds docs length {len(docs)}.")
+                continue
+            item["ids"] = [docs[curr_idx]["id"]]
+            if ii + 1 < len(toc):
+                next_chunk_val = toc[ii + 1].get("chunk_id", "")
+                if str(next_chunk_val).strip() != "":
+                    next_idx = int(next_chunk_val)
+                    for jj in range(curr_idx + 1, min(next_idx + 1, len(docs))):
+                        item["ids"].append(docs[jj]["id"])
+                else:
+                    logging.warning(f"Index {ii + 1}: next chunk_id is empty, range fill skipped.")
+        except (ValueError, TypeError) as e:
+            logging.error(f"Index {ii}: Data conversion error - {e}")
         except Exception as e:
-            logging.exception(e)
-        ii += 1
+            logging.exception(f"Index {ii}: Unexpected error - {e}")
 
     if toc:
         d = copy.deepcopy(docs[-1])
@@ -1117,7 +1127,7 @@ async def do_handle_task(task):
         if has_canceled(task_id):
             try:
                 exists = await asyncio.to_thread(
-                    settings.docStoreConn.indexExist,
+                    settings.docStoreConn.index_exist,
                     search.index_name(task_tenant_id),
                     task_dataset_id,
                 )

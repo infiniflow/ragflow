@@ -97,6 +97,7 @@ export interface FormFieldConfig {
   schema?: ZodSchema;
   shouldRender?: (formValues: any) => boolean;
   labelClassName?: string;
+  className?: string;
   disabled?: boolean;
 }
 
@@ -187,20 +188,23 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
 
     // Handle required fields
     if (field.required) {
+      const requiredMessage =
+        field.validation?.message || `${field.label} is required`;
+
       if (field.type === FormFieldType.Checkbox) {
         fieldSchema = (fieldSchema as z.ZodBoolean).refine(
           (val) => val === true,
           {
-            message: `${field.label} is required`,
+            message: requiredMessage,
           },
         );
       } else if (field.type === FormFieldType.Tag) {
         fieldSchema = (fieldSchema as z.ZodArray<z.ZodString>).min(1, {
-          message: `${field.label} is required`,
+          message: requiredMessage,
         });
       } else {
         fieldSchema = (fieldSchema as z.ZodString).min(1, {
-          message: `${field.label} is required`,
+          message: requiredMessage,
         });
       }
     }
