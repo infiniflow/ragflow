@@ -1127,7 +1127,7 @@ async def do_handle_task(task):
         if has_canceled(task_id):
             try:
                 exists = await asyncio.to_thread(
-                    settings.docStoreConn.indexExist,
+                    settings.docStoreConn.index_exist,
                     search.index_name(task_tenant_id),
                     task_dataset_id,
                 )
