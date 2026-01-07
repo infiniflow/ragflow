@@ -1,6 +1,9 @@
 ---
 sidebar_position: 1
 slug: /admin_ui
+sidebar_custom_props: {
+  categoryIcon: LucidePalette
+}
 ---
 
 # Admin UI

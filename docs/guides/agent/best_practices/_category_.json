@@ -4,5 +4,8 @@
   "link": {
     "type": "generated-index",
     "description": "Best practices on Agent configuration."
+  },
+  "customProps": {
+    "categoryIcon": "LucideStar"
   }
 }
