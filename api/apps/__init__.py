@@ -18,11 +18,11 @@ import os
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-from quart import Blueprint, Quart, request, g, current_app, session
+from quart import Blueprint, Quart, request, g, current_app, session, jsonify
 from flasgger import Swagger
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from quart_cors import cors
-from common.constants import StatusEnum
+from common.constants import StatusEnum, RetCode
 from api.db.db_models import close_connection, APIToken
 from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
@@ -283,6 +283,27 @@ async def not_found(error):
         "error": "Not Found",
         "message": error_msg,
     }, 404
+
+
+@app.errorhandler(Unauthorized)
+async def handle_unauthorized(e):
+    """
+    Handle Unauthorized exceptions across the backend.
+
+    Notes:
+        - Any route that raises `Unauthorized` will trigger this handler.
+        - Clients can detect authentication errors either by `code` field
+          or by HTTP status 401.
+        - SDK endpoints using `@token_required` will trigger this
+          when the API key is invalid.
+        - Internal interfaces using `@login_required` are generally unaffected
+          unless they explicitly raise Unauthorized.
+    """
+    return jsonify({
+        "code": RetCode.UNAUTHORIZED,
+        "data": None,
+        "message": e.description,
+    }), 401
 
 
 @app.teardown_request
