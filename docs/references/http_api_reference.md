@@ -5569,7 +5569,7 @@ Failure
 {
     "code": 500,
     "data": null,
-    "message": "Memory {memory_id} failed. Detail: {fail information}"
+    "message": "Some messages failed to add. Detail: {fail information}"
 }
 ```
 
