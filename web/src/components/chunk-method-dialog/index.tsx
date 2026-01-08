@@ -186,19 +186,8 @@ export function ChunkMethodDialog({
   const isPdf = documentExtension === 'pdf';
 
   const showPages = useMemo(() => {
-    // Don't show pages for LLM-based layout recognition
-    const isLlmBased =
-      layoutRecognize &&
-      !['DeepDOC', 'Plain Text', 'Docling', 'TCADP Parser'].includes(
-        layoutRecognize,
-      );
-
-    return (
-      isPdf &&
-      !isLlmBased &&
-      hidePagesChunkMethods.every((x) => x !== selectedTag)
-    );
-  }, [selectedTag, isPdf, layoutRecognize]);
+    return isPdf && hidePagesChunkMethods.every((x) => x !== selectedTag);
+  }, [selectedTag, isPdf]);
 
   const showOne = useMemo(() => {
     return (
