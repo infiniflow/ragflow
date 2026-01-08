@@ -17,6 +17,7 @@
 import argparse
 import base64
 import getpass
+import urllib.parse
 from cmd import Cmd
 from typing import Any, Dict, List
 
@@ -55,6 +56,9 @@ sql_command: list_services
            | show_version
            | grant_admin
            | revoke_admin
+           | generate_token
+           | list_tokens
+           | drop_token
 
 // meta command definition
 meta_command: "\\" meta_command_name [meta_args]
@@ -98,6 +102,10 @@ RESOURCES: "RESOURCES"i
 ON: "ON"i
 SET: "SET"i
 VERSION: "VERSION"i
+TOKEN: "TOKEN"i
+TOKENS: "TOKENS"i
+GENERATE: "GENERATE"i
+DELETE: "DELETE"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -128,6 +136,10 @@ show_user_permission: SHOW USER PERMISSION quoted_string ";"
 
 grant_admin: GRANT ADMIN quoted_string ";"
 revoke_admin: REVOKE ADMIN quoted_string ";"
+
+generate_token: GENERATE TOKEN FOR USER quoted_string ";"
+list_tokens: LIST TOKENS OF quoted_string ";"
+drop_token: DROP TOKEN quoted_string OF quoted_string ";"
 
 show_version: SHOW VERSION ";"
 
@@ -263,6 +275,19 @@ class AdminTransformer(Transformer):
         user_name = items[2]
         return {"type": "revoke_admin", "user_name": user_name}
 
+    def generate_token(self, items):
+        user_name = items[4]
+        return {"type": "generate_token", "user_name": user_name}
+
+    def list_tokens(self, items):
+        user_name = items[3]
+        return {"type": "list_tokens", "user_name": user_name}
+
+    def drop_token(self, items):
+        token = items[2]
+        user_name = items[4]
+        return {"type": "drop_token", "token": token, "user_name": user_name}
+
     def action_list(self, items):
         return items
 
@@ -329,6 +354,9 @@ SHOW USER PERMISSION <user>
 SHOW VERSION
 GRANT ADMIN <user>
 REVOKE ADMIN <user>
+GENERATE TOKEN FOR USER <user>
+LIST TOKENS OF <user>
+DROP TOKEN <token> OF <user>
 
 Meta Commands:
 \\?, \\h, \\help     Show this help
@@ -621,6 +649,12 @@ class AdminCLI(Cmd):
                 self._grant_admin(command_dict)
             case "revoke_admin":
                 self._revoke_admin(command_dict)
+            case "generate_token":
+                self._generate_token(command_dict)
+            case "list_tokens":
+                self._list_tokens(command_dict)
+            case "drop_token":
+                self._drop_token(command_dict)
             case "meta":
                 self._handle_meta_command(command_dict)
             case _:
@@ -752,7 +786,6 @@ class AdminCLI(Cmd):
                 print(f"Fail to alter activate status, code: {res_json['code']}, message: {res_json['message']}")
         else:
             print(f"Unknown activate status: {activate_status}.")
-
 
     def _grant_admin(self, command):
         user_name_tree: Tree = command["user_name"]
@@ -950,6 +983,46 @@ class AdminCLI(Cmd):
         else:
             print(f"Fail to show version, code: {res_json['code']}, message: {res_json['message']}")
 
+    def _generate_token(self, command):
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Generating API token for user: {user_name}")
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/new_token"
+        response = self.session.post(url)
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Fail to generate token for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _list_tokens(self, command):
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Listing API tokens for user: {user_name}")
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/token_list"
+        response = self.session.get(url)
+        res_json = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Fail to list tokens for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _drop_token(self, command):
+        token_tree: Tree = command["token"]
+        token: str = token_tree.children[0].strip("'\"")
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Dropping API token for user: {user_name}")
+        # URL encode the token to handle special characters
+        encoded_token = urllib.parse.quote(token, safe="")
+        url = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/token/{encoded_token}"
+        response = self.session.delete(url)
+        res_json = response.json()
+        if response.status_code == 200:
+            print(res_json["message"])
+        else:
+            print(f"Fail to drop token for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+
     def _handle_meta_command(self, command):
         meta_command = command["command"]
         args = command.get("args", [])
@@ -983,11 +1056,11 @@ def main():
     else:
         if cli.verify_admin(args, single_command=False):
             print(r"""
-                ____  ___   ______________                 ___       __          _     
-               / __ \/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ 
+                ____  ___   ______________                 ___       __          _
+               / __ \/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___
               / /_/ / /| |/ / __/ /_  / / __ \ | /| / /  / /| |/ __  / __ `__ \/ / __ \
              / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /
-            /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/  /_/  |_\__,_/_/ /_/ /_/_/_/ /_/ 
+            /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/  /_/  |_\__,_/_/ /_/ /_/_/_/ /_/
             """)
             cli.cmdloop()
 
