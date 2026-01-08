@@ -2,19 +2,20 @@
 
 import json
 import logging
-from typing import Optional, TypedDict, Any
+from typing import Optional, TypedDict
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from agent.engine.graph_state import GraphState
 
 logger = logging.getLogger(__name__)
 
-# Checkpoint data structure
-class Checkpoint(TypedDict):
-    """Checkpoint data structure."""
+
+# Internal checkpoint data structure for Redis storage
+class _StoredCheckpoint(TypedDict):
+    """Internal checkpoint structure for Redis persistence."""
     id: str
     thread_id: str
-    state: dict
+    state_dict: dict  # GraphState serialized as dict
     metadata: dict
     step: int
 
@@ -61,19 +62,32 @@ class RedisCheckpoint(BaseCheckpointSaver):
         """Get checkpoint Redis key."""
         return f"{self._key_prefix}:{thread_id}"
 
-    def _get_state_key(self, thread_id: str, checkpoint_id: str) -> str:
-        """Get state Redis key."""
-        return f"{self._key_prefix}:{thread_id}:{checkpoint_id}:state"
-
-    def get(self, config: RunnableConfig) -> Optional[Checkpoint]:
+    def _get_state_key(self, thread_id: str, checkpoint_id: str = "") -> str:
         """
-        Get checkpoint by configuration.
+        Get state Redis key.
+
+        Args:
+            thread_id: Thread ID
+            checkpoint_id: Checkpoint ID (optional, for specific checkpoint state)
+
+        Returns:
+            Redis key for state storage
+        """
+        # Always use a consistent state key for the thread
+        # This simplifies state management and retrieval
+        return f"{self._key_prefix}:{thread_id}:state"
+
+    def get(self, config: RunnableConfig) -> Optional[dict]:
+        """
+        Get checkpoint by configuration and reconstruct GraphState.
+
+        Returns checkpoint data with GraphState as dict (for LangGraph compatibility).
 
         Args:
             config: RunnableConfig containing thread_id
 
         Returns:
-            Checkpoint object or None if not found
+            Checkpoint dict or None if not found
         """
         if self.redis is None:
             return None
@@ -83,61 +97,75 @@ class RedisCheckpoint(BaseCheckpointSaver):
             return None
 
         key = self._get_checkpoint_key(thread_id)
+        state_key = self._get_state_key(thread_id, "")
+
         try:
+            # Get checkpoint metadata
             data = self.redis.get(key)
             if not data:
                 return None
 
             checkpoint_data = json.loads(data)
-            return Checkpoint(**checkpoint_data)
+
+            # Get state data and reconstruct GraphState
+            state_data = self.redis.get(state_key)
+            if state_data:
+                state_dict = json.loads(state_data)
+                # Reconstruct GraphState from dict to ensure validity
+                graph_state = GraphState(**state_dict)
+                # Return GraphState as dict for LangGraph (channel_values)
+                checkpoint_data["channel_values"] = graph_state.model_dump()
+            else:
+                # If no state data, create empty GraphState
+                checkpoint_data["channel_values"] = GraphState().model_dump()
+
+            return checkpoint_data
         except Exception as e:
             logger.error(f"Failed to get checkpoint: {e}")
             return None
 
-    def put(self, config: RunnableConfig, checkpoint: Checkpoint) -> Checkpoint:
+    def put(self, config: RunnableConfig, checkpoint: dict) -> dict:
         """
         Save checkpoint to Redis.
 
         Args:
             config: RunnableConfig containing thread_id
-            checkpoint: Checkpoint object to save
+            checkpoint: Checkpoint dict with GraphState in channel_values
 
         Returns:
-            Saved checkpoint
+            Saved checkpoint dict
         """
         if self.redis is None:
             return checkpoint
 
         thread_id = config.get("configurable", {}).get("thread_id")
         checkpoint_key = self._get_checkpoint_key(thread_id)
-        state_key = self._get_state_key(thread_id, checkpoint.id)
+        state_key = self._get_state_key(thread_id, checkpoint.get("id", ""))
 
         try:
             # Save checkpoint metadata
             self.redis.set(
                 checkpoint_key,
                 json.dumps({
-                    "id": checkpoint.id,
+                    "id": checkpoint.get("id"),
                     "thread_id": thread_id,
-                    "metadata": checkpoint.metadata,
-                    "step": checkpoint.step
+                    "metadata": checkpoint.get("metadata"),
+                    "step": checkpoint.get("step", 0)
                 }),
-                ex=self.ttl
+                exp=self.ttl
             )
 
-            # Save full state
-            state_data = {
-                "globals": checkpoint.state.get("globals", {}),
-                "variables_pool": checkpoint.state.get("variables_pool", {}),
-                "messages": checkpoint.state.get("messages", []),
-                "retrieval": checkpoint.state.get("retrieval", []),
-                "current_node_id": checkpoint.state.get("current_node_id")
-            }
+            # Extract GraphState from channel_values and save
+            channel_values = checkpoint.get("channel_values", {})
+
+            # Validate and convert to GraphState for serialization
+            graph_state = GraphState(**channel_values)
+            state_data = graph_state.model_dump()
 
             self.redis.set(
                 state_key,
                 json.dumps(state_data),
-                ex=self.ttl
+                exp=self.ttl
             )
 
         except Exception as e:
@@ -145,7 +173,7 @@ class RedisCheckpoint(BaseCheckpointSaver):
 
         return checkpoint
 
-    def list(self, config: RunnableConfig, limit: int = 10, before: Optional[str] = None) -> list[Checkpoint]:
+    def list(self, config: RunnableConfig, limit: int = 10, before: Optional[str] = None) -> list[dict]:
         """
         List historical checkpoints.
 
@@ -240,12 +268,12 @@ class RedisCheckpoint(BaseCheckpointSaver):
             logger.error(f"Failed to clear checkpoints: {e}")
 
     # Required BaseCheckpointSaver methods (minimal implementation)
-    def get_tuple(self, config: RunnableConfig) -> tuple[Optional[Checkpoint], Optional[dict]]:
+    def get_tuple(self, config: RunnableConfig) -> tuple[Optional[dict], Optional[dict]]:
         """Get checkpoint tuple (for LangGraph compatibility)."""
         checkpoint = self.get(config)
         return (checkpoint, checkpoint.get("metadata") if checkpoint else None)
 
-    def put_tuple(self, config: RunnableConfig, checkpoint: tuple[Checkpoint, dict]) -> tuple[Checkpoint, dict]:
+    def put_tuple(self, config: RunnableConfig, checkpoint: tuple[dict, dict]) -> tuple[dict, dict]:
         """Put checkpoint tuple (for LangGraph compatibility)."""
         self.put(config, checkpoint[0])
         return checkpoint

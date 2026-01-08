@@ -465,7 +465,6 @@ class Canvas(Graph):
 
     async def _run_new_engine(self, **kwargs):
         """Execute using new LangGraph engine."""
-        st = time.perf_counter()
         self._loop = asyncio.get_running_loop()
         self.message_id = get_uuid()
 
