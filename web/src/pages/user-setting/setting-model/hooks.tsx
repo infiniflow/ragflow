@@ -504,3 +504,43 @@ export const useSubmitMinerU = () => {
     mineruLoading: loading,
   };
 };
+
+export const useSubmitPaddleOCR = () => {
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: paddleocrVisible,
+    hideModal: hidePaddleOCRModal,
+    showModal: showPaddleOCRModal,
+  } = useSetModalState();
+
+  const onPaddleOCROk = useCallback(
+    async (payload: any) => {
+      const cfg: any = {
+        ...payload,
+      };
+      const req: IAddLlmRequestBody = {
+        llm_factory: LLMFactory.PaddleOCR,
+        llm_name: payload.llm_name,
+        model_type: 'ocr',
+        api_key: cfg,
+        api_base: '',
+        max_tokens: 0,
+      };
+      const ret = await addLlm(req);
+      if (ret === 0) {
+        hidePaddleOCRModal();
+        return true;
+      }
+      return false;
+    },
+    [addLlm, hidePaddleOCRModal],
+  );
+
+  return {
+    paddleocrVisible,
+    hidePaddleOCRModal,
+    showPaddleOCRModal,
+    onPaddleOCROk,
+    paddleocrLoading: loading,
+  };
+};
