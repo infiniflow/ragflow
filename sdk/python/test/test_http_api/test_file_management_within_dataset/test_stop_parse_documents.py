@@ -156,7 +156,7 @@ class TestDocumentsParseStop:
 
         res = stop_parse_documnets(get_http_api_auth, dataset_id, {"document_ids": document_ids})
         assert res["code"] == 102
-        assert res["message"] == "Can't stop parsing document with progress at 0 or 1"
+        assert res["message"] == "Can't stop parsing document that has not started or already completed"
 
     @pytest.mark.p3
     def test_duplicate_stop_parse(self, get_http_api_auth, add_documents_func):
