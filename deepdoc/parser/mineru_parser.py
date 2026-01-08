@@ -20,6 +20,7 @@ import re
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
@@ -262,6 +263,8 @@ class MinerUParser(RAGFlowPdfParser):
             "response_format_zip": True,
             "start_page_id": options.start_page if options.start_page is not None else 0,
             "end_page_id": options.end_page if options.end_page is not None else 99999,
+            "batch_size": options.batch_size,
+            "exif_correction": options.exif_correction,
         }
 
         if options.server_url:
@@ -273,32 +276,41 @@ class MinerUParser(RAGFlowPdfParser):
         self.logger.info(f"[MinerU] request {options=}")
 
         headers = {"Accept": "application/json"}
-        try:
-            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')}")
-            if callback:
-                callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse")
-            response = requests.post(url=f"{self.mineru_api}/file_parse", files=files, data=data, headers=headers,
-                                     timeout=1800)
-
-            response.raise_for_status()
-            if response.headers.get("Content-Type") == "application/zip":
-                self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
-
+        max_retries = 3
+        backoff_factor = 2
+        for attempt in range(max_retries):
+            try:
+                self.logger.info(f"[MinerU] invoke api (attempt {attempt + 1}/{max_retries}): {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')}")
                 if callback:
-                    callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
+                    callback(0.20, f"[MinerU] invoke api (attempt {attempt + 1}/{max_retries}): {self.mineru_api}/file_parse")
+                response = requests.post(url=f"{self.mineru_api}/file_parse", files=files, data=data, headers=headers,
+                                         timeout=10800)
 
-                with open(output_zip_path, "wb") as f:
-                    f.write(response.content)
+                response.raise_for_status()
+                if response.headers.get("Content-Type") == "application/zip":
+                    self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
 
-                self.logger.info(f"[MinerU] Unzip to {output_path}...")
-                self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
+                    if callback:
+                        callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
 
-                if callback:
-                    callback(0.40, f"[MinerU] Unzip to {output_path}...")
-            else:
-                self.logger.warning(f"[MinerU] not zip returned from api: {response.headers.get('Content-Type')}")
-        except Exception as e:
-            raise RuntimeError(f"[MinerU] api failed with exception {e}")
+                    with open(output_zip_path, "wb") as f:
+                        f.write(response.content)
+
+                    self.logger.info(f"[MinerU] Unzip to {output_path}...")
+                    self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
+
+                    if callback:
+                        callback(0.40, f"[MinerU] Unzip to {output_path}...")
+                else:
+                    self.logger.warning(f"[MinerU] not zip returned from api: {response.headers.get('Content-Type')}")
+                break  # Success, exit retry loop
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = backoff_factor ** attempt
+                    self.logger.warning(f"[MinerU] api failed on attempt {attempt + 1}: {e}, retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    raise RuntimeError(f"[MinerU] api failed after {max_retries} attempts with exception {e}")
         self.logger.info("[MinerU] Api completed successfully.")
         return Path(output_path)
 
