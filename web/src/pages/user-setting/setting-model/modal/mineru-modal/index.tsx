@@ -41,6 +41,7 @@ const FormSchema = z.object({
   mineru_server_url: z.string().url().optional(),
   mineru_start_page: z.number().min(0).optional(),
   mineru_end_page: z.number().min(0).optional(),
+  mineru_batch_size: z.number().min(1).max(100).optional(),
   mineru_delete_output: z.boolean(),
 });
 
@@ -157,6 +158,12 @@ const MinerUModal = ({
               label={t('setting.mineru.endPage')}
             >
               <Input type="number" placeholder="99999" min="0" />
+            </RAGFlowFormItem>
+            <RAGFlowFormItem
+              name="mineru_batch_size"
+              label={t('setting.mineru.batchSize')}
+            >
+              <Input type="number" placeholder="30" min="1" max="100" />
             </RAGFlowFormItem>
             <RAGFlowFormItem
               name="mineru_delete_output"
