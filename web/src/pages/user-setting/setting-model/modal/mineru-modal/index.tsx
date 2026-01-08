@@ -29,6 +29,8 @@ const FormSchema = z.object({
   mineru_output_dir: z.string().optional(),
   mineru_backend: z.enum([
     'pipeline',
+    'hybrid-auto-engine',
+    'hybrid',
     'vlm-transformers',
     'vlm-vllm-engine',
     'vlm-http-client',
@@ -37,6 +39,8 @@ const FormSchema = z.object({
     'vlm-lmdeploy-engine',
   ]),
   mineru_server_url: z.string().url().optional(),
+  mineru_start_page: z.number().min(0).optional(),
+  mineru_end_page: z.number().min(0).optional(),
   mineru_delete_output: z.boolean(),
 });
 
@@ -52,6 +56,8 @@ const MinerUModal = ({
 
   const backendOptions = buildOptions([
     'pipeline',
+    'hybrid-auto-engine',
+    'hybrid',
     'vlm-transformers',
     'vlm-vllm-engine',
     'vlm-http-client',
@@ -63,7 +69,7 @@ const MinerUModal = ({
   const form = useForm<MinerUFormValues>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
-      mineru_backend: 'pipeline',
+      mineru_backend: 'hybrid-auto-engine',
       mineru_delete_output: true,
     },
   });
@@ -140,6 +146,18 @@ const MinerUModal = ({
                 <Input placeholder="http://your-vllm-server:30000" />
               </RAGFlowFormItem>
             )}
+            <RAGFlowFormItem
+              name="mineru_start_page"
+              label={t('setting.mineru.startPage')}
+            >
+              <Input type="number" placeholder="0" min="0" />
+            </RAGFlowFormItem>
+            <RAGFlowFormItem
+              name="mineru_end_page"
+              label={t('setting.mineru.endPage')}
+            >
+              <Input type="number" placeholder="99999" min="0" />
+            </RAGFlowFormItem>
             <RAGFlowFormItem
               name="mineru_delete_output"
               label={t('setting.mineru.deleteOutput')}
