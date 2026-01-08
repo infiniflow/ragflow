@@ -424,12 +424,18 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Enable formula recognition. Note: This may not work correctly for Cyrillic documents.',
       mineruTableEnable: 'Table recognition',
       mineruTableEnableTip: 'Enable table recognition and extraction.',
+      mineruBatchOptions: 'Batch Processing Options',
       mineruBatchSize: 'Batch Size',
-      mineruBatchSizeTip: 'Batch size for processing.',
+      mineruBatchSizeTip:
+        'Number of pages to process per batch for large PDFs. Larger values use more memory but may be faster. Default is 30.',
       mineruStartPage: 'Start Page',
-      mineruStartPageTip: 'Start page number.',
+      mineruStartPageTip:
+        'Starting page number for processing (0-based). Leave empty to start from the beginning.',
       mineruEndPage: 'End Page',
-      mineruEndPageTip: 'End page number.',
+      mineruEndPageTip:
+        'Ending page number for processing (0-based, inclusive). Leave empty to process until the end.',
+      mineruLanguage: 'Language',
+      mineruLanguageTip: 'Preferred OCR language for MinerU.',
       overlappedPercent: 'Overlapped percent(%)',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',

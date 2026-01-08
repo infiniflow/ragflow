@@ -141,22 +141,29 @@ export function MinerUOptionsFormField({
         )}
       </RAGFlowFormItem>
 
+      <div className="text-sm font-medium text-text-secondary mt-4">
+        {t(
+          'knowledgeConfiguration.mineruBatchOptions',
+          'Batch Processing Options',
+        )}
+      </div>
+
       <RAGFlowFormItem
         name={buildName('mineru_batch_size')}
         label={t('knowledgeConfiguration.mineruBatchSize', 'Batch Size')}
         tooltip={t(
           'knowledgeConfiguration.mineruBatchSizeTip',
-          'Batch size for processing.',
+          'Number of pages to process per batch for large PDFs. Larger values use more memory but may be faster. Default is 30.',
         )}
         horizontal={true}
       >
         {(field) => (
           <Input
             type="number"
+            min={1}
+            max={500}
             value={field.value ?? 30}
-            onChange={(e) => field.onChange(Number(e.target.value))}
-            min="1"
-            max="500"
+            onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 30)}
             placeholder="30"
           />
         )}
@@ -167,17 +174,21 @@ export function MinerUOptionsFormField({
         label={t('knowledgeConfiguration.mineruStartPage', 'Start Page')}
         tooltip={t(
           'knowledgeConfiguration.mineruStartPageTip',
-          'Start page number.',
+          'Starting page number for processing (0-based). Leave empty to start from the beginning.',
         )}
         horizontal={true}
       >
         {(field) => (
           <Input
             type="number"
-            value={field.value ?? 0}
-            onChange={(e) => field.onChange(Number(e.target.value))}
-            min="0"
-            placeholder="0"
+            min={0}
+            value={field.value ?? ''}
+            onChange={(e) =>
+              field.onChange(
+                e.target.value ? parseInt(e.target.value, 10) : null,
+              )
+            }
+            placeholder="Optional"
           />
         )}
       </RAGFlowFormItem>
@@ -187,17 +198,21 @@ export function MinerUOptionsFormField({
         label={t('knowledgeConfiguration.mineruEndPage', 'End Page')}
         tooltip={t(
           'knowledgeConfiguration.mineruEndPageTip',
-          'End page number.',
+          'Ending page number for processing (0-based, inclusive). Leave empty to process until the end.',
         )}
         horizontal={true}
       >
         {(field) => (
           <Input
             type="number"
-            value={field.value ?? 99999}
-            onChange={(e) => field.onChange(Number(e.target.value))}
-            min="0"
-            placeholder="99999"
+            min={0}
+            value={field.value ?? ''}
+            onChange={(e) =>
+              field.onChange(
+                e.target.value ? parseInt(e.target.value, 10) : null,
+              )
+            }
+            placeholder="Optional"
           />
         )}
       </RAGFlowFormItem>
