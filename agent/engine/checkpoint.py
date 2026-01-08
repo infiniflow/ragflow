@@ -198,16 +198,16 @@ class RedisCheckpoint(BaseCheckpointSaver):
             # Use Redis SCAN to iterate through all checkpoints for this thread
             pattern = f"{self._key_prefix}:{thread_id}:*"
             for key in self.redis.scan_iter(match=pattern):
-                key_str = key.decode() if isinstance(key, bytes) else key
-
                 # Skip state keys
-                if key_str.endswith(":state"):
+                if isinstance(key, bytes):
+                    key = key.decode()
+                if key.endswith(":state"):
                     continue
 
                 data = self.redis.get(key)
                 if data:
                     checkpoint_data = json.loads(data)
-                    checkpoints.append(Checkpoint(**checkpoint_data))
+                    checkpoints.append(checkpoint_data)
 
             # Sort by step descending
             checkpoints.sort(key=lambda x: x.step, reverse=True)

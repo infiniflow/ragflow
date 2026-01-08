@@ -110,8 +110,6 @@ class GraphEngine:
         # Step 2: Create edges from downstream/upstream
         for cpn_id, cpn_data in components.items():
             downstream = cpn_data.get("downstream", [])
-            source_component = cpn_data.get("obj", {})
-            source_type = source_component.get("component_name", "").lower()
 
             for target_id in downstream:
                 source_node = self.nodes_map.get(cpn_id)
