@@ -210,7 +210,6 @@ export function ChunkMethodDialog({
   const showAutoKeywords = useShowAutoKeywords();
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
-    console.log('🚀 ~ onSubmit ~ data:', data);
     const parserConfig = data.parser_config;
     const imageTableContextWindow = Number(
       parserConfig?.image_table_context_window || 0,
@@ -229,7 +228,6 @@ export function ChunkMethodDialog({
         pages: parserConfig?.pages?.map((x: any) => [x.from, x.to]) ?? [],
       },
     };
-    console.log('🚀 ~ onSubmit ~ nextData:', nextData);
     const ret = await onOk?.(nextData);
     if (ret) {
       hideModal?.();
