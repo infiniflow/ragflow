@@ -1,6 +1,9 @@
 ---
 sidebar_position: 4
 slug: /enable_table_of_contents
+sidebar_custom_props: {
+  categoryIcon: LucideTableOfContents
+}
 ---
 
 # Extract table of contents
@@ -28,7 +31,7 @@ The system's default chat model is used to summarize clustered content. Before p
 2. Enable **TOC Enhance**.
 
 3. To use this technique during retrieval, do either of the following:
-   
+
    - In the **Chat setting** panel of your chat app, switch on the **TOC Enhance** toggle.
    - If you are using an agent, click the **Retrieval** agent component to specify the dataset(s) and switch on the **TOC Enhance** toggle.
 

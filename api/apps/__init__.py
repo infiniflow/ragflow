@@ -125,18 +125,28 @@ def _load_user():
         user = UserService.query(
             access_token=access_token, status=StatusEnum.VALID.value
         )
-        if not user and len(authorization.split()) == 2:
-            objs = APIToken.query(token=authorization.split()[1])
-            if objs:
-                user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
         if user:
             if not user[0].access_token or not user[0].access_token.strip():
                 logging.warning(f"User {user[0].email} has empty access_token in database")
                 return None
             g.user = user[0]
             return user[0]
-    except Exception as e:
-        logging.warning(f"load_user got exception {e}")
+    except Exception as e_auth:
+        logging.warning(f"load_user got exception {e_auth}")
+        try:
+            authorization = request.headers.get("Authorization")
+            if len(authorization.split()) == 2:
+                objs = APIToken.query(token=authorization.split()[1])
+                if objs:
+                    user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
+                    if user:
+                        if not user[0].access_token or not user[0].access_token.strip():
+                            logging.warning(f"User {user[0].email} has empty access_token in database")
+                            return None
+                        g.user = user[0]
+                        return user[0]
+        except Exception as e_api_token:
+            logging.warning(f"load_user got exception {e_api_token}")
 
 
 current_user = LocalProxy(_load_user)

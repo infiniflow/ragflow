@@ -1,5 +1,8 @@
 import dayjs from 'dayjs';
+import { isPlainObject } from 'lodash';
 import JsonView from 'react18-json-view';
+import 'react18-json-view/src/style.css';
+
 import {
   Bar,
   BarChart,
@@ -15,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatDate, formatTime } from '@/utils/date';
+import ServiceDetail from './service-detail';
 
 interface TaskExecutorDetailProps {
   content?: AdminService.TaskExecutorInfo;
@@ -68,9 +72,15 @@ function CustomAxisTick({ x, y, payload }: any) {
 }
 
 function TaskExecutorDetail({ content }: TaskExecutorDetailProps) {
+  if (!isPlainObject(content)) {
+    return <ServiceDetail content={content} />;
+  }
+
   return (
     <section className="space-y-8">
       {Object.entries(content ?? {}).map(([name, data]) => {
+        console.log(data);
+
         const items = data.map((x) => ({
           ...x,
           done: Math.floor(Math.random() * 100),

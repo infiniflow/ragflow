@@ -31,7 +31,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get, set } from 'lodash';
 import { useCallback, useState } from 'react';
-import { useParams, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
@@ -622,10 +622,10 @@ export const useFetchExternalAgentInputs = () => {
     isFetching: loading,
     refetch,
   } = useQuery<IInputs>({
-    queryKey: [AgentApiAction.FetchExternalAgentInputs],
+    queryKey: [AgentApiAction.FetchExternalAgentInputs, sharedId],
     initialData: {} as IInputs,
     refetchOnReconnect: false,
-    refetchOnMount: false,
+    // refetchOnMount: false,
     refetchOnWindowFocus: false,
     gcTime: 0,
     enabled: !!sharedId,

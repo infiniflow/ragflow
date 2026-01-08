@@ -474,7 +474,8 @@ export const useSubmitMinerU = () => {
     async (payload: MinerUFormValues) => {
       const cfg: any = {
         ...payload,
-        mineru_delete_output: payload.mineru_delete_output ?? true ? '1' : '0',
+        mineru_delete_output:
+          (payload.mineru_delete_output ?? true) ? '1' : '0',
       };
       if (payload.mineru_backend !== 'vlm-http-client') {
         delete cfg.mineru_server_url;
