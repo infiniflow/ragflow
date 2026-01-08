@@ -82,8 +82,14 @@ def structure_answer(conv, ans, message_id, session_id):
 
     if not conv.message:
         conv.message = []
+    content = ans["answer"]
+    if ans.get("start_to_think"):
+        content = "<think>"
+    elif ans.get("end_to_think"):
+        content = "</think>"
+
     if not conv.message or conv.message[-1].get("role", "") != "assistant":
-        conv.message.append({"role": "assistant", "content": ans["answer"], "created_at": time.time(), "id": message_id})
+        conv.message.append({"role": "assistant", "content": content, "created_at": time.time(), "id": message_id})
     else:
         if is_final:
             if ans.get("answer"):
@@ -92,7 +98,7 @@ def structure_answer(conv, ans, message_id, session_id):
                 conv.message[-1]["created_at"] = time.time()
                 conv.message[-1]["id"] = message_id
         else:
-            conv.message[-1]["content"] = (conv.message[-1].get("content") or "") + ans["answer"]
+            conv.message[-1]["content"] = (conv.message[-1].get("content") or "") + content
             conv.message[-1]["created_at"] = time.time()
             conv.message[-1]["id"] = message_id
     if conv.reference:
