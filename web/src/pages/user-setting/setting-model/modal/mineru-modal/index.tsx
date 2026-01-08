@@ -25,6 +25,7 @@ const FormSchema = z.object({
   llm_name: z.string().min(1, {
     message: t('setting.mineru.modelNameRequired'),
   }),
+  mineru_api_key: z.string().optional(),
   mineru_apiserver: z.string().url(),
   mineru_output_dir: z.string().optional(),
   mineru_backend: z.enum([
@@ -107,6 +108,9 @@ const MinerUModal = ({
               required
             >
               <Input placeholder="http://host.docker.internal:9987" />
+            </RAGFlowFormItem>
+            <RAGFlowFormItem name="mineru_api_key" label={t('setting.apiKey')}>
+              <Input placeholder={t('setting.apiKey')} type="password" />
             </RAGFlowFormItem>
             <RAGFlowFormItem
               name="mineru_output_dir"

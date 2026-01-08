@@ -179,6 +179,21 @@ const ModelProviders = () => {
     [showApiKeyModal, showLlmAddingModal, ModalMap],
   );
 
+  const handleApiKeyClick = useCallback(
+    (llmFactory: string) => {
+      if (isLocalLlmFactory(llmFactory)) {
+        showLlmAddingModal(llmFactory);
+      } else if (llmFactory === LLMFactory.MinerU) {
+        showApiKeyModal({ llm_factory: llmFactory });
+      } else if (llmFactory in ModalMap) {
+        ModalMap[llmFactory as keyof typeof ModalMap]();
+      } else {
+        showApiKeyModal({ llm_factory: llmFactory });
+      }
+    },
+    [showApiKeyModal, showLlmAddingModal, ModalMap],
+  );
+
   const handleEditModel = useCallback(
     (model: any, factory: LlmItem) => {
       if (factory) {
@@ -213,7 +228,7 @@ const ModelProviders = () => {
           loading={saveSystemModelSettingLoading}
         />
         <UsedModel
-          handleAddModel={handleAddModel}
+          handleApiKey={handleApiKeyClick}
           handleEditModel={handleEditModel}
         />
       </section>

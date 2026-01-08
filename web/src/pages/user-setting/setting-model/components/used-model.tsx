@@ -3,10 +3,10 @@ import { t } from 'i18next';
 import { ModelProviderCard } from './modal-card';
 
 export const UsedModel = ({
-  handleAddModel,
+  handleApiKey,
   handleEditModel,
 }: {
-  handleAddModel: (factory: string) => void;
+  handleApiKey: (factory: string) => void;
   handleEditModel: (model: any, factory: LlmItem) => void;
 }) => {
   const { myLlmList: llmList } = useSelectLlmList();
@@ -20,7 +20,7 @@ export const UsedModel = ({
           <ModelProviderCard
             key={llm.name}
             item={llm}
-            clickApiKey={handleAddModel}
+            onApiKey={handleApiKey}
             handleEditModel={handleEditModel}
           />
         );

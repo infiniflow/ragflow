@@ -56,6 +56,7 @@ class MinerUOcrModel(Base, MinerUParser):
         self.mineru_backend = _resolve_config("mineru_backend", "MINERU_BACKEND", "pipeline")
         self.mineru_server_url = _resolve_config("mineru_server_url", "MINERU_SERVER_URL", "")
         self.mineru_delete_output = bool(int(_resolve_config("mineru_delete_output", "MINERU_DELETE_OUTPUT", 1)))
+        self.mineru_api_key = _resolve_config("mineru_api_key", "MINERU_API_KEY", "")
 
         # Redact sensitive config keys before logging
         redacted_config = {}
@@ -71,7 +72,12 @@ class MinerUOcrModel(Base, MinerUParser):
             f"Parsed MinerU config (sensitive fields redacted): {redacted_config}"
         )
 
-        MinerUParser.__init__(self, mineru_api=self.mineru_api, mineru_server_url=self.mineru_server_url)
+        MinerUParser.__init__(
+            self,
+            mineru_api=self.mineru_api,
+            mineru_server_url=self.mineru_server_url,
+            mineru_api_key=self.mineru_api_key,
+        )
 
     def check_available(self, backend: Optional[str] = None, server_url: Optional[str] = None) -> tuple[bool, str]:
         backend = backend or self.mineru_backend
