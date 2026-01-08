@@ -589,6 +589,26 @@ class MinerUParser(RAGFlowPdfParser):
         end_page = parser_cfg.get('mineru_end_page', None)
         batch_size = parser_cfg.get('mineru_batch_size', 30)
         strict_mode = parser_cfg.get('mineru_strict_mode', True)
+        
+        # Handle pages parameter - MinerU only supports single continuous page range
+        pages = parser_cfg.get('pages', [])
+        if pages and len(pages) > 0:
+            if len(pages) == 1:
+                # Single page range
+                page_range = pages[0]
+                if isinstance(page_range, list) and len(page_range) == 2:
+                    start_page = page_range[0] - 1  # Convert to 0-based indexing
+                    end_page = page_range[1]  # end_page is exclusive in MinerU API
+                    self.logger.info(f"[MinerU] Using page range: {page_range} (0-based: {start_page} to {end_page})")
+                else:
+                    self.logger.warning(f"[MinerU] Invalid page range format: {page_range}")
+            else:
+                # Multiple page ranges - MinerU doesn't support this, use first range
+                self.logger.warning(f"[MinerU] Multiple page ranges not supported, using first range: {pages[0]}")
+                page_range = pages[0]
+                if isinstance(page_range, list) and len(page_range) == 2:
+                    start_page = page_range[0] - 1  # Convert to 0-based indexing
+                    end_page = page_range[1]  # end_page is exclusive in MinerU API
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
