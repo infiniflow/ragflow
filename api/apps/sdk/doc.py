@@ -647,10 +647,10 @@ async def metadata_batch_update(dataset_id, tenant_id):
     for d in deletes:
         if not isinstance(d, dict) or not d.get("key"):
             return get_error_data_result(message="Each delete requires key.")
-
-    kb_doc_ids = KnowledgebaseService.list_documents_by_ids([dataset_id])
-    target_doc_ids = set(kb_doc_ids)
+   
     if document_ids:
+        kb_doc_ids = KnowledgebaseService.list_documents_by_ids([dataset_id])
+        target_doc_ids = set(kb_doc_ids)
         invalid_ids = set(document_ids) - set(kb_doc_ids)
         if invalid_ids:
             return get_error_data_result(message=f"These documents do not belong to dataset {dataset_id}: {', '.join(invalid_ids)}")
@@ -1519,11 +1519,12 @@ async def retrieval_test(tenant_id):
     toc_enhance = req.get("toc_enhance", False)
     langs = req.get("cross_languages", [])
     if not isinstance(doc_ids, list):
-        return get_error_data_result("`documents` should be a list")
-    doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
-    for doc_id in doc_ids:
-        if doc_id not in doc_ids_list:
-            return get_error_data_result(f"The datasets don't own the document {doc_id}")
+        return get_error_data_result("`documents` should be a list")   
+    if doc_ids: 
+        doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
+        for doc_id in doc_ids:
+            if doc_id not in doc_ids_list:
+                return get_error_data_result(f"The datasets don't own the document {doc_id}")
     if not doc_ids:
         metadata_condition = req.get("metadata_condition", {}) or {}
         metas = DocumentService.get_meta_by_kbs(kb_ids)
@@ -1575,7 +1576,7 @@ async def retrieval_test(tenant_id):
         )
         if toc_enhance:
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
-            cks = settings.retriever.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
+            cks = await settings.retriever.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
             if cks:
                 ranks["chunks"] = cks
         if use_kg:

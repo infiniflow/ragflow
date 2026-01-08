@@ -1,6 +1,8 @@
 import { FormFieldType } from '@/components/dynamic-form';
+import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { t, TFunction } from 'i18next';
+import { Mail } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -130,12 +132,18 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.GITHUB]: {
       name: 'GitHub',
       description: t(`setting.${DataSourceKey.GITHUB}Description`),
-      icon: <SvgIcon name={'data-source/github'} width={38} />,
+      icon: (
+        <IconFontFill
+          // name="a-DiscordIconSVGVectorIcon"
+          name="GitHub"
+          className="text-text-primary size-6"
+        ></IconFontFill>
+      ),
     },
     [DataSourceKey.IMAP]: {
       name: 'IMAP',
       description: t(`setting.${DataSourceKey.IMAP}Description`),
-      icon: <SvgIcon name={'data-source/imap'} width={38} />,
+      icon: <Mail className="text-text-primary" size={22} />,
     },
     [DataSourceKey.BITBUCKET]: {
       name: 'Bitbucket',

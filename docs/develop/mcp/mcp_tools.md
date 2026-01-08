@@ -1,6 +1,9 @@
 ---
 sidebar_position: 2
 slug: /mcp_tools
+sidebar_custom_props: {
+  categoryIcon: LucideToolCase
+}
 ---
 
 # RAGFlow MCP tools

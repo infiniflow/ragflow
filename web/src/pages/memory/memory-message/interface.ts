@@ -2,7 +2,6 @@ export interface IMessageInfo {
   message_id: number;
   message_type: 'semantic' | 'raw' | 'procedural';
   source_id: string | '-';
-  id: string;
   user_id: string;
   agent_id: string;
   agent_name: string;
@@ -11,6 +10,7 @@ export interface IMessageInfo {
   invalid_at: string;
   forget_at: string;
   status: boolean;
+  extract?: IMessageInfo[];
 }
 
 export interface IMessageTableProps {

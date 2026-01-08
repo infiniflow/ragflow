@@ -4,5 +4,8 @@
   "link": {
     "type": "generated-index",
     "description": "Team-specific guides."
+  },
+  "customProps": {
+    "categoryIcon": "LucideUsers"
   }
 }

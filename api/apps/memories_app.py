@@ -180,13 +180,18 @@ async def list_memory():
         page = int(args.get("page", 1))
         page_size = int(args.get("page_size", 50))
         # make filter dict
-        filter_dict = {"memory_type": memory_types, "storage_type": storage_type}
+        filter_dict: dict = {"storage_type": storage_type}
         if not tenant_ids:
             # restrict to current user's tenants
             user_tenants = UserTenantService.get_user_tenant_relation_by_user_id(current_user.id)
             filter_dict["tenant_id"] = [tenant["tenant_id"] for tenant in user_tenants]
         else:
+            if len(tenant_ids) == 1 and ',' in tenant_ids[0]:
+                tenant_ids = tenant_ids[0].split(',')
             filter_dict["tenant_id"] = tenant_ids
+        if memory_types and len(memory_types) == 1 and ',' in memory_types[0]:
+            memory_types = memory_types[0].split(',')
+        filter_dict["memory_type"] = memory_types
 
         memory_list, count = MemoryService.get_by_filter(filter_dict, keywords, page, page_size)
         [memory.update({"memory_type": get_memory_type_human(memory["memory_type"])}) for memory in memory_list]
@@ -211,6 +216,8 @@ async def get_memory_config(memory_id):
 async def get_memory_detail(memory_id):
     args = request.args
     agent_ids = args.getlist("agent_id")
+    if len(agent_ids) == 1 and ',' in agent_ids[0]:
+        agent_ids = agent_ids[0].split(',')
     keywords = args.get("keywords", "")
     keywords = keywords.strip()
     page = int(args.get("page", 1))
@@ -234,4 +241,6 @@ async def get_memory_detail(memory_id):
     for message in messages["message_list"]:
         message["agent_name"] = agent_name_mapping.get(message["agent_id"], "Unknown")
         message["task"] = extract_task_mapping.get(message["message_id"], {})
+        for extract_msg in message["extract"]:
+            extract_msg["agent_name"] = agent_name_mapping.get(extract_msg["agent_id"], "Unknown")
     return get_json_result(data={"messages": messages, "storage_type": memory.storage_type}, message=True)

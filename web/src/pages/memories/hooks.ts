@@ -1,14 +1,21 @@
 // src/pages/next-memoryes/hooks.ts
 
+import { FilterCollection } from '@/components/list-filter-bar/interface';
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import memoryService, { updateMemoryById } from '@/services/memory-service';
+import {
+  buildOwnersFilter,
+  groupListByArray,
+  groupListByType,
+} from '@/utils/list-filter-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { omit } from 'lodash';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router';
 import {
@@ -45,7 +52,27 @@ export const useCreateMemory = () => {
 export const useFetchMemoryList = () => {
   const { handleInputChange, searchString, pagination, setPagination } =
     useHandleSearchChange();
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+
+  const memoryType = Array.isArray(filterValue.memoryType)
+    ? filterValue.memoryType
+    : [];
+  const storageType = Array.isArray(filterValue.storageType)
+    ? filterValue.storageType
+    : [];
+  const owner = filterValue.owner;
+  const requestParams: Record<string, any> = {
+    keywords: debouncedSearchString,
+    page_size: pagination.pageSize,
+    page: pagination.current,
+    memory_type: memoryType.length > 0 ? memoryType.join(',') : undefined,
+    storage_type: storageType.length === 1 ? storageType[0] : undefined,
+  };
+
+  if (Array.isArray(owner) && owner.length > 0) {
+    requestParams.owner_ids = owner.join(',');
+  }
   const { data, isLoading, isError, refetch } = useQuery<
     MemoryListResponse,
     Error
@@ -56,16 +83,13 @@ export const useFetchMemoryList = () => {
         debouncedSearchString,
         ...pagination,
       },
+      filterValue,
     ],
     queryFn: async () => {
       const { data: response } = await memoryService.getMemoryList(
         {
-          params: {
-            keywords: debouncedSearchString,
-            page_size: pagination.pageSize,
-            page: pagination.current,
-          },
-          data: {},
+          params: requestParams,
+          data: { memory_type: memoryType },
         },
         true,
       );
@@ -93,6 +117,8 @@ export const useFetchMemoryList = () => {
     handleInputChange,
     setPagination,
     refetch,
+    filterValue,
+    handleFilterSubmit,
   };
 };
 
@@ -275,3 +301,35 @@ export const useRenameMemory = () => {
     showMemoryRenameModal: handleShowChatRenameModal,
   };
 };
+
+export function useSelectFilters() {
+  const { data: res } = useFetchMemoryList();
+  const data = res?.data;
+
+  const memoryType = useMemo(() => {
+    return groupListByArray(data?.memory_list ?? [], 'memory_type');
+  }, [data?.memory_list]);
+  const storageType = useMemo(() => {
+    return groupListByType(
+      data?.memory_list ?? [],
+      'storage_type',
+      'storage_type',
+    );
+  }, [data?.memory_list]);
+
+  const filters: FilterCollection[] = [
+    buildOwnersFilter(data?.memory_list ?? [], 'owner_name'),
+    {
+      field: 'memoryType',
+      list: memoryType,
+      label: 'Memory Type',
+    },
+    {
+      field: 'storageType',
+      list: storageType,
+      label: 'Storage Type',
+    },
+  ];
+
+  return { filters };
+}

@@ -3,9 +3,12 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { Eye, EyeOff, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
-export interface InputProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
+export interface InputProps extends Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  'prefix'
+> {
   value?: string | number | readonly string[] | undefined;
   prefix?: React.ReactNode;
   suffix?: React.ReactNode;
@@ -157,8 +160,13 @@ export interface ExpandedInputProps extends InputProps {}
 const ExpandedInput = Input;
 
 const SearchInput = (props: InputProps) => {
+  const { t } = useTranslation();
   return (
-    <Input {...props} prefix={<Search className="ml-2 mr-1 size-[1em]" />} />
+    <Input
+      placeholder={t('common.search')}
+      {...props}
+      prefix={<Search className="ml-2 mr-1 size-[1em]" />}
+    />
   );
 };
 

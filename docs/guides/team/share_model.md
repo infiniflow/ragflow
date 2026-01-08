@@ -1,6 +1,9 @@
 ---
 sidebar_position: 7
 slug: /share_model
+sidebar_custom_props: {
+  categoryIcon: LucideShare2
+}
 ---
 
 # Share models

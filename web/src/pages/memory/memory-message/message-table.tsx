@@ -17,15 +17,19 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Pagination } from '@/interfaces/common';
+import { cn } from '@/lib/utils';
 import { replaceText } from '@/pages/dataset/process-log-modal';
 import { MemoryOptions } from '@/pages/memories/constants';
 import {
   ColumnDef,
   ColumnFiltersState,
+  ExpandedState,
+  Row,
   SortingState,
   VisibilityState,
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
@@ -33,7 +37,13 @@ import {
 } from '@tanstack/react-table';
 import { t } from 'i18next';
 import { pick } from 'lodash';
-import { Copy, Eraser, TextSelect } from 'lucide-react';
+import {
+  Copy,
+  Eraser,
+  ListChevronsDownUp,
+  ListChevronsUpDown,
+  TextSelect,
+} from 'lucide-react';
 import * as React from 'react';
 import { useMemo, useState } from 'react';
 import { CopyToClipboard } from 'react-copy-to-clipboard';
@@ -74,15 +84,55 @@ export function MemoryTable({
     handleClickMessageContentDialog,
   } = useMessageAction();
 
+  const disabledRowFunc = (row: Row<IMessageInfo>) => {
+    return row.original.forget_at !== 'None' && !!row.original.forget_at;
+  };
   // Define columns for the memory table
   const columns: ColumnDef<IMessageInfo>[] = useMemo(
     () => [
       {
         accessorKey: 'session_id',
-        header: () => <span>{t('memory.messages.sessionId')}</span>,
+        header: ({ table }) => (
+          <div className="flex items-center gap-1">
+            <button
+              {...{
+                onClick: table.getToggleAllRowsExpandedHandler(),
+              }}
+            >
+              {table.getIsAllRowsExpanded() ? (
+                <ListChevronsDownUp size={16} />
+              ) : (
+                <ListChevronsUpDown size={16} />
+              )}
+            </button>{' '}
+            <span>{t('memory.messages.sessionId')}</span>
+          </div>
+        ),
         cell: ({ row }) => (
-          <div className="text-sm font-medium ">
-            {row.getValue('session_id')}
+          <div className="flex items-center gap-1">
+            {row.getCanExpand() ? (
+              <button
+                {...{
+                  onClick: row.getToggleExpandedHandler(),
+                  style: { cursor: 'pointer' },
+                }}
+              >
+                {row.getIsExpanded() ? (
+                  <ListChevronsDownUp size={16} />
+                ) : (
+                  <ListChevronsUpDown size={16} />
+                )}
+              </button>
+            ) : (
+              ''
+            )}
+            <div
+              className={cn('text-sm font-medium', {
+                'pl-5': !row.getCanExpand(),
+              })}
+            >
+              {row.getValue('session_id')}
+            </div>
           </div>
         ),
       },
@@ -138,6 +188,7 @@ export function MemoryTable({
           return (
             <div className="flex items-center">
               <Switch
+                disabled={disabledRowFunc(row)}
                 defaultChecked={isEnabled}
                 onCheckedChange={(val) => {
                   handleClickUpdateMessageState(row.original, val);
@@ -166,6 +217,7 @@ export function MemoryTable({
             </Button>
             <Button
               variant={'delete'}
+              disabled={disabledRowFunc(row)}
               className="bg-transparent"
               aria-label="Edit"
               onClick={() => {
@@ -187,15 +239,18 @@ export function MemoryTable({
       pageSize: pagination.pageSize || 10,
     };
   }, [pagination]);
-
+  const [expanded, setExpanded] = React.useState<ExpandedState>({});
   const table = useReactTable({
     data: messages,
     columns,
+    onExpandedChange: setExpanded,
+    getSubRows: (row) => row.extract || undefined,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     manualPagination: true,
@@ -204,13 +259,14 @@ export function MemoryTable({
       columnFilters,
       columnVisibility,
       pagination: currentPagination,
+      expanded,
     },
     rowCount: total,
   });
 
   return (
     <div className="w-full">
-      <Table rootClassName="max-h-[calc(100vh-282px)]">
+      <Table rootClassName="max-h-[calc(100vh-292px)]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -233,7 +289,9 @@ export function MemoryTable({
               <TableRow
                 key={row.id}
                 data-state={row.getIsSelected() && 'selected'}
-                className="group"
+                className={cn('group', {
+                  'bg-bg-list/5': !row.getCanExpand(),
+                })}
               >
                 {row.getVisibleCells().map((cell) => (
                   <TableCell key={cell.id}>
@@ -257,7 +315,7 @@ export function MemoryTable({
           title={t('memory.messages.forgetMessage')}
           open={showDeleteDialog}
           onOpenChange={setShowDeleteDialog}
-          okButtonText={t('common.confirm')}
+          okButtonText={t('memory.messages.forget')}
           content={{
             title: t('memory.messages.forgetMessageTip'),
             node: (
