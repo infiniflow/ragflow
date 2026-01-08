@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Optional, TypedDict, Any
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint import BaseCheckpointSaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from agent.engine.graph_state import GraphState
 
 logger = logging.getLogger(__name__)

@@ -3,7 +3,8 @@
 import logging
 from typing import Any, Dict
 
-from agent.component import ComponentBase, component_class
+from agent.component.base import ComponentBase
+from agent.component import component_class
 from agent.engine.graph_state import GraphState
 from agent.callback.sse_callback import SSECallback
 
