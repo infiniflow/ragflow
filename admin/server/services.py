@@ -26,6 +26,7 @@ from api.db.services.canvas_service import UserCanvasService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.api_service import APITokenService
+from api.db.db_models import APIToken
 from api.utils.crypt import decrypt
 from api.utils import health_utils
 
@@ -171,6 +172,23 @@ class UserMgr:
         return APITokenService.save(**api_token)
 
     @staticmethod
+    def delete_api_token(username: str, token: str) -> bool:
+        # use email to find user. check exist and unique.
+        user_list: list[Any] = UserService.query_user_by_email(username)
+        if not user_list:
+            raise UserNotFoundError(username)
+        elif len(user_list) > 1:
+            raise AdminException(f"Exist more than 1 user: {username}!")
+
+        usr: Any = user_list[0]
+        # tenant_id is typically the same as user_id for the owner tenant
+        tenant_id: str = usr.id
+
+        # Delete the API token
+        deleted_count: int = APITokenService.filter_delete([APIToken.tenant_id == tenant_id, APIToken.token == token])
+        return deleted_count > 0
+
+    @staticmethod
     def grant_admin(username: str):
         # use email to find user. check exist and unique.
         user_list = UserService.query_user_by_email(username)
@@ -250,13 +268,13 @@ class UserServiceMgr:
 class ServiceMgr:
     @staticmethod
     def get_all_services():
-        doc_engine = os.getenv('DOC_ENGINE', 'elasticsearch')
+        doc_engine = os.getenv("DOC_ENGINE", "elasticsearch")
         result = []
         configs = SERVICE_CONFIGS.configs
         for service_id, config in enumerate(configs):
             config_dict = config.to_dict()
-            if config_dict['service_type'] == 'retrieval':
-                if config_dict['extra']['retrieval_type'] != doc_engine:
+            if config_dict["service_type"] == "retrieval":
+                if config_dict["extra"]["retrieval_type"] != doc_engine:
                     continue
             try:
                 service_detail = ServiceMgr.get_service_details(service_id)

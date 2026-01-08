@@ -69,12 +69,14 @@ class TestGetUserApiKey:
     @pytest.mark.p2
     def test_get_user_api_key_nonexistent_user(self, admin_session: requests.Session) -> None:
         """Test getting API keys for non-existent user fails"""
-        response: Dict[str, Any] = get_user_api_key(admin_session, "nonexistent_user_12345")
+        nonexistent_user: str = "nonexistent_user_12345"
+        response: Dict[str, Any] = get_user_api_key(admin_session, nonexistent_user)
 
-        assert response["code"] != RetCode.SUCCESS, response
+        assert response["code"] == RetCode.NOT_FOUND, response
         assert "message" in response, "Response should contain message"
         message: str = response["message"]
-        assert "User not found" in message or "not found" in message.lower(), f"Message should indicate user not found, got: {message}"
+        expected_message: str = f"User '{nonexistent_user}' not found"
+        assert message == expected_message, f"Message should indicate user not found, got: {message}"
 
     @pytest.mark.p2
     def test_get_user_api_key_empty_username(self, admin_session: requests.Session) -> None:
@@ -160,7 +162,7 @@ class TestGetUserApiKey:
 
         response: Dict[str, Any] = get_user_api_key(session, user_name)
 
-        assert response["code"] != RetCode.SUCCESS, response
+        assert response["code"] == RetCode.UNAUTHORIZED, response
         assert "message" in response, "Response should contain message"
         message: str = response["message"].lower()
         assert (

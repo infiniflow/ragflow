@@ -33,9 +33,9 @@ from api.utils.api_utils import generate_confirmation_token
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/v1/admin")
 
 
-@admin_bp.route('/ping', methods=['GET'])
+@admin_bp.route("/ping", methods=["GET"])
 def ping():
-    return success_response('PONG')
+    return success_response("PONG")
 
 
 @admin_bp.route("/login", methods=["POST"])
@@ -162,7 +162,7 @@ def alter_user_activate_status(username):
         return error_response(str(e), 500)
 
 
-@admin_bp.route('/users/<username>/admin', methods=['PUT'])
+@admin_bp.route("/users/<username>/admin", methods=["PUT"])
 @login_required
 @check_admin_auth
 def grant_admin(username):
@@ -177,7 +177,8 @@ def grant_admin(username):
     except Exception as e:
         return error_response(str(e), 500)
 
-@admin_bp.route('/users/<username>/admin', methods=['DELETE'])
+
+@admin_bp.route("/users/<username>/admin", methods=["DELETE"])
 @login_required
 @check_admin_auth
 def revoke_admin(username):
@@ -191,6 +192,7 @@ def revoke_admin(username):
         return error_response(e.message, e.code)
     except Exception as e:
         return error_response(str(e), 500)
+
 
 @admin_bp.route("/users/<username>", methods=["GET"])
 @login_required
@@ -450,6 +452,22 @@ def get_user_api_keys(username: str) -> tuple[Response, int]:
     try:
         api_keys: list[dict[str, Any]] = UserMgr.get_user_api_key(username)
         return success_response(api_keys, "Get user API keys")
+    except AdminException as e:
+        return error_response(e.message, e.code)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@admin_bp.route("/users/<username>/token/<token>", methods=["DELETE"])
+@login_required
+@check_admin_auth
+def delete_user_api_key(username: str, token: str) -> tuple[Response, int]:
+    try:
+        deleted = UserMgr.delete_api_token(username, token)
+        if deleted:
+            return success_response(None, "API key deleted successfully")
+        else:
+            return error_response("API key not found or could not be deleted", 404)
     except AdminException as e:
         return error_response(e.message, e.code)
     except Exception as e:

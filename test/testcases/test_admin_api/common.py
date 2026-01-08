@@ -15,6 +15,7 @@
 #
 
 import os
+import urllib.parse
 from typing import Any, Dict
 
 import requests
@@ -26,7 +27,7 @@ ADMIN_HOST_ADDRESS = os.getenv("ADMIN_HOST_ADDRESS", "http://127.0.0.1:9381")
 
 def generate_user_api_key(session: requests.Session, user_name: str) -> Dict[str, Any]:
     """Helper function to generate API key for a user
-    
+
     Returns:
         Dict containing the full API response with keys: code, message, data
     """
@@ -47,13 +48,35 @@ def generate_user_api_key(session: requests.Session, user_name: str) -> Dict[str
 
 def get_user_api_key(session: requests.Session, username: str) -> Dict[str, Any]:
     """Helper function to get API keys for a user
-    
+
     Returns:
         Dict containing the full API response with keys: code, message, data
     """
     url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/users/{username}/token_list"
     response: requests.Response = session.get(url)
-    
+
+    try:
+        res_json: Dict[str, Any] = response.json()
+    except requests.exceptions.JSONDecodeError:
+        return {
+            "code": response.status_code,
+            "message": response.text,
+            "data": None,
+        }
+    return res_json
+
+
+def delete_user_api_key(session: requests.Session, username: str, token: str) -> Dict[str, Any]:
+    """Helper function to delete an API key for a user
+
+    Returns:
+        Dict containing the full API response with keys: code, message, data
+    """
+    # URL encode the token to handle special characters
+    encoded_token: str = urllib.parse.quote(token, safe="")
+    url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/users/{username}/token/{encoded_token}"
+    response: requests.Response = session.delete(url)
+
     try:
         res_json: Dict[str, Any] = response.json()
     except requests.exceptions.JSONDecodeError:
