@@ -190,7 +190,6 @@ class DeepResearcher:
         last_idx = 0
         endswith_think = False
         last_full = ""
-        step_token = f"dr-{id(self)}"
 
         def emit_delta(full_text: str):
             nonlocal last_idx, endswith_think, last_full
