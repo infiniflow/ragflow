@@ -40,7 +40,7 @@ class TestGetUserApiKey:
         assert get_response["code"] == RetCode.SUCCESS, get_response
         assert "message" in get_response, "Response should contain message"
         assert "data" in get_response, "Response should contain data"
-        
+
         api_keys: List[Dict[str, Any]] = get_response["data"]
 
         # Verify response is a list with at least one key
@@ -54,7 +54,7 @@ class TestGetUserApiKey:
             assert "beta" in key, "API key should contain beta"
             assert "tenant_id" in key, "API key should contain tenant_id"
             assert "create_date" in key, "API key should contain create_date"
-            
+
             # Verify field types
             assert isinstance(key["token"], str), "token should be string"
             assert isinstance(key["beta"], str), "beta should be string"
@@ -70,18 +70,17 @@ class TestGetUserApiKey:
     def test_get_user_api_key_nonexistent_user(self, admin_session: requests.Session) -> None:
         """Test getting API keys for non-existent user fails"""
         response: Dict[str, Any] = get_user_api_key(admin_session, "nonexistent_user_12345")
-        
+
         assert response["code"] != RetCode.SUCCESS, response
         assert "message" in response, "Response should contain message"
         message: str = response["message"]
-        assert "User not found" in message or "not found" in message.lower(), \
-            f"Message should indicate user not found, got: {message}"
+        assert "User not found" in message or "not found" in message.lower(), f"Message should indicate user not found, got: {message}"
 
     @pytest.mark.p2
     def test_get_user_api_key_empty_username(self, admin_session: requests.Session) -> None:
         """Test getting API keys with empty username"""
         response: Dict[str, Any] = get_user_api_key(admin_session, "")
-        
+
         # Empty username should either return error or empty list
         if response["code"] == RetCode.SUCCESS:
             assert "data" in response, "Response should contain data"
@@ -160,9 +159,11 @@ class TestGetUserApiKey:
         user_name: str = EMAIL
 
         response: Dict[str, Any] = get_user_api_key(session, user_name)
-        
+
         assert response["code"] != RetCode.SUCCESS, response
         assert "message" in response, "Response should contain message"
         message: str = response["message"].lower()
-        assert "auth" in message or "login" in message or "403" in message or "401" in message, \
-            f"Message should indicate auth error, got: {response.get('message')}"
+        assert (
+            message
+            == "<!doctype html>\n<html lang=en>\n<title>401 unauthorized</title>\n<h1>unauthorized</h1>\n<p>the server could not verify that you are authorized to access the url requested. you either supplied the wrong credentials (e.g. a bad password), or your browser doesn&#39;t understand how to supply the credentials required.</p>\n"
+        )

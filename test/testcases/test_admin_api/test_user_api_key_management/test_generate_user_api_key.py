@@ -145,13 +145,12 @@ class TestGenerateUserApiKey:
     def test_generate_user_api_key_nonexistent_user(self, admin_session: requests.Session) -> None:
         """Test generating API key for non-existent user fails"""
         response: Dict[str, Any] = generate_user_api_key(admin_session, "nonexistent_user_12345")
-        
+
         # Verify error response
         assert response.get("code") == RetCode.BAD_REQUEST, "Response code should indicate error"
         assert "message" in response, "Response should contain message"
         message: str = response.get("message", "")
-        assert  message == "User not found!", f"Message should indicate user not found, got: {message}"
-
+        assert message == "User not found!", f"Message should indicate user not found, got: {message}"
 
     @pytest.mark.p2
     def test_generate_user_api_key_tenant_id_consistency(self, admin_session: requests.Session) -> None:
@@ -162,7 +161,7 @@ class TestGenerateUserApiKey:
         response1: Dict[str, Any] = generate_user_api_key(admin_session, user_name)
         assert response1.get("code") == RetCode.SUCCESS, f"First generate should succeed, got code {response1.get('code')}"
         key1: Dict[str, Any] = response1["data"]
-        
+
         response2: Dict[str, Any] = generate_user_api_key(admin_session, user_name)
         assert response2.get("code") == RetCode.SUCCESS, f"Second generate should succeed, got code {response2.get('code')}"
         key2: Dict[str, Any] = response2["data"]
@@ -200,13 +199,16 @@ class TestGenerateUserApiKey:
         user_name: str = EMAIL
 
         response: Dict[str, Any] = generate_user_api_key(session, user_name)
-        
+
         # Verify error response
         assert response.get("code") == RetCode.UNAUTHORIZED, "Response code should indicate error"
         assert "message" in response, "Response should contain message"
         message: str = response.get("message", "").lower()
         # The message is an HTML string indicating unauthorized user .
-        assert "auth" in message or "login" in message or "403" in message or "401" in message, f"Message should indicate auth error, got: {response.get('message')}"
+        assert (
+            message
+            == "<!doctype html>\n<html lang=en>\n<title>401 unauthorized</title>\n<h1>unauthorized</h1>\n<p>the server could not verify that you are authorized to access the url requested. you either supplied the wrong credentials (e.g. a bad password), or your browser doesn&#39;t understand how to supply the credentials required.</p>\n"
+        )
 
     @pytest.mark.p3
     def test_generate_user_api_key_timestamp_fields(self, admin_session: requests.Session) -> None:

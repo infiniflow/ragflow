@@ -31,9 +31,7 @@ ENCRYPTED_ADMIN_PASSWORD: str = """WBPsJbL/W+1HN+hchm5pgu1YC3yMEb/9MFtsanZrpKEE9
 def admin_login(session: requests.Session, email: str = "admin@ragflow.io", password: str = "admin") -> str:
     """Helper function to login as admin and return authorization token"""
     url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/login"
-    # Use stored encrypted password for default "admin" password
-    encrypted_password: str = ENCRYPTED_ADMIN_PASSWORD
-    response: requests.Response = session.post(url, json={"email": email, "password": encrypted_password})
+    response: requests.Response = session.post(url, json={"email": email, "password": ENCRYPTED_ADMIN_PASSWORD})
     res_json: Dict[str, Any] = response.json()
     if res_json.get("code") != 0:
         raise Exception(res_json.get("message"))
