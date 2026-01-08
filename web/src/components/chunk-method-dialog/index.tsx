@@ -186,8 +186,8 @@ export function ChunkMethodDialog({
   const isPdf = documentExtension === 'pdf';
 
   const showPages = useMemo(() => {
-    return isPdf && hidePagesChunkMethods.every((x) => x !== selectedTag);
-  }, [selectedTag, isPdf]);
+    return layoutRecognize?.toLowerCase?.()?.includes('mineru') || false;
+  }, [layoutRecognize]);
 
   const showOne = useMemo(() => {
     return (
@@ -318,9 +318,7 @@ export function ChunkMethodDialog({
                   </FormItem>
                 )}
               /> */}
-              {showPages && parseType === 1 && (
-                <DynamicPageRange></DynamicPageRange>
-              )}
+              {showPages && <DynamicPageRange></DynamicPageRange>}
             </FormContainer>
             {parseType === 1 && (
               <>
