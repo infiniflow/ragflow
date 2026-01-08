@@ -143,6 +143,7 @@ WORKDIR /ragflow
 
 # install dependencies from uv.lock file
 COPY pyproject.toml uv.lock ./
+COPY sdk sdk
 
 # https://github.com/astral-sh/uv/issues/10462
 # uv records index url into uv.lock but doesn't failover among multiple indexes
