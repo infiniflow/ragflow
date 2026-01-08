@@ -85,6 +85,28 @@ export function DynamicPageRange() {
         <Plus />
         {t('knowledgeDetails.addPage')}
       </Button>
+
+      <FormField
+        control={form.control}
+        name="parser_config.task_page_size"
+        render={({ field }) => (
+          <FormItem className="mt-4">
+            <FormLabel tooltip={t('knowledgeDetails.taskPageSizeTip')}>
+              {t('knowledgeDetails.taskPageSize')}
+            </FormLabel>
+            <FormControl>
+              <Input
+                type="number"
+                placeholder="30"
+                min="1"
+                max="500"
+                {...field}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
     </div>
   );
 }

@@ -5,14 +5,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { IModalProps } from '@/interfaces/common';
@@ -47,7 +40,6 @@ import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
 import { MinerUOptionsFormField } from '../mineru-options-form-field';
 import { ButtonLoading } from '../ui/button';
-import { Input } from '../ui/input';
 import { DynamicPageRange } from './dynamic-page-range';
 import { useShowAutoKeywords } from './hooks';
 import {
@@ -194,8 +186,19 @@ export function ChunkMethodDialog({
   const isPdf = documentExtension === 'pdf';
 
   const showPages = useMemo(() => {
-    return isPdf && hidePagesChunkMethods.every((x) => x !== selectedTag);
-  }, [selectedTag, isPdf]);
+    // Don't show pages for LLM-based layout recognition
+    const isLlmBased =
+      layoutRecognize &&
+      !['DeepDOC', 'Plain Text', 'Docling', 'TCADP Parser'].includes(
+        layoutRecognize,
+      );
+
+    return (
+      isPdf &&
+      !isLlmBased &&
+      hidePagesChunkMethods.every((x) => x !== selectedTag)
+    );
+  }, [selectedTag, isPdf, layoutRecognize]);
 
   const showOne = useMemo(() => {
     return (
@@ -330,30 +333,6 @@ export function ChunkMethodDialog({
               /> */}
               {showPages && parseType === 1 && (
                 <DynamicPageRange></DynamicPageRange>
-              )}
-              {showPages && parseType === 1 && layoutRecognize && (
-                <FormField
-                  control={form.control}
-                  name="parser_config.task_page_size"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel
-                        tooltip={t('knowledgeDetails.taskPageSizeTip')}
-                      >
-                        {t('knowledgeDetails.taskPageSize')}
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type={'number'}
-                          min={1}
-                          max={128}
-                        ></Input>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
               )}
             </FormContainer>
             {parseType === 1 && (
