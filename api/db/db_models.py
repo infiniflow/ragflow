@@ -1234,7 +1234,7 @@ def alter_db_column_type(migrator, table_name, column_name, new_column_type):
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
     try:
         migrate(migrator.rename_column(table_name, old_column_name, new_column_name))
-    except Exception as ex:
+    except Exception:
         # rename fail will lead to a weired error.
         # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
         pass
