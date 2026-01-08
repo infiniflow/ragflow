@@ -31,6 +31,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 import pdfplumber
 import requests
+import requests.exceptions
 from PIL import Image
 from strenum import StrEnum
 
@@ -265,6 +266,7 @@ class MinerUParser(RAGFlowPdfParser):
             "end_page_id": options.end_page if options.end_page is not None else 99999,
             "batch_size": options.batch_size,
             "exif_correction": options.exif_correction,
+            "strict_mode": options.strict_mode,
         }
 
         if options.server_url:
@@ -304,7 +306,7 @@ class MinerUParser(RAGFlowPdfParser):
                 else:
                     self.logger.warning(f"[MinerU] not zip returned from api: {response.headers.get('Content-Type')}")
                 break  # Success, exit retry loop
-            except Exception as e:
+            except requests.exceptions.RequestException as e:
                 if attempt < max_retries - 1:
                     wait_time = backoff_factor ** attempt
                     self.logger.warning(f"[MinerU] api failed on attempt {attempt + 1}: {e}, retrying in {wait_time} seconds...")
