@@ -236,8 +236,6 @@ class RedisCheckpoint(BaseCheckpointSaver):
             # Find all checkpoints with this ID (across all threads)
             pattern = f"{self._key_prefix}:*"
             for key in self.redis.scan_iter(match=pattern):
-                key_str = key.decode() if isinstance(key, bytes) else key
-
                 data = self.redis.get(key)
                 if data:
                     checkpoint_data = json.loads(data)
