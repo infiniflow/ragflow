@@ -217,7 +217,7 @@ export default {
       chunkTokenNumber: 'Tamanho de bloco recomendado',
       chunkTokenNumberMessage: 'O número de tokens por fragmento é obrigatório',
       embeddingModelTip:
-        'O modelo de embedding padrão da base de conhecimento. Não pode ser alterado uma vez que a base de conhecimento tenha chunks. Para mudar para um modelo de embedding padrão diferente, é necessário excluir todos os chunks existentes na base de conhecimento.',
+        'O modelo de embedding padrão da base de conhecimento. Depois que a base de conhecimento já possui chunks, ao trocar o modelo de embedding o sistema sorteia alguns chunks para verificação de compatibilidade, os re-embebe com o novo modelo de embedding e calcula a similaridade cosseno entre os vetores novos e antigos. A troca só é permitida quando a similaridade média da amostra é ≥ 0.9. Caso contrário, é necessário excluir todos os chunks da base de conhecimento antes de poder alterar.',
       permissionsTip:
         "Se definido como 'Equipe', todos os membros da equipe poderão gerenciar a base de conhecimento.",
       chunkTokenNumberTip:
