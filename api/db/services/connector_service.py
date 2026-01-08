@@ -28,6 +28,7 @@ from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
 from common.constants import TaskStatus
 from common.time_utils import current_timestamp, timestamp_to_date
+from common import settings
 
 
 class ConnectorService(CommonService):
@@ -209,29 +210,109 @@ class SyncLogsService(CommonService):
                 return self.blob
 
         errs = []
-        files = [FileObj(filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"]) for d in docs]
         doc_ids = []
-        err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
-        errs.extend(err)
-
-        # Create a mapping from filename to metadata for later use
+        
+        # Create mappings for metadata and external IDs
         metadata_map = {}
+        external_id_map = {}  # Maps filename to external document ID
+        docs_to_upload = []  # List of docs that need to be uploaded (new or updated)
+        
         for d in docs:
+            filename = d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else "")
             if d.get("metadata"):
-                filename = d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else "")
                 metadata_map[filename] = d["metadata"]
-
-        kb_table_num_map = {}
-        for doc, _ in doc_blob_pairs:
-            doc_ids.append(doc["id"])
+            if d.get("id"):
+                external_id_map[filename] = d["id"]
+            docs_to_upload.append(d)
+        
+        # Check for existing documents from this source
+        existing_docs_by_location = {}
+        if external_id_map:
+            existing_docs = DocumentService.query(kb_id=kb.id, source_type=src)
+            for doc in existing_docs:
+                if doc.location:
+                    existing_docs_by_location[doc.location] = doc
+        
+        files_to_create = []
+        docs_to_update = []
+        
+        for d in docs_to_upload:
+            filename = d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else "")
             
-            # Set metadata if available for this document
-            if doc["name"] in metadata_map:
-                DocumentService.update_by_id(doc["id"], {"meta_fields": metadata_map[doc["name"]]})
+            existing_doc = None
+            for loc, doc in existing_docs_by_location.items():
+                if loc.endswith(filename) or loc == filename:
+                    existing_doc = doc
+                    break
             
-            if not auto_parse or auto_parse == "0":
-                continue
-            DocumentService.run(tenant_id, doc, kb_table_num_map)
+            if existing_doc:
+                # Document exists - always update it since we can't reliably compare timestamps
+                # For now, always update existing documents to ensure they stay in sync
+                # TODO: Implement reliable timestamp comparison once update_time format is standardized
+                logging.info(f"Updating existing document: {filename} (ID: {existing_doc.id})")
+                docs_to_update.append((existing_doc, d, filename))
+            else:
+                files_to_create.append(FileObj(filename=filename, blob=d["blob"]))
+        
+        # Upload new documents
+        if files_to_create:
+            err, doc_blob_pairs = FileService.upload_document(kb, files_to_create, tenant_id, src)
+            errs.extend(err)
+            
+            kb_table_num_map = {}
+            for doc, _ in doc_blob_pairs:
+                doc_ids.append(doc["id"])
+                
+                # Set metadata if available for this document
+                if doc["name"] in metadata_map:
+                    DocumentService.update_by_id(doc["id"], {"meta_fields": metadata_map[doc["name"]]})
+                
+                if not auto_parse or auto_parse == "0":
+                    continue
+                DocumentService.run(tenant_id, doc, kb_table_num_map)
+            
+            if files_to_create:
+                logging.info(f"Created {len(files_to_create)} new document(s)")
+        
+        # Update existing documents
+        if docs_to_update:
+            logging.info(f"Updating {len(docs_to_update)} existing document(s)")
+            
+        for existing_doc, doc_data, filename in docs_to_update:
+            try:
+                blob = doc_data["blob"]
+                location = existing_doc.location
+                
+                settings.STORAGE_IMPL.put(kb.id, location, blob)
+                
+                update_fields = {
+                    "size": len(blob),
+                    "run": "1" if auto_parse and auto_parse != "0" else "0",
+                    "progress": 0,
+                    "progress_msg": "",
+                    "chunk_num": 0,
+                    "token_num": 0,
+                }
+                
+                if filename in metadata_map:
+                    update_fields["meta_fields"] = metadata_map[filename]
+                
+                DocumentService.update_by_id(existing_doc.id, update_fields)
+                doc_ids.append(existing_doc.id)
+                
+                # Re-parse if needed
+                if auto_parse and auto_parse != "0":
+                    DocumentService.clear_chunk_num(existing_doc.id)
+                    
+                    kb_table_num_map = {}
+                    doc_dict = existing_doc.to_dict()
+                    doc_dict.update(update_fields)
+                    DocumentService.run(tenant_id, doc_dict, kb_table_num_map)
+                    
+            except Exception as e:
+                error_msg = f"{filename}: Failed to update - {str(e)}"
+                errs.append(error_msg)
+                logging.error(error_msg)
 
         return errs, doc_ids
 

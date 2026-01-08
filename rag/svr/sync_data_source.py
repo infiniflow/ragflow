@@ -36,6 +36,7 @@ from flask import json
 
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.document_service import DocumentService
 from common import settings
 from common.config_utils import show_configs
 from common.data_source import (
@@ -117,9 +118,18 @@ class SyncBase:
             if not document_batch:
                 continue
 
-            min_update = min(doc.doc_updated_at for doc in document_batch)
-            max_update = max(doc.doc_updated_at for doc in document_batch)
-            next_update = max(next_update, max_update)
+            # Ensure doc_updated_at values are datetime objects
+            update_times = []
+            for doc in document_batch:
+                if isinstance(doc.doc_updated_at, datetime):
+                    update_times.append(doc.doc_updated_at)
+                else:
+                    # Fallback to current time if invalid
+                    update_times.append(datetime.now(timezone.utc))
+            
+            min_update = min(update_times)
+            max_update = max(update_times)
+            next_update = max([next_update, max_update])
 
             docs = []
             for doc in document_batch:
@@ -137,19 +147,84 @@ class SyncBase:
                     d["metadata"] = doc.metadata
                 docs.append(d)
 
+            # Filter unchanged documents
+            filenames = []
+            for d in docs:
+                filename = d["semantic_identifier"]
+                if d["extension"] and not filename.endswith(d["extension"]):
+                     filename += d["extension"]
+                filenames.append(filename)
+            
+            existing_docs = DocumentService.query(
+                kb_id=task["kb_id"], 
+                source_type=f"{self.SOURCE_NAME}/{task['connector_id']}",
+                location=filenames 
+            )
+            existing_map = {doc.location: doc for doc in existing_docs}
+            
+            docs_to_process = []
+            for d in docs:
+                filename = d["semantic_identifier"]
+                if d["extension"] and not filename.endswith(d["extension"]):
+                     filename += d["extension"]
+                
+                existing_doc = existing_map.get(filename)
+                should_process = True
+                
+                # Add source_last_modified to metadata
+                if "metadata" not in d:
+                    d["metadata"] = {}
+                
+                new_modified = d["doc_updated_at"]
+                if isinstance(new_modified, datetime):
+                    d["metadata"]["source_last_modified"] = new_modified.isoformat()
+                else:
+                    d["metadata"]["source_last_modified"] = new_modified
+
+                if existing_doc:
+                    last_modified_str = existing_doc.meta_fields.get("source_last_modified") if existing_doc.meta_fields else None
+                    if last_modified_str:
+                        try:
+                            if isinstance(last_modified_str, (int, float)):
+                                last_modified = datetime.fromtimestamp(last_modified_str, tz=timezone.utc)
+                            else:
+                                last_modified = datetime.fromisoformat(str(last_modified_str))
+                                if last_modified.tzinfo is None:
+                                    last_modified = last_modified.replace(tzinfo=timezone.utc)
+                            
+                            if isinstance(new_modified, (int, float)):
+                                new_modified_dt = datetime.fromtimestamp(new_modified, tz=timezone.utc)
+                            elif isinstance(new_modified, datetime):
+                                new_modified_dt = new_modified
+                            else:
+                                new_modified_dt = datetime.now(timezone.utc) # Fallback
+
+                            if new_modified_dt <= last_modified:
+                                should_process = False
+                        except Exception as e:
+                            logging.warning(f"Date comparison failed for {filename}: {e}")
+                
+                if should_process:
+                    docs_to_process.append(d)
+                else:
+                    logging.info(f"Skipping unchanged document: {filename}")
+
+            if not docs_to_process:
+                continue
+
             try:
                 e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
                 err, dids = SyncLogsService.duplicate_and_parse(
-                    kb, docs, task["tenant_id"],
+                    kb, docs_to_process, task["tenant_id"],
                     f"{self.SOURCE_NAME}/{task['connector_id']}",
                     task["auto_parse"]
                 )
                 SyncLogsService.increase_docs(
                     task["id"], min_update, max_update,
-                    len(docs), "\n".join(err), len(err)
+                    len(docs_to_process), "\n".join(err), len(err)
                 )
 
-                doc_num += len(docs)
+                doc_num += len(docs_to_process)
 
             except Exception as batch_ex:
                 msg = str(batch_ex)
