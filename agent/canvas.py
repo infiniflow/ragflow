@@ -19,6 +19,7 @@ import inspect
 import binascii
 import json
 import logging
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -28,6 +29,7 @@ from typing import Any, Union, Tuple
 
 from agent.component import component_class
 from agent.component.base import ComponentBase
+from agent.engine.graph_engine import GraphEngine
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
@@ -36,6 +38,9 @@ from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
 from rag.prompts.generator import chunks_format
 from rag.utils.redis_conn import REDIS_CONN
+
+# Global configuration: enable new engine (can be controlled via environment variable)
+USE_NEW_ENGINE = os.getenv("RAGFLOW_USE_NEW_ENGINE", "false").lower() == "true"
 
 class Graph:
     """
@@ -145,10 +150,24 @@ class Graph:
         raise NotImplementedError()
 
     def get_component(self, cpn_id) -> Union[None, dict[str, Any]]:
+        """Get component data (compatible with both engines)."""
+        if self._use_new_engine:
+            node = self._engine.get_node(cpn_id)
+            if not node:
+                return None
+            return {
+                "obj": node.component,
+                "downstream": self.dsl_dict.get("components", {}).get(cpn_id, {}).get("downstream", []),
+                "upstream": self.dsl_dict.get("components", {}).get(cpn_id, {}).get("upstream", [])
+            }
         return self.components.get(cpn_id)
 
     def get_component_obj(self, cpn_id) -> ComponentBase:
-        return self.components.get(cpn_id)["obj"]
+        """Get component object (compatible with both engines)."""
+        if self._use_new_engine:
+            node = self._engine.get_node(cpn_id)
+            return node.component if node else None
+        return self.components.get(cpn_id, {}).get("obj")
 
     def get_component_type(self, cpn_id) -> str:
         return self.components.get(cpn_id)["obj"].component_name
@@ -187,6 +206,10 @@ class Graph:
         return("".join(out_parts))
 
     def get_variable_value(self, exp: str) -> Any:
+        """Get variable value (compatible with both engines)."""
+        if self._use_new_engine:
+            return self._engine.get_variable_value(exp)
+
         exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
         if exp.find("@") < 0:
             return self.globals[exp]
@@ -277,6 +300,14 @@ class Graph:
 
 
 class Canvas(Graph):
+    """
+    Compatibility layer that selects between legacy and new engines.
+
+    Both engines directly use the existing DSL format without conversion.
+    Engine selection is controlled by:
+    1. Environment variable: RAGFLOW_USE_NEW_ENGINE
+    2. Optional DSL field: dsl["engine"] = "langgraph" or "legacy"
+    """
 
     def __init__(self, dsl: str, tenant_id=None, task_id=None, canvas_id=None):
         self.globals = {
@@ -286,34 +317,93 @@ class Canvas(Graph):
             "sys.files": []
         }
         self.variables = {}
+        self.dsl_dict = json.loads(dsl)
         super().__init__(dsl, tenant_id, task_id)
         self._id = canvas_id
 
-    def load(self):
-        super().load()
-        self.history = self.dsl["history"]
-        if "globals" in self.dsl:
-            self.globals = self.dsl["globals"]
+        # Check if using new engine
+        self._use_new_engine = self._should_use_new_engine()
+
+        if self._use_new_engine:
+            # Initialize new LangGraph engine (uses DSL directly)
+            self._engine = GraphEngine(
+                dsl=self.dsl_dict,  # Direct DSL, no conversion
+                tenant_id=tenant_id,
+                task_id=self.task_id,
+                canvas_id=canvas_id,
+                globals=self.globals
+            )
+        else:
+            # Use legacy path-based engine (existing behavior)
+            self._load_legacy_state()
+
+    def _should_use_new_engine(self) -> bool:
+        """
+        Determine whether to use the new engine.
+
+        Priority:
+        1. Environment variable RAGFLOW_USE_NEW_ENGINE
+        2. DSL engine field (if present)
+        3. Default to legacy engine
+        """
+        # 1. Environment variable takes priority
+        if os.getenv("RAGFLOW_USE_NEW_ENGINE"):
+            return os.getenv("RAGFLOW_USE_NEW_ENGINE").lower() == "true"
+
+        # 2. DSL engine field (backward compatible)
+        engine_type = self.dsl_dict.get("engine", "legacy")
+        if engine_type == "langgraph":
+            return True
+
+        return False
+
+    def _load_legacy_state(self):
+        """Load state for legacy engine (existing behavior)."""
+        self.history = self.dsl_dict.get("history", [])
+        if "globals" in self.dsl_dict:
+            self.globals = self.dsl_dict["globals"]
         else:
             self.globals = {
-            "sys.query": "",
-            "sys.user_id": "",
-            "sys.conversation_turns": 0,
-            "sys.files": []
-        }
-        if "variables" in self.dsl:
-            self.variables = self.dsl["variables"]
+                "sys.query": "",
+                "sys.user_id": "",
+                "sys.conversation_turns": 0,
+                "sys.files": []
+            }
+        if "variables" in self.dsl_dict:
+            self.variables = self.dsl_dict["variables"]
         else:
             self.variables = {}
 
-        self.retrieval = self.dsl["retrieval"]
-        self.memory = self.dsl.get("memory", [])
+        self.retrieval = self.dsl_dict.get("retrieval", {"chunks": [], "doc_aggs": []})
+        self.memory = self.dsl_dict.get("memory", [])
 
     def __str__(self):
-        self.dsl["history"] = self.history
-        self.dsl["retrieval"] = self.retrieval
-        self.dsl["memory"] = self.memory
-        return super().__str__()
+        """
+        Return DSL string.
+
+        Both engines use and output the original DSL format.
+        """
+        if self._use_new_engine:
+            # New engine: use original DSL directly
+            self.dsl_dict["globals"] = self.globals
+            self.dsl_dict["history"] = self._engine.graph_state.messages
+            self.dsl_dict["retrieval"] = self._engine.graph_state.retrieval
+
+            # Update component states
+            for cpn_id, node in self._engine.nodes_map.items():
+                if cpn_id in self.dsl_dict["components"]:
+                    try:
+                        self.dsl_dict["components"][cpn_id]["obj"] = json.loads(str(node.component))
+                    except Exception:
+                        pass
+
+            return json.dumps(self.dsl_dict, ensure_ascii=False)
+        else:
+            # Legacy engine: existing behavior
+            self.dsl["history"] = self.history
+            self.dsl["retrieval"] = self.retrieval
+            self.dsl["memory"] = self.memory
+            return super().__str__()
 
     def reset(self, mem=False):
         super().reset()
@@ -359,6 +449,47 @@ class Canvas(Graph):
                     self.globals[k] = ""
 
     async def run(self, **kwargs):
+        """
+        Unified interface: execute workflow based on selected engine.
+
+        Returns same event format for both engines.
+        """
+        if self._use_new_engine:
+            # Use new LangGraph engine
+            async for event in self._run_new_engine(**kwargs):
+                yield event
+        else:
+            # Use legacy path-based engine (existing behavior)
+            async for event in self._run_legacy(**kwargs):
+                yield event
+
+    async def _run_new_engine(self, **kwargs):
+        """Execute using new LangGraph engine."""
+        st = time.perf_counter()
+        self._loop = asyncio.get_running_loop()
+        self.message_id = get_uuid()
+
+        # Update globals from kwargs
+        for k in kwargs.keys():
+            if k in ["query", "user_id", "files"] and kwargs[k]:
+                if k == "files":
+                    self.globals[f"sys.{k}"] = await self.get_files_async(kwargs[k])
+                else:
+                    self.globals[f"sys.{k}"] = kwargs[k]
+
+        if not self.globals.get("sys.conversation_turns"):
+            self.globals["sys.conversation_turns"] = 0
+        self.globals["sys.conversation_turns"] += 1
+
+        # Add user input to history
+        self._engine.graph_state.messages.append(("user", kwargs.get("query")))
+
+        # Execute workflow and stream events
+        async for event in self._engine.run(**kwargs):
+            yield event
+
+    async def _run_legacy(self, **kwargs):
+        """Execute using legacy path-based engine (existing behavior)."""
         st = time.perf_counter()
         self._loop = asyncio.get_running_loop()
         self.message_id = get_uuid()
