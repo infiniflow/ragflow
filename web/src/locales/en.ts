@@ -424,6 +424,12 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Enable formula recognition. Note: This may not work correctly for Cyrillic documents.',
       mineruTableEnable: 'Table recognition',
       mineruTableEnableTip: 'Enable table recognition and extraction.',
+      mineruBatchSize: 'Batch Size',
+      mineruBatchSizeTip: 'Batch size for processing.',
+      mineruStartPage: 'Start Page',
+      mineruStartPageTip: 'Start page number.',
+      mineruEndPage: 'End Page',
+      mineruEndPageTip: 'End page number.',
       overlappedPercent: 'Overlapped percent(%)',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',

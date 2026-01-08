@@ -1,4 +1,5 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Input } from '@/components/ui/input';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { LLMFactory } from '@/constants/llm';
@@ -136,6 +137,67 @@ export function MinerUOptionsFormField({
           <Switch
             checked={field.value ?? true}
             onCheckedChange={field.onChange}
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_batch_size')}
+        label={t('knowledgeConfiguration.mineruBatchSize', 'Batch Size')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruBatchSizeTip',
+          'Batch size for processing.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <Input
+            type="number"
+            value={field.value ?? 30}
+            onChange={(e) => field.onChange(Number(e.target.value))}
+            min="1"
+            max="500"
+            placeholder="30"
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_start_page')}
+        label={t('knowledgeConfiguration.mineruStartPage', 'Start Page')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruStartPageTip',
+          'Start page number.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <Input
+            type="number"
+            value={field.value ?? 0}
+            onChange={(e) => field.onChange(Number(e.target.value))}
+            min="0"
+            placeholder="0"
+          />
+        )}
+      </RAGFlowFormItem>
+
+      <RAGFlowFormItem
+        name={buildName('mineru_end_page')}
+        label={t('knowledgeConfiguration.mineruEndPage', 'End Page')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruEndPageTip',
+          'End page number.',
+        )}
+        horizontal={true}
+      >
+        {(field) => (
+          <Input
+            type="number"
+            value={field.value ?? 99999}
+            onChange={(e) => field.onChange(Number(e.target.value))}
+            min="0"
+            placeholder="99999"
           />
         )}
       </RAGFlowFormItem>

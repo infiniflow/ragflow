@@ -148,24 +148,6 @@ const MinerUModal = ({
               </RAGFlowFormItem>
             )}
             <RAGFlowFormItem
-              name="mineru_start_page"
-              label={t('setting.mineru.startPage')}
-            >
-              <Input type="number" placeholder="0" min="0" />
-            </RAGFlowFormItem>
-            <RAGFlowFormItem
-              name="mineru_end_page"
-              label={t('setting.mineru.endPage')}
-            >
-              <Input type="number" placeholder="99999" min="0" />
-            </RAGFlowFormItem>
-            <RAGFlowFormItem
-              name="mineru_batch_size"
-              label={t('setting.mineru.batchSize')}
-            >
-              <Input type="number" placeholder="30" min="1" max="500" />
-            </RAGFlowFormItem>
-            <RAGFlowFormItem
               name="mineru_delete_output"
               label={t('setting.mineru.deleteOutput')}
               labelClassName="!mb-0"
