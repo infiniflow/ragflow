@@ -37,9 +37,11 @@ class DeepResearcher:
         self._kg_retrieve = kg_retrieve
 
     def _remove_tags(text: str, start_tag: str, end_tag: str) -> str:
-        """General Tag Removal Method"""
-        pattern = re.escape(start_tag) + r"(.*?)" + re.escape(end_tag)
-        return re.sub(pattern, "", text)
+        """Remove tags but keep the content between them."""
+        if not text:
+            return text
+        text = re.sub(re.escape(start_tag), "", text)
+        return re.sub(re.escape(end_tag), "", text)
 
     @staticmethod
     def _remove_query_tags(text: str) -> str:
@@ -52,21 +54,29 @@ class DeepResearcher:
         return DeepResearcher._remove_tags(text, BEGIN_SEARCH_RESULT, END_SEARCH_RESULT)
 
     async def _generate_reasoning(self, msg_history):
-        """Generate reasoning steps"""
-        query_think = ""
+        """Generate reasoning steps (delta output)"""
+        raw_answer = ""
+        cleaned_answer = ""
         if msg_history[-1]["role"] != "user":
             msg_history.append({"role": "user", "content": "Continues reasoning with the new information.\n"})
         else:
             msg_history[-1]["content"] += "\n\nContinues reasoning with the new information.\n"
-            
-        async for ans in self.chat_mdl.async_chat_streamly(REASON_PROMPT, msg_history, {"temperature": 0.7}):
-            ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-            if not ans:
+
+        async for delta in self.chat_mdl.async_chat_streamly_delta(REASON_PROMPT, msg_history, {"temperature": 0.7}):
+            if not delta:
                 continue
-            query_think = ans
-            yield query_think
-            query_think = ""
-        yield query_think
+            raw_answer += delta
+            cleaned_full = re.sub(r"^.*</think>", "", raw_answer, flags=re.DOTALL)
+            if not cleaned_full:
+                continue
+            if cleaned_full.startswith(cleaned_answer):
+                delta_clean = cleaned_full[len(cleaned_answer):]
+            else:
+                delta_clean = cleaned_full
+            if not delta_clean:
+                continue
+            cleaned_answer = cleaned_full
+            yield delta_clean
 
     def _extract_search_queries(self, query_think, question, step_index):
         """Extract search queries from thinking"""
@@ -93,7 +103,7 @@ class DeepResearcher:
                 else:
                     if truncated_prev_reasoning[-len('\n\n...\n\n'):] != '\n\n...\n\n':
                         truncated_prev_reasoning += '...\n\n'
-        
+
         return truncated_prev_reasoning.strip('\n')
 
     def _retrieve_information(self, search_query):
@@ -138,16 +148,17 @@ class DeepResearcher:
             for c in kbinfos["chunks"]:
                 if c["chunk_id"] not in cids:
                     chunk_info["chunks"].append(c)
-                    
+
             dids = [d["doc_id"] for d in chunk_info["doc_aggs"]]
             for d in kbinfos["doc_aggs"]:
                 if d["doc_id"] not in dids:
                     chunk_info["doc_aggs"].append(d)
 
     async def _extract_relevant_info(self, truncated_prev_reasoning, search_query, kbinfos):
-        """Extract and summarize relevant information"""
-        summary_think = ""
-        async for ans in self.chat_mdl.async_chat_streamly(
+        """Extract and summarize relevant information (delta output)"""
+        raw_answer = ""
+        cleaned_answer = ""
+        async for delta in self.chat_mdl.async_chat_streamly_delta(
                 RELEVANT_EXTRACTION_PROMPT.format(
                     prev_reasoning=truncated_prev_reasoning,
                     search_query=search_query,
@@ -156,39 +167,92 @@ class DeepResearcher:
                 [{"role": "user",
                   "content": f'Now you should analyze each web page and find helpful information based on the current search query "{search_query}" and previous reasoning steps.'}],
                 {"temperature": 0.7}):
-            ans = re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
-            if not ans:
+            if not delta:
                 continue
-            summary_think = ans
-            yield summary_think
-            summary_think = ""
-        
-        yield summary_think
+            raw_answer += delta
+            cleaned_full = re.sub(r"^.*</think>", "", raw_answer, flags=re.DOTALL)
+            if not cleaned_full:
+                continue
+            if cleaned_full.startswith(cleaned_answer):
+                delta_clean = cleaned_full[len(cleaned_answer):]
+            else:
+                delta_clean = cleaned_full
+            if not delta_clean:
+                continue
+            cleaned_answer = cleaned_full
+            yield delta_clean
 
     async def thinking(self, chunk_info: dict, question: str):
         executed_search_queries = []
         msg_history = [{"role": "user", "content": f'Question:\"{question}\"\n'}]
         all_reasoning_steps = []
         think = "<think>"
-        
+        last_idx = 0
+        endswith_think = False
+        last_full = ""
+
+        def emit_delta(full_text: str):
+            nonlocal last_idx, endswith_think, last_full
+            if full_text == last_full:
+                return None
+            last_full = full_text
+            delta_ans = full_text[last_idx:]
+
+            if delta_ans.find("<think>") == 0:
+                last_idx += len("<think>")
+                delta = "<think>"
+            elif delta_ans.find("<think>") > 0:
+                delta = full_text[last_idx:last_idx + delta_ans.find("<think>")]
+                last_idx += delta_ans.find("<think>")
+            elif delta_ans.endswith("</think>"):
+                endswith_think = True
+                delta = re.sub(r"(<think>|</think>)", "", delta_ans)
+            elif endswith_think:
+                endswith_think = False
+                delta = "</think>"
+            else:
+                last_idx = len(full_text)
+                if full_text.endswith("</think>"):
+                    last_idx -= len("</think>")
+                delta = re.sub(r"(<think>|</think>)", "", delta_ans)
+
+            if not delta:
+                return None
+            if delta == "<think>":
+                return {"answer": "", "reference": {}, "audio_binary": None, "final": False, "start_to_think": True}
+            if delta == "</think>":
+                return {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
+            return {"answer": delta, "reference": {}, "audio_binary": None, "final": False}
+
+        def flush_think_close():
+            nonlocal endswith_think
+            if endswith_think:
+                endswith_think = False
+                return {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
+            return None
+
         for step_index in range(MAX_SEARCH_LIMIT + 1):
             # Check if the maximum search limit has been reached
             if step_index == MAX_SEARCH_LIMIT - 1:
                 summary_think = f"\n{BEGIN_SEARCH_RESULT}\nThe maximum search limit is exceeded. You are not allowed to search.\n{END_SEARCH_RESULT}\n"
-                yield {"answer": think + summary_think + "</think>", "reference": {}, "audio_binary": None}
+                payload = emit_delta(think + summary_think)
+                if payload:
+                    yield payload
                 all_reasoning_steps.append(summary_think)
                 msg_history.append({"role": "assistant", "content": summary_think})
                 break
 
             # Step 1: Generate reasoning
             query_think = ""
-            async for ans in self._generate_reasoning(msg_history):
-                query_think = ans
-                yield {"answer": think + self._remove_query_tags(query_think) + "</think>", "reference": {}, "audio_binary": None}
+            async for delta in self._generate_reasoning(msg_history):
+                query_think += delta
+                payload = emit_delta(think + self._remove_query_tags(query_think))
+                if payload:
+                    yield payload
 
             think += self._remove_query_tags(query_think)
             all_reasoning_steps.append(query_think)
-            
+
             # Step 2: Extract search queries
             queries = self._extract_search_queries(query_think, question, step_index)
             if not queries and step_index > 0:
@@ -197,42 +261,51 @@ class DeepResearcher:
 
             # Process each search query
             for search_query in queries:
-                logging.info(f"[THINK]Query: {step_index}. {search_query}")
                 msg_history.append({"role": "assistant", "content": search_query})
                 think += f"\n\n> {step_index + 1}. {search_query}\n\n"
-                yield {"answer": think + "</think>", "reference": {}, "audio_binary": None}
+                payload = emit_delta(think)
+                if payload:
+                    yield payload
 
                 # Check if the query has already been executed
                 if search_query in executed_search_queries:
                     summary_think = f"\n{BEGIN_SEARCH_RESULT}\nYou have searched this query. Please refer to previous results.\n{END_SEARCH_RESULT}\n"
-                    yield {"answer": think + summary_think + "</think>", "reference": {}, "audio_binary": None}
+                    payload = emit_delta(think + summary_think)
+                    if payload:
+                        yield payload
                     all_reasoning_steps.append(summary_think)
                     msg_history.append({"role": "user", "content": summary_think})
                     think += summary_think
                     continue
-                
+
                 executed_search_queries.append(search_query)
-                
+
                 # Step 3: Truncate previous reasoning steps
                 truncated_prev_reasoning = self._truncate_previous_reasoning(all_reasoning_steps)
-                
+
                 # Step 4: Retrieve information
                 kbinfos = self._retrieve_information(search_query)
-                
+
                 # Step 5: Update chunk information
                 self._update_chunk_info(chunk_info, kbinfos)
-                
+
                 # Step 6: Extract relevant information
                 think += "\n\n"
                 summary_think = ""
-                async for ans in self._extract_relevant_info(truncated_prev_reasoning, search_query, kbinfos):
-                    summary_think = ans
-                    yield {"answer": think + self._remove_result_tags(summary_think) + "</think>", "reference": {}, "audio_binary": None}
+                async for delta in self._extract_relevant_info(truncated_prev_reasoning, search_query, kbinfos):
+                    summary_think += delta
+                    payload = emit_delta(think + self._remove_result_tags(summary_think))
+                    if payload:
+                        yield payload
 
                 all_reasoning_steps.append(summary_think)
                 msg_history.append(
                     {"role": "user", "content": f"\n\n{BEGIN_SEARCH_RESULT}{summary_think}{END_SEARCH_RESULT}\n\n"})
                 think += self._remove_result_tags(summary_think)
-                logging.info(f"[THINK]Summary: {step_index}. {summary_think}")
 
-        yield think + "</think>"
+        final_payload = emit_delta(think + "</think>")
+        if final_payload:
+            yield final_payload
+        close_payload = flush_think_close()
+        if close_payload:
+            yield close_payload

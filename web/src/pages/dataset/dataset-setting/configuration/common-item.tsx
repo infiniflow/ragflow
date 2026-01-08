@@ -515,7 +515,6 @@ export function LLMModelItem({ line = 1, isEdit, label, name }: IProps) {
               })}
             >
               <FormLabel
-                required
                 tooltip={t('globalIndexModelTip')}
                 className={cn('text-sm  whitespace-wrap ', {
                   'w-1/4': line === 1,
