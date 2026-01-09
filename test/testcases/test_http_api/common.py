@@ -253,6 +253,7 @@ def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
     return session_ids
 
 
+<<<<<<< HEAD
 # DATASET GRAPH AND TASKS
 def knowledge_graph(auth, dataset_id, params=None):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/knowledge_graph"
@@ -353,5 +354,25 @@ def delete_agent_sessions(auth, agent_id, payload=None):
 
 def agent_completions(auth, agent_id, payload=None):
     url = f"{HOST_ADDRESS}{AGENT_API_URL}/{agent_id}/completions"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
+
+
+def chat_completions(auth, chat_id, payload=None):
+    """
+    Send a question/message to a chat assistant and get completion.
+
+    Args:
+        auth: Authentication object
+        chat_id: Chat assistant ID
+        payload: Dictionary containing:
+            - question: str (required) - The question to ask
+            - stream: bool (optional) - Whether to stream responses, default False
+            - session_id: str (optional) - Session ID for conversation context
+
+    Returns:
+        Response JSON with answer data
+    """
+    url = f"{HOST_ADDRESS}/api/{VERSION}/chats/{chat_id}/completions"
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()

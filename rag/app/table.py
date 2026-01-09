@@ -33,6 +33,7 @@ from deepdoc.parser.figure_parser import vision_figure_parser_figure_xlsx_wrappe
 from deepdoc.parser.utils import get_text
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table
 from deepdoc.parser import ExcelParser
+from common import settings
 
 
 class Excel(ExcelParser):
@@ -431,7 +432,9 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
 
     res = []
     PY = Pinyin()
-    fieds_map = {"text": "_tks", "int": "_long", "keyword": "_kwd", "float": "_flt", "datetime": "_dt", "bool": "_kwd"}
+    # Field type suffixes for database columns
+    # Maps data types to their database field suffixes
+    fields_map = {"text": "_tks", "int": "_long", "keyword": "_kwd", "float": "_flt", "datetime": "_dt", "bool": "_kwd"}
     for df in dfs:
         for n in ["id", "_id", "index", "idx"]:
             if n in df.columns:
@@ -452,13 +455,17 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
             df[clmns[j]] = cln
             if ty == "text":
                 txts.extend([str(c) for c in cln if c])
-        clmns_map = [(py_clmns[i].lower() + fieds_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in
+        clmns_map = [(py_clmns[i].lower() + fields_map[clmn_tys[i]], str(clmns[i]).replace("_", " ")) for i in
                      range(len(clmns))]
+
+        field_map = {k: v for k, v in clmns_map}
+        logging.debug(f"Field map: {field_map}")
+        KnowledgebaseService.update_parser_config(kwargs["kb_id"], {"field_map": field_map})
 
         eng = lang.lower() == "english"  # is_english(txts)
         for ii, row in df.iterrows():
             d = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
-            row_txt = []
+            row_fields = []
             for j in range(len(clmns)):
                 if row[clmns[j]] is None:
                     continue
@@ -468,15 +475,17 @@ def chunk(filename, binary=None, from_page=0, to_page=10000000000, lang="Chinese
                     continue
                 fld = clmns_map[j][0]
                 d[fld] = row[clmns[j]] if clmn_tys[j] != "text" else rag_tokenizer.tokenize(row[clmns[j]])
-                row_txt.append("{}:{}".format(clmns[j], row[clmns[j]]))
-            if not row_txt:
+                row_fields.append((clmns[j], row[clmns[j]]))
+            if not row_fields:
                 continue
-            tokenize(d, "; ".join(row_txt), eng)
+            # Format as a structured text for better LLM comprehension
+            # Format each field as "- Field Name: Value" on separate lines
+            formatted_text = "\n".join([f"- {field}: {value}" for field, value in row_fields])
+            tokenize(d, formatted_text, eng)
             res.append(d)
         if tbls:
             doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
             res.extend(tokenize_table(tbls, doc, is_english))
-        KnowledgebaseService.update_parser_config(kwargs["kb_id"], {"field_map": {k: v for k, v in clmns_map}})
     callback(0.35, "")
 
     return res

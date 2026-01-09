@@ -230,9 +230,12 @@ class InfinityConnectionBase(DocStoreConnection):
 
     def create_idx(self, index_name: str, dataset_id: str, vector_size: int):
         table_name = f"{index_name}_{dataset_id}"
+        self.logger.debug(f"CREATE_IDX: Creating table {table_name}")
+
         inf_conn = self.connPool.get_conn()
         inf_db = inf_conn.create_database(self.dbName, ConflictType.Ignore)
 
+        # Use configured schema
         fp_mapping = os.path.join(get_project_base_directory(), "conf", self.mapping_file_name)
         if not os.path.exists(fp_mapping):
             raise Exception(f"Mapping file not found at {fp_mapping}")
@@ -453,4 +456,212 @@ class InfinityConnectionBase(DocStoreConnection):
     """
 
     def sql(self, sql: str, fetch_size: int, format: str):
-        raise NotImplementedError("Not implemented")
+        """
+        Execute SQL query on Infinity database via psql command.
+        Transform text-to-sql for Infinity's SQL syntax.
+        """
+        import subprocess
+
+        try:
+            self.logger.debug(f"InfinityConnection.sql get sql: {sql}")
+
+            # Clean up SQL
+            sql = re.sub(r"[ `]+", " ", sql)
+            sql = sql.replace("%", "")
+
+            # Transform SELECT field aliases to actual stored field names
+            # Build field mapping from infinity_mapping.json comment field
+            field_mapping = {}
+            # Also build reverse mapping for column names in result
+            reverse_mapping = {}
+            fp_mapping = os.path.join(get_project_base_directory(), "conf", self.mapping_file_name)
+            if os.path.exists(fp_mapping):
+                schema = json.load(open(fp_mapping))
+                for field_name, field_info in schema.items():
+                    if "comment" in field_info:
+                        # Parse comma-separated aliases from comment
+                        # e.g., "docnm_kwd, title_tks, title_sm_tks"
+                        aliases = [a.strip() for a in field_info["comment"].split(",")]
+                        for alias in aliases:
+                            field_mapping[alias] = field_name
+                            reverse_mapping[field_name] = alias  # Store first alias for reverse mapping
+
+            # Replace field names in SELECT clause
+            select_match = re.search(r"(select\s+.*?)(from\s+)", sql, re.IGNORECASE)
+            original_select_fields = None  # Initialize outside the if block
+            transformed_field_names = []  # Track the actual field order after transformation
+            if select_match:
+                select_clause = select_match.group(1)
+                from_clause = select_match.group(2)
+
+                # Store original SELECT fields for column name mapping
+                original_select_fields = select_clause
+
+                # Track field order through transformation
+                original_fields_list = [f.strip() for f in re.sub(r"^select\s+", "", original_select_fields, flags=re.IGNORECASE).strip().split(",")]
+                seen_original = set()
+                unique_original_fields = []
+                for f in original_fields_list:
+                    if f not in seen_original:
+                        seen_original.add(f)
+                        unique_original_fields.append(f)
+
+                # Apply transformations and build the final field list
+                for alias, actual in field_mapping.items():
+                    select_clause = re.sub(
+                        rf'(^|[, ]){alias}([, ]|$)',
+                        rf'\1{actual}\2',
+                        select_clause
+                    )
+
+                sql = select_clause + from_clause + sql[select_match.end():]
+
+                # Parse the transformed SELECT clause to get the actual field order
+                transformed_fields_list = [f.strip() for f in re.sub(r"^select\s+", "", select_clause, flags=re.IGNORECASE).strip().split(",")]
+                seen_transformed = set()
+                for f in transformed_fields_list:
+                    if f not in seen_transformed:
+                        seen_transformed.add(f)
+                        transformed_field_names.append(f)
+
+            # Also replace field names in WHERE, ORDER BY, GROUP BY, and HAVING clauses
+            for alias, actual in field_mapping.items():
+                # Transform in WHERE clause
+                sql = re.sub(
+                    rf'(\bwhere\s+[^;]*?)(\b){re.escape(alias)}\b',
+                    rf'\1{actual}',
+                    sql,
+                    flags=re.IGNORECASE
+                )
+                # Transform in ORDER BY clause
+                sql = re.sub(
+                    rf'(\border by\s+[^;]*?)(\b){re.escape(alias)}\b',
+                    rf'\1{actual}',
+                    sql,
+                    flags=re.IGNORECASE
+                )
+                # Transform in GROUP BY clause
+                sql = re.sub(
+                    rf'(\bgroup by\s+[^;]*?)(\b){re.escape(alias)}\b',
+                    rf'\1{actual}',
+                    sql,
+                    flags=re.IGNORECASE
+                )
+                # Transform in HAVING clause
+                sql = re.sub(
+                    rf'(\bhaving\s+[^;]*?)(\b){re.escape(alias)}\b',
+                    rf'\1{actual}',
+                    sql,
+                    flags=re.IGNORECASE
+                )
+
+            self.logger.debug(f"InfinityConnection.sql to execute: {sql}")
+
+            # Get connection parameters from the Infinity connection pool wrapper
+            # We need to use INFINITY_CONN singleton, not the raw ConnectionPool
+            from common.doc_store.infinity_conn_pool import INFINITY_CONN
+            conn_info = INFINITY_CONN.get_conn_uri()
+
+            # Parse host and port from conn_info
+            if conn_info and "host=" in conn_info:
+                host_match = re.search(r"host=(\S+)", conn_info)
+                if host_match:
+                    host = host_match.group(1)
+                else:
+                    host = "infinity"
+            else:
+                host = "infinity"
+
+            # Parse port from conn_info, default to 5432 if not found
+            if conn_info and "port=" in conn_info:
+                port_match = re.search(r"port=(\d+)", conn_info)
+                if port_match:
+                    port = port_match.group(1)
+                else:
+                    port = "5432"
+            else:
+                port = "5432"
+
+            # Use psql command to execute SQL
+            psql_cmd = [
+                "psql",
+                "-h", host,
+                "-p", port,
+                "-c", sql,
+                "-t",  # tuples only
+                "-A",  # unaligned output
+                "-F", "|"  # field separator
+            ]
+
+            self.logger.debug(f"Executing psql command: {' '.join(psql_cmd)}")
+
+            result = subprocess.run(
+                psql_cmd,
+                capture_output=True,
+                text=True,
+                timeout=10  # 10 second timeout
+            )
+
+            if result.returncode != 0:
+                error_msg = result.stderr.strip()
+                raise Exception(f"psql command failed: {error_msg}\nSQL: {sql}")
+
+            # Parse the output
+            output = result.stdout.strip()
+            if not output:
+                # No results
+                return {
+                    "columns": [],
+                    "rows": []
+                } if format == "json" else []
+
+            # Parse column names from the SQL query
+            # Following ES approach: return actual field names as stored, not aliases
+            columns = []
+            if transformed_field_names:
+                # Use the actual transformed field names that match what psql returns
+                # Don't reverse-map to aliases - this is what ES does
+                for field in transformed_field_names:
+                    columns.append({"name": field})
+            elif original_select_fields:
+                # Fallback: Parse from original SELECT clause (before transformation)
+                # Following ES approach: use the actual field names from the SQL
+                select_fields = re.sub(r"^select\s+", "", original_select_fields, flags=re.IGNORECASE).strip()
+                if select_fields != "*":
+                    seen_fields = set()  # Track seen fields to avoid duplicates
+                    for f in select_fields.split(","):
+                        field = f.strip()
+                        # Skip duplicates
+                        if field in seen_fields:
+                            continue
+                        seen_fields.add(field)
+                        # Use the field name as-is (ES approach)
+                        columns.append({"name": field})
+                else:
+                    # For SELECT *, we'll need to get column names from a separate query
+                    # For now, use empty column names
+                    columns = []
+
+            # Parse rows
+            rows = []
+            for line in output.split("\n"):
+                if line.strip():
+                    row = [cell.strip() for cell in line.split("|")]
+                    rows.append(row)
+
+            if format == "json":
+                result = {
+                    "columns": columns,
+                    "rows": rows[:fetch_size] if fetch_size > 0 else rows
+                }
+            else:
+                result = rows[:fetch_size] if fetch_size > 0 else rows
+
+            return result
+
+        except subprocess.TimeoutExpired:
+            self.logger.exception(f"InfinityConnection.sql timeout. SQL:\n{sql}")
+            raise Exception(f"SQL timeout\n\nSQL: {sql}")
+        except Exception as e:
+            self.logger.exception(f"InfinityConnection.sql got exception. SQL:\n{sql}")
+            raise Exception(f"SQL error: {e}\n\nSQL: {sql}")
