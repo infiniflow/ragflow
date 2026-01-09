@@ -251,6 +251,6 @@ def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
 
 # CHECK EMBEDDING MODEL
 def check_embedding(auth, payload=None):
-    url = f"{HOST_ADDRESS}/api/{VERSION}/kb/check_embedding"
+    url = f"{HOST_ADDRESS}/{VERSION}/kb/check_embedding"
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
     return res.json()

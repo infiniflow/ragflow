@@ -184,11 +184,21 @@ class DataSet(Base):
         Raises:
             Exception: If API call fails
         """
-        res = self.post("/kb/check_embedding", {
-            "kb_id": self.id,
-            "embd_id": embd_id,
-            "check_num": check_num
-        })
+        import requests
+        # The kb/check_embedding endpoint is registered at /v1/kb/check_embedding
+        # not /api/v1/kb/check_embedding, so we need to construct the URL manually
+        base_url = self.rag.api_url.rsplit("/api/", 1)[0]
+        url = f"{base_url}/v1/kb/check_embedding"
+
+        res = requests.post(
+            url=url,
+            json={
+                "kb_id": self.id,
+                "embd_id": embd_id,
+                "check_num": check_num
+            },
+            headers=self.rag.authorization_header
+        )
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))
