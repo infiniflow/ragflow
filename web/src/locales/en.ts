@@ -427,7 +427,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       paddleocrOptions: 'PaddleOCR Options',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'The API endpoint URL for PaddleOCR service',
-      paddleocrApiUrlPlaceholder: 'e.g. https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlPlaceholder:
+        'e.g. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio Access Token',
       paddleocrAccessTokenTip: 'Access token for PaddleOCR API (optional)',
       paddleocrAccessTokenPlaceholder: 'Your AI Studio token (optional)',
@@ -435,6 +436,21 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       paddleocrAlgorithmTip: 'Algorithm to use for PaddleOCR parsing',
       paddleocrSelectAlgorithm: 'Select Algorithm',
       paddleocrModelNamePlaceholder: 'e.g. paddleocr-from-env-1',
+      mineruBatchOptions: 'Batch Processing Options',
+      mineruBatchSize: 'Batch Size',
+      mineruBatchSizeTip:
+        'Number of pages to process per batch for large PDFs. Larger values use more memory but may be faster. Default is 30.',
+      mineruStrictMode: 'Strict Mode',
+      mineruStrictModeTip:
+        'Require all batches to succeed; toggle to allow partial successes when disabled (backend-only option).',
+      mineruStartPage: 'Start Page',
+      mineruStartPageTip:
+        'Starting page number for processing (0-based). Leave empty to start from the beginning.',
+      mineruEndPage: 'End Page',
+      mineruEndPageTip:
+        'Ending page number for processing (0-based, inclusive). Leave empty to process until the end.',
+      mineruLanguage: 'Language',
+      mineruLanguageTip: 'Preferred OCR language for MinerU.',
       overlappedPercent: 'Overlapped percent(%)',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
@@ -1107,14 +1123,15 @@ Example: Virtual Hosted Style`,
       baseUrlNameMessage: 'Please input your base url!',
       paddleocr: {
         apiUrl: 'PaddleOCR API URL',
-        apiUrlPlaceholder: 'For example: https://paddleocr-server.com/layout-parsing',
+        apiUrlPlaceholder:
+          'For example: https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio Access Token',
         accessTokenPlaceholder: 'Your AI Studio token (optional)',
         algorithm: 'PaddleOCR Algorithm',
         selectAlgorithm: 'Select Algorithm',
         modelNamePlaceholder: 'For example: paddleocr-from-env-1',
         modelNameRequired: 'Model name is required',
-        apiUrlRequired: 'PaddleOCR API URL is required'
+        apiUrlRequired: 'PaddleOCR API URL is required',
       },
       vision: 'Does it support Vision?',
       ollamaLink: 'How to integrate {{name}}',

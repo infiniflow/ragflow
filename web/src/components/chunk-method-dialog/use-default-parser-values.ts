@@ -23,6 +23,10 @@ export function useDefaultParserValues() {
       mineru_formula_enable: true,
       mineru_table_enable: true,
       mineru_lang: 'English',
+      mineru_batch_size: 30,
+      mineru_start_page: 0,
+      mineru_end_page: 99999,
+      mineru_strict_mode: true,
       // raptor: {
       //   use_raptor: false,
       //   prompt: t('knowledgeConfiguration.promptText'),

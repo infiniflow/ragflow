@@ -154,6 +154,10 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     fi; \
     uv sync --python 3.12 --frozen
 
+# Copy SDK after dependencies are installed to avoid invalidating build cache
+# caused by changing SDK files which are not needed for dependency resolution
+COPY sdk sdk
+
 COPY web web
 COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \

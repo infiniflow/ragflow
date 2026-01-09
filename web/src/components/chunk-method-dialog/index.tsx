@@ -5,14 +5,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { DocumentParserType } from '@/constants/knowledge';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { IModalProps } from '@/interfaces/common';
@@ -47,7 +40,6 @@ import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
 import { MinerUOptionsFormField } from '../mineru-options-form-field';
 import { ButtonLoading } from '../ui/button';
-import { Input } from '../ui/input';
 import { DynamicPageRange } from './dynamic-page-range';
 import { useShowAutoKeywords } from './hooks';
 import {
@@ -127,6 +119,10 @@ export function ChunkMethodDialog({
         mineru_formula_enable: z.boolean().optional(),
         mineru_table_enable: z.boolean().optional(),
         mineru_lang: z.string().optional(),
+        mineru_batch_size: z.number().min(1).max(500).optional(),
+        mineru_start_page: z.number().min(0).optional(),
+        mineru_end_page: z.number().min(0).optional(),
+        mineru_strict_mode: z.boolean().optional(),
         // raptor: z
         //   .object({
         //     use_raptor: z.boolean().optional(),
@@ -166,6 +162,17 @@ export function ChunkMethodDialog({
           code: 'custom',
         });
       }
+
+      // Validate MinerU start/end pages when provided
+      const start = data.parser_config?.mineru_start_page;
+      const end = data.parser_config?.mineru_end_page;
+      if (typeof start === 'number' && typeof end === 'number' && start > end) {
+        ctx.addIssue({
+          path: ['parser_config', 'mineru_end_page'],
+          message: t('knowledgeConfiguration.mineruEndPageTip'),
+          code: 'custom',
+        });
+      }
     });
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -194,8 +201,8 @@ export function ChunkMethodDialog({
   const isPdf = documentExtension === 'pdf';
 
   const showPages = useMemo(() => {
-    return isPdf && hidePagesChunkMethods.every((x) => x !== selectedTag);
-  }, [selectedTag, isPdf]);
+    return layoutRecognize?.toLowerCase?.()?.includes('mineru') || false;
+  }, [layoutRecognize]);
 
   const showOne = useMemo(() => {
     return (
@@ -218,7 +225,6 @@ export function ChunkMethodDialog({
   const showAutoKeywords = useShowAutoKeywords();
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
-    console.log('🚀 ~ onSubmit ~ data:', data);
     const parserConfig = data.parser_config;
     const imageTableContextWindow = Number(
       parserConfig?.image_table_context_window || 0,
@@ -237,7 +243,6 @@ export function ChunkMethodDialog({
         pages: parserConfig?.pages?.map((x: any) => [x.from, x.to]) ?? [],
       },
     };
-    console.log('🚀 ~ onSubmit ~ nextData:', nextData);
     const ret = await onOk?.(nextData);
     if (ret) {
       hideModal?.();
@@ -328,33 +333,7 @@ export function ChunkMethodDialog({
                   </FormItem>
                 )}
               /> */}
-              {showPages && parseType === 1 && (
-                <DynamicPageRange></DynamicPageRange>
-              )}
-              {showPages && parseType === 1 && layoutRecognize && (
-                <FormField
-                  control={form.control}
-                  name="parser_config.task_page_size"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel
-                        tooltip={t('knowledgeDetails.taskPageSizeTip')}
-                      >
-                        {t('knowledgeDetails.taskPageSize')}
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type={'number'}
-                          min={1}
-                          max={128}
-                        ></Input>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
+              {showPages && <DynamicPageRange></DynamicPageRange>}
             </FormContainer>
             {parseType === 1 && (
               <>

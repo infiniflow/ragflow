@@ -20,6 +20,7 @@ import re
 import sys
 import tempfile
 import threading
+import time
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
@@ -30,12 +31,16 @@ from typing import Any, Callable, Optional
 import numpy as np
 import pdfplumber
 import requests
+import requests.exceptions
 from PIL import Image
 from strenum import StrEnum
 
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
+# Use a module-level registry key to share a single Lock object without mutating
+# sys.path or other global import state. Storing a Lock under a well-known key in
+# sys.modules is acceptable, but avoid inserting unrelated paths into sys.path.
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
@@ -78,7 +83,9 @@ LANGUAGE_TO_MINERU_MAP = {
 class MinerUBackend(StrEnum):
     """MinerU processing backend options."""
 
-    PIPELINE = "pipeline"  # Traditional multimodel pipeline (default)
+    HYBRID_AUTO_ENGINE = "hybrid-auto-engine"  # Hybrid auto engine with automatic optimization (default in MinerU 2.7.0+)
+    HYBRID = "hybrid"  # Hybrid backend combining multiple processing strategies
+    PIPELINE = "pipeline"  # Traditional multimodel pipeline
     VLM_TRANSFORMERS = "vlm-transformers"  # Vision-language model using HuggingFace Transformers
     VLM_MLX_ENGINE = "vlm-mlx-engine"  # Faster, requires Apple Silicon and macOS 13.5+
     VLM_VLLM_ENGINE = "vlm-vllm-engine"  # Local vLLM engine, requires local GPU
@@ -119,9 +126,20 @@ class MinerUParseMethod(StrEnum):
 
 @dataclass
 class MinerUParseOptions:
-    """Options for MinerU PDF parsing."""
+    """Options for MinerU PDF parsing.
 
-    backend: MinerUBackend = MinerUBackend.PIPELINE
+    Notes:
+    - `batch_size` default is 30; valid range is [1, 500]. Values outside this range
+      will be clamped to a safe default or upper bound by the parser.
+    - `start_page` and `end_page` are 0-based. If both provided, `start_page` must
+      be <= `end_page` otherwise validation will fail.
+    - `strict_mode` is a backend-only option (default True) that requires all
+      batches to succeed; it is currently not exposed in the UI. To expose it
+      in the frontend, add a boolean field (e.g., `mineru_strict_mode`) to the
+      MinerU parser form and propagate it into `parser_config`.
+    """
+
+    backend: MinerUBackend = MinerUBackend.HYBRID_AUTO_ENGINE
     lang: Optional[MinerULanguage] = None  # language for OCR (pipeline backend only)
     method: MinerUParseMethod = MinerUParseMethod.AUTO
     server_url: Optional[str] = None
@@ -129,6 +147,11 @@ class MinerUParseOptions:
     parse_method: str = "raw"
     formula_enable: bool = True
     table_enable: bool = True
+    batch_size: int = 30  # Number of pages per batch for large PDFs (clamped to [1,500])
+    start_page: Optional[int] = None  # Starting page (0-based, for manual pagination)
+    end_page: Optional[int] = None  # Ending page (0-based, for manual pagination)
+    strict_mode: bool = True  # If True (default), all batches must succeed; if False, allow partial success with warnings
+    exif_correction: bool = True
 
 
 class MinerUParser(RAGFlowPdfParser):
@@ -183,7 +206,7 @@ class MinerUParser(RAGFlowPdfParser):
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
 
-        valid_backends = ["pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
+        valid_backends = ["hybrid-auto-engine", "hybrid", "pipeline", "vlm-http-client", "vlm-transformers", "vlm-vllm-engine", "vlm-mlx-engine", "vlm-vllm-async-engine", "vlm-lmdeploy-engine"]
         if backend not in valid_backends:
             reason = f"[MinerU] Invalid backend '{backend}'. Valid backends are: {valid_backends}"
             self.logger.warning(reason)
@@ -220,6 +243,40 @@ class MinerUParser(RAGFlowPdfParser):
 
         return True, reason
 
+    def _validate_parse_options(self, options: MinerUParseOptions) -> None:
+        """Validate parse options for MinerUParser.
+
+        Raises:
+            ValueError: If options are invalid (e.g., start_page > end_page).
+        """
+        # Validate start_page and end_page types and ranges
+        if options.start_page is not None and not isinstance(options.start_page, int):
+            raise ValueError(f"[MinerU] start_page must be an int or None, got {type(options.start_page).__name__}")
+        if options.end_page is not None and not isinstance(options.end_page, int):
+            raise ValueError(f"[MinerU] end_page must be an int or None, got {type(options.end_page).__name__}")
+        if options.start_page is not None and options.start_page < 0:
+            raise ValueError(f"[MinerU] start_page must be >= 0, got {options.start_page}")
+        if options.end_page is not None and options.end_page < 0:
+            raise ValueError(f"[MinerU] end_page must be >= 0, got {options.end_page}")
+        if options.start_page is not None and options.end_page is not None and options.start_page > options.end_page:
+            raise ValueError(f"[MinerU] start_page ({options.start_page}) must be <= end_page ({options.end_page})")
+
+        # Validate batch_size and clamp to reasonable bounds
+        if not isinstance(options.batch_size, int) or options.batch_size <= 0:
+            self.logger.warning(f"[MinerU] invalid batch_size {options.batch_size}, resetting to default 30")
+            options.batch_size = 30
+        elif options.batch_size > 500:
+            self.logger.warning(f"[MinerU] batch_size {options.batch_size} is unusually large; capping to 500")
+            options.batch_size = 500
+
+        # strict_mode: ensure boolean and log note because it's currently not exposed in UI
+        if not isinstance(options.strict_mode, bool):
+            self.logger.warning(f"[MinerU] strict_mode must be boolean, got {type(options.strict_mode).__name__}; coercing to bool")
+            options.strict_mode = bool(options.strict_mode)
+        # Document strict_mode behaviour in help text to aid frontend developers
+        if options.strict_mode:
+            self.logger.info("[MinerU] strict_mode is enabled; note: this option currently has no UI control and is backend-only. If you want to expose it in the UI, add a toggle in the mineru form and update translation strings.")
+
     def _run_mineru(
         self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
     ) -> Path:
@@ -230,14 +287,18 @@ class MinerUParser(RAGFlowPdfParser):
     ) -> Path:
         pdf_file_path = str(input_path)
 
+        # Validate options before proceeding with API call
+        try:
+            self._validate_parse_options(options)
+        except ValueError as ve:
+            raise RuntimeError(f"[MinerU] invalid parse options: {ve}")
+
         if not os.path.exists(pdf_file_path):
             raise RuntimeError(f"[MinerU] PDF file not exists: {pdf_file_path}")
 
         pdf_file_name = Path(pdf_file_path).stem.strip()
         output_path = tempfile.mkdtemp(prefix=f"{pdf_file_name}_{options.method}_", dir=str(output_dir))
         output_zip_path = os.path.join(str(output_dir), f"{Path(output_path).name}.zip")
-
-        files = {"files": (pdf_file_name + ".pdf", open(pdf_file_path, "rb"), "application/pdf")}
 
         data = {
             "output_dir": "./output",
@@ -253,8 +314,11 @@ class MinerUParser(RAGFlowPdfParser):
             "return_content_list": True,
             "return_images": True,
             "response_format_zip": True,
-            "start_page_id": 0,
-            "end_page_id": 99999,
+            "start_page_id": options.start_page if options.start_page is not None else 0,
+            "end_page_id": options.end_page if options.end_page is not None else 99999,
+            "batch_size": options.batch_size,
+            "exif_correction": options.exif_correction,
+            "strict_mode": options.strict_mode,
         }
 
         if options.server_url:
@@ -266,32 +330,46 @@ class MinerUParser(RAGFlowPdfParser):
         self.logger.info(f"[MinerU] request {options=}")
 
         headers = {"Accept": "application/json"}
-        try:
-            self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')}")
-            if callback:
-                callback(0.20, f"[MinerU] invoke api: {self.mineru_api}/file_parse")
-            response = requests.post(url=f"{self.mineru_api}/file_parse", files=files, data=data, headers=headers,
-                                     timeout=1800)
+        max_retries = 3
+        backoff_factor = 2
 
-            response.raise_for_status()
-            if response.headers.get("Content-Type") == "application/zip":
-                self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
+        # Ensure the PDF file handle is properly closed after attempts by using a context manager
+        with open(pdf_file_path, "rb") as pdf_f:
+            files = {"files": (pdf_file_name + ".pdf", pdf_f, "application/pdf")}
 
-                if callback:
-                    callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
+            for attempt in range(max_retries):
+                try:
+                    self.logger.info(f"[MinerU] invoke api (attempt {attempt + 1}/{max_retries}): {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')}")
+                    if callback:
+                        callback(0.20, f"[MinerU] invoke api (attempt {attempt + 1}/{max_retries}): {self.mineru_api}/file_parse")
+                    response = requests.post(url=f"{self.mineru_api}/file_parse", files=files, data=data, headers=headers,
+                                             timeout=10800)
 
-                with open(output_zip_path, "wb") as f:
-                    f.write(response.content)
+                    response.raise_for_status()
+                    if response.headers.get("Content-Type") == "application/zip":
+                        self.logger.info(f"[MinerU] zip file returned, saving to {output_zip_path}...")
 
-                self.logger.info(f"[MinerU] Unzip to {output_path}...")
-                self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
+                        if callback:
+                            callback(0.30, f"[MinerU] zip file returned, saving to {output_zip_path}...")
 
-                if callback:
-                    callback(0.40, f"[MinerU] Unzip to {output_path}...")
-            else:
-                self.logger.warning(f"[MinerU] not zip returned from api: {response.headers.get('Content-Type')}")
-        except Exception as e:
-            raise RuntimeError(f"[MinerU] api failed with exception {e}")
+                        with open(output_zip_path, "wb") as f:
+                            f.write(response.content)
+
+                        self.logger.info(f"[MinerU] Unzip to {output_path}...")
+                        self._extract_zip_no_root(output_zip_path, output_path, pdf_file_name + "/")
+
+                        if callback:
+                            callback(0.40, f"[MinerU] Unzip to {output_path}...")
+                    else:
+                        self.logger.warning(f"[MinerU] not zip returned from api: {response.headers.get('Content-Type')}")
+                    break  # Success, exit retry loop
+                except requests.exceptions.RequestException as e:
+                    if attempt < max_retries - 1:
+                        wait_time = backoff_factor ** attempt
+                        self.logger.warning(f"[MinerU] api failed on attempt {attempt + 1}: {e}, retrying in {wait_time} seconds...")
+                        time.sleep(wait_time)
+                    else:
+                        raise RuntimeError(f"[MinerU] api failed after {max_retries} attempts with exception {e}")
         self.logger.info("[MinerU] Api completed successfully.")
         return Path(output_path)
 
@@ -564,6 +642,30 @@ class MinerUParser(RAGFlowPdfParser):
         mineru_method_raw_str = parser_cfg.get('mineru_parse_method', 'auto')
         enable_formula = parser_cfg.get('mineru_formula_enable', True)
         enable_table = parser_cfg.get('mineru_table_enable', True)
+        start_page = parser_cfg.get('mineru_start_page', None)
+        end_page = parser_cfg.get('mineru_end_page', None)
+        batch_size = parser_cfg.get('mineru_batch_size', 30)
+        strict_mode = parser_cfg.get('mineru_strict_mode', True)
+        
+        # Handle pages parameter - MinerU only supports single continuous page range
+        pages = parser_cfg.get('pages', [])
+        if pages and len(pages) > 0:
+            if len(pages) == 1:
+                # Single page range
+                page_range = pages[0]
+                if isinstance(page_range, list) and len(page_range) == 2:
+                    start_page = page_range[0] - 1  # Convert to 0-based indexing
+                    end_page = page_range[1]  # end_page is exclusive in MinerU API
+                    self.logger.info(f"[MinerU] Using page range: {page_range} (0-based: {start_page} to {end_page})")
+                else:
+                    self.logger.warning(f"[MinerU] Invalid page range format: {page_range}")
+            else:
+                # Multiple page ranges - MinerU doesn't support this, use first range
+                self.logger.warning(f"[MinerU] Multiple page ranges not supported, using first range: {pages[0]}")
+                page_range = pages[0]
+                if isinstance(page_range, list) and len(page_range) == 2:
+                    start_page = page_range[0] - 1  # Convert to 0-based indexing
+                    end_page = page_range[1]  # end_page is exclusive in MinerU API
 
         # remove spaces, or mineru crash, and _read_output fail too
         file_path = Path(filepath)
@@ -612,6 +714,10 @@ class MinerUParser(RAGFlowPdfParser):
                 parse_method=parse_method,
                 formula_enable=enable_formula,
                 table_enable=enable_table,
+                batch_size=batch_size,
+                start_page=start_page,
+                end_page=end_page,
+                strict_mode=strict_mode,
             )
             final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
             outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
