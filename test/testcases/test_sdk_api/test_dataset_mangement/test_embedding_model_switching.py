@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 import pytest
-from utils import wait_for
 
 
 class TestCheckEmbedding:

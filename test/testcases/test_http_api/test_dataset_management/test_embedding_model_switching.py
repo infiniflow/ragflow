@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 import pytest
-from common import check_embedding, create_dataset, update_dataset, parse_documents
+from common import check_embedding, update_dataset, parse_documents
 
 
 class TestCheckEmbedding:
