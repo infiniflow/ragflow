@@ -19,7 +19,6 @@ import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from quart import Blueprint, Quart, request, g, current_app, session, jsonify
-from flasgger import Swagger
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from quart_cors import cors
 from common.constants import StatusEnum, RetCode
@@ -29,6 +28,7 @@ from api.utils.json_encode import CustomJSONEncoder
 from api.utils import commands
 
 from quart_auth import Unauthorized
+from quart_schema import QuartSchema
 from common import settings
 from api.utils.api_utils import server_error_response
 from api.constants import API_VERSION
@@ -41,37 +41,8 @@ __all__ = ["app"]
 app = Quart(__name__)
 app = cors(app, allow_origin="*")
 
-# Add this at the beginning of your file to configure Swagger UI
-swagger_config = {
-    "headers": [],
-    "specs": [
-        {
-            "endpoint": "apispec",
-            "route": "/apispec.json",
-            "rule_filter": lambda rule: True,  # Include all endpoints
-            "model_filter": lambda tag: True,  # Include all models
-        }
-    ],
-    "static_url_path": "/flasgger_static",
-    "swagger_ui": True,
-    "specs_route": "/apidocs/",
-}
-
-swagger = Swagger(
-    app,
-    config=swagger_config,
-    template={
-        "swagger": "2.0",
-        "info": {
-            "title": "RAGFlow API",
-            "description": "",
-            "version": "1.0.0",
-        },
-        "securityDefinitions": {
-            "ApiKeyAuth": {"type": "apiKey", "name": "Authorization", "in": "header"}
-        },
-    },
-)
+# openapi supported
+QuartSchema(app)
 
 app.url_map.strict_slashes = False
 app.json_encoder = CustomJSONEncoder
@@ -125,18 +96,28 @@ def _load_user():
         user = UserService.query(
             access_token=access_token, status=StatusEnum.VALID.value
         )
-        if not user and len(authorization.split()) == 2:
-            objs = APIToken.query(token=authorization.split()[1])
-            if objs:
-                user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
         if user:
             if not user[0].access_token or not user[0].access_token.strip():
                 logging.warning(f"User {user[0].email} has empty access_token in database")
                 return None
             g.user = user[0]
             return user[0]
-    except Exception as e:
-        logging.warning(f"load_user got exception {e}")
+    except Exception as e_auth:
+        logging.warning(f"load_user got exception {e_auth}")
+        try:
+            authorization = request.headers.get("Authorization")
+            if len(authorization.split()) == 2:
+                objs = APIToken.query(token=authorization.split()[1])
+                if objs:
+                    user = UserService.query(id=objs[0].tenant_id, status=StatusEnum.VALID.value)
+                    if user:
+                        if not user[0].access_token or not user[0].access_token.strip():
+                            logging.warning(f"User {user[0].email} has empty access_token in database")
+                            return None
+                        g.user = user[0]
+                        return user[0]
+        except Exception as e_api_token:
+            logging.warning(f"load_user got exception {e_api_token}")
 
 
 current_user = LocalProxy(_load_user)

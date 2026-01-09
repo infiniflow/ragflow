@@ -1,6 +1,9 @@
 ---
 sidebar_position: 3
 slug: /embed_agent_into_webpage
+sidebar_custom_props: {
+  categoryIcon: LucideMonitorDot
+}
 ---
 
 # Embed agent into webpage

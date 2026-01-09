@@ -4,5 +4,8 @@
   "link": {
     "type": "generated-index",
     "description": "Miscellaneous References"
+  },
+  "customProps": {
+    "sidebarIcon": "LucideScrollText"
   }
 }

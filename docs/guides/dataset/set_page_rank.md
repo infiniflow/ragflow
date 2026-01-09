@@ -1,6 +1,9 @@
 ---
 sidebar_position: -2
 slug: /set_page_rank
+sidebar_custom_props: {
+  categoryIcon: LucideStickyNote
+}
 ---
 
 # Set page rank

@@ -101,7 +101,7 @@ export default {
       embeddingModelTooltip:
         '将文本转换为数值向量，用于语义相似度搜索和记忆检索。',
       embeddingModelError: '记忆类型为必填项，且"原始"类型不可删除。',
-      memoryTypeTooltip: `原始: 用户与代理之间的原始对话内容（默认必需）。
+      memoryTypeTooltip: `原始: 用户与智能体之间的原始对话内容（默认必需）。
 语义记忆: 关于用户和世界的通用知识和事实。
 情景记忆: 带时间戳的特定事件和经历记录。
 程序记忆: 学习的技能、习惯和自动化程序。`,
@@ -118,15 +118,16 @@ export default {
       embeddingModel: '嵌入模型',
       selectModel: '选择模型',
       llm: '大语言模型',
-      delMemoryWarn: `删除后，此记忆中的所有消息都将被删除，代理将无法检索。`,
+      delMemoryWarn: `删除后，此记忆中的所有消息都将被删除，智能体将无法检索。`,
     },
     memory: {
       messages: {
+        forget: '遗忘',
         forgetMessageTip: '确定遗忘吗？',
         messageDescription: '记忆提取使用高级设置中的提示词和温度值进行配置。',
         copied: '已复制！',
         content: '内容',
-        delMessageWarn: `遗忘后，代理将无法检索此消息。`,
+        delMessageWarn: `遗忘后，智能体将无法检索此消息。`,
         forgetMessage: '遗忘消息',
         sessionId: '会话ID',
         agent: '智能体',
@@ -389,6 +390,17 @@ export default {
         '启用公式识别。注意：对于西里尔文档可能无法正常工作。',
       mineruTableEnable: '表格识别',
       mineruTableEnableTip: '启用表格识别和提取。',
+      paddleocrOptions: 'PaddleOCR 选项',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlTip: 'PaddleOCR 服务的 API 端点 URL',
+      paddleocrApiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio 访问令牌',
+      paddleocrAccessTokenTip: 'PaddleOCR API 的访问令牌（可选）',
+      paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可选）',
+      paddleocrAlgorithm: 'PaddleOCR 算法',
+      paddleocrAlgorithmTip: '用于 PaddleOCR 解析的算法',
+      paddleocrSelectAlgorithm: '选择算法',
+      paddleocrModelNamePlaceholder: '例如：paddleocr-环境-1',
       generationScopeTip: '选择 RAPTOR 的生成范围：整个知识库或单个文件。',
       generationScope: '生成范围',
       scopeSingleFile: '单文件',
@@ -443,7 +455,7 @@ export default {
       chunkTokenNumber: '建议文本块大小',
       chunkTokenNumberMessage: '块Token数是必填项',
       embeddingModelTip:
-        '知识库采用的默认嵌入模型。 一旦知识库内已经产生了文本块后，你将无法更改默认的嵌入模型，除非删除知识库内的所有文本块。',
+        '知识库采用的默认嵌入模型。一旦知识库内已经产生了文本块，更换嵌入模型时，系统将随机抽取若干 chunk 进行兼容性校验，使用新嵌入模型重新编码并计算新旧向量的余弦相似度，样本平均相似度需 ≥ 0.9 方可切换。否则，必须删除知识库内的所有文本块后才能更改。',
       permissionsTip:
         '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
       chunkTokenNumberTip:
@@ -1111,6 +1123,17 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
           vlmVllmAsyncEngine: '基于vLLM异步引擎的视觉语言模型（实验性）',
           vlmLmdeployEngine: '基于LMDeploy引擎的视觉语言模型（实验性）',
         },
+      },
+      paddleocr: {
+        apiUrl: 'PaddleOCR API URL',
+        apiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+        accessToken: 'AI Studio访问令牌',
+        accessTokenPlaceholder: '您的 AI Studio 令牌（可选）',
+        algorithm: 'PaddleOCR算法',
+        selectAlgorithm: '选择算法',
+        modelNamePlaceholder: '例如：paddleocr-from-env-1',
+        modelNameRequired: '模型名称为必填项',
+        apiUrlRequired: 'PaddleOCR API URL 为必填项'
       },
     },
     message: {
@@ -2138,6 +2161,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       delFilesContent: '已选择 {{count}} 个文件',
       delChat: '删除聊天',
       delMember: '删除成员',
+      delMemory: '删除记忆',
     },
 
     empty: {

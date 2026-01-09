@@ -1,6 +1,9 @@
 ---
 sidebar_position: 10
 slug: /run_retrieval_test
+sidebar_custom_props: {
+  categoryIcon: LucideTextSearch
+}
 ---
 
 # Run retrieval test
@@ -53,7 +56,7 @@ The switch is disabled by default. When enabled, RAGFlow performs the following 
 3. Find similar entities and their N-hop relationships from the graph using the embeddings of the extracted query entities.
 4. Retrieve similar relationships from the graph using the query embedding.
 5. Rank these retrieved entities and relationships by multiplying each one's PageRank value with its similarity score to the query, returning the top n as the final retrieval.
-6. Retrieve the report for the community involving the most entities in the final retrieval.  
+6. Retrieve the report for the community involving the most entities in the final retrieval.
    *The retrieved entity descriptions, relationship descriptions, and the top 1 community report are sent to the LLM for content generation.*
 
 :::danger IMPORTANT
@@ -78,10 +81,10 @@ This field is where you put in your testing query.
 1. Navigate to the **Retrieval testing** page of your dataset, enter your query in **Test text**, and click **Testing** to run the test.
 2. If the results are unsatisfactory, tune the options listed in the Configuration section and rerun the test.
 
-   *The following is a screenshot of a retrieval test conducted without using knowledge graph. It demonstrates a hybrid search combining weighted keyword similarity and weighted vector cosine similarity. The overall hybrid similarity score is 28.56, calculated as 25.17 (term similarity score) x 0.7 + 36.49 (vector similarity score) x 0.3:*  
+   *The following is a screenshot of a retrieval test conducted without using knowledge graph. It demonstrates a hybrid search combining weighted keyword similarity and weighted vector cosine similarity. The overall hybrid similarity score is 28.56, calculated as 25.17 (term similarity score) x 0.7 + 36.49 (vector similarity score) x 0.3:*
    ![Image](https://github.com/user-attachments/assets/541554d4-3f3e-44e1-954b-0ae77d7372c6)
 
-   *The following is a screenshot of a retrieval test conducted using a knowledge graph. It shows that only vector similarity is used for knowledge graph-generated chunks:*  
+   *The following is a screenshot of a retrieval test conducted using a knowledge graph. It shows that only vector similarity is used for knowledge graph-generated chunks:*
    ![Image](https://github.com/user-attachments/assets/30a03091-0f7b-4058-901a-f4dc5ca5aa6b)
 
 :::caution WARNING

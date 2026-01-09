@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { AddOrEditModal } from './add-or-edit-modal';
 import { defaultMemoryFields } from './constants';
-import { useFetchMemoryList, useRenameMemory } from './hooks';
+import { useFetchMemoryList, useRenameMemory, useSelectFilters } from './hooks';
 import { ICreateMemoryProps, IMemory } from './interface';
 import { MemoryCard } from './memory-card';
 
@@ -27,6 +27,8 @@ export default function MemoryList() {
     handleInputChange,
     setPagination,
     refetch: refetchList,
+    filterValue,
+    handleFilterSubmit,
   } = useFetchMemoryList();
 
   const {
@@ -56,6 +58,7 @@ export default function MemoryList() {
   );
 
   const [searchUrl, setMemoryUrl] = useSearchParams();
+  const { filters } = useSelectFilters();
   const isCreate = searchUrl.get('isCreate') === 'true';
   useEffect(() => {
     if (isCreate) {
@@ -87,9 +90,11 @@ export default function MemoryList() {
             <ListFilterBar
               icon="memory"
               title={t('memory')}
-              showFilter={false}
               onSearchChange={handleInputChange}
               searchString={searchString}
+              filters={filters}
+              onChange={handleFilterSubmit}
+              value={filterValue}
             >
               <Button
                 variant={'default'}
@@ -97,7 +102,7 @@ export default function MemoryList() {
                   openCreateModalFun();
                 }}
               >
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className=" h-4 w-4" />
                 {t('createMemory')}
               </Button>
             </ListFilterBar>

@@ -48,6 +48,7 @@ logger = logging.getLogger('ragflow.ob_conn')
 
 column_order_id = Column("_order_id", Integer, nullable=True, comment="chunk order id for maintaining sequence")
 column_group_id = Column("group_id", String(256), nullable=True, comment="group id for external retrieval")
+column_mom_id = Column("mom_id", String(256), nullable=True, comment="parent chunk id")
 
 column_definitions: list[Column] = [
     Column("id", String(256), primary_key=True, comment="chunk id"),
@@ -92,6 +93,7 @@ column_definitions: list[Column] = [
     Column("extra", JSON, nullable=True, comment="extra information of non-general chunk"),
     column_order_id,
     column_group_id,
+    column_mom_id,
 ]
 
 column_names: list[str] = [col.name for col in column_definitions]
@@ -538,7 +540,7 @@ class OBConnection(DocStoreConnection):
                 column_name = fts_column.split("^")[0]
                 if not self._index_exists(table_name, fulltext_index_name_template % column_name):
                     return False
-            for column in [column_order_id, column_group_id]:
+            for column in [column_order_id, column_group_id, column_mom_id]:
                 if not self._column_exist(table_name, column.name):
                     return False
         except Exception as e:
@@ -592,7 +594,7 @@ class OBConnection(DocStoreConnection):
             )
 
             # new columns migration
-            for column in [column_order_id, column_group_id]:
+            for column in [column_order_id, column_group_id, column_mom_id]:
                 _try_with_lock(
                     lock_name=f"ob_add_{column.name}_{indexName}",
                     check_func=lambda: self._column_exist(indexName, column.name),
