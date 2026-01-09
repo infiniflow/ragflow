@@ -259,8 +259,9 @@ class MinerUParser(RAGFlowPdfParser):
         if not isinstance(options.strict_mode, bool):
             self.logger.warning(f"[MinerU] strict_mode must be boolean, got {type(options.strict_mode).__name__}; coercing to bool")
             options.strict_mode = bool(options.strict_mode)
+        # Document strict_mode behaviour in help text to aid frontend developers
         if options.strict_mode:
-            self.logger.info("[MinerU] strict_mode is enabled; note: this option currently has no UI control and is backend-only.")
+            self.logger.info("[MinerU] strict_mode is enabled; note: this option currently has no UI control and is backend-only. If you want to expose it in the UI, add a toggle in the mineru form and update translation strings.")
 
     def _run_mineru(
         self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
