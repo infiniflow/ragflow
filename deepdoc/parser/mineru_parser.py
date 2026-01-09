@@ -262,12 +262,16 @@ class MinerUParser(RAGFlowPdfParser):
             "return_content_list": True,
             "return_images": True,
             "response_format_zip": True,
-            "start_page_id": options.start_page if options.start_page is not None else 0,
-            "end_page_id": options.end_page if options.end_page is not None else 99999,
             "batch_size": options.batch_size,
             "exif_correction": options.exif_correction,
             "strict_mode": options.strict_mode,
         }
+
+        # Only include page range parameters if they are explicitly set
+        if options.start_page is not None:
+            data["start_page_id"] = options.start_page
+        if options.end_page is not None:
+            data["end_page_id"] = options.end_page
 
         if options.server_url:
             data["server_url"] = options.server_url
