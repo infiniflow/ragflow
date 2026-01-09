@@ -117,7 +117,7 @@ export const useSubmitOllama = () => {
   const [selectedLlmFactory, setSelectedLlmFactory] = useState<string>('');
   const [editMode, setEditMode] = useState(false);
   const [initialValues, setInitialValues] = useState<
-    Partial<IAddLlmRequestBody> | undefined
+    Partial<IAddLlmRequestBody> & { provider_order?: string }
   >();
   const { addLlm, loading } = useAddLlm();
   const {

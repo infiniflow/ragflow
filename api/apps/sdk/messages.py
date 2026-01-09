@@ -31,34 +31,21 @@ async def add_message():
 
     req = await get_request_json()
     memory_ids = req["memory_id"]
-    agent_id = req["agent_id"]
-    session_id = req["session_id"]
-    user_id = req["user_id"] if req.get("user_id") else ""
-    user_input = req["user_input"]
-    agent_response = req["agent_response"]
 
-    res = []
-    for memory_id in memory_ids:
-        success, msg = await memory_message_service.save_to_memory(
-            memory_id,
-            {
-                "user_id": user_id,
-                "agent_id": agent_id,
-                "session_id": session_id,
-                "user_input": user_input,
-                "agent_response": agent_response
-            }
-        )
-        res.append({
-            "memory_id": memory_id,
-            "success": success,
-            "message": msg
-        })
+    message_dict = {
+        "user_id": req.get("user_id"),
+        "agent_id": req["agent_id"],
+        "session_id": req["session_id"],
+        "user_input": req["user_input"],
+        "agent_response": req["agent_response"],
+    }
 
-    if all([r["success"] for r in res]):
-        return get_json_result(message="Successfully added to memories.")
+    res, msg = await memory_message_service.queue_save_to_memory_task(memory_ids, message_dict)
 
-    return get_json_result(code=RetCode.SERVER_ERROR, message="Some messages failed to add.", data=res)
+    if res:
+        return get_json_result(message=msg)
+
+    return get_json_result(code=RetCode.SERVER_ERROR, message="Some messages failed to add. Detail:" + msg)
 
 
 @manager.route("/messages/<memory_id>:<message_id>", methods=["DELETE"]) # noqa: F821
