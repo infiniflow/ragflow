@@ -29,7 +29,9 @@ def test_validate_batch_size_clamping_and_defaults():
 
 def test_strict_mode_coercion_and_type():
     parser = MinerUParser(mineru_api="http://test-api")
-    opts = MinerUParseOptions(strict_mode="yes")
+    opts = MinerUParseOptions()
+    # Simulate malformed input coming from ui/config by assigning a non-bool value
+    opts.strict_mode = "yes"
     parser._validate_parse_options(opts)
     assert isinstance(opts.strict_mode, bool)
     assert opts.strict_mode is True
