@@ -5,6 +5,7 @@ import {
 } from '@/components/dynamic-form';
 import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
+import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import omit from 'lodash/omit';
@@ -20,6 +21,7 @@ const SparkModal = ({
 }: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
   const { t } = useTranslate('setting');
   const { t: tc } = useCommonTranslation();
+  const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
   const fields: FormFieldConfig[] = [
     {
@@ -27,10 +29,7 @@ const SparkModal = ({
       label: t('modelType'),
       type: FormFieldType.Select,
       required: true,
-      options: [
-        { label: 'chat', value: 'chat' },
-        { label: 'tts', value: 'tts' },
-      ],
+      options: buildModelTypeOptions(['chat', 'tts']),
       defaultValue: 'chat',
       validation: {
         message: t('modelTypeMessage'),

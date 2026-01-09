@@ -5,6 +5,7 @@ import {
 } from '@/components/dynamic-form';
 import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
+import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { FieldValues } from 'react-hook-form';
@@ -19,6 +20,7 @@ const FishAudioModal = ({
 }: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
   const { t } = useTranslate('setting');
   const { t: tc } = useCommonTranslation();
+  const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
   const fields: FormFieldConfig[] = [
     {
@@ -26,7 +28,7 @@ const FishAudioModal = ({
       label: t('modelType'),
       type: FormFieldType.Select,
       required: true,
-      options: [{ label: 'tts', value: 'tts' }],
+      options: buildModelTypeOptions(['tts']),
       defaultValue: 'tts',
       validation: { message: t('modelTypeMessage') },
     },
