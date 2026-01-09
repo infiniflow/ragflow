@@ -38,6 +38,8 @@ def get_value(d, k1, k2):
 
 
 def chunks_format(reference):
+    if not reference or (reference is not dict):
+        return []
     return [
         {
             "id": get_value(chunk, "chunk_id", "id"),

@@ -425,7 +425,7 @@ async def chat_completion_openai_like(tenant_id, chat_id):
             ],
         }
         if need_reference:
-            response["choices"][0]["message"]["reference"] = chunks_format(answer.get("reference", []))
+            response["choices"][0]["message"]["reference"] = chunks_format(answer.get("reference", {}))
 
         return jsonify(response)
 
