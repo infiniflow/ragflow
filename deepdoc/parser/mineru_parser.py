@@ -272,6 +272,12 @@ class MinerUParser(RAGFlowPdfParser):
     ) -> Path:
         pdf_file_path = str(input_path)
 
+        # Validate options before proceeding with API call
+        try:
+            self._validate_parse_options(options)
+        except ValueError as ve:
+            raise RuntimeError(f"[MinerU] invalid parse options: {ve}")
+
         if not os.path.exists(pdf_file_path):
             raise RuntimeError(f"[MinerU] PDF file not exists: {pdf_file_path}")
 
