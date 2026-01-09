@@ -229,15 +229,17 @@ const ModelProviders = () => {
         onOk={onApiKeySavingOk}
         llmFactory={llmFactory}
       ></ApiKeyModal>
-      <OllamaModal
-        visible={llmAddingVisible}
-        hideModal={hideLlmAddingModal}
-        onOk={onLlmAddingOk}
-        loading={llmAddingLoading}
-        editMode={llmEditMode}
-        initialValues={llmInitialValues}
-        llmFactory={selectedLlmFactory}
-      ></OllamaModal>
+      {llmAddingVisible && (
+        <OllamaModal
+          visible={llmAddingVisible}
+          hideModal={hideLlmAddingModal}
+          onOk={onLlmAddingOk}
+          loading={llmAddingLoading}
+          editMode={llmEditMode}
+          initialValues={llmInitialValues}
+          llmFactory={selectedLlmFactory}
+        ></OllamaModal>
+      )}
       <VolcEngineModal
         visible={volcAddingVisible}
         hideModal={hideVolcAddingModal}
