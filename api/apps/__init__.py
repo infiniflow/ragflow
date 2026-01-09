@@ -29,6 +29,7 @@ from api.utils.json_encode import CustomJSONEncoder
 from api.utils import commands
 
 from quart_auth import Unauthorized
+from quart_schema import QuartSchema
 from common import settings
 from api.utils.api_utils import server_error_response
 from api.constants import API_VERSION
@@ -41,37 +42,8 @@ __all__ = ["app"]
 app = Quart(__name__)
 app = cors(app, allow_origin="*")
 
-# Add this at the beginning of your file to configure Swagger UI
-swagger_config = {
-    "headers": [],
-    "specs": [
-        {
-            "endpoint": "apispec",
-            "route": "/apispec.json",
-            "rule_filter": lambda rule: True,  # Include all endpoints
-            "model_filter": lambda tag: True,  # Include all models
-        }
-    ],
-    "static_url_path": "/flasgger_static",
-    "swagger_ui": True,
-    "specs_route": "/apidocs/",
-}
-
-swagger = Swagger(
-    app,
-    config=swagger_config,
-    template={
-        "swagger": "2.0",
-        "info": {
-            "title": "RAGFlow API",
-            "description": "",
-            "version": "1.0.0",
-        },
-        "securityDefinitions": {
-            "ApiKeyAuth": {"type": "apiKey", "name": "Authorization", "in": "header"}
-        },
-    },
-)
+# openapi supported
+QuartSchema(app)
 
 app.url_map.strict_slashes = False
 app.json_encoder = CustomJSONEncoder
