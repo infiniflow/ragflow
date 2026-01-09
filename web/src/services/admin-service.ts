@@ -1,6 +1,6 @@
+import { history } from '@/utils/simple-history-util';
 import { message, notification } from 'antd';
 import axios from 'axios';
-import { history } from 'umi';
 
 import { Authorization } from '@/constants/authorization';
 import i18n from '@/locales/config';

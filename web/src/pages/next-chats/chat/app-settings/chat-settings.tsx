@@ -8,12 +8,12 @@ import {
   setLLMSettingEnabledValues,
 } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { omit } from 'lodash';
+import { isEmpty, omit } from 'lodash';
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 import { z } from 'zod';
 import ChatBasicSetting from './chat-basic-settings';
 import { ChatModelSettings } from './chat-model-settings';
@@ -33,7 +33,7 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
 
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
-    shouldUnregister: true,
+    shouldUnregister: false,
     defaultValues: {
       name: '',
       icon: '',
@@ -88,7 +88,10 @@ export function ChatSettings({ switchSettingVisible }: ChatSettingsProps) {
       ...data,
       ...llmSettingEnabledValues,
     };
-    form.reset(nextData as FormSchemaType);
+
+    if (!isEmpty(data)) {
+      form.reset(nextData as FormSchemaType);
+    }
   }, [data, form]);
 
   return (

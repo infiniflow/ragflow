@@ -25,6 +25,7 @@ from api.db.joint_services.user_account_service import create_new_user, delete_u
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.user_service import TenantService, UserTenantService
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.system_settings_service import SystemSettingsService
 from api.db.services.api_service import APITokenService
 from api.db.db_models import APIToken
 from api.utils.crypt import decrypt
@@ -318,3 +319,84 @@ class ServiceMgr:
     @staticmethod
     def restart_service(service_id: int):
         raise AdminException("restart_service: not implemented")
+
+
+class SettingsMgr:
+    @staticmethod
+    def get_all():
+        settings = SystemSettingsService.get_all()
+        result = []
+        for setting in settings:
+            result.append(
+                {
+                    "name": setting.name,
+                    "source": setting.source,
+                    "data_type": setting.data_type,
+                    "value": setting.value,
+                }
+            )
+        return result
+
+    @staticmethod
+    def get_by_name(name: str):
+        settings = SystemSettingsService.get_by_name(name)
+        if len(settings) == 0:
+            raise AdminException(f"Can't get setting: {name}")
+        result = []
+        for setting in settings:
+            result.append(
+                {
+                    "name": setting.name,
+                    "source": setting.source,
+                    "data_type": setting.data_type,
+                    "value": setting.value,
+                }
+            )
+        return result
+
+    @staticmethod
+    def update_by_name(name: str, value: str):
+        settings = SystemSettingsService.get_by_name(name)
+        if len(settings) == 1:
+            setting = settings[0]
+            setting.value = value
+            setting_dict = setting.to_dict()
+            SystemSettingsService.update_by_name(name, setting_dict)
+        elif len(settings) > 1:
+            raise AdminException(f"Can't update more than 1 setting: {name}")
+        else:
+            raise AdminException(f"No setting: {name}")
+
+
+class ConfigMgr:
+    @staticmethod
+    def get_all():
+        result = []
+        configs = SERVICE_CONFIGS.configs
+        for config in configs:
+            config_dict = config.to_dict()
+            result.append(config_dict)
+        return result
+
+
+class EnvironmentsMgr:
+    @staticmethod
+    def get_all():
+        result = []
+
+        env_kv = {"env": "DOC_ENGINE", "value": os.getenv("DOC_ENGINE")}
+        result.append(env_kv)
+
+        env_kv = {"env": "DEFAULT_SUPERUSER_EMAIL", "value": os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")}
+        result.append(env_kv)
+
+        env_kv = {"env": "DB_TYPE", "value": os.getenv("DB_TYPE", "mysql")}
+        result.append(env_kv)
+
+        env_kv = {"env": "DEVICE", "value": os.getenv("DEVICE", "cpu")}
+        result.append(env_kv)
+
+        env_kv = {"env": "STORAGE_IMPL", "value": os.getenv("STORAGE_IMPL", "MINIO")}
+        result.append(env_kv)
+
+        return result
