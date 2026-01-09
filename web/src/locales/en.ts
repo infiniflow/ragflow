@@ -428,6 +428,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       mineruBatchSize: 'Batch Size',
       mineruBatchSizeTip:
         'Number of pages to process per batch for large PDFs. Larger values use more memory but may be faster. Default is 30.',
+      mineruStrictMode: 'Strict Mode',
+      mineruStrictModeTip:
+        'Require all batches to succeed; toggle to allow partial successes when disabled (backend-only option).',
       mineruStartPage: 'Start Page',
       mineruStartPageTip:
         'Starting page number for processing (0-based). Leave empty to start from the beginning.',
