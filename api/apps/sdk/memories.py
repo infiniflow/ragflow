@@ -31,7 +31,7 @@ from memory.utils.prompt_util import PromptAssembler
 from common.constants import MemoryType, RetCode, ForgettingPolicy
 
 
-@manager.route("", methods=["POST"])  # noqa: F821
+@manager.route("/memories", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name", "memory_type", "embd_id", "llm_id")
 async def create_memory():
@@ -68,7 +68,7 @@ async def create_memory():
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 
-@manager.route("/<memory_id>", methods=["PUT"])  # noqa: F821
+@manager.route("/memories/<memory_id>", methods=["PUT"])  # noqa: F821
 @login_required
 async def update_memory(memory_id):
     req = await get_request_json()
@@ -152,7 +152,7 @@ async def update_memory(memory_id):
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 
-@manager.route("/<memory_id>", methods=["DELETE"])  # noqa: F821
+@manager.route("/memories/<memory_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 async def delete_memory(memory_id):
     memory = MemoryService.get_by_memory_id(memory_id)
@@ -168,7 +168,7 @@ async def delete_memory(memory_id):
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 
-@manager.route("", methods=["GET"])  # noqa: F821
+@manager.route("/memories", methods=["GET"])  # noqa: F821
 @login_required
 async def list_memory():
     args = request.args
@@ -202,7 +202,7 @@ async def list_memory():
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 
-@manager.route("/<memory_id>/config", methods=["GET"])  # noqa: F821
+@manager.route("/memories/<memory_id>/config", methods=["GET"])  # noqa: F821
 @login_required
 async def get_memory_config(memory_id):
     memory = MemoryService.get_with_owner_name_by_id(memory_id)
@@ -211,7 +211,7 @@ async def get_memory_config(memory_id):
     return get_json_result(message=True, data=format_ret_data_from_memory(memory))
 
 
-@manager.route("/<memory_id>", methods=["GET"])  # noqa: F821
+@manager.route("/memories/<memory_id>", methods=["GET"])  # noqa: F821
 @login_required
 async def get_memory_detail(memory_id):
     args = request.args

@@ -42,7 +42,7 @@ class Memory(Base):
         super().__init__(rag, res_dict)
 
     def update(self, update_dict: dict):
-        res = self.put(f"/v1/memories/{self.id}", update_dict)
+        res = self.put(f"/memories/{self.id}", update_dict)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
@@ -50,7 +50,7 @@ class Memory(Base):
         return self
 
     def get_config(self):
-        res = self.get(f"/v1/memories/{self.id}/config")
+        res = self.get(f"/memories/{self.id}/config")
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
@@ -64,14 +64,14 @@ class Memory(Base):
             "page": page,
             "page_size": page_size
         }
-        res = self.get(f"/v1/memories/{self.id}", params)
+        res = self.get(f"/memories/{self.id}", params)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
         return res["data"]
 
     def forget_message(self, message_id: int):
-        res = self.rm(f"/v1/messages/{self.id}:{message_id}", {})
+        res = self.rm(f"/messages/{self.id}:{message_id}", {})
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
@@ -81,14 +81,14 @@ class Memory(Base):
         update_message = {
             "status": status
         }
-        res = self.put(f"/v1/messages/{self.id}:{message_id}", update_message)
+        res = self.put(f"/messages/{self.id}:{message_id}", update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
         return True
 
     def get_message_content(self, message_id: int) -> dict:
-        res = self.get(f"/v1/memories/{self.id}:{message_id}/content")
+        res = self.get(f"/messages/{self.id}:{message_id}/content")
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
