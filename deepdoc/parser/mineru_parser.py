@@ -40,6 +40,7 @@ LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 
+
 class MinerUContentType(StrEnum):
     IMAGE = "image"
     TABLE = "table"
