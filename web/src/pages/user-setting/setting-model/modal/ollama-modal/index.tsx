@@ -6,6 +6,7 @@ import {
 import { Modal } from '@/components/ui/modal/modal';
 import { LLMFactory } from '@/constants/llm';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
+import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { useMemo } from 'react';
@@ -33,49 +34,6 @@ const llmFactoryToUrlMap: Partial<Record<LLMFactory, string>> = {
   [LLMFactory.TokenPony]: 'https://docs.tokenpony.cn/#/',
 };
 
-const optionsMap: Partial<
-  Record<LLMFactory, { label: string; value: string }[]>
-> & {
-  Default: { label: string; value: string }[];
-} = {
-  [LLMFactory.HuggingFace]: [
-    { label: 'embedding', value: 'embedding' },
-    { label: 'chat', value: 'chat' },
-    { label: 'rerank', value: 'rerank' },
-  ],
-  [LLMFactory.LMStudio]: [
-    { label: 'chat', value: 'chat' },
-    { label: 'embedding', value: 'embedding' },
-    { label: 'image2text', value: 'image2text' },
-  ],
-  [LLMFactory.Xinference]: [
-    { label: 'chat', value: 'chat' },
-    { label: 'embedding', value: 'embedding' },
-    { label: 'rerank', value: 'rerank' },
-    { label: 'image2text', value: 'image2text' },
-    { label: 'sequence2text', value: 'speech2text' },
-    { label: 'tts', value: 'tts' },
-  ],
-  [LLMFactory.ModelScope]: [{ label: 'chat', value: 'chat' }],
-  [LLMFactory.GPUStack]: [
-    { label: 'chat', value: 'chat' },
-    { label: 'embedding', value: 'embedding' },
-    { label: 'rerank', value: 'rerank' },
-    { label: 'sequence2text', value: 'speech2text' },
-    { label: 'tts', value: 'tts' },
-  ],
-  [LLMFactory.OpenRouter]: [
-    { label: 'chat', value: 'chat' },
-    { label: 'image2text', value: 'image2text' },
-  ],
-  Default: [
-    { label: 'chat', value: 'chat' },
-    { label: 'embedding', value: 'embedding' },
-    { label: 'rerank', value: 'rerank' },
-    { label: 'image2text', value: 'image2text' },
-  ],
-};
-
 const OllamaModal = ({
   visible,
   hideModal,
@@ -90,6 +48,47 @@ const OllamaModal = ({
 }) => {
   const { t } = useTranslate('setting');
   const { t: tc } = useCommonTranslation();
+  const { buildModelTypeOptions } = useBuildModelTypeOptions();
+
+  const optionsMap: Partial<
+    Record<LLMFactory, { label: string; value: string }[]>
+  > & {
+    Default: { label: string; value: string }[];
+  } = {
+    [LLMFactory.HuggingFace]: buildModelTypeOptions([
+      'embedding',
+      'chat',
+      'rerank',
+    ]),
+    [LLMFactory.LMStudio]: buildModelTypeOptions([
+      'chat',
+      'embedding',
+      'image2text',
+    ]),
+    [LLMFactory.Xinference]: buildModelTypeOptions([
+      'chat',
+      'embedding',
+      'rerank',
+      'image2text',
+      'speech2text',
+      'tts',
+    ]),
+    [LLMFactory.ModelScope]: buildModelTypeOptions(['chat']),
+    [LLMFactory.GPUStack]: buildModelTypeOptions([
+      'chat',
+      'embedding',
+      'rerank',
+      'speech2text',
+      'tts',
+    ]),
+    [LLMFactory.OpenRouter]: buildModelTypeOptions(['chat', 'image2text']),
+    Default: buildModelTypeOptions([
+      'chat',
+      'embedding',
+      'rerank',
+      'image2text',
+    ]),
+  };
 
   const url =
     llmFactoryToUrlMap[llmFactory as LLMFactory] ||
