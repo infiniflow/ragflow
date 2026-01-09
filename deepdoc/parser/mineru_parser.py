@@ -251,9 +251,9 @@ class MinerUParser(RAGFlowPdfParser):
         if not isinstance(options.batch_size, int) or options.batch_size <= 0:
             self.logger.warning(f"[MinerU] invalid batch_size {options.batch_size}, resetting to default 30")
             options.batch_size = 30
-        elif options.batch_size > 1000:
-            self.logger.warning(f"[MinerU] batch_size {options.batch_size} is unusually large; capping to 1000")
-            options.batch_size = 1000
+        elif options.batch_size > 500:
+            self.logger.warning(f"[MinerU] batch_size {options.batch_size} is unusually large; capping to 500")
+            options.batch_size = 500
 
         # strict_mode: ensure boolean and log note because it's currently not exposed in UI
         if not isinstance(options.strict_mode, bool):
