@@ -163,8 +163,8 @@ Example: chat benchmark creating dataset + upload + parse + chat (login + regist
   PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark chat \
     --base-url http://127.0.0.1:9380 \
     --allow-register \
-    --login-email isbaaoui09@gmail.com \
-    --login-password-encrypted "epjCVLgkADSdEHEEJH8LdHvVhL9H7K/DWms4i6EI2IUuIIeiTOd389pmbX41d58hSGwb/O0dSjtuFfhuUwmf9cWqEB0Z/CfytM+AhJrIbpuowNpjEj4y3tYNGphXPfDTqesA/1cpC8lAwlA7mVexLuyci58zsDW3hxozFCdOHQCjKkOyuLpkfTg6rjGoNdRskVdc0hu7967Ix5R0g3It55VgX1kawhTJ+jwhFiLezYV0AOgiNVR5+FrbjwlMSGBxJIoLOjouLGctu6XUonFMwgIQyRRID9f/rI5UqkOOAyxD1f0qCT2Lqo/S+oowHc+lCSYTLozOf5Rlw2OVzKaJGg==" \
+    --login-email "<login_email>" \
+    --login-password-encrypted "<encrypted_passowrd>" \
     --bootstrap-llm \
     --llm-factory ZHIPU-AI \
     --llm-api-key $ZHIPU_AI_API_KEY \
@@ -181,8 +181,8 @@ Example: chat benchmark with existing dataset + chat id (no creation)
   PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark chat \
     --base-url http://127.0.0.1:9380 \
     --chat-id <existing_chat_id> \
-    --login-email isbaaoui09@gmail.com \
-    --login-password-encrypted "epjCVLgkADSdEHEEJH8LdHvVhL9H7K/DWms4i6EI2IUuIIeiTOd389pmbX41d58hSGwb/O0dSjtuFfhuUwmf9cWqEB0Z/CfytM+AhJrIbpuowNpjEj4y3tYNGphXPfDTqesA/1cpC8lAwlA7mVexLuyci58zsDW3hxozFCdOHQCjKkOyuLpkfTg6rjGoNdRskVdc0hu7967Ix5R0g3It55VgX1kawhTJ+jwhFiLezYV0AOgiNVR5+FrbjwlMSGBxJIoLOjouLGctu6XUonFMwgIQyRRID9f/rI5UqkOOAyxD1f0qCT2Lqo/S+oowHc+lCSYTLozOf5Rlw2OVzKaJGg==" \
+    --login-email "<login_email>" \
+    --login-password-encrypted "<encrypted_passowrd>" \
     --message "Say this is a test!" \
     --model "glm-4-flash@ZHIPU-AI"
 
@@ -190,31 +190,30 @@ Example: retrieval benchmark creating dataset + upload + parse
   PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
     --allow-register \
-    --login-email isbaaoui09@gmail.com \
-    --login-password-encrypted "epjCVLgkADSdEHEEJH8LdHvVhL9H7K/DWms4i6EI2IUuIIeiTOd389pmbX41d58hSGwb/O0dSjtuFfhuUwmf9cWqEB0Z/CfytM+AhJrIbpuowNpjEj4y3tYNGphXPfDTqesA/1cpC8lAwlA7mVexLuyci58zsDW3hxozFCdOHQCjKkOyuLpkfTg6rjGoNdRskVdc0hu7967Ix5R0g3It55VgX1kawhTJ+jwhFiLezYV0AOgiNVR5+FrbjwlMSGBxJIoLOjouLGctu6XUonFMwgIQyRRID9f/rI5UqkOOAyxD1f0qCT2Lqo/S+oowHc+lCSYTLozOf5Rlw2OVzKaJGg==" \
+    --login-email "<login_email>" \
+    --login-password-encrypted "<encrypted_passowrd>" \
     --bootstrap-llm \
     --llm-factory ZHIPU-AI \
     --llm-api-key $ZHIPU_AI_API_KEY \
     --dataset-name "bench_dataset" \
     --dataset-payload '{"name":"bench_dataset","embedding_model":"embedding-2@ZHIPU-AI"}' \
-    --document-path /home/idriss/Downloads/Ottoman_Empire.pdf \
-    --document-path /home/idriss/Downloads/Qing_dynasty.pdf \
-    --document-path /home/idriss/Downloads/Spanish_Empire.pdf \
-    --question "What is the longest lasting empire"
+    --document-path path/to/doc/doc1.pdf \
+    --document-path path/to/doc/doc2.pdf \
+    --question "What is advantage of ragflow?"
 
 Example: retrieval benchmark with existing dataset IDs
   PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
-    --login-email isbaaoui09@gmail.com \
-    --login-password-encrypted "epjCVLgkADSdEHEEJH8LdHvVhL9H7K/DWms4i6EI2IUuIIeiTOd389pmbX41d58hSGwb/O0dSjtuFfhuUwmf9cWqEB0Z/CfytM+AhJrIbpuowNpjEj4y3tYNGphXPfDTqesA/1cpC8lAwlA7mVexLuyci58zsDW3hxozFCdOHQCjKkOyuLpkfTg6rjGoNdRskVdc0hu7967Ix5R0g3It55VgX1kawhTJ+jwhFiLezYV0AOgiNVR5+FrbjwlMSGBxJIoLOjouLGctu6XUonFMwgIQyRRID9f/rI5UqkOOAyxD1f0qCT2Lqo/S+oowHc+lCSYTLozOf5Rlw2OVzKaJGg==" \
+    --login-email "<login_email>" \
+    --login-password-encrypted "<encrypted_passowrd>" \
     --dataset-ids "<dataset_id_1>,<dataset_id_2>" \
     --question "What is advantage of ragflow?"
 
 Example: retrieval benchmark with existing dataset IDs and document IDs
   PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
-    --login-email isbaaoui09@gmail.com \
-    --login-password-encrypted "epjCVLgkADSdEHEEJH8LdHvVhL9H7K/DWms4i6EI2IUuIIeiTOd389pmbX41d58hSGwb/O0dSjtuFfhuUwmf9cWqEB0Z/CfytM+AhJrIbpuowNpjEj4y3tYNGphXPfDTqesA/1cpC8lAwlA7mVexLuyci58zsDW3hxozFCdOHQCjKkOyuLpkfTg6rjGoNdRskVdc0hu7967Ix5R0g3It55VgX1kawhTJ+jwhFiLezYV0AOgiNVR5+FrbjwlMSGBxJIoLOjouLGctu6XUonFMwgIQyRRID9f/rI5UqkOOAyxD1f0qCT2Lqo/S+oowHc+lCSYTLozOf5Rlw2OVzKaJGg==" \
+    --login-email "<login_email>" \
+    --login-password-encrypted "<encrypted_passowrd>" \
     --dataset-id "<dataset_id>" \
     --document-ids "<doc_id_1>,<doc_id_2>" \
     --question "What is advantage of ragflow?"
@@ -222,8 +221,8 @@ Example: retrieval benchmark with existing dataset IDs and document IDs
 Example: using a document list file (multi-file selection)
   PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
-    --login-email isbaaoui09@gmail.com \
-    --login-password-encrypted "epjCVLgkADSdEHEEJH8LdHvVhL9H7K/DWms4i6EI2IUuIIeiTOd389pmbX41d58hSGwb/O0dSjtuFfhuUwmf9cWqEB0Z/CfytM+AhJrIbpuowNpjEj4y3tYNGphXPfDTqesA/1cpC8lAwlA7mVexLuyci58zsDW3hxozFCdOHQCjKkOyuLpkfTg6rjGoNdRskVdc0hu7967Ix5R0g3It55VgX1kawhTJ+jwhFiLezYV0AOgiNVR5+FrbjwlMSGBxJIoLOjouLGctu6XUonFMwgIQyRRID9f/rI5UqkOOAyxD1f0qCT2Lqo/S+oowHc+lCSYTLozOf5Rlw2OVzKaJGg==" \
+    --login-email "<login_email>" \
+    --login-password-encrypted "<encrypted_passowrd>" \
     --dataset-name "bench_dataset" \
     --dataset-payload '{"name":"bench_dataset","embedding_model":"embedding-2@ZHIPU-AI"}' \
     --document-paths-file /path/to/document_paths.txt \
