@@ -247,3 +247,24 @@ def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
         res = create_session_with_chat_assistant(auth, chat_assistant_id, {"name": f"session_with_chat_assistant_{i}"})
         session_ids.append(res["data"]["id"])
     return session_ids
+
+
+# CHAT COMPLETIONS
+def chat_completions(auth, chat_id, payload=None):
+    """
+    Send a question/message to a chat assistant and get completion.
+
+    Args:
+        auth: Authentication object
+        chat_id: Chat assistant ID
+        payload: Dictionary containing:
+            - question: str (required) - The question to ask
+            - stream: bool (optional) - Whether to stream responses, default False
+            - session_id: str (optional) - Session ID for conversation context
+
+    Returns:
+        Response JSON with answer data
+    """
+    url = f"{HOST_ADDRESS}/api/{VERSION}/chats/{chat_id}/completions"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
