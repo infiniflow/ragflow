@@ -162,6 +162,17 @@ export function ChunkMethodDialog({
           code: 'custom',
         });
       }
+
+      // Validate MinerU start/end pages when provided
+      const start = data.parser_config?.mineru_start_page;
+      const end = data.parser_config?.mineru_end_page;
+      if (typeof start === 'number' && typeof end === 'number' && start > end) {
+        ctx.addIssue({
+          path: ['parser_config', 'mineru_end_page'],
+          message: t('knowledgeConfiguration.mineruEndPageTip'),
+          code: 'custom',
+        });
+      }
     });
 
   const form = useForm<z.infer<typeof FormSchema>>({
