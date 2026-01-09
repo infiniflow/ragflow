@@ -353,7 +353,7 @@ export default {
       chunkTokenNumber: 'Dimensione chunk raccomandata',
       chunkTokenNumberMessage: 'Il numero di token per chunk è richiesto',
       embeddingModelTip:
-        'Il modello di embedding predefinito per la base di conoscenza. Non può essere cambiato una volta che la base di conoscenza ha chunk.',
+        'Il modello di embedding predefinito della base di conoscenza. Una volta che la base di conoscenza contiene chunk, quando si cambia il modello di embedding il sistema estrae casualmente alcuni chunk per una verifica di compatibilità, li ricodifica con il nuovo modello di embedding e calcola la similarità coseno tra i vettori nuovi e quelli vecchi. Il cambio è consentito solo se la similarità media del campione è ≥ 0.9. In caso contrario, è necessario eliminare tutti i chunk nella base di conoscenza prima di poterlo modificare.',
       permissionsTip:
         "Se impostato su 'Team', tutti i membri del team potranno gestire la base di conoscenza.",
       chunkTokenNumberTip:
