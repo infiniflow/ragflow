@@ -163,7 +163,11 @@ export function MinerUOptionsFormField({
             min={1}
             max={500}
             value={field.value ?? 30}
-            onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 30)}
+            onChange={(e) => {
+              const parsed = parseInt(e.target.value, 10);
+              // If parsed is NaN or less than 1, fallback to default 30
+              field.onChange(Number.isNaN(parsed) || parsed < 1 ? 30 : parsed);
+            }}
             placeholder="30"
           />
         )}

@@ -38,7 +38,8 @@ const FormSchema = z.object({
     'vlm-vllm-async-engine',
     'vlm-lmdeploy-engine',
   ]),
-  mineru_server_url: z.string().url().optional(),
+  // mineru_server_url is optional; allow empty string for optional cases to avoid validation failure when the field is empty
+  mineru_server_url: z.string().url().or(z.literal('')).optional(),
   mineru_start_page: z.number().min(0).optional(),
   mineru_end_page: z.number().min(0).optional(),
   mineru_batch_size: z.number().min(1).max(500).optional(),
