@@ -24,7 +24,7 @@ from api.utils.api_utils import validate_request, get_request_json, get_error_ar
 from common.constants import RetCode
 
 
-@manager.route("", methods=["POST"]) # noqa: F821
+@manager.route("/messages", methods=["POST"]) # noqa: F821
 @login_required
 @validate_request("memory_id", "agent_id", "session_id", "user_input", "agent_response")
 async def add_message():
@@ -48,7 +48,7 @@ async def add_message():
     return get_json_result(code=RetCode.SERVER_ERROR, message="Some messages failed to add. Detail:" + msg)
 
 
-@manager.route("/<memory_id>:<message_id>", methods=["DELETE"]) # noqa: F821
+@manager.route("/messages/<memory_id>:<message_id>", methods=["DELETE"]) # noqa: F821
 @login_required
 async def forget_message(memory_id: str, message_id: int):
 
@@ -67,7 +67,7 @@ async def forget_message(memory_id: str, message_id: int):
         return get_json_result(code=RetCode.SERVER_ERROR, message=f"Failed to forget message '{message_id}' in memory '{memory_id}'.")
 
 
-@manager.route("/<memory_id>:<message_id>", methods=["PUT"]) # noqa: F821
+@manager.route("/messages/<memory_id>:<message_id>", methods=["PUT"]) # noqa: F821
 @login_required
 @validate_request("status")
 async def update_message(memory_id: str, message_id: int):
@@ -87,7 +87,7 @@ async def update_message(memory_id: str, message_id: int):
         return get_json_result(code=RetCode.SERVER_ERROR, message=f"Failed to set status for message '{message_id}' in memory '{memory_id}'.")
 
 
-@manager.route("/search", methods=["GET"]) # noqa: F821
+@manager.route("/messages/search", methods=["GET"]) # noqa: F821
 @login_required
 async def search_message():
     args = request.args
@@ -120,7 +120,7 @@ async def search_message():
     return get_json_result(message=True, data=res)
 
 
-@manager.route("", methods=["GET"]) # noqa: F821
+@manager.route("/messages", methods=["GET"]) # noqa: F821
 @login_required
 async def get_messages():
     args = request.args
@@ -144,7 +144,7 @@ async def get_messages():
     return get_json_result(message=True, data=res)
 
 
-@manager.route("/<memory_id>:<message_id>/content", methods=["GET"]) # noqa: F821
+@manager.route("/messages/<memory_id>:<message_id>/content", methods=["GET"]) # noqa: F821
 @login_required
 async def get_message_content(memory_id:str, message_id: int):
     memory = MemoryService.get_by_memory_id(memory_id)
