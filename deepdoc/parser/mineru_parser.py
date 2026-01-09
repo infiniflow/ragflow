@@ -126,7 +126,18 @@ class MinerUParseMethod(StrEnum):
 
 @dataclass
 class MinerUParseOptions:
-    """Options for MinerU PDF parsing."""
+    """Options for MinerU PDF parsing.
+
+    Notes:
+    - `batch_size` default is 30; valid range is [1, 500]. Values outside this range
+      will be clamped to a safe default or upper bound by the parser.
+    - `start_page` and `end_page` are 0-based. If both provided, `start_page` must
+      be <= `end_page` otherwise validation will fail.
+    - `strict_mode` is a backend-only option (default True) that requires all
+      batches to succeed; it is currently not exposed in the UI. To expose it
+      in the frontend, add a boolean field (e.g., `mineru_strict_mode`) to the
+      MinerU parser form and propagate it into `parser_config`.
+    """
 
     backend: MinerUBackend = MinerUBackend.HYBRID_AUTO_ENGINE
     lang: Optional[MinerULanguage] = None  # language for OCR (pipeline backend only)
@@ -136,7 +147,7 @@ class MinerUParseOptions:
     parse_method: str = "raw"
     formula_enable: bool = True
     table_enable: bool = True
-    batch_size: int = 30  # Number of pages per batch for large PDFs
+    batch_size: int = 30  # Number of pages per batch for large PDFs (clamped to [1,500])
     start_page: Optional[int] = None  # Starting page (0-based, for manual pagination)
     end_page: Optional[int] = None  # Ending page (0-based, for manual pagination)
     strict_mode: bool = True  # If True (default), all batches must succeed; if False, allow partial success with warnings
