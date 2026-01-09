@@ -68,7 +68,7 @@ Are you asking about the fruit itself, or its use in a specific context?
 """
         }
         add_res = client.add_message(**message_payload)
-        # assert add_res == "All add to task.", str(add_res)
+        assert add_res == "All add to task.", str(add_res)
         time.sleep(2)  # make sure refresh to index before search
         memory = Memory(client, {"id": memory_id})
         message_res = memory.list_memory_messages(**{"agent_id": agent_id, "keywords": session_id})
@@ -104,7 +104,7 @@ Are you asking about the fruit itself, or its use in a specific context?
 """
         }
         add_res = client.add_message(**message_payload)
-        # assert add_res == "All add to task.", str(add_res)
+        assert add_res == "All add to task.", str(add_res)
         time.sleep(2)  # make sure refresh to index before search
         memory = Memory(client, {"id": memory_id})
         message_res = memory.list_memory_messages(**{"agent_id": agent_id, "keywords": session_id})
@@ -140,7 +140,7 @@ Are you asking about the fruit itself, or its use in a specific context?
 """
         }
         add_res = client.add_message(**message_payload)
-        # assert add_res == "All add to task.", str(add_res)
+        assert add_res == "All add to task.", str(add_res)
         time.sleep(2)  # make sure refresh to index before search
         for memory_id in memory_ids:
             memory = Memory(client, {"id": memory_id})

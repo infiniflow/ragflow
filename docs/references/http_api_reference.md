@@ -4924,14 +4924,14 @@ Failure:
 
 ### Create Memory
 
-**POST** `/v1/memories`
+**POST** `/api/v1/memories`
 
 Create a new memory.
 
 #### Request
 
 - Method: POST
-- URL: `/v1/memories`
+- URL: `/api/v1/memories`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -4944,7 +4944,7 @@ Create a new memory.
 ##### Request example
 
 ```bash
-curl --location 'http://{address}/v1/memories' \
+curl --location 'http://{address}/api/v1/memories' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: Bearer <YOUR_API_KEY>' \
 --data-raw '{
@@ -5014,14 +5014,14 @@ Failure:
 
 ### Update Memory
 
-**PUT** `/v1/memories/{memory_id}`
+**PUT** `/api/v1/memories/{memory_id}`
 
 Updates configurations for a specified memory.
 
 #### Request
 
 - Method: PUT
-- URL: `/v1/memories/{memory_id}`
+- URL: `/api/v1/memories/{memory_id}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -5040,7 +5040,7 @@ Updates configurations for a specified memory.
 ##### Request example
 
 ```bash
-curl --location --request PUT 'http://{address}/v1/memories/d6775d4eeada11f08ca284ba59bc53c7' \
+curl --location --request PUT 'http://{address}/api/v1/memories/d6775d4eeada11f08ca284ba59bc53c7' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: Bearer <YOUR_API_KEY>' \
 --data '{
@@ -5139,14 +5139,14 @@ Failure:
 
 ### List Memory
 
-**GET** `/v1/memories?tenant_id={tenant_ids}&memory_type={memory_types}&storage_type={storage_type}&keywords={keywords}&page={page}&page_size={page_size}`
+**GET** `/api/v1/memories?tenant_id={tenant_ids}&memory_type={memory_types}&storage_type={storage_type}&keywords={keywords}&page={page}&page_size={page_size}`
 
 List memories.
 
 #### Request
 
 - Method: GET
-- URL:  `/v1/memories?tenant_id={tenant_ids}&memory_type={memory_types}&storage_type={storage_type}&keywords={keywords}&page={page}&page_size={page_size}`
+- URL:  `/api/v1/memories?tenant_id={tenant_ids}&memory_type={memory_types}&storage_type={storage_type}&keywords={keywords}&page={page}&page_size={page_size}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -5154,7 +5154,7 @@ List memories.
 ##### Request example
 
 ```bash
-curl --location 'http://{address}/v1/memories?keywords=&page_size=50&page=1&memory_type=semantic%2Cepisodic' \
+curl --location 'http://{address}/api/v1/memories?keywords=&page_size=50&page=1&memory_type=semantic%2Cepisodic' \
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -5235,14 +5235,14 @@ Failure:
 
 ### Get Memory Config
 
-**GET** `/v1/memories/{memory_id}/config`
+**GET** `/api/v1/memories/{memory_id}/config`
 
 Get the configuration of a specified memory. 
 
 #### Request
 
 - Method: GET
-- URL: `/v1/memories/{memory_id}/config`
+- URL: `/api/v1/memories/{memory_id}/config`
 - Headers: 
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -5250,7 +5250,7 @@ Get the configuration of a specified memory.
 ##### Request example
 
 ```bash
-curl --location 'http://{address}/v1/memories/6c8983badede11f083f184ba59bc53c7/config' \
+curl --location 'http://{address}/api/v1/memories/6c8983badede11f083f184ba59bc53c7/config' \
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -5312,12 +5312,12 @@ Failure
 
 ### Delete Memory
 
-**DELETE** `/v1/memories/{memory_id}`
+**DELETE** `/api/v1/memories/{memory_id}`
 
 #### Request
 
 - Method: DELETE
-- URL: `/v1/memories/{memory_id}`
+- URL: `/api/v1/memories/{memory_id}`
 - Headers:
 - Headers: 
   - `'Content-Type: application/json'`
@@ -5326,7 +5326,7 @@ Failure
 ##### Request example
 
 ```bash
-curl --location --request DELETE 'http://{address}/v1/memories/d6775d4eeada11f08ca284ba59bc53c7' \
+curl --location --request DELETE 'http://{address}/api/v1/memories/d6775d4eeada11f08ca284ba59bc53c7' \
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -5362,14 +5362,14 @@ Failure
 
 ### List messages of a memory
 
-**GET** `/v1/memories/{memory_id}?agent_id={agent_id}&keywords={session_id}&page={page}&page_size={page_size}`
+**GET** `/api/v1/memories/{memory_id}?agent_id={agent_id}&keywords={session_id}&page={page}&page_size={page_size}`
 
 List the messages of a specified memory.
 
 #### Request
 
 - Method: GET
-- URL: `/v1/memories/{memory_id}?agent_id={agent_id}&keywords={session_id}&page={page}&page_size={page_size}`
+- URL: `/api/v1/memories/{memory_id}?agent_id={agent_id}&keywords={session_id}&page={page}&page_size={page_size}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -5377,7 +5377,7 @@ List the messages of a specified memory.
 ##### Request example
 
 ```bash
-curl --location 'http://{address}/v1/memories/6c8983badede11f083f184ba59bc53c?page=1' \
+curl --location 'http://{address}/api/v1/memories/6c8983badede11f083f184ba59bc53c?page=1' \
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -5489,14 +5489,14 @@ Failure
 
 ### Add Message
 
-**POST** `/v1/messages`
+**POST** `/api/v1/messages`
 
 Add a message to specified memories.
 
 #### Request
 
 - Method: POST
-- URL: `/v1/messages`
+- URL: `/api/v1/messages`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -5511,7 +5511,7 @@ Add a message to specified memories.
 ##### Request example
 
 ```bash
-curl --location 'http://{address}/v1/messages' \
+curl --location 'http://{address}/api/v1/messages' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: Bearer <YOUR_API_KEY>' \
 --data '{
@@ -5577,14 +5577,14 @@ Failure
 
 ### Forget Message
 
-**DELETE** `/v1/messages/{memory_id}:{message_id}`
+**DELETE** `/api/v1/messages/{memory_id}:{message_id}`
 
 Forget a specified message. After forgetting, this message will not be retrieved by agents, and it will also be prioritized for cleanup by the forgetting policy.
 
 #### Request
 
 - Method: DELETE
-- URL: `/v1/messages/{memory_id}:{message_id}`
+- URL: `/api/v1/messages/{memory_id}:{message_id}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -5592,7 +5592,7 @@ Forget a specified message. After forgetting, this message will not be retrieved
 ##### Request example
 
 ```bash
-curl --location --request DELETE 'http://{address}/v1/messages/6c8983badede11f083f184ba59bc53c7:272' \
+curl --location --request DELETE 'http://{address}/api/v1/messages/6c8983badede11f083f184ba59bc53c7:272' \
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -5632,14 +5632,14 @@ Failure
 
 ### Update message status
 
-**PUT** `/v1/messages/{memory_id}:{message_id}`
+**PUT** `/api/v1/messages/{memory_id}:{message_id}`
 
 Update message status, enable or disable a message. Once a message is disabled, it will not be retrieved by agents.
 
 #### Request 
 
 - Method: PUT
-- URL: `/v1/messages/{memory_id}:{message_id}`
+- URL: `/api/v1/messages/{memory_id}:{message_id}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -5649,7 +5649,7 @@ Update message status, enable or disable a message. Once a message is disabled, 
 ##### Request example
 
 ```bash
-curl --location --request PUT 'http://{address}/v1/messages/6c8983badede11f083f184ba59bc53c7:270' \
+curl --location --request PUT 'http://{address}/api/v1/messages/6c8983badede11f083f184ba59bc53c7:270' \
 --header 'Content-Type: application/json' \
 --header 'Authorization: Bearer <YOUR_API_KEY>' \
 --data '{
@@ -5695,14 +5695,14 @@ Failure
 
 ### Search Message
 
-**GET** `/v1/messages/search?query={question}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
+**GET** `/api/v1/messages/search?query={question}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
 
 Searches and retrieves messages from memory based on the provided `query` and other configuration parameters.
 
 #### Request
 
 - Method: GET
-- URL: `/v1/messages/search?query={question}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
+- URL: `/api/v1/messages/search?query={question}&memory_id={memory_id}&similarity_threshold={similarity_threshold}&keywords_similarity_weight={keywords_similarity_weight}&top_n={top_n}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -5710,7 +5710,7 @@ Searches and retrieves messages from memory based on the provided `query` and ot
 ##### Request example
 
 ```bash
-curl --location 'http://{address}/v1/messages/search?query=%22who%20are%20you%3F%22&memory_id=6c8983badede11f083f184ba59bc53c7&similarity_threshold=0.2&keywords_similarity_weight=0.7&top_n=10' \
+curl --location 'http://{address}/api/v1/messages/search?query=%22who%20are%20you%3F%22&memory_id=6c8983badede11f083f184ba59bc53c7&similarity_threshold=0.2&keywords_similarity_weight=0.7&top_n=10' \
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -5789,14 +5789,14 @@ Failure
 
 ### Get Recent Messages
 
-**GET** `/v1/messages?memory_id={memory_id}&agent_id={agent_id}&session_id={session_id}&limit={limit}`
+**GET** `/api/v1/messages?memory_id={memory_id}&agent_id={agent_id}&session_id={session_id}&limit={limit}`
 
 Retrieves the most recent messages from specified memories. Typically accepts a `limit` parameter to control the number of messages returned.
 
 #### Request
 
 - Method: GET
-- URL: `/v1/messages?memory_id={memory_id}&agent_id={agent_id}&session_id={session_id}&limit={limit}`
+- URL: `/api/v1/messages?memory_id={memory_id}&agent_id={agent_id}&session_id={session_id}&limit={limit}`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -5804,7 +5804,7 @@ Retrieves the most recent messages from specified memories. Typically accepts a 
 ##### Request example
 
 ```bash
-curl --location 'http://{address}/v1/messages?memory_id=6c8983badede11f083f184ba59bc53c7&limit=10' \
+curl --location 'http://{address}/api/v1/messages?memory_id=6c8983badede11f083f184ba59bc53c7&limit=10' \
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -5867,14 +5867,14 @@ Failure
 
 ### Get Message Content
 
-**GET** `/v1/messages/{memory_id}:{message_id}/content`
+**GET** `/api/v1/messages/{memory_id}:{message_id}/content`
 
 Retrieves the full content and embed vector of a specific message using its unique message ID.
 
 #### Request
 
 - Method: GET
-- URL: `/v1/messages/{memory_id}:{message_id}/content`
+- URL: `/api/v1/messages/{memory_id}:{message_id}/content`
 - Headers:
   - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
@@ -5882,7 +5882,7 @@ Retrieves the full content and embed vector of a specific message using its uniq
 ##### Request example
 
 ```bash
-curl --location 'http://{address}/v1/messages/6c8983badede11f083f184ba59bc53c7:270/content' \
+curl --location 'http://{address}/api/v1/messages/6c8983badede11f083f184ba59bc53c7:270/content' \
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
