@@ -17,9 +17,8 @@ import random
 import re
 
 import pytest
-from test_web_api.common import create_memory
-from configs import INVALID_API_TOKEN
-from libs.auth import RAGFlowWebApiAuth
+from configs import INVALID_API_TOKEN, HOST_ADDRESS
+from ragflow_sdk import RAGFlow
 from hypothesis import example, given, settings
 from utils.hypothesis_utils import valid_names
 
@@ -27,36 +26,37 @@ from utils.hypothesis_utils import valid_names
 class TestAuthorization:
     @pytest.mark.p1
     @pytest.mark.parametrize(
-        "invalid_auth, expected_code, expected_message",
+        "invalid_auth, expected_message",
         [
-            (None, 401, "<Unauthorized '401: Unauthorized'>"),
-            (RAGFlowWebApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
+            (None, "<Unauthorized '401: Unauthorized'>"),
+            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
         ],
         ids=["empty_auth", "invalid_api_token"]
     )
-    def test_auth_invalid(self, invalid_auth, expected_code, expected_message):
-        res = create_memory(invalid_auth)
-        assert res["code"] == expected_code, res
-        assert res["message"] == expected_message, res
+    def test_auth_invalid(self, invalid_auth, expected_message):
+        client = RAGFlow(invalid_auth, HOST_ADDRESS)
+        with pytest.raises(Exception) as exception_info:
+            client.create_memory(**{"name": "test_memory", "memory_type": ["raw"], "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW", "llm_id": "glm-4-flash@ZHIPU-AI"})
+        assert str(exception_info.value) == expected_message, str(exception_info.value)
 
 
+@pytest.mark.usefixtures("delete_test_memory")
 class TestMemoryCreate:
     @pytest.mark.p1
     @given(name=valid_names())
-    @example("d" * 128)
+    @example("e" * 128)
     @settings(max_examples=20)
-    def test_name(self, WebApiAuth, name):
+    def test_name(self, client, name):
         payload = {
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
             "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
-        res = create_memory(WebApiAuth, payload)
-        assert res["code"] == 0, res
+        memory = client.create_memory(**payload)
         pattern = rf'^{name}|{name}(?:\((\d+)\))?$'
-        escaped_name = re.escape(res["data"]["name"])
-        assert re.match(pattern, escaped_name), res
+        escaped_name = re.escape(memory.name)
+        assert re.match(pattern, escaped_name), str(memory)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -68,30 +68,32 @@ class TestMemoryCreate:
         ],
         ids=["empty_name", "space_name", "too_long_name"],
     )
-    def test_name_invalid(self, WebApiAuth, name, expected_message):
+    def test_name_invalid(self, client, name, expected_message):
         payload = {
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
             "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
-        res = create_memory(WebApiAuth, payload)
-        assert res["message"] == expected_message, res
+        with pytest.raises(Exception) as exception_info:
+            client.create_memory(**payload)
+        assert str(exception_info.value) == expected_message, str(exception_info.value)
 
     @pytest.mark.p2
     @given(name=valid_names())
-    def test_type_invalid(self, WebApiAuth, name):
+    def test_type_invalid(self, client, name):
         payload = {
             "name": name,
             "memory_type": ["something"],
             "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
-        res = create_memory(WebApiAuth, payload)
-        assert res["message"] == f"Memory type '{ {'something'} }' is not supported.", res
+        with pytest.raises(Exception) as exception_info:
+            client.create_memory(**payload)
+        assert str(exception_info.value) == f"Memory type '{ {'something'} }' is not supported.", str(exception_info.value)
 
     @pytest.mark.p3
-    def test_name_duplicated(self, WebApiAuth):
+    def test_name_duplicated(self, client):
         name = "duplicated_name_test"
         payload = {
             "name": name,
@@ -99,8 +101,8 @@ class TestMemoryCreate:
             "embd_id": "BAAI/bge-large-zh-v1.5@SILICONFLOW",
             "llm_id": "glm-4-flash@ZHIPU-AI"
         }
-        res1 = create_memory(WebApiAuth, payload)
-        assert res1["code"] == 0, res1
+        res1 = client.create_memory(**payload)
+        assert res1.name == name, str(res1)
 
-        res2 = create_memory(WebApiAuth, payload)
-        assert res2["code"] == 0, res2
+        res2 = client.create_memory(**payload)
+        assert res2.name == f"{name}(1)", str(res2)
