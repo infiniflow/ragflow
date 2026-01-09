@@ -169,7 +169,7 @@ class TestEmbeddingModelSwitching:
         with pytest.raises(Exception) as exception_info:
             dataset.update({"embedding_model": "BAAI/bge-large-zh-v1.5@Builtin"})
 
-        error_msg = str(exception_info.value)
+        # error_msg = str(exception_info.value)
         # Should fail - just verify exception was raised
         assert exception_info.value is not None
 
