@@ -815,11 +815,6 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
         if len(contexts) < len(res) + 1:
             contexts.append(("", ""))
         res.append(((img, tb), poss))
-
-        print("\n\n")
-        for c in contexts:
-            print(c)
-        print("\n\n")
     return contexts if return_context else res
 
 
