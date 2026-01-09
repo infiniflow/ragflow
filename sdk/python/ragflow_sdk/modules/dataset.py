@@ -151,3 +151,45 @@ class DataSet(Base):
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res.get("message"))
+
+    def check_embedding(self, embd_id: str, check_num: int = 5):
+        """
+        Check if switching to a different embedding model is compatible.
+
+        Args:
+            embd_id: Target embedding model ID in format "model_name@provider"
+            check_num: Number of chunks to sample for similarity check (default: 5, range: 1-10000)
+
+        Returns:
+            dict: Result containing summary and detailed results
+            {
+                "code": 0,  # 0 for success, 10 for incompatibility, other for errors
+                "message": "success" or error message,
+                "data": {
+                    "summary": {
+                        "kb_id": "...",
+                        "model": "model_name@provider",
+                        "sampled": 5,
+                        "valid": 5,
+                        "dimension_mismatch": 0,
+                        "avg_cos_sim": 0.95,
+                        "min_cos_sim": 0.90,
+                        "max_cos_sim": 0.99,
+                        "match_mode": "content_only"
+                    },
+                    "results": [...]
+                }
+            }
+
+        Raises:
+            Exception: If API call fails
+        """
+        res = self.post("/kb/check_embedding", {
+            "kb_id": self.id,
+            "embd_id": embd_id,
+            "check_num": check_num
+        })
+        res = res.json()
+        if res.get("code") != 0:
+            raise Exception(res.get("message"))
+        return res.get("data")

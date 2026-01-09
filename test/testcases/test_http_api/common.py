@@ -247,3 +247,10 @@ def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
         res = create_session_with_chat_assistant(auth, chat_assistant_id, {"name": f"session_with_chat_assistant_{i}"})
         session_ids.append(res["data"]["id"])
     return session_ids
+
+
+# CHECK EMBEDDING MODEL
+def check_embedding(auth, payload=None):
+    url = f"{HOST_ADDRESS}/api/{VERSION}/kb/check_embedding"
+    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
+    return res.json()
