@@ -143,7 +143,6 @@ WORKDIR /ragflow
 
 # install dependencies from uv.lock file
 COPY pyproject.toml uv.lock ./
-COPY sdk sdk
 
 # https://github.com/astral-sh/uv/issues/10462
 # uv records index url into uv.lock but doesn't failover among multiple indexes
@@ -154,6 +153,10 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
         sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
     fi; \
     uv sync --python 3.12 --frozen
+
+# Copy SDK after dependencies are installed to avoid invalidating build cache
+# caused by changing SDK files which are not needed for dependency resolution
+COPY sdk sdk
 
 COPY web web
 COPY docs docs
