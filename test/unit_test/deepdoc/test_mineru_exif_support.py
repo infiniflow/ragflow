@@ -62,7 +62,8 @@ class TestMinerUExifSupport:
                  patch('shutil.rmtree'):
                 
                 try:
-                    result = self.parser._run_mineru_api(
+                    # Call the API (return value is not used in this test)
+                    self.parser._run_mineru_api(
                         Path("/tmp/test.pdf"), 
                         Path("/tmp/output"),
                         options,
