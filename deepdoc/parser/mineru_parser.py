@@ -38,6 +38,9 @@ from strenum import StrEnum
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
+# Use a module-level registry key to share a single Lock object without mutating
+# sys.path or other global import state. Storing a Lock under a well-known key in
+# sys.modules is acceptable, but avoid inserting unrelated paths into sys.path.
 if LOCK_KEY_pdfplumber not in sys.modules:
     sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
 

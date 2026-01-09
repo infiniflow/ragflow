@@ -17,11 +17,14 @@ if os.path.isdir(REAL_DEEPDOC_PATH):
     # which prevents the real top-level package from being importable. Inserting
     # PROJECT_ROOT ensures imports like `deepdoc.parser` resolve to the package
     # under the repository root.
-    if PROJECT_ROOT not in sys.path:
-        sys.path.insert(0, PROJECT_ROOT)
+    # Do NOT modify sys.path at import time; this causes side effects that can
+    # affect other packages and test runners. Tests that need the repository root
+    # on PYTHONPATH should configure it in their test runner (e.g., pytest.ini or
+    # the test command) instead of relying on runtime path mutation.
 
-    # Also set package __path__ so submodules (deepdoc.parser) are searched inside
-    # the real deepdoc directory.
+    # Set package __path__ so submodules (deepdoc.parser) are searched inside
+    # the real deepdoc directory. This is sufficient for importlib to resolve
+    # submodules when the test runner's PYTHONPATH is configured correctly.
     __path__ = [REAL_DEEPDOC_PATH]
 
     # Try to load the real deepdoc.__init__.py to copy any top-level attributes
@@ -40,4 +43,9 @@ if os.path.isdir(REAL_DEEPDOC_PATH):
     except Exception:
         # If loading the real __init__ fails for any reason, don't raise; the
         # __path__ setting will still allow imports of submodules like deepdoc.parser
-        pass
+        # However, we will log an informational message to help debugging test setup issues.
+        try:
+            import logging
+            logging.getLogger(__name__).info("deepdoc shim could not import real __init__; ensure PYTHONPATH is set to repository root for test execution.")
+        except Exception:
+            pass
