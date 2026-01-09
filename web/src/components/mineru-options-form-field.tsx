@@ -141,6 +141,24 @@ export function MinerUOptionsFormField({
         )}
       </RAGFlowFormItem>
 
+      <RAGFlowFormItem
+        name={buildName('mineru_strict_mode')}
+        label={t('knowledgeConfiguration.mineruStrictMode', 'Strict Mode')}
+        tooltip={t(
+          'knowledgeConfiguration.mineruStrictModeTip',
+          'Require all batches to succeed (backend-only option). Toggle to allow partial successes when disabled.',
+        )}
+        horizontal={true}
+        labelClassName="!mb-0"
+      >
+        {(field) => (
+          <Switch
+            checked={field.value ?? true}
+            onCheckedChange={field.onChange}
+          />
+        )}
+      </RAGFlowFormItem>
+
       <div className="text-sm font-medium text-text-secondary mt-4">
         {t(
           'knowledgeConfiguration.mineruBatchOptions',

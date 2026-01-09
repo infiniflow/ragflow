@@ -122,6 +122,7 @@ export function ChunkMethodDialog({
         mineru_batch_size: z.number().min(1).max(500).optional(),
         mineru_start_page: z.number().min(0).optional(),
         mineru_end_page: z.number().min(0).optional(),
+        mineru_strict_mode: z.boolean().optional(),
         // raptor: z
         //   .object({
         //     use_raptor: z.boolean().optional(),

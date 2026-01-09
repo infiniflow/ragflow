@@ -98,8 +98,8 @@ export function DynamicPageRange() {
               <Input
                 type="number"
                 placeholder="30"
-                min="1"
-                max="500"
+                min={1}
+                max={500}
                 {...field}
               />
             </FormControl>
