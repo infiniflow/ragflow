@@ -159,6 +159,20 @@ export default {
       html4excelTip: `Usar junto con el método de fragmentación General. Cuando está desactivado, los archivos de hoja de cálculo (XLSX, XLS (Excel 97-2003)) se analizan línea por línea como pares clave-valor. Cuando está activado, los archivos de hoja de cálculo se convierten en tablas HTML. Si la tabla original tiene más de 12 filas, el sistema la dividirá automáticamente en varias tablas HTML cada 12 filas. Para más información, consulte https://ragflow.io/docs/dev/enable_excel2html.`,
     },
 
+    knowledgeConfiguration: {
+      paddleocrOptions: 'Opciones de PaddleOCR',
+      paddleocrApiUrl: 'URL de API de PaddleOCR',
+      paddleocrApiUrlTip: 'La URL del endpoint de la API para el servicio PaddleOCR',
+      paddleocrApiUrlPlaceholder: 'ej: https://servidor-paddleocr.com/api',
+      paddleocrAccessToken: 'Token de acceso de AI Studio',
+      paddleocrAccessTokenTip: 'Token de acceso para la API de PaddleOCR (opcional)',
+      paddleocrAccessTokenPlaceholder: 'Su token de AI Studio (opcional)',
+      paddleocrAlgorithm: 'Algoritmo de PaddleOCR',
+      paddleocrAlgorithmTip: 'Algoritmo a utilizar para el análisis de PaddleOCR',
+      paddleocrSelectAlgorithm: 'Seleccionar algoritmo',
+      paddleocrModelNamePlaceholder: 'ej: paddleocr-desde-env-1',
+    },
+
     // Otros bloques de traducción
     // Continua con la misma estructura
     chat: {
@@ -379,6 +393,17 @@ export default {
       modelTypeMessage: '¡Por favor ingresa el tipo de tu modelo!',
       addLlmBaseUrl: 'URL base',
       baseUrlNameMessage: '¡Por favor ingresa tu URL base!',
+      paddleocr: {
+        apiUrl: 'URL de la API de PaddleOCR',
+        apiUrlPlaceholder: 'Por ejemplo: https://paddleocr-server.com/layout-parsing',
+        accessToken: 'Token de acceso de AI Studio',
+        accessTokenPlaceholder: 'Su token de AI Studio (opcional)',
+        algorithm: 'Algoritmo de PaddleOCR',
+        selectAlgorithm: 'Seleccionar algoritmo',
+        modelNamePlaceholder: 'Por ejemplo: paddleocr-from-env-1',
+        modelNameRequired: 'El nombre del modelo es obligatorio',
+        apiUrlRequired: 'La URL de la API de PaddleOCR es obligatoria'
+      },
       vision: '¿Soporta visión?',
       ollamaLink: 'Cómo integrar {{name}}',
       FishAudioLink: 'Cómo usar FishAudio',

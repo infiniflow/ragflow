@@ -61,6 +61,7 @@ export enum LLMFactory {
   JiekouAI = 'Jiekou.AI',
   Builtin = 'Builtin',
   MinerU = 'MinerU',
+  PaddleOCR = 'PaddleOCR',
 }
 
 // Please lowercase the file name
@@ -127,6 +128,7 @@ export const IconMap = {
   [LLMFactory.JiekouAI]: 'jiekouai',
   [LLMFactory.Builtin]: 'builtin',
   [LLMFactory.MinerU]: 'mineru',
+  [LLMFactory.PaddleOCR]: 'paddleocr',
 };
 
 export const APIMapUrl = {
@@ -178,4 +180,5 @@ export const APIMapUrl = {
   [LLMFactory.DeerAPI]: 'https://api.deerapi.com/token',
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
+  [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
 };
