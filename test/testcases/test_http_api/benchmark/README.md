@@ -30,7 +30,7 @@ Global flags
   --iterations
     Iterations per benchmark (default: 1).
   --concurrency
-    Concurrency (forced to 1). Any other value is ignored with a warning.
+    Number of concurrent requests (default: 1). Uses multiprocessing.
   --json
     Output JSON report (plain stdout).
   --print-response
