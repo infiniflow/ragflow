@@ -152,7 +152,8 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     else \
         sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
     fi; \
-    uv sync --python 3.12 --frozen
+    sed -i '/gitlab.pyicu.org/d' uv.lock && \
+    uv sync --python 3.12 uv sync --index-url https://mirrors.aliyun.com/pypi/simple
 
 COPY web web
 COPY docs docs
