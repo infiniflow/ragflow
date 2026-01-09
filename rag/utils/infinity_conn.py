@@ -437,7 +437,6 @@ class InfinityConnection(InfinityConnectionBase):
         """
         try:
             import infinity
-            from infinity.index import IndexInfo, IndexType
 
             # Get existing columns
             existing_columns = set([col_name for col_name, _, _, _ in table_instance.show_columns().rows()])
