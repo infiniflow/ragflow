@@ -11,18 +11,12 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { FieldPath, useForm } from 'react-hook-form';
-import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { z, ZodArray, ZodString } from 'zod';
 
 import { Button } from '@/components/ui/button';
 
-import {
-  Form,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { t } from 'i18next';
 import { FilterField } from './filter-field';
 import { FilterChange, FilterCollection, FilterValue } from './interface';
@@ -71,37 +65,35 @@ function CheckboxFormMultiple({
     }, {});
   }, [resolvedFilters]);
 
-  // const FormSchema = useMemo(() => {
-  //   if (resolvedFilters.length === 0) {
-  //     return z.object({});
-  //   }
-
-  //   return z.object(
-  //     resolvedFilters.reduce<
-  //       Record<
-  //         string,
-  //         ZodArray<ZodString, 'many'> | z.ZodObject<any> | z.ZodOptional<any>
-  //       >
-  //     >((pre, cur) => {
-  //       const hasNested = cur.list?.some(
-  //         (item) => item.list && item.list.length > 0,
-  //       );
-
-  //       if (hasNested) {
-  //         pre[cur.field] = z
-  //           .record(z.string(), z.array(z.string().optional()).optional())
-  //           .optional();
-  //       } else {
-  //         pre[cur.field] = z.array(z.string().optional()).optional();
-  //       }
-
-  //       return pre;
-  //     }, {}),
-  //   );
-  // }, [resolvedFilters]);
   const FormSchema = useMemo(() => {
-    return z.object({});
-  }, []);
+    if (resolvedFilters.length === 0) {
+      return z.object({});
+    }
+    return z.object(
+      resolvedFilters.reduce<
+        Record<
+          string,
+          ZodArray<ZodString, 'many'> | z.ZodObject<any> | z.ZodOptional<any>
+        >
+      >((pre, cur) => {
+        const hasNested = cur.list?.some(
+          (item) => item.list && item.list.length > 0,
+        );
+        if (hasNested) {
+          pre[cur.field] = z
+            .record(z.string(), z.array(z.string().optional()).optional())
+            .optional();
+        } else {
+          pre[cur.field] = z.array(z.string().optional()).optional();
+        }
+
+        return pre;
+      }, {}),
+    );
+  }, [resolvedFilters]);
+  // const FormSchema = useMemo(() => {
+  //   return z.object({});
+  // }, []);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: resolvedFilters.length > 0 ? zodResolver(FormSchema) : undefined,
@@ -178,37 +170,28 @@ function CheckboxFormMultiple({
           {notInfilterGroup &&
             notInfilterGroup.map((x) => {
               return (
-                <FormField
-                  key={x.field}
-                  control={form.control}
-                  name={
-                    x.field.toString() as FieldPath<z.infer<typeof FormSchema>>
-                  }
-                  render={() => (
-                    <FormItem className="space-y-4">
-                      <div>
-                        <FormLabel className="text-text-primary text-sm">
-                          {x.label}
-                        </FormLabel>
-                      </div>
-                      {x.list?.length &&
-                        x.list.map((item) => {
-                          return (
-                            <FilterField
-                              key={item.id}
-                              item={{ ...item }}
-                              parent={{
-                                ...x,
-                                id: x.field,
-                                // field: `${x.field}${item.field ? '.' + item.field : ''}`,
-                              }}
-                            />
-                          );
-                        })}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <FormItem className="space-y-4" key={x.field}>
+                  <div>
+                    <FormLabel className="text-text-primary text-sm">
+                      {x.label}
+                    </FormLabel>
+                  </div>
+                  {x.list?.length &&
+                    x.list.map((item) => {
+                      return (
+                        <FilterField
+                          key={item.id}
+                          item={{ ...item }}
+                          parent={{
+                            ...x,
+                            id: x.field,
+                            // field: `${x.field}${item.field ? '.' + item.field : ''}`,
+                          }}
+                        />
+                      );
+                    })}
+                  <FormMessage />
+                </FormItem>
               );
             })}
         </div>
