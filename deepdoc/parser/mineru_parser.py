@@ -229,6 +229,39 @@ class MinerUParser(RAGFlowPdfParser):
 
         return True, reason
 
+    def _validate_parse_options(self, options: MinerUParseOptions) -> None:
+        """Validate parse options for MinerUParser.
+
+        Raises:
+            ValueError: If options are invalid (e.g., start_page > end_page).
+        """
+        # Validate start_page and end_page types and ranges
+        if options.start_page is not None and not isinstance(options.start_page, int):
+            raise ValueError(f"[MinerU] start_page must be an int or None, got {type(options.start_page).__name__}")
+        if options.end_page is not None and not isinstance(options.end_page, int):
+            raise ValueError(f"[MinerU] end_page must be an int or None, got {type(options.end_page).__name__}")
+        if options.start_page is not None and options.start_page < 0:
+            raise ValueError(f"[MinerU] start_page must be >= 0, got {options.start_page}")
+        if options.end_page is not None and options.end_page < 0:
+            raise ValueError(f"[MinerU] end_page must be >= 0, got {options.end_page}")
+        if options.start_page is not None and options.end_page is not None and options.start_page > options.end_page:
+            raise ValueError(f"[MinerU] start_page ({options.start_page}) must be <= end_page ({options.end_page})")
+
+        # Validate batch_size and clamp to reasonable bounds
+        if not isinstance(options.batch_size, int) or options.batch_size <= 0:
+            self.logger.warning(f"[MinerU] invalid batch_size {options.batch_size}, resetting to default 30")
+            options.batch_size = 30
+        elif options.batch_size > 1000:
+            self.logger.warning(f"[MinerU] batch_size {options.batch_size} is unusually large; capping to 1000")
+            options.batch_size = 1000
+
+        # strict_mode: ensure boolean and log note because it's currently not exposed in UI
+        if not isinstance(options.strict_mode, bool):
+            self.logger.warning(f"[MinerU] strict_mode must be boolean, got {type(options.strict_mode).__name__}; coercing to bool")
+            options.strict_mode = bool(options.strict_mode)
+        if options.strict_mode:
+            self.logger.info("[MinerU] strict_mode is enabled; note: this option currently has no UI control and is backend-only.")
+
     def _run_mineru(
         self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
     ) -> Path:
@@ -262,16 +295,12 @@ class MinerUParser(RAGFlowPdfParser):
             "return_content_list": True,
             "return_images": True,
             "response_format_zip": True,
+            "start_page_id": options.start_page if options.start_page is not None else 0,
+            "end_page_id": options.end_page if options.end_page is not None else 99999,
             "batch_size": options.batch_size,
             "exif_correction": options.exif_correction,
             "strict_mode": options.strict_mode,
         }
-
-        # Only include page range parameters if they are explicitly set
-        if options.start_page is not None:
-            data["start_page_id"] = options.start_page
-        if options.end_page is not None:
-            data["end_page_id"] = options.end_page
 
         if options.server_url:
             data["server_url"] = options.server_url
