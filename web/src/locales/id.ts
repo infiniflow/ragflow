@@ -179,7 +179,7 @@ export default {
       chunkTokenNumber: 'Ukuran potongan yang disarankan',
       chunkTokenNumberMessage: 'Jumlah token potongan diperlukan',
       embeddingModelTip:
-        'Model embedding default dari basis pengetahuan. Tidak dapat diubah setelah basis pengetahuan memiliki potongan data (chunks). Untuk beralih ke model embedding default yang berbeda, Anda harus menghapus semua potongan data yang ada di basis pengetahuan.',
+        'Model embedding default untuk basis pengetahuan. Setelah basis pengetahuan memiliki chunk, saat mengganti model embedding sistem akan mengambil beberapa chunk secara acak untuk pemeriksaan kompatibilitas, meng-encode ulang dengan model embedding baru, dan menghitung kemiripan kosinus antara vektor baru dan vektor lama. Pergantian hanya diizinkan jika rata-rata kemiripan sampel ≥ 0.9. Jika tidak, Anda harus menghapus semua chunk di basis pengetahuan sebelum dapat mengubahnya.',
       permissionsTip:
         "Jika izinnya 'Tim', semua anggota tim dapat memanipulasi basis pengetahuan.",
       chunkTokenNumberTip:

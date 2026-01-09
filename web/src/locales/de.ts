@@ -448,7 +448,7 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       chunkTokenNumber: 'Empfohlene Chunk-Größe',
       chunkTokenNumberMessage: 'Chunk-Token-Anzahl ist erforderlich',
       embeddingModelTip:
-        'Das Standard-Embedding-Modell der Wissensdatenbank. Es kann nicht geändert werden, sobald die Wissensdatenbank Chunks enthält. Um zu einem anderen Standard-Embedding-Modell zu wechseln, müssen alle vorhandenen Chunks in der Wissensdatenbank gelöscht werden.',
+        'Das Standard-Embedding-Modell der Wissensdatenbank. Sobald die Wissensdatenbank Chunks enthält, führt das System beim Wechsel des Embedding-Modells eine Kompatibilitätsprüfung durch: Es zieht zufällig einige Chunks als Stichprobe, kodiert sie mit dem neuen Embedding-Modell neu und berechnet die Kosinusähnlichkeit zwischen neuen und alten Vektoren. Ein Wechsel ist nur möglich, wenn die durchschnittliche Ähnlichkeit der Stichprobe ≥ 0.9 ist. Andernfalls müssen Sie alle Chunks in der Wissensdatenbank löschen, bevor Sie das Modell ändern können.',
       permissionsTip:
         'Wenn auf "Team" gesetzt, können alle Teammitglieder die Wissensdatenbank verwalten.',
       chunkTokenNumberTip:
