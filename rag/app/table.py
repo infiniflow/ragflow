@@ -33,7 +33,6 @@ from deepdoc.parser.figure_parser import vision_figure_parser_figure_xlsx_wrappe
 from deepdoc.parser.utils import get_text
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table
 from deepdoc.parser import ExcelParser
-from common import settings
 
 
 class Excel(ExcelParser):
