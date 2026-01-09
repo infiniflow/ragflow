@@ -57,7 +57,7 @@ class TestMinerUExifSupport:
             )
 
             # Mock file operations 
-            with patch('builtins.open', Mock()), \
+            with patch('builtins.open', mock_open()), \
                  patch('os.unlink'), \
                  patch('shutil.rmtree'):
                 
