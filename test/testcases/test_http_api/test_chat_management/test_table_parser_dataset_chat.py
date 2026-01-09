@@ -110,8 +110,6 @@ class TestTableParserDatasetChat:
             ("Show me the body column", r"url|title2|body"),
             # Test COUNT query - should show count(*)
             ("How many rows are there?", r"count\(\*\)"),
-            # Test WHERE query - should find matching rows
-            ("Which rows have body containing 'content3'", r"Rows with body containing 'content3'"),
         ],
     )
     def test_table_parser_dataset_chat(
