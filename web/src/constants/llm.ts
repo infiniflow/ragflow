@@ -141,7 +141,8 @@ export const APIMapUrl = {
   [LLMFactory.HuggingFace]: 'https://huggingface.co/settings/tokens',
   [LLMFactory.Mistral]: 'https://console.mistral.ai/api-keys/',
   [LLMFactory.Cohere]: 'https://dashboard.cohere.com/api-keys',
-  [LLMFactory.BaiduYiYan]: 'https://wenxin.baidu.com/user/key',
+  [LLMFactory.BaiduYiYan]:
+    'https://console.bce.baidu.com/qianfan/ais/console/apiKey',
   [LLMFactory.Meituan]: 'https://longcat.chat/platform/api_keys',
   [LLMFactory.Bedrock]:
     'https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-2#/users',
