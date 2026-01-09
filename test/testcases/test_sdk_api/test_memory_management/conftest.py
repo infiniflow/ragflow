@@ -38,3 +38,15 @@ def add_memory_func(client, request):
         memory_ids.append(res.id)
     request.cls.memory_ids = memory_ids
     return memory_ids
+
+
+@pytest.fixture(scope="class")
+def delete_test_memory(client, request):
+    def cleanup():
+        memory_list_res = client.list_memory()
+        exist_memory_ids = [memory.id for memory in memory_list_res["memory_list"]]
+        for memory_id in exist_memory_ids:
+            client.delete_memory(memory_id)
+
+    request.addfinalizer(cleanup)
+    return

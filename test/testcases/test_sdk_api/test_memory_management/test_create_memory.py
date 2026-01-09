@@ -40,6 +40,7 @@ class TestAuthorization:
         assert str(exception_info.value) == expected_message, str(exception_info.value)
 
 
+@pytest.mark.usefixtures("delete_test_memory")
 class TestMemoryCreate:
     @pytest.mark.p1
     @given(name=valid_names())
