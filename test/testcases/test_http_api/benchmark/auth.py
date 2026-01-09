@@ -12,7 +12,7 @@ def encrypt_password(password_plain: str) -> str:
         from api.utils.crypt import crypt
     except Exception as exc:
         raise AuthError(
-            "Password encryption unavailable; provide --login-password-encrypted."
+            "Password encryption unavailable; install pycryptodomex (uv sync --python 3.12 --group test)."
         ) from exc
     return crypt(password_plain)
 

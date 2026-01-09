@@ -1,11 +1,11 @@
 # RAGFlow HTTP Benchmark CLI
 
 Run (from repo root):
-  PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark [global flags] <chat|retrieval> [command flags]
+  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark [global flags] <chat|retrieval> [command flags]
   Global flags can be placed before or after the command.
 
 If you run from another directory:
-  PYTHONPATH=/home/idriss/ragflow/test python3 -m testcases.test_http_api.benchmark [global flags] <chat|retrieval> [command flags]
+  PYTHONPATH=/Directory_name/ragflow/test uv run -m testcases.test_http_api.benchmark [global flags] <chat|retrieval> [command flags]
 
 JSON args:
   For --dataset-payload, --chat-payload, --messages-json, --extra-body, --payload
@@ -46,10 +46,7 @@ Auth and bootstrap flags (used when --api-key is not provided)
     Nickname for registration. If omitted, defaults to email prefix when registering.
     Env: RAGFLOW_NICKNAME
   --login-password
-    Login password (encrypted client-side).
-  --login-password-encrypted
-    Pre-encrypted login password (RSA + Base64).
-    Env: RAGFLOW_PASSWORD_ENC
+    Login password (encrypted client-side). Requires pycryptodomex in the test group.
   --allow-register
     Attempt /user/register before login (best effort).
   --token-name
@@ -160,11 +157,11 @@ Do I need the dataset ID?
 Examples
 
 Example: chat benchmark creating dataset + upload + parse + chat (login + register)
-  PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark chat \
+  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark chat \
     --base-url http://127.0.0.1:9380 \
     --allow-register \
     --login-email "<login_email>" \
-    --login-password-encrypted "<encrypted_passowrd>" \
+    --login-password "<password>" \
     --bootstrap-llm \
     --llm-factory ZHIPU-AI \
     --llm-api-key $ZHIPU_AI_API_KEY \
@@ -178,51 +175,51 @@ Example: chat benchmark creating dataset + upload + parse + chat (login + regist
     --model "glm-4-flash@ZHIPU-AI"
 
 Example: chat benchmark with existing dataset + chat id (no creation)
-  PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark chat \
+  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark chat \
     --base-url http://127.0.0.1:9380 \
     --chat-id <existing_chat_id> \
     --login-email "<login_email>" \
-    --login-password-encrypted "<encrypted_passowrd>" \
+    --login-password "<password>" \
     --message "Say this is a test!" \
     --model "glm-4-flash@ZHIPU-AI"
 
 Example: retrieval benchmark creating dataset + upload + parse
-  PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark retrieval \
+  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
     --allow-register \
     --login-email "<login_email>" \
-    --login-password-encrypted "<encrypted_passowrd>" \
+    --login-password "<password>" \
     --bootstrap-llm \
     --llm-factory ZHIPU-AI \
     --llm-api-key $ZHIPU_AI_API_KEY \
     --dataset-name "bench_dataset" \
     --dataset-payload '{"name":"bench_dataset","embedding_model":"embedding-2@ZHIPU-AI"}' \
-    --document-path path/to/doc/doc1.pdf \
-    --document-path path/to/doc/doc2.pdf \
-    --question "What is advantage of ragflow?"
+    --document-path /path/to/file/Doc1.pdf \
+    --document-path /path/to/file/Doc2.pdf \
+    --question "What is the longest lasting empire"
 
 Example: retrieval benchmark with existing dataset IDs
-  PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark retrieval \
+  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
     --login-email "<login_email>" \
-    --login-password-encrypted "<encrypted_passowrd>" \
+    --login-password "<password>" \
     --dataset-ids "<dataset_id_1>,<dataset_id_2>" \
     --question "What is advantage of ragflow?"
 
 Example: retrieval benchmark with existing dataset IDs and document IDs
-  PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark retrieval \
+  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
     --login-email "<login_email>" \
-    --login-password-encrypted "<encrypted_passowrd>" \
+    --login-password "<password>" \
     --dataset-id "<dataset_id>" \
     --document-ids "<doc_id_1>,<doc_id_2>" \
     --question "What is advantage of ragflow?"
 
 Example: using a document list file (multi-file selection)
-  PYTHONPATH=./test python3 -m testcases.test_http_api.benchmark retrieval \
+  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
     --login-email "<login_email>" \
-    --login-password-encrypted "<encrypted_passowrd>" \
+    --login-password "<password>" \
     --dataset-name "bench_dataset" \
     --dataset-payload '{"name":"bench_dataset","embedding_model":"embedding-2@ZHIPU-AI"}' \
     --document-paths-file /path/to/document_paths.txt \

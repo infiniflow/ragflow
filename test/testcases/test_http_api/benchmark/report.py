@@ -13,10 +13,16 @@ def _fmt_ms(value: Optional[float]) -> str:
     return f"{value * 1000.0:.2f}ms"
 
 
-def _fmt_qps(avg_latency_s: Optional[float]) -> str:
-    if avg_latency_s is None or avg_latency_s <= 0:
+def _fmt_qps(qps: Optional[float]) -> str:
+    if qps is None or qps <= 0:
         return "n/a"
-    return f"{1.0 / avg_latency_s:.2f}"
+    return f"{qps:.2f}"
+
+
+def _calc_qps(total_duration_s: Optional[float], total_requests: int) -> Optional[float]:
+    if total_duration_s is None or total_duration_s <= 0:
+        return None
+    return total_requests / total_duration_s
 
 
 def render_report(lines: List[str]) -> str:
@@ -27,7 +33,7 @@ def chat_report(
     *,
     interface: str,
     concurrency: int,
-    concurrency_note: Optional[str],
+    total_duration_s: Optional[float],
     iterations: int,
     success: int,
     failure: int,
@@ -39,7 +45,7 @@ def chat_report(
 ) -> str:
     lines = [
         f"Interface: {interface}",
-        f"Concurrency: {concurrency}{(' ' + concurrency_note) if concurrency_note else ''}",
+        f"Concurrency: {concurrency}",
         f"Iterations: {iterations}",
         f"Success: {success}",
         f"Failure: {failure}",
@@ -55,7 +61,8 @@ def chat_report(
             "Latency (first token): "
             f"avg={_fmt_ms(first_token_stats['avg'])}, min={_fmt_ms(first_token_stats['min'])}, "
             f"p50={_fmt_ms(first_token_stats['p50'])}, p90={_fmt_ms(first_token_stats['p90'])}, p95={_fmt_ms(first_token_stats['p95'])}",
-            f"QPS (1 / avg total latency): {_fmt_qps(total_stats['avg'])}",
+            f"Total Duration: {_fmt_seconds(total_duration_s)}",
+            f"QPS (requests / total duration): {_fmt_qps(_calc_qps(total_duration_s, iterations))}",
         ]
     )
     if errors:
@@ -67,7 +74,7 @@ def retrieval_report(
     *,
     interface: str,
     concurrency: int,
-    concurrency_note: Optional[str],
+    total_duration_s: Optional[float],
     iterations: int,
     success: int,
     failure: int,
@@ -77,7 +84,7 @@ def retrieval_report(
 ) -> str:
     lines = [
         f"Interface: {interface}",
-        f"Concurrency: {concurrency}{(' ' + concurrency_note) if concurrency_note else ''}",
+        f"Concurrency: {concurrency}",
         f"Iterations: {iterations}",
         f"Success: {success}",
         f"Failure: {failure}",
@@ -89,10 +96,10 @@ def retrieval_report(
             "Latency: "
             f"avg={_fmt_ms(stats['avg'])}, min={_fmt_ms(stats['min'])}, "
             f"p50={_fmt_ms(stats['p50'])}, p90={_fmt_ms(stats['p90'])}, p95={_fmt_ms(stats['p95'])}",
-            f"QPS (1 / avg latency): {_fmt_qps(stats['avg'])}",
+            f"Total Duration: {_fmt_seconds(total_duration_s)}",
+            f"QPS (requests / total duration): {_fmt_qps(_calc_qps(total_duration_s, iterations))}",
         ]
     )
     if errors:
         lines.append("Errors: " + "; ".join(errors[:5]))
     return render_report(lines)
-

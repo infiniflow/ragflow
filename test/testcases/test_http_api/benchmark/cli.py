@@ -1,6 +1,9 @@
 import argparse
 import json
 import os
+import multiprocessing as mp
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -42,7 +45,7 @@ def _parse_args() -> argparse.Namespace:
     base_parser.add_argument("--read-timeout", type=float, default=60.0, help="Read timeout seconds")
     base_parser.add_argument("--no-verify-ssl", action="store_false", dest="verify_ssl", help="Disable SSL verification")
     base_parser.add_argument("--iterations", type=int, default=1, help="Number of iterations")
-    base_parser.add_argument("--concurrency", type=int, default=1, help="Concurrency (forced to 1)")
+    base_parser.add_argument("--concurrency", type=int, default=1, help="Concurrency")
     base_parser.add_argument("--json", action="store_true", help="Print JSON report (optional)")
     base_parser.add_argument("--print-response", action="store_true", help="Print response content per iteration")
     base_parser.add_argument(
@@ -55,8 +58,7 @@ def _parse_args() -> argparse.Namespace:
     # Auth/login options
     base_parser.add_argument("--login-email", default=os.getenv("RAGFLOW_EMAIL"), help="Login email")
     base_parser.add_argument("--login-nickname", default=os.getenv("RAGFLOW_NICKNAME"), help="Nickname for registration")
-    base_parser.add_argument("--login-password", help="Plain login password (will be encrypted)")
-    base_parser.add_argument("--login-password-encrypted", default=os.getenv("RAGFLOW_PASSWORD_ENC"), help="Encrypted login password")
+    base_parser.add_argument("--login-password", help="Login password (encrypted client-side)")
     base_parser.add_argument("--allow-register", action="store_true", help="Attempt /user/register before login")
     base_parser.add_argument("--token-name", help="Optional API token name")
     base_parser.add_argument("--bootstrap-llm", action="store_true", help="Ensure LLM factory API key is configured")
@@ -154,18 +156,59 @@ def _format_retrieval_response(sample: RetrievalSample, max_chars: int) -> str:
     return _truncate_text(text, max_chars)
 
 
+def _chat_worker(
+    base_url: str,
+    api_version: str,
+    api_key: str,
+    connect_timeout: float,
+    read_timeout: float,
+    verify_ssl: bool,
+    chat_id: str,
+    model: str,
+    messages: List[Dict[str, Any]],
+    extra_body: Optional[Dict[str, Any]],
+) -> ChatSample:
+    client = HttpClient(
+        base_url=base_url,
+        api_version=api_version,
+        api_key=api_key,
+        connect_timeout=connect_timeout,
+        read_timeout=read_timeout,
+        verify_ssl=verify_ssl,
+    )
+    return stream_chat_completion(client, chat_id, model, messages, extra_body)
+
+
+def _retrieval_worker(
+    base_url: str,
+    api_version: str,
+    api_key: str,
+    connect_timeout: float,
+    read_timeout: float,
+    verify_ssl: bool,
+    payload: Dict[str, Any],
+) -> RetrievalSample:
+    client = HttpClient(
+        base_url=base_url,
+        api_version=api_version,
+        api_key=api_key,
+        connect_timeout=connect_timeout,
+        read_timeout=read_timeout,
+        verify_ssl=verify_ssl,
+    )
+    return run_retrieval_request(client, payload)
+
+
 def _ensure_auth(client: HttpClient, args: argparse.Namespace) -> None:
     if args.api_key:
         client.api_key = args.api_key
         return
     if not args.login_email:
         raise AuthError("Missing API key and login email")
-    if not args.login_password_encrypted and not args.login_password:
+    if not args.login_password:
         raise AuthError("Missing login password")
 
-    password_enc = args.login_password_encrypted
-    if not password_enc:
-        password_enc = auth.encrypt_password(args.login_password)
+    password_enc = auth.encrypt_password(args.login_password)
 
     if args.allow_register:
         nickname = args.login_nickname or args.login_email.split("@")[0]
@@ -324,15 +367,42 @@ def run_chat(client: HttpClient, args: argparse.Namespace) -> int:
 
     samples: List[ChatSample] = []
     responses: List[str] = []
-    for idx in range(args.iterations):
-        sample = stream_chat_completion(client, chat_id, model, messages, extra_body)
-        samples.append(sample)
-        if args.print_response:
+    start_time = time.perf_counter()
+    if args.concurrency <= 1:
+        for _ in range(args.iterations):
+            samples.append(stream_chat_completion(client, chat_id, model, messages, extra_body))
+    else:
+        results: List[Optional[ChatSample]] = [None] * args.iterations
+        mp_context = mp.get_context("spawn")
+        with ProcessPoolExecutor(max_workers=args.concurrency, mp_context=mp_context) as executor:
+            future_map = {
+                executor.submit(
+                    _chat_worker,
+                    client.base_url,
+                    client.api_version,
+                    client.api_key or "",
+                    client.connect_timeout,
+                    client.read_timeout,
+                    client.verify_ssl,
+                    chat_id,
+                    model,
+                    messages,
+                    extra_body,
+                ): idx
+                for idx in range(args.iterations)
+            }
+            for future in as_completed(future_map):
+                idx = future_map[future]
+                results[idx] = future.result()
+        samples = [sample for sample in results if sample is not None]
+    total_duration = time.perf_counter() - start_time
+    if args.print_response:
+        for idx, sample in enumerate(samples, start=1):
             rendered = _format_chat_response(sample, args.response_max_chars)
             if args.json:
                 responses.append(rendered)
             else:
-                print(f"Response[{idx + 1}]: {rendered}")
+                print(f"Response[{idx}]: {rendered}")
 
     total_latencies = [s.total_latency for s in samples if s.total_latency is not None and s.error is None]
     first_latencies = [s.first_token_latency for s in samples if s.first_token_latency is not None and s.error is None]
@@ -345,8 +415,7 @@ def run_chat(client: HttpClient, args: argparse.Namespace) -> int:
     if args.json:
         payload = {
             "interface": "chat",
-            "concurrency": 1,
-            "concurrency_note": f"forced; requested {args.concurrency}" if args.concurrency != 1 else None,
+            "concurrency": args.concurrency,
             "iterations": args.iterations,
             "success": success,
             "failure": failure,
@@ -355,6 +424,8 @@ def run_chat(client: HttpClient, args: argparse.Namespace) -> int:
             "first_token_latency": first_stats,
             "errors": [e for e in errors if e],
             "created": created,
+            "total_duration_s": total_duration,
+            "qps": (args.iterations / total_duration) if total_duration > 0 else None,
         }
         if args.print_response:
             payload["responses"] = responses
@@ -362,8 +433,8 @@ def run_chat(client: HttpClient, args: argparse.Namespace) -> int:
     else:
         report = chat_report(
             interface="chat",
-            concurrency=1,
-            concurrency_note=f"(forced; requested {args.concurrency})" if args.concurrency != 1 else None,
+            concurrency=args.concurrency,
+            total_duration_s=total_duration,
             iterations=args.iterations,
             success=success,
             failure=failure,
@@ -403,15 +474,39 @@ def run_retrieval(client: HttpClient, args: argparse.Namespace) -> int:
 
     samples: List[RetrievalSample] = []
     responses: List[str] = []
-    for idx in range(args.iterations):
-        sample = run_retrieval_request(client, payload)
-        samples.append(sample)
-        if args.print_response:
+    start_time = time.perf_counter()
+    if args.concurrency <= 1:
+        for _ in range(args.iterations):
+            samples.append(run_retrieval_request(client, payload))
+    else:
+        results: List[Optional[RetrievalSample]] = [None] * args.iterations
+        mp_context = mp.get_context("spawn")
+        with ProcessPoolExecutor(max_workers=args.concurrency, mp_context=mp_context) as executor:
+            future_map = {
+                executor.submit(
+                    _retrieval_worker,
+                    client.base_url,
+                    client.api_version,
+                    client.api_key or "",
+                    client.connect_timeout,
+                    client.read_timeout,
+                    client.verify_ssl,
+                    payload,
+                ): idx
+                for idx in range(args.iterations)
+            }
+            for future in as_completed(future_map):
+                idx = future_map[future]
+                results[idx] = future.result()
+        samples = [sample for sample in results if sample is not None]
+    total_duration = time.perf_counter() - start_time
+    if args.print_response:
+        for idx, sample in enumerate(samples, start=1):
             rendered = _format_retrieval_response(sample, args.response_max_chars)
             if args.json:
                 responses.append(rendered)
             else:
-                print(f"Response[{idx + 1}]: {rendered}")
+                print(f"Response[{idx}]: {rendered}")
 
     latencies = [s.latency for s in samples if s.latency is not None and s.error is None]
     success = len(latencies)
@@ -422,14 +517,15 @@ def run_retrieval(client: HttpClient, args: argparse.Namespace) -> int:
     if args.json:
         payload = {
             "interface": "retrieval",
-            "concurrency": 1,
-            "concurrency_note": f"forced; requested {args.concurrency}" if args.concurrency != 1 else None,
+            "concurrency": args.concurrency,
             "iterations": args.iterations,
             "success": success,
             "failure": failure,
             "latency": stats,
             "errors": [e for e in errors if e],
             "created": created,
+            "total_duration_s": total_duration,
+            "qps": (args.iterations / total_duration) if total_duration > 0 else None,
         }
         if args.print_response:
             payload["responses"] = responses
@@ -437,8 +533,8 @@ def run_retrieval(client: HttpClient, args: argparse.Namespace) -> int:
     else:
         report = retrieval_report(
             interface="retrieval",
-            concurrency=1,
-            concurrency_note=f"(forced; requested {args.concurrency})" if args.concurrency != 1 else None,
+            concurrency=args.concurrency,
+            total_duration_s=total_duration,
             iterations=args.iterations,
             success=success,
             failure=failure,
@@ -457,8 +553,8 @@ def main() -> None:
         raise SystemExit("Missing --base-url or HOST_ADDRESS")
     if args.iterations < 1:
         raise SystemExit("--iterations must be >= 1")
-    if args.concurrency != 1:
-        eprint(f"Warning: concurrency forced to 1 (requested {args.concurrency})")
+    if args.concurrency < 1:
+        raise SystemExit("--concurrency must be >= 1")
     client = HttpClient(
         base_url=args.base_url,
         api_version=args.api_version,
