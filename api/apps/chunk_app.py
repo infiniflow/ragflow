@@ -223,7 +223,9 @@ async def rm():
             e, doc = DocumentService.get_by_id(req["doc_id"])
             if not e:
                 return get_data_error_result(message="Document not found!")
-            if not settings.docStoreConn.delete({"id": req["chunk_ids"]},
+            # Include doc_id in condition to properly scope the delete
+            condition = {"id": req["chunk_ids"], "doc_id": req["doc_id"]}
+            if not settings.docStoreConn.delete(condition,
                                                 search.index_name(DocumentService.get_tenant_id(req["doc_id"])),
                                                 doc.kb_id):
                 return get_data_error_result(message="Chunk deleting failure")
