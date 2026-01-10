@@ -168,38 +168,44 @@ RUN version_info=$(git describe --tags --match=v* --first-parent --always); \
 
 # production stage
 FROM base AS production
-USER root
-
+RUN useradd -m -u 1001 ragflow
 WORKDIR /ragflow
 
 # Copy Python environment and packages
 ENV VIRTUAL_ENV=/ragflow/.venv
-COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
+COPY --from=builder --chown=ragflow:ragflow ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 ENV PYTHONPATH=/ragflow/
 
-COPY web web
-COPY admin admin
-COPY api api
-COPY conf conf
-COPY deepdoc deepdoc
-COPY rag rag
-COPY agent agent
-COPY graphrag graphrag
-COPY agentic_reasoning agentic_reasoning
-COPY pyproject.toml uv.lock ./
-COPY mcp mcp
-COPY plugin plugin
-COPY common common
-COPY memory memory
+COPY --chown=ragflow:ragflow web web
+COPY --chown=ragflow:ragflow admin admin
+COPY --chown=ragflow:ragflow api api
+COPY --chown=ragflow:ragflow conf conf
+COPY --chown=ragflow:ragflow deepdoc deepdoc
+COPY --chown=ragflow:ragflow rag rag
+COPY --chown=ragflow:ragflow agent agent
+COPY --chown=ragflow:ragflow graphrag graphrag
+COPY --chown=ragflow:ragflow agentic_reasoning agentic_reasoning
+COPY --chown=ragflow:ragflow pyproject.toml uv.lock ./
+COPY --chown=ragflow:ragflow mcp mcp
+COPY --chown=ragflow:ragflow plugin plugin
+COPY --chown=ragflow:ragflow common common
+COPY --chown=ragflow:ragflow memory memory
 
-COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
-COPY docker/entrypoint.sh ./
+COPY --chown=ragflow:ragflow docker/service_conf.yaml.template ./conf/service_conf.yaml.template
+COPY --chown=ragflow:ragflow docker/entrypoint.sh ./
 RUN chmod +x ./entrypoint*.sh
 
 # Copy compiled web pages
-COPY --from=builder /ragflow/web/dist /ragflow/web/dist
+COPY --from=builder --chown=ragflow:ragflow /ragflow/web/dist /ragflow/web/dist
 
-COPY --from=builder /ragflow/VERSION /ragflow/VERSION
+COPY --from=builder --chown=ragflow:ragflow /ragflow/VERSION /ragflow/VERSION
+
+RUN touch /run/nginx.pid && \
+    chown -R ragflow:ragflow /var/lib/nginx /var/log/nginx /etc/nginx /run/nginx.pid
+
+RUN chown -R ragflow:ragflow /ragflow
+USER ragflow
+
 ENTRYPOINT ["./entrypoint.sh"]
