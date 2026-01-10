@@ -148,10 +148,11 @@ class MinerUParseOptions:
     formula_enable: bool = True
     table_enable: bool = True
     batch_size: int = 30  # Number of pages per batch for large PDFs (clamped to [1,500])
-    start_page: Optional[int] = None  # Starting page (0-based, for manual pagination)
-    end_page: Optional[int] = None  # Ending page (0-based, for manual pagination)
+    start_page: Optional[int] = None  # Starting page (0-based, inclusive)
+    end_page: Optional[int] = None  # Ending page (0-based, exclusive; matches MinerU API semantics)
     strict_mode: bool = True  # If True (default), all batches must succeed; if False, allow partial success with warnings
     exif_correction: bool = True
+
 
 
 class MinerUParser(RAGFlowPdfParser):
@@ -258,8 +259,10 @@ class MinerUParser(RAGFlowPdfParser):
             raise ValueError(f"[MinerU] start_page must be >= 0, got {options.start_page}")
         if options.end_page is not None and options.end_page < 0:
             raise ValueError(f"[MinerU] end_page must be >= 0, got {options.end_page}")
-        if options.start_page is not None and options.end_page is not None and options.start_page > options.end_page:
-            raise ValueError(f"[MinerU] start_page ({options.start_page}) must be <= end_page ({options.end_page})")
+        # With our semantics end_page is exclusive (0-based), therefore start_page must be strictly
+        # less than end_page when both are provided to refer to a non-empty page range.
+        if options.start_page is not None and options.end_page is not None and options.start_page >= options.end_page:
+            raise ValueError(f"[MinerU] start_page ({options.start_page}) must be < end_page ({options.end_page})")
 
         # Validate batch_size and clamp to reasonable bounds
         if not isinstance(options.batch_size, int) or options.batch_size <= 0:
