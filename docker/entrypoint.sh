@@ -202,8 +202,81 @@ function ensure_docling() {
 }
 
 # -----------------------------------------------------------------------------
+# Install PyTorch with CUDA support when DEVICE=gpu
+# Auto-detects CUDA version based on NVIDIA driver
+# -----------------------------------------------------------------------------
+
+# Map NVIDIA driver major version to CUDA version
+# Driver >= 550 -> cu124 (RTX 40/50 series)
+# Driver >= 525 -> cu121 (RTX 30/40 series)
+# Driver >= 450 -> cu118 (GTX 10/16/20 series)
+function get_cuda_version_from_driver() {
+    local major_version="$1"
+    if [[ "$major_version" -ge 550 ]]; then
+        echo "cu124"
+    elif [[ "$major_version" -ge 525 ]]; then
+        echo "cu121"
+    elif [[ "$major_version" -ge 450 ]]; then
+        echo "cu118"
+    else
+        echo "cu124"  # default for unknown/newer drivers
+    fi
+}
+
+function ensure_torch_cuda() {
+    [[ "${DEVICE}" == "gpu" ]] || { echo "[torch] DEVICE is not gpu, skipping CUDA PyTorch installation"; return 0; }
+    
+    # Check if torch with CUDA is already installed
+    if python3 -c "import torch; exit(0 if torch.cuda.is_available() else 1)" 2>/dev/null; then
+        echo "[torch] PyTorch with CUDA support already installed"
+        return 0
+    fi
+    
+    echo "[torch] Installing PyTorch with CUDA support..."
+    
+    # Auto-detect CUDA version from NVIDIA driver
+    local cuda_version="cu124"  # default
+    local driver_version=""
+    local major_version=""
+    
+    if command -v nvidia-smi &> /dev/null; then
+        driver_version=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1)
+    elif [[ -f /proc/driver/nvidia/version ]]; then
+        driver_version=$(grep -oP 'Kernel Module\s+\K[\d.]+' /proc/driver/nvidia/version 2>/dev/null)
+    fi
+    
+    if [[ -n "$driver_version" ]]; then
+        major_version=$(echo "$driver_version" | cut -d. -f1)
+        echo "[torch] Detected NVIDIA driver version: $driver_version (major: $major_version)"
+        cuda_version=$(get_cuda_version_from_driver "$major_version")
+    fi
+    
+    echo "[torch] Using CUDA version: $cuda_version"
+    local index_url="https://download.pytorch.org/whl/${cuda_version}"
+    local cn_mirror_url="https://mirrors.aliyun.com/pytorch-wheels/${cuda_version}"
+    
+    # Install using uv (preferred) or pip, try Chinese mirror first
+    if command -v uv &> /dev/null; then
+        uv pip install "torch>=2.5.0,<3.0.0" --index-url "$cn_mirror_url" 2>/dev/null || \
+        uv pip install "torch>=2.5.0,<3.0.0" --index-url "$index_url" || \
+        python3 -m pip install "torch>=2.5.0,<3.0.0" --index-url "$index_url"
+    else
+        python3 -m pip install "torch>=2.5.0,<3.0.0" --index-url "$cn_mirror_url" 2>/dev/null || \
+        python3 -m pip install "torch>=2.5.0,<3.0.0" --index-url "$index_url"
+    fi
+    
+    # Verify installation
+    if python3 -c "import torch; print(f'PyTorch {torch.__version__} installed, CUDA available: {torch.cuda.is_available()}')" 2>/dev/null; then
+        echo "[torch] PyTorch with CUDA support installed successfully"
+    else
+        echo "[torch] Warning: PyTorch installation may have issues"
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
+ensure_torch_cuda
 ensure_docling
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
