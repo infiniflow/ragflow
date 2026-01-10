@@ -371,33 +371,40 @@ class MinerUParser(RAGFlowPdfParser):
         if not os.path.exists(pdf_file_path):
             raise RuntimeError(f"[MinerU] PDF file not exists: {pdf_file_path}")
 
-        # If user explicitly set page range, we usually run single batch —
-        # except when the range covers the entire document (in which case
-        # automatic batching is still useful for large documents).
+        # Decision logging: what was provided and configured
         start_set = options.start_page is not None
         end_set = options.end_page is not None
+        self.logger.info(f"[MinerU] batching_decision: start_set={start_set}, end_set={end_set}, batch_size={options.batch_size}, strict_mode={options.strict_mode}")
+
+        # If user explicitly set page range, prefer single batch unless the range covers the whole document
         if start_set or end_set:
-            # Normalize tentative start/end
             s = options.start_page if start_set else 0
             e = options.end_page if end_set else 99999
-
-            # If this looks like a request to process the whole doc, allow automatic batching
-            if s == 0:
+            try:
                 total_pages = self._get_total_pages(input_path)
-                # If we couldn't determine pages, keep single-batch to be safe
-                if total_pages and e >= total_pages:
-                    # treat as not specifying a sub-range and continue to batching logic below
-                    self.logger.info(f"[MinerU] Explicit page range covers full document ({s}-{e}) and total_pages={total_pages}; enabling automatic batching")
-                else:
-                    return self._run_mineru_api_single_batch(input_path, output_dir, options, s, e, callback=callback)
+            except Exception as exc:
+                total_pages = 0
+                self.logger.warning(f"[MinerU] could not read total pages while evaluating explicit range: {exc}")
+
+            self.logger.info(f"[MinerU] explicit_range_detected: start={s}, end={e}, total_pages={total_pages}")
+
+            # If explicit range appears to be the full document, allow automatic batching
+            if s == 0 and total_pages and e >= total_pages:
+                self.logger.info(f"[MinerU] Explicit page range covers full document ({s}-{e}) and total_pages={total_pages}; enabling automatic batching")
+                # fall through to automatic batching logic below
             else:
+                self.logger.info(f"[MinerU] Running single batch for explicit range {s}-{e}")
                 return self._run_mineru_api_single_batch(input_path, output_dir, options, s, e, callback=callback)
 
         # Automatic batching if batch_size positive
         if options.batch_size and options.batch_size > 0:
             total_pages = self._get_total_pages(input_path)
-            if total_pages == 0 or total_pages <= options.batch_size:
-                # Fall back to single batch for small or unknown page counts
+            self.logger.info(f"[MinerU] Auto-batching check: total_pages={total_pages}, batch_size={options.batch_size}")
+            if total_pages == 0:
+                self.logger.warning("[MinerU] Could not determine total pages; falling back to single batch")
+                return self._run_mineru_api_single_batch(input_path, output_dir, options, 0, 99999, callback=callback)
+            if total_pages <= options.batch_size:
+                self.logger.info(f"[MinerU] total_pages ({total_pages}) <= batch_size ({options.batch_size}); using single batch")
                 return self._run_mineru_api_single_batch(input_path, output_dir, options, 0, 99999, callback=callback)
 
             batches = []
