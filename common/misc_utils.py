@@ -100,9 +100,105 @@ def once(func):
 
 @once
 def pip_install_torch():
+    """
+    Install PyTorch with CUDA support if DEVICE=gpu.
+    
+    Note: In Docker deployments, PyTorch is installed during container startup
+    via entrypoint.sh. This function serves as a fallback for non-Docker environments.
+    """
     device = os.getenv("DEVICE", "cpu")
-    if device=="cpu":
+    if device == "cpu":
         return
-    logging.info("Installing pytorch")
+    
+    # Check if torch is already installed with CUDA support
+    try:
+        import torch
+        if torch.cuda.is_available():
+            logging.info(f"PyTorch {torch.__version__} with CUDA support already available")
+            return
+    except ImportError:
+        pass
+    
+    # Auto-detect CUDA version
+    cuda_version = _detect_cuda_version()
+    cuda_index_url = f"https://download.pytorch.org/whl/{cuda_version}"
+    cn_mirror_url = f"https://mirrors.aliyun.com/pytorch-wheels/{cuda_version}"
+    logging.info(f"Installing PyTorch with CUDA support ({cuda_version})")
+    
     pkg_names = ["torch>=2.5.0,<3.0.0"]
-    subprocess.check_call([sys.executable, "-m", "pip", "install", *pkg_names])
+    
+    # Try Chinese mirror first (faster for users in China), then fallback to official
+    for index_url in [cn_mirror_url, cuda_index_url]:
+        try:
+            # Try uv first (preferred in container environment)
+            subprocess.check_call(
+                ["uv", "pip", "install", *pkg_names, "--index-url", index_url]
+            )
+            return
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            try:
+                # Fallback to pip if uv is not available
+                subprocess.check_call(
+                    [sys.executable, "-m", "pip", "install", *pkg_names, "--index-url", index_url]
+                )
+                return
+            except subprocess.CalledProcessError:
+                continue
+    
+    logging.error("Failed to install PyTorch with CUDA support")
+
+
+def _map_driver_to_cuda(major_version: int) -> str:
+    """
+    Map NVIDIA driver major version to CUDA version.
+    Driver >= 550 -> cu124 (RTX 40/50 series)
+    Driver >= 525 -> cu121 (RTX 30/40 series)
+    Driver >= 450 -> cu118 (GTX 10/16/20 series)
+    """
+    if major_version >= 550:
+        return "cu124"
+    elif major_version >= 525:
+        return "cu121"
+    elif major_version >= 450:
+        return "cu118"
+    return "cu124"  # default for modern GPUs
+
+
+def _detect_cuda_version():
+    """
+    Auto-detect CUDA version for PyTorch installation.
+    Returns a PyTorch wheel tag like 'cu118', 'cu121', 'cu124'.
+    """
+    driver_version = None
+    
+    # Try nvidia-smi
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            driver_version = result.stdout.strip().split("\n")[0]
+    except Exception:
+        pass
+    
+    # Try /proc/driver/nvidia/version (Linux fallback)
+    if not driver_version:
+        try:
+            with open("/proc/driver/nvidia/version", "r") as f:
+                import re
+                match = re.search(r"Kernel Module\s+(\d+\.\d+)", f.read())
+                if match:
+                    driver_version = match.group(1)
+        except Exception:
+            pass
+    
+    # Map driver version to CUDA version
+    if driver_version:
+        try:
+            major = int(driver_version.split(".")[0])
+            return _map_driver_to_cuda(major)
+        except (ValueError, IndexError):
+            pass
+    
+    return "cu124"  # Default for modern GPUs
