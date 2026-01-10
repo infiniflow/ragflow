@@ -371,11 +371,27 @@ class MinerUParser(RAGFlowPdfParser):
         if not os.path.exists(pdf_file_path):
             raise RuntimeError(f"[MinerU] PDF file not exists: {pdf_file_path}")
 
-        # If user explicitly set page range, just run single batch
-        if options.start_page is not None or options.end_page is not None:
-            s = options.start_page if options.start_page is not None else 0
-            e = options.end_page if options.end_page is not None else 99999
-            return self._run_mineru_api_single_batch(input_path, output_dir, options, s, e, callback=callback)
+        # If user explicitly set page range, we usually run single batch —
+        # except when the range covers the entire document (in which case
+        # automatic batching is still useful for large documents).
+        start_set = options.start_page is not None
+        end_set = options.end_page is not None
+        if start_set or end_set:
+            # Normalize tentative start/end
+            s = options.start_page if start_set else 0
+            e = options.end_page if end_set else 99999
+
+            # If this looks like a request to process the whole doc, allow automatic batching
+            if s == 0:
+                total_pages = self._get_total_pages(input_path)
+                # If we couldn't determine pages, keep single-batch to be safe
+                if total_pages and e >= total_pages:
+                    # treat as not specifying a sub-range and continue to batching logic below
+                    self.logger.info(f"[MinerU] Explicit page range covers full document ({s}-{e}) and total_pages={total_pages}; enabling automatic batching")
+                else:
+                    return self._run_mineru_api_single_batch(input_path, output_dir, options, s, e, callback=callback)
+            else:
+                return self._run_mineru_api_single_batch(input_path, output_dir, options, s, e, callback=callback)
 
         # Automatic batching if batch_size positive
         if options.batch_size and options.batch_size > 0:
