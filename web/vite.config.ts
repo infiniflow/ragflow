@@ -59,7 +59,7 @@ export default defineConfig(({ mode, command }) => {
       },
     },
     server: {
-      port: 9222,
+      port: Number(env.PORT) || 9222,
       strictPort: false,
       hmr: {
         overlay: false,

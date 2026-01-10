@@ -14,7 +14,7 @@ import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
 import { Pen, Upload } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   MetadataType,
@@ -48,6 +48,7 @@ export default function Dataset() {
     filterValue,
     handleFilterSubmit,
     loading,
+    checkValue,
   } = useFetchDocumentList();
 
   const refreshCount = useMemo(() => {
@@ -74,6 +75,10 @@ export default function Dataset() {
     tableData,
     config: metadataConfig,
   } = useManageMetadata();
+
+  useEffect(() => {
+    checkValue(filters);
+  }, [filters]);
 
   const { rowSelection, rowSelectionIsEmpty, setRowSelection, selectedCount } =
     useRowSelection();

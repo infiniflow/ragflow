@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
 import { Segmented } from '@/components/ui/segmented';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
+import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -32,6 +33,7 @@ const BedrockModal = ({
 }: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
   const { t } = useTranslate('setting');
   const { t: ct } = useCommonTranslation();
+  const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
   const FormSchema = z
     .object({
@@ -160,10 +162,7 @@ const BedrockModal = ({
               <SelectWithSearch
                 value={field.value}
                 onChange={field.onChange}
-                options={[
-                  { label: 'chat', value: 'chat' },
-                  { label: 'embedding', value: 'embedding' },
-                ]}
+                options={buildModelTypeOptions(['chat', 'embedding'])}
                 placeholder={t('modelTypeMessage')}
               />
             )}

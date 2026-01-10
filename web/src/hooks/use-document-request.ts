@@ -94,8 +94,10 @@ export const useFetchDocumentList = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { id } = useParams();
+  const queryClient = useQueryClient();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const { filterValue, handleFilterSubmit, checkValue } =
+    useHandleFilterSubmit();
   const [docs, setDocs] = useState<IDocumentInfo[]>([]);
   const isLoop = useMemo(() => {
     return docs.some((doc) => doc.run === '1');
@@ -144,6 +146,9 @@ export const useFetchDocumentList = () => {
         },
       );
       if (ret.data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [DocumentApiAction.FetchDocumentFilter],
+        });
         return ret.data.data;
       }
 
@@ -173,6 +178,7 @@ export const useFetchDocumentList = () => {
     setPagination,
     filterValue,
     handleFilterSubmit,
+    checkValue,
   };
 };
 
@@ -191,7 +197,6 @@ export const useGetDocumentFilter = (): {
       DocumentApiAction.FetchDocumentFilter,
       debouncedSearchString,
       knowledgeId,
-      open,
     ],
     queryFn: async () => {
       const { data } = await kbService.documentFilter({

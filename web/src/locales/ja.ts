@@ -188,7 +188,7 @@ export default {
       chunkTokenNumber: '推奨チャンクサイズ',
       chunkTokenNumberMessage: 'チャンクトークン数は必須です',
       embeddingModelTip:
-        'ナレッジベースのデフォルトの埋め込みモデルです。ナレッジベースにチャンクが存在する場合、変更することはできません。別のデフォルト埋め込みモデルに切り替えるには、ナレッジベース内のすべての既存チャンクを削除する必要があります。',
+        'ナレッジベースで使用されるデフォルトの埋め込みモデルです。ナレッジベースにチャンクが作成された後に埋め込みモデルを変更する場合、システムは互換性チェックのためにいくつかのチャンクをランダムに抽出し、新しい埋め込みモデルで再エンコードして新旧ベクトルのコサイン類似度を計算します。サンプルの平均類似度が ≥ 0.9 の場合のみ切り替えできます。平均類似度が 0.9 未満の場合は、変更する前にナレッジベース内のすべてのチャンクを削除する必要があります。',
       permissionsTip:
         '「チーム」に設定すると、全てのチームメンバーがナレッジベースを管理できます。',
       chunkTokenNumberTip:
@@ -240,7 +240,7 @@ export default {
       <b>XLSX</b>形式のファイルには、ヘッダーのない2つの
       列が必要です： 1つは質問の列でもう1つは回答の列です
       （質問列が先行）。複数のシートも可能です。
-      
+
     </li>
     <li>
      <b>CSV/TXT</b>形式のファイルは、TABで区切られたUTF-8エンコードである必要があります。
@@ -285,7 +285,7 @@ export default {
     LLMがその量のコンテキスト長を処理できる場合に、ドキュメント全体を要約する必要があるときに適用されます。
     </p>`,
       knowledgeGraph: `<p>対応ファイル形式は<b>DOCX, EXCEL, PPT, IMAGE, PDF, TXT, MD, JSON, EML</b>です。
-          
+
 <p>このアプローチでは、ファイルを'ナイーブ'/'一般'メソッドを使用してチャンクに分割します。ドキュメントをセグメントに分割し、隣接するセグメントを結合してトークン数が'チャンクトークン数'で指定されたしきい値を超えるまで続け、その時点でチャンクが作成されます。</p>
 <p>その後、チャンクはLLMに入力され、ナレッジグラフとマインドマップのエンティティと関係を抽出します。</p>
 <p><b>エンティティタイプ</b>を設定することを忘れないでください。</p>`,
@@ -314,6 +314,17 @@ export default {
       entityTypes: 'エンティティタイプ',
       pageRank: 'ページランク',
       pageRankTip: `検索時に特定の知識ベースにより高いPageRankスコアを割り当てることができます。対応するスコアは、これらの知識ベースから取得されたチャンクのハイブリッド類似度スコアに加算され、ランキングが向上します。詳細については、https://ragflow.io/docs/dev/set_page_rank を参照してください。`,
+      paddleocrOptions: 'PaddleOCRオプション',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlTip: 'PaddleOCRサービスのAPIエンドポイントURL',
+      paddleocrApiUrlPlaceholder: '例: https://paddleocr-server.com/api',
+      paddleocrAccessToken: 'AI Studioアクセストークン',
+      paddleocrAccessTokenTip: 'PaddleOCR APIのアクセストークン（オプション）',
+      paddleocrAccessTokenPlaceholder: 'AI Studioトークン（オプション）',
+      paddleocrAlgorithm: 'PaddleOCRアルゴリズム',
+      paddleocrAlgorithmTip: 'PaddleOCR解析に使用するアルゴリズム',
+      paddleocrSelectAlgorithm: 'アルゴリズムを選択',
+      paddleocrModelNamePlaceholder: '例: paddleocr-from-env-1',
     },
     chunk: {
       chunk: 'チャンク',
@@ -596,6 +607,17 @@ export default {
       modelTypeMessage: 'モデルタイプを入力してください！',
       addLlmBaseUrl: 'ベースURL',
       baseUrlNameMessage: 'ベースURLを入力してください！',
+      paddleocr: {
+        apiUrl: 'PaddleOCR API URL',
+        apiUrlPlaceholder: '例：https://paddleocr-server.com/layout-parsing',
+        accessToken: 'AI Studio アクセストークン',
+        accessTokenPlaceholder: 'AI Studio のトークン（任意）',
+        algorithm: 'PaddleOCR アルゴリズム',
+        selectAlgorithm: 'アルゴリズムを選択',
+        modelNamePlaceholder: '例：paddleocr-from-env-1',
+        modelNameRequired: 'モデル名は必須です',
+        apiUrlRequired: 'PaddleOCR API URL は必須です'
+      },
       vision: 'ビジョンをサポートしていますか？',
       ollamaLink: '{{name}}を統合する方法',
       FishAudioLink: 'FishAudioの使用方法',

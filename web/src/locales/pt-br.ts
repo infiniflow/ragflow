@@ -217,7 +217,7 @@ export default {
       chunkTokenNumber: 'Tamanho de bloco recomendado',
       chunkTokenNumberMessage: 'O número de tokens por fragmento é obrigatório',
       embeddingModelTip:
-        'O modelo de embedding padrão da base de conhecimento. Não pode ser alterado uma vez que a base de conhecimento tenha chunks. Para mudar para um modelo de embedding padrão diferente, é necessário excluir todos os chunks existentes na base de conhecimento.',
+        'O modelo de embedding padrão da base de conhecimento. Depois que a base de conhecimento já possui chunks, ao trocar o modelo de embedding o sistema sorteia alguns chunks para verificação de compatibilidade, os re-embebe com o novo modelo de embedding e calcula a similaridade cosseno entre os vetores novos e antigos. A troca só é permitida quando a similaridade média da amostra é ≥ 0.9. Caso contrário, é necessário excluir todos os chunks da base de conhecimento antes de poder alterar.',
       permissionsTip:
         "Se definido como 'Equipe', todos os membros da equipe poderão gerenciar a base de conhecimento.",
       chunkTokenNumberTip:
@@ -310,6 +310,17 @@ export default {
       topnTags: 'Top-N Etiquetas',
       tags: 'Etiquetas',
       addTag: 'Adicionar etiqueta',
+      paddleocrOptions: 'Opções do PaddleOCR',
+      paddleocrApiUrl: 'URL da API do PaddleOCR',
+      paddleocrApiUrlTip: 'A URL do endpoint da API para o serviço PaddleOCR',
+      paddleocrApiUrlPlaceholder: 'ex: https://servidor-paddleocr.com/api',
+      paddleocrAccessToken: 'Token de Acesso do AI Studio',
+      paddleocrAccessTokenTip: 'Token de acesso para a API do PaddleOCR (opcional)',
+      paddleocrAccessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
+      paddleocrAlgorithm: 'Algoritmo do PaddleOCR',
+      paddleocrAlgorithmTip: 'Algoritmo a ser usado para a análise do PaddleOCR',
+      paddleocrSelectAlgorithm: 'Selecionar algoritmo',
+      paddleocrModelNamePlaceholder: 'ex: paddleocr-do-ambiente-1',
     },
     chunk: {
       chunk: 'Fragmento',
@@ -546,6 +557,17 @@ export default {
       modelTypeMessage: 'Por favor, insira o tipo do seu modelo!',
       addLlmBaseUrl: 'URL base',
       baseUrlNameMessage: 'Por favor, insira sua URL base!',
+      paddleocr: {
+        apiUrl: 'URL da API do PaddleOCR',
+        apiUrlPlaceholder: 'Por exemplo: https://paddleocr-server.com/layout-parsing',
+        accessToken: 'Token de acesso do AI Studio',
+        accessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
+        algorithm: 'Algoritmo do PaddleOCR',
+        selectAlgorithm: 'Selecionar algoritmo',
+        modelNamePlaceholder: 'Por exemplo: paddleocr-from-env-1',
+        modelNameRequired: 'O nome do modelo é obrigatório',
+        apiUrlRequired: 'A URL da API do PaddleOCR é obrigatória'
+      },
       vision: 'Suporta visão?',
       ollamaLink: 'Como integrar {{name}}',
       FishAudioLink: 'Como usar FishAudio',

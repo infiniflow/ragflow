@@ -28,8 +28,8 @@ CHUNK_API_URL = f"/{VERSION}/chunk"
 DIALOG_APP_URL = f"/{VERSION}/dialog"
 # SESSION_WITH_CHAT_ASSISTANT_API_URL = "/api/v1/chats/{chat_id}/sessions"
 # SESSION_WITH_AGENT_API_URL = "/api/v1/agents/{agent_id}/sessions"
-MEMORY_API_URL = f"/{VERSION}/memories"
-MESSAGE_API_URL = f"/{VERSION}/messages"
+MEMORY_API_URL = f"/api/{VERSION}/memories"
+MESSAGE_API_URL = f"/api/{VERSION}/messages"
 
 
 # KB APP

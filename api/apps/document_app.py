@@ -615,6 +615,7 @@ async def run():
                         e, kb = KnowledgebaseService.get_by_id(doc.kb_id)
                         if not e:
                             raise LookupError("Can't find this dataset!")
+                        doc.parser_config["llm_id"] = kb.parser_config.get("llm_id")
                         doc.parser_config["enable_metadata"] = kb.parser_config.get("enable_metadata", False)
                         doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
                         DocumentService.update_parser_config(doc.id, doc.parser_config)

@@ -166,7 +166,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp parser"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "tcadp parser", "paddleocr"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -232,6 +232,9 @@ class Parser(ProcessBase):
             if lowered.endswith("@mineru"):
                 parser_model_name = raw_parse_method.rsplit("@", 1)[0]
                 parse_method = "MinerU"
+            elif lowered.endswith("@paddleocr"):
+                parser_model_name = raw_parse_method.rsplit("@", 1)[0]
+                parse_method = "PaddleOCR"
 
         if parse_method.lower() == "deepdoc":
             bboxes = RAGFlowPdfParser().parse_into_bboxes(blob, callback=self.callback)
@@ -239,6 +242,7 @@ class Parser(ProcessBase):
             lines, _ = PlainParser()(blob)
             bboxes = [{"text": t} for t, _ in lines]
         elif parse_method.lower() == "mineru":
+
             def resolve_mineru_llm_name():
                 configured = parser_model_name or conf.get("mineru_llm_name")
                 if configured:
@@ -320,6 +324,84 @@ class Parser(ProcessBase):
                         bboxes.append({"text": section})
                 else:
                     bboxes.append({"text": section})
+        elif parse_method.lower() == "paddleocr":
+
+            def resolve_paddleocr_llm_name():
+                configured = parser_model_name or conf.get("paddleocr_llm_name")
+                if configured:
+                    return configured
+
+                tenant_id = self._canvas._tenant_id
+                if not tenant_id:
+                    return None
+
+                from api.db.services.tenant_llm_service import TenantLLMService
+
+                env_name = TenantLLMService.ensure_paddleocr_from_env(tenant_id)
+                candidates = TenantLLMService.query(tenant_id=tenant_id, llm_factory="PaddleOCR", model_type=LLMType.OCR.value)
+                if candidates:
+                    return candidates[0].llm_name
+                return env_name
+
+            parser_model_name = resolve_paddleocr_llm_name()
+            if not parser_model_name:
+                raise RuntimeError("PaddleOCR model not configured. Please add PaddleOCR in Model Providers or set PADDLEOCR_* env.")
+
+            tenant_id = self._canvas._tenant_id
+            ocr_model = LLMBundle(tenant_id, LLMType.OCR, llm_name=parser_model_name)
+            pdf_parser = ocr_model.mdl
+
+            lines, _ = pdf_parser.parse_pdf(
+                filepath=name,
+                binary=blob,
+                callback=self.callback,
+                parse_method=conf.get("paddleocr_parse_method", "raw"),
+            )
+            bboxes = []
+            for section in lines:
+                # PaddleOCRParser returns sections as tuple, different formats based on parse_method:
+                # - "raw": (text, position_tag)
+                # - "manual": (text, label, position_tag)
+                # - "paper": (text_with_tag, label)
+                text = section[0]
+
+                # Parse position tag if exists
+                position_tag = ""
+                if len(section) > 1:
+                    if len(section) == 2:  # raw format: (text, tag)
+                        position_tag = section[1]
+                    elif len(section) == 3:  # manual format: (text, label, tag)
+                        position_tag = section[2]
+                    elif "paper" in conf.get("paddleocr_parse_method", "") and len(section) == 2:
+                        # paper format: text may contain tag
+                        text_with_tag = text
+                        import re
+
+                        tag_match = re.search(r"(@@[0-9-]+\t[0-9.\t]+##)", text_with_tag)
+                        if tag_match:
+                            position_tag = tag_match.group(1)
+                            text = text_with_tag.replace(position_tag, "").strip()
+
+                # Extract coordinate information from position tag
+                page_number, x0, x1, top, bottom = 1, 0, 0, 0, 0
+                if position_tag:
+                    import re
+
+                    tag_match = re.match(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", position_tag)
+                    if tag_match:
+                        pn, x0_str, x1_str, top_str, bottom_str = tag_match.groups()
+                        page_number = int(pn.split("-")[0])  # Take first page number
+                        x0, x1, top, bottom = float(x0_str), float(x1_str), float(top_str), float(bottom_str)
+
+                box = {
+                    "text": text,
+                    "page_number": page_number,
+                    "x0": x0,
+                    "x1": x1,
+                    "top": top,
+                    "bottom": bottom,
+                }
+                bboxes.append(box)
         else:
             vision_model = LLMBundle(self._canvas._tenant_id, LLMType.IMAGE2TEXT, llm_name=conf.get("parse_method"), lang=self._param.setups["pdf"].get("lang"))
             lines, _ = VisionParser(vision_model=vision_model)(blob, callback=self.callback)
@@ -802,7 +884,7 @@ class Parser(ProcessBase):
         outs = self.output()
         tasks = []
         for d in outs.get("json", []):
-            tasks.append(asyncio.create_task(image2id(d,partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id),get_uuid())))
+            tasks.append(asyncio.create_task(image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())))
 
         try:
             await asyncio.gather(*tasks, return_exceptions=False)

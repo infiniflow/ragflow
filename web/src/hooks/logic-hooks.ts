@@ -274,10 +274,23 @@ export const useSendMessageWithSse = (
                 const val = JSON.parse(value?.data || '');
                 const d = val?.data;
                 if (typeof d !== 'boolean') {
-                  setAnswer({
-                    ...d,
-                    conversationId: body?.conversation_id,
-                    chatBoxId: body.chatBoxId,
+                  setAnswer((prev) => {
+                    let newAnswer = (prev.answer || '') + (d.answer || '');
+
+                    if (d.start_to_think === true) {
+                      newAnswer = newAnswer + '<think>';
+                    }
+
+                    if (d.end_to_think === true) {
+                      newAnswer = newAnswer + '</think>';
+                    }
+
+                    return {
+                      ...d,
+                      answer: newAnswer,
+                      conversationId: body?.conversation_id,
+                      chatBoxId: body.chatBoxId,
+                    };
                   });
                 }
               } catch (e) {
