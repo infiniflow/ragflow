@@ -153,5 +153,10 @@ class PoolDiagnostics:
 
             PoolDiagnostics._monitoring_active = False
             PoolDiagnostics._monitoring_thread.join(timeout=2)
-            PoolDiagnostics._monitoring_thread = None
-            logging.info("Connection pool health monitoring stopped")
+            
+            # Only clear reference if thread actually terminated
+            if not PoolDiagnostics._monitoring_thread.is_alive():
+                PoolDiagnostics._monitoring_thread = None
+                logging.info("Connection pool health monitoring stopped")
+            else:
+                logging.warning("Health monitoring thread did not terminate within timeout")

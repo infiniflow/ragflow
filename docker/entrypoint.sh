@@ -224,7 +224,7 @@ function ensure_pip_dependency() {
     # Verify cache validity: marker exists AND package actually imports
     # Use import_name for Python import check, package_name for display/marker
     if [[ -f "$marker_file" ]]; then
-        if python3 -c "import importlib.util; exit(0 if importlib.util.find_spec('${import_name}') else 1)" 2>/dev/null; then
+        if "$PY" -c "import importlib.util; exit(0 if importlib.util.find_spec('${import_name}') else 1)" 2>/dev/null; then
             echo "[$package_name] already installed (cached), skipping..."
             return 0
         else
@@ -235,9 +235,9 @@ function ensure_pip_dependency() {
     
     # Install with persistent cache directory
     echo "[$package_name] installing ${package_spec}..."
-    python3 -c 'import pip' >/dev/null 2>&1 || python3 -m ensurepip --upgrade || true
+    "$PY" -c 'import pip' >/dev/null 2>&1 || "$PY" -m ensurepip --upgrade || true
     
-    if python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --cache-dir /root/.cache/pip "${package_spec}"; then
+    if "$PY" -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --cache-dir /root/.cache/pip "${package_spec}"; then
         mkdir -p /opt/ragflow/.deps
         touch "$marker_file"
         echo "[$package_name] installation complete"

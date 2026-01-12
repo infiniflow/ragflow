@@ -190,9 +190,13 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
         try:
             self.connect()
         except Exception as e:
-            logging.error(f"Failed to reconnect to PostgreSQL: {e}")
+            logging.error(f"Failed to reconnect to PostgreSQL (attempt 1): {e}")
             time.sleep(0.1)
-            self.connect()
+            try:
+                self.connect()
+            except Exception as e2:
+                logging.error(f"Failed to reconnect to PostgreSQL (attempt 2): {e2}")
+                raise e2
 
     def _should_retry_postgres_error(self, e):
         """Check if a PostgreSQL error is transient and retryable."""

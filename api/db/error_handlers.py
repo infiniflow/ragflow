@@ -29,7 +29,7 @@ class StandardErrorHandler:
             "postgres": ["23505", "42P07"],  # Unique violation, Relation already exists
         },
         "incompatible_type": {
-            "mysql": [1064],  # Syntax error (used for type mismatches)
+            "mysql": [1366, 1292],  # Incorrect value for column, incorrect datetime value
             "postgres": ["42804"],  # Type mismatch
         },
         "missing_column": {
@@ -42,7 +42,7 @@ class StandardErrorHandler:
     ERROR_MESSAGES = {
         "duplicate_column": ["duplicate column", "already exists", "column already"],
         "duplicate_entry": ["duplicate entry", "unique constraint", "duplicate key"],
-        "incompatible_type": ["cannot be cast", "incompatible", "type mismatch", "syntax error"],
+        "incompatible_type": ["cannot be cast", "incompatible", "type mismatch", "cannot alter", "data type"],
         "missing_column": ["does not exist", "no such column", "unknown column"],
     }
 

@@ -120,7 +120,30 @@ class DatabaseCompat:
             logging.warning(f"Unknown database type: {db_type}")
             return False
 
-        return DatabaseCompat.CAPABILITIES[db_type].get(capability, False)
+        return bool(DatabaseCompat.CAPABILITIES[db_type].get(capability, False))
+
+    @staticmethod
+    def get_capability_value(db_type: str, capability: str):
+        """
+        Get the raw capability value for a database.
+
+        Args:
+            db_type: Database type (mysql or postgres)
+            capability: Capability name from CAPABILITIES dict
+
+        Returns:
+            The raw capability value or None
+
+        Example:
+            >>> DatabaseCompat.get_capability_value("postgres", "jsonb_support")
+            True
+        """
+        db_type = db_type.lower()
+        if db_type not in DatabaseCompat.CAPABILITIES:
+            logging.warning(f"Unknown database type: {db_type}")
+            return None
+
+        return DatabaseCompat.CAPABILITIES[db_type].get(capability)
 
     @staticmethod
     def get_equivalent_type(field_type: str, source_db: str, target_db: str) -> str | None:

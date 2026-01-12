@@ -162,17 +162,17 @@ class TestDatasetLifecycle:
 uv run pytest
 
 # Only integration tests
-pytest test/integration/
+uv run pytest test/integration/
 
 # Only API contracts
-pytest test/api_contract/
+uv run pytest test/api_contract/
 
 # With priority markers
-pytest -m p1        # High priority tests only
-pytest -m "not p3"  # Skip low priority tests
+uv run pytest -m p1        # High priority tests only
+uv run pytest -m "not p3"  # Skip low priority tests
 
 # Specific file
-pytest test/integration/test_dataset_lifecycle.py -v
+uv run pytest test/integration/test_dataset_lifecycle.py -v
 ```
 
 **For detailed test architecture**, see [test/TEST_ARCHITECTURE.md](test/TEST_ARCHITECTURE.md).
