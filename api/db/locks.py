@@ -161,7 +161,9 @@ class MysqlDatabaseLock:
 
         # Check for timeout
         if ret[0] == 0:
-            raise Exception(f"acquire mysql lock {self.lock_name} timeout")
+            # Non-retriable lock acquisition timeout: signal with TimeoutError so
+            # any retry wrappers will not retry (only transient DB errors should).
+            raise TimeoutError(f"acquire mysql lock {self.lock_name} timeout")
 
         # Check for success
         if ret[0] == 1:
