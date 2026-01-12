@@ -167,17 +167,7 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                     logging.debug("PostgreSQL query executed successfully")
                 return result
             except (OperationalError, InterfaceError) as e:
-                # Specific transient error messages only; excludes permanent config/permission errors
-                transient_errors = [
-                    "server closed",
-                    "connection refused",
-                    "no connection to the server",
-                    "terminating connection",
-                    "connection reset by peer",
-                    "connection already closed",
-                ]
-                error_str = str(e).lower()
-                should_retry = any(msg in error_str for msg in transient_errors) or isinstance(e, InterfaceError)
+                should_retry = self._should_retry_postgres_error(e)
 
                 if should_retry and attempt < self.max_retries:
                     logging.warning(f"PostgreSQL connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
@@ -216,6 +206,7 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
             "could not connect",
             "connection timed out",
             "connection already closed",
+            "connection reset by peer",
         ]
         error_str = str(e).lower()
         return any(msg in error_str for msg in transient_errors) or isinstance(e, InterfaceError)
