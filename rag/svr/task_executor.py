@@ -12,6 +12,10 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+
+import time
+start_ts = time.time()
+
 import asyncio
 import socket
 import concurrent
@@ -21,7 +25,6 @@ import concurrent
 import random
 import sys
 import threading
-import time
 
 from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -1322,6 +1325,8 @@ async def main():
 
     report_task = asyncio.create_task(report_status())
     tasks = []
+
+    logging.info(f"RAGFlow ingestion is ready after {time.time() - start_ts}s initialization.")
     try:
         while not stop_event.is_set():
             await task_limiter.acquire()
