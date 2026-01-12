@@ -293,6 +293,10 @@ volumes:
     driver: local
   kibana_data:
     driver: local
+  ragflow-deps:
+    driver: local
+  ragflow-cache:
+    driver: local
 
 networks:
   ragflow:
