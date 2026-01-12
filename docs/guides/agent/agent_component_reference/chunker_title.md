@@ -1,6 +1,9 @@
 ---
 sidebar_position: 31
 slug: /chunker_title_component
+sidebar_custom_props: {
+  categoryIcon: LucideBlocks
+}
 ---
 
 # Title chunker component
@@ -23,7 +26,7 @@ Placing a **Title chunker** after a **Token chunker** is invalid and will cause 
 
 ### Hierarchy
 
-Specifies the heading level to define chunk boundaries: 
+Specifies the heading level to define chunk boundaries:
 
 - H1
 - H2

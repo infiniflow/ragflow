@@ -431,6 +431,7 @@ export function AutoMetadata({
 
   const handleSaveMetadata = (data?: IMetaDataReturnJSONSettings) => {
     form.setValue('parser_config.metadata', data || []);
+    form.setValue('parser_config.enable_metadata', true);
   };
   return (
     <>
@@ -515,7 +516,6 @@ export function LLMModelItem({ line = 1, isEdit, label, name }: IProps) {
               })}
             >
               <FormLabel
-                required
                 tooltip={t('globalIndexModelTip')}
                 className={cn('text-sm  whitespace-wrap ', {
                   'w-1/4': line === 1,

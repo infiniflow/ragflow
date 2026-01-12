@@ -129,6 +129,7 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
     },
     memory: {
       messages: {
+        forget: 'Forget',
         forgetMessageTip: 'Are you sure you want to forget?',
         messageDescription:
           'Memory extract is configured with Prompts and Temperature from Advanced Settings.',
@@ -147,7 +148,7 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         action: 'Action',
       },
       config: {
-        memorySizeTooltip: `Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). 
+        memorySizeTooltip: `Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes).
 Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.`,
         avatar: 'Avatar',
         description: 'Description',
@@ -423,6 +424,17 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Enable formula recognition. Note: This may not work correctly for Cyrillic documents.',
       mineruTableEnable: 'Table recognition',
       mineruTableEnableTip: 'Enable table recognition and extraction.',
+      paddleocrOptions: 'PaddleOCR Options',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlTip: 'The API endpoint URL for PaddleOCR service',
+      paddleocrApiUrlPlaceholder: 'e.g. https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio Access Token',
+      paddleocrAccessTokenTip: 'Access token for PaddleOCR API (optional)',
+      paddleocrAccessTokenPlaceholder: 'Your AI Studio token (optional)',
+      paddleocrAlgorithm: 'PaddleOCR Algorithm',
+      paddleocrAlgorithmTip: 'Algorithm to use for PaddleOCR parsing',
+      paddleocrSelectAlgorithm: 'Select Algorithm',
+      paddleocrModelNamePlaceholder: 'e.g. paddleocr-from-env-1',
       overlappedPercent: 'Overlapped percent(%)',
       generationScopeTip:
         'Determines whether RAPTOR is generated for the entire dataset or for a single file.',
@@ -481,7 +493,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       chunkTokenNumber: 'Recommended chunk size',
       chunkTokenNumberMessage: 'Chunk token number for text is required',
       embeddingModelTip:
-        'The default embedding model for the knowledge base. It cannot be changed once the knowledge base has chunks. To switch to a different default embedding model, you must delete all existing chunks in the knowledge base.',
+        'The default embedding model used by the knowledge base. Once the knowledge base has chunks, when switching the embedding model, the system randomly samples a few chunks for a compatibility check, re-embeds them with the new embedding model, and computes cosine similarity between the new and old vectors. Switching is allowed only when the average similarity of the sample is ≥ 0.9. Otherwise, you must delete all chunks in the knowledge base before you can change it.',
       permissionsTip:
         "If it is set to 'Team', all your team members will be able to manage the knowledge base.",
       chunkTokenNumberTip:
@@ -1093,6 +1105,17 @@ Example: Virtual Hosted Style`,
       modelTypeMessage: 'Please input your model type!',
       addLlmBaseUrl: 'Base url',
       baseUrlNameMessage: 'Please input your base url!',
+      paddleocr: {
+        apiUrl: 'PaddleOCR API URL',
+        apiUrlPlaceholder: 'For example: https://paddleocr-server.com/layout-parsing',
+        accessToken: 'AI Studio Access Token',
+        accessTokenPlaceholder: 'Your AI Studio token (optional)',
+        algorithm: 'PaddleOCR Algorithm',
+        selectAlgorithm: 'Select Algorithm',
+        modelNamePlaceholder: 'For example: paddleocr-from-env-1',
+        modelNameRequired: 'Model name is required',
+        apiUrlRequired: 'PaddleOCR API URL is required'
+      },
       vision: 'Does it support Vision?',
       ollamaLink: 'How to integrate {{name}}',
       FishAudioLink: 'How to use FishAudio',
@@ -1231,6 +1254,15 @@ Example: Virtual Hosted Style`,
           vlmLmdeployEngine:
             'Vision Language Model with LMDeploy Engine (Experimental)',
         },
+      },
+      modelTypes: {
+        chat: 'Chat',
+        embedding: 'Embedding',
+        rerank: 'Rerank',
+        sequence2text: 'sequence2text',
+        tts: 'TTS',
+        image2text: 'OCR',
+        speech2text: 'ASR',
       },
     },
     message: {

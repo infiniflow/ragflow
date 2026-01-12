@@ -5693,6 +5693,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyhumps"
+version = "3.8.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c4/83/fa6f8fb7accb21f39e8f2b6a18f76f6d90626bdb0a5e5448e5cc9b8ab014/pyhumps-3.8.0.tar.gz", hash = "sha256:498026258f7ee1a8e447c2e28526c0bea9407f9a59c03260aee4bd6c04d681a3", size = 9018, upload-time = "2022-10-21T10:38:59.496Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/9e/11/a1938340ecb32d71e47ad4914843775011e6e9da59ba1229f181fef3119e/pyhumps-3.8.0-py3-none-any.whl", hash = "sha256:060e1954d9069f428232a1adda165db0b9d8dfdce1d265d36df7fbff540acfd6", size = 6095, upload-time = "2022-10-21T10:38:58.231Z" },
+]
+
+[[package]]
 name = "pyjwt"
 version = "2.8.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -6320,6 +6329,19 @@ wheels = [
 ]
 
 [[package]]
+name = "quart-schema"
+version = "0.23.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "pyhumps" },
+    { name = "quart" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/24/65/97b69c76bc8838f0389387c87f480382eea48ca60d5262aeaf4086ad14e2/quart_schema-0.23.0.tar.gz", hash = "sha256:778f36aa80697420a0148807eb324b7d6ca1f10793cd1d0eb4f1c7908d860bdd", size = 24485, upload-time = "2025-12-02T22:01:08.508Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/12/ba/54c4516499bf6549ff47d656b8dc8cd58cea7f6d03d3097aebf1958f4974/quart_schema-0.23.0-py3-none-any.whl", hash = "sha256:f8f217942d433954dfe9860b4d748fe4b111836d8d74e06bc0afc512dd991c80", size = 21682, upload-time = "2025-12-02T22:01:06.522Z" },
+]
+
+[[package]]
 name = "ragflow"
 version = "0.23.1"
 source = { virtual = "." }
@@ -6411,6 +6433,7 @@ dependencies = [
     { name = "qianfan" },
     { name = "quart-auth" },
     { name = "quart-cors" },
+    { name = "quart-schema" },
     { name = "ranx" },
     { name = "readability-lxml" },
     { name = "replicate" },
@@ -6545,6 +6568,7 @@ requires-dist = [
     { name = "qianfan", specifier = "==0.4.6" },
     { name = "quart-auth", specifier = "==0.11.0" },
     { name = "quart-cors", specifier = "==0.8.0" },
+    { name = "quart-schema", specifier = "==0.23.0" },
     { name = "ranx", specifier = "==0.3.20" },
     { name = "readability-lxml", specifier = ">=0.8.4,<1.0.0" },
     { name = "replicate", specifier = "==0.31.0" },

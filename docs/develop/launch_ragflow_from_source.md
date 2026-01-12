@@ -1,6 +1,9 @@
 ---
 sidebar_position: 2
 slug: /launch_ragflow_from_source
+sidebar_custom_props: {
+  categoryIcon: LucideMonitorPlay
+}
 ---
 
 # Launch service from source
@@ -36,7 +39,7 @@ cd ragflow/
 ### Install Python dependencies
 
 1. Install uv:
-   
+
    ```bash
    pipx install uv
    ```
@@ -88,13 +91,13 @@ docker compose -f docker/docker-compose-base.yml up -d
    ```
 
 3. **Optional:** If you cannot access HuggingFace, set the HF_ENDPOINT environment variable to use a mirror site:
- 
+
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
 
 4. Check the configuration in **conf/service_conf.yaml**, ensuring all hosts and ports are correctly set.
-   
+
 5. Run the **entrypoint.sh** script to launch the backend service:
 
    ```shell
@@ -123,10 +126,10 @@ docker compose -f docker/docker-compose-base.yml up -d
 3. Start up the RAGFlow frontend service:
 
    ```bash
-   npm run dev 
+   npm run dev
    ```
 
-   *The following message appears, showing the IP address and port number of your frontend service:*  
+   *The following message appears, showing the IP address and port number of your frontend service:*
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 

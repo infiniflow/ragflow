@@ -1,6 +1,9 @@
 ---
 sidebar_position: 4
 slug: /set_chat_variables
+sidebar_custom_props: {
+  categoryIcon: LucideVariable
+}
 ---
 
 # Set variables
@@ -91,7 +94,7 @@ from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 assistant = rag_object.list_chats(name="Miss R")
 assistant = assistant[0]
-session = assistant.create_session()    
+session = assistant.create_session()
 
 print("\n==================== Miss R =====================\n")
 print("Hello. What can I do for you?")
@@ -99,9 +102,9 @@ print("Hello. What can I do for you?")
 while True:
     question = input("\n==================== User =====================\n> ")
     style = input("Please enter your preferred style (e.g., formal, informal, hilarious): ")
-    
+
     print("\n==================== Miss R =====================\n")
-    
+
     cont = ""
     for ans in session.ask(question, stream=True, style=style):
         print(ans.content[len(cont):], end='', flush=True)

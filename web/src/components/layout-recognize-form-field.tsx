@@ -6,6 +6,7 @@ import { camelCase } from 'lodash';
 import { ReactNode, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { MinerUOptionsFormField } from './mineru-options-form-field';
+import { PaddleOCROptionsFormField } from './paddleocr-options-form-field';
 import { SelectWithSearch } from './originui/select-with-search';
 import {
   FormControl,
@@ -28,12 +29,14 @@ export function LayoutRecognizeFormField({
   optionsWithoutLLM,
   label,
   showMineruOptions = true,
+  showPaddleocrOptions = true,
 }: {
   name?: string;
   horizontal?: boolean;
   optionsWithoutLLM?: { value: string; label: string }[];
   label?: ReactNode;
   showMineruOptions?: boolean;
+  showPaddleocrOptions?: boolean;
 }) {
   const form = useFormContext();
 
@@ -113,6 +116,7 @@ export function LayoutRecognizeFormField({
               </div>
             </FormItem>
             {showMineruOptions && <MinerUOptionsFormField />}
+            {showPaddleocrOptions && <PaddleOCROptionsFormField />}
           </>
         );
       }}

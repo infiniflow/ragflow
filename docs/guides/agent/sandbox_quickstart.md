@@ -1,13 +1,16 @@
 ---
 sidebar_position: 20
 slug: /sandbox_quickstart
+sidebar_custom_props: {
+  categoryIcon: LucideCodesandbox
+}
 ---
 
 # Sandbox quickstart
 
 A secure, pluggable code execution backend designed for RAGFlow and other applications requiring isolated code execution environments.
 
-## Features: 
+## Features:
 
 - Seamless RAGFlow Integration — Works out-of-the-box with the code component of RAGFlow.
 - High Security — Uses gVisor for syscall-level sandboxing to isolate execution.
@@ -55,7 +58,7 @@ Next, build the executor manager image:
 docker build -t sandbox-executor-manager:latest ./executor_manager
 ```
 
-## Running with RAGFlow 
+## Running with RAGFlow
 
 1. Verify that gVisor is properly installed and operational.
 

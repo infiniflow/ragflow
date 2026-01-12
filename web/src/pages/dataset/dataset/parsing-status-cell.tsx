@@ -183,8 +183,12 @@ export function ParsingStatusCell({
       )}
       {reparseDialogVisible && (
         <ReparseDialog
-          hidden={isRunning}
+          hidden={
+            (isZeroChunk && !record?.parser_config?.enable_metadata) ||
+            isRunning
+          }
           // hidden={false}
+          enable_metadata={record?.parser_config?.enable_metadata}
           handleOperationIconClick={handleOperationIconClick}
           chunk_num={chunk_num}
           visible={reparseDialogVisible}
