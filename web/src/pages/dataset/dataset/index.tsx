@@ -127,6 +127,7 @@ export default function Dataset() {
                   type: MetadataType.Manage,
                   isCanAdd: false,
                   isEditField: true,
+                  isDeleteSingleValue: true,
                   title: (
                     <div className="flex flex-col gap-2">
                       <div className="text-base font-normal">
