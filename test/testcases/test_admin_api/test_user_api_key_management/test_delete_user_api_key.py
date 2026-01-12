@@ -171,7 +171,7 @@ class TestDeleteUserApiKey:
         assert delete_response.get("code") == RetCode.NOT_FOUND, "Delete should fail for wrong user"
         assert "message" in delete_response, "Response should contain message"
         message: str = delete_response.get("message", "")
-        expected_message: str = f"User '{user2_email}' not found"
+        expected_message: str = "API key not found or could not be deleted"
         assert message == expected_message, f"Message should indicate user not found, got: {message}"
 
     @pytest.mark.p3

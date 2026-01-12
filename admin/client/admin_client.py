@@ -1086,7 +1086,7 @@ class AdminCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to generate token for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Failed to generate token for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _list_tokens(self, command: dict[str, Any]) -> None:
         username_tree: Tree = command["user_name"]
@@ -1098,7 +1098,7 @@ class AdminCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to list tokens for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Failed to list tokens for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _drop_token(self, command: dict[str, Any]) -> None:
         token_tree: Tree = command["token"]
@@ -1114,7 +1114,7 @@ class AdminCLI(Cmd):
         if response.status_code == 200:
             print(res_json["message"])
         else:
-            print(f"Fail to drop token for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Failed to drop token for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_meta_command(self, command):
         meta_command = command["command"]

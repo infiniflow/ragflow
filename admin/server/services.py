@@ -153,7 +153,7 @@ class UserMgr:
         if not user_list:
             raise UserNotFoundError(username)
         elif len(user_list) > 1:
-            raise AdminException(f"Exist more than 1 user: {username}!")
+            raise AdminException(f"More than one user with username '{username}' found!")
 
         usr: Any = user_list[0]
         # tenant_id is typically the same as user_id for the owner tenant

@@ -94,6 +94,21 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 - Changes the user to active or inactive.
 - [Example](#example-alter-user-active)
 
+`GENERATE TOKEN FOR USER <username>;`
+
+- Generates a new API token for the specified user.
+- [Example](#example-generate-token)
+
+`LIST TOKENS OF <username>;`
+
+- Lists all API tokens associated with the specified user.
+- [Example](#example-list-tokens)
+
+`DROP TOKEN <token> OF <username>;`
+
+- Deletes a specific API token for the specified user.
+- [Example](#example-drop-token)
+
 ### Data and Agent Commands
 
 `LIST DATASETS OF <username>;`
@@ -346,6 +361,44 @@ Delete done!
 
 Delete user's data at the same time.
 
+<span id="example-generate-token"></span>
+
+- Generate API token for user.
+
+```
+admin> generate token for user "example@ragflow.io";
+Generating API token for user: example@ragflow.io
++----------------------------------+-------------------------------+---------------+----------------------------------+-----------------------------------------------------+-------------+-------------+
+| beta                             | create_date                   | create_time   | tenant_id                        | token                                               | update_date | update_time |
++----------------------------------+-------------------------------+---------------+----------------------------------+-----------------------------------------------------+-------------+-------------+
+| Es9OpZ6hrnPGeYA3VU1xKUkj6NCb7cp- | Mon, 12 Jan 2026 15:19:11 GMT | 1768227551361 | 5d5ea8a3efc111f0a79b80fa5b90e659 | ragflow-piwVJHEk09M5UN3LS_Xx9HA7yehs3yNOc9GGsD4jzus | None        | None        |
++----------------------------------+-------------------------------+---------------+----------------------------------+-----------------------------------------------------+-------------+-------------+
+```
+
+<span id="example-list-tokens"></span>
+
+- List all API tokens for user.
+
+```
+admin> list tokens of "example@ragflow.io";
+Listing API tokens for user: example@ragflow.io
++----------------------------------+-------------------------------+---------------+-----------+--------+----------------------------------+-----------------------------------------------------+-------------------------------+---------------+
+| beta                             | create_date                   | create_time   | dialog_id | source | tenant_id                        | token                                               | update_date                   | update_time   |
++----------------------------------+-------------------------------+---------------+-----------+--------+----------------------------------+-----------------------------------------------------+-------------------------------+---------------+
+| Es9OpZ6hrnPGeYA3VU1xKUkj6NCb7cp- | Mon, 12 Jan 2026 15:19:11 GMT | 1768227551361 | None      | None   | 5d5ea8a3efc111f0a79b80fa5b90e659 | ragflow-piwVJHEk09M5UN3LS_Xx9HA7yehs3yNOc9GGsD4jzus | Mon, 12 Jan 2026 15:19:11 GMT | 1768227551361 |
++----------------------------------+-------------------------------+---------------+-----------+--------+----------------------------------+-----------------------------------------------------+-------------------------------+---------------+
+```
+
+<span id="example-drop-token"></span>
+
+- Drop API token for user.
+
+```
+admin> drop token "ragflow-piwVJHEk09M5UN3LS_Xx9HA7yehs3yNOc9GGsD4jzus" of "example@ragflow.io";
+Dropping API token for user: example@ragflow.io
+API key deleted successfully
+```
+
 <span id="example-list-datasets-of-user"></span>
 
 - List the specified user's dataset.
@@ -500,19 +553,34 @@ admin> \help
 command: \help
 
 Commands:
-  LIST SERVICES
-  SHOW SERVICE <service>
-  STARTUP SERVICE <service>
-  SHUTDOWN SERVICE <service>
-  RESTART SERVICE <service>
-  LIST USERS
-  SHOW USER <user>
-  DROP USER <user>
-  CREATE USER <user> <password>
-  ALTER USER PASSWORD <user> <new_password>
-  ALTER USER ACTIVE <user> <on/off>
-  LIST DATASETS OF <user>
-  LIST AGENTS OF <user>
+LIST SERVICES
+SHOW SERVICE <service>
+STARTUP SERVICE <service>
+SHUTDOWN SERVICE <service>
+RESTART SERVICE <service>
+LIST USERS
+SHOW USER <user>
+DROP USER <user>
+CREATE USER <user> <password>
+ALTER USER PASSWORD <user> <new_password>
+ALTER USER ACTIVE <user> <on/off>
+LIST DATASETS OF <user>
+LIST AGENTS OF <user>
+CREATE ROLE <role>
+DROP ROLE <role>
+ALTER ROLE <role> SET DESCRIPTION <description>
+LIST ROLES
+SHOW ROLE <role>
+GRANT <action_list> ON <function> TO ROLE <role>
+REVOKE <action_list> ON <function> TO ROLE <role>
+ALTER USER <user> SET ROLE <role>
+SHOW USER PERMISSION <user>
+SHOW VERSION
+GRANT ADMIN <user>
+REVOKE ADMIN <user>
+GENERATE TOKEN FOR USER <user>
+LIST TOKENS OF <user>
+DROP TOKEN <token> OF <user>
 
 Meta Commands:
   \?, \h, \help     Show this help
@@ -526,4 +594,3 @@ admin> \q
 command: \q
 Goodbye!
 ```
-
