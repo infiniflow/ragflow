@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import logging
 import re
 from functools import partial
@@ -21,7 +22,9 @@ from agentic_reasoning.prompts import BEGIN_SEARCH_QUERY, BEGIN_SEARCH_RESULT, E
 from api.db.services.llm_service import LLMBundle
 from rag.nlp import extract_between
 from rag.prompts import kb_prompt
+from rag.prompts.generator import sufficiency_check, multi_queries_gen
 from rag.utils.tavily_conn import Tavily
+from timeit import default_timer as timer
 
 
 class DeepResearcher:
@@ -35,6 +38,7 @@ class DeepResearcher:
         self.prompt_config = prompt_config
         self._kb_retrieve = kb_retrieve
         self._kg_retrieve = kg_retrieve
+        self._lock = asyncio.Lock()
 
     def _remove_tags(text: str, start_tag: str, end_tag: str) -> str:
         """Remove tags but keep the content between them."""
@@ -154,6 +158,25 @@ class DeepResearcher:
                 if d["doc_id"] not in dids:
                     chunk_info["doc_aggs"].append(d)
 
+    async def _async_update_chunk_info(self, chunk_info, kbinfos):
+        async with self._lock:
+            """Update chunk information for citations"""
+            if not chunk_info["chunks"]:
+                # If this is the first retrieval, use the retrieval results directly
+                for k in chunk_info.keys():
+                    chunk_info[k] = kbinfos[k]
+            else:
+                # Merge newly retrieved information, avoiding duplicates
+                cids = [c["chunk_id"] for c in chunk_info["chunks"]]
+                for c in kbinfos["chunks"]:
+                    if c["chunk_id"] not in cids:
+                        chunk_info["chunks"].append(c)
+
+                dids = [d["doc_id"] for d in chunk_info["doc_aggs"]]
+                for d in kbinfos["doc_aggs"]:
+                    if d["doc_id"] not in dids:
+                        chunk_info["doc_aggs"].append(d)
+
     async def _extract_relevant_info(self, truncated_prev_reasoning, search_query, kbinfos):
         """Extract and summarize relevant information (delta output)"""
         raw_answer = ""
@@ -181,6 +204,46 @@ class DeepResearcher:
                 continue
             cleaned_answer = cleaned_full
             yield delta_clean
+
+    async def research(self, chunk_info, question, query, depth=3, callback=None):
+        if callback:
+            await callback("<START_DEEP_RESEARCH>")
+        await self._research(chunk_info, question, query, depth, callback)
+        if callback:
+            await callback("<END_DEEP_RESEARCH>")
+
+    async def _research(self, chunk_info, question, query, depth=3, callback=None):
+        if depth == 0:
+            #if callback:
+            #    await callback("Reach the max search depth.")
+            return ""
+        if callback:
+            await callback(f"Searching by `{query}`...")
+        st = timer()
+        ret = self._retrieve_information(query)
+        if callback:
+            await callback(f"Retrieval %d results by %.1fms"%(len(ret["chunks"]), (timer()-st)*1000))
+        await self._async_update_chunk_info(chunk_info, ret)
+        ret = kb_prompt(ret, self.chat_mdl.max_length*0.5)
+
+        if callback:
+            await callback("Checking the sufficiency for retrieved information.")
+        suff = await sufficiency_check(self.chat_mdl, question, ret)
+        if suff["is_sufficient"]:
+            if callback:
+                await callback("Yes, it's sufficient.")
+            return ret
+
+        #if callback:
+        #    await callback("The retrieved information is not sufficient. Planing next steps...")
+        succ_question_info = await multi_queries_gen(self.chat_mdl, question, query, suff["missing_information"], ret)
+        if callback:
+            await callback("Next step is to search for the following questions:\n" + "\n - ".join(step["question"] for step in succ_question_info["questions"]))
+        steps = []
+        for step in succ_question_info["questions"]:
+            steps.append(asyncio.create_task(self._research(chunk_info, step["question"], step["query"], depth-1, callback)))
+        results = await asyncio.gather(*steps, return_exceptions=True)
+        return "\n".join([str(r) for r in results])
 
     async def thinking(self, chunk_info: dict, question: str):
         executed_search_queries = []
