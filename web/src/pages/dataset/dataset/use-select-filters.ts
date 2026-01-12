@@ -72,7 +72,12 @@ export function useSelectDatasetFilters() {
     return [
       { field: 'type', label: 'File Type', list: fileTypes },
       { field: 'run', label: 'Status', list: fileStatus },
-      { field: 'metadata', label: 'Metadata field', list: metaDataList },
+      {
+        field: 'metadata',
+        label: 'Metadata field',
+        canSearch: true,
+        list: metaDataList,
+      },
     ] as FilterCollection[];
   }, [fileStatus, fileTypes, metaDataList]);
 

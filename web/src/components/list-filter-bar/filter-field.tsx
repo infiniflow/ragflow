@@ -80,7 +80,7 @@ const FilterItem = memo(
                 }
                 // className="hidden group-hover:block"
               />
-              <FormLabel
+              <div
                 onClick={() =>
                   handleCheckChange({
                     checked: !field.value?.includes(item.id.toString()),
@@ -88,9 +88,10 @@ const FilterItem = memo(
                     item,
                   })
                 }
+                className="truncate w-[200px] text-sm font-normal leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-text-secondary"
               >
                 {item.label}
-              </FormLabel>
+              </div>
             </div>
           </FormControl>
         </FormItem>
@@ -101,7 +102,7 @@ const FilterItem = memo(
     );
   },
 );
-
+FilterItem.displayName = 'FilterItem';
 export const FilterField = memo(
   ({
     item,
