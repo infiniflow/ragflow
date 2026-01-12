@@ -30,7 +30,13 @@ data:
         gzip_types text/plain application/javascript application/x-javascript text/css application/xml text/javascript application/x-httpd-php image/jpeg image/gif image/png;
         gzip_vary on;
         gzip_disable "MSIE [1-6]\.";
-
+        {{- if .Values.ragflow.enableAdminServer }}
+        # Admin API route (must be above generic /api)
+        location ~ ^/api/v1/admin {
+            proxy_pass http://localhost:9381;
+            include proxy.conf;
+        }
+        {{- end }}
         location ~ ^/(v1|api) {
             proxy_pass http://localhost:9380;
             include proxy.conf;

@@ -92,6 +92,7 @@ ragflow:
     service:
       enabled: true
       type: ClusterIP
+  enableAdminServer: false
 
 infinity:
   image:
