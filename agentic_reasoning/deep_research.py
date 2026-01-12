@@ -222,7 +222,7 @@ class DeepResearcher:
         st = timer()
         ret = self._retrieve_information(query)
         if callback:
-            await callback(f"Retrieval %d results by %.1fms"%(len(ret["chunks"]), (timer()-st)*1000))
+            await callback("Retrieval %d results by %.1fms"%(len(ret["chunks"]), (timer()-st)*1000))
         await self._async_update_chunk_info(chunk_info, ret)
         ret = kb_prompt(ret, self.chat_mdl.max_length*0.5)
 
