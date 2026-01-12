@@ -26,21 +26,6 @@ from utils.file_utils import create_image_file
 from utils.hypothesis_utils import valid_names
 from configs import DEFAULT_PARSER_CONFIG
 
-
-def _get_parser_config_flags(parser_config):
-    if isinstance(parser_config, dict):
-        return (
-            parser_config.get("graphrag", {}).get("use_graphrag"),
-            parser_config.get("raptor", {}).get("use_raptor"),
-        )
-    graphrag = getattr(parser_config, "graphrag", None)
-    raptor = getattr(parser_config, "raptor", None)
-    return (
-        getattr(graphrag, "use_graphrag", None),
-        getattr(raptor, "use_raptor", None),
-    )
-
-
 class TestRquest:
     @pytest.mark.p2
     def test_payload_empty(self, add_dataset_func):
@@ -673,41 +658,50 @@ class TestDatasetUpdate:
     @pytest.mark.p3
     def test_parser_config_empty_with_chunk_method_change(self, client, add_dataset_func):
         dataset = add_dataset_func
+        expected_config = DataSet.ParserConfig(
+            client,
+            {
+                "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
+            },
+        )
         dataset.update({"chunk_method": "qa", "parser_config": {}})
-        use_graphrag, use_raptor = _get_parser_config_flags(dataset.parser_config)
-        assert use_graphrag is False, str(dataset)
-        assert use_raptor is False, str(dataset)
+        assert str(dataset.parser_config) == str(expected_config), str(dataset)
 
         retrieved_dataset = client.get_dataset(name=dataset.name)
-        use_graphrag, use_raptor = _get_parser_config_flags(retrieved_dataset.parser_config)
-        assert use_graphrag is False, str(retrieved_dataset)
-        assert use_raptor is False, str(retrieved_dataset)
+        assert str(retrieved_dataset.parser_config) == str(expected_config), str(retrieved_dataset)
 
     @pytest.mark.p3
     def test_parser_config_unset_with_chunk_method_change(self, client, add_dataset_func):
         dataset = add_dataset_func
+        expected_config = DataSet.ParserConfig(
+            client,
+            {
+                "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
+            },
+        )
         dataset.update({"chunk_method": "qa"})
-        use_graphrag, use_raptor = _get_parser_config_flags(dataset.parser_config)
-        assert use_graphrag is False, str(dataset)
-        assert use_raptor is False, str(dataset)
+        assert str(dataset.parser_config) == str(expected_config), str(dataset)
 
         retrieved_dataset = client.get_dataset(name=dataset.name)
-        use_graphrag, use_raptor = _get_parser_config_flags(retrieved_dataset.parser_config)
-        assert use_graphrag is False, str(retrieved_dataset)
-        assert use_raptor is False, str(retrieved_dataset)
+        assert str(retrieved_dataset.parser_config) == str(expected_config), str(retrieved_dataset)
 
     @pytest.mark.p3
     def test_parser_config_none_with_chunk_method_change(self, client, add_dataset_func):
         dataset = add_dataset_func
+        expected_config = DataSet.ParserConfig(
+            client,
+            {
+                "raptor": {"use_raptor": False},
+                "graphrag": {"use_graphrag": False},
+            },
+        )
         dataset.update({"chunk_method": "qa", "parser_config": None})
-        use_graphrag, use_raptor = _get_parser_config_flags(dataset.parser_config)
-        assert use_graphrag is False, str(dataset)
-        assert use_raptor is False, str(dataset)
+        assert str(dataset.parser_config) == str(expected_config), str(dataset)
 
         retrieved_dataset = client.get_dataset(name=dataset.name)
-        use_graphrag, use_raptor = _get_parser_config_flags(retrieved_dataset.parser_config)
-        assert use_graphrag is False, str(retrieved_dataset)
-        assert use_raptor is False, str(retrieved_dataset)
+        assert str(retrieved_dataset.parser_config) == str(expected_config), str(retrieved_dataset)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(

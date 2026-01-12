@@ -98,11 +98,7 @@ class TestChatAssistantUpdate:
     def test_llm(self, client, add_chat_assistants_func, llm, expected_message):
         dataset, _, chat_assistants = add_chat_assistants_func
         chat_assistant = chat_assistants[0]
-        llm_payload = dict(llm) if isinstance(llm, dict) else llm
-        if isinstance(llm_payload, dict) and "model_name" in llm_payload:
-            # Backend requires model_type when model_name is provided.
-            llm_payload.setdefault("model_type", "chat")
-        payload = {"name": "llm_test", "llm": llm_payload, "dataset_ids": [dataset.id]}
+        payload = {"name": "llm_test", "llm": llm, "dataset_ids": [dataset.id]}
 
         if expected_message:
             with pytest.raises(Exception) as exception_info:
@@ -111,10 +107,8 @@ class TestChatAssistantUpdate:
         else:
             chat_assistant.update(payload)
             updated_chat = client.list_chats(id=chat_assistant.id)[0]
-            if llm_payload:
-                for k, v in llm_payload.items():
-                    if k == "model_type":
-                        continue
+            if llm:
+                for k, v in llm.items():
                     assert attrgetter(k)(updated_chat.llm) == v, str(updated_chat)
             else:
                 excepted_value = Chat.LLM(
