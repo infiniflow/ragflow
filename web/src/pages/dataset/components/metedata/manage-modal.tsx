@@ -5,6 +5,7 @@ import {
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
 import {
   Table,
@@ -25,7 +26,13 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { Plus, Settings, Trash2 } from 'lucide-react';
+import {
+  ListChevronsDownUp,
+  ListChevronsUpDown,
+  Plus,
+  Settings,
+  Trash2,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from '../../sidebar/hooks';
@@ -61,6 +68,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     values: [],
   });
 
+  const [expanded, setExpanded] = useState(true);
   const [currentValueIndex, setCurrentValueIndex] = useState<number>(0);
   const [deleteDialogContent, setDeleteDialogContent] = useState({
     visible: false,
@@ -70,6 +78,11 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     onOk: () => {},
     onCancel: () => {},
   });
+  const [editingValue, setEditingValue] = useState<{
+    field: string;
+    value: string;
+    newValue: string;
+  } | null>(null);
 
   const {
     tableData,
@@ -81,6 +94,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     addDeleteValue,
   } = useManageMetaDataModal(originalTableData, metadataType, otherData);
   const { handleMenuClick } = useHandleMenuClick();
+  const [shouldSave, setShouldSave] = useState(false);
   const {
     visible: manageValuesVisible,
     showModal: showManageValuesModal,
@@ -95,6 +109,32 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       onOk: () => {},
       onCancel: () => {},
     });
+  };
+
+  const handleEditValue = (field: string, value: string) => {
+    setEditingValue({ field, value, newValue: value });
+  };
+
+  const saveEditedValue = useCallback(() => {
+    if (editingValue) {
+      setTableData((prev) => {
+        return prev.map((row) => {
+          if (row.field === editingValue.field) {
+            const updatedValues = row.values.map((v) =>
+              v === editingValue.value ? editingValue.newValue : v,
+            );
+            return { ...row, values: updatedValues };
+          }
+          return row;
+        });
+      });
+      setEditingValue(null);
+      setShouldSave(true);
+    }
+  }, [editingValue, setTableData]);
+
+  const cancelEditValue = () => {
+    setEditingValue(null);
   };
   const handAddValueRow = () => {
     setValueData({
@@ -136,66 +176,119 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
       },
       {
         accessorKey: 'values',
-        header: () => <span>{t('knowledgeDetails.metadata.values')}</span>,
+        header: () => (
+          <div className="flex items-center">
+            <span>{t('knowledgeDetails.metadata.values')}</span>
+            <div
+              className="ml-2 p-1 cursor-pointer"
+              onClick={() => {
+                setExpanded(!expanded);
+              }}
+            >
+              {expanded ? (
+                <ListChevronsDownUp size={14} />
+              ) : (
+                <ListChevronsUpDown size={14} />
+              )}
+              {expanded}
+            </div>
+          </div>
+        ),
         cell: ({ row }) => {
           const values = row.getValue('values') as Array<string>;
+
+          if (!Array.isArray(values) || values.length === 0) {
+            return <div></div>;
+          }
+
+          const displayedValues = expanded ? values : values.slice(0, 2);
+          const hasMore = Array.isArray(values) && values.length > 2;
+
           return (
-            <div className="flex items-center gap-1">
-              {Array.isArray(values) &&
-                values.length > 0 &&
-                values
-                  .filter((value: string, index: number) => index < 2)
-                  ?.map((value: string) => {
-                    return (
-                      <Button
-                        key={value}
-                        variant={'ghost'}
-                        className="border border-border-button"
-                        aria-label="Edit"
-                      >
-                        <div className="flex gap-1 items-center">
-                          <div className="text-sm truncate max-w-24">
-                            {value}
-                          </div>
-                          {isDeleteSingleValue && (
-                            <Button
-                              variant={'delete'}
-                              className="p-0 bg-transparent"
-                              onClick={() => {
-                                setDeleteDialogContent({
-                                  visible: true,
-                                  title:
-                                    t('common.delete') +
-                                    ' ' +
-                                    t('knowledgeDetails.metadata.value'),
-                                  name: value,
-                                  warnText:
-                                    MetadataDeleteMap(t)[
-                                      metadataType as MetadataType
-                                    ].warnValueText,
-                                  onOk: () => {
-                                    hideDeleteModal();
-                                    handleDeleteSingleValue(
-                                      row.getValue('field'),
-                                      value,
-                                    );
-                                  },
-                                  onCancel: () => {
-                                    hideDeleteModal();
-                                  },
-                                });
-                              }}
-                            >
-                              <Trash2 />
-                            </Button>
-                          )}
-                        </div>
-                      </Button>
-                    );
-                  })}
-              {Array.isArray(values) && values.length > 2 && (
-                <div className="text-text-secondary self-end">...</div>
-              )}
+            <div className="flex flex-col gap-1">
+              <div className="flex flex-wrap gap-1">
+                {displayedValues?.map((value: string) => {
+                  const isEditing =
+                    editingValue &&
+                    editingValue.field === row.getValue('field') &&
+                    editingValue.value === value;
+
+                  return isEditing ? (
+                    <div key={value}>
+                      <Input
+                        type="text"
+                        value={editingValue.newValue}
+                        onChange={(e) =>
+                          setEditingValue({
+                            ...editingValue,
+                            newValue: e.target.value,
+                          })
+                        }
+                        onBlur={saveEditedValue}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            saveEditedValue();
+                          } else if (e.key === 'Escape') {
+                            cancelEditValue();
+                          }
+                        }}
+                        autoFocus
+                        // className="text-sm min-w-20 max-w-32 outline-none bg-transparent px-1 py-0.5"
+                      />
+                    </div>
+                  ) : (
+                    <Button
+                      key={value}
+                      variant={'ghost'}
+                      className="border border-border-button"
+                      onClick={() =>
+                        handleEditValue(row.getValue('field'), value)
+                      }
+                      aria-label="Edit"
+                    >
+                      <div className="flex gap-1 items-center">
+                        <div className="text-sm truncate max-w-24">{value}</div>
+                        {isDeleteSingleValue && (
+                          <Button
+                            variant={'delete'}
+                            className="p-0 bg-transparent"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteDialogContent({
+                                visible: true,
+                                title:
+                                  t('common.delete') +
+                                  ' ' +
+                                  t('knowledgeDetails.metadata.value'),
+                                name: value,
+                                warnText:
+                                  MetadataDeleteMap(t)[
+                                    metadataType as MetadataType
+                                  ].warnValueText,
+                                onOk: () => {
+                                  hideDeleteModal();
+                                  handleDeleteSingleValue(
+                                    row.getValue('field'),
+                                    value,
+                                  );
+                                },
+                                onCancel: () => {
+                                  hideDeleteModal();
+                                },
+                              });
+                            }}
+                          >
+                            <Trash2 />
+                          </Button>
+                        )}
+                      </div>
+                    </Button>
+                  );
+                })}
+                {hasMore && !expanded && (
+                  <div className="text-text-secondary self-end">...</div>
+                )}
+              </div>
             </div>
           );
         },
@@ -260,6 +353,9 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     isDeleteSingleValue,
     handleEditValueRow,
     metadataType,
+    expanded,
+    editingValue,
+    saveEditedValue,
   ]);
 
   const table = useReactTable({
@@ -271,7 +367,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     getFilteredRowModel: getFilteredRowModel(),
     manualPagination: true,
   });
-  const [shouldSave, setShouldSave] = useState(false);
+
   const handleSaveValues = (data: IMetaDataTableData) => {
     setTableData((prev) => {
       let newData;
