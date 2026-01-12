@@ -583,8 +583,16 @@ class InfinityConnectionBase(DocStoreConnection):
                 port = "5432"
 
             # Use psql command to execute SQL
+            # Use full path to psql to avoid PATH issues
+            psql_path = "/usr/bin/psql"
+            # Check if psql exists at expected location, otherwise try to find it
+            import shutil
+            psql_from_path = shutil.which("psql")
+            if psql_from_path:
+                psql_path = psql_from_path
+
             psql_cmd = [
-                "psql",
+                psql_path,
                 "-h", host,
                 "-p", port,
                 "-c", sql,

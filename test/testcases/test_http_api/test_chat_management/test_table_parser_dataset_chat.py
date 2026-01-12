@@ -107,7 +107,7 @@ class TestTableParserDatasetChat:
         "question, expected_answer_pattern",
         [
             # Test simple field display - should show all titles
-            ("Show me the body column", r"url|title2|body"),
+            ("Show me the columns of url and body", r"url\|body\|source"),
             # Test COUNT query - should show count(*)
             ("How many rows are there?", r"count\(\*\)"),
         ],
