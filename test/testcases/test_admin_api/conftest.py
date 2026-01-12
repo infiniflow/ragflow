@@ -15,7 +15,7 @@
 #
 
 import os
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 import requests
@@ -32,7 +32,7 @@ def admin_login(session: requests.Session, email: str = "admin@ragflow.io", pass
     """Helper function to login as admin and return authorization token"""
     url: str = f"{ADMIN_HOST_ADDRESS}/api/{VERSION}/admin/login"
     response: requests.Response = session.post(url, json={"email": email, "password": ENCRYPTED_ADMIN_PASSWORD})
-    res_json: Dict[str, Any] = response.json()
+    res_json: dict[str, Any] = response.json()
     if res_json.get("code") != 0:
         raise Exception(res_json.get("message"))
     # Admin login uses session cookies and Authorization header

@@ -18,8 +18,9 @@ from typing import Any, Dict, List
 
 import pytest
 import requests
+
 from common.constants import RetCode
-from common import generate_user_api_key, get_user_api_key
+from common import generate_user_api_key, get_user_api_key, UNAUTHORIZED_ERROR_MESSAGE
 from configs import EMAIL
 
 
@@ -207,7 +208,7 @@ class TestGenerateUserApiKey:
         # The message is an HTML string indicating unauthorized user .
         assert (
             message
-            == "<!doctype html>\n<html lang=en>\n<title>401 unauthorized</title>\n<h1>unauthorized</h1>\n<p>the server could not verify that you are authorized to access the url requested. you either supplied the wrong credentials (e.g. a bad password), or your browser doesn&#39;t understand how to supply the credentials required.</p>\n"
+            == UNAUTHORIZED_ERROR_MESSAGE
         )
 
     @pytest.mark.p3

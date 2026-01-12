@@ -16,7 +16,7 @@
 
 import os
 import urllib.parse
-from typing import Any, Dict
+from typing import Any
 
 import requests
 from configs import VERSION
@@ -24,8 +24,10 @@ from configs import VERSION
 # Admin API runs on port 9381
 ADMIN_HOST_ADDRESS = os.getenv("ADMIN_HOST_ADDRESS", "http://127.0.0.1:9381")
 
+UNAUTHORIZED_ERROR_MESSAGE = "<!doctype html>\n<html lang=en>\n<title>401 unauthorized</title>\n<h1>unauthorized</h1>\n<p>the server could not verify that you are authorized to access the url requested. you either supplied the wrong credentials (e.g. a bad password), or your browser doesn&#39;t understand how to supply the credentials required.</p>\n"
 
-def generate_user_api_key(session: requests.Session, user_name: str) -> Dict[str, Any]:
+
+def generate_user_api_key(session: requests.Session, user_name: str) -> dict[str, Any]:
     """Helper function to generate API key for a user
 
     Returns:
@@ -36,7 +38,7 @@ def generate_user_api_key(session: requests.Session, user_name: str) -> Dict[str
 
     # Some error responses (e.g., 401) may return HTML instead of JSON.
     try:
-        res_json: Dict[str, Any] = response.json()
+        res_json: dict[str, Any] = response.json()
     except requests.exceptions.JSONDecodeError:
         return {
             "code": response.status_code,
@@ -46,7 +48,7 @@ def generate_user_api_key(session: requests.Session, user_name: str) -> Dict[str
     return res_json
 
 
-def get_user_api_key(session: requests.Session, username: str) -> Dict[str, Any]:
+def get_user_api_key(session: requests.Session, username: str) -> dict[str, Any]:
     """Helper function to get API keys for a user
 
     Returns:
@@ -56,7 +58,7 @@ def get_user_api_key(session: requests.Session, username: str) -> Dict[str, Any]
     response: requests.Response = session.get(url)
 
     try:
-        res_json: Dict[str, Any] = response.json()
+        res_json: dict[str, Any] = response.json()
     except requests.exceptions.JSONDecodeError:
         return {
             "code": response.status_code,
@@ -66,7 +68,7 @@ def get_user_api_key(session: requests.Session, username: str) -> Dict[str, Any]
     return res_json
 
 
-def delete_user_api_key(session: requests.Session, username: str, token: str) -> Dict[str, Any]:
+def delete_user_api_key(session: requests.Session, username: str, token: str) -> dict[str, Any]:
     """Helper function to delete an API key for a user
 
     Returns:
@@ -78,7 +80,7 @@ def delete_user_api_key(session: requests.Session, username: str, token: str) ->
     response: requests.Response = session.delete(url)
 
     try:
-        res_json: Dict[str, Any] = response.json()
+        res_json: dict[str, Any] = response.json()
     except requests.exceptions.JSONDecodeError:
         return {
             "code": response.status_code,

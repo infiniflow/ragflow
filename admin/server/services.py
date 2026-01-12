@@ -17,6 +17,7 @@
 import os
 import logging
 import re
+from typing import Any
 
 from werkzeug.security import check_password_hash
 from common.constants import ActiveEnum
@@ -33,7 +34,6 @@ from api.utils import health_utils
 
 from api.common.exceptions import AdminException, UserAlreadyExistsError, UserNotFoundError
 from config import SERVICE_CONFIGS
-from typing import Any
 
 
 class UserMgr:
