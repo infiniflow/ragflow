@@ -19,7 +19,7 @@ from typing import Any, Dict, List
 import pytest
 import requests
 
-from common import generate_user_api_key, get_user_api_key, UNAUTHORIZED_ERROR_MESSAGE
+from conftest import generate_user_api_key, get_user_api_key, UNAUTHORIZED_ERROR_MESSAGE
 from common.constants import RetCode
 from configs import EMAIL
 

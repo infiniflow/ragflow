@@ -20,7 +20,7 @@ import pytest
 import requests
 
 from common.constants import RetCode
-from common import generate_user_api_key, get_user_api_key, UNAUTHORIZED_ERROR_MESSAGE
+from conftest import generate_user_api_key, get_user_api_key, UNAUTHORIZED_ERROR_MESSAGE
 from configs import EMAIL
 
 
