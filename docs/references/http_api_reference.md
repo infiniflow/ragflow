@@ -5062,6 +5062,7 @@ curl --location --request PUT 'http://{address}/api/v1/memories/d6775d4eeada11f0
   - Maximum 128 characters, *Optional*
 
 - `avatar`: (*Body parameter*), `string`, *Optional*
+
   The updated base64 encoding of the avatar.
 
   - Maximum 65535 characters
@@ -5184,10 +5185,12 @@ curl --location 'http://{address}/api/v1/memories?keywords=&page_size=50&page=1&
   The name of memory to retrieve, supports fuzzy search.
 
 - `page`: (*Filter parameter*), `int`, *Optional*
-  Specifies the page on which the datasets will be displayed. Defaults to `1`.
+
+  Specifies the page on which the memories will be displayed. Defaults to `1`.
 
 - `page_size`: (*Filter parameter*), `int`, *Optional*
-  The number of datasets on each page. Defaults to `50`.
+
+  The number of memories on each page. Defaults to `50`.
 
 #### Response
 
@@ -5314,6 +5317,8 @@ Failure
 
 **DELETE** `/api/v1/memories/{memory_id}`
 
+Delete a specified memory.
+
 #### Request
 
 - Method: DELETE
@@ -5396,10 +5401,12 @@ curl --location 'http://{address}/api/v1/memories/6c8983badede11f083f184ba59bc53
   Filters messages by their session ID. This field supports fuzzy search.
 
 - `page`: (*Filter parameter*), `int`, *Optional*
-  Specifies the page on which the datasets will be displayed. Defaults to `1`.
+
+  Specifies the page on which the messages will be displayed. Defaults to `1`.
 
 - `page_size`: (*Filter parameter*), `int`, *Optional*
-  The number of datasets on each page. Defaults to `50`.
+
+  The number of messages on each page. Defaults to `50`.
 
 #### Response
 
