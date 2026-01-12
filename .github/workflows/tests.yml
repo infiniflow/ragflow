@@ -208,7 +208,7 @@ jobs:
       - name: Run sdk tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 http://localhost:9380/v1/system/ping > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
@@ -217,7 +217,7 @@ jobs:
       - name: Run frontend api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 http://localhost:9380/v1/system/ping > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
@@ -226,7 +226,7 @@ jobs:
       - name: Run http api tests against Elasticsearch
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 http://localhost:9380/v1/system/ping > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
@@ -253,7 +253,7 @@ jobs:
       - name: Run sdk tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 http://localhost:9380/v1/system/ping > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
@@ -262,7 +262,7 @@ jobs:
       - name: Run frontend api tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 http://localhost:9380/v1/system/ping > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done
@@ -271,7 +271,7 @@ jobs:
       - name: Run http api tests against Infinity
         run: |
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 ${HOST_ADDRESS}/v1/system/ping > /dev/null; do
+          until sudo docker exec ${RAGFLOW_CONTAINER} curl -s --connect-timeout 5 http://localhost:9380/v1/system/ping > /dev/null; do
             echo "Waiting for service to be available..."
             sleep 5
           done

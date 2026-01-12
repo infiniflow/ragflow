@@ -90,27 +90,27 @@ for arg in "$@"; do
       INIT_SUPERUSER_ARGS="--init-superuser"
       shift
       ;;
-    --mcp-host=*)
+    --mcp-host=*) 
       MCP_HOST="${arg#*=}"
       shift
       ;;
-    --mcp-port=*)
+    --mcp-port=*) 
       MCP_PORT="${arg#*=}"
       shift
       ;;
-    --mcp-base-url=*)
+    --mcp-base-url=*) 
       MCP_BASE_URL="${arg#*=}"
       shift
       ;;
-    --mcp-mode=*)
+    --mcp-mode=*) 
       MCP_MODE="${arg#*=}"
       shift
       ;;
-    --mcp-host-api-key=*)
+    --mcp-host-api-key=*) 
       MCP_HOST_API_KEY="${arg#*=}"
       shift
       ;;
-    --mcp-script-path=*)
+    --mcp-script-path=*) 
       MCP_SCRIPT_PATH="${arg#*=}"
       shift
       ;;
@@ -126,19 +126,19 @@ for arg in "$@"; do
       MCP_JSON_RESPONSE_FLAG="--no-json-response"
       shift
       ;;
-    --consumer-no-beg=*)
+    --consumer-no-beg=*) 
       CONSUMER_NO_BEG="${arg#*=}"
       shift
       ;;
-    --consumer-no-end=*)
+    --consumer-no-end=*) 
       CONSUMER_NO_END="${arg#*=}"
       shift
       ;;
-    --workers=*)
+    --workers=*) 
       WORKERS="${arg#*=}"
       shift
       ;;
-    --host-id=*)
+    --host-id=*) 
       HOST_ID="${arg#*=}"
       shift
       ;;
@@ -147,6 +147,13 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# -----------------------------------------------------------------------------
+# Runtime Permission Fix
+# -----------------------------------------------------------------------------
+# Ensure the ragflow user owns the necessary directories, especially if mounted from host
+mkdir -p /ragflow/logs
+chown -R ragflow:ragflow /ragflow/logs /var/lib/nginx /var/log/nginx /etc/nginx /tmp/nginx.pid || true
 
 # -----------------------------------------------------------------------------
 # Replace env variables in the service_conf.yaml file
@@ -159,9 +166,10 @@ rm -f "${CONF_FILE}"
 while IFS= read -r line || [[ -n "$line" ]]; do
     eval "echo \"$line\"" >> "${CONF_FILE}"
 done < "${TEMPLATE_FILE}"
+chown ragflow:ragflow "${CONF_FILE}"
 
-export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
-PY=python3
+export LD_LIBRARY_PATH="/usr/lib/$(uname -m)-linux-gnu/"
+PY=/ragflow/.venv/bin/python
 
 # -----------------------------------------------------------------------------
 # Function(s)
@@ -174,6 +182,7 @@ function task_exe() {
     JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
     while true; do
         LD_PRELOAD="$JEMALLOC_PATH" \
+        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
         "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"  &
         wait;
         sleep 1;
@@ -182,6 +191,7 @@ function task_exe() {
 
 function start_mcp_server() {
     echo "Starting MCP Server on ${MCP_HOST}:${MCP_PORT} with base URL ${MCP_BASE_URL}..."
+    sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
     "$PY" "${MCP_SCRIPT_PATH}" \
         --host="${MCP_HOST}" \
         --port="${MCP_PORT}" \
@@ -195,10 +205,10 @@ function start_mcp_server() {
 
 function ensure_docling() {
     [[ "${USE_DOCLING}" == "true" ]] || { echo "[docling] disabled by USE_DOCLING"; return 0; }
-    python3 -c 'import pip' >/dev/null 2>&1 || python3 -m ensurepip --upgrade || true
+    sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$PY" -c 'import pip' >/dev/null 2>&1 || sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$PY" -m ensurepip --upgrade || true
     DOCLING_PIN="${DOCLING_VERSION:-==2.58.0}"
-    python3 -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
-      || python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
+    sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
+      || sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$PY" -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
 }
 
 # -----------------------------------------------------------------------------
@@ -208,10 +218,11 @@ ensure_docling
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
-    /usr/sbin/nginx
+    sudo -u ragflow /usr/sbin/nginx
 
     echo "Starting ragflow_server..."
     while true; do
+        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
         "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
         wait;
         sleep 1;
@@ -221,6 +232,7 @@ fi
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
     while true; do
+        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
         "$PY" rag/svr/sync_data_source.py &
         wait;
         sleep 1;
@@ -230,6 +242,7 @@ fi
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     echo "Starting admin_server..."
     while true; do
+        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
         "$PY" admin/server/admin_server.py &
         wait;
         sleep 1;
