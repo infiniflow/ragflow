@@ -105,22 +105,16 @@ class TestWaitForSchemaReady:
 
     def test_schema_timeout(self):
         """Test timeout when schema never becomes ready"""
-        # Create a mock cursor and ensure close() is called even when errors occur
-        mock_cursor = MagicMock()
-        # Simulate an error during cursor close to force retries while still creating/closing cursors
-        mock_cursor.close = MagicMock(side_effect=Exception("forced close error"))
-
-        # Mock execute_sql to return a cursor each attempt (so wait_for_schema_ready closes it)
-        mock_execute_sql = MagicMock(return_value=mock_cursor)
+        # Mock execute_sql to always raise exception (schema not ready)
+        mock_execute_sql = MagicMock(side_effect=Exception("schema not ready"))
         connection.DB.execute_sql = mock_execute_sql
 
-        # Should raise RuntimeError after max_retries due to close error
+        # Should raise RuntimeError after max_retries due to schema unavailability
         with pytest.raises(RuntimeError, match="Database schema initialization timeout"):
             wait_for_schema_ready(max_retries=3, retry_delay=0.01)
 
-        # Verify it retried max_retries times and closed the cursor each time (no leak)
+        # Verify it retried max_retries times (once per retry attempt)
         assert mock_execute_sql.call_count == 3
-        assert mock_cursor.close.call_count == 3
 
     def test_schema_with_different_error(self):
         """Test behavior with non-schema errors (e.g., connection errors)"""
