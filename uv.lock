@@ -6236,7 +6236,6 @@ dependencies = [
     { name = "psycopg2-binary" },
     { name = "pyairtable" },
     { name = "pyclipper" },
-    { name = "pycryptodomex" },
     { name = "pygithub" },
     { name = "pyobvector" },
     { name = "pyodbc" },
