@@ -21,6 +21,7 @@ import {
   useManageMetadata,
 } from '../components/metedata/hooks/use-manage-modal';
 import { ManageMetadataModal } from '../components/metedata/manage-modal';
+import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { DatasetTable } from './dataset-table';
 import Generate from './generate-button/generate';
 import { ReparseDialog } from './reparse-dialog';
@@ -38,7 +39,7 @@ export default function Dataset() {
     onDocumentUploadOk,
     documentUploadLoading,
   } = useHandleUploadDocument();
-
+  const { knowledgeBase } = useKnowledgeBaseContext();
   const {
     searchString,
     documents,
@@ -221,8 +222,11 @@ export default function Dataset() {
         )}
         {reparseDialogVisible && (
           <ReparseDialog
-            // hidden={isZeroChunk || isRunning}
-            hidden={false}
+            hidden={
+              chunkNum === 0 && !knowledgeBase?.parser_config?.enable_metadata
+            }
+            // hidden={false}
+            enable_metadata={knowledgeBase?.parser_config?.enable_metadata}
             handleOperationIconClick={handleOperationIconClick}
             chunk_num={chunkNum}
             visible={reparseDialogVisible}
