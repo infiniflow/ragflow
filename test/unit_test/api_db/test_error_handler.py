@@ -174,8 +174,8 @@ class TestStandardErrorHandlerCategorization(unittest.TestCase):
 class TestStandardErrorHandlerMigrationErrorHandling(unittest.TestCase):
     """Test error handling for migration operations."""
 
-    def test_handle_duplicate_column_logs_debug_and_skips(self):
-        """Test that duplicate column errors are logged at debug level and skipped."""
+    def test_handle_duplicate_column_logs_debug_and_does_not_skip(self):
+        """Test that duplicate column errors log debug but return a falsy skip indicator."""
         exc = MockPostgresError("column already exists", "42701")
 
         with patch('logging.debug') as mock_debug:
