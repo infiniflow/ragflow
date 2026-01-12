@@ -350,6 +350,32 @@ def add_memory_forgetting_policy_constraint(migrator):
             StandardErrorHandler.handle_migration_error(ex, "memory", "forgetting_policy", "add_check_constraint", db_type=settings.DATABASE_TYPE.lower())
 
 
+def add_fk_constraint_if_not_exists(constraint_name: str, sql: str):
+    """
+    Add a foreign key constraint idempotently.
+
+    Executes the ALTER TABLE ADD CONSTRAINT SQL and handles cases where
+    the constraint already exists gracefully. This allows migrations to be
+    re-run without failing on duplicate constraints.
+
+    Args:
+        constraint_name: Name of the constraint being added (for logging)
+        sql: The complete ALTER TABLE ADD CONSTRAINT SQL statement
+    """
+    try:
+        DB.execute_sql(sql)
+        logging.debug(f"Added foreign key constraint: {constraint_name}")
+    except Exception as ex:  # noqa: BLE001
+        # Check if the error is due to constraint already existing
+        error_str = str(ex).lower()
+        if "already exists" in error_str or "duplicate" in error_str:
+            logging.debug(f"Foreign key constraint {constraint_name} already exists, skipping")
+        else:
+            # Unexpected error, log and re-raise
+            logging.error(f"Failed to add foreign key constraint {constraint_name}: {ex}")
+            raise
+
+
 def migrate_db():
     """
     Apply all database migrations atomically with tracking.
@@ -456,30 +482,36 @@ def migrate_db():
         # Evaluation foreign key constraints for referential integrity
         (
             "evaluation_cases_fk_dataset",
-            lambda: DB.execute_sql(
-                "ALTER TABLE evaluation_cases ADD CONSTRAINT fk_evaluation_cases_dataset_id FOREIGN KEY (dataset_id) REFERENCES evaluation_datasets(id) ON DELETE CASCADE ON UPDATE CASCADE"
+            lambda: add_fk_constraint_if_not_exists(
+                "fk_evaluation_cases_dataset_id",
+                "ALTER TABLE evaluation_cases ADD CONSTRAINT fk_evaluation_cases_dataset_id FOREIGN KEY (dataset_id) REFERENCES evaluation_datasets(id) ON DELETE CASCADE ON UPDATE CASCADE",
             ),
         ),
         (
             "evaluation_runs_fk_dataset",
-            lambda: DB.execute_sql(
-                "ALTER TABLE evaluation_runs ADD CONSTRAINT fk_evaluation_runs_dataset_id FOREIGN KEY (dataset_id) REFERENCES evaluation_datasets(id) ON DELETE CASCADE ON UPDATE CASCADE"
+            lambda: add_fk_constraint_if_not_exists(
+                "fk_evaluation_runs_dataset_id",
+                "ALTER TABLE evaluation_runs ADD CONSTRAINT fk_evaluation_runs_dataset_id FOREIGN KEY (dataset_id) REFERENCES evaluation_datasets(id) ON DELETE CASCADE ON UPDATE CASCADE",
             ),
         ),
         (
             "evaluation_runs_fk_dialog",
-            lambda: DB.execute_sql("ALTER TABLE evaluation_runs ADD CONSTRAINT fk_evaluation_runs_dialog_id FOREIGN KEY (dialog_id) REFERENCES dialog(id) ON DELETE CASCADE ON UPDATE CASCADE"),
+            lambda: add_fk_constraint_if_not_exists(
+                "fk_evaluation_runs_dialog_id", "ALTER TABLE evaluation_runs ADD CONSTRAINT fk_evaluation_runs_dialog_id FOREIGN KEY (dialog_id) REFERENCES dialog(id) ON DELETE CASCADE ON UPDATE CASCADE"
+            ),
         ),
         (
             "evaluation_results_fk_run",
-            lambda: DB.execute_sql(
-                "ALTER TABLE evaluation_results ADD CONSTRAINT fk_evaluation_results_run_id FOREIGN KEY (run_id) REFERENCES evaluation_runs(id) ON DELETE CASCADE ON UPDATE CASCADE"
+            lambda: add_fk_constraint_if_not_exists(
+                "fk_evaluation_results_run_id",
+                "ALTER TABLE evaluation_results ADD CONSTRAINT fk_evaluation_results_run_id FOREIGN KEY (run_id) REFERENCES evaluation_runs(id) ON DELETE CASCADE ON UPDATE CASCADE",
             ),
         ),
         (
             "evaluation_results_fk_case",
-            lambda: DB.execute_sql(
-                "ALTER TABLE evaluation_results ADD CONSTRAINT fk_evaluation_results_case_id FOREIGN KEY (case_id) REFERENCES evaluation_cases(id) ON DELETE CASCADE ON UPDATE CASCADE"
+            lambda: add_fk_constraint_if_not_exists(
+                "fk_evaluation_results_case_id",
+                "ALTER TABLE evaluation_results ADD CONSTRAINT fk_evaluation_results_case_id FOREIGN KEY (case_id) REFERENCES evaluation_cases(id) ON DELETE CASCADE ON UPDATE CASCADE",
             ),
         ),
         # Memory model constraints
@@ -492,6 +524,8 @@ def migrate_db():
     migration_start = time.time()
     successful_migrations = []
     failed_migration = None
+    failed_error = None
+    failed_duration = None
 
     try:
         with DB.atomic():
@@ -512,9 +546,11 @@ def migrate_db():
                     MigrationTracker.record_migration(migration_name, "success", duration_ms=duration_ms)
                     successful_migrations.append(migration_name)
                 except Exception as ex:
+                    # Capture failure details before transaction rollback
                     duration_ms = int((time.time() - start_time) * 1000)
-                    MigrationTracker.record_migration(migration_name, "failed", error=str(ex), duration_ms=duration_ms)
                     failed_migration = migration_name
+                    failed_error = str(ex)
+                    failed_duration = duration_ms
                     TransactionLogger.log_transaction_error(DB, ex, f"migration '{migration_name}'")
                     # Re-raise to trigger rollback of entire transaction
                     raise
@@ -526,6 +562,16 @@ def migrate_db():
         total_duration = int((time.time() - migration_start) * 1000)
         TransactionLogger.log_transaction_state(DB, "rollback", f"migration '{failed_migration}' failed after {total_duration}ms, rolled back {len(successful_migrations)} successful migrations")
         logging.error(f"Migration batch rolled back due to failure in '{failed_migration}': {ex}. All {len(successful_migrations)} successful migrations in this batch were rolled back.")
+        
+        # Record the failure outside the rolled-back transaction
+        # This ensures the failure record persists even though the migration was rolled back
+        if failed_migration is not None:
+            try:
+                MigrationTracker.record_migration(failed_migration, "failed", error=failed_error, duration_ms=failed_duration)
+            except Exception as record_ex:  # noqa: BLE001
+                # If we can't record the failure, log but don't fail the rollback
+                logging.warning(f"Failed to record migration failure for {failed_migration}: {record_ex}")
+        
         # Re-raise to notify caller of failure
         raise
     finally:
