@@ -67,6 +67,7 @@ export interface ParserConfig {
   tag_kb_ids?: string[];
   topn_tags?: number;
   graphrag?: { use_graphrag?: boolean };
+  enable_metadata?: boolean;
 }
 
 export interface IKnowledgeFileParserConfig {
