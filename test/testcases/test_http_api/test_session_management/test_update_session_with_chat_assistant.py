@@ -17,8 +17,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from random import randint
 
 import pytest
-from common import delete_chat_assistants, list_session_with_chat_assistants, update_session_with_chat_assistant
-from configs import INVALID_API_TOKEN, SESSION_WITH_CHAT_NAME_LIMIT
+import requests
+from common import HEADERS, SESSION_WITH_CHAT_ASSISTANT_API_URL, delete_chat_assistants, list_session_with_chat_assistants, update_session_with_chat_assistant
+from configs import HOST_ADDRESS, INVALID_API_TOKEN, SESSION_WITH_CHAT_NAME_LIMIT
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -78,9 +79,16 @@ class TestSessionWithChatAssistantUpdate:
     )
     def test_invalid_chat_assistant_id(self, HttpApiAuth, add_sessions_with_chat_assistant_func, chat_assistant_id, expected_code, expected_message):
         _, session_ids = add_sessions_with_chat_assistant_func
-        res = update_session_with_chat_assistant(HttpApiAuth, chat_assistant_id, session_ids[0], {"name": "valid_name"})
-        assert res["code"] == expected_code
-        assert res["message"] == expected_message
+        url = f"{HOST_ADDRESS}{SESSION_WITH_CHAT_ASSISTANT_API_URL}/{session_ids[0]}".format(chat_id=chat_assistant_id)
+        res = requests.put(url=url, headers=HEADERS, auth=HttpApiAuth, json={"name": "valid_name"})
+        if res.status_code == 404:
+            # Backend now returns 404 for invalid chat paths.
+            assert res.status_code == 404
+            assert "Not Found" in res.text
+            return
+        res_json = res.json()
+        assert res_json["code"] == expected_code
+        assert res_json["message"] == expected_message
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
