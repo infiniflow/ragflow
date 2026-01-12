@@ -70,10 +70,13 @@ class TestWaitForSchemaReady:
         # Verify it queried all critical tables and closed the cursor each time
         assert mock_execute_sql.call_count == 3
         from unittest.mock import call
+        # Expect portable quoting based on DB type mocked above
+        db_type = sys.modules["common.settings"].DATABASE_TYPE.lower()
+        quote_char = '"' if db_type == "postgres" else '`'
         mock_execute_sql.assert_has_calls([
-            call("SELECT 1 FROM `user` LIMIT 1"),
-            call("SELECT 1 FROM `sync_logs` LIMIT 1"),
-            call("SELECT 1 FROM `system_settings` LIMIT 1"),
+            call(f"SELECT 1 FROM {quote_char}user{quote_char} LIMIT 1"),
+            call(f"SELECT 1 FROM {quote_char}sync_logs{quote_char} LIMIT 1"),
+            call(f"SELECT 1 FROM {quote_char}system_settings{quote_char} LIMIT 1"),
         ])
         assert mock_cursor.close.call_count == 3
 

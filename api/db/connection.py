@@ -228,12 +228,15 @@ def wait_for_schema_ready(max_retries: int = 30, retry_delay: float = 0.5):
     import time
 
     critical_tables = ["user", "sync_logs", "system_settings"]
+    # Use portable identifier quoting across DBs: Postgres uses double quotes, MySQL uses backticks
+    db_type = settings.DATABASE_TYPE.lower()
+    quote_char = '"' if db_type == "postgres" else '`'
 
     for attempt in range(max_retries):
         try:
             # Try to query all critical tables to verify schema exists
             for table in critical_tables:
-                cursor = DB.execute_sql(f"SELECT 1 FROM `{table}` LIMIT 1")
+                cursor = DB.execute_sql(f"SELECT 1 FROM {quote_char}{table}{quote_char} LIMIT 1")
                 cursor.close()
             logging.info(f"✓ Database schema is ready (attempt {attempt + 1}/{max_retries})")
             return
