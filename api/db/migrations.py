@@ -111,6 +111,14 @@ class MigrationTracker:
         try:
             MigrationHistory.insert(
                 migration_name=migration_name, applied_at=datetime.now(), status=status, error_message=error, duration_ms=duration_ms, db_type=settings.DATABASE_TYPE.lower()
+            ).on_conflict(
+                conflict_target=[MigrationHistory.migration_name],
+                update={
+                    MigrationHistory.applied_at: datetime.now(),
+                    MigrationHistory.status: status,
+                    MigrationHistory.error_message: error,
+                    MigrationHistory.duration_ms: duration_ms
+                }
             ).execute()
             logging.debug(f"Recorded migration: {migration_name} ({status})")
         except Exception as ex:
@@ -422,13 +430,13 @@ def migrate_db():
         ("add_task_retry_count", lambda: alter_db_add_column(migrator, "task", "retry_count", IntegerField(default=0))),
         ("alter_api_token_dialog_id", lambda: alter_db_column_type(migrator, "api_token", "dialog_id", CharField(max_length=32, null=True, index=True))),
         ("add_tenant_llm_max_tokens", lambda: alter_db_add_column(migrator, "tenant_llm", "max_tokens", IntegerField(default=8192, index=True))),
-        ("add_api_4_conversation_dsl", lambda: alter_db_add_column(migrator, "api_4_conversation", "dsl", JSONField(null=True, default={}))),
+        ("add_api_4_conversation_dsl", lambda: alter_db_add_column(migrator, "api_4_conversation", "dsl", JSONField(null=True, default=dict))),
         ("add_knowledgebase_pagerank", lambda: alter_db_add_column(migrator, "knowledgebase", "pagerank", IntegerField(default=0, index=False))),
         ("add_api_token_beta", lambda: alter_db_add_column(migrator, "api_token", "beta", CharField(max_length=255, null=True, index=True))),
         ("add_task_digest", lambda: alter_db_add_column(migrator, "task", "digest", TextField(null=True, help_text="task digest", default=""))),
         ("add_task_chunk_ids", lambda: alter_db_add_column(migrator, "task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default=""))),
         ("add_conversation_user_id", lambda: alter_db_add_column(migrator, "conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True))),
-        ("add_document_meta_fields", lambda: alter_db_add_column(migrator, "document", "meta_fields", JSONField(null=True, default={}))),
+        ("add_document_meta_fields", lambda: alter_db_add_column(migrator, "document", "meta_fields", JSONField(null=True, default=dict))),
         ("add_task_task_type", lambda: alter_db_add_column(migrator, "task", "task_type", CharField(max_length=32, null=False, default=""))),
         ("add_task_priority", lambda: alter_db_add_column(migrator, "task", "priority", IntegerField(default=0))),
         ("add_user_canvas_permission", lambda: alter_db_add_column(migrator, "user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True))),
@@ -438,7 +446,7 @@ def migrate_db():
         ("rename_document_process_duation", lambda: alter_db_rename_column(migrator, "document", "process_duation", "process_duration")),
         ("add_document_suffix", lambda: alter_db_add_column(migrator, "document", "suffix", CharField(max_length=32, null=False, default="", help_text="The real file extension suffix", index=True))),
         ("add_api_4_conversation_errors", lambda: alter_db_add_column(migrator, "api_4_conversation", "errors", TextField(null=True, help_text="errors"))),
-        ("add_dialog_meta_data_filter", lambda: alter_db_add_column(migrator, "dialog", "meta_data_filter", JSONField(null=True, default={}))),
+        ("add_dialog_meta_data_filter", lambda: alter_db_add_column(migrator, "dialog", "meta_data_filter", JSONField(null=True, default=dict))),
         ("alter_canvas_template_title", lambda: alter_db_column_type(migrator, "canvas_template", "title", JSONField(null=True, default=dict, help_text="Canvas title"))),
         ("alter_canvas_template_description", lambda: alter_db_column_type(migrator, "canvas_template", "description", JSONField(null=True, default=dict, help_text="Canvas description"))),
         (
@@ -455,7 +463,7 @@ def migrate_db():
         ("add_document_pipeline_id", lambda: alter_db_add_column(migrator, "document", "pipeline_id", CharField(max_length=32, null=True, help_text="Pipeline ID", index=True))),
         (
             "add_knowledgebase_graphrag_task_id",
-            lambda: alter_db_add_column(migrator, "knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Gragh RAG task ID", index=True)),
+            lambda: alter_db_add_column(migrator, "knowledgebase", "graphrag_task_id", CharField(max_length=32, null=True, help_text="Graph RAG task ID", index=True)),
         ),
         ("add_knowledgebase_raptor_task_id", lambda: alter_db_add_column(migrator, "knowledgebase", "raptor_task_id", CharField(max_length=32, null=True, help_text="RAPTOR task ID", index=True))),
         ("add_knowledgebase_graphrag_finish_at", lambda: alter_db_add_column(migrator, "knowledgebase", "graphrag_task_finish_at", DateTimeField(null=True))),

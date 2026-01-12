@@ -15,7 +15,15 @@ F = TypeVar("F", bound=Callable)
 
 
 class PostgresDatabaseLock:
-    """PostgreSQL advisory lock using native pg_advisory_lock functions."""
+    """PostgreSQL advisory lock using native pg_advisory_lock functions.
+    
+    WARNING: Advisory locks are session-bound. When using with connection pooling,
+    the same connection must be held for the lock's lifetime. The lock will NOT
+    be automatically released if the connection is returned to the pool.
+    
+    For connection-pooled environments, consider using transaction-scoped locks
+    (pg_advisory_xact_lock) which are automatically released on transaction commit/rollback.
+    """
 
     def __init__(self, lock_name, timeout=10, db=None):
         self.lock_name = lock_name

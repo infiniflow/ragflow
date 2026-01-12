@@ -161,6 +161,9 @@ class TestPostgreSQLConnectionPoolFix:
             # Verify it succeeded after retry
             assert result is not None
 
+            # Verify retry actually occurred
+            assert call_count == 2
+
             # Verify pool was cleared during retry
             assert db._connections.clear.call_count >= 1
 

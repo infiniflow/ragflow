@@ -236,8 +236,12 @@ def wait_for_schema_ready(max_retries: int = 30, retry_delay: float = 0.5):
         try:
             # Try to query all critical tables to verify schema exists
             for table in critical_tables:
-                cursor = DB.execute_sql(f"SELECT 1 FROM {quote_char}{table}{quote_char} LIMIT 1")
-                cursor.close()
+                cursor = None
+                try:
+                    cursor = DB.execute_sql(f"SELECT 1 FROM {quote_char}{table}{quote_char} LIMIT 1")
+                finally:
+                    if cursor:
+                        cursor.close()
             logging.info(f"✓ Database schema is ready (attempt {attempt + 1}/{max_retries})")
             return
         except Exception as e:

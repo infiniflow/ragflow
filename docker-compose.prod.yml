@@ -1,0 +1,79 @@
+# Production Override for Unraid Deployment
+# This file extends docker-compose-base.yml with production-specific settings
+# - Connects RAGFlow containers to external postgresql16 network
+# - Removes MySQL dependency (uses external PostgreSQL)
+# - Adjusts volume mounts for data persistence only
+
+include:
+  - docker/docker-compose-base.yml
+
+services:
+  # Override ragflow-cpu for production
+  ragflow-cpu:
+    # REMOVE MySQL dependency - PostgreSQL runs on separate docker instance
+    depends_on: {}
+    
+    env_file: .env.prod
+    
+    # Connect to both ragflow and postgresql networks
+    networks:
+      - ragflow
+      - postgres
+    
+    # Remove source code volumes, keep logs and configs only
+    volumes:
+      - /mnt/user/appdata/ragflow/logs:/ragflow/logs
+      - /mnt/user/appdata/ragflow/nginx_conf/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
+      - /mnt/user/appdata/ragflow/nginx_conf/proxy.conf:/etc/nginx/proxy.conf
+      - /mnt/user/appdata/ragflow/nginx_conf/nginx.conf:/etc/nginx/nginx.conf
+      - docker/service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
+      - docker/entrypoint.sh:/ragflow/entrypoint.sh
+  
+  # Override ragflow-gpu for production
+  ragflow-gpu:
+    depends_on: {}
+    
+    env_file: .env.prod
+    
+    networks:
+      - ragflow
+      - postgres
+    
+    volumes:
+      - /mnt/user/appdata/ragflow/logs:/ragflow/logs
+      - /mnt/user/appdata/ragflow/nginx_conf/ragflow.conf:/etc/nginx/conf.d/ragflow.conf
+      - /mnt/user/appdata/ragflow/nginx_conf/proxy.conf:/etc/nginx/proxy.conf
+      - /mnt/user/appdata/ragflow/nginx_conf/nginx.conf:/etc/nginx/nginx.conf
+      - docker/service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
+      - docker/entrypoint.sh:/ragflow/entrypoint.sh
+
+  # Remove MySQL entirely for production
+  mysql:
+    enabled: false
+
+  # Elasticsearch still needed
+  elasticsearch:
+    depends_on: {}
+    networks:
+      - ragflow
+
+  # Redis still needed
+  redis:
+    depends_on: {}
+    networks:
+      - ragflow
+
+  # MinIO still needed
+  minio:
+    depends_on: {}
+    networks:
+      - ragflow
+
+# Network configuration
+networks:
+  ragflow:
+    driver: bridge
+  
+  postgres:
+    external: true  # PostgreSQL network exists separately on Unraid
+    name: postgres

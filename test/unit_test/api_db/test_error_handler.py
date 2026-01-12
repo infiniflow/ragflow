@@ -1,5 +1,5 @@
 """
-Unit tests for StandardErrorHandler in api/db/migrations.py
+Unit tests for StandardErrorHandler in api.db.error_handlers
 
 Tests error categorization and handling for both MySQL and PostgreSQL databases.
 """
