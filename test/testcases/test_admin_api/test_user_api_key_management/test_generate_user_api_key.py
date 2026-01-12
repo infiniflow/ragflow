@@ -148,7 +148,7 @@ class TestGenerateUserApiKey:
         response: Dict[str, Any] = generate_user_api_key(admin_session, "nonexistent_user_12345")
 
         # Verify error response
-        assert response.get("code") == RetCode.BAD_REQUEST, "Response code should indicate error"
+        assert response.get("code") == RetCode.NOT_FOUND, "Response code should indicate error"
         assert "message" in response, "Response should contain message"
         message: str = response.get("message", "")
         assert message == "User not found!", f"Message should indicate user not found, got: {message}"

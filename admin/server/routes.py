@@ -491,10 +491,10 @@ def generate_user_api_key(username: str) -> tuple[Response, int]:
     try:
         user_details: list[dict[str, Any]] = UserMgr.get_user_details(username)
         if not user_details:
-            return error_response("User not found!", 400)
+            return error_response("User not found!", 404)
         tenants: list[dict[str, Any]] = UserServiceMgr.get_user_tenants(username)
         if not tenants:
-            return error_response("Tenant not found!", 400)
+            return error_response("Tenant not found!", 404)
         tenant_id: str = tenants[0]["tenant_id"]
         token: str = generate_confirmation_token()
         obj: dict[str, Any] = {
