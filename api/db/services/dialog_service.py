@@ -24,7 +24,6 @@ from functools import partial
 from timeit import default_timer as timer
 from langfuse import Langfuse
 from peewee import fn
-from agentic_reasoning import DeepResearcher
 from api.db.services.file_service import FileService
 from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
@@ -37,6 +36,7 @@ from common.metadata_utils import apply_meta_data_filter
 from api.db.services.tenant_llm_service import TenantLLMService
 from common.time_utils import current_timestamp, datetime_format
 from graphrag.general.mind_map_extractor import MindMapExtractor
+from rag.advanced_rag import DeepResearcher
 from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
