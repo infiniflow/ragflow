@@ -16,9 +16,8 @@
 
 
 import pytest
-import requests
-from common import FILE_API_URL, HEADERS, list_documents, update_document
-from configs import DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN
+from common import list_documents, update_document
+from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 from configs import DEFAULT_PARSER_CONFIG
 
@@ -126,16 +125,9 @@ class TestDocumentsUpdated:
     )
     def test_invalid_dataset_id(self, HttpApiAuth, add_documents, dataset_id, expected_code, expected_message):
         _, document_ids = add_documents
-        url = f"{HOST_ADDRESS}{FILE_API_URL}/{document_ids[0]}".format(dataset_id=dataset_id)
-        res = requests.put(url=url, headers=HEADERS, auth=HttpApiAuth, json={"name": "new_name.txt"})
-        if res.status_code == 404:
-            # Backend now returns 404 for invalid dataset paths.
-            assert res.status_code == 404
-            assert "Not Found" in res.text
-            return
-        res_json = res.json()
-        assert res_json["code"] == expected_code
-        assert res_json["message"] == expected_message
+        res = update_document(HttpApiAuth, dataset_id, document_ids[0], {"name": "new_name.txt"})
+        assert res["code"] == expected_code
+        assert res["message"] == expected_message
 
     @pytest.mark.p3
     @pytest.mark.parametrize(

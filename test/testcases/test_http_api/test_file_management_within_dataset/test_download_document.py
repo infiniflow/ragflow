@@ -129,10 +129,6 @@ class TestDocumentDownload:
             document_ids[0],
             tmp_path / "ragflow_test_download_1.txt",
         )
-        if res.status_code == codes.not_found:
-            # Backend may return 404 for invalid dataset paths.
-            assert res.status_code == codes.not_found
-            return
         assert res.status_code == codes.ok
         with (tmp_path / "ragflow_test_download_1.txt").open("r") as f:
             response_json = json.load(f)

@@ -53,9 +53,7 @@ class TestRquest:
         BAD_CONTENT_TYPE = "text/xml"
         res = create_dataset(HttpApiAuth, {"name": "bad_content_type"}, headers={"Content-Type": BAD_CONTENT_TYPE})
         assert res["code"] == 101, res
-        # Backend now returns validation errors for missing fields.
-        assert "Field: <name>" in res["message"], res
-        assert "Field required" in res["message"], res
+        assert res["message"] == f"Unsupported content type: Expected application/json, got {BAD_CONTENT_TYPE}", res
 
     @pytest.mark.p3
     @pytest.mark.parametrize(

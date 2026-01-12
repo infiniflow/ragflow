@@ -16,9 +16,8 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-import requests
-from common import CHUNK_API_URL, HEADERS, add_chunk, delete_documents, list_chunks
-from configs import HOST_ADDRESS, INVALID_API_TOKEN
+from common import add_chunk, delete_documents, list_chunks
+from configs import INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -170,16 +169,9 @@ class TestAddChunk:
         expected_message,
     ):
         _, document_id = add_document
-        url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
-        res = requests.post(url=url, headers=HEADERS, auth=HttpApiAuth, json={"content": "a"})
-        if res.status_code == 404:
-            # Backend now returns 404 for invalid dataset paths.
-            assert res.status_code == 404
-            assert "Not Found" in res.text
-            return
-        res_json = res.json()
-        assert res_json["code"] == expected_code
-        assert res_json["message"] == expected_message
+        res = add_chunk(HttpApiAuth, dataset_id, document_id, {"content": "a"})
+        assert res["code"] == expected_code
+        assert res["message"] == expected_message
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
