@@ -87,8 +87,8 @@ CONTENT_TYPE_MAP = {
     "avif": "image/avif",
     "heic": "image/heic",
     # PPTX
-    "ppt"： "application/vnd.ms-powerpoint"，
-    "pptx"："application/vnd.openxmLformats-officedocument.presentationml.presentation"，
+    "ppt": "application/vnd.ms-powerpoint",
+    "pptx": "application/vnd.openxmLformats-officedocument.presentationml.presentation",
 }
 
 
