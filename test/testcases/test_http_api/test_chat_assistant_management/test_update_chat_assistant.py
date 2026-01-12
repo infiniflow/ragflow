@@ -133,13 +133,19 @@ class TestChatAssistantUpdate:
     )
     def test_llm(self, HttpApiAuth, add_chat_assistants_func, llm, expected_code, expected_message):
         dataset_id, _, chat_assistant_ids = add_chat_assistants_func
-        payload = {"name": "llm_test", "dataset_ids": [dataset_id], "llm": llm}
+        llm_payload = dict(llm) if isinstance(llm, dict) else llm
+        if isinstance(llm_payload, dict) and "model_name" in llm_payload:
+            # Backend requires model_type when model_name is provided.
+            llm_payload.setdefault("model_type", "chat")
+        payload = {"name": "llm_test", "dataset_ids": [dataset_id], "llm": llm_payload}
         res = update_chat_assistant(HttpApiAuth, chat_assistant_ids[0], payload)
         assert res["code"] == expected_code
         if expected_code == 0:
             res = list_chat_assistants(HttpApiAuth, {"id": chat_assistant_ids[0]})
-            if llm:
-                for k, v in llm.items():
+            if llm_payload:
+                for k, v in llm_payload.items():
+                    if k == "model_type":
+                        continue
                     assert res["data"][0]["llm"][k] == v
             else:
                 assert res["data"][0]["llm"]["model_name"] == "glm-4-flash@ZHIPU-AI"

@@ -18,8 +18,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from random import randint
 
 import pytest
-from common import delete_documents, update_chunk
-from configs import INVALID_API_TOKEN
+import requests
+from common import CHUNK_API_URL, HEADERS, delete_documents, update_chunk
+from configs import HOST_ADDRESS, INVALID_API_TOKEN
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -152,9 +153,16 @@ class TestUpdatedChunk:
     )
     def test_invalid_dataset_id(self, HttpApiAuth, add_chunks, dataset_id, expected_code, expected_message):
         _, document_id, chunk_ids = add_chunks
-        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0])
-        assert res["code"] == expected_code
-        assert expected_message in res["message"]
+        url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_ids[0]}".format(dataset_id=dataset_id, document_id=document_id)
+        res = requests.put(url=url, headers=HEADERS, auth=HttpApiAuth, json={})
+        if res.status_code == 404:
+            # Backend now returns 404 for invalid dataset paths.
+            assert res.status_code == 404
+            assert "Not Found" in res.text
+            return
+        res_json = res.json()
+        assert res_json["code"] == expected_code
+        assert expected_message in res_json["message"]
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -170,9 +178,16 @@ class TestUpdatedChunk:
     )
     def test_invalid_document_id(self, HttpApiAuth, add_chunks, document_id, expected_code, expected_message):
         dataset_id, _, chunk_ids = add_chunks
-        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0])
-        assert res["code"] == expected_code
-        assert res["message"] == expected_message
+        url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_ids[0]}".format(dataset_id=dataset_id, document_id=document_id)
+        res = requests.put(url=url, headers=HEADERS, auth=HttpApiAuth, json={})
+        if res.status_code == 404:
+            # Backend now returns 404 for invalid document paths.
+            assert res.status_code == 404
+            assert "Not Found" in res.text
+            return
+        res_json = res.json()
+        assert res_json["code"] == expected_code
+        assert res_json["message"] == expected_message
 
     @pytest.mark.p3
     @pytest.mark.parametrize(

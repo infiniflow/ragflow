@@ -98,7 +98,11 @@ class TestChatAssistantUpdate:
     def test_llm(self, client, add_chat_assistants_func, llm, expected_message):
         dataset, _, chat_assistants = add_chat_assistants_func
         chat_assistant = chat_assistants[0]
-        payload = {"name": "llm_test", "llm": llm, "dataset_ids": [dataset.id]}
+        llm_payload = dict(llm) if isinstance(llm, dict) else llm
+        if isinstance(llm_payload, dict) and "model_name" in llm_payload:
+            # Backend requires model_type when model_name is provided.
+            llm_payload.setdefault("model_type", "chat")
+        payload = {"name": "llm_test", "llm": llm_payload, "dataset_ids": [dataset.id]}
 
         if expected_message:
             with pytest.raises(Exception) as exception_info:
@@ -107,8 +111,10 @@ class TestChatAssistantUpdate:
         else:
             chat_assistant.update(payload)
             updated_chat = client.list_chats(id=chat_assistant.id)[0]
-            if llm:
-                for k, v in llm.items():
+            if llm_payload:
+                for k, v in llm_payload.items():
+                    if k == "model_type":
+                        continue
                     assert attrgetter(k)(updated_chat.llm) == v, str(updated_chat)
             else:
                 excepted_value = Chat.LLM(
@@ -199,10 +205,11 @@ class TestChatAssistantUpdate:
                         "top_n": 6,
                         "variables": [{"key": "knowledge", "optional": False}],
                         "rerank_model": "",
-                        "empty_response": "Sorry! No relevant content was found in the knowledge base!",
+                        "empty_response": None,
                         "opener": "Hi! I'm your assistant. What can I do for you?",
                         "show_quote": True,
-                        "prompt": 'You are an intelligent assistant. Please summarize the content of the dataset to answer the question. Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question, your answer must include the sentence "The answer you are looking for is not found in the dataset!" Answers need to consider chat history.\n      Here is the knowledge base:\n      {knowledge}\n      The above is the knowledge base.',
+                        "prompt": "You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base." "**Essential Rules:**" "- Your answer must be derived **solely** from this knowledge base: `{knowledge}`." "- **When information is available**: Summarize the content to give a detailed answer." "- **When information is unavailable**: Your response must contain this exact sentence: 'The answer you are looking for is not found in the knowledge base!' " "- **Always consider** the entire conversation history.",
+                        "top_k": 1024,
                     },
                 )
                 assert str(updated_chat.prompt) == str(excepted_value), str(updated_chat)
