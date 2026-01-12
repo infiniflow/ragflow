@@ -47,18 +47,31 @@ def mock_common_modules(monkeypatch):
     # Cleanup: monkeypatch automatically reverts sys.modules on fixture teardown
 
 
-from api.db.connection import (  # noqa: E402
-    RetryingPooledMySQLDatabase,
-    RetryingPooledPostgresqlDatabase,
-)
+@pytest.fixture
+def pg_db_class(mock_common_modules):
+    """Import Postgres pool class after mocks are applied."""
+    from api.db.connection import RetryingPooledPostgresqlDatabase  # noqa: E402
+
+    return RetryingPooledPostgresqlDatabase
+
+
+@pytest.fixture
+def mysql_db_class(mock_common_modules, monkeypatch):
+    """Import MySQL pool class after mocks are applied and set mysql db type."""
+    mock_settings = sys.modules.get("common.settings")
+    if mock_settings:
+        monkeypatch.setattr(mock_settings, "DATABASE_TYPE", "mysql", raising=False)
+    from api.db.connection import RetryingPooledMySQLDatabase  # noqa: E402
+
+    return RetryingPooledMySQLDatabase
 
 
 class TestPostgreSQLConnectionPoolFix:
     """Test the fix for PostgreSQL connection pool reusing closed connections"""
 
-    def test_handle_connection_loss_clears_pool(self):
+    def test_handle_connection_loss_clears_pool(self, pg_db_class):
         """Test that _handle_connection_loss properly clears the connection pool"""
-        db = RetryingPooledPostgresqlDatabase("test", user="test", password="test")
+        db = pg_db_class("test", user="test", password="test")
 
         # Mock the _connections attribute that exists in pooled databases
         db._connections = MagicMock()
@@ -79,9 +92,9 @@ class TestPostgreSQLConnectionPoolFix:
             # Verify reconnect was attempted
             mock_connect.assert_called_once()
 
-    def test_handle_connection_loss_without_connections_attribute(self):
+    def test_handle_connection_loss_without_connections_attribute(self, pg_db_class):
         """Test that _handle_connection_loss works even if _connections doesn't exist"""
-        db = RetryingPooledPostgresqlDatabase("test", user="test", password="test")
+        db = pg_db_class("test", user="test", password="test")
 
         # Ensure _connections doesn't exist
         if hasattr(db, '_connections'):
@@ -92,9 +105,9 @@ class TestPostgreSQLConnectionPoolFix:
              patch.object(db, 'connect'):
             db._handle_connection_loss()  # Should complete without error
 
-    def test_execute_sql_retries_and_clears_pool_on_connection_error(self):
+    def test_execute_sql_retries_and_clears_pool_on_connection_error(self, pg_db_class):
         """Test that execute_sql properly handles connection errors and clears pool"""
-        db = RetryingPooledPostgresqlDatabase("test", user="test", password="test", max_retries=2)
+        db = pg_db_class("test", user="test", password="test", max_retries=2)
         db._connections = MagicMock()
         db._connections.clear = Mock()
 
@@ -124,9 +137,9 @@ class TestPostgreSQLConnectionPoolFix:
             # Verify retry happened
             assert call_count == 2
 
-    def test_begin_retries_and_clears_pool_on_connection_error(self):
+    def test_begin_retries_and_clears_pool_on_connection_error(self, pg_db_class):
         """Test that begin() properly handles connection errors and clears pool"""
-        db = RetryingPooledPostgresqlDatabase("test", user="test", password="test", max_retries=2)
+        db = pg_db_class("test", user="test", password="test", max_retries=2)
         db._connections = MagicMock()
         db._connections.clear = Mock()
 
@@ -155,9 +168,9 @@ class TestPostgreSQLConnectionPoolFix:
 class TestMySQLConnectionPoolFix:
     """Test that MySQL connection pool handling matches PostgreSQL fix"""
 
-    def test_handle_connection_loss_clears_pool(self):
+    def test_handle_connection_loss_clears_pool(self, mysql_db_class):
         """Test that MySQL _handle_connection_loss also properly clears the connection pool"""
-        db = RetryingPooledMySQLDatabase("test", user="test", password="test")
+        db = mysql_db_class("test", user="test", password="test")
 
         # Mock the _connections attribute
         db._connections = MagicMock()
@@ -171,9 +184,9 @@ class TestMySQLConnectionPoolFix:
             # Verify pool was cleared (same as PostgreSQL)
             db._connections.clear.assert_called_once()
 
-    def test_execute_sql_clears_pool_on_retry(self):
+    def test_execute_sql_clears_pool_on_retry(self, mysql_db_class):
         """Test that MySQL execute_sql clears pool when retrying"""
-        db = RetryingPooledMySQLDatabase("test", user="test", password="test", max_retries=2)
+        db = mysql_db_class("test", user="test", password="test", max_retries=2)
         db._connections = MagicMock()
         db._connections.clear = Mock()
 
@@ -198,9 +211,9 @@ class TestMySQLConnectionPoolFix:
             assert result is not None
             assert db._connections.clear.call_count >= 1
 
-    def test_begin_retries_and_clears_pool_on_connection_error(self):
+    def test_begin_retries_and_clears_pool_on_connection_error(self, mysql_db_class):
         """Test that MySQL begin() properly handles connection errors and clears pool"""
-        db = RetryingPooledMySQLDatabase("test", user="test", password="test", max_retries=2)
+        db = mysql_db_class("test", user="test", password="test", max_retries=2)
         db._connections = MagicMock()
         db._connections.clear = Mock()
 
