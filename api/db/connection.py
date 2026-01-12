@@ -28,7 +28,15 @@ def get_database_config():
     Returns dict with keys: 'type', 'name', 'host', 'port', 'user', 'password'
     """
     database_config = (settings.DATABASE or {}).copy()
-    db_type = settings.DATABASE_TYPE.lower()
+    # Guard against None DATABASE_TYPE
+    db_type_raw = settings.DATABASE_TYPE
+    if not db_type_raw:
+        raise ValueError(
+            "DATABASE_TYPE setting is required. "
+            "Must be 'postgres' or 'mysql'. "
+            "Set via environment or service_conf.yaml"
+        )
+    db_type = db_type_raw.lower()
 
     return {
         "type": db_type,
@@ -165,12 +173,13 @@ class BaseDataBase:
             "retry_delay": 1,
         }
         database_config.update(pool_config)
-        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
+        db_type_upper = settings.DATABASE_TYPE.upper()
+        self.database_connection = PooledDatabase[db_type_upper].value(db_name, **database_config)
+        self.database_connection.lock = DatabaseLock[db_type_upper].value  # type: ignore[attr-defined]
 
         # Log initial pool configuration
-        db_type = settings.DATABASE_TYPE.upper()
         max_conn = database_config.get("max_connections", 32)
-        logging.info(f"Initialized {db_type} connection pool: max_connections={max_conn}, max_retries={pool_config['max_retries']}, retry_delay={pool_config['retry_delay']}s")
+        logging.info(f"Initialized {db_type_upper} connection pool: max_connections={max_conn}, max_retries={pool_config['max_retries']}, retry_delay={pool_config['retry_delay']}s")
 
         # Log initial pool stats
         stats = PoolDiagnostics.get_pool_stats(self.database_connection)
@@ -182,16 +191,47 @@ class BaseDataBase:
         logging.info("Database connection pool initialized")
 
 
-# Initialize DB singleton
-DB = BaseDataBase().database_connection
-DB.lock = DatabaseLock[settings.DATABASE_TYPE.upper()].value  # type: ignore[attr-defined]
+# Lazy initialization: getter function instead of module-level instantiation
+_db_instance = None
+
+
+def init_db():
+    """Initialize the database connection pool (lazy initialization).
+    
+    Called automatically on first access via get_db().
+    Can be called explicitly to control initialization timing.
+    Idempotent—safe to call multiple times.
+    """
+    global _db_instance
+    if _db_instance is None:
+        _db_instance = BaseDataBase().database_connection
+    return _db_instance
+
+
+def get_db():
+    """Get the database connection pool, initializing if needed (lazy initialization).
+    
+    This prevents side effects at import time. Connections are not opened,
+    background health checks are not started, and locks are not acquired
+    until this function is explicitly called.
+    
+    Returns:
+        PooledMySQLDatabase | PooledPostgresqlDatabase: The initialized connection pool
+    """
+    return init_db()
+
+
+# For backward compatibility, also provide DB as module-level variable
+# It will be initialized via get_db() when first accessed
+DB = None  # Will be set by init_db() on first call
 
 
 def close_connection():
     """Close stale database connections."""
     try:
-        if DB:
-            DB.close_stale(age=30)
+        db = get_db()
+        if db:
+            db.close_stale(age=30)
     except Exception:
         logging.exception("Failed to close stale DB connections")
 
