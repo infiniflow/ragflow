@@ -56,12 +56,6 @@ def get_opendal_config():
             "has_credentials": any(k in kwargs for k in ("password", "connection_string")),
         }
         logging.info("Loaded OpenDAL configuration (non sensitive fields only): %s", safe_log_info)
-
-        # For safety, explicitly remove sensitive keys from kwargs after use
-        if "password" in kwargs:
-            del kwargs["password"]
-        if "connection_string" in kwargs:
-            del kwargs["connection_string"]
         return kwargs
     except Exception as e:
         logging.error("Failed to load OpenDAL configuration from yaml: %s", str(e))

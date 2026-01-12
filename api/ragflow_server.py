@@ -18,8 +18,8 @@
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
-from common.log_utils import init_root_logger
-from plugin import GlobalPluginManager
+import time
+start_ts = time.time()
 
 import logging
 import os
@@ -40,6 +40,8 @@ from api.db.init_data import init_web_data, init_superuser
 from common.versions import get_ragflow_version
 from common.config_utils import show_configs
 from common.mcp_tool_call_conn import shutdown_all_mcp_sessions
+from common.log_utils import init_root_logger
+from plugin import GlobalPluginManager
 from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
@@ -145,7 +147,7 @@ if __name__ == '__main__':
 
     # start http server
     try:
-        logging.info("RAGFlow HTTP server start...")
+        logging.info(f"RAGFlow server is ready after {time.time() - start_ts}s initialization.")
         app.run(host=settings.HOST_IP, port=settings.HOST_PORT)
     except Exception:
         traceback.print_exc()
