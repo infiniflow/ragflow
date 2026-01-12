@@ -21,7 +21,6 @@ import { ParsingCard } from './parsing-card';
 import { ReparseDialog } from './reparse-dialog';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
-import { UseSaveMetaShowType } from './use-save-meta';
 import { isParserRunning } from './utils';
 const IconMap = {
   [RunningStatus.UNSTART]: (
@@ -44,13 +43,12 @@ const IconMap = {
 export function ParsingStatusCell({
   record,
   showChangeParserModal,
-  showSetMetaModal,
+  // showSetMetaModal,
   showLog,
 }: {
   record: IDocumentInfo;
   showLog: (record: IDocumentInfo) => void;
-} & UseChangeDocumentParserShowType &
-  UseSaveMetaShowType) {
+} & UseChangeDocumentParserShowType) {
   const { t } = useTranslation();
   const {
     run,
@@ -82,10 +80,6 @@ export function ParsingStatusCell({
   const handleShowChangeParserModal = useCallback(() => {
     showChangeParserModal(record);
   }, [record, showChangeParserModal]);
-
-  const handleShowSetMetaModal = useCallback(() => {
-    showSetMetaModal(record);
-  }, [record, showSetMetaModal]);
 
   const showParse = useMemo(() => {
     return record.type !== DocumentType.Virtual;
@@ -123,9 +117,6 @@ export function ParsingStatusCell({
           <DropdownMenuContent>
             <DropdownMenuItem onClick={handleShowChangeParserModal}>
               {t('knowledgeDetails.dataPipeline')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleShowSetMetaModal}>
-              {t('knowledgeDetails.setMetaData')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
