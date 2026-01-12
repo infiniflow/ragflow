@@ -188,7 +188,4 @@ class TestDeleteUserApiKey:
         assert "message" in response, "Response should contain message"
         message: str = response.get("message", "").lower()
         # The message is an HTML string indicating unauthorized user.
-        assert (
-            message
-            == UNAUTHORIZED_ERROR_MESSAGE
-        )
+        assert message == UNAUTHORIZED_ERROR_MESSAGE

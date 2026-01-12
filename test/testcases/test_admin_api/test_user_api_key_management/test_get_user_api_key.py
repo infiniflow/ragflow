@@ -166,7 +166,4 @@ class TestGetUserApiKey:
         assert response["code"] == RetCode.UNAUTHORIZED, response
         assert "message" in response, "Response should contain message"
         message: str = response["message"].lower()
-        assert (
-            message
-            == UNAUTHORIZED_ERROR_MESSAGE
-        )
+        assert message == UNAUTHORIZED_ERROR_MESSAGE

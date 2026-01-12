@@ -206,10 +206,7 @@ class TestGenerateUserApiKey:
         assert "message" in response, "Response should contain message"
         message: str = response.get("message", "").lower()
         # The message is an HTML string indicating unauthorized user .
-        assert (
-            message
-            == UNAUTHORIZED_ERROR_MESSAGE
-        )
+        assert message == UNAUTHORIZED_ERROR_MESSAGE
 
     @pytest.mark.p3
     def test_generate_user_api_key_timestamp_fields(self, admin_session: requests.Session) -> None:
