@@ -149,11 +149,22 @@ for arg in "$@"; do
 done
 
 # -----------------------------------------------------------------------------
-# Runtime Permission Fix
+# Runtime Permission Fix (The "Hammer" Approach)
 # -----------------------------------------------------------------------------
-# Ensure the ragflow user owns the necessary directories, especially if mounted from host
-mkdir -p /ragflow/logs
-chown -R ragflow:ragflow /ragflow/logs /var/lib/nginx /var/log/nginx /etc/nginx /tmp/nginx.pid || true
+echo "Ensuring directory permissions for user 'ragflow'..."
+# Create necessary subdirs if they don't exist
+mkdir -p /ragflow/logs /ragflow/rag/res /home/ragflow/.cache /home/ragflow/.crawl4ai /home/ragflow/.nltk_data
+
+# Chown everything that might be touched by the app or mounted volumes
+# This is the most reliable way to handle host-mounted volumes with different UIDs
+chown -R ragflow:ragflow /ragflow/logs /ragflow/rag/res /ragflow/conf /home/ragflow /tmp/nginx.pid || true
+chown -R ragflow:ragflow /var/lib/nginx /var/log/nginx /etc/nginx || true
+
+# Export AI-specific Home dirs to avoid libraries trying to write to /root
+export HOME=/home/ragflow
+export HF_HOME=/home/ragflow/.cache/huggingface
+export NLTK_DATA=/usr/share/nltk_data:/home/ragflow/.nltk_data
+export CRAWL4AI_HOME=/home/ragflow/.crawl4ai
 
 # -----------------------------------------------------------------------------
 # Replace env variables in the service_conf.yaml file
@@ -176,9 +187,17 @@ PY=/ragflow/.venv/bin/python
 # -----------------------------------------------------------------------------
 
 function run_as_ragflow() {
-    # Helper to run commands as ragflow user with correct environment
-    # Use runuser instead of sudo to avoid potential policy issues
-    runuser -u ragflow -- env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" VIRTUAL_ENV="$VIRTUAL_ENV" "$@"
+    # Enhanced run_as_ragflow with full env preservation to ensure
+    # AI libraries find their models and caches correctly.
+    runuser -u ragflow -- env \
+        HOME="$HOME" \
+        PATH="$PATH" \
+        PYTHONPATH="$PYTHONPATH" \
+        VIRTUAL_ENV="$VIRTUAL_ENV" \
+        HF_HOME="$HF_HOME" \
+        NLTK_DATA="$NLTK_DATA" \
+        CRAWL4AI_HOME="$CRAWL4AI_HOME" \
+        "$@"
 }
 
 function task_exe() {
