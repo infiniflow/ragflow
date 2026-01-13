@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideTableOfContents
 }
 ---
-
 # Extract table of contents
 
 Extract table of contents (TOC) from documents to provide long context RAG and improve retrieval.
@@ -31,7 +30,7 @@ The system's default chat model is used to summarize clustered content. Before p
 2. Enable **TOC Enhance**.
 
 3. To use this technique during retrieval, do either of the following:
-
+   
    - In the **Chat setting** panel of your chat app, switch on the **TOC Enhance** toggle.
    - If you are using an agent, click the **Retrieval** agent component to specify the dataset(s) and switch on the **TOC Enhance** toggle.
 

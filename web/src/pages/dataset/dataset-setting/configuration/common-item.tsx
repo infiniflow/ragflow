@@ -431,6 +431,7 @@ export function AutoMetadata({
 
   const handleSaveMetadata = (data?: IMetaDataReturnJSONSettings) => {
     form.setValue('parser_config.metadata', data || []);
+    form.setValue('parser_config.enable_metadata', true);
   };
   return (
     <>

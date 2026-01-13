@@ -389,6 +389,7 @@ export const useManageMetaDataModal = (
       const { data: res } = await kbService.kbUpdateMetaData({
         kb_id: id,
         metadata: data,
+        enable_metadata: true,
       });
       if (res.code === 0) {
         message.success(t('message.operated'));

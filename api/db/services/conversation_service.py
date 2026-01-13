@@ -64,6 +64,7 @@ class ConversationService(CommonService):
             offset += limit
         return res
 
+
 def structure_answer(conv, ans, message_id, session_id):
     reference = ans["reference"]
     if not isinstance(reference, dict):
@@ -106,6 +107,7 @@ def structure_answer(conv, ans, message_id, session_id):
         if should_update_reference:
             conv.reference[-1] = reference
     return ans
+
 
 async def async_completion(tenant_id, chat_id, question, name="New session", session_id=None, stream=True, **kwargs):
     assert name, "`name` can not be empty."
