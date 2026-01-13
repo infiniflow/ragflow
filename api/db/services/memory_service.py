@@ -66,11 +66,9 @@ class MemoryService(CommonService):
             cls.model.system_prompt,
             cls.model.user_prompt,
             cls.model.create_date,
-            cls.model.create_time
+            cls.model.create_time,
         ]
-        memory = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id)).where(
-            cls.model.id == memory_id
-        ).first()
+        memory = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id)).where(cls.model.id == memory_id).first()
         return memory
 
     @classmethod
@@ -87,7 +85,7 @@ class MemoryService(CommonService):
             cls.model.permissions,
             cls.model.description,
             cls.model.create_time,
-            cls.model.create_date
+            cls.model.create_date,
         ]
         memories = cls.model.select(*fields).join(User, on=(cls.model.tenant_id == User.id))
         if filter_dict.get("tenant_id"):
@@ -109,11 +107,7 @@ class MemoryService(CommonService):
     @DB.connection_context()
     def create_memory(cls, tenant_id: str, name: str, memory_type: List[str], embd_id: str, llm_id: str):
         # Deduplicate name within tenant
-        memory_name = duplicate_name(
-            cls.query,
-            name=name,
-            tenant_id=tenant_id
-        )
+        memory_name = duplicate_name(cls.query, name=name, tenant_id=tenant_id)
         if len(memory_name) > MEMORY_NAME_LIMIT:
             return False, f"Memory name {memory_name} exceeds limit of {MEMORY_NAME_LIMIT}."
 
@@ -152,15 +146,8 @@ class MemoryService(CommonService):
         if "memory_type" in update_dict and isinstance(update_dict["memory_type"], list):
             update_dict["memory_type"] = calculate_memory_type(update_dict["memory_type"])
         if "name" in update_dict:
-            update_dict["name"] = duplicate_name(
-                cls.query,
-                name=update_dict["name"],
-                tenant_id=tenant_id
-            )
-        update_dict.update({
-            "update_time": current_timestamp(),
-            "update_date": get_format_time()
-        })
+            update_dict["name"] = duplicate_name(cls.query, name=update_dict["name"], tenant_id=tenant_id)
+        update_dict.update({"update_time": current_timestamp(), "update_date": get_format_time()})
 
         return cls.model.update(update_dict).where(cls.model.id == memory_id).execute()
 

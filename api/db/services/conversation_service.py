@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
 import time
 from uuid import uuid4
 from common.constants import StatusEnum
@@ -64,6 +65,7 @@ class ConversationService(CommonService):
             offset += limit
         return res
 
+
 def structure_answer(conv, ans, message_id, session_id):
     reference = ans["reference"]
     if not isinstance(reference, dict):
@@ -107,6 +109,7 @@ def structure_answer(conv, ans, message_id, session_id):
             conv.reference[-1] = reference
     return ans
 
+
 async def async_completion(tenant_id, chat_id, question, name="New session", session_id=None, stream=True, **kwargs):
     assert name, "`name` can not be empty."
     dia = DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
@@ -114,34 +117,27 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
 
     if not session_id:
         session_id = get_uuid()
+        prologue = (dia[0].prompt_config or {}).get("prologue", "")
         conv = {
             "id": session_id,
             "dialog_id": chat_id,
             "name": name,
-            "message": [{"role": "assistant", "content": dia[0].prompt_config.get("prologue"), "created_at": time.time()}],
-            "user_id": kwargs.get("user_id", "")
+            "message": [{"role": "assistant", "content": prologue, "created_at": time.time()}],
+            "user_id": kwargs.get("user_id", ""),
         }
         ConversationService.save(**conv)
         if stream:
-            yield "data:" + json.dumps({"code": 0, "message": "",
-                                        "data": {
-                                            "answer": conv["message"][0]["content"],
-                                            "reference": {},
-                                            "audio_binary": None,
-                                            "id": None,
-                                        "session_id": session_id
-                                        }},
-                                    ensure_ascii=False) + "\n\n"
+            yield (
+                "data:"
+                + json.dumps(
+                    {"code": 0, "message": "", "data": {"answer": conv["message"][0]["content"], "reference": {}, "audio_binary": None, "id": None, "session_id": session_id}}, ensure_ascii=False
+                )
+                + "\n\n"
+            )
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
             return
         else:
-            answer = {
-                "answer": conv["message"][0]["content"],
-                "reference": {},
-                "audio_binary": None,
-                "id": None,
-                "session_id": session_id
-            }
+            answer = {"answer": conv["message"][0]["content"], "reference": {}, "audio_binary": None, "id": None, "session_id": session_id}
             yield answer
             return
 
@@ -151,11 +147,7 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
 
     conv = conv[0]
     msg = []
-    question = {
-        "content": question,
-        "role": "user",
-        "id": str(uuid4())
-    }
+    question = {"content": question, "role": "user", "id": str(uuid4())}
     conv.message.append(question)
     for m in conv.message:
         if m["role"] == "system":
@@ -166,7 +158,7 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
     message_id = msg[-1].get("id")
     e, dia = DialogService.get_by_id(conv.dialog_id)
 
-    kb_ids = kwargs.get("kb_ids",[])
+    kb_ids = kwargs.get("kb_ids", [])
     dia.kb_ids = list(set(dia.kb_ids + kb_ids))
     if not conv.reference:
         conv.reference = []
@@ -179,11 +171,11 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
                 ans = structure_answer(conv, ans, message_id, session_id)
                 yield "data:" + json.dumps({"code": 0, "data": ans}, ensure_ascii=False) + "\n\n"
             ConversationService.update_by_id(conv.id, conv.to_dict())
-        except Exception as e:
-            yield "data:" + json.dumps({"code": 500, "message": str(e),
-                                        "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                                       ensure_ascii=False) + "\n\n"
-        yield "data:" + json.dumps({"code": 0, "data": True}, ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 0, "data": True}, ensure_ascii=False) + "\n\n"
+        except Exception:
+            logging.exception("Error in async_completion during streaming chat")
+            yield "data:" + json.dumps({"code": 500, "message": "Internal server error", "data": {"answer": "**ERROR**: Internal server error", "reference": {}}}, ensure_ascii=False) + "\n\n"
+            return
 
     else:
         answer = None
@@ -193,27 +185,20 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
             break
         yield answer
 
+
 async def async_iframe_completion(dialog_id, question, session_id=None, stream=True, **kwargs):
     e, dia = DialogService.get_by_id(dialog_id)
     assert e, "Dialog not found"
     if not session_id:
         session_id = get_uuid()
-        conv = {
-            "id": session_id,
-            "dialog_id": dialog_id,
-            "user_id": kwargs.get("user_id", ""),
-            "message": [{"role": "assistant", "content": dia.prompt_config["prologue"], "created_at": time.time()}]
-        }
+        prologue = (dia.prompt_config or {}).get("prologue", "")
+        conv = {"id": session_id, "dialog_id": dialog_id, "user_id": kwargs.get("user_id", ""), "message": [{"role": "assistant", "content": prologue, "created_at": time.time()}]}
         API4ConversationService.save(**conv)
-        yield "data:" + json.dumps({"code": 0, "message": "",
-                                    "data": {
-                                        "answer": conv["message"][0]["content"],
-                                        "reference": {},
-                                        "audio_binary": None,
-                                        "id": None,
-                                        "session_id": session_id
-                                    }},
-                                   ensure_ascii=False) + "\n\n"
+        yield (
+            "data:"
+            + json.dumps({"code": 0, "message": "", "data": {"answer": conv["message"][0]["content"], "reference": {}, "audio_binary": None, "id": None, "session_id": session_id}}, ensure_ascii=False)
+            + "\n\n"
+        )
         yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
         return
     else:
@@ -224,11 +209,7 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
     if not conv.message:
         conv.message = []
     messages = conv.message
-    question = {
-        "role": "user",
-        "content": question,
-        "id": str(uuid4())
-    }
+    question = {"role": "user", "content": question, "id": str(uuid4())}
     messages.append(question)
 
     msg = []
@@ -250,14 +231,13 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
         try:
             async for ans in async_chat(dia, msg, True, **kwargs):
                 ans = structure_answer(conv, ans, message_id, session_id)
-                yield "data:" + json.dumps({"code": 0, "message": "", "data": ans},
-                                           ensure_ascii=False) + "\n\n"
+                yield "data:" + json.dumps({"code": 0, "message": "", "data": ans}, ensure_ascii=False) + "\n\n"
             API4ConversationService.append_message(conv.id, conv.to_dict())
-        except Exception as e:
-            yield "data:" + json.dumps({"code": 500, "message": str(e),
-                                        "data": {"answer": "**ERROR**: " + str(e), "reference": []}},
-                                       ensure_ascii=False) + "\n\n"
-        yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
+        except Exception:
+            logging.exception("Error in async_iframe_completion during streaming chat")
+            yield "data:" + json.dumps({"code": 500, "message": "Internal server error", "data": {"answer": "**ERROR**: Internal server error", "reference": {}}}, ensure_ascii=False) + "\n\n"
+            return
 
     else:
         answer = None

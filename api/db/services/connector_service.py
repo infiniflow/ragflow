@@ -56,23 +56,17 @@ class ConnectorService(CommonService):
 
     @classmethod
     def list(cls, tenant_id):
-        fields = [
-            cls.model.id,
-            cls.model.name,
-            cls.model.source,
-            cls.model.status
-        ]
-        return list(cls.model.select(*fields).where(
-            cls.model.tenant_id == tenant_id
-        ).dicts())
+        fields = [cls.model.id, cls.model.name, cls.model.source, cls.model.status]
+        return list(cls.model.select(*fields).where(cls.model.tenant_id == tenant_id).dicts())
 
     @classmethod
-    def rebuild(cls, kb_id:str, connector_id: str, tenant_id:str):
+    def rebuild(cls, kb_id: str, connector_id: str, tenant_id: str):
         from api.db.services.file_service import FileService
+
         e, conn = cls.get_by_id(connector_id)
         if not e:
             return None
-        SyncLogsService.filter_delete([SyncLogs.connector_id==connector_id, SyncLogs.kb_id==kb_id])
+        SyncLogsService.filter_delete([SyncLogs.connector_id == connector_id, SyncLogs.kb_id == kb_id])
         docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}", kb_id=kb_id)
         err = FileService.delete_docs([d.id for d in docs], tenant_id)
         SyncLogsService.schedule(connector_id, kb_id, reindex=True)
@@ -105,15 +99,17 @@ class SyncLogsService(CommonService):
             Connector2Kb.auto_parse,
             cls.model.from_beginning.alias("reindex"),
             cls.model.status,
-            cls.model.update_time
+            cls.model.update_time,
         ]
         if not connector_id:
             fields.append(Connector.config)
-            
-        query = cls.model.select(*fields)\
-            .join(Connector, on=(cls.model.connector_id==Connector.id))\
-            .join(Connector2Kb, on=(cls.model.kb_id==Connector2Kb.kb_id))\
-            .join(Knowledgebase, on=(cls.model.kb_id==Knowledgebase.id))
+
+        query = (
+            cls.model.select(*fields)
+            .join(Connector, on=(cls.model.connector_id == Connector.id))
+            .join(Connector2Kb, on=((cls.model.kb_id == Connector2Kb.kb_id) & (cls.model.connector_id == Connector2Kb.connector_id)))
+            .join(Knowledgebase, on=(cls.model.kb_id == Knowledgebase.id))
+        )
 
         if connector_id:
             query = query.where(cls.model.connector_id == connector_id)
@@ -124,10 +120,7 @@ class SyncLogsService(CommonService):
             else:
                 interval_expr = SQL("INTERVAL `t2`.`refresh_freq` MINUTE")
             query = query.where(
-                Connector.input_type == InputType.POLL,
-                Connector.status == TaskStatus.SCHEDULE,
-                cls.model.status == TaskStatus.SCHEDULE,
-                cls.model.update_date < (fn.NOW() - interval_expr)
+                Connector.input_type == InputType.POLL, Connector.status == TaskStatus.SCHEDULE, cls.model.status == TaskStatus.SCHEDULE, cls.model.update_date < (fn.NOW() - interval_expr)
             )
 
         query = query.distinct().order_by(cls.model.update_time.desc())
@@ -139,7 +132,7 @@ class SyncLogsService(CommonService):
 
     @classmethod
     def start(cls, id, connector_id):
-        cls.update_by_id(id, {"status": TaskStatus.RUNNING, "time_started": datetime.now().strftime('%Y-%m-%d %H:%M:%S') })
+        cls.update_by_id(id, {"status": TaskStatus.RUNNING, "time_started": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
         ConnectorService.update_by_id(connector_id, {"status": TaskStatus.RUNNING})
 
     @classmethod
@@ -164,40 +157,43 @@ class SyncLogsService(CommonService):
                 return None
             reindex = "1" if reindex else "0"
             ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDULE})
-            return cls.save(**{
-                "id": get_uuid(),
-                "kb_id": kb_id, "status": TaskStatus.SCHEDULE, "connector_id": connector_id,
-                "poll_range_start": poll_range_start, "from_beginning": reindex,
-                "total_docs_indexed": total_docs_indexed
-            })
+            return cls.save(
+                **{
+                    "id": get_uuid(),
+                    "kb_id": kb_id,
+                    "status": TaskStatus.SCHEDULE,
+                    "connector_id": connector_id,
+                    "poll_range_start": poll_range_start,
+                    "from_beginning": reindex,
+                    "total_docs_indexed": total_docs_indexed,
+                }
+            )
         except Exception as e:
             logging.exception(e)
             task = cls.get_latest_task(connector_id, kb_id)
             if task:
-                cls.model.update(status=TaskStatus.SCHEDULE,
-                                 poll_range_start=poll_range_start,
-                                 error_msg=cls.model.error_msg + str(e),
-                                 full_exception_trace=cls.model.full_exception_trace + str(e)
-                                 ) \
-                .where(cls.model.id == task.id).execute()
+                cls.model.update(
+                    status=TaskStatus.SCHEDULE, poll_range_start=poll_range_start, error_msg=cls.model.error_msg + str(e), full_exception_trace=cls.model.full_exception_trace + str(e)
+                ).where(cls.model.id == task.id).execute()
                 ConnectorService.update_by_id(connector_id, {"status": TaskStatus.SCHEDULE})
 
     @classmethod
     def increase_docs(cls, id, min_update, max_update, doc_num, err_msg="", error_count=0):
-        cls.model.update(new_docs_indexed=cls.model.new_docs_indexed + doc_num,
-                         total_docs_indexed=cls.model.total_docs_indexed + doc_num,
-                         poll_range_start=fn.COALESCE(fn.LEAST(cls.model.poll_range_start,min_update), min_update),
-                         poll_range_end=fn.COALESCE(fn.GREATEST(cls.model.poll_range_end, max_update), max_update),
-                         error_msg=cls.model.error_msg + err_msg,
-                         error_count=cls.model.error_count + error_count,
-                         update_time=current_timestamp(),
-                         update_date=timestamp_to_date(current_timestamp())
-                         )\
-            .where(cls.model.id == id).execute()
+        cls.model.update(
+            new_docs_indexed=cls.model.new_docs_indexed + doc_num,
+            total_docs_indexed=cls.model.total_docs_indexed + doc_num,
+            poll_range_start=fn.COALESCE(fn.LEAST(cls.model.poll_range_start, min_update), min_update),
+            poll_range_end=fn.COALESCE(fn.GREATEST(cls.model.poll_range_end, max_update), max_update),
+            error_msg=cls.model.error_msg + err_msg,
+            error_count=cls.model.error_count + error_count,
+            update_time=current_timestamp(),
+            update_date=timestamp_to_date(current_timestamp()),
+        ).where(cls.model.id == id).execute()
 
     @classmethod
     def duplicate_and_parse(cls, kb, docs, tenant_id, src, auto_parse=True):
         from api.db.services.file_service import FileService
+
         if not docs:
             return None
 
@@ -209,7 +205,7 @@ class SyncLogsService(CommonService):
                 return self.blob
 
         errs = []
-        files = [FileObj(filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"]) for d in docs]
+        files = [FileObj(filename=d["semantic_identifier"] + (f"{d['extension']}" if d["semantic_identifier"][::-1].find(d["extension"][::-1]) < 0 else ""), blob=d["blob"]) for d in docs]
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)
@@ -218,17 +214,17 @@ class SyncLogsService(CommonService):
         metadata_map = {}
         for d in docs:
             if d.get("metadata"):
-                filename = d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else "")
+                filename = d["semantic_identifier"] + (f"{d['extension']}" if d["semantic_identifier"][::-1].find(d["extension"][::-1]) < 0 else "")
                 metadata_map[filename] = d["metadata"]
 
         kb_table_num_map = {}
         for doc, _ in doc_blob_pairs:
             doc_ids.append(doc["id"])
-            
+
             # Set metadata if available for this document
             if doc["name"] in metadata_map:
                 DocumentService.update_by_id(doc["id"], {"meta_fields": metadata_map[doc["name"]]})
-            
+
             if not auto_parse or auto_parse == "0":
                 continue
             DocumentService.run(tenant_id, doc, kb_table_num_map)
@@ -237,17 +233,14 @@ class SyncLogsService(CommonService):
 
     @classmethod
     def get_latest_task(cls, connector_id, kb_id):
-        return cls.model.select().where(
-            cls.model.connector_id==connector_id,
-            cls.model.kb_id == kb_id
-        ).order_by(cls.model.update_time.desc()).first()
+        return cls.model.select().where(cls.model.connector_id == connector_id, cls.model.kb_id == kb_id).order_by(cls.model.update_time.desc()).first()
 
 
 class Connector2KbService(CommonService):
     model = Connector2Kb
 
     @classmethod
-    def link_connectors(cls, kb_id:str, connectors: list[dict], tenant_id:str):
+    def link_connectors(cls, kb_id: str, connectors: list[dict], tenant_id: str):
         arr = cls.query(kb_id=kb_id)
         old_conn_ids = [a.connector_id for a in arr]
         connector_ids = []
@@ -255,48 +248,29 @@ class Connector2KbService(CommonService):
             conn_id = conn["id"]
             connector_ids.append(conn_id)
             if conn_id in old_conn_ids:
-                cls.filter_update([cls.model.connector_id==conn_id, cls.model.kb_id==kb_id], {"auto_parse": conn.get("auto_parse", "1")})
+                cls.filter_update([cls.model.connector_id == conn_id, cls.model.kb_id == kb_id], {"auto_parse": conn.get("auto_parse", "1")})
                 continue
-            cls.save(**{
-                "id": get_uuid(),
-                "connector_id": conn_id,
-                "kb_id": kb_id,
-                "auto_parse": conn.get("auto_parse", "1")
-            })
+            cls.save(**{"id": get_uuid(), "connector_id": conn_id, "kb_id": kb_id, "auto_parse": conn.get("auto_parse", "1")})
             SyncLogsService.schedule(conn_id, kb_id, reindex=True)
 
         errs = []
         for conn_id in old_conn_ids:
             if conn_id in connector_ids:
                 continue
-            cls.filter_delete([cls.model.kb_id==kb_id, cls.model.connector_id==conn_id])
+            cls.filter_delete([cls.model.kb_id == kb_id, cls.model.connector_id == conn_id])
             e, conn = ConnectorService.get_by_id(conn_id)
             if not e:
                 continue
-            #SyncLogsService.filter_delete([SyncLogs.connector_id==conn_id, SyncLogs.kb_id==kb_id])
+            # SyncLogsService.filter_delete([SyncLogs.connector_id==conn_id, SyncLogs.kb_id==kb_id])
             # Do not delete docs while unlinking.
-            SyncLogsService.filter_update([SyncLogs.connector_id==conn_id, SyncLogs.kb_id==kb_id, SyncLogs.status.in_([TaskStatus.SCHEDULE, TaskStatus.RUNNING])], {"status": TaskStatus.CANCEL})
-            #docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}")
-            #err = FileService.delete_docs([d.id for d in docs], tenant_id)
-            #if err:
+            SyncLogsService.filter_update([SyncLogs.connector_id == conn_id, SyncLogs.kb_id == kb_id, SyncLogs.status.in_([TaskStatus.SCHEDULE, TaskStatus.RUNNING])], {"status": TaskStatus.CANCEL})
+            # docs = DocumentService.query(source_type=f"{conn.source}/{conn.id}")
+            # err = FileService.delete_docs([d.id for d in docs], tenant_id)
+            # if err:
             #    errs.append(err)
         return "\n".join(errs)
 
     @classmethod
     def list_connectors(cls, kb_id):
-        fields = [
-            Connector.id,
-            Connector.source,
-            Connector.name,
-            cls.model.auto_parse,
-            Connector.status
-        ]
-        return list(cls.model.select(*fields)\
-                    .join(Connector, on=(cls.model.connector_id==Connector.id))\
-                    .where(
-                        cls.model.kb_id==kb_id
-                    ).dicts()
-        )
-
-
-
+        fields = [Connector.id, Connector.source, Connector.name, cls.model.auto_parse, Connector.status]
+        return list(cls.model.select(*fields).join(Connector, on=(cls.model.connector_id == Connector.id)).where(cls.model.kb_id == kb_id).dicts())

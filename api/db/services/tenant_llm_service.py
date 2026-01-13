@@ -60,10 +60,8 @@ class TenantLLMService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_my_llms(cls, tenant_id):
-        fields = [cls.model.llm_factory, LLMFactories.logo, LLMFactories.tags, cls.model.model_type, cls.model.llm_name,
-                  cls.model.used_tokens, cls.model.status]
-        objs = cls.model.select(*fields).join(LLMFactories, on=(cls.model.llm_factory == LLMFactories.name)).where(
-            cls.model.tenant_id == tenant_id, ~cls.model.api_key.is_null()).dicts()
+        fields = [cls.model.llm_factory, LLMFactories.logo, LLMFactories.tags, cls.model.model_type, cls.model.llm_name, cls.model.used_tokens, cls.model.status]
+        objs = cls.model.select(*fields).join(LLMFactories, on=(cls.model.llm_factory == LLMFactories.name)).where(cls.model.tenant_id == tenant_id, ~cls.model.api_key.is_null()).dicts()
 
         return list(objs)
 
@@ -90,6 +88,7 @@ class TenantLLMService(CommonService):
     @DB.connection_context()
     def get_model_config(cls, tenant_id, llm_type, llm_name=None):
         from api.db.services.llm_service import LLMService
+
         e, tenant = TenantService.get_by_id(tenant_id)
         if not e:
             raise LookupError("Tenant not found")
@@ -119,9 +118,9 @@ class TenantLLMService(CommonService):
             model_config = cls.get_api_key(tenant_id, mdlnm)
         if model_config:
             model_config = model_config.to_dict()
-        elif llm_type == LLMType.EMBEDDING and fid == 'Builtin' and "tei-" in os.getenv("COMPOSE_PROFILES", "") and mdlnm == os.getenv('TEI_MODEL', ''):
+        elif llm_type == LLMType.EMBEDDING and fid == "Builtin" and "tei-" in os.getenv("COMPOSE_PROFILES", "") and mdlnm == os.getenv("TEI_MODEL", ""):
             embedding_cfg = settings.EMBEDDING_CFG
-            model_config = {"llm_factory": 'Builtin', "api_key": embedding_cfg["api_key"], "llm_name": mdlnm, "api_base": embedding_cfg["base_url"]}
+            model_config = {"llm_factory": "Builtin", "api_key": embedding_cfg["api_key"], "llm_name": mdlnm, "api_base": embedding_cfg["base_url"]}
         else:
             raise LookupError(f"Model({mdlnm}@{fid}) not authorized")
 
@@ -140,33 +139,27 @@ class TenantLLMService(CommonService):
         if llm_type == LLMType.EMBEDDING.value:
             if model_config["llm_factory"] not in EmbeddingModel:
                 return None
-            return EmbeddingModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"],
-                                                               base_url=model_config["api_base"])
+            return EmbeddingModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
 
         elif llm_type == LLMType.RERANK:
             if model_config["llm_factory"] not in RerankModel:
                 return None
-            return RerankModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"],
-                                                            base_url=model_config["api_base"])
+            return RerankModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"])
 
         elif llm_type == LLMType.IMAGE2TEXT.value:
             if model_config["llm_factory"] not in CvModel:
                 return None
-            return CvModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], lang,
-                                                        base_url=model_config["api_base"], **kwargs)
+            return CvModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], lang, base_url=model_config["api_base"], **kwargs)
 
         elif llm_type == LLMType.CHAT.value:
             if model_config["llm_factory"] not in ChatModel:
                 return None
-            return ChatModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"],
-                                                          base_url=model_config["api_base"], **kwargs)
+            return ChatModel[model_config["llm_factory"]](model_config["api_key"], model_config["llm_name"], base_url=model_config["api_base"], **kwargs)
 
         elif llm_type == LLMType.SPEECH2TEXT:
             if model_config["llm_factory"] not in Seq2txtModel:
                 return None
-            return Seq2txtModel[model_config["llm_factory"]](key=model_config["api_key"],
-                                                             model_name=model_config["llm_name"], lang=lang,
-                                                             base_url=model_config["api_base"])
+            return Seq2txtModel[model_config["llm_factory"]](key=model_config["api_key"], model_name=model_config["llm_name"], lang=lang, base_url=model_config["api_base"])
         elif llm_type == LLMType.TTS:
             if model_config["llm_factory"] not in TTSModel:
                 return None
@@ -216,14 +209,11 @@ class TenantLLMService(CommonService):
         try:
             num = (
                 cls.model.update(used_tokens=cls.model.used_tokens + used_tokens)
-                .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == llm_name,
-                       cls.model.llm_factory == llm_factory if llm_factory else True)
+                .where(cls.model.tenant_id == tenant_id, cls.model.llm_name == llm_name, cls.model.llm_factory == llm_factory if llm_factory else True)
                 .execute()
             )
         except Exception:
-            logging.exception(
-                "TenantLLMService.increase_usage got exception,Failed to update used_tokens for tenant_id=%s, llm_name=%s",
-                tenant_id, llm_name)
+            logging.exception("TenantLLMService.increase_usage got exception. Failed to update used_tokens for tenant_id=%s, llm_name=%s", tenant_id, llm_name)
             return 0
 
         return num
@@ -231,9 +221,7 @@ class TenantLLMService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_openai_models(cls):
-        objs = cls.model.select().where((cls.model.llm_factory == "OpenAI"),
-                                        ~(cls.model.llm_name == "text-embedding-3-small"),
-                                        ~(cls.model.llm_name == "text-embedding-3-large")).dicts()
+        objs = cls.model.select().where((cls.model.llm_factory == "OpenAI"), ~(cls.model.llm_name == "text-embedding-3-small"), ~(cls.model.llm_name == "text-embedding-3-large")).dicts()
         return list(objs)
 
     @classmethod
@@ -306,6 +294,7 @@ class TenantLLMService(CommonService):
     @staticmethod
     def llm_id2llm_type(llm_id: str) -> str | None:
         from api.db.services.llm_service import LLMService
+
         llm_id, *_ = TenantLLMService.split_model_name_and_factory(llm_id)
         llm_factories = settings.FACTORY_LLM_INFOS
         for llm_factory in llm_factories:
@@ -340,8 +329,7 @@ class LLM4Tenant:
         langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=tenant_id)
         self.langfuse = None
         if langfuse_keys:
-            langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key,
-                                host=langfuse_keys.host)
+            langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
             if langfuse.auth_check():
                 self.langfuse = langfuse
                 trace_id = self.langfuse.create_trace_id()
