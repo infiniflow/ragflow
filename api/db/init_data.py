@@ -41,6 +41,7 @@ DEFAULT_SUPERUSER_NICKNAME = os.getenv("DEFAULT_SUPERUSER_NICKNAME", "admin")
 DEFAULT_SUPERUSER_EMAIL = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
 DEFAULT_SUPERUSER_PASSWORD = os.getenv("DEFAULT_SUPERUSER_PASSWORD", "admin")
 
+
 def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_EMAIL, password=DEFAULT_SUPERUSER_PASSWORD, role=UserTenantRole.OWNER):
     user_info = {
         "id": uuid.uuid1().hex,
@@ -58,14 +59,9 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
         "embd_id": settings.EMBEDDING_MDL,
         "asr_id": settings.ASR_MDL,
         "parser_ids": settings.PARSERS,
-        "img2txt_id": settings.IMAGE2TEXT_MDL
+        "img2txt_id": settings.IMAGE2TEXT_MDL,
     }
-    usr_tenant = {
-        "tenant_id": user_info["id"],
-        "user_id": user_info["id"],
-        "invited_by": user_info["id"],
-        "role": role
-    }
+    usr_tenant = {"tenant_id": user_info["id"], "user_id": user_info["id"], "invited_by": user_info["id"], "role": role}
 
     tenant_llm = get_init_tenant_llm(user_info["id"])
 
@@ -75,22 +71,19 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
     TenantService.insert(**tenant)
     UserTenantService.insert(**usr_tenant)
     TenantLLMService.insert_many(tenant_llm)
-    logging.info(
-        f"Super user initialized. email: {email},A default password has been set; changing the password after login is strongly recommended.")
+    # Mask email to avoid PII exposure in logs
+    email_parts = email.split('@')
+    masked_email = f"{email_parts[0][0]}***@{email_parts[1]}" if len(email_parts) == 2 and email_parts[0] else "***"
+    logging.info(f"Super user initialized. email: {masked_email}, A default password has been set; changing the password after login is strongly recommended.")
 
     chat_mdl = LLMBundle(tenant["id"], LLMType.CHAT, tenant["llm_id"])
     msg = asyncio.run(chat_mdl.async_chat(system="", history=[{"role": "user", "content": "Hello!"}], gen_conf={}))
     if msg.find("ERROR: ") == 0:
-        logging.error(
-            "'{}' doesn't work. {}".format(
-                tenant["llm_id"],
-                msg))
+        logging.error("'{}' doesn't work. {}".format(tenant["llm_id"], msg))
     embd_mdl = LLMBundle(tenant["id"], LLMType.EMBEDDING, tenant["embd_id"])
     v, c = embd_mdl.encode(["Hello!"])
     if c == 0:
-        logging.error(
-            "'{}' doesn't work!".format(
-                tenant["embd_id"]))
+        logging.error("'{}' doesn't work!".format(tenant["embd_id"]))
 
 
 def init_llm_factory():
@@ -120,8 +113,12 @@ def init_llm_factory():
     LLMService.filter_delete([LLMService.model.fid == "QAnything"])
     TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "QAnything"], {"llm_factory": "Youdao"})
     TenantLLMService.filter_update([TenantLLMService.model.llm_factory == "cohere"], {"llm_factory": "Cohere"})
-    TenantService.filter_update([1 == 1], {
-        "parser_ids": "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"})
+    TenantService.filter_update(
+        [1 == 1],
+        {
+            "parser_ids": "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"
+        },
+    )
     ## insert openai two embedding models to the current openai user.
     # print("Start to insert 2 OpenAI embedding models...")
     tenant_ids = set([row["tenant_id"] for row in TenantLLMService.get_openai_models()])
@@ -144,7 +141,6 @@ def init_llm_factory():
         KnowledgebaseService.update_document_number_in_init(kb_id=kb_id, doc_num=doc_count.get(kb_id, 0))
 
 
-
 def add_graph_templates():
     dir = os.path.join(get_project_base_directory(), "agent", "templates")
     CanvasTemplateService.filter_delete([1 == 1])
@@ -154,7 +150,7 @@ def add_graph_templates():
 
     for fnm in os.listdir(dir):
         try:
-            cnvs = json.load(open(os.path.join(dir, fnm), "r",encoding="utf-8"))
+            cnvs = json.load(open(os.path.join(dir, fnm), "r", encoding="utf-8"))
             try:
                 CanvasTemplateService.save(**cnvs)
             except Exception:
@@ -176,6 +172,7 @@ def init_web_data():
     init_message_id_sequence()
     init_memory_size_cache()
     logging.info("init web data success:{}".format(time.time() - start_time))
+
 
 def init_table():
     # init system_settings
@@ -203,6 +200,6 @@ def init_table():
             raise e
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     init_web_db()
     init_web_data()

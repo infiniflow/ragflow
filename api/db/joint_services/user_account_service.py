@@ -40,6 +40,7 @@ from rag.nlp import search
 from common.constants import ActiveEnum
 from common import settings
 
+
 def create_new_user(user_info: dict) -> dict:
     """
     Add a new user, and create tenant, tenant llm, file folder for new user.
@@ -57,8 +58,8 @@ def create_new_user(user_info: dict) -> dict:
     """
     # generate user_id and access_token for user
     user_id = uuid.uuid1().hex
-    user_info['id'] = user_id
-    user_info['access_token'] = uuid.uuid1().hex
+    user_info["id"] = user_id
+    user_info["access_token"] = uuid.uuid1().hex
     # construct tenant info
     tenant = {
         "id": user_id,
@@ -148,7 +149,7 @@ def delete_user_data(user_id: str) -> dict:
     tenants = UserTenantService.get_user_tenant_relation_by_user_id(usr.id)
     owned_tenant = [t for t in tenants if t["role"] == UserTenantRole.OWNER.value]
 
-    done_msg = ''
+    done_msg = ""
     try:
         # step1. delete owned tenant info
         if owned_tenant:
@@ -174,14 +175,10 @@ def delete_user_data(user_id: str) -> dict:
                     file_delete_res = FileService.delete_by_ids([f["id"] for f in file_ids])
                     done_msg += f"- Deleted {file_delete_res} file records.\n"
                 if doc_ids or file_ids:
-                    file2doc_delete_res = File2DocumentService.delete_by_document_ids_or_file_ids(
-                        [i["id"] for i in doc_ids],
-                        [f["id"] for f in file_ids]
-                    )
+                    file2doc_delete_res = File2DocumentService.delete_by_document_ids_or_file_ids([i["id"] for i in doc_ids], [f["id"] for f in file_ids])
                     done_msg += f"- Deleted {file2doc_delete_res} document-file relation records.\n"
                 # step1.1.3 delete chunk in es
-                r = settings.docStoreConn.delete({"kb_id": kb_ids},
-                                         search.index_name(tenant_id), kb_ids)
+                r = settings.docStoreConn.delete({"kb_id": kb_ids}, search.index_name(tenant_id), kb_ids)
                 done_msg += f"- Deleted {r} chunk records.\n"
                 kb_delete_res = KnowledgebaseService.delete_by_ids(kb_ids)
                 done_msg += f"- Deleted {kb_delete_res} dataset records.\n"
@@ -223,8 +220,8 @@ def delete_user_data(user_id: str) -> dict:
                 created_documents = DocumentService.get_all_docs_by_creator_id(usr.id)
                 if created_documents:
                     # step2.1.1 delete files
-                    doc_file_info = File2DocumentService.get_by_document_ids([d['id'] for d in created_documents])
-                    created_files = FileService.get_by_ids([f['file_id'] for f in doc_file_info])
+                    doc_file_info = File2DocumentService.get_by_document_ids([d["id"] for d in created_documents])
+                    created_files = FileService.get_by_ids([f["file_id"] for f in doc_file_info])
                     if created_files:
                         # step2.1.1.1 delete file in storage
                         for f in created_files:
@@ -234,10 +231,7 @@ def delete_user_data(user_id: str) -> dict:
                         file_delete_res = FileService.delete_by_ids([f.id for f in created_files])
                         done_msg += f"- Deleted {file_delete_res} file records.\n"
                     # step2.1.2 delete document-file relation record
-                    file2doc_delete_res = File2DocumentService.delete_by_document_ids_or_file_ids(
-                        [d['id'] for d in created_documents],
-                        [f.id for f in created_files]
-                    )
+                    file2doc_delete_res = File2DocumentService.delete_by_document_ids_or_file_ids([d["id"] for d in created_documents], [f.id for f in created_files])
                     done_msg += f"- Deleted {file2doc_delete_res} document-file relation records.\n"
                     # step2.1.3 delete chunks
                     doc_groups = group_by(created_documents, "tenant_id")
@@ -247,27 +241,20 @@ def delete_user_data(user_id: str) -> dict:
                     kb_doc_info = {}
                     for _tenant_id, kb_doc in kb_grouped_doc.items():
                         for _kb_id, docs in kb_doc.items():
-                            chunk_delete_res += settings.docStoreConn.delete(
-                                {"doc_id": [d["id"] for d in docs]},
-                                search.index_name(_tenant_id), _kb_id
-                            )
+                            chunk_delete_res += settings.docStoreConn.delete({"doc_id": [d["id"] for d in docs]}, search.index_name(_tenant_id), _kb_id)
                             # record doc info
                             if _kb_id in kb_doc_info.keys():
-                                kb_doc_info[_kb_id]['doc_num'] += 1
-                                kb_doc_info[_kb_id]['token_num'] += sum([d["token_num"] for d in docs])
-                                kb_doc_info[_kb_id]['chunk_num'] += sum([d["chunk_num"] for d in docs])
+                                kb_doc_info[_kb_id]["doc_num"] += 1
+                                kb_doc_info[_kb_id]["token_num"] += sum([d["token_num"] for d in docs])
+                                kb_doc_info[_kb_id]["chunk_num"] += sum([d["chunk_num"] for d in docs])
                             else:
-                                kb_doc_info[_kb_id] = {
-                                    'doc_num': 1,
-                                    'token_num': sum([d["token_num"] for d in docs]),
-                                    'chunk_num': sum([d["chunk_num"] for d in docs])
-                                }
+                                kb_doc_info[_kb_id] = {"doc_num": 1, "token_num": sum([d["token_num"] for d in docs]), "chunk_num": sum([d["chunk_num"] for d in docs])}
                     done_msg += f"- Deleted {chunk_delete_res} chunks.\n"
                     # step2.1.4 delete tasks
-                    task_delete_res = TaskService.delete_by_doc_ids([d['id'] for d in created_documents])
+                    task_delete_res = TaskService.delete_by_doc_ids([d["id"] for d in created_documents])
                     done_msg += f"- Deleted {task_delete_res} tasks.\n"
                     # step2.1.5 delete document record
-                    doc_delete_res = DocumentService.delete_by_ids([d['id'] for d in created_documents])
+                    doc_delete_res = DocumentService.delete_by_ids([d["id"] for d in created_documents])
                     done_msg += f"- Deleted {doc_delete_res} documents.\n"
                     # step2.1.6 update dataset doc&chunk&token cnt
                     for kb_id, doc_num in kb_doc_info.items():
@@ -284,7 +271,7 @@ def delete_user_data(user_id: str) -> dict:
 
     except Exception as e:
         logging.exception(e)
-        return {"success": False, "message": "An internal error occurred during user deletion. Some operations may have completed.","details": done_msg}
+        return {"success": False, "message": "An internal error occurred during user deletion. Some operations may have completed.", "details": done_msg}
 
 
 def delete_user_agents(user_id: str) -> dict:
@@ -298,13 +285,10 @@ def delete_user_agents(user_id: str) -> dict:
     agents_deleted_count, agents_version_deleted_count = 0, 0
     user_agents = UserCanvasService.get_all_agents_by_tenant_ids([user_id], user_id)
     if user_agents:
-        agents_version = UserCanvasVersionService.get_all_canvas_version_by_canvas_ids([a['id'] for a in user_agents])
-        agents_version_deleted_count = UserCanvasVersionService.delete_by_ids([v['id'] for v in agents_version])
-        agents_deleted_count = UserCanvasService.delete_by_ids([a['id'] for a in user_agents])
-    return {
-        "agents_deleted_count": agents_deleted_count,
-        "version_deleted_count": agents_version_deleted_count
-    }
+        agents_version = UserCanvasVersionService.get_all_canvas_version_by_canvas_ids([a["id"] for a in user_agents])
+        agents_version_deleted_count = UserCanvasVersionService.delete_by_ids([v["id"] for v in agents_version])
+        agents_deleted_count = UserCanvasService.delete_by_ids([a["id"] for a in user_agents])
+    return {"agents_deleted_count": agents_deleted_count, "version_deleted_count": agents_version_deleted_count}
 
 
 def delete_user_dialogs(user_id: str) -> dict:
@@ -321,17 +305,17 @@ def delete_user_dialogs(user_id: str) -> dict:
     user_dialogs = DialogService.get_all_dialogs_by_tenant_id(user_id)
     if user_dialogs:
         # delete conversation
-        conversations = ConversationService.get_all_conversation_by_dialog_ids([ud['id'] for ud in user_dialogs])
-        conversations_deleted_count = ConversationService.delete_by_ids([c['id'] for c in conversations])
+        conversations = ConversationService.get_all_conversation_by_dialog_ids([ud["id"] for ud in user_dialogs])
+        conversations_deleted_count = ConversationService.delete_by_ids([c["id"] for c in conversations])
         # delete api token
         api_token_deleted_count = APITokenService.delete_by_tenant_id(user_id)
         # delete api for conversation
-        api4conversation_deleted_count = API4ConversationService.delete_by_dialog_ids([ud['id'] for ud in user_dialogs])
+        api4conversation_deleted_count = API4ConversationService.delete_by_dialog_ids([ud["id"] for ud in user_dialogs])
         # delete dialog at last
-        dialog_deleted_count = DialogService.delete_by_ids([ud['id'] for ud in user_dialogs])
+        dialog_deleted_count = DialogService.delete_by_ids([ud["id"] for ud in user_dialogs])
     return {
         "dialogs_deleted_count": dialog_deleted_count,
         "conversations_deleted_count": conversations_deleted_count,
         "api_token_deleted_count": api_token_deleted_count,
-        "api4conversation_deleted_count": api4conversation_deleted_count
+        "api4conversation_deleted_count": api4conversation_deleted_count,
     }
