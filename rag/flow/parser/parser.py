@@ -358,48 +358,14 @@ class Parser(ProcessBase):
                 parse_method=conf.get("paddleocr_parse_method", "raw"),
             )
             bboxes = []
-            for section in lines:
-                # PaddleOCRParser returns sections as tuple, different formats based on parse_method:
-                # - "raw": (text, position_tag)
-                # - "manual": (text, label, position_tag)
-                # - "paper": (text_with_tag, label)
-                text = section[0]
-
-                # Parse position tag if exists
-                position_tag = ""
-                if len(section) > 1:
-                    if len(section) == 2:  # raw format: (text, tag)
-                        position_tag = section[1]
-                    elif len(section) == 3:  # manual format: (text, label, tag)
-                        position_tag = section[2]
-                    elif "paper" in conf.get("paddleocr_parse_method", "") and len(section) == 2:
-                        # paper format: text may contain tag
-                        text_with_tag = text
-                        import re
-
-                        tag_match = re.search(r"(@@[0-9-]+\t[0-9.\t]+##)", text_with_tag)
-                        if tag_match:
-                            position_tag = tag_match.group(1)
-                            text = text_with_tag.replace(position_tag, "").strip()
-
-                # Extract coordinate information from position tag
-                page_number, x0, x1, top, bottom = 1, 0, 0, 0, 0
-                if position_tag:
-                    import re
-
-                    tag_match = re.match(r"@@([0-9-]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)##", position_tag)
-                    if tag_match:
-                        pn, x0_str, x1_str, top_str, bottom_str = tag_match.groups()
-                        page_number = int(pn.split("-")[0])  # Take first page number
-                        x0, x1, top, bottom = float(x0_str), float(x1_str), float(top_str), float(bottom_str)
+            for t, poss in lines:
+                # Get cropped image and positions
+                cropped_image, positions = pdf_parser.crop(poss, need_position=True)
 
                 box = {
-                    "text": text,
-                    "page_number": page_number,
-                    "x0": x0,
-                    "x1": x1,
-                    "top": top,
-                    "bottom": bottom,
+                    "text": t,
+                    "image": cropped_image,
+                    "positions": positions,
                 }
                 bboxes.append(box)
         else:
