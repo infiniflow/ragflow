@@ -658,7 +658,7 @@ class OBConnection(DocStoreConnection):
 
         self.client.create_table(
             table_name=table_name,
-            columns=column_definitions,
+            columns=[c.copy() for c in column_definitions],
             **table_options,
         )
         logger.info(f"Created table '{table_name}'.")
@@ -711,7 +711,7 @@ class OBConnection(DocStoreConnection):
         try:
             self.client.add_columns(
                 table_name=table_name,
-                columns=[column],
+                columns=[column.copy()],
             )
             logger.info(f"Added column '{column.name}' to table '{table_name}'.")
         except Exception as e:
