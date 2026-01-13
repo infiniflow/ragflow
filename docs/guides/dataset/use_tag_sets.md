@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideTags
 }
 ---
-
 # Use tag set
 
 Use a tag set to auto-tag chunks in your datasets.
@@ -46,10 +45,10 @@ A tag set is *not* involved in document indexing or retrieval. Do not specify a 
 
 1. Click **+ Create dataset** to create a dataset.
 2. Navigate to the **Configuration** page of the created dataset, select **Built-in** in **Ingestion pipeline**, then choose **Tag** as the default chunking method from the **Built-in** drop-down menu.
-3. Go back to the **Files** page and upload and parse your table file in XLSX, CSV, or TXT formats.
-   _A tag cloud appears under the **Tag view** section, indicating the tag set is created:_
+3. Go back to the **Files** page and upload and parse your table file in XLSX, CSV, or TXT formats.  
+   _A tag cloud appears under the **Tag view** section, indicating the tag set is created:_  
    ![Image](https://github.com/user-attachments/assets/abefbcbf-c130-4abe-95e1-267b0d2a0505)
-4. Click the **Table** tab to view the tag frequency table:
+4. Click the **Table** tab to view the tag frequency table:  
    ![Image](https://github.com/user-attachments/assets/af91d10c-5ea5-491f-ab21-3803d5ebf59f)
 
 ## 2. Tag chunks
@@ -63,12 +62,12 @@ Once a tag set is created, you can apply it to your dataset:
    If the tag set is missing from the dropdown, check that it has been created or configured correctly.
    :::
 
-3. Re-parse your documents to start the auto-tagging process.
+3. Re-parse your documents to start the auto-tagging process.  
    _In an AI chat scenario using auto-tagged datasets, each query will be tagged using the corresponding tag set(s) and chunks with these tags will have a higher chance to be retrieved._
 
 ## 3. Update tag set
 
-Creating a tag set is *not* for once and for all. Oftentimes, you may find it necessary to update or delete existing tags or add new entries.
+Creating a tag set is *not* for once and for all. Oftentimes, you may find it necessary to update or delete existing tags or add new entries. 
 
 - You can update the existing tag set in the tag frequency table.
 - To add new entries, you can add and parse new table files in XLSX, CSV, or TXT formats.

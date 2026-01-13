@@ -5,10 +5,9 @@ sidebar_custom_props: {
   categoryIcon: RagHTTP
 }
 ---
-
 # HTTP request component
 
-A component that calls remote services.
+A component that calls remote services. 
 
 ---
 

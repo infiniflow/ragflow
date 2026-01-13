@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideScanSearch
 }
 ---
-
 # Implement deep research
 
 Implements deep research for agentic reasoning.
