@@ -236,18 +236,20 @@ export default {
   retrievalTestShare: `${ExternalApi}${api_host}/searchbots/retrieval_test`,
 
   // memory
-  createMemory: `${api_host}/memories`,
-  getMemoryList: `${api_host}/memories`,
-  getMemoryConfig: (id: string) => `${api_host}/memories/${id}/config`,
-  deleteMemory: (id: string) => `${api_host}/memories/${id}`,
-  getMemoryDetail: (id: string) => `${api_host}/memories/${id}`,
-  updateMemorySetting: (id: string) => `${api_host}/memories/${id}`,
+  createMemory: `${ExternalApi}${api_host}/memories`,
+  getMemoryList: `${ExternalApi}${api_host}/memories`,
+  getMemoryConfig: (id: string) =>
+    `${ExternalApi}${api_host}/memories/${id}/config`,
+  deleteMemory: (id: string) => `${ExternalApi}${api_host}/memories/${id}`,
+  getMemoryDetail: (id: string) => `${ExternalApi}${api_host}/memories/${id}`,
+  updateMemorySetting: (id: string) =>
+    `${ExternalApi}${api_host}/memories/${id}`,
   deleteMemoryMessage: (data: { memory_id: string; message_id: string }) =>
-    `${api_host}/messages/${data.memory_id}:${data.message_id}`,
+    `${ExternalApi}${api_host}/messages/${data.memory_id}:${data.message_id}`,
   getMessageContent: (data: { memory_id: string; message_id: string }) =>
-    `${api_host}/messages/${data.memory_id}:${data.message_id}/content`,
+    `${ExternalApi}${api_host}/messages/${data.memory_id}:${data.message_id}/content`,
   updateMessageState: (data: { memory_id: string; message_id: string }) =>
-    `${api_host}/messages/${data.memory_id}:${data.message_id}`,
+    `${ExternalApi}${api_host}/messages/${data.memory_id}:${data.message_id}`,
 
   // data pipeline
   fetchDataflow: (id: string) => `${api_host}/dataflow/get/${id}`,

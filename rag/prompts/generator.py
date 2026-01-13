@@ -38,6 +38,8 @@ def get_value(d, k1, k2):
 
 
 def chunks_format(reference):
+    if not reference or not isinstance(reference, dict):
+        return []
     return [
         {
             "id": get_value(chunk, "chunk_id", "id"),
@@ -483,20 +485,26 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str) -> dict:
     return {"conditions": []}
 
 
-async def gen_json(system_prompt: str, user_prompt: str, chat_mdl, gen_conf=None):
+async def gen_json(system_prompt: str, user_prompt: str, chat_mdl, gen_conf={}, max_retry=2):
     from graphrag.utils import get_llm_cache, set_llm_cache
     cached = get_llm_cache(chat_mdl.llm_name, system_prompt, user_prompt, gen_conf)
     if cached:
         return json_repair.loads(cached)
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
-    ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:], gen_conf=gen_conf)
-    ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
-    try:
-        res = json_repair.loads(ans)
-        set_llm_cache(chat_mdl.llm_name, system_prompt, ans, user_prompt, gen_conf)
-        return res
-    except Exception:
-        logging.exception(f"Loading json failure: {ans}")
+    err = ""
+    ans = ""
+    for _ in range(max_retry):
+        if ans and err:
+            msg[-1]["content"] += f"\nGenerated JSON is as following:\n{ans}\nBut exception while loading:\n{err}\nPlease reconsider and correct it."
+        ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:], gen_conf=gen_conf)
+        ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
+        try:
+            res = json_repair.loads(ans)
+            set_llm_cache(chat_mdl.llm_name, system_prompt, ans, user_prompt, gen_conf)
+            return res
+        except Exception as e:
+            logging.exception(f"Loading json failure: {ans}")
+            err += str(e)
 
 
 TOC_DETECTION = load_prompt("toc_detection")
@@ -845,8 +853,6 @@ async def run_toc_from_text(chunks, chat_mdl, callback=None):
 
 TOC_RELEVANCE_SYSTEM = load_prompt("toc_relevance_system")
 TOC_RELEVANCE_USER = load_prompt("toc_relevance_user")
-
-
 async def relevant_chunks_with_toc(query: str, toc: list[dict], chat_mdl, topn: int = 6):
     import numpy as np
     try:
@@ -874,8 +880,6 @@ async def relevant_chunks_with_toc(query: str, toc: list[dict], chat_mdl, topn: 
 
 
 META_DATA = load_prompt("meta_data")
-
-
 async def gen_metadata(chat_mdl, schema: dict, content: str):
     template = PROMPT_JINJA_ENV.from_string(META_DATA)
     for k, desc in schema["properties"].items():
@@ -888,3 +892,34 @@ async def gen_metadata(chat_mdl, schema: dict, content: str):
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
     ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:])
     return re.sub(r"^.*</think>", "", ans, flags=re.DOTALL)
+
+
+SUFFICIENCY_CHECK = load_prompt("sufficiency_check")
+async def sufficiency_check(chat_mdl, question: str, ret_content: str):
+    try:
+        return await gen_json(
+            PROMPT_JINJA_ENV.from_string(SUFFICIENCY_CHECK).render(question=question, retrieved_docs=ret_content),
+            "Output:\n",
+            chat_mdl
+        )
+    except Exception as e:
+        logging.exception(e)
+    return {}
+
+
+MULTI_QUERIES_GEN = load_prompt("multi_queries_gen")
+async def multi_queries_gen(chat_mdl, question: str, query:str, missing_infos:list[str], ret_content: str):
+    try:
+        return await gen_json(
+            PROMPT_JINJA_ENV.from_string(MULTI_QUERIES_GEN).render(
+                original_question=question,
+                original_query=query,
+                missing_info="\n - ".join(missing_infos),
+                retrieved_docs=ret_content
+            ),
+            "Output:\n",
+            chat_mdl
+        )
+    except Exception as e:
+        logging.exception(e)
+    return {}
