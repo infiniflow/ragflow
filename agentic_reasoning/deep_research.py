@@ -36,6 +36,7 @@ class DeepResearcher:
         self._kb_retrieve = kb_retrieve
         self._kg_retrieve = kg_retrieve
 
+    @staticmethod
     def _remove_tags(text: str, start_tag: str, end_tag: str) -> str:
         """General Tag Removal Method"""
         pattern = re.escape(start_tag) + r"(.*?)" + re.escape(end_tag)

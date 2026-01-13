@@ -18,9 +18,8 @@
 Unit tests for MinerU parser fault tolerance features.
 """
 
-import pytest
 import requests
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from deepdoc.parser.mineru_parser import (
     MinerUParser,

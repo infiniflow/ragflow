@@ -257,6 +257,11 @@ class MinerUParser(RAGFlowPdfParser):
         output_path = tempfile.mkdtemp(prefix=f"{pdf_file_name}_{options.method}_", dir=str(output_dir))
         output_zip_path = os.path.join(str(output_dir), f"{Path(output_path).name}.zip")
 
+        # Ensure start_page <= end_page; swap if user provided reversed range
+        if start_page is not None and end_page is not None and start_page > end_page:
+            self.logger.warning(f"[MinerU] start_page ({start_page}) > end_page ({end_page}), swapping")
+            start_page, end_page = end_page, start_page
+
         data = {
             "output_dir": "./output",
             "lang_list": options.lang,
