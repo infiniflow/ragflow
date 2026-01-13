@@ -122,7 +122,7 @@ const PaddleOCRModal = ({
                 disabled={loading}
                 className="btn btn-primary"
               >
-                {loading ? t('common.adding') : t('common.add')}
+                {t('common.add')}
               </button>
             </div>
           </form>
