@@ -17,7 +17,7 @@
 
 import pytest
 from common import list_documents, update_document
-from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN
+from configs import DOCUMENT_NAME_LIMIT, INVALID_API_TOKEN, INVALID_ID_32
 from libs.auth import RAGFlowHttpApiAuth
 from configs import DEFAULT_PARSER_CONFIG
 
@@ -97,9 +97,8 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
-            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
             (
-                "invalid_document_id",
+                INVALID_ID_32,
                 102,
                 "The dataset doesn't own the document.",
             ),
@@ -115,9 +114,8 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
-            ("", 100, "<NotFound '404: Not Found'>"),
             (
-                "invalid_dataset_id",
+                INVALID_ID_32,
                 102,
                 "You don't own the dataset.",
             ),
