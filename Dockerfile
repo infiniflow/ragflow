@@ -55,6 +55,14 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y texlive && \
     apt install -y fonts-freefont-ttf fonts-noto-cjk
 
+# --- [修改点 1] ---
+# Use system Python 3.12 provided by Ubuntu 24.04 (avoid external PPAs)
+RUN apt-get update && apt-get install -y python3.12 python3.12-venv python3-pip
+
+# --- [修改点 2] ---
+# Install hatchling from apt to avoid pip-based build-time issues
+RUN apt-get update && apt-get install -y python3-hatchling
+
 # Install uv
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
     if [ "$NEED_MIRROR" == "1" ]; then \
@@ -66,11 +74,9 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
     fi; \
     tar xzf /deps/uv-x86_64-unknown-linux-gnu.tar.gz \
     && cp uv-x86_64-unknown-linux-gnu/* /usr/local/bin/ \
-    && rm -rf uv-x86_64-unknown-linux-gnu \
-    && uv python install 3.12
+    && rm -rf uv-x86_64-unknown-linux-gnu
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
-ENV PATH=/root/.local/bin:$PATH
 
 # nodejs 12.22 on Ubuntu 22.04 is too old
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
@@ -144,15 +150,19 @@ WORKDIR /ragflow
 # install dependencies from uv.lock file
 COPY pyproject.toml uv.lock ./
 
-# https://github.com/astral-sh/uv/issues/10462
-# uv records index url into uv.lock but doesn't failover among multiple indexes
+# --- [修改点 3] ---
+# Adjust uv.lock to prefer configured PyPI mirror and run uv sync in reproducible mode.
+# If NEED_MIRROR=1 then use pypi.tuna.tsinghua.edu.cn; otherwise use pypi.org
 RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
+        PYPI_SIMPLE="https://pypi.tuna.tsinghua.edu.cn/simple"; \
         sed -i 's|pypi.org|pypi.tuna.tsinghua.edu.cn|g' uv.lock; \
     else \
+        PYPI_SIMPLE="https://pypi.org/simple"; \
         sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
     fi; \
-    uv sync --python 3.12 --frozen
+    # Use uv to sync the virtual environment. Prefer system Python 3.12 for deterministic builds.
+    uv sync --python 3.12 --frozen --index-url "$PYPI_SIMPLE"
 
 COPY web web
 COPY docs docs
@@ -187,6 +197,7 @@ COPY deepdoc deepdoc
 COPY rag rag
 COPY agent agent
 COPY graphrag graphrag
+COPY agentic_reasoning agentic_reasoning
 COPY pyproject.toml uv.lock ./
 COPY mcp mcp
 COPY plugin plugin
