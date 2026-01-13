@@ -1,11 +1,15 @@
 # RAGFlow HTTP Benchmark CLI
 
 Run (from repo root):
+```
   PYTHONPATH=./test uv run -m benchmark [global flags] <chat|retrieval> [command flags]
   Global flags can be placed before or after the command.
+```
 
 If you run from another directory:
+```
   PYTHONPATH=/Directory_name/ragflow/test uv run -m benchmark [global flags] <chat|retrieval> [command flags]
+```
 
 JSON args:
   For --dataset-payload, --chat-payload, --messages-json, --extra-body, --payload
@@ -13,6 +17,7 @@ JSON args:
   - Or use a file: '@/path/to/file.json'
 
 Global flags
+```
   --base-url
     Base server URL.
     Env: RAGFLOW_BASE_URL or HOST_ADDRESS
@@ -37,8 +42,10 @@ Global flags
     Print response content per iteration (stdout). With --json, responses are included in the JSON output.
   --response-max-chars
     Truncate printed responses to N chars (0 = no limit).
+```
 
 Auth and bootstrap flags (used when --api-key is not provided)
+```
   --login-email
     Login email.
     Env: RAGFLOW_EMAIL
@@ -79,8 +86,10 @@ Auth and bootstrap flags (used when --api-key is not provided)
   --tenant-tts-id
     Tenant TTS model ID.
     Env: RAGFLOW_TENANT_TTS_ID
+```
 
 Dataset/document flags (shared by chat and retrieval)
+```
   --dataset-id
     Existing dataset ID.
   --dataset-ids
@@ -100,8 +109,10 @@ Dataset/document flags (shared by chat and retrieval)
     Document parse poll interval seconds (default: 1.0).
   --teardown
     Delete created resources after run.
+```
 
 Chat command flags
+```
   --chat-id
     Existing chat ID. If omitted, a chat is created.
   --chat-name
@@ -118,23 +129,30 @@ Chat command flags
     JSON list of OpenAI-format messages (required unless --message is provided).
   --extra-body
     JSON extra_body for OpenAI-compatible request.
+```
 
 Retrieval command flags
+```
   --question
     Retrieval question (required unless provided in --payload).
   --payload
     JSON body for /api/v1/retrieval (see API docs).
   --document-ids
     Comma-separated document IDs for retrieval.
+```
 
 Model selection guidance
   - Embedding model is tied to the dataset.
     Set during dataset creation using --dataset-payload:
+```
       {"name": "...", "embedding_model": "<model_name>@<provider>"}
+```
     Or set tenant defaults via --set-tenant-info with --tenant-embd-id.
   - Chat model is tied to the chat assistant.
     Set during chat creation using --chat-payload:
+```
       {"name": "...", "llm": {"model_name": "<model_name>@<provider>"}}
+```
     Or set tenant defaults via --set-tenant-info with --tenant-llm-id.
   - --model is required by the OpenAI-compatible endpoint but does not override
     the chat assistant's configured model on the server.
@@ -157,70 +175,109 @@ Do I need the dataset ID?
 Examples
 
 Example: chat benchmark creating dataset + upload + parse + chat (login + register)
+```
   PYTHONPATH=./test uv run -m benchmark chat \
     --base-url http://127.0.0.1:9380 \
     --allow-register \
-    --login-email "<login_email>" \
-    --login-password "<password>" \
+    --login-email "test@ragflow.com" \
+    --login-password "1234" \
     --bootstrap-llm \
     --llm-factory ZHIPU-AI \
     --llm-api-key $ZHIPU_AI_API_KEY \
     --dataset-name "bench_dataset" \
     --dataset-payload '{"name":"bench_dataset","embedding_model":"embedding-2@ZHIPU-AI"}' \
-    --document-path /path/to/doc1.pdf \
-    --document-path /path/to/doc2.pdf \
+    --document-path test/benchmark/test_docs/Doc1.pdf \
+    --document-path test/benchmark/test_docs/Doc2.pdf \
+    --document-path test/benchmark/test_docs/Doc3.pdf \
     --chat-name "bench_chat" \
     --chat-payload '{"name":"bench_chat","llm":{"model_name":"glm-4-flash@ZHIPU-AI"}}' \
-    --message "Say this is a test!" \
+    --message "What is the purpose of RAGFlow?" \
     --model "glm-4-flash@ZHIPU-AI"
+```
 
 Example: chat benchmark with existing dataset + chat id (no creation)
+```
   PYTHONPATH=./test uv run -m benchmark chat \
     --base-url http://127.0.0.1:9380 \
     --chat-id <existing_chat_id> \
-    --login-email "<login_email>" \
-    --login-password "<password>" \
-    --message "Say this is a test!" \
+    --login-email "test@ragflow.com" \
+    --login-password "1234" \
+    --message "What is the purpose of RAGFlow?" \
     --model "glm-4-flash@ZHIPU-AI"
+```
 
 Example: retrieval benchmark creating dataset + upload + parse
+```
   PYTHONPATH=./test uv run -m benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
     --allow-register \
-    --login-email "<login_email>" \
-    --login-password "<password>" \
+    --login-email "test@ragflow.com" \
+    --login-password "1234" \
     --bootstrap-llm \
     --llm-factory ZHIPU-AI \
     --llm-api-key $ZHIPU_AI_API_KEY \
     --dataset-name "bench_dataset" \
     --dataset-payload '{"name":"bench_dataset","embedding_model":"embedding-2@ZHIPU-AI"}' \
-    --document-path /path/to/file/Doc1.pdf \
-    --document-path /path/to/file/Doc2.pdf \
-    --question "What is the longest lasting empire"
+    --document-path test/benchmark/test_docs/Doc1.pdf \
+    --document-path test/benchmark/test_docs/Doc2.pdf \
+    --document-path test/benchmark/test_docs/Doc3.pdf \
+    --question "What does RAG mean?"
+```
 
 Example: retrieval benchmark with existing dataset IDs
+```
   PYTHONPATH=./test uv run -m benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
-    --login-email "<login_email>" \
-    --login-password "<password>" \
+    --login-email "test@ragflow.com" \
+    --login-password "1234" \
     --dataset-ids "<dataset_id_1>,<dataset_id_2>" \
-    --question "What is advantage of ragflow?"
+    --question "What does RAG mean?"
+```
 
 Example: retrieval benchmark with existing dataset IDs and document IDs
+```
   PYTHONPATH=./test uv run -m benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
-    --login-email "<login_email>" \
-    --login-password "<password>" \
+    --login-email "test@ragflow.com" \
+    --login-password "1234" \
     --dataset-id "<dataset_id>" \
     --document-ids "<doc_id_1>,<doc_id_2>" \
-    --question "What is advantage of ragflow?"
+    --question "What does RAG mean?"
+```
 
-Example: using a document list file (multi-file selection)
-  PYTHONPATH=./test uv run -m benchmark retrieval \
-    --base-url http://127.0.0.1:9380 \
-    --login-email "<login_email>" \
-    --login-password "<password>" \
-    --dataset-name "bench_dataset" \
-    --dataset-payload '{"name":"bench_dataset","embedding_model":"embedding-2@ZHIPU-AI"}' \
-    --document-paths-file /path/to/document_paths.txt \
-    --question "What is advantage of ragflow?"
+Quick scripts
+
+These scripts create a dataset,
+upload/parse docs from test/benchmark/test_docs, run the benchmark, and clean up.
+The both script runs retrieval then chat on the same dataset, then deletes it.
+
+Make sure to run uv sync --python 3.12 --group test before running the commands
+
+Chat only:
+```
+  ./test/benchmark/run_chat.sh
+```
+
+Retrieval only:
+```
+  ./test/benchmark/run_retrieval.sh
+```
+
+Both (retrieval then chat on the same dataset):
+```
+  ./test/benchmark/run_both.sh
+```
+
+Requires:
+  - ZHIPU_AI_API_KEY exported in your shell.
+
+Defaults used:
+  - Base URL: http://127.0.0.1:9380
+  - Login: test@ragflow.com / 1234 (with allow-register)
+  - LLM bootstrap: ZHIPU-AI with $ZHIPU_AI_API_KEY
+  - Dataset: bench_dataset (embedding-2@ZHIPU-AI)
+  - Chat: bench_chat (glm-4-flash@ZHIPU-AI)
+  - Chat message: "What is the purpose of RAGFlow?"
+  - Retrieval question: "What does RAG mean?"
+  - Iterations: 1
+  - concurrency:f 4
