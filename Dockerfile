@@ -150,7 +150,6 @@ COPY --chown=ragflow:ragflow deepdoc deepdoc
 COPY --chown=ragflow:ragflow rag rag
 COPY --chown=ragflow:ragflow agent agent
 COPY --chown=ragflow:ragflow graphrag graphrag
-COPY --chown=ragflow:ragflow agentic_reasoning agentic_reasoning
 COPY --chown=ragflow:ragflow pyproject.toml uv.lock ./
 COPY --chown=ragflow:ragflow mcp mcp
 COPY --chown=ragflow:ragflow plugin plugin

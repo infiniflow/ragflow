@@ -177,7 +177,6 @@ url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 [tool.setuptools]
 packages = [
     'agent',
-    'agentic_reasoning',
     'api',
     'deepdoc',
     'graphrag',
