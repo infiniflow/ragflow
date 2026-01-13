@@ -61,7 +61,7 @@ class ParserParam(ProcessParamBase):
                 "json",
             ],
             "image": [
-                "text",
+                "json",
             ],
             "email": [
                 "text",
@@ -120,7 +120,7 @@ class ParserParam(ProcessParamBase):
                 "lang": "Chinese",
                 "system_prompt": "",
                 "suffix": ["jpg", "jpeg", "png", "gif"],
-                "output_format": "text",
+                "output_format": "json",
             },
             "email": {
                 "suffix": [
@@ -676,7 +676,12 @@ class Parser(ProcessBase):
             else:
                 txt = cv_model.describe(img_binary.read())
 
-        self.set_output("text", txt)
+        json_result = [{
+            "text": txt,
+            "image": img,
+            "doc_type_kwd": "image",
+        }]
+        self.set_output("json", json_result)
 
     def _audio(self, name, blob):
         import os
