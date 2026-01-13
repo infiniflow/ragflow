@@ -34,15 +34,15 @@ from api.apps import app
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
 from common.file_utils import get_project_base_directory
-from common import settings
 from api.db.db_models import init_database_tables as init_web_db
 from api.db.init_data import init_web_data, init_superuser
 from common.versions import get_ragflow_version
 from common.config_utils import show_configs
 from common.mcp_tool_call_conn import shutdown_all_mcp_sessions
+from rag.utils.redis_utils import RedisDistributedLock
+from core.config import app_config
 from common.log_utils import init_root_logger
 from plugin import GlobalPluginManager
-from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
 
@@ -91,8 +91,6 @@ if __name__ == '__main__':
         f'project base: {get_project_base_directory()}'
     )
     show_configs()
-    settings.init_settings()
-    settings.print_rag_settings()
 
     if RAGFLOW_DEBUGPY_LISTEN > 0:
         logging.info(f"debugpy listen on {RAGFLOW_DEBUGPY_LISTEN}")
@@ -127,7 +125,7 @@ if __name__ == '__main__':
         logging.info("run on debug mode")
 
     RuntimeConfig.init_env()
-    RuntimeConfig.init_config(JOB_SERVER_HOST=settings.HOST_IP, HTTP_PORT=settings.HOST_PORT)
+    RuntimeConfig.init_config(JOB_SERVER_HOST=app_config.ragflow.host, HTTP_PORT=app_config.ragflow.host)
 
     GlobalPluginManager.load_plugins()
 
@@ -148,7 +146,7 @@ if __name__ == '__main__':
     # start http server
     try:
         logging.info(f"RAGFlow server is ready after {time.time() - start_ts}s initialization.")
-        app.run(host=settings.HOST_IP, port=settings.HOST_PORT)
+        app.run(host=app_config.ragflow.host, port=app_config.ragflow.http_port)
     except Exception:
         traceback.print_exc()
         stop_event.set()

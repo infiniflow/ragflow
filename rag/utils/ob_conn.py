@@ -33,12 +33,12 @@ from sqlalchemy import text, Column, String, Integer, JSON, Double, Row, Table
 from sqlalchemy.dialects.mysql import LONGTEXT, TEXT
 from sqlalchemy.sql.type_api import TypeEngine
 
-from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.decorator import singleton
 from common.float_utils import get_float
 from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr, FusionExpr, MatchTextExpr, \
     MatchDenseExpr
+from core.config import app_config
 from rag.nlp import rag_tokenizer
 
 ATTEMPT_TIME = 2
@@ -322,7 +322,7 @@ def _try_with_lock(lock_name: str, process_func, check_func, timeout: int = None
         timeout = int(os.environ.get("OB_DDL_TIMEOUT", "60"))
 
     if not check_func():
-        from rag.utils.redis_conn import RedisDistributedLock
+        from rag.utils.redis_utils import RedisDistributedLock
         lock = RedisDistributedLock(lock_name)
         if lock.acquire():
             logger.info(f"acquired lock success: {lock_name}, start processing.")
@@ -346,26 +346,14 @@ def _try_with_lock(lock_name: str, process_func, check_func, timeout: int = None
 @singleton
 class OBConnection(DocStoreConnection):
     def __init__(self):
-        scheme: str = settings.OB.get("scheme")
-        ob_config = settings.OB.get("config", {})
+        ob_cfg = app_config.database.oceanbase
+        host = ob_cfg.host
+        port = ob_cfg.port
+        self.username = ob_cfg.username
+        self.password = ob_cfg.password
+        max_connections = ob_cfg.max_connections
 
-        if scheme and scheme.lower() == "mysql":
-            mysql_config = settings.get_base_config("mysql", {})
-            logger.info("Use MySQL scheme to create OceanBase connection.")
-            host = mysql_config.get("host", "localhost")
-            port = mysql_config.get("port", 2881)
-            self.username = mysql_config.get("user", "root@test")
-            self.password = mysql_config.get("password", "infini_rag_flow")
-            max_connections = mysql_config.get("max_connections", 300)
-        else:
-            logger.info("Use customized config to create OceanBase connection.")
-            host = ob_config.get("host", "localhost")
-            port = ob_config.get("port", 2881)
-            self.username = ob_config.get("user", "root@test")
-            self.password = ob_config.get("password", "infini_rag_flow")
-            max_connections = ob_config.get("max_connections", 300)
-
-        self.db_name = ob_config.get("db_name", "test")
+        self.db_name = ob_cfg.db_name
         self.uri = f"{host}:{port}"
 
         logger.info(f"Use OceanBase '{self.uri}' as the doc engine.")

@@ -18,12 +18,13 @@ import json
 import logging
 from peewee import IntegrityError
 from langfuse import Langfuse
-from common import settings
 from common.constants import MINERU_DEFAULT_CONFIG, MINERU_ENV_KEYS, PADDLEOCR_DEFAULT_CONFIG, PADDLEOCR_ENV_KEYS, LLMType
 from api.db.db_models import DB, LLMFactories, TenantLLM
 from api.db.services.common_service import CommonService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.user_service import TenantService
+from core.config import app_config
+from core.config.utils.loader import get_llm_factories
 from rag.llm import ChatModel, CvModel, EmbeddingModel, OcrModel, RerankModel, Seq2txtModel, TTSModel
 
 
@@ -75,7 +76,7 @@ class TenantLLMService(CommonService):
 
         # model name must be xxx@yyy
         try:
-            model_factories = settings.FACTORY_LLM_INFOS
+            model_factories = get_llm_factories()
             model_providers = set([f["name"] for f in model_factories])
             if arr[-1] not in model_providers:
                 return model_name, None
@@ -119,7 +120,7 @@ class TenantLLMService(CommonService):
         if model_config:
             model_config = model_config.to_dict()
         elif llm_type == LLMType.EMBEDDING and fid == "Builtin" and "tei-" in os.getenv("COMPOSE_PROFILES", "") and mdlnm == os.getenv("TEI_MODEL", ""):
-            embedding_cfg = settings.EMBEDDING_CFG
+            embedding_cfg = app_config.user_default_llm.embedding_model_cfg.model_dump()
             model_config = {"llm_factory": "Builtin", "api_key": embedding_cfg["api_key"], "llm_name": mdlnm, "api_base": embedding_cfg["base_url"]}
         else:
             raise LookupError(f"Model({mdlnm}@{fid}) not authorized")
@@ -358,7 +359,7 @@ class TenantLLMService(CommonService):
         from api.db.services.llm_service import LLMService
 
         llm_id, *_ = TenantLLMService.split_model_name_and_factory(llm_id)
-        llm_factories = settings.FACTORY_LLM_INFOS
+        llm_factories = get_llm_factories()
         for llm_factory in llm_factories:
             for llm in llm_factory["llm"]:
                 if llm_id == llm["llm_name"]:

@@ -36,11 +36,10 @@ from api.db import VALID_FILE_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.db_models import File
 from api.utils.api_utils import get_json_result
+from core.providers import providers
 from rag.nlp import search
 from api.constants import DATASET_NAME_LIMIT
-from rag.utils.redis_conn import REDIS_CONN
 from common.constants import RetCode, PipelineTaskType, StatusEnum, VALID_TASK_STATUS, FileSource, LLMType, PAGERANK_FLD
-from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 from api.apps import login_required, current_user
 
@@ -131,7 +130,7 @@ async def update():
         if kb.pagerank != req.get("pagerank", 0):
             if req.get("pagerank", 0) > 0:
                 await asyncio.to_thread(
-                    settings.docStoreConn.update,
+                    providers.doc_store.conn.update,
                     {"kb_id": kb.id},
                     {PAGERANK_FLD: req["pagerank"]},
                     search.index_name(kb.tenant_id),
@@ -140,7 +139,7 @@ async def update():
             else:
                 # Elasticsearch requires PAGERANK_FLD be non-zero!
                 await asyncio.to_thread(
-                    settings.docStoreConn.update,
+                    providers.doc_store.conn.update,
                     {"exists": PAGERANK_FLD},
                     {"remove": PAGERANK_FLD},
                     search.index_name(kb.tenant_id),
@@ -285,10 +284,11 @@ async def rm():
                 return get_data_error_result(
                     message="Database error (Knowledgebase removal)!")
             for kb in kbs:
-                settings.docStoreConn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
-                settings.docStoreConn.delete_idx(search.index_name(kb.tenant_id), kb.id)
-                if hasattr(settings.STORAGE_IMPL, 'remove_bucket'):
-                    settings.STORAGE_IMPL.remove_bucket(kb.id)
+                providers.doc_store.conn.delete({"kb_id": kb.id}, search.index_name(kb.tenant_id), kb.id)
+                providers.doc_store.conn.delete_idx(search.index_name(kb.tenant_id), kb.id)
+                
+                if hasattr(providers.storage.conn, "remove_bucket"):
+                    providers.storage.conn.remove_bucket(kb.id)
             return get_json_result(data=True)
 
         return await asyncio.to_thread(_rm_sync)
@@ -309,7 +309,7 @@ def list_tags(kb_id):
     tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
     tags = []
     for tenant in tenants:
-        tags += settings.retriever.all_tags(tenant["tenant_id"], [kb_id])
+        tags += providers.retriever.conn.all_tags(tenant["tenant_id"], [kb_id])
     return get_json_result(data=tags)
 
 
@@ -328,7 +328,7 @@ def list_tags_from_kbs():
     tenants = UserTenantService.get_tenants_by_user_id(current_user.id)
     tags = []
     for tenant in tenants:
-        tags += settings.retriever.all_tags(tenant["tenant_id"], kb_ids)
+        tags += providers.retriever.conn.all_tags(tenant["tenant_id"], kb_ids)
     return get_json_result(data=tags)
 
 
@@ -345,7 +345,7 @@ async def rm_tags(kb_id):
     e, kb = KnowledgebaseService.get_by_id(kb_id)
 
     for t in req["tags"]:
-        settings.docStoreConn.update({"tag_kwd": t, "kb_id": [kb_id]},
+        providers.doc_store.conn.update({"tag_kwd": t, "kb_id": [kb_id]},
                                      {"remove": {"tag_kwd": t}},
                                      search.index_name(kb.tenant_id),
                                      kb_id)
@@ -364,7 +364,7 @@ async def rename_tags(kb_id):
         )
     e, kb = KnowledgebaseService.get_by_id(kb_id)
 
-    settings.docStoreConn.update({"tag_kwd": req["from_tag"], "kb_id": [kb_id]},
+    providers.doc_store.conn.update({"tag_kwd": req["from_tag"], "kb_id": [kb_id]},
                                      {"remove": {"tag_kwd": req["from_tag"].strip()}, "add": {"tag_kwd": req["to_tag"]}},
                                      search.index_name(kb.tenant_id),
                                      kb_id)
@@ -387,9 +387,9 @@ def knowledge_graph(kb_id):
     }
 
     obj = {"graph": {}, "mind_map": {}}
-    if not settings.docStoreConn.index_exist(search.index_name(kb.tenant_id), kb_id):
+    if not providers.doc_store.conn.index_exist(search.index_name(kb.tenant_id), kb_id):
         return get_json_result(data=obj)
-    sres = settings.retriever.search(req, search.index_name(kb.tenant_id), [kb_id])
+    sres = providers.retriever.conn.search(req, search.index_name(kb.tenant_id), [kb_id])
     if not len(sres.ids):
         return get_json_result(data=obj)
 
@@ -421,7 +421,7 @@ def delete_knowledge_graph(kb_id):
             code=RetCode.AUTHENTICATION_ERROR
         )
     _, kb = KnowledgebaseService.get_by_id(kb_id)
-    settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
+    providers.doc_store.conn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
 
     return get_json_result(data=True)
 
@@ -785,7 +785,7 @@ def delete_kb_task():
         return get_error_data_result(message="Invalid task type")
 
     def cancel_task(task_id):
-        REDIS_CONN.set(f"{task_id}-cancel", "x")
+        providers.cache.conn.set(f"{task_id}-cancel", "x")
 
     kb_task_id_field: str = ""
     kb_task_finish_at: str = ""
@@ -795,13 +795,13 @@ def delete_kb_task():
             task_id = kb.graphrag_task_id
             kb_task_finish_at = "graphrag_task_finish_at"
             cancel_task(task_id)
-            settings.docStoreConn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
+            providers.doc_store.conn.delete({"knowledge_graph_kwd": ["graph", "subgraph", "entity", "relation"]}, search.index_name(kb.tenant_id), kb_id)
         case PipelineTaskType.RAPTOR:
             kb_task_id_field = "raptor_task_id"
             task_id = kb.raptor_task_id
             kb_task_finish_at = "raptor_task_finish_at"
             cancel_task(task_id)
-            settings.docStoreConn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), kb_id)
+            providers.doc_store.conn.delete({"raptor_kwd": ["raptor"]}, search.index_name(kb.tenant_id), kb_id)
         case PipelineTaskType.MINDMAP:
             kb_task_id_field = "mindmap_task_id"
             task_id = kb.mindmap_task_id
@@ -918,7 +918,7 @@ async def check_embedding():
     tenant_id = kb.tenant_id
 
     emb_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embd_id)
-    samples = sample_random_chunks_with_vectors(settings.docStoreConn, tenant_id=tenant_id, kb_id=kb_id, n=n)
+    samples = sample_random_chunks_with_vectors(providers.doc_store.conn, tenant_id=tenant_id, kb_id=kb_id, n=n)
 
     results, eff_sims = [], []
     for ck in samples:

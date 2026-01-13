@@ -38,7 +38,6 @@ from flask import json
 
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.db.services.knowledgebase_service import KnowledgebaseService
-from common import settings
 from common.config_utils import show_configs
 from common.data_source import (
     BlobStorageConnector,
@@ -1261,7 +1260,7 @@ async def main():
     """)
     logging.info(f"RAGFlow version: {get_ragflow_version()}")
     show_configs()
-    settings.init_settings()
+
     if sys.platform != "win32":
         signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)
         signal.signal(signal.SIGUSR2, stop_tracemalloc)

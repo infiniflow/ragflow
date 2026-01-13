@@ -25,6 +25,7 @@ from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
 from common.misc_utils import get_uuid
 from common.connection_utils import timeout
+from core.providers import providers
 from graphrag.entity_resolution import EntityResolution
 from graphrag.general.community_reports_extractor import CommunityReportsExtractor
 from graphrag.general.extractor import Extractor
@@ -40,8 +41,7 @@ from graphrag.utils import (
     tidy_graph,
 )
 from rag.nlp import rag_tokenizer, search
-from rag.utils.redis_conn import RedisDistributedLock
-from common import settings
+from rag.utils.redis_utils import RedisDistributedLock
 
 
 async def run_graphrag(
@@ -57,7 +57,7 @@ async def run_graphrag(
     start = asyncio.get_running_loop().time()
     tenant_id, kb_id, doc_id = row["tenant_id"], str(row["kb_id"]), row["doc_id"]
     chunks = []
-    for d in settings.retriever.chunk_list(doc_id, tenant_id, [kb_id], max_count=10000, fields=["content_with_weight", "doc_id"], sort_by_position=True):
+    for d in providers.retriever.conn.chunk_list(doc_id, tenant_id, [kb_id], max_count=10000, fields=["content_with_weight", "doc_id"], sort_by_position=True):
         chunks.append(d["content_with_weight"])
 
     timeout_sec = max(120, len(chunks) * 60 * 10) if enable_timeout_assertion else 10000000000
@@ -185,7 +185,7 @@ async def run_graphrag_for_kb(
         current_chunk = ""
 
         # DEBUG: Obtener todos los chunks primero
-        raw_chunks = list(settings.retriever.chunk_list(
+        raw_chunks = list(providers.retriever.conn.chunk_list(
             doc_id,
             tenant_id,
             [kb_id],
@@ -460,8 +460,8 @@ async def generate_subgraph(
         "removed_kwd": "N",
     }
     cid = chunk_id(chunk)
-    await asyncio.to_thread(settings.docStoreConn.delete,{"knowledge_graph_kwd": "subgraph", "source_id": doc_id},search.index_name(tenant_id),kb_id,)
-    await asyncio.to_thread(settings.docStoreConn.insert,[{"id": cid, **chunk}],search.index_name(tenant_id),kb_id,)
+    await asyncio.to_thread(providers.doc_store.conn.delete,{"knowledge_graph_kwd": "subgraph", "source_id": doc_id},search.index_name(tenant_id),kb_id,)
+    await asyncio.to_thread(providers.doc_store.conn.insert,[{"id": cid, **chunk}],search.index_name(tenant_id),kb_id,)
     now = asyncio.get_running_loop().time()
     callback(msg=f"generated subgraph for doc {doc_id} in {now - start:.2f} seconds.")
     return subgraph
@@ -592,10 +592,10 @@ async def extract_community(
         chunk["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(chunk["content_ltks"])
         chunks.append(chunk)
 
-    await asyncio.to_thread(settings.docStoreConn.delete,{"knowledge_graph_kwd": "community_report", "kb_id": kb_id},search.index_name(tenant_id),kb_id,)
+    await asyncio.to_thread(providers.doc_store.conn.delete,{"knowledge_graph_kwd": "community_report", "kb_id": kb_id},search.index_name(tenant_id),kb_id,)
     es_bulk_size = 4
     for b in range(0, len(chunks), es_bulk_size):
-        doc_store_result = await asyncio.to_thread(settings.docStoreConn.insert,chunks[b : b + es_bulk_size],search.index_name(tenant_id),kb_id,)
+        doc_store_result = await asyncio.to_thread(providers.doc_store.conn.insert,chunks[b : b + es_bulk_size],search.index_name(tenant_id),kb_id,)
         if doc_store_result:
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
             raise Exception(error_message)

@@ -19,8 +19,7 @@ import traceback
 
 from api.db.db_models import close_connection
 from api.db.services.task_service import TaskService
-from rag.utils.redis_conn import REDIS_CONN
-from common import settings
+from core.providers import providers
 
 
 def collect():
@@ -39,13 +38,13 @@ def main():
     logging.info(f"TASKS: {len(locations)}")
     for kb_id, loc in locations:
         try:
-            if REDIS_CONN.is_alive():
+            if providers.cache.conn.is_alive():
                 try:
                     key = "{}/{}".format(kb_id, loc)
-                    if REDIS_CONN.exist(key):
+                    if providers.cache.conn.exist(key):
                         continue
-                    file_bin = settings.STORAGE_IMPL.get(kb_id, loc)
-                    REDIS_CONN.transaction(key, file_bin, 12 * 60)
+                    file_bin = providers.storage.conn.get(kb_id, loc)
+                    providers.cache.conn.transaction(key, file_bin, 12 * 60)
                     logging.info("CACHE: {}".format(loc))
                 except Exception as e:
                     logging.error(f"Error to get data from REDIS: {e}")

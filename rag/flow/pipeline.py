@@ -22,7 +22,7 @@ from timeit import default_timer as timer
 from agent.canvas import Graph
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import has_canceled, TaskService, CANVAS_DEBUG_DOC_ID
-from rag.utils.redis_conn import REDIS_CONN
+from core.providers import providers
 
 
 class Pipeline(Graph):
@@ -48,7 +48,7 @@ class Pipeline(Graph):
             progress = -1
             message += "[CANCEL]"
         try:
-            bin = REDIS_CONN.get(log_key)
+            bin = providers.cache.conn.get(log_key)
             obj = json.loads(bin.encode("utf-8"))
             if obj:
                 if obj[-1]["component_id"] == component_name:
@@ -95,7 +95,7 @@ class Pipeline(Graph):
                 TaskService.update_progress(self.task_id, {"progress": finished, "progress_msg": msg})
             elif component_name == "END" and not self._doc_id:
                 obj[-1]["trace"][-1]["dsl"] = json.loads(str(self))
-            REDIS_CONN.set_obj(log_key, obj, 60 * 30)
+            providers.cache.conn.set_obj(log_key, obj, 60 * 30)
 
         except Exception as e:
             logging.exception(e)
@@ -106,7 +106,7 @@ class Pipeline(Graph):
     def fetch_logs(self):
         log_key = f"{self._flow_id}-{self.task_id}-logs"
         try:
-            bin = REDIS_CONN.get(log_key)
+            bin = providers.cache.conn.get(log_key)
             if bin:
                 return json.loads(bin.encode("utf-8"))
         except Exception as e:
@@ -117,7 +117,7 @@ class Pipeline(Graph):
     async def run(self, **kwargs):
         log_key = f"{self._flow_id}-{self.task_id}-logs"
         try:
-            REDIS_CONN.set_obj(log_key, [], 60 * 10)
+            providers.cache.conn.set_obj(log_key, [], 60 * 10)
         except Exception as e:
             logging.exception(e)
         self.error = ""

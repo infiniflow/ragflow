@@ -14,24 +14,12 @@
 #  limitations under the License.
 #
 
-import asyncio
 import logging
 import json
-import uuid
 
 import valkey as redis
 from common.decorator import singleton
-from common import settings
-from valkey.lock import Lock
-
-REDIS = {}
-try:
-    REDIS = settings.decrypt_database_config(name="redis")
-except Exception:
-    try:
-        REDIS = settings.get_base_config("redis", {})
-    except Exception:
-        REDIS = {}
+from core.config import app_config
 
 
 class RedisMsg:
@@ -113,7 +101,7 @@ class RedisDB:
 
     def __init__(self):
         self.REDIS = None
-        self.config = REDIS
+        self.config = app_config.cache.redis
         self.__open__()
 
     def register_scripts(self) -> None:
@@ -124,21 +112,7 @@ class RedisDB:
 
     def __open__(self):
         try:
-            conn_params = {
-                "host": self.config["host"].split(":")[0],
-                "port": int(self.config.get("host", ":6379").split(":")[1]),
-                "db": int(self.config.get("db", 1)),
-                "decode_responses": True,
-            }
-            username = self.config.get("username")
-            if username:
-                conn_params["username"] = username
-            password = self.config.get("password")
-            if password:
-                conn_params["password"] = password
-
-            self.REDIS = redis.StrictRedis(**conn_params)
-
+            self.REDIS = redis.StrictRedis(**self.config.connection_params)
             self.register_scripts()
         except Exception as e:
             logging.warning(f"Redis can't be connected. Error: {str(e)}")
@@ -486,31 +460,3 @@ class RedisDB:
             logging.warning("RedisDB.delete " + str(key) + " got exception: " + str(e))
             self.__open__()
         return False
-
-
-REDIS_CONN = RedisDB()
-
-
-class RedisDistributedLock:
-    def __init__(self, lock_key, lock_value=None, timeout=10, blocking_timeout=1):
-        self.lock_key = lock_key
-        if lock_value:
-            self.lock_value = lock_value
-        else:
-            self.lock_value = str(uuid.uuid4())
-        self.timeout = timeout
-        self.lock = Lock(REDIS_CONN.REDIS, lock_key, timeout=timeout, blocking_timeout=blocking_timeout)
-
-    def acquire(self):
-        REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
-        return self.lock.acquire(token=self.lock_value)
-
-    async def spin_acquire(self):
-        REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)
-        while True:
-            if self.lock.acquire(token=self.lock_value):
-                break
-            await asyncio.sleep(10)
-
-    def release(self):
-        REDIS_CONN.delete_if_equal(self.lock_key, self.lock_value)

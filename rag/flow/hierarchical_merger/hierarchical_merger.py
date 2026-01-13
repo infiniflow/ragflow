@@ -21,12 +21,12 @@ from copy import deepcopy
 from functools import partial
 
 from common.misc_utils import get_uuid
+from core.providers import providers
 from rag.utils.base64_image import id2image, image2id
 from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.hierarchical_merger.schema import HierarchicalMergerFromUpstream
 from rag.nlp import concat_img
-from common import settings
 
 
 class HierarchicalMergerParam(ProcessParamBase):
@@ -166,7 +166,7 @@ class HierarchicalMerger(ProcessBase):
                 img = None
                 for i in path:
                     txt += lines[i] + "\n"
-                    concat_img(img, id2image(section_images[i], partial(settings.STORAGE_IMPL.get, tenant_id=self._canvas._tenant_id)))
+                    concat_img(img, id2image(section_images[i], partial(providers.storage.conn.get, tenant_id=self._canvas._tenant_id)))
                 cks.append(txt)
                 images.append(img)
 
@@ -180,7 +180,7 @@ class HierarchicalMerger(ProcessBase):
             ]
             tasks = []
             for d in cks:
-                tasks.append(asyncio.create_task(image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())))
+                tasks.append(asyncio.create_task(image2id(d, partial(providers.storage.conn.put, tenant_id=self._canvas._tenant_id), get_uuid())))
             try:
                 await asyncio.gather(*tasks, return_exceptions=False)
             except Exception as e:

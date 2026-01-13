@@ -20,11 +20,11 @@ import time
 import argparse
 from collections import defaultdict
 
-from common import settings
 from common.constants import LLMType
 from api.db.services.llm_service import LLMBundle
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from common.misc_utils import get_uuid
+from core.providers import providers
 from rag.nlp import tokenize, search
 from ranx import evaluate
 from ranx import Qrels, Run
@@ -52,7 +52,7 @@ class Benchmark:
         run = defaultdict(dict)
         query_list = list(qrels.keys())
         for query in query_list:
-            ranks = settings.retriever.retrieval(query, self.embd_mdl, self.tenant_id, [self.kb.id], 1, 30,
+            ranks = providers.retriever.conn.retrieval(query, self.embd_mdl, self.tenant_id, [self.kb.id], 1, 30,
                                             0.0, self.vector_similarity_weight)
             if len(ranks["chunks"]) == 0:
                 print(f"deleted query: {query}")
@@ -77,9 +77,9 @@ class Benchmark:
     def init_index(self, vector_size: int):
         if self.initialized_index:
             return
-        if settings.docStoreConn.index_exist(self.index_name, self.kb_id):
-            settings.docStoreConn.delete_idx(self.index_name, self.kb_id)
-        settings.docStoreConn.create_idx(self.index_name, self.kb_id, vector_size)
+        if providers.doc_store.conn.index_exist(self.index_name, self.kb_id):
+            providers.doc_store.conn.delete_idx(self.index_name, self.kb_id)
+        providers.doc_store.conn.create_idx(self.index_name, self.kb_id, vector_size)
         self.initialized_index = True
 
     def ms_marco_index(self, file_path, index_name):
@@ -114,13 +114,13 @@ class Benchmark:
                     docs_count += len(docs)
                     docs, vector_size = self.embedding(docs)
                     self.init_index(vector_size)
-                    settings.docStoreConn.insert(docs, self.index_name, self.kb_id)
+                    providers.doc_store.conn.insert(docs, self.index_name, self.kb_id)
                     docs = []
 
         if docs:
             docs, vector_size = self.embedding(docs)
             self.init_index(vector_size)
-            settings.docStoreConn.insert(docs, self.index_name, self.kb_id)
+            providers.doc_store.conn.insert(docs, self.index_name, self.kb_id)
         return qrels, texts
 
     def trivia_qa_index(self, file_path, index_name):
@@ -155,12 +155,12 @@ class Benchmark:
                     docs_count += len(docs)
                     docs, vector_size = self.embedding(docs)
                     self.init_index(vector_size)
-                    settings.docStoreConn.insert(docs,self.index_name)
+                    providers.doc_store.conn.insert(docs,self.index_name)
                     docs = []
 
         docs, vector_size = self.embedding(docs)
         self.init_index(vector_size)
-        settings.docStoreConn.insert(docs, self.index_name)
+        providers.doc_store.conn.insert(docs, self.index_name)
         return qrels, texts
 
     def miracl_index(self, file_path, corpus_path, index_name):
@@ -210,12 +210,12 @@ class Benchmark:
                     docs_count += len(docs)
                     docs, vector_size = self.embedding(docs)
                     self.init_index(vector_size)
-                    settings.docStoreConn.insert(docs, self.index_name)
+                    providers.doc_store.conn.insert(docs, self.index_name)
                     docs = []
 
         docs, vector_size = self.embedding(docs)
         self.init_index(vector_size)
-        settings.docStoreConn.insert(docs, self.index_name)
+        providers.doc_store.conn.insert(docs, self.index_name)
         return qrels, texts
 
     def save_results(self, qrels, run, texts, dataset, file_path):
