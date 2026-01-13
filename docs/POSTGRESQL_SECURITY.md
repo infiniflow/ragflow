@@ -259,7 +259,7 @@ set -e
 # Run against default postgres database to create user and database
 psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<-EOSQL
   CREATE USER ragflow_user WITH PASSWORD 'app_password';
-  CREATE DATABASE ragflow_db;
+  CREATE DATABASE ragflow_db OWNER ragflow_user;
   GRANT CONNECT ON DATABASE ragflow_db TO ragflow_user;
   GRANT ALL PRIVILEGES ON DATABASE ragflow_db TO ragflow_user;
 EOSQL

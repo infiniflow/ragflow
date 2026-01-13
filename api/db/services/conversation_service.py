@@ -174,7 +174,7 @@ async def async_completion(tenant_id, chat_id, question, name="New session", ses
             yield "data:" + json.dumps({"code": 0, "data": True}, ensure_ascii=False) + "\n\n"
         except Exception:
             logging.exception("Error in async_completion during streaming chat")
-            yield "data:" + json.dumps({"code": 500, "message": "Internal server error", "data": {"answer": "**ERROR**: Internal server error", "reference": []}}, ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 500, "message": "Internal server error", "data": {"answer": "**ERROR**: Internal server error", "reference": {}}}, ensure_ascii=False) + "\n\n"
             return
 
     else:
@@ -236,7 +236,7 @@ async def async_iframe_completion(dialog_id, question, session_id=None, stream=T
             yield "data:" + json.dumps({"code": 0, "message": "", "data": True}, ensure_ascii=False) + "\n\n"
         except Exception:
             logging.exception("Error in async_iframe_completion during streaming chat")
-            yield "data:" + json.dumps({"code": 500, "message": "Internal server error", "data": {"answer": "**ERROR**: Internal server error", "reference": []}}, ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"code": 500, "message": "Internal server error", "data": {"answer": "**ERROR**: Internal server error", "reference": {}}}, ensure_ascii=False) + "\n\n"
             return
 
     else:

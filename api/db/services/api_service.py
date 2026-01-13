@@ -82,6 +82,15 @@ class API4ConversationService(CommonService):
     def stats(cls, tenant_id, from_date, to_date, source=None):
         if len(to_date) == 10:
             to_date += " 23:59:59"
+        
+        # Build WHERE conditions, only include source filter if not None
+        conditions = [
+            cls.model.create_date >= from_date,
+            cls.model.create_date <= to_date,
+        ]
+        if source is not None:
+            conditions.append(cls.model.source == source)
+        
         return (
             cls.model.select(
                 cls.model.create_date.truncate("day").alias("dt"),
@@ -93,7 +102,7 @@ class API4ConversationService(CommonService):
                 peewee.fn.SUM(cls.model.thumb_up).alias("thumb_up"),
             )
             .join(Dialog, on=((cls.model.dialog_id == Dialog.id) & (Dialog.tenant_id == tenant_id)))
-            .where(cls.model.create_date >= from_date, cls.model.create_date <= to_date, cls.model.source == source)
+            .where(*conditions)
             .group_by(cls.model.create_date.truncate("day"))
             .dicts()
         )

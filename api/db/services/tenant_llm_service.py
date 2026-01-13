@@ -213,7 +213,7 @@ class TenantLLMService(CommonService):
                 .execute()
             )
         except Exception:
-            logging.exception("TenantLLMService.increase_usage got exception,Failed to update used_tokens for tenant_id=%s, llm_name=%s", tenant_id, llm_name)
+            logging.exception("TenantLLMService.increase_usage got exception. Failed to update used_tokens for tenant_id=%s, llm_name=%s", tenant_id, llm_name)
             return 0
 
         return num

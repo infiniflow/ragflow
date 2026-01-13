@@ -107,7 +107,7 @@ class SyncLogsService(CommonService):
         query = (
             cls.model.select(*fields)
             .join(Connector, on=(cls.model.connector_id == Connector.id))
-            .join(Connector2Kb, on=(cls.model.kb_id == Connector2Kb.kb_id))
+            .join(Connector2Kb, on=((cls.model.kb_id == Connector2Kb.kb_id) & (cls.model.connector_id == Connector2Kb.connector_id)))
             .join(Knowledgebase, on=(cls.model.kb_id == Knowledgebase.id))
         )
 

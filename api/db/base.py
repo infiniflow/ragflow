@@ -102,7 +102,8 @@ class BaseModel(Model):
     def insert(cls, __data=None, **insert):
         if isinstance(__data, dict) and __data:
             timestamp = current_timestamp()
-            __data[cls._meta.combined["create_time"]] = timestamp
+            if "create_time" in cls._meta.combined:
+                __data[cls._meta.combined["create_time"]] = timestamp
             if "create_date" in cls._meta.combined:
                 __data[cls._meta.combined["create_date"]] = timestamp_to_date(timestamp)
         if insert:
@@ -175,12 +176,13 @@ class DataBaseModel(BaseModel):
         return not has_issues
 
     @classmethod
-    def get_field_info(cls, field_name: str) -> dict:
+    def get_field_info(cls, field_name: str, db_type: Optional[str] = None) -> dict:
         """
         Get detailed information about a specific field.
 
         Args:
             field_name: Name of the field to inspect
+            db_type: Optional database type override (defaults to settings.DATABASE_TYPE)
 
         Returns:
             dict: Field information including type, constraints, and compatibility
@@ -192,7 +194,7 @@ class DataBaseModel(BaseModel):
             return {"error": f"Field {field_name} not found in {cls.__name__}"}
 
         field = cls._meta.fields[field_name]
-        db_type = (getattr(settings, "DATABASE_TYPE", None) or "mysql").lower()
+        db_type = (db_type or getattr(settings, "DATABASE_TYPE", None) or "mysql").lower()
 
         is_compatible, warning = DatabaseCompat.validate_field_for_db(field, db_type)
 

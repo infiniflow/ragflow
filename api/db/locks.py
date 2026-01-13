@@ -85,11 +85,10 @@ class PostgresDatabaseLock:
         if cursor is None:
             raise RuntimeError("postgres unlock returned no cursor")
         ret = cursor.fetchone()
-        if ret[0] == 0:
-            raise Exception(f"postgres lock {self.lock_name} was not established by this thread")
-        if ret[0] == 1:
+        # pg_advisory_unlock returns boolean: True if lock was held, False otherwise
+        if ret[0]:
             return True
-        raise Exception(f"postgres lock {self.lock_name} does not exist")
+        raise Exception(f"postgres lock {self.lock_name} was not held by this session/thread")
 
     def __enter__(self):
         db = self._get_db()
