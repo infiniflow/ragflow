@@ -11,13 +11,7 @@ class UserCanvasVersionService(CommonService):
     def list_by_canvas_id(cls, user_canvas_id):
         try:
             user_canvas_version = cls.model.select(
-                *[cls.model.id,
-                  cls.model.create_time,
-                  cls.model.title,
-                  cls.model.create_date,
-                  cls.model.update_date,
-                  cls.model.user_canvas_id,
-                  cls.model.update_time]
+                *[cls.model.id, cls.model.create_time, cls.model.title, cls.model.create_date, cls.model.update_date, cls.model.user_canvas_id, cls.model.update_time]
             ).where(cls.model.user_canvas_id == user_canvas_id)
             return user_canvas_version
         except DoesNotExist:
@@ -46,8 +40,7 @@ class UserCanvasVersionService(CommonService):
     @DB.connection_context()
     def delete_all_versions(cls, user_canvas_id):
         try:
-            user_canvas_version = cls.model.select().where(cls.model.user_canvas_id == user_canvas_id).order_by(
-                cls.model.create_time.desc())
+            user_canvas_version = cls.model.select().where(cls.model.user_canvas_id == user_canvas_id).order_by(cls.model.create_time.desc())
             if user_canvas_version.count() > 20:
                 delete_ids = []
                 for i in range(20, user_canvas_version.count()):

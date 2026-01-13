@@ -22,6 +22,7 @@ from api.db.db_models import DB
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
 
+
 def retry_db_operation(func):
     @retry(
         stop=stop_after_attempt(3),
@@ -32,7 +33,9 @@ def retry_db_operation(func):
     )
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
+
     return wrapper
+
 
 class CommonService:
     """Base service class that provides common database operations.
@@ -279,7 +282,7 @@ class CommonService:
         # Returns:
         #     Number of records deleted
         return cls.model.delete().where(cls.model.id == pid).execute()
-    
+
     @classmethod
     @DB.connection_context()
     def delete_by_ids(cls, pids):
