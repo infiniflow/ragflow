@@ -55,14 +55,6 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt install -y texlive && \
     apt install -y fonts-freefont-ttf fonts-noto-cjk
 
-# --- [修改点 1] ---
-# Use system Python 3.12 provided by Ubuntu 24.04 (avoid external PPAs)
-RUN apt-get update && apt-get install -y python3.12 python3.12-venv python3-pip
-
-# --- [修改点 2] ---
-# Install hatchling from apt to avoid pip-based build-time issues
-RUN apt-get update && apt-get install -y python3-hatchling
-
 # Install uv
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
     if [ "$NEED_MIRROR" == "1" ]; then \
@@ -72,11 +64,15 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
         echo 'url = "https://pypi.tuna.tsinghua.edu.cn/simple"' >> /etc/uv/uv.toml && \
         echo 'default = true' >> /etc/uv/uv.toml; \
     fi; \
-    tar xzf /deps/uv-x86_64-unknown-linux-gnu.tar.gz \
-    && cp uv-x86_64-unknown-linux-gnu/* /usr/local/bin/ \
-    && rm -rf uv-x86_64-unknown-linux-gnu
+    arch="$(uname -m)"; \
+    if [ "$arch" = "x86_64" ]; then uv_arch="x86_64"; else uv_arch="aarch64"; fi; \
+    tar xzf "/deps/uv-${uv_arch}-unknown-linux-gnu.tar.gz" \
+    && cp "uv-${uv_arch}-unknown-linux-gnu/"* /usr/local/bin/ \
+    && rm -rf "uv-${uv_arch}-unknown-linux-gnu" \
+    && uv python install 3.12
 
 ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+ENV PATH=/root/.local/bin:$PATH
 
 # nodejs 12.22 on Ubuntu 22.04 is too old
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
