@@ -27,8 +27,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.memory_service import MemoryService
 from api.db.joint_services import memory_message_service
-from common import settings
 from common.connection_utils import timeout
+from core.providers import providers
 from rag.app.tag import label_question
 from rag.prompts.generator import cross_languages, kb_prompt, memory_prompt
 
@@ -174,7 +174,7 @@ class Retrieval(ToolBase, ABC):
 
         if kbs:
             query = re.sub(r"^user[:：\s]*", "", query, flags=re.IGNORECASE)
-            kbinfos = await settings.retriever.retrieval(
+            kbinfos = await providers.retriever.conn.retrieval(
                 query,
                 embd_mdl,
                 [kb.tenant_id for kb in kbs],
@@ -193,16 +193,16 @@ class Retrieval(ToolBase, ABC):
 
             if self._param.toc_enhance:
                 chat_mdl = LLMBundle(self._canvas._tenant_id, LLMType.CHAT)
-                cks = await settings.retriever.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs],
+                cks = await providers.retriever.conn.retrieval_by_toc(query, kbinfos["chunks"], [kb.tenant_id for kb in kbs],
                                                           chat_mdl, self._param.top_n)
                 if self.check_if_canceled("Retrieval processing"):
                     return
                 if cks:
                     kbinfos["chunks"] = cks
-            kbinfos["chunks"] = settings.retriever.retrieval_by_children(kbinfos["chunks"],
+            kbinfos["chunks"] = providers.retriever.conn.retrieval_by_children(kbinfos["chunks"],
                                                                          [kb.tenant_id for kb in kbs])
             if self._param.use_kg:
-                ck = await settings.kg_retriever.retrieval(query,
+                ck = await providers.kg_retriever.conn.retrieval(query,
                                                      [kb.tenant_id for kb in kbs],
                                                      kb_ids,
                                                      embd_mdl,
@@ -215,7 +215,7 @@ class Retrieval(ToolBase, ABC):
             kbinfos = {"chunks": [], "doc_aggs": []}
 
         if self._param.use_kg and kbs:
-            ck = await settings.kg_retriever.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl,
+            ck = await providers.kg_retriever.conn.retrieval(query, [kb.tenant_id for kb in kbs], filtered_kb_ids, embd_mdl,
                                                  LLMBundle(kbs[0].tenant_id, LLMType.CHAT))
             if self.check_if_canceled("Retrieval processing"):
                 return

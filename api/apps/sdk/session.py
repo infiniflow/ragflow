@@ -39,11 +39,11 @@ from api.db.services.user_service import UserTenantService
 from common.misc_utils import get_uuid
 from api.utils.api_utils import check_duplicate_ids, get_data_openai, get_error_data_result, get_json_result, \
     get_result, get_request_json, server_error_response, token_required, validate_request
+from core.providers import providers
 from rag.app.tag import label_question
 from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction, chunks_format
 from common.constants import RetCode, LLMType, StatusEnum
-from common import settings
 
 
 @manager.route("/chats/<chat_id>/sessions", methods=["POST"])  # noqa: F821
@@ -1098,12 +1098,12 @@ async def retrieval_test_embedded():
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
-        ranks = await settings.retriever.retrieval(
+        ranks = await providers.retriever.conn.retrieval(
             _question, embd_mdl, tenant_ids, kb_ids, page, size, similarity_threshold, vector_similarity_weight, top,
             local_doc_ids, rerank_mdl=rerank_mdl, highlight=req.get("highlight"), rank_feature=labels
         )
         if use_kg:
-            ck = await settings.kg_retriever.retrieval(_question, tenant_ids, kb_ids, embd_mdl,
+            ck = await providers.kg_retriever.conn.retrieval(_question, tenant_ids, kb_ids, embd_mdl,
                                                  LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)

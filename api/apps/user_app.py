@@ -45,7 +45,7 @@ from api.utils.api_utils import (
     validate_request,
 )
 from api.utils.crypt import decrypt
-from rag.utils.redis_conn import REDIS_CONN
+from core.config import app_config
 from api.apps import login_required, current_user, login_user, logout_user
 from api.utils.web_utils import (
     send_email_html,
@@ -58,8 +58,8 @@ from api.utils.web_utils import (
     hash_code,
     captcha_key,
 )
-from common import settings
 from common.http_client import async_request
+from core.providers import providers
 
 
 @manager.route("/login", methods=["POST", "GET"])  # noqa: F821
@@ -148,7 +148,7 @@ async def get_login_channels():
     """
     try:
         channels = []
-        for channel, config in settings.OAUTH_CONFIG.items():
+        for channel, config in app_config.third_party.oauth.model_dump().items():
             channels.append(
                 {
                     "channel": channel,
@@ -164,7 +164,7 @@ async def get_login_channels():
 
 @manager.route("/login/<channel>", methods=["GET"])  # noqa: F821
 async def oauth_login(channel):
-    channel_config = settings.OAUTH_CONFIG.get(channel)
+    channel_config = app_config.third_party.oauth.model_dump().get(channel)
     if not channel_config:
         raise ValueError(f"Invalid channel name: {channel}")
     auth_cli = get_auth_client(channel_config)
@@ -181,7 +181,7 @@ async def oauth_callback(channel):
     Handle the OAuth/OIDC callback for various channels dynamically.
     """
     try:
-        channel_config = settings.OAUTH_CONFIG.get(channel)
+        channel_config = app_config.third_party.oauth.model_dump().get(channel)
         if not channel_config:
             raise ValueError(f"Invalid channel name: {channel}")
         auth_cli = get_auth_client(channel_config)
@@ -291,12 +291,13 @@ async def github_callback():
         schema:
           type: object
     """
+    github_conf = app_config.third_party.oauth.github
     res = await async_request(
         "POST",
-        settings.GITHUB_OAUTH.get("url"),
+        github_conf.redirect_uri,
         data={
-            "client_id": settings.GITHUB_OAUTH.get("client_id"),
-            "client_secret": settings.GITHUB_OAUTH.get("secret_key"),
+            "client_id": github_conf.client_id,
+            "client_secret": github_conf.client_secret,
             "code": request.args.get("code"),
         },
         headers={"Accept": "application/json"},
@@ -377,13 +378,14 @@ async def feishu_callback():
         schema:
           type: object
     """
+    feishu_conf = app_config.third_party.oauth.feishu
     app_access_token_res = await async_request(
         "POST",
-        settings.FEISHU_OAUTH.get("app_access_token_url"),
+        feishu_conf.app_access_token_url,
         data=json.dumps(
             {
-                "app_id": settings.FEISHU_OAUTH.get("app_id"),
-                "app_secret": settings.FEISHU_OAUTH.get("app_secret"),
+                "app_id": feishu_conf.app_id,
+                "app_secret": feishu_conf.app_secret,
             }
         ),
         headers={"Content-Type": "application/json; charset=utf-8"},
@@ -394,10 +396,10 @@ async def feishu_callback():
 
     res = await async_request(
         "POST",
-        settings.FEISHU_OAUTH.get("user_access_token_url"),
+        feishu_conf.user_access_token_url,
         data=json.dumps(
             {
-                "grant_type": settings.FEISHU_OAUTH.get("grant_type"),
+                "grant_type": feishu_conf.grant_type,
                 "code": request.args.get("code"),
             }
         ),
@@ -632,12 +634,12 @@ def user_register(user_id, user):
     tenant = {
         "id": user_id,
         "name": user["nickname"] + "‘s Kingdom",
-        "llm_id": settings.CHAT_MDL,
-        "embd_id": settings.EMBEDDING_MDL,
-        "asr_id": settings.ASR_MDL,
-        "parser_ids": settings.PARSERS,
-        "img2txt_id": settings.IMAGE2TEXT_MDL,
-        "rerank_id": settings.RERANK_MDL,
+        "llm_id": app_config.user_default_llm.chat_model_cfg.model,
+        "embd_id": app_config.user_default_llm.embedding_model_cfg.model,
+        "asr_id": app_config.user_default_llm.asr_model_cfg.model,
+        "parser_ids": app_config.user_default_llm.parsers,
+        "img2txt_id": app_config.user_default_llm.image2text_model_cfg.model,
+        "rerank_id": app_config.user_default_llm.rerank_model_cfg.model,
     }
     usr_tenant = {
         "tenant_id": user_id,
@@ -700,7 +702,7 @@ async def user_add():
           type: object
     """
 
-    if not settings.REGISTER_ENABLED:
+    if not app_config.ragflow.register_enabled:
         return get_json_result(
             data=False,
             message="User registration is disabled!",
@@ -867,7 +869,7 @@ async def forget_get_captcha():
     # Generate captcha text
     allowed = string.ascii_uppercase + string.digits
     captcha_text = "".join(secrets.choice(allowed) for _ in range(OTP_LENGTH))
-    REDIS_CONN.set(captcha_key(email), captcha_text, 60) # Valid for 60 seconds
+    providers.cache.conn.set(captcha_key(email), captcha_text, 60) # Valid for 60 seconds
 
     from captcha.image import ImageCaptcha
     image = ImageCaptcha(width=300, height=120, font_sizes=[50, 60, 70])
@@ -895,18 +897,18 @@ async def forget_send_otp():
     if not users:
         return get_json_result(data=False, code=RetCode.DATA_ERROR, message="invalid email")
 
-    stored_captcha = REDIS_CONN.get(captcha_key(email))
+    stored_captcha = providers.cache.conn.get(captcha_key(email))
     if not stored_captcha:
         return get_json_result(data=False, code=RetCode.NOT_EFFECTIVE, message="invalid or expired captcha")
     if (stored_captcha or "").strip().lower() != captcha.lower():
         return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="invalid or expired captcha")
 
     # Delete captcha to prevent reuse
-    REDIS_CONN.delete(captcha_key(email))
+    providers.cache.conn.delete(captcha_key(email))
 
     k_code, k_attempts, k_last, k_lock = otp_keys(email)
     now = int(time.time())
-    last_ts = REDIS_CONN.get(k_last)
+    last_ts = providers.cache.conn.get(k_last)
     if last_ts:
         try:
             elapsed = now - int(last_ts)
@@ -920,10 +922,10 @@ async def forget_send_otp():
     otp = "".join(secrets.choice(string.ascii_uppercase) for _ in range(OTP_LENGTH))
     salt = os.urandom(16)
     code_hash = hash_code(otp, salt)
-    REDIS_CONN.set(k_code, f"{code_hash}:{salt.hex()}", OTP_TTL_SECONDS)
-    REDIS_CONN.set(k_attempts, 0, OTP_TTL_SECONDS)
-    REDIS_CONN.set(k_last, now, OTP_TTL_SECONDS)
-    REDIS_CONN.delete(k_lock)
+    providers.cache.conn.set(k_code, f"{code_hash}:{salt.hex()}", OTP_TTL_SECONDS)
+    providers.cache.conn.set(k_attempts, 0, OTP_TTL_SECONDS)
+    providers.cache.conn.set(k_last, now, OTP_TTL_SECONDS)
+    providers.cache.conn.delete(k_lock)
 
     ttl_min = OTP_TTL_SECONDS // 60
 
@@ -968,10 +970,10 @@ async def forget_verify_otp():
 
     # Verify OTP from Redis
     k_code, k_attempts, k_last, k_lock = otp_keys(email)
-    if REDIS_CONN.get(k_lock):
+    if providers.cache.conn.get(k_lock):
         return get_json_result(data=False, code=RetCode.NOT_EFFECTIVE, message="too many attempts, try later")
 
-    stored = REDIS_CONN.get(k_code)
+    stored = providers.cache.conn.get(k_code)
     if not stored:
         return get_json_result(data=False, code=RetCode.NOT_EFFECTIVE, message="expired otp")
 
@@ -985,23 +987,23 @@ async def forget_verify_otp():
     if calc != stored_hash:
         # bump attempts
         try:
-            attempts = int(REDIS_CONN.get(k_attempts) or 0) + 1
+            attempts = int(providers.cache.conn.get(k_attempts) or 0) + 1
         except Exception:
             attempts = 1
-        REDIS_CONN.set(k_attempts, attempts, OTP_TTL_SECONDS)
+        providers.cache.conn.set(k_attempts, attempts, OTP_TTL_SECONDS)
         if attempts >= ATTEMPT_LIMIT:
-            REDIS_CONN.set(k_lock, int(time.time()), ATTEMPT_LOCK_SECONDS)
+            providers.cache.conn.set(k_lock, int(time.time()), ATTEMPT_LOCK_SECONDS)
         return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="expired otp")
 
     # Success: consume OTP and attempts; mark verified
-    REDIS_CONN.delete(k_code)
-    REDIS_CONN.delete(k_attempts)
-    REDIS_CONN.delete(k_last)
-    REDIS_CONN.delete(k_lock)
+    providers.cache.conn.delete(k_code)
+    providers.cache.conn.delete(k_attempts)
+    providers.cache.conn.delete(k_last)
+    providers.cache.conn.delete(k_lock)
 
     # set verified flag with limited TTL, reuse OTP_TTL_SECONDS or smaller window
     try:
-        REDIS_CONN.set(_verified_key(email), "1", OTP_TTL_SECONDS)
+        providers.cache.conn.set(_verified_key(email), "1", OTP_TTL_SECONDS)
     except Exception:
         return get_json_result(data=False, code=RetCode.SERVER_ERROR, message="failed to set verification state")
 
@@ -1029,8 +1031,8 @@ async def forget_reset_password():
     new_pwd_string = base64.b64decode(new_pwd_base64).decode('utf-8')
     new_pwd2_string = base64.b64decode(decrypt(new_pwd2)).decode('utf-8')
 
-    REDIS_CONN.get(_verified_key(email))
-    if not REDIS_CONN.get(_verified_key(email)):
+    providers.cache.conn.get(_verified_key(email))
+    if not providers.cache.conn.get(_verified_key(email)):
         return get_json_result(data=False, code=RetCode.AUTHENTICATION_ERROR, message="email not verified")
 
     if not all([email, new_pwd, new_pwd2]):
@@ -1052,7 +1054,7 @@ async def forget_reset_password():
 
     # clear verified flag
     try:
-        REDIS_CONN.delete(_verified_key(email))
+        providers.cache.conn.delete(_verified_key(email))
     except Exception:
         pass
 

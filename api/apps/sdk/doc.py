@@ -44,7 +44,7 @@ from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
 from common.string_utils import remove_redundant_spaces
 from common.constants import RetCode, LLMType, ParserType, TaskStatus, FileSource
-from common import settings
+from core.providers import providers
 
 MAXIMUM_OF_UPLOADING_FILES = 256
 
@@ -314,7 +314,7 @@ async def update_doc(tenant_id, dataset_id, document_id):
             )
             if not e:
                 return get_error_data_result(message="Document not found!")
-            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
+            providers.doc_store.conn.delete({"doc_id": doc.id}, search.index_name(tenant_id), dataset_id)
 
     if "enabled" in req:
         status = int(req["enabled"])
@@ -322,7 +322,7 @@ async def update_doc(tenant_id, dataset_id, document_id):
             try:
                 if not DocumentService.update_by_id(doc.id, {"status": str(status)}):
                     return get_error_data_result(message="Database error (Document update)!")
-                settings.docStoreConn.update({"doc_id": doc.id}, {"available_int": status}, search.index_name(kb.tenant_id), doc.kb_id)
+                providers.doc_store.conn.update({"doc_id": doc.id}, {"available_int": status}, search.index_name(kb.tenant_id), doc.kb_id)
             except Exception as e:
                 return server_error_response(e)
 
@@ -404,7 +404,7 @@ async def download(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
     # The process of downloading
     doc_id, doc_location = File2DocumentService.get_storage_address(doc_id=document_id)  # minio address
-    file_stream = settings.STORAGE_IMPL.get(doc_id, doc_location)
+    file_stream = providers.storage.conn.get(doc_id, doc_location)
     if not file_stream:
         return construct_json_result(message="This file is empty.", code=RetCode.DATA_ERROR)
     file = BytesIO(file_stream)
@@ -754,7 +754,7 @@ async def delete(tenant_id, dataset_id):
             )
             File2DocumentService.delete_by_document_id(doc_id)
 
-            settings.STORAGE_IMPL.rm(b, n)
+            providers.storage.conn.rm(b, n)
             success_count += 1
         except Exception as e:
             errors += str(e)
@@ -838,7 +838,7 @@ async def parse(tenant_id, dataset_id):
             return get_error_data_result("Can't parse document that is currently being processed")
         info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
         DocumentService.update_by_id(id, info)
-        settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
+        providers.doc_store.conn.delete({"doc_id": id}, search.index_name(tenant_id), dataset_id)
         TaskService.filter_delete([Task.doc_id == id])
         e, doc = DocumentService.get_by_id(id)
         doc = doc.to_dict()
@@ -920,7 +920,7 @@ async def stop_parsing(tenant_id, dataset_id):
         cancel_all_task_of(id)
         info = {"run": "2", "progress": 0, "chunk_num": 0}
         DocumentService.update_by_id(id, info)
-        settings.docStoreConn.delete({"doc_id": doc[0].id}, search.index_name(tenant_id), dataset_id)
+        providers.doc_store.conn.delete({"doc_id": doc[0].id}, search.index_name(tenant_id), dataset_id)
         success_count += 1
     if duplicate_messages:
         if success_count > 0:
@@ -1053,7 +1053,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
 
     res = {"total": 0, "chunks": [], "doc": renamed_doc}
     if req.get("id"):
-        chunk = settings.docStoreConn.get(req.get("id"), search.index_name(tenant_id), [dataset_id])
+        chunk = providers.doc_store.conn.get(req.get("id"), search.index_name(tenant_id), [dataset_id])
         if not chunk:
             return get_result(message=f"Chunk not found: {dataset_id}/{req.get('id')}", code=RetCode.NOT_FOUND)
         k = []
@@ -1080,8 +1080,8 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         res["chunks"].append(final_chunk)
         _ = Chunk(**final_chunk)
 
-    elif settings.docStoreConn.index_exist(search.index_name(tenant_id), dataset_id):
-        sres = await settings.retriever.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None, highlight=True)
+    elif providers.doc_store.conn.index_exist(search.index_name(tenant_id), dataset_id):
+        sres = await providers.retriever.conn.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None, highlight=True)
         res["total"] = sres.total
         for id in sres.ids:
             d = {
@@ -1205,7 +1205,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     v, c = embd_mdl.encode([doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
-    settings.docStoreConn.insert([d], search.index_name(tenant_id), dataset_id)
+    providers.doc_store.conn.insert([d], search.index_name(tenant_id), dataset_id)
 
     DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
     # rename keys
@@ -1289,7 +1289,7 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
     else:
         unique_chunk_ids = []
         duplicate_messages = []
-    chunk_number = settings.docStoreConn.delete(condition, search.index_name(tenant_id), dataset_id)
+    chunk_number = providers.doc_store.conn.delete(condition, search.index_name(tenant_id), dataset_id)
     if chunk_number != 0:
         DocumentService.decrement_chunk_num(document_id, dataset_id, 1, chunk_number, 0)
     if "chunk_ids" in req and chunk_number != len(unique_chunk_ids):
@@ -1361,7 +1361,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         schema:
           type: object
     """
-    chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant_id), [dataset_id])
+    chunk = providers.doc_store.conn.get(chunk_id, search.index_name(tenant_id), [dataset_id])
     if chunk is None:
         return get_error_data_result(f"Can't find this chunk {chunk_id}")
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
@@ -1406,7 +1406,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
     v, c = embd_mdl.encode([doc.name, d["content_with_weight"] if not d.get("question_kwd") else "\n".join(d["question_kwd"])])
     v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
     d["q_%d_vec" % len(v)] = v.tolist()
-    settings.docStoreConn.update({"id": chunk_id}, d, search.index_name(tenant_id), dataset_id)
+    providers.doc_store.conn.update({"id": chunk_id}, d, search.index_name(tenant_id), dataset_id)
     return get_result()
 
 
@@ -1559,7 +1559,7 @@ async def retrieval_test(tenant_id):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             question += await keyword_extraction(chat_mdl, question)
 
-        ranks = await settings.retriever.retrieval(
+        ranks = await providers.retriever.conn.retrieval(
             question,
             embd_mdl,
             tenant_ids,
@@ -1576,11 +1576,11 @@ async def retrieval_test(tenant_id):
         )
         if toc_enhance:
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
-            cks = await settings.retriever.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
+            cks = await providers.retriever.conn.retrieval_by_toc(question, ranks["chunks"], tenant_ids, chat_mdl, size)
             if cks:
                 ranks["chunks"] = cks
         if use_kg:
-            ck = await settings.kg_retriever.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
+            ck = await providers.kg_retriever.conn.retrieval(question, [k.tenant_id for k in kbs], kb_ids, embd_mdl, LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
 

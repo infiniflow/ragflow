@@ -34,8 +34,8 @@ from api.db.services.task_service import has_canceled
 from common.constants import LLMType
 from common.misc_utils import get_uuid, hash_str2int
 from common.exceptions import TaskCanceledException
+from core.providers import providers
 from rag.prompts.generator import chunks_format
-from rag.utils.redis_conn import REDIS_CONN
 
 class Graph:
     """
@@ -130,8 +130,8 @@ class Graph:
         for k, cpn in self.components.items():
             self.components[k]["obj"].reset()
         try:
-            REDIS_CONN.delete(f"{self.task_id}-logs")
-            REDIS_CONN.delete(f"{self.task_id}-cancel")
+            providers.cache.conn.delete(f"{self.task_id}-logs")
+            providers.cache.conn.delete(f"{self.task_id}-cancel")
         except Exception as e:
             logging.exception(e)
 
@@ -269,7 +269,7 @@ class Graph:
 
     def cancel_task(self) -> bool:
         try:
-            REDIS_CONN.set(f"{self.task_id}-cancel", "x")
+            providers.cache.conn.set(f"{self.task_id}-cancel", "x")
         except Exception as e:
             logging.exception(e)
             return False
@@ -764,7 +764,7 @@ class Canvas(Graph):
         agent_name = self.get_component_name(agent_ids[0])
         path = agent_name if len(agent_ids) < 2 else agent_name+"-->"+"-->".join(agent_ids[1:])
         try:
-            bin = REDIS_CONN.get(f"{self.task_id}-{self.message_id}-logs")
+            bin = providers.cache.conn.get(f"{self.task_id}-{self.message_id}-logs")
             if bin:
                 obj = json.loads(bin.encode("utf-8"))
                 if obj[-1]["component_id"] == agent_ids[0]:
@@ -779,7 +779,7 @@ class Canvas(Graph):
                     "component_id": agent_ids[0],
                     "trace": [{"path": path, "tool_name": func_name, "arguments": params, "result": result, "elapsed_time": elapsed_time}]
                 }]
-            REDIS_CONN.set_obj(f"{self.task_id}-{self.message_id}-logs", obj, 60*10)
+            providers.cache.conn.set_obj(f"{self.task_id}-{self.message_id}-logs", obj, 60*10)
         except Exception as e:
             logging.exception(e)
 

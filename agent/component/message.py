@@ -31,7 +31,7 @@ from jinja2 import Template as Jinja2Template
 
 from common.connection_utils import timeout
 from common.misc_utils import get_uuid
-from common import settings
+from core.providers import providers
 
 from api.db.joint_services.memory_message_service import queue_save_to_memory_task
 
@@ -415,7 +415,7 @@ class Message(ComponentBase):
                     if os.path.exists(tmp_name):
                         os.remove(tmp_name)
 
-            settings.STORAGE_IMPL.put(self._canvas._tenant_id, doc_id, binary_content)
+            providers.storage.conn.put(self._canvas._tenant_id, doc_id, binary_content)
             self.set_output("attachment", {
                 "doc_id":doc_id,
                 "format":self._param.output_format,

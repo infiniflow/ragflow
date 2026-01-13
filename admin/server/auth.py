@@ -32,13 +32,13 @@ from api.utils.crypt import decrypt
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.connection_utils import sync_construct_response
-from common import settings
+from core.config import app_config
 
 
 def setup_auth(login_manager):
     @login_manager.request_loader
     def load_user(web_request):
-        jwt = Serializer(secret_key=settings.SECRET_KEY)
+        jwt = Serializer(secret_key=app_config.ragflow.secret_key)
         authorization = web_request.headers.get("Authorization")
         if authorization:
             try:

@@ -16,7 +16,7 @@
 import argparse
 import os
 from agent.canvas import Canvas
-from common import settings
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -30,7 +30,6 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--stream', default=False, help="Stream output", action='store_true', required=False)
     args = parser.parse_args()
 
-    settings.init_settings()
     canvas = Canvas(open(args.dsl, "r").read(), args.tenant_id)
     if canvas.get_prologue():
         print(f"==================== Bot =====================\n>    {canvas.get_prologue()}", end='')

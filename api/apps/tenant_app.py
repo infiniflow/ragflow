@@ -24,8 +24,8 @@ from common.misc_utils import get_uuid
 from common.time_utils import delta_seconds
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from api.utils.web_utils import send_invite_email
-from common import settings
 from api.apps import login_required, current_user
+from core.config import app_config
 
 
 @manager.route("/<tenant_id>/user/list", methods=["GET"])  # noqa: F821
@@ -91,7 +91,7 @@ async def create(tenant_id):
         asyncio.create_task(
             send_invite_email(
                 to_email=invite_user_email,
-                invite_url=settings.MAIL_FRONTEND_URL,
+                invite_url=app_config.smtp.frontend_url,
                 tenant_id=tenant_id,
                 inviter=user_name or current_user.email
             )

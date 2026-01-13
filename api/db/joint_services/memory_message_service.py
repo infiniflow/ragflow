@@ -16,7 +16,6 @@
 import logging
 from typing import List
 
-from common import settings
 from common.time_utils import current_timestamp, timestamp_to_date, format_iso_8601_to_ymd_hms
 from common.constants import MemoryType, LLMType
 from common.doc_store.doc_store_base import FusionExpr
@@ -28,11 +27,12 @@ from api.db.services.memory_service import MemoryService
 from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.llm_service import LLMBundle
 from api.utils.memory_utils import get_memory_type_human
+from core.config.utils.helpers import get_svr_queue_name
+from core.providers import providers
 from memory.services.messages import MessageService
 from memory.services.query import MsgTextQuery, get_vector
 from memory.utils.prompt_util import PromptAssembler
 from memory.utils.msg_util import get_json_result_from_llm_response
-from rag.utils.redis_conn import REDIS_CONN
 
 
 async def save_to_memory(memory_id: str, message_dict: dict):
@@ -59,7 +59,7 @@ async def save_to_memory(memory_id: str, message_dict: dict):
         message_dict.get("user_input", ""),
         message_dict.get("agent_response", "")
     ) if memory.memory_type != MemoryType.RAW.value else []  # if only RAW, no need to extract
-    raw_message_id = REDIS_CONN.generate_auto_increment_id(namespace="memory")
+    raw_message_id = providers.cache.conn.generate_auto_increment_id(namespace="memory")
     message_list = [{
         "message_id": raw_message_id,
         "message_type": MemoryType.RAW.name.lower(),
@@ -74,7 +74,7 @@ async def save_to_memory(memory_id: str, message_dict: dict):
         "forget_at": None,
         "status": True
     }, *[{
-        "message_id": REDIS_CONN.generate_auto_increment_id(namespace="memory"),
+        "message_id": providers.cache.conn.generate_auto_increment_id(namespace="memory"),
         "message_type": content["message_type"],
         "source_id": raw_message_id,
         "memory_id": memory_id,
@@ -115,7 +115,7 @@ async def save_extracted_to_memory_only(memory_id: str, message_dict, source_mes
         task_id=task_id
     )
     message_list = [{
-        "message_id": REDIS_CONN.generate_auto_increment_id(namespace="memory"),
+        "message_id": providers.cache.conn.generate_auto_increment_id(namespace="memory"),
         "message_type": content["message_type"],
         "source_id": source_message_id,
         "memory_id": memory_id,
@@ -250,27 +250,27 @@ def query_message(filter_dict: dict, params: dict):
 
 def init_message_id_sequence():
     message_id_redis_key = "id_generator:memory"
-    if REDIS_CONN.exist(message_id_redis_key):
-        current_max_id = REDIS_CONN.get(message_id_redis_key)
+    if providers.cache.conn.exist(message_id_redis_key):
+        current_max_id = providers.cache.conn.get(message_id_redis_key)
         logging.info(f"No need to init message_id sequence, current max id is {current_max_id}.")
     else:
         max_id = 1
         exist_memory_list = MemoryService.get_all_memory()
         if not exist_memory_list:
-            REDIS_CONN.set(message_id_redis_key, max_id)
+            providers.cache.conn.set(message_id_redis_key, max_id)
         else:
             max_id = MessageService.get_max_message_id(
                 uid_list=[m.tenant_id for m in exist_memory_list],
                 memory_ids=[m.id for m in exist_memory_list]
             )
-            REDIS_CONN.set(message_id_redis_key, max_id)
+            providers.cache.conn.set(message_id_redis_key, max_id)
         logging.info(f"Init message_id sequence done, current max id is {max_id}.")
 
 
 def get_memory_size_cache(memory_id: str, uid: str):
     redis_key = f"memory_{memory_id}"
-    if REDIS_CONN.exist(redis_key):
-        return int(REDIS_CONN.get(redis_key))
+    if providers.cache.conn.exist(redis_key):
+        return int(providers.cache.conn.get(redis_key))
     else:
         memory_size_map = MessageService.calculate_memory_size(
             [memory_id],
@@ -283,17 +283,17 @@ def get_memory_size_cache(memory_id: str, uid: str):
 
 def set_memory_size_cache(memory_id: str, size: int):
     redis_key = f"memory_{memory_id}"
-    return REDIS_CONN.set(redis_key, size)
+    return providers.cache.conn.set(redis_key, size)
 
 
 def increase_memory_size_cache(memory_id: str, size: int):
     redis_key = f"memory_{memory_id}"
-    return REDIS_CONN.incrby(redis_key, size)
+    return providers.cache.conn.incrby(redis_key, size)
 
 
 def decrease_memory_size_cache(memory_id: str, size: int):
     redis_key = f"memory_{memory_id}"
-    return REDIS_CONN.decrby(redis_key, size)
+    return providers.cache.conn.decrby(redis_key, size)
 
 
 def init_memory_size_cache():
@@ -339,7 +339,7 @@ async def queue_save_to_memory_task(memory_ids: list[str], message_dict: dict):
             not_found_memory.append(memory_id)
             continue
 
-        raw_message_id = REDIS_CONN.generate_auto_increment_id(namespace="memory")
+        raw_message_id = providers.cache.conn.generate_auto_increment_id(namespace="memory")
         raw_message = {
             "message_id": raw_message_id,
             "message_type": MemoryType.RAW.name.lower(),
@@ -369,7 +369,7 @@ async def queue_save_to_memory_task(memory_ids: list[str], message_dict: dict):
             "source_id": raw_message_id,
             "message_dict": message_dict
         }
-        if not REDIS_CONN.queue_product(settings.get_svr_queue_name(priority=0), message=task_message):
+        if not providers.cache.conn.queue_product(get_svr_queue_name(priority=0), message=task_message):
             failed_memory.append({"memory_id": memory_id, "fail_msg": "Can't access Redis."})
 
     error_msg = ""

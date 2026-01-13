@@ -29,9 +29,10 @@ from zhipuai import ZhipuAI
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
-from common import settings
 import logging
 import base64
+
+from core.config import app_config
 
 
 class Base(ABC):
@@ -59,13 +60,16 @@ class BuiltinEmbed(Base):
     _model_lock = threading.Lock()
 
     def __init__(self, key, model_name, **kwargs):
-        logging.info(f"Initialize BuiltinEmbed according to settings.EMBEDDING_CFG: {settings.EMBEDDING_CFG}")
-        embedding_cfg = settings.EMBEDDING_CFG
+        embedding_cfg = app_config.user_default_llm.embedding_model_cfg.model_dump()
+        embedding_model = embedding_cfg.model
+        logging.info(
+            f"Initialize BuiltinEmbed according to "
+            f"app_config.user_default_llm.embedding_model_cfg: {embedding_cfg}")
         if not BuiltinEmbed._model and "tei-" in os.getenv("COMPOSE_PROFILES", ""):
             with BuiltinEmbed._model_lock:
-                BuiltinEmbed._model_name = settings.EMBEDDING_MDL
-                BuiltinEmbed._max_tokens = BuiltinEmbed.MAX_TOKENS.get(settings.EMBEDDING_MDL, 500)
-                BuiltinEmbed._model = HuggingFaceEmbed(embedding_cfg["api_key"], settings.EMBEDDING_MDL, base_url=embedding_cfg["base_url"])
+                BuiltinEmbed._model_name = embedding_model
+                BuiltinEmbed._max_tokens = BuiltinEmbed.MAX_TOKENS.get(embedding_model, 500)
+                BuiltinEmbed._model = HuggingFaceEmbed(embedding_cfg["api_key"], embedding_model, base_url=embedding_cfg["base_url"])
         self._model = BuiltinEmbed._model
         self._model_name = BuiltinEmbed._model_name
         self._max_tokens = BuiltinEmbed._max_tokens
