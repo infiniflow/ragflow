@@ -377,6 +377,8 @@ export default {
     },
     knowledgeConfiguration: {
       settings: '设置',
+      autoMetadataTip:
+        '自动生成元数据。适用于解析新文件。现有文件需要重新解析才能更新（chunk将保留）。请注意，“配置”中指定的索引模型将消耗额外的 Token。',
       imageTableContextWindow: '图像与表格上下文窗口',
       imageTableContextWindowTip:
         '抓取图像与表格上下方的 N 个 token，为该 chunk 提供更丰富的背景上下文。',
