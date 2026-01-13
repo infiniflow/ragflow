@@ -440,7 +440,7 @@ class FileService(CommonService):
         err, files = [], []
         for file in file_objs:
             doc_id = file.id if hasattr(file, "id") else get_uuid()
-            e, doc = DocumentService.get_by_id(file.id)
+            e, doc = DocumentService.get_by_id(doc_id)
             if e:
                 blob = file.read()
                 settings.STORAGE_IMPL.put(kb.id, doc.location, blob, kb.tenant_id)
