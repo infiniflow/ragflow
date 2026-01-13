@@ -17,9 +17,7 @@ function usage() {
     echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
     echo "  --consumer-no-end=<num>         End range for consumers (if using range-based)."
     echo "  --workers=<num>                 Number of task executors to run (if range is not used)."
-    echo "  --host-id=<string>              Unique ID for the host (defaults to 
-	hostname
-)."
+    echo "  --host-id=<string>              Unique ID for the host (defaults to \`hostname\`)."
     echo
     echo "Examples:"
     echo "  $0 --disable-taskexecutor"
@@ -92,27 +90,27 @@ for arg in "$@"; do
       INIT_SUPERUSER_ARGS="--init-superuser"
       shift
       ;; 
-    --mcp-host=*) 
+    --mcp-host=*)
       MCP_HOST="${arg#*=}"
       shift
       ;; 
-    --mcp-port=*) 
+    --mcp-port=*)
       MCP_PORT="${arg#*=}"
       shift
       ;; 
-    --mcp-base-url=*) 
+    --mcp-base-url=*)
       MCP_BASE_URL="${arg#*=}"
       shift
       ;; 
-    --mcp-mode=*) 
+    --mcp-mode=*)
       MCP_MODE="${arg#*=}"
       shift
       ;; 
-    --mcp-host-api-key=*) 
+    --mcp-host-api-key=*)
       MCP_HOST_API_KEY="${arg#*=}"
       shift
       ;; 
-    --mcp-script-path=*) 
+    --mcp-script-path=*)
       MCP_SCRIPT_PATH="${arg#*=}"
       shift
       ;; 
@@ -128,19 +126,19 @@ for arg in "$@"; do
       MCP_JSON_RESPONSE_FLAG="--no-json-response"
       shift
       ;; 
-    --consumer-no-beg=*) 
+    --consumer-no-beg=*)
       CONSUMER_NO_BEG="${arg#*=}"
       shift
       ;; 
-    --consumer-no-end=*) 
+    --consumer-no-end=*)
       CONSUMER_NO_END="${arg#*=}"
       shift
       ;; 
-    --workers=*) 
+    --workers=*)
       WORKERS="${arg#*=}"
       shift
       ;; 
-    --host-id=*) 
+    --host-id=*)
       HOST_ID="${arg#*=}"
       shift
       ;; 
@@ -177,14 +175,19 @@ PY=/ragflow/.venv/bin/python
 # Function(s)
 # -----------------------------------------------------------------------------
 
+function run_as_ragflow() {
+    # Helper to run commands as ragflow user with correct environment
+    # Use runuser instead of sudo to avoid potential policy issues
+    runuser -u ragflow -- env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" VIRTUAL_ENV="$VIRTUAL_ENV" "$@"
+}
+
 function task_exe() {
     local consumer_id="$1"
     local host_id="$2"
 
     JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
     while true; do
-        sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" LD_PRELOAD="$JEMALLOC_PATH" \
-        "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"  &
+        run_as_ragflow env LD_PRELOAD="$JEMALLOC_PATH" "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"  &
         wait;
         sleep 1;
     done
@@ -192,8 +195,7 @@ function task_exe() {
 
 function start_mcp_server() {
     echo "Starting MCP Server on ${MCP_HOST}:${MCP_PORT} with base URL ${MCP_BASE_URL}..."
-    sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
-    "$PY" "${MCP_SCRIPT_PATH}" \
+    run_as_ragflow "$PY" "${MCP_SCRIPT_PATH}" \
         --host="${MCP_HOST}" \
         --port="${MCP_PORT}" \
         --base-url="${MCP_BASE_URL}" \
@@ -207,8 +209,9 @@ function start_mcp_server() {
 function ensure_docling() {
     [[ "${USE_DOCLING}" == "true" ]] || { echo "[docling] disabled by USE_DOCLING"; return 0; }
     DOCLING_PIN="${DOCLING_VERSION:-==2.58.0}"
-    sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
-      || sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
+    # check if docling is installed
+    run_as_ragflow "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
+      || run_as_ragflow /usr/local/bin/uv pip install --python "$PY" -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
 }
 
 # -----------------------------------------------------------------------------
@@ -218,12 +221,11 @@ ensure_docling
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
-    sudo -u ragflow /usr/sbin/nginx
+    run_as_ragflow /usr/sbin/nginx
 
     echo "Starting ragflow_server..."
     while true; do
-        sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
-        "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
+        run_as_ragflow "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
         wait;
         sleep 1;
     done &
@@ -232,8 +234,7 @@ fi
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
     while true; do
-        sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
-        "$PY" rag/svr/sync_data_source.py &
+        run_as_ragflow "$PY" rag/svr/sync_data_source.py &
         wait;
         sleep 1;
     done &
@@ -242,8 +243,7 @@ fi
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     echo "Starting admin_server..."
     while true; do
-        sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
-        "$PY" admin/server/admin_server.py &
+        run_as_ragflow "$PY" admin/server/admin_server.py &
         wait;
         sleep 1;
     done &
@@ -251,7 +251,7 @@ fi
 
 if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
     start_mcp_server
-fi
+}
 
 
 if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
@@ -269,6 +269,6 @@ if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
           task_exe "${i}" "${HOST_ID}" &
         done
     fi
-fi
+}
 
 wait
