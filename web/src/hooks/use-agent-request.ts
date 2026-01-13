@@ -97,6 +97,7 @@ export const EmptyDsl = {
   retrieval: [], // reference
   history: [],
   path: [],
+  variables: [],
   globals: {
     [AgentGlobals.SysQuery]: '',
     [AgentGlobals.SysUserId]: '',

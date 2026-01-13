@@ -195,10 +195,9 @@ function start_mcp_server() {
 
 function ensure_docling() {
     [[ "${USE_DOCLING}" == "true" ]] || { echo "[docling] disabled by USE_DOCLING"; return 0; }
-    python3 -c 'import pip' >/dev/null 2>&1 || python3 -m ensurepip --upgrade || true
     DOCLING_PIN="${DOCLING_VERSION:-==2.58.0}"
-    python3 -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
-      || python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
+    "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
+      || uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
 }
 
 # -----------------------------------------------------------------------------
