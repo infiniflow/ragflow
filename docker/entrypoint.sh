@@ -182,7 +182,7 @@ function task_exe() {
     JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
     while true; do
         LD_PRELOAD="$JEMALLOC_PATH" \
-        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
+        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow \
         "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"  &
         wait;
         sleep 1;
@@ -191,7 +191,7 @@ function task_exe() {
 
 function start_mcp_server() {
     echo "Starting MCP Server on ${MCP_HOST}:${MCP_PORT} with base URL ${MCP_BASE_URL}..."
-    sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
+    sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow \
     "$PY" "${MCP_SCRIPT_PATH}" \
         --host="${MCP_HOST}" \
         --port="${MCP_PORT}" \
@@ -205,10 +205,10 @@ function start_mcp_server() {
 
 function ensure_docling() {
     [[ "${USE_DOCLING}" == "true" ]] || { echo "[docling] disabled by USE_DOCLING"; return 0; }
-    sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$PY" -c 'import pip' >/dev/null 2>&1 || sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$PY" -m ensurepip --upgrade || true
+    sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow "$PY" -c 'import pip' >/dev/null 2>&1 || sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow "$PY" -m ensurepip --upgrade || true
     DOCLING_PIN="${DOCLING_VERSION:-==2.58.0}"
-    sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
-      || sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$PY" -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
+    sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
+      || sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow "$PY" -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
 }
 
 # -----------------------------------------------------------------------------
@@ -222,7 +222,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     echo "Starting ragflow_server..."
     while true; do
-        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
+        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow \
         "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
         wait;
         sleep 1;
@@ -232,7 +232,7 @@ fi
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
     while true; do
-        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
+        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow \
         "$PY" rag/svr/sync_data_source.py &
         wait;
         sleep 1;
@@ -242,7 +242,7 @@ fi
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     echo "Starting admin_server..."
     while true; do
-        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
+        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow \
         "$PY" admin/server/admin_server.py &
         wait;
         sleep 1;
