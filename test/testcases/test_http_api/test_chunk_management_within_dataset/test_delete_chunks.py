@@ -16,9 +16,8 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-import requests
-from common import CHUNK_API_URL, HEADERS, batch_add_chunks, delete_chunks, list_chunks
-from configs import HOST_ADDRESS, INVALID_API_TOKEN
+from common import batch_add_chunks, delete_chunks, list_chunks
+from configs import INVALID_API_TOKEN, INVALID_ID_32
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -46,33 +45,20 @@ class TestChunksDeletion:
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
-            ("", 100, "<NotFound '404: Not Found'>"),
-            (
-                "invalid_dataset_id",
-                102,
-                "You don't own the dataset invalid_dataset_id.",
-            ),
+            (INVALID_ID_32, 102, f"You don't own the dataset {INVALID_ID_32}."),
         ],
     )
     def test_invalid_dataset_id(self, HttpApiAuth, add_chunks_func, dataset_id, expected_code, expected_message):
         _, document_id, chunk_ids = add_chunks_func
-        url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
-        res = requests.delete(url=url, headers=HEADERS, auth=HttpApiAuth, json={"chunk_ids": chunk_ids})
-        if res.status_code == 404:
-            # Backend now returns 404 for invalid dataset paths.
-            assert res.status_code == 404
-            assert "Not Found" in res.text
-            return
-        res_json = res.json()
-        assert res_json["code"] == expected_code
-        assert res_json["message"] == expected_message
+        res = delete_chunks(HttpApiAuth, dataset_id, document_id, {"chunk_ids": chunk_ids})
+        assert res["code"] == expected_code
+        assert res["message"] == expected_message
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
-            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
-            ("invalid_document_id", 100, """LookupError("Can't find the document with ID invalid_document_id!")"""),
+            (INVALID_ID_32, 100, f"""LookupError("Can't find the document with ID {INVALID_ID_32}!")"""),
         ],
     )
     def test_invalid_document_id(self, HttpApiAuth, add_chunks_func, document_id, expected_code, expected_message):

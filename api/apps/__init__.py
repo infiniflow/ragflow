@@ -22,7 +22,7 @@ from quart import Blueprint, Quart, request, g, current_app, session
 from flasgger import Swagger
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from quart_cors import cors
-from common.constants import StatusEnum
+from common.constants import RetCode, StatusEnum
 from api.db.db_models import close_connection, APIToken
 from api.db.services import UserService
 from api.utils.json_encode import CustomJSONEncoder
@@ -30,7 +30,7 @@ from api.utils import commands
 
 from quart_auth import Unauthorized
 from common import settings
-from api.utils.api_utils import server_error_response
+from api.utils.api_utils import get_json_result, server_error_response
 from api.constants import API_VERSION
 from common.misc_utils import get_uuid
 
@@ -289,10 +289,9 @@ client_urls_prefix = [
 async def not_found(error):
     error_msg: str = f"The requested URL {request.path} was not found"
     logging.error(error_msg)
-    return {
-        "error": "Not Found",
-        "message": error_msg,
-    }, 404
+    response = get_json_result(code=RetCode.NOT_FOUND, message=error_msg, data=None)
+    response.status_code = 404
+    return response
 
 
 @app.teardown_request

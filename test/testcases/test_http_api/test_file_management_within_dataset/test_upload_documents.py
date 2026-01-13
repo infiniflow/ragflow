@@ -115,8 +115,8 @@ class TestDocumentsUpload:
         dataset_id = add_dataset_func
         fp = create_txt_file(tmp_path / "ragflow_test.txt")
         url = f"{HOST_ADDRESS}{FILE_API_URL}".format(dataset_id=dataset_id)
-        with fp.open("rb") as handle:
-            fields = (("file", ("", handle)),)
+        with fp.open("rb") as file_obj:
+            fields = (("file", ("", file_obj)),)
             m = MultipartEncoder(fields=fields)
             res = requests.post(
                 url=url,

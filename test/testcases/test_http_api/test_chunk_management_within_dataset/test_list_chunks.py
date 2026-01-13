@@ -17,9 +17,8 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-import requests
-from common import CHUNK_API_URL, HEADERS, batch_add_chunks, list_chunks
-from configs import HOST_ADDRESS, INVALID_API_TOKEN
+from common import batch_add_chunks, list_chunks
+from configs import INVALID_API_TOKEN, INVALID_ID_32
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -178,36 +177,23 @@ class TestChunksList:
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
-            ("", 100, "<NotFound '404: Not Found'>"),
-            (
-                "invalid_dataset_id",
-                102,
-                "You don't own the dataset invalid_dataset_id.",
-            ),
+            (INVALID_ID_32, 102, f"You don't own the dataset {INVALID_ID_32}."),
         ],
     )
     def test_invalid_dataset_id(self, HttpApiAuth, add_chunks, dataset_id, expected_code, expected_message):
         _, document_id, _ = add_chunks
-        url = f"{HOST_ADDRESS}{CHUNK_API_URL}".format(dataset_id=dataset_id, document_id=document_id)
-        res = requests.get(url=url, headers=HEADERS, auth=HttpApiAuth)
-        if res.status_code == 404:
-            # Backend now returns 404 for invalid dataset paths.
-            assert res.status_code == 404
-            assert "Not Found" in res.text
-            return
-        res_json = res.json()
-        assert res_json["code"] == expected_code
-        assert res_json["message"] == expected_message
+        res = list_chunks(HttpApiAuth, dataset_id, document_id)
+        assert res["code"] == expected_code
+        assert res["message"] == expected_message
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
-            ("", 102, "The dataset not own the document chunks."),
             (
-                "invalid_document_id",
+                INVALID_ID_32,
                 102,
-                "You don't own the document invalid_document_id.",
+                f"You don't own the document {INVALID_ID_32}.",
             ),
         ],
     )

@@ -18,9 +18,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from random import randint
 
 import pytest
-import requests
-from common import CHUNK_API_URL, HEADERS, delete_documents, update_chunk
-from configs import HOST_ADDRESS, INVALID_API_TOKEN
+from common import delete_documents, update_chunk
+from configs import INVALID_API_TOKEN, INVALID_ID_32
 from libs.auth import RAGFlowHttpApiAuth
 
 
@@ -146,58 +145,41 @@ class TestUpdatedChunk:
     @pytest.mark.parametrize(
         "dataset_id, expected_code, expected_message",
         [
-            ("", 100, "<NotFound '404: Not Found'>"),
-            pytest.param("invalid_dataset_id", 102, "You don't own the dataset invalid_dataset_id.", marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="infinity")),
-            pytest.param("invalid_dataset_id", 102, "Can't find this chunk", marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "opensearch", "elasticsearch"], reason="elasticsearch")),
+            pytest.param(INVALID_ID_32, 102, f"You don't own the dataset {INVALID_ID_32}.", marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="infinity")),
+            pytest.param(INVALID_ID_32, 102, "Can't find this chunk", marks=pytest.mark.skipif(os.getenv("DOC_ENGINE") in [None, "opensearch", "elasticsearch"], reason="elasticsearch")),
         ],
     )
     def test_invalid_dataset_id(self, HttpApiAuth, add_chunks, dataset_id, expected_code, expected_message):
         _, document_id, chunk_ids = add_chunks
-        url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_ids[0]}".format(dataset_id=dataset_id, document_id=document_id)
-        res = requests.put(url=url, headers=HEADERS, auth=HttpApiAuth, json={})
-        if res.status_code == 404:
-            # Backend now returns 404 for invalid dataset paths.
-            assert res.status_code == 404
-            assert "Not Found" in res.text
-            return
-        res_json = res.json()
-        assert res_json["code"] == expected_code
-        assert expected_message in res_json["message"]
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0])
+        assert res["code"] == expected_code
+        assert expected_message in res["message"]
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "document_id, expected_code, expected_message",
         [
-            ("", 100, "<NotFound '404: Not Found'>"),
             (
-                "invalid_document_id",
+                INVALID_ID_32,
                 102,
-                "You don't own the document invalid_document_id.",
+                f"You don't own the document {INVALID_ID_32}.",
             ),
         ],
     )
     def test_invalid_document_id(self, HttpApiAuth, add_chunks, document_id, expected_code, expected_message):
         dataset_id, _, chunk_ids = add_chunks
-        url = f"{HOST_ADDRESS}{CHUNK_API_URL}/{chunk_ids[0]}".format(dataset_id=dataset_id, document_id=document_id)
-        res = requests.put(url=url, headers=HEADERS, auth=HttpApiAuth, json={})
-        if res.status_code == 404:
-            # Backend now returns 404 for invalid document paths.
-            assert res.status_code == 404
-            assert "Not Found" in res.text
-            return
-        res_json = res.json()
-        assert res_json["code"] == expected_code
-        assert res_json["message"] == expected_message
+        res = update_chunk(HttpApiAuth, dataset_id, document_id, chunk_ids[0])
+        assert res["code"] == expected_code
+        assert res["message"] == expected_message
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "chunk_id, expected_code, expected_message",
         [
-            ("", 100, "<MethodNotAllowed '405: Method Not Allowed'>"),
             (
-                "invalid_document_id",
+                INVALID_ID_32,
                 102,
-                "Can't find this chunk invalid_document_id",
+                f"Can't find this chunk {INVALID_ID_32}",
             ),
         ],
     )
