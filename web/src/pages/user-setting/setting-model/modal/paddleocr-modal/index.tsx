@@ -1,20 +1,20 @@
-import { useForm } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
-import { z } from 'zod';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { t } from 'i18next';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { RAGFlowSelect, RAGFlowSelectOptionType } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import { Form } from '@/components/ui/form';
-import { LLMHeader } from '../../components/llm-header';
+import { Input } from '@/components/ui/input';
+import { RAGFlowSelect, RAGFlowSelectOptionType } from '@/components/ui/select';
 import { LLMFactory } from '@/constants/llm';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
+import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
+import { z } from 'zod';
+import { LLMHeader } from '../../components/llm-header';
 
 const FormSchema = z.object({
   llm_name: z.string().min(1, {
@@ -81,7 +81,9 @@ const PaddleOCRModal = ({
               label={t('setting.modelName')}
               required
             >
-              <Input placeholder={t('setting.paddleocr.modelNamePlaceholder')} />
+              <Input
+                placeholder={t('setting.paddleocr.modelNamePlaceholder')}
+              />
             </RAGFlowFormItem>
             <RAGFlowFormItem
               name="paddleocr_api_url"
@@ -94,7 +96,9 @@ const PaddleOCRModal = ({
               name="paddleocr_access_token"
               label={t('setting.paddleocr.accessToken')}
             >
-              <Input placeholder={t('setting.paddleocr.accessTokenPlaceholder')} />
+              <Input
+                placeholder={t('setting.paddleocr.accessTokenPlaceholder')}
+              />
             </RAGFlowFormItem>
             <RAGFlowFormItem
               name="paddleocr_algorithm"
