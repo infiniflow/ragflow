@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideFilePlay
 }
 ---
-
 # Parser component
 
 A component that sets the parsing rules for your dataset.
@@ -57,12 +56,12 @@ Starting from v0.22.0, RAGFlow includes MinerU (&ge; 2.6.3) as an optional PDF p
       - `"vlm-mlx-engine"`
       - `"vlm-vllm-async-engine"`
       - `"vlm-lmdeploy-engine"`.
-   - `MINERU_SERVER_URL`: (optional) The downstream vLLM HTTP server (e.g., `http://vllm-host:30000`). Applicable when `MINERU_BACKEND` is set to `"vlm-http-client"`.
+   - `MINERU_SERVER_URL`: (optional) The downstream vLLM HTTP server (e.g., `http://vllm-host:30000`). Applicable when `MINERU_BACKEND` is set to `"vlm-http-client"`. 
    - `MINERU_OUTPUT_DIR`: (optional) The local directory for holding the outputs of the MinerU API service (zip/JSON) before ingestion.
    - `MINERU_DELETE_OUTPUT`: Whether to delete temporary output when a temporary directory is used:
      - `1`: Delete.
      - `0`: Retain.
-3. In the web UI, navigate to your dataset's **Configuration** page and find the **Ingestion pipeline** section:
+3. In the web UI, navigate to your dataset's **Configuration** page and find the **Ingestion pipeline** section:  
    - If you decide to use a chunking method from the **Built-in** dropdown, ensure it supports PDF parsing, then select **MinerU** from the **PDF parser** dropdown.
    - If you use a custom ingestion pipeline instead, select **MinerU** in the **PDF parser** section of the **Parser** component.
 
