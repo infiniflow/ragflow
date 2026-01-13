@@ -382,6 +382,7 @@ class Dealer:
 
         # Ensure RERANK_LIMIT is multiple of page_size
         RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
+        RERANK_LIMIT = max(30, RERANK_LIMIT)
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,

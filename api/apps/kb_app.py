@@ -174,6 +174,7 @@ async def update_metadata_setting():
             message="Database error (Knowledgebase rename)!")
     kb = kb.to_dict()
     kb["parser_config"]["metadata"] = req["metadata"]
+    kb["parser_config"]["enable_metadata"] = req.get("enable_metadata", True)
     KnowledgebaseService.update_by_id(kb["id"], kb)
     return get_json_result(data=kb)
 
