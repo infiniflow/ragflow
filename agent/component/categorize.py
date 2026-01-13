@@ -97,6 +97,13 @@ Here's description of each category:
 class Categorize(LLM, ABC):
     component_name = "Categorize"
 
+    def get_input_elements(self) -> dict[str, dict]:
+        query_key = self._param.query or "sys.query"
+        elements = self.get_input_elements_from_text(f"{{{query_key}}}")
+        if not elements:
+            logging.warning(f"[Categorize] input element not detected for query key: {query_key}")
+        return elements
+
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60)))
     async def _invoke_async(self, **kwargs):
         if self.check_if_canceled("Categorize processing"):
@@ -105,12 +112,15 @@ class Categorize(LLM, ABC):
         msg = self._canvas.get_history(self._param.message_history_window_size)
         if not msg:
             msg = [{"role": "user", "content": ""}]
-        if kwargs.get("sys.query"):
-            msg[-1]["content"] = kwargs["sys.query"]
-            self.set_input_value("sys.query", kwargs["sys.query"])
+        query_key = self._param.query or "sys.query"
+        if query_key in kwargs:
+            query_value = kwargs[query_key]
         else:
-            msg[-1]["content"] = self._canvas.get_variable_value(self._param.query)
-            self.set_input_value(self._param.query, msg[-1]["content"])
+            query_value = self._canvas.get_variable_value(query_key)
+        if query_value is None:
+            query_value = ""
+        msg[-1]["content"] = query_value
+        self.set_input_value(query_key, msg[-1]["content"])
         self._param.update_prompt()
         chat_mdl = LLMBundle(self._canvas.get_tenant_id(), LLMType.CHAT, self._param.llm_id)
 
