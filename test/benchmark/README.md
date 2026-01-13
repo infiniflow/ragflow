@@ -1,11 +1,11 @@
 # RAGFlow HTTP Benchmark CLI
 
 Run (from repo root):
-  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark [global flags] <chat|retrieval> [command flags]
+  PYTHONPATH=./test uv run -m benchmark [global flags] <chat|retrieval> [command flags]
   Global flags can be placed before or after the command.
 
 If you run from another directory:
-  PYTHONPATH=/Directory_name/ragflow/test uv run -m testcases.test_http_api.benchmark [global flags] <chat|retrieval> [command flags]
+  PYTHONPATH=/Directory_name/ragflow/test uv run -m benchmark [global flags] <chat|retrieval> [command flags]
 
 JSON args:
   For --dataset-payload, --chat-payload, --messages-json, --extra-body, --payload
@@ -157,7 +157,7 @@ Do I need the dataset ID?
 Examples
 
 Example: chat benchmark creating dataset + upload + parse + chat (login + register)
-  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark chat \
+  PYTHONPATH=./test uv run -m benchmark chat \
     --base-url http://127.0.0.1:9380 \
     --allow-register \
     --login-email "<login_email>" \
@@ -175,7 +175,7 @@ Example: chat benchmark creating dataset + upload + parse + chat (login + regist
     --model "glm-4-flash@ZHIPU-AI"
 
 Example: chat benchmark with existing dataset + chat id (no creation)
-  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark chat \
+  PYTHONPATH=./test uv run -m benchmark chat \
     --base-url http://127.0.0.1:9380 \
     --chat-id <existing_chat_id> \
     --login-email "<login_email>" \
@@ -184,7 +184,7 @@ Example: chat benchmark with existing dataset + chat id (no creation)
     --model "glm-4-flash@ZHIPU-AI"
 
 Example: retrieval benchmark creating dataset + upload + parse
-  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark retrieval \
+  PYTHONPATH=./test uv run -m benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
     --allow-register \
     --login-email "<login_email>" \
@@ -199,7 +199,7 @@ Example: retrieval benchmark creating dataset + upload + parse
     --question "What is the longest lasting empire"
 
 Example: retrieval benchmark with existing dataset IDs
-  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark retrieval \
+  PYTHONPATH=./test uv run -m benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
     --login-email "<login_email>" \
     --login-password "<password>" \
@@ -207,7 +207,7 @@ Example: retrieval benchmark with existing dataset IDs
     --question "What is advantage of ragflow?"
 
 Example: retrieval benchmark with existing dataset IDs and document IDs
-  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark retrieval \
+  PYTHONPATH=./test uv run -m benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
     --login-email "<login_email>" \
     --login-password "<password>" \
@@ -216,7 +216,7 @@ Example: retrieval benchmark with existing dataset IDs and document IDs
     --question "What is advantage of ragflow?"
 
 Example: using a document list file (multi-file selection)
-  PYTHONPATH=./test uv run -m testcases.test_http_api.benchmark retrieval \
+  PYTHONPATH=./test uv run -m benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
     --login-email "<login_email>" \
     --login-password "<password>" \
