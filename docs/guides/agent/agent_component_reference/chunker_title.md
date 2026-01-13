@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideBlocks
 }
 ---
-
 # Title chunker component
 
 A component that splits texts into chunks by heading level.
@@ -26,7 +25,7 @@ Placing a **Title chunker** after a **Token chunker** is invalid and will cause 
 
 ### Hierarchy
 
-Specifies the heading level to define chunk boundaries:
+Specifies the heading level to define chunk boundaries: 
 
 - H1
 - H2
