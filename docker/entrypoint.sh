@@ -17,7 +17,9 @@ function usage() {
     echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
     echo "  --consumer-no-end=<num>         End range for consumers (if using range-based)."
     echo "  --workers=<num>                 Number of task executors to run (if range is not used)."
-    echo "  --host-id=<string>              Unique ID for the host (defaults to \`hostname\`)."
+    echo "  --host-id=<string>              Unique ID for the host (defaults to 
+	hostname
+)."
     echo
     echo "Examples:"
     echo "  $0 --disable-taskexecutor"
@@ -69,82 +71,82 @@ for arg in "$@"; do
     --disable-webserver)
       ENABLE_WEBSERVER=0
       shift
-      ;;
+      ;; 
     --disable-taskexecutor)
       ENABLE_TASKEXECUTOR=0
       shift
-      ;;
+      ;; 
     --disable-datasync)
       ENABLE_DATASYNC=0
       shift
-      ;;
+      ;; 
     --enable-mcpserver)
       ENABLE_MCP_SERVER=1
       shift
-      ;;
+      ;; 
     --enable-adminserver)
       ENABLE_ADMIN_SERVER=1
       shift
-      ;;
+      ;; 
     --init-superuser)
       INIT_SUPERUSER_ARGS="--init-superuser"
       shift
-      ;;
+      ;; 
     --mcp-host=*) 
       MCP_HOST="${arg#*=}"
       shift
-      ;;
+      ;; 
     --mcp-port=*) 
       MCP_PORT="${arg#*=}"
       shift
-      ;;
+      ;; 
     --mcp-base-url=*) 
       MCP_BASE_URL="${arg#*=}"
       shift
-      ;;
+      ;; 
     --mcp-mode=*) 
       MCP_MODE="${arg#*=}"
       shift
-      ;;
+      ;; 
     --mcp-host-api-key=*) 
       MCP_HOST_API_KEY="${arg#*=}"
       shift
-      ;;
+      ;; 
     --mcp-script-path=*) 
       MCP_SCRIPT_PATH="${arg#*=}"
       shift
-      ;;
+      ;; 
     --no-transport-sse-enabled)
       MCP_TRANSPORT_SSE_FLAG="--no-transport-sse-enabled"
       shift
-      ;;
+      ;; 
     --no-transport-streamable-http-enabled)
       MCP_TRANSPORT_STREAMABLE_HTTP_FLAG="--no-transport-streamable-http-enabled"
       shift
-      ;;
+      ;; 
     --no-json-response)
       MCP_JSON_RESPONSE_FLAG="--no-json-response"
       shift
-      ;;
+      ;; 
     --consumer-no-beg=*) 
       CONSUMER_NO_BEG="${arg#*=}"
       shift
-      ;;
+      ;; 
     --consumer-no-end=*) 
       CONSUMER_NO_END="${arg#*=}"
       shift
-      ;;
+      ;; 
     --workers=*) 
       WORKERS="${arg#*=}"
       shift
-      ;;
+      ;; 
     --host-id=*) 
       HOST_ID="${arg#*=}"
       shift
-      ;;
+      ;; 
     *)
       usage
-      ;;
+      ;; 
   esac
 done
 
@@ -181,8 +183,7 @@ function task_exe() {
 
     JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
     while true; do
-        LD_PRELOAD="$JEMALLOC_PATH" \
-        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow \
+        sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" LD_PRELOAD="$JEMALLOC_PATH" \
         "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"  &
         wait;
         sleep 1;
@@ -191,7 +192,7 @@ function task_exe() {
 
 function start_mcp_server() {
     echo "Starting MCP Server on ${MCP_HOST}:${MCP_PORT} with base URL ${MCP_BASE_URL}..."
-    sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow \
+    sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
     "$PY" "${MCP_SCRIPT_PATH}" \
         --host="${MCP_HOST}" \
         --port="${MCP_PORT}" \
@@ -206,8 +207,8 @@ function start_mcp_server() {
 function ensure_docling() {
     [[ "${USE_DOCLING}" == "true" ]] || { echo "[docling] disabled by USE_DOCLING"; return 0; }
     DOCLING_PIN="${DOCLING_VERSION:-==2.58.0}"
-    sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
-      || sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
+    sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
+      || sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
 }
 
 # -----------------------------------------------------------------------------
@@ -221,7 +222,7 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
 
     echo "Starting ragflow_server..."
     while true; do
-        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow \
+        sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
         "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS} &
         wait;
         sleep 1;
@@ -231,7 +232,7 @@ fi
 if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
     echo "Starting data sync..."
     while true; do
-        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow \
+        sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
         "$PY" rag/svr/sync_data_source.py &
         wait;
         sleep 1;
@@ -241,7 +242,7 @@ fi
 if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
     echo "Starting admin_server..."
     while true; do
-        sudo -u ragflow --preserve-env PATH="$PATH" PYTHONPATH="$PYTHONPATH" HOME=/home/ragflow \
+        sudo -u ragflow --preserve-env env HOME=/home/ragflow PATH="$PATH" PYTHONPATH="$PYTHONPATH" \
         "$PY" admin/server/admin_server.py &
         wait;
         sleep 1;
