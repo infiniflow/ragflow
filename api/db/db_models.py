@@ -251,19 +251,13 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
                 return super().execute_sql(sql, params, commit)
             except (OperationalError, InterfaceError) as e:
                 error_codes = [2013, 2006]
-                error_messages = ['', 'Lost connection']
-                should_retry = (
-                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-                    (str(e) in error_messages) or
-                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
-                )
+                error_messages = ["Lost connection"]
+                should_retry = (hasattr(e, "args") and e.args and e.args[0] in error_codes) or (str(e) in error_messages) or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"Database connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
-                    )
+                    logging.warning(f"Database connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     logging.error(f"DB execution failure: {e}")
                     raise
@@ -289,20 +283,14 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
                 return super().begin()
             except (OperationalError, InterfaceError) as e:
                 error_codes = [2013, 2006]
-                error_messages = ['', 'Lost connection']
+                error_messages = ["Lost connection"]
 
-                should_retry = (
-                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-                    (str(e) in error_messages) or
-                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
-                )
+                should_retry = (hasattr(e, "args") and e.args and e.args[0] in error_codes) or (str(e) in error_messages) or (hasattr(e, "__class__") and e.__class__.__name__ == "InterfaceError")
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
-                    )
+                    logging.warning(f"Lost connection during transaction (attempt {attempt + 1}/{self.max_retries})")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     raise
         return None
@@ -326,17 +314,14 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
                 # 08006: connection_failure
                 # 08003: connection_does_not_exist
                 # 08000: connection_exception
-                error_messages = ['connection', 'server closed', 'connection refused',
-                                'no connection to the server', 'terminating connection']
+                error_messages = ["connection", "server closed", "connection refused", "no connection to the server", "terminating connection"]
 
                 should_retry = any(msg in str(e).lower() for msg in error_messages)
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"PostgreSQL connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
-                    )
+                    logging.warning(f"PostgreSQL connection issue (attempt {attempt + 1}/{self.max_retries}): {e}")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     logging.error(f"PostgreSQL execution failure: {e}")
                     raise
@@ -359,17 +344,14 @@ class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
             try:
                 return super().begin()
             except (OperationalError, InterfaceError) as e:
-                error_messages = ['connection', 'server closed', 'connection refused',
-                                'no connection to the server', 'terminating connection']
+                error_messages = ["connection", "server closed", "connection refused", "no connection to the server", "terminating connection"]
 
                 should_retry = any(msg in str(e).lower() for msg in error_messages)
 
                 if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"PostgreSQL connection lost during transaction (attempt {attempt+1}/{self.max_retries})"
-                    )
+                    logging.warning(f"PostgreSQL connection lost during transaction (attempt {attempt + 1}/{self.max_retries})")
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     raise
         return None
@@ -392,13 +374,11 @@ class BaseDataBase:
         db_name = database_config.pop("name")
 
         pool_config = {
-            'max_retries': 5,
-            'retry_delay': 1,
+            "max_retries": 5,
+            "retry_delay": 1,
         }
         database_config.update(pool_config)
-        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(
-            db_name, **database_config
-        )
+        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
         # self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
         logging.info("init database on cluster mode successfully")
 
@@ -1073,9 +1053,9 @@ class Connector2Kb(DataBaseModel):
 
 
 class DateTimeTzField(CharField):
-    field_type = 'VARCHAR'
+    field_type = "VARCHAR"
 
-    def db_value(self, value: datetime|None) -> str|None:
+    def db_value(self, value: datetime | None) -> str | None:
         if value is not None:
             if value.tzinfo is not None:
                 return value.isoformat()
@@ -1083,11 +1063,12 @@ class DateTimeTzField(CharField):
                 return value.replace(tzinfo=timezone.utc).isoformat()
         return value
 
-    def python_value(self, value: str|None) -> datetime|None:
+    def python_value(self, value: str | None) -> datetime | None:
         if value is not None:
             dt = datetime.fromisoformat(value)
             if dt.tzinfo is None:
                 import pytz
+
                 return dt.replace(tzinfo=pytz.UTC)
             return dt
         return value
@@ -1115,6 +1096,7 @@ class SyncLogs(DataBaseModel):
 
 class EvaluationDataset(DataBaseModel):
     """Ground truth dataset for RAG evaluation"""
+
     id = CharField(max_length=32, primary_key=True)
     tenant_id = CharField(max_length=32, null=False, index=True, help_text="tenant ID")
     name = CharField(max_length=255, null=False, index=True, help_text="dataset name")
@@ -1131,6 +1113,7 @@ class EvaluationDataset(DataBaseModel):
 
 class EvaluationCase(DataBaseModel):
     """Individual test case in an evaluation dataset"""
+
     id = CharField(max_length=32, primary_key=True)
     dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
     question = TextField(null=False, help_text="test question")
@@ -1146,6 +1129,7 @@ class EvaluationCase(DataBaseModel):
 
 class EvaluationRun(DataBaseModel):
     """A single evaluation run"""
+
     id = CharField(max_length=32, primary_key=True)
     dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
     dialog_id = CharField(max_length=32, null=False, index=True, help_text="dialog configuration being evaluated")
@@ -1163,6 +1147,7 @@ class EvaluationRun(DataBaseModel):
 
 class EvaluationResult(DataBaseModel):
     """Result for a single test case in an evaluation run"""
+
     id = CharField(max_length=32, primary_key=True)
     run_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_runs")
     case_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_cases")
@@ -1183,7 +1168,7 @@ class Memory(DataBaseModel):
     avatar = TextField(null=True, help_text="avatar base64 string")
     tenant_id = CharField(max_length=32, null=False, index=True)
     memory_type = IntegerField(null=False, default=1, index=True, help_text="Bit flags (LSB->MSB): 1=raw, 2=semantic, 4=episodic, 8=procedural. E.g., 5 enables raw + episodic.")
-    storage_type = CharField(max_length=32, default='table', null=False, index=True, help_text="table|graph")
+    storage_type = CharField(max_length=32, default="table", null=False, index=True, help_text="table|graph")
     embd_id = CharField(max_length=128, null=False, index=False, help_text="embedding model ID")
     llm_id = CharField(max_length=128, null=False, index=False, help_text="chat model ID")
     permissions = CharField(max_length=16, null=False, index=True, help_text="me|team", default="me")
@@ -1197,25 +1182,25 @@ class Memory(DataBaseModel):
     class Meta:
         db_table = "memory"
 
+
 class SystemSettings(DataBaseModel):
     name = CharField(max_length=128, primary_key=True)
     source = CharField(max_length=32, null=False, index=False)
     data_type = CharField(max_length=32, null=False, index=False)
     value = CharField(max_length=1024, null=False, index=False)
+
     class Meta:
         db_table = "system_settings"
+
 
 def alter_db_add_column(migrator, table_name, column_name, column_type):
     try:
         migrate(migrator.add_column(table_name, column_name, column_type))
     except OperationalError as ex:
         error_codes = [1060]
-        error_messages = ['Duplicate column name']
+        error_messages = ["Duplicate column name"]
 
-        should_skip_error = (
-                (hasattr(ex, 'args') and ex.args and ex.args[0] in error_codes) or
-                (str(ex) in error_messages)
-        )
+        should_skip_error = (hasattr(ex, "args") and ex.args and ex.args[0] in error_codes) or (str(ex) in error_messages)
 
         if not should_skip_error:
             logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, operation error: {ex}")
@@ -1224,12 +1209,14 @@ def alter_db_add_column(migrator, table_name, column_name, column_type):
         logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, error: {ex}")
         pass
 
+
 def alter_db_column_type(migrator, table_name, column_name, new_column_type):
     try:
         migrate(migrator.alter_column_type(table_name, column_name, new_column_type))
     except Exception as ex:
         logging.critical(f"Failed to alter {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name} type, error: {ex}")
         pass
+
 
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
     try:
@@ -1238,6 +1225,7 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
         # rename fail will lead to a weired error.
         # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
         pass
+
 
 def migrate_db():
     logging.disable(logging.ERROR)
