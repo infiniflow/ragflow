@@ -25,6 +25,5 @@ def test_route_not_found_returns_json():
     res = requests.get(url)
     assert res.status_code == 404
     payload = res.json()
-    assert payload["code"] == 404
+    assert payload["error"] == "Not Found"
     assert f"/api/{VERSION}/__missing_route__" in payload["message"]
-    assert "data" in payload

@@ -289,10 +289,10 @@ client_urls_prefix = [
 async def not_found(error):
     error_msg: str = f"The requested URL {request.path} was not found"
     logging.error(error_msg)
-    response = get_json_result(code=RetCode.NOT_FOUND, message=error_msg, data=None)
-    response.status_code = 404
-    return response
-
+    return {
+        "error": "Not Found",
+        "message": error_msg,
+    }, 404
 
 @app.teardown_request
 def _db_close(exception):
