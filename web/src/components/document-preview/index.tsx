@@ -67,7 +67,7 @@ const Preview = ({
           <VideoPreviewer className={className} url={url} />
         </section>
       )}
-      {['pptx'].indexOf(fileType) > -1 && (
+      {['ppt', 'pptx'].indexOf(fileType) > -1 && (
         <section>
           <PptPreviewer className={className} url={url} />
         </section>
