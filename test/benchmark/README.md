@@ -179,13 +179,13 @@ Example: chat benchmark creating dataset + upload + parse + chat (login + regist
   PYTHONPATH=./test uv run -m benchmark chat \
     --base-url http://127.0.0.1:9380 \
     --allow-register \
-    --login-email "test@ragflow.com" \
-    --login-password "1234" \
+    --login-email "qa@infiniflow.org" \
+    --login-password "123" \
     --bootstrap-llm \
     --llm-factory ZHIPU-AI \
     --llm-api-key $ZHIPU_AI_API_KEY \
     --dataset-name "bench_dataset" \
-    --dataset-payload '{"name":"bench_dataset","embedding_model":"embedding-2@ZHIPU-AI"}' \
+    --dataset-payload '{"name":"bench_dataset","embedding_model":"BAAI/bge-small-en-v1.5@Builtin"}' \
     --document-path test/benchmark/test_docs/Doc1.pdf \
     --document-path test/benchmark/test_docs/Doc2.pdf \
     --document-path test/benchmark/test_docs/Doc3.pdf \
@@ -200,8 +200,8 @@ Example: chat benchmark with existing dataset + chat id (no creation)
   PYTHONPATH=./test uv run -m benchmark chat \
     --base-url http://127.0.0.1:9380 \
     --chat-id <existing_chat_id> \
-    --login-email "test@ragflow.com" \
-    --login-password "1234" \
+    --login-email "qa@infiniflow.org" \
+    --login-password "123" \
     --message "What is the purpose of RAGFlow?" \
     --model "glm-4-flash@ZHIPU-AI"
 ```
@@ -211,13 +211,13 @@ Example: retrieval benchmark creating dataset + upload + parse
   PYTHONPATH=./test uv run -m benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
     --allow-register \
-    --login-email "test@ragflow.com" \
-    --login-password "1234" \
+    --login-email "qa@infiniflow.org" \
+    --login-password "123" \
     --bootstrap-llm \
     --llm-factory ZHIPU-AI \
     --llm-api-key $ZHIPU_AI_API_KEY \
     --dataset-name "bench_dataset" \
-    --dataset-payload '{"name":"bench_dataset","embedding_model":"embedding-2@ZHIPU-AI"}' \
+    --dataset-payload '{"name":"bench_dataset","embedding_model":"BAAI/bge-small-en-v1.5@Builtin"}' \
     --document-path test/benchmark/test_docs/Doc1.pdf \
     --document-path test/benchmark/test_docs/Doc2.pdf \
     --document-path test/benchmark/test_docs/Doc3.pdf \
@@ -228,8 +228,8 @@ Example: retrieval benchmark with existing dataset IDs
 ```
   PYTHONPATH=./test uv run -m benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
-    --login-email "test@ragflow.com" \
-    --login-password "1234" \
+    --login-email "qa@infiniflow.org" \
+    --login-password "123" \
     --dataset-ids "<dataset_id_1>,<dataset_id_2>" \
     --question "What does RAG mean?"
 ```
@@ -238,8 +238,8 @@ Example: retrieval benchmark with existing dataset IDs and document IDs
 ```
   PYTHONPATH=./test uv run -m benchmark retrieval \
     --base-url http://127.0.0.1:9380 \
-    --login-email "test@ragflow.com" \
-    --login-password "1234" \
+    --login-email "qa@infiniflow.org" \
+    --login-password "123" \
     --dataset-id "<dataset_id>" \
     --document-ids "<doc_id_1>,<doc_id_2>" \
     --question "What does RAG mean?"
@@ -251,7 +251,8 @@ These scripts create a dataset,
 upload/parse docs from test/benchmark/test_docs, run the benchmark, and clean up.
 The both script runs retrieval then chat on the same dataset, then deletes it.
 
-Make sure to run uv sync --python 3.12 --group test before running the commands
+- Make sure to run uv sync ```--python 3.12 --group test ``` before running the commands.
+- It is also necessary to run this command prior to initializing your containers if you plan on using the built-in embedded model: ```echo -e "TEI_MODEL=BAAI/bge-small-en-v1.5" >> docker/.env```
 
 Chat only:
 ```
@@ -265,7 +266,7 @@ Retrieval only:
 
 Both (retrieval then chat on the same dataset):
 ```
-  ./test/benchmark/run_both.sh
+  ./test/benchmark/run_retrieval_chat.sh
 ```
 
 Requires:
@@ -273,9 +274,9 @@ Requires:
 
 Defaults used:
   - Base URL: http://127.0.0.1:9380
-  - Login: test@ragflow.com / 1234 (with allow-register)
+  - Login: qa@infiniflow.org / 123 (with allow-register)
   - LLM bootstrap: ZHIPU-AI with $ZHIPU_AI_API_KEY
-  - Dataset: bench_dataset (embedding-2@ZHIPU-AI)
+  - Dataset: bench_dataset (BAAI/bge-small-en-v1.5@Builtin)
   - Chat: bench_chat (glm-4-flash@ZHIPU-AI)
   - Chat message: "What is the purpose of RAGFlow?"
   - Retrieval question: "What does RAG mean?"
