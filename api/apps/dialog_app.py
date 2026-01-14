@@ -42,7 +42,7 @@ async def set_dialog():
     if len(name.encode("utf-8")) > 255:
         return get_data_error_result(message=f"Dialog name length is {len(name)} which is larger than 255")
 
-    if is_create and DialogService.query(tenant_id=current_user.id, name=name.strip()):
+    if is_create and name.strip().isascii() and DialogService.query(tenant_id=current_user.id, name=name.strip()):
         name = name.strip()
         name = duplicate_name(
             DialogService.query,
@@ -63,16 +63,15 @@ async def set_dialog():
     meta_data_filter = req.get("meta_data_filter", {})
     prompt_config = req["prompt_config"]
 
-    if not is_create:
-        if not req.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config['system']:
-            return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
+    if not req.get("kb_ids", []) and not prompt_config.get("tavily_api_key") and "{knowledge}" in prompt_config.get("system", ""):
+        return get_data_error_result(message="Please remove `{knowledge}` in system prompt since no dataset / Tavily used here.")
 
-        for p in prompt_config["parameters"]:
-            if p["optional"]:
-                continue
-            if prompt_config["system"].find("{%s}" % p["key"]) < 0:
-                return get_data_error_result(
-                    message="Parameter '{}' is not used".format(p["key"]))
+    for p in prompt_config.get("parameters", []):
+        if p["optional"]:
+            continue
+        if prompt_config.get("system", "").find("{%s}" % p["key"]) < 0:
+            return get_data_error_result(
+                message="Parameter '{}' is not used".format(p["key"]))
 
     try:
         e, tenant = TenantService.get_by_id(current_user.id)

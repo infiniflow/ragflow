@@ -395,6 +395,9 @@ class BaseDataBase:
             'max_retries': 5,
             'retry_delay': 1,
         }
+        if settings.DATABASE_TYPE.upper() == "MYSQL":
+            database_config.setdefault("charset", "utf8mb4")
+            database_config.setdefault("collation", "utf8mb4_unicode_ci")
         database_config.update(pool_config)
         self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(
             db_name, **database_config

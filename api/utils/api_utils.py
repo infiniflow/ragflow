@@ -66,17 +66,12 @@ async def _coerce_request_data() -> dict:
             payload = None
 
     if payload is None:
-        if last_error is not None:
-            raise last_error
-        raise ValueError("No JSON body or form data found in request.")
+        return {}
 
     if isinstance(payload, dict):
         return payload or {}
 
-    if isinstance(payload, str):
-        raise AttributeError("'str' object has no attribute 'get'")
-
-    raise TypeError(f"Unsupported request payload type: {type(payload)!r}")
+    return {}
 
 async def get_request_json():
     return await _coerce_request_data()
@@ -124,16 +119,10 @@ def server_error_response(e):
     try:
         msg = repr(e).lower()
         if getattr(e, "code", None) == 401 or ("unauthorized" in msg) or ("401" in msg):
-            return get_json_result(code=RetCode.UNAUTHORIZED, message=repr(e))
+            return get_json_result(code=RetCode.UNAUTHORIZED, message="Unauthorized"), RetCode.UNAUTHORIZED
     except Exception as ex:
         logging.warning(f"error checking authorization: {ex}")
 
-    if len(e.args) > 1:
-        try:
-            serialized_data = serialize_for_json(e.args[1])
-            return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=serialized_data)
-        except Exception:
-            return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=None)
     if repr(e).find("index_not_found_exception") >= 0:
         return get_json_result(code=RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
 
