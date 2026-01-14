@@ -202,6 +202,9 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
+      settings: '設置',
+      autoMetadataTip:
+        '自動生成元數據。適用於解析新文件。現有文件需要重新解析才能更新（ chunk 將保留）。請注意，配置中指定的索引模型將消耗額外的 Token。',
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
       imageTableContextWindow: '影像與表格上下文視窗',
       imageTableContextWindowTip:
@@ -370,7 +373,8 @@ export default {
       paddleocrOptions: 'PaddleOCR 選項',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'PaddleOCR 服務的 API 端點 URL',
-      paddleocrApiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+      paddleocrApiUrlPlaceholder:
+        '例如：https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio 訪問令牌',
       paddleocrAccessTokenTip: 'PaddleOCR API 的訪問令牌（可選）',
       paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可選）',
@@ -664,7 +668,7 @@ export default {
         selectAlgorithm: '選擇演算法',
         modelNamePlaceholder: '例如：paddleocr-from-env-1',
         modelNameRequired: '模型名稱為必填項目',
-        apiUrlRequired: 'PaddleOCR API URL 為必填項目'
+        apiUrlRequired: 'PaddleOCR API URL 為必填項目',
       },
       ollamaLink: '如何集成 {{name}}',
       FishAudioLink: '如何使用Fish Audio',
