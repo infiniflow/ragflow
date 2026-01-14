@@ -202,6 +202,9 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
+      settings: '設置',
+      autoMetadataTip:
+        '自動生成元數據。適用於解析新文件。現有文件需要重新解析才能更新（ chunk 將保留）。請注意，配置中指定的索引模型將消耗額外的 Token。',
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
       imageTableContextWindow: '影像與表格上下文視窗',
       imageTableContextWindowTip:
@@ -367,6 +370,18 @@ export default {
  `,
       tags: '標籤',
       addTag: '增加標籤',
+      paddleocrOptions: 'PaddleOCR 選項',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlTip: 'PaddleOCR 服務的 API 端點 URL',
+      paddleocrApiUrlPlaceholder:
+        '例如：https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio 訪問令牌',
+      paddleocrAccessTokenTip: 'PaddleOCR API 的訪問令牌（可選）',
+      paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可選）',
+      paddleocrAlgorithm: 'PaddleOCR 算法',
+      paddleocrAlgorithmTip: '用於 PaddleOCR 解析的算法',
+      paddleocrSelectAlgorithm: '選擇算法',
+      paddleocrModelNamePlaceholder: '例如：paddleocr-環境-1',
       useGraphRag: '提取知識圖譜',
       useGraphRagTip:
         '基於知識庫內所有切好的文本塊構建知識圖譜，用以提升多跳和複雜問題回答的正確率。請注意：構建知識圖譜將消耗大量 token 和時間。詳見 https://ragflow.io/docs/dev/construct_knowledge_graph。',
@@ -644,6 +659,17 @@ export default {
       modelNameMessage: '請輸入模型名稱！',
       modelTypeMessage: '請輸入模型類型！',
       baseUrlNameMessage: '請輸入基礎 Url！',
+      paddleocr: {
+        apiUrl: 'PaddleOCR API URL',
+        apiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+        accessToken: 'AI Studio 存取權杖',
+        accessTokenPlaceholder: '您的 AI Studio 權杖（選填）',
+        algorithm: 'PaddleOCR 演算法',
+        selectAlgorithm: '選擇演算法',
+        modelNamePlaceholder: '例如：paddleocr-from-env-1',
+        modelNameRequired: '模型名稱為必填項目',
+        apiUrlRequired: 'PaddleOCR API URL 為必填項目',
+      },
       ollamaLink: '如何集成 {{name}}',
       FishAudioLink: '如何使用Fish Audio',
       TencentCloudLink: '如何使用騰訊雲語音識別',

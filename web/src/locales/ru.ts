@@ -510,6 +510,17 @@ export default {
         'В графе знаний сообщество - это кластер сущностей, связанных отношениями. Вы можете поручить LLM генерировать аннотацию для каждого сообщества, известную как отчет сообщества. Более подробная информация здесь: https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/',
       theDocumentBeingParsedCannotBeDeleted:
         'Документ, который в данный момент парсится, не может быть удален',
+      paddleocrOptions: 'Параметры PaddleOCR',
+      paddleocrApiUrl: 'URL API PaddleOCR',
+      paddleocrApiUrlTip: 'URL конечной точки API сервиса PaddleOCR',
+      paddleocrApiUrlPlaceholder: 'Например: https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'Токен доступа AI Studio',
+      paddleocrAccessTokenTip: 'Токен доступа к API PaddleOCR (необязательно)',
+      paddleocrAccessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
+      paddleocrAlgorithm: 'Алгоритм PaddleOCR',
+      paddleocrAlgorithmTip: 'Алгоритм, используемый для обработки PaddleOCR',
+      paddleocrSelectAlgorithm: 'Выбрать алгоритм',
+      paddleocrModelNamePlaceholder: 'Например: paddleocr-среда-1',
     },
     chunk: {
       chunk: 'Чанк',
@@ -716,7 +727,7 @@ export default {
         'Базовый URL вашего экземпляра Confluence (например, https://your-domain.atlassian.net/wiki)',
       confluenceSpaceKeyTip:
         'Необязательно: Укажите ключ пространства для синхронизации только определенного пространства. Оставьте пустым для синхронизации всех доступных пространств. Для нескольких пространств разделите запятыми (например, DEV,DOCS,HR)',
-      s3PrefixTip: `Укажите путь к папке в вашем S3 бакете для получения файлов. 
+      s3PrefixTip: `Укажите путь к папке в вашем S3 бакете для получения файлов.
 Пример: general/v2/`,
       S3CompatibleEndpointUrlTip: `Требуется для S3 совместимого Storage Box. Укажите URL конечной точки, совместимой с S3.
 Пример: https://fsn1.your-objectstorage.com`,
@@ -1034,6 +1045,17 @@ export default {
       modelsToBeAddedTooltip:
         'Если ваш провайдер моделей не указан, но заявляет о "совместимости с OpenAI-API", выберите карточку OpenAI-API-compatible, чтобы добавить соответствующие модели. ',
       mcp: 'MCP',
+      paddleocr: {
+        apiUrl: 'URL API PaddleOCR',
+        apiUrlPlaceholder: 'Например: https://paddleocr-server.com/layout-parsing',
+        accessToken: 'Токен доступа AI Studio',
+        accessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
+        algorithm: 'Алгоритм PaddleOCR',
+        selectAlgorithm: 'Выбрать алгоритм',
+        modelNamePlaceholder: 'Например: paddleocr-from-env-1',
+        modelNameRequired: 'Имя модели является обязательным',
+        apiUrlRequired: 'URL API PaddleOCR является обязательным'
+      },
     },
     message: {
       registered: 'Зарегистрирован!',

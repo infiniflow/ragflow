@@ -377,6 +377,8 @@ export default {
     },
     knowledgeConfiguration: {
       settings: '设置',
+      autoMetadataTip:
+        '自动生成元数据。适用于解析新文件。现有文件需要重新解析才能更新（chunk将保留）。请注意，配置中指定的索引模型将消耗额外的 Token。',
       imageTableContextWindow: '图像与表格上下文窗口',
       imageTableContextWindowTip:
         '抓取图像与表格上下方的 N 个 token，为该 chunk 提供更丰富的背景上下文。',
@@ -390,6 +392,18 @@ export default {
         '启用公式识别。注意：对于西里尔文档可能无法正常工作。',
       mineruTableEnable: '表格识别',
       mineruTableEnableTip: '启用表格识别和提取。',
+      paddleocrOptions: 'PaddleOCR 选项',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlTip: 'PaddleOCR 服务的 API 端点 URL',
+      paddleocrApiUrlPlaceholder:
+        '例如：https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio 访问令牌',
+      paddleocrAccessTokenTip: 'PaddleOCR API 的访问令牌（可选）',
+      paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可选）',
+      paddleocrAlgorithm: 'PaddleOCR 算法',
+      paddleocrAlgorithmTip: '用于 PaddleOCR 解析的算法',
+      paddleocrSelectAlgorithm: '选择算法',
+      paddleocrModelNamePlaceholder: '例如：paddleocr-环境-1',
       generationScopeTip: '选择 RAPTOR 的生成范围：整个知识库或单个文件。',
       generationScope: '生成范围',
       scopeSingleFile: '单文件',
@@ -1112,6 +1126,17 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
           vlmVllmAsyncEngine: '基于vLLM异步引擎的视觉语言模型（实验性）',
           vlmLmdeployEngine: '基于LMDeploy引擎的视觉语言模型（实验性）',
         },
+      },
+      paddleocr: {
+        apiUrl: 'PaddleOCR API URL',
+        apiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+        accessToken: 'AI Studio访问令牌',
+        accessTokenPlaceholder: '您的 AI Studio 令牌（可选）',
+        algorithm: 'PaddleOCR算法',
+        selectAlgorithm: '选择算法',
+        modelNamePlaceholder: '例如：paddleocr-from-env-1',
+        modelNameRequired: '模型名称为必填项',
+        apiUrlRequired: 'PaddleOCR API URL 为必填项',
       },
     },
     message: {
