@@ -19,6 +19,9 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
 
+import time
+start_ts = time.time()
+
 import asyncio
 import copy
 import faulthandler
@@ -27,7 +30,6 @@ import os
 import signal
 import sys
 import threading
-import time
 import traceback
 from datetime import datetime, timezone
 from typing import Any
@@ -1266,6 +1268,7 @@ async def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    logging.info(f"RAGFlow data sync is ready after {time.time() - start_ts}s initialization.")
     while not stop_event.is_set():
         await dispatch_tasks()
     logging.error("BUG!!! You should not reach here!!!")
