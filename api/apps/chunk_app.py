@@ -376,7 +376,7 @@ async def retrieval_test():
 
         labels = label_question(_question, [kb])
         
-        ranks = await asyncio.to_thread(settings.retriever.retrieval,
+        ranks = await asyncio.to_thread(providers.retriever.conn.retrieval,
                     _question,
                     embd_mdl,
                     tenant_ids,
