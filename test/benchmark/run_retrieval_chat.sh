@@ -69,8 +69,8 @@ retrieval_output="$(PYTHONPATH="${REPO_ROOT}/test" uv run -m benchmark retrieval
   --document-path "${SCRIPT_DIR}/test_docs/Doc1.pdf" \
   --document-path "${SCRIPT_DIR}/test_docs/Doc2.pdf" \
   --document-path "${SCRIPT_DIR}/test_docs/Doc3.pdf" \
-  --iterations 1 \
-  --concurrency 4 \
+  --iterations 10 \
+  --concurrency 8 \
   --question "What does RAG mean?")"
 printf '%s\n' "${retrieval_output}"
 
@@ -93,6 +93,6 @@ PYTHONPATH="${REPO_ROOT}/test" uv run -m benchmark chat \
   --chat-payload "${CHAT_PAYLOAD}" \
   --message "What is the purpose of RAGFlow?" \
   --model "glm-4-flash@ZHIPU-AI" \
-  --iterations 1 \
-  --concurrency 4 \
+  --iterations 10 \
+  --concurrency 8 \
   --teardown

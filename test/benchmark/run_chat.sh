@@ -23,6 +23,6 @@ PYTHONPATH="${REPO_ROOT}/test" uv run -m benchmark chat \
   --chat-payload '{"name":"bench_chat","llm":{"model_name":"glm-4-flash@ZHIPU-AI"}}' \
   --message "What is the purpose of RAGFlow?" \
   --model "glm-4-flash@ZHIPU-AI" \
-  --iterations 1 \
-  --concurrency 4 \
+  --iterations 10 \
+  --concurrency 8 \
   --teardown
