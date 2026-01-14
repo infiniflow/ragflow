@@ -62,9 +62,10 @@ def meta_filter(metas: dict, filters: list[dict], logic: str = "and"):
             matched = False
             try:
                 if operator == "contains":
-                    matched = input in value if not isinstance(input, list) else all(i in value for i in input)
+                    # Check if filter value is a substring of the metadata value
+                    matched = value in str(input) if not isinstance(input, list) else any(value in str(i) for i in input)
                 elif operator == "not contains":
-                    matched = input not in value if not isinstance(input, list) else all(i not in value for i in input)
+                    matched = value not in str(input) if not isinstance(input, list) else all(value not in str(i) for i in input)
                 elif operator == "in":
                     matched = input in value if not isinstance(input, list) else all(i in value for i in input)
                 elif operator == "not in":
