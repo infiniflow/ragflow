@@ -29,6 +29,7 @@ class RedisConfig(BaseModel):
     username: Optional[str] = Field(default=None)
     password: Optional[str] = Field(default=None)
     db: int = Field(default=1)
+    decode_responses: bool = Field(default=True)
 
     dsn: Optional[RedisDsn] = None
 
@@ -70,7 +71,8 @@ class RedisConfig(BaseModel):
         conn = {
             "host": self.host,
             "port": self.port,
-            "db": self.db
+            "db": self.db,
+            "decode_responses": self.decode_responses,
         }
         if self.username:
             conn["username"] = self.username
