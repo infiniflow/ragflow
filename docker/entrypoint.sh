@@ -155,10 +155,7 @@ CONF_DIR="/ragflow/conf"
 TEMPLATE_FILE="${CONF_DIR}/service_conf.yaml.template"
 CONF_FILE="${CONF_DIR}/service_conf.yaml"
 
-rm -f "${CONF_FILE}"
-while IFS= read -r line || [[ -n "$line" ]]; do
-    eval "echo \"$line\"" >> "${CONF_FILE}"
-done < "${TEMPLATE_FILE}"
+python scripts/render_yaml.py $TEMPLATE_FILE $CONF_FILE
 
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 PY=python3

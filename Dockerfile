@@ -199,6 +199,9 @@ COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint.sh ./
 RUN chmod +x ./entrypoint*.sh
 
+COPY docker/scripts/* ./scripts/
+RUN find ./scripts -type f -exec chmod +x {} +
+
 # Copy compiled web pages
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist
 
