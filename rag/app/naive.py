@@ -727,7 +727,7 @@ def load_from_xml_v2(baseURI, rels_item_xml):
     if rels_item_xml is not None:
         rels_elm = parse_xml(rels_item_xml)
         for rel_elm in rels_elm.Relationship_lst:
-            if rel_elm.target_ref in ("../NULL", "NULL"):
+            if rel_elm.target_ref in ("../NULL", "NULL") or rel_elm.target_ref.startswith("#"):
                 continue
             srels._srels.append(_SerializedRelationship(baseURI, rel_elm))
     return srels
