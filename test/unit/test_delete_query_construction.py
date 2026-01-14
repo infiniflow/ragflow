@@ -27,7 +27,6 @@ Run with: python -m pytest test/unit/test_delete_query_construction.py -v
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
 from elasticsearch_dsl import Q, Search
 
 
