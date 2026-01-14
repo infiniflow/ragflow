@@ -47,10 +47,20 @@ export const ReparseDialog = memo(
       }
     }, []);
     useEffect(() => {
+      const initialDeleteValue = chunk_num > 0;
       setDefaultValues({
-        delete: chunk_num > 0,
+        delete: initialDeleteValue,
         apply_kb: false,
       });
+
+      // Reset form when dialog opens using new default values
+      if (visible && formCallbackRef.current) {
+        formCallbackRef.current.reset({
+          delete: initialDeleteValue,
+          apply_kb: false,
+        });
+      }
+
       const deleteField = {
         name: 'delete',
         label: '',
@@ -103,7 +113,7 @@ export const ReparseDialog = memo(
       } else {
         setFields([]);
       }
-    }, [chunk_num, t, enable_metadata]);
+    }, [chunk_num, t, enable_metadata, visible, formCallbackRef]);
 
     const formCallbackRef = useRef<DynamicFormRef>(null);
 
