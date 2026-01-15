@@ -36,8 +36,8 @@ This image is approximately 2 GB in size and relies on external LLM and embeddin
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
-uv run download_deps.py
-docker build -f Dockerfile.deps -t infiniflow/ragflow_deps .
+uv run scripts/download_deps.py
+docker build -f docker/Dockerfile.deps -t infiniflow/ragflow_deps .
 docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 

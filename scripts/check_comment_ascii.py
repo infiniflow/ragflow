@@ -6,7 +6,7 @@ Check whether given python files contain non-ASCII comments.
 How to check the whole git repo:
 
 ```
-$ git ls-files -z -- '*.py' | xargs -0 python3 check_comment_ascii.py
+$ git ls-files -z -- '*.py' | xargs -0 python3 scripts/check_comment_ascii.py
 ```
 """
 

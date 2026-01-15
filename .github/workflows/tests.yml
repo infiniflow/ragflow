@@ -112,7 +112,7 @@ jobs:
 
               for file in "${files[@]}"; do
                 if [ -f "$file" ]; then
-                  if python3 check_comment_ascii.py "$file"; then
+                  if python3 scripts/check_comment_ascii.py "$file"; then
                     echo "✅ $file"
                   else
                     echo "❌ $file"

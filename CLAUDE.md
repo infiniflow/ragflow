@@ -52,7 +52,7 @@ RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on d
 ```bash
 # Install Python dependencies
 uv sync --python 3.12 --all-extras
-uv run download_deps.py
+uv run scripts/download_deps.py
 pre-commit install
 
 # Start dependent services
