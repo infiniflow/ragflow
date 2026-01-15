@@ -32,16 +32,24 @@ class Colors:
 
 
 class TestRunner:
-    """RAGFlow Unit Test Runner"""
+    """RAGFlow Test Runner - Supports unit, integration, contract, and benchmark tests"""
 
     def __init__(self):
         self.project_root = Path(__file__).parent.resolve()
-        self.ut_dir = Path(self.project_root / 'test' / 'unit_test')
+        self.test_root = Path(self.project_root / 'test')
+        
+        # Test directories
+        self.unit_dir = self.test_root / 'unit_test'
+        self.integration_dir = self.test_root / 'integration'
+        self.contract_dir = self.test_root / 'api_contract'
+        self.benchmark_dir = self.test_root / 'benchmark'
+        
         # Default options
         self.coverage = False
         self.parallel = False
         self.verbose = False
         self.markers = ""
+        self.test_type = "all"  # unit, integration, contract, benchmark, or all
 
         # Python interpreter path
         self.python = sys.executable
@@ -57,11 +65,39 @@ class TestRunner:
         print(f"{Colors.RED}[ERROR]{Colors.NC} {message}")
 
     @staticmethod
+    def print_warning(message: str) -> None:
+        """Print warning message"""
+        print(f"{Colors.YELLOW}[WARNING]{Colors.NC} {message}")
+
+    def check_environment(self) -> None:
+        """Check for required environment variables based on test type"""
+        if self.test_type in ["integration", "contract", "all"]:
+            # Check for integration/contract test requirements
+            missing = []
+            
+            if not os.getenv("ZHIPU_AI_API_KEY"):
+                missing.append("ZHIPU_AI_API_KEY")
+            
+            if missing:
+                self.print_warning("Missing environment variables for integration/contract tests:")
+                for var in missing:
+                    print(f"    - {var}")
+                self.print_info("Integration and contract tests may be skipped; the runner will continue.")
+                print()
+
+    @staticmethod
     def show_usage() -> None:
         """Display usage information"""
         usage = """
-RAGFlow Unit Test Runner
+RAGFlow Test Runner
 Usage: python run_tests.py [OPTIONS]
+
+TEST TYPES:
+    --unit                  Run unit tests only (test/unit_test/)
+    --integration           Run integration tests only (test/integration/)
+    --contract              Run API contract tests only (test/api_contract/)
+    --benchmark             Run benchmark tests only (test/benchmark/)
+    --all                   Run all tests (default)
 
 OPTIONS:
     -h, --help              Show this help message
@@ -69,35 +105,57 @@ OPTIONS:
     -p, --parallel          Run tests in parallel (requires pytest-xdist)
     -v, --verbose           Verbose output
     -t, --test FILE         Run specific test file or directory
-    -m, --markers MARKERS   Run tests with specific markers (e.g., "unit", "integration")
+    -m, --markers MARKERS   Run tests with specific markers
 
 EXAMPLES:
     # Run all tests
     python run_tests.py
 
-    # Run with coverage
-    python run_tests.py --coverage
+    # Run only unit tests with coverage
+    python run_tests.py --unit --coverage
 
-    # Run in parallel
-    python run_tests.py --parallel
+    # Run integration tests in parallel
+    python run_tests.py --integration --parallel
+
+    # Run contract tests with verbose output
+    python run_tests.py --contract --verbose
 
     # Run specific test file
-    python run_tests.py --test services/test_dialog_service.py
+    python run_tests.py --test test/unit_test/services/test_dialog_service.py
 
-    # Run only unit tests
-    python run_tests.py --markers "unit"
-
-    # Run tests with coverage and parallel execution
-    python run_tests.py --coverage --parallel
+    # Run tests with specific markers
+    python run_tests.py --markers "slow"
 
 """
         print(usage)
 
+    def get_test_paths(self) -> List[Path]:
+        """Get test paths based on test type"""
+        paths = []
+        
+        if self.test_type == "unit":
+            paths.append(self.unit_dir)
+        elif self.test_type == "integration":
+            paths.append(self.integration_dir)
+        elif self.test_type == "contract":
+            paths.append(self.contract_dir)
+        elif self.test_type == "benchmark":
+            paths.append(self.benchmark_dir)
+        else:  # all
+            paths.extend([self.unit_dir, self.integration_dir, self.contract_dir, self.benchmark_dir])
+        
+        # Filter out non-existent paths
+        return [p for p in paths if p.exists()]
+
     def build_pytest_command(self) -> List[str]:
         """Build the pytest command arguments"""
-        cmd = ["pytest", str(self.ut_dir)]
-
-        # Add test path
+        test_paths = self.get_test_paths()
+        
+        if not test_paths:
+            raise ValueError(f"No test directories found for test type: {self.test_type}")
+        
+        # Use python -m pytest to ensure virtual environment is used
+        cmd = [self.python, "-m", "pytest"] + [str(p) for p in test_paths]
 
         # Add markers
         if self.markers:
@@ -111,12 +169,17 @@ EXAMPLES:
 
         # Add coverage
         if self.coverage:
-            # Relative path from test directory to source code
-            source_path = str(self.project_root / "common")
+            # Coverage for main source directories
+            source_paths = ["api", "rag", "agent", "common", "deepdoc", "graphrag"]
+            for source in source_paths:
+                source_dir = self.project_root / source
+                if source_dir.exists():
+                    cmd.extend(["--cov", str(source_dir)])
+            
             cmd.extend([
-                "--cov", source_path,
                 "--cov-report", "html",
-                "--cov-report", "term"
+                "--cov-report", "term",
+                "--cov-report", "term-missing"
             ])
 
         # Add parallel execution
@@ -142,13 +205,20 @@ EXAMPLES:
         # Change to test directory
         os.chdir(self.project_root)
 
+        # Check environment variables
+        self.check_environment()
+
         # Build command
         cmd = self.build_pytest_command()
 
         # Print test configuration
-        self.print_info("Running RAGFlow Unit Tests")
+        test_paths = self.get_test_paths()
+        self.print_info("Running RAGFlow Tests")
         self.print_info("=" * 40)
-        self.print_info(f"Test Directory: {self.ut_dir}")
+        self.print_info(f"Test Type: {self.test_type}")
+        self.print_info("Test Directories:")
+        for path in test_paths:
+            self.print_info(f"  - {path.relative_to(self.project_root)}")
         self.print_info(f"Coverage: {self.coverage}")
         self.print_info(f"Parallel: {self.parallel}")
         self.print_info(f"Verbose: {self.verbose}")
@@ -166,7 +236,7 @@ EXAMPLES:
                 print(f"\n{Colors.GREEN}[SUCCESS]{Colors.NC} All tests passed!")
 
                 if self.coverage:
-                    coverage_dir = self.ut_dir / "htmlcov"
+                    coverage_dir = self.project_root / "htmlcov"
                     if coverage_dir.exists():
                         index_file = coverage_dir / "index.html"
                         print(f"\n{Colors.BLUE}[INFO]{Colors.NC} Coverage report generated:")
@@ -191,16 +261,46 @@ EXAMPLES:
     def parse_arguments(self) -> bool:
         """Parse command line arguments"""
         parser = argparse.ArgumentParser(
-            description="RAGFlow Unit Test Runner",
+            description="RAGFlow Test Runner",
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
 Examples:
   python run_tests.py                    # Run all tests
-  python run_tests.py --coverage         # Run with coverage
+  python run_tests.py --unit             # Run unit tests only
+  python run_tests.py --integration      # Run integration tests only
+  python run_tests.py --contract         # Run API contract tests only
+  python run_tests.py --unit --coverage  # Run unit tests with coverage
   python run_tests.py --parallel         # Run in parallel
-  python run_tests.py --test services/test_dialog_service.py  # Run specific test
-  python run_tests.py --markers "unit"   # Run only unit tests
+  python run_tests.py --test test/unit_test/services/test_dialog_service.py  # Run specific test
 """
+        )
+
+        # Test type selection (mutually exclusive)
+        test_type_group = parser.add_mutually_exclusive_group()
+        test_type_group.add_argument(
+            "--unit",
+            action="store_true",
+            help="Run unit tests only (test/unit_test/)"
+        )
+        test_type_group.add_argument(
+            "--integration",
+            action="store_true",
+            help="Run integration tests only (test/integration/)"
+        )
+        test_type_group.add_argument(
+            "--contract",
+            action="store_true",
+            help="Run API contract tests only (test/api_contract/)"
+        )
+        test_type_group.add_argument(
+            "--benchmark",
+            action="store_true",
+            help="Run benchmark tests only (test/benchmark/)"
+        )
+        test_type_group.add_argument(
+            "--all",
+            action="store_true",
+            help="Run all tests (default)"
         )
 
         parser.add_argument(
@@ -232,11 +332,23 @@ Examples:
             "-m", "--markers",
             type=str,
             default="",
-            help="Run tests with specific markers (e.g., 'unit', 'integration')"
+            help="Run tests with specific markers"
         )
 
         try:
             args = parser.parse_args()
+
+            # Set test type
+            if args.unit:
+                self.test_type = "unit"
+            elif args.integration:
+                self.test_type = "integration"
+            elif args.contract:
+                self.test_type = "contract"
+            elif args.benchmark:
+                self.test_type = "benchmark"
+            else:
+                self.test_type = "all"
 
             # Set options
             self.coverage = args.coverage

@@ -40,6 +40,18 @@ from libs.auth import RAGFlowHttpApiAuth  # noqa: E402
 from testcases.conftest import *  # noqa: F401, F403, E402
 
 
+@pytest.fixture(autouse=True)
+def skip_if_no_api_key():
+    """Skip integration tests if ZHIPU_AI_API_KEY is not set."""
+    from configs import HAS_REAL_API_KEY
+    
+    if not HAS_REAL_API_KEY:
+        pytest.skip(
+            "Integration tests require ZHIPU_AI_API_KEY environment variable. "
+            "Set it to run tests against a real RAGFlow instance."
+        )
+
+
 @pytest.fixture
 def api_client(token):
     """HTTP API client with authentication."""

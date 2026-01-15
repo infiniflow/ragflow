@@ -12,9 +12,10 @@ import os
 import sys
 import unittest
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, Mock
 
 import pytest
+import peewee
 
 # Check if we're running in Docker (with real database) or locally (need mocks)
 IN_DOCKER = os.path.exists('/ragflow/.venv') or os.environ.get('DOCKER_CONTAINER') == 'true'
@@ -42,18 +43,36 @@ from api.db.migrations import (  # noqa: E402
 )
 from api.db.connection import TransactionLogger, DB  # noqa: E402
 
-# Use real PostgreSQL database for all tests
+
 def setup_test_database():
-    """Set up test database using real PostgreSQL connection"""
-    # Ensure migration_history table exists
-    MigrationTracker.init_tracking_table()
-    return DB
+    """Set up test database - use in-memory SQLite for tests without external dependencies"""
+    if IN_DOCKER and DB and hasattr(DB, 'database'):
+        # Use real PostgreSQL database in Docker
+        MigrationTracker.init_tracking_table()
+        return DB
+    else:
+        # Use in-memory SQLite for local testing
+        from playhouse.sqlite_ext import SqliteExtDatabase
+        test_db = SqliteExtDatabase(':memory:')
+        
+        # Bind MigrationHistory to test database
+        test_db.bind([MigrationHistory])
+        test_db.connect()
+        test_db.create_tables([MigrationHistory])
+        
+        # Patch the global DB object
+        import api.db.connection
+        api.db.connection.DB = test_db
+        
+        return test_db
+
 
 def teardown_test_database():
     """Clean up test database - just clear data, don't drop tables"""
     try:
         # Clear test data but keep the table structure
-        MigrationHistory.delete().execute()
+        if MigrationHistory.table_exists():
+            MigrationHistory.delete().execute()
     except Exception:
         pass  # Table might not exist in some test scenarios
 
@@ -64,17 +83,20 @@ class TestMigrationHistoryModel(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test database"""
-        setup_test_database()
+        cls.test_db = setup_test_database()
 
     @classmethod
     def tearDownClass(cls):
         """Clean up test database"""
         teardown_test_database()
+        if not IN_DOCKER and cls.test_db:
+            cls.test_db.close()
 
     def setUp(self):
         """Clean up before each test"""
         # Clear migration history before each test
-        MigrationHistory.delete().execute()
+        if MigrationHistory.table_exists():
+            MigrationHistory.delete().execute()
 
     def test_migration_history_table_creation(self):
         """Verify migration_history table can be created"""
@@ -113,16 +135,19 @@ class TestMigrationTracker(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test database"""
-        setup_test_database()
+        cls.test_db = setup_test_database()
 
     @classmethod
     def tearDownClass(cls):
         """Clean up test database"""
         teardown_test_database()
+        if not IN_DOCKER and cls.test_db:
+            cls.test_db.close()
 
     def setUp(self):
         """Clean up before each test"""
-        MigrationHistory.delete().execute()
+        if MigrationHistory.table_exists():
+            MigrationHistory.delete().execute()
 
     def test_init_tracking_table(self):
         """Test tracking table initialization"""
@@ -214,16 +239,19 @@ class TestMigrationIntegration(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test database"""
-        setup_test_database()
+        cls.test_db = setup_test_database()
 
     @classmethod
     def tearDownClass(cls):
         """Clean up test database"""
         teardown_test_database()
+        if not IN_DOCKER and cls.test_db:
+            cls.test_db.close()
 
     def setUp(self):
         """Clean up before each test"""
-        MigrationHistory.delete().execute()
+        if MigrationHistory.table_exists():
+            MigrationHistory.delete().execute()
 
     @patch("api.db.migrations.DatabaseMigrator")
     @patch("api.db.migrations.alter_db_add_column")
@@ -280,16 +308,19 @@ class TestMigrationErrorHandling(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test database"""
-        setup_test_database()
+        cls.test_db = setup_test_database()
 
     @classmethod
     def tearDownClass(cls):
         """Clean up test database"""
         teardown_test_database()
+        if not IN_DOCKER and cls.test_db:
+            cls.test_db.close()
 
     def setUp(self):
         """Clean up before each test"""
-        MigrationHistory.delete().execute()
+        if MigrationHistory.table_exists():
+            MigrationHistory.delete().execute()
 
     def test_migration_continues_on_tracking_failure(self):
         """Test that migrations continue even if tracking fails"""
@@ -436,17 +467,19 @@ class TestTransactionSafety(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test database"""
-        # Use the real database, just ensure migration_history table exists
-        MigrationTracker.init_tracking_table()
+        cls.test_db = setup_test_database()
 
     @classmethod
     def tearDownClass(cls):
         """Clean up test database"""
-        # Clear test data but keep table structure
-        try:
+        teardown_test_database()
+        if not IN_DOCKER and cls.test_db:
+            cls.test_db.close()
+
+    def setUp(self):
+        """Clean up before each test"""
+        if MigrationHistory.table_exists():
             MigrationHistory.delete().execute()
-        except Exception:
-            pass
 
     def setUp(self):
         """Clean up before each test"""
@@ -564,24 +597,19 @@ class TestTransactionSafetyP1:
     @classmethod
     def setup_class(cls):
         """Set up test database for pytest class"""
-        # Use the real database, just ensure migration_history table exists
-        MigrationTracker.init_tracking_table()
+        cls.test_db = setup_test_database()
 
     @classmethod
     def teardown_class(cls):
         """Clean up test database for pytest class"""
-        # Clear test data but keep table structure
-        try:
-            MigrationHistory.delete().execute()
-        except Exception:
-            pass
+        teardown_test_database()
+        if not IN_DOCKER and cls.test_db:
+            cls.test_db.close()
 
     def setup_method(self):
         """Clean up before each test"""
-        try:
+        if MigrationHistory.table_exists():
             MigrationHistory.delete().execute()
-        except Exception:
-            pass
 
     def test_atomic_all_or_nothing(self):
         """Test that migrations are truly atomic (all-or-nothing)"""
