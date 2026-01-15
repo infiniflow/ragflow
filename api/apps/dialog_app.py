@@ -42,13 +42,18 @@ async def set_dialog():
     if len(name.encode("utf-8")) > 255:
         return get_data_error_result(message=f"Dialog name length is {len(name)} which is larger than 255")
 
-    if is_create and name.strip().isascii() and DialogService.query(tenant_id=current_user.id, name=name.strip()):
-        name = name.strip()
-        name = duplicate_name(
-            DialogService.query,
-            name=name,
-            tenant_id=current_user.id,
-            status=StatusEnum.VALID.value)
+    name = name.strip()
+    if is_create:
+        existing_names = {
+            d.name.casefold()
+            for d in DialogService.query(tenant_id=current_user.id, status=StatusEnum.VALID.value)
+            if d.name
+        }
+        if name.casefold() in existing_names:
+            def _name_exists(name: str, **_kwargs) -> bool:
+                return name.casefold() in existing_names
+
+            name = duplicate_name(_name_exists, name=name)
 
     description = req.get("description", "A helpful dialog")
     icon = req.get("icon", "")

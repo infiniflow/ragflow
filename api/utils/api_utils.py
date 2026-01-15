@@ -48,30 +48,32 @@ requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSON
 
 async def _coerce_request_data() -> dict:
     """Fetch JSON body with sane defaults; fallback to form data."""
+    if hasattr(request, "_cached_payload"):
+        return request._cached_payload
     payload: Any = None
-    last_error: Exception | None = None
 
     try:
         payload = await request.get_json(force=True, silent=True)
-    except Exception as e:
-        last_error = e
+    except Exception:
         payload = None
 
     if payload is None:
         try:
             form = await request.form
             payload = form.to_dict()
-        except Exception as e:
-            last_error = e
+        except Exception:
             payload = None
 
     if payload is None:
-        return {}
+        payload = {}
 
     if isinstance(payload, dict):
-        return payload or {}
+        payload = payload or {}
+    else:
+        payload = {}
 
-    return {}
+    request._cached_payload = payload
+    return payload
 
 async def get_request_json():
     return await _coerce_request_data()

@@ -16,6 +16,7 @@
 import logging
 import os
 import sys
+import time
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from quart import Blueprint, Quart, request, g, current_app, session
@@ -162,10 +163,18 @@ def login_required(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]
 
     @wraps(func)
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-        if not current_user:  # or not session.get("_user_id"):
+        timing_enabled = os.getenv("RAGFLOW_API_TIMING")
+        t_start = time.perf_counter() if timing_enabled else None
+        user = current_user
+        if timing_enabled:
+            logging.info(
+                "api_timing login_required auth_ms=%.2f path=%s",
+                (time.perf_counter() - t_start) * 1000,
+                request.path,
+            )
+        if not user:  # or not session.get("_user_id"):
             raise QuartAuthUnauthorized()
-        else:
-            return await current_app.ensure_async(func)(*args, **kwargs)
+        return await current_app.ensure_async(func)(*args, **kwargs)
 
     return wrapper
 

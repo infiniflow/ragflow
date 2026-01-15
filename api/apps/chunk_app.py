@@ -228,8 +228,9 @@ async def rm():
             e, doc = DocumentService.get_by_id(req["doc_id"])
             if not e:
                 return get_data_error_result(message="Document not found!")
+            condition = {"id": req["chunk_ids"], "doc_id": req["doc_id"]}
             try:
-                deleted_count = settings.docStoreConn.delete({"id": req["chunk_ids"]},
+                deleted_count = settings.docStoreConn.delete(condition,
                                                              search.index_name(DocumentService.get_tenant_id(req["doc_id"])),
                                                              doc.kb_id)
             except Exception:
