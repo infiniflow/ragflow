@@ -38,7 +38,7 @@ When the Memory reaches its storage limit and the automatic forgetting policy is
 
 ## Enhance Agent context 
 
-Under **Retrieval** and **Message** component settings, a new Memory invocation capability is available. In the Message component, users can configure the Agent to write selected data into a designated Memory, while the Retrieval component can be set to read from that same Memory to answer future queries.  This enables a simple Q&A bot Agent to accumulate context over time and respond with richer, memory-aware answers.
+Under [Retrieval](../agent/agent_component_reference/retrieval.mdx) and [Message](../agent/agent_component_reference/message.mdx) component settings, a new Memory invocation capability is available. In the Message component, users can configure the Agent to write selected data into a designated Memory, while the Retrieval component can be set to read from that same Memory to answer future queries.  This enables a simple Q&A bot Agent to accumulate context over time and respond with richer, memory-aware answers.
 
 ### Retrieve from memory
 
@@ -52,6 +52,13 @@ At the same time you have finished **Retrieval** component settings, select the 
 
 
 ![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/save_to_memory.png)
+
+
+## Frequently asked questions
+
+### Can I share my memory?
+
+Yes, you can. Your memory can be shared between Agents. If you wish to share your memory with your team members, please ensure you have configured its team permissions. See [Share memory](../team/share_memory.md) for details.
 
 
 
