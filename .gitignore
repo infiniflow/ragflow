@@ -52,6 +52,10 @@ uv-x86_64*.tar.gz
 .venv
 docker/data
 
+# OceanBase data and conf
+docker/oceanbase/conf
+docker/oceanbase/data
+
 
 #--------------------------------------------------#
 # The following was generated with gitignore.nvim: #
