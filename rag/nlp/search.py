@@ -381,9 +381,8 @@ class Dealer:
         if not question:
             return ranks
 
-        # Ensure RERANK_LIMIT is multiple of page_size
-        RERANK_LIMIT = math.ceil(64 / page_size) * page_size if page_size > 1 else 1
-        RERANK_LIMIT = max(30, RERANK_LIMIT)
+        # Use fixed candidate pool size so page_size only affects display, not retrieval results
+        RERANK_LIMIT = 64
         req = {
             "kb_ids": kb_ids,
             "doc_ids": doc_ids,
