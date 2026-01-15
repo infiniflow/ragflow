@@ -19,7 +19,7 @@ import sys
 import time
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-from quart import Blueprint, Quart, request, g, current_app, session
+from quart import Blueprint, Quart, request, g, current_app, session, jsonify
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from quart_cors import cors
 from common.constants import StatusEnum, RetCode
@@ -285,7 +285,14 @@ client_urls_prefix = [
 @app.errorhandler(404)
 async def not_found(error):
     logging.error(f"The requested URL {request.path} was not found")
-    return get_json_result(code=RetCode.NOT_FOUND, message="Not Found"), RetCode.NOT_FOUND
+    message = f"Not Found: {request.path}"
+    response = {
+        "code": RetCode.NOT_FOUND,
+        "message": message,
+        "data": None,
+        "error": "Not Found",
+    }
+    return jsonify(response), RetCode.NOT_FOUND
 
 
 @app.errorhandler(401)

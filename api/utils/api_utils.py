@@ -31,6 +31,12 @@ from quart import (
     jsonify,
     request
 )
+from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
+
+try:
+    from quart.exceptions import BadRequest as QuartBadRequest
+except ImportError:  # pragma: no cover - optional dependency
+    QuartBadRequest = None
 
 from peewee import OperationalError
 
@@ -52,25 +58,26 @@ async def _coerce_request_data() -> dict:
         return request._cached_payload
     payload: Any = None
 
-    try:
-        payload = await request.get_json(force=True, silent=True)
-    except Exception:
-        payload = None
+    body_bytes = await request.get_data()
+    has_body = bool(body_bytes)
+    content_type = (request.content_type or "").lower()
+    is_json = content_type.startswith("application/json")
 
-    if payload is None:
-        try:
-            form = await request.form
-            payload = form.to_dict()
-        except Exception:
-            payload = None
-
-    if payload is None:
+    if not has_body:
         payload = {}
-
-    if isinstance(payload, dict):
-        payload = payload or {}
+    elif is_json:
+        payload = await request.get_json(force=False, silent=False)
+        if isinstance(payload, dict):
+            payload = payload or {}
+        elif isinstance(payload, str):
+            raise AttributeError("'str' object has no attribute 'get'")
+        else:
+            raise TypeError("JSON payload must be an object.")
     else:
-        payload = {}
+        form = await request.form
+        payload = form.to_dict() if form else None
+        if payload is None:
+            raise TypeError("Request body is not a valid form payload.")
 
     request._cached_payload = payload
     return payload
@@ -159,7 +166,17 @@ def validate_request(*args, **kwargs):
     def wrapper(func):
         @wraps(func)
         async def decorated_function(*_args, **_kwargs):
-            errs = process_args(await _coerce_request_data())
+            exception_types = (AttributeError, TypeError, WerkzeugBadRequest)
+            if QuartBadRequest is not None:
+                exception_types = exception_types + (QuartBadRequest,)
+            if args or kwargs:
+                try:
+                    input_arguments = await _coerce_request_data()
+                except exception_types:
+                    input_arguments = {}
+            else:
+                input_arguments = await _coerce_request_data()
+            errs = process_args(input_arguments)
             if errs:
                 return get_json_result(code=RetCode.ARGUMENT_ERROR, message=errs)
             if inspect.iscoroutinefunction(func):
