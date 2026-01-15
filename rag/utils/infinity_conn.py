@@ -340,7 +340,7 @@ class InfinityConnection(InfinityConnectionBase):
                     if not d.get("docnm_kwd"):
                         d["docnm"] = self.list2str(v)
                 elif k == "important_kwd":
-                    d["important_keywords"] = self.list2str(v)
+                    d["important_keywords"] = self.list2str(v, ",")
                 elif k == "important_tks":
                     if not d.get("important_kwd"):
                         d["important_keywords"] = v
@@ -429,7 +429,7 @@ class InfinityConnection(InfinityConnectionBase):
                 if not new_value.get("docnm_kwd"):
                     new_value["docnm"] = v
             elif k == "important_kwd":
-                new_value["important_keywords"] = self.list2str(v)
+                new_value["important_keywords"] = self.list2str(v, ",")
             elif k == "important_tks":
                 if not new_value.get("important_kwd"):
                     new_value["important_keywords"] = v
@@ -532,7 +532,7 @@ class InfinityConnection(InfinityConnectionBase):
                     res[field] = res["docnm"]
         if "important_keywords" in res.columns:
             if "important_kwd" in fields_all:
-                res["important_kwd"] = res["important_keywords"].apply(lambda v: v.split())
+                res["important_kwd"] = res["important_keywords"].apply(lambda v: v.split(",") if v else [])
             if "important_tks" in fields_all:
                 res["important_tks"] = res["important_keywords"]
         if "questions" in res.columns:
