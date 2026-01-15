@@ -296,10 +296,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=dialog.tenant_id)
     if langfuse_keys:
         langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
-        if langfuse.auth_check():
-            langfuse_tracer = langfuse
-            trace_id = langfuse_tracer.create_trace_id()
-            trace_context = {"trace_id": trace_id}
+        try:
+            if langfuse.auth_check():
+                langfuse_tracer = langfuse
+                trace_id = langfuse_tracer.create_trace_id()
+                trace_context = {"trace_id": trace_id}
+        except Exception:
+            # Skip langfuse tracing if connection fails
+            pass
 
     check_langfuse_tracer_ts = timer()
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
