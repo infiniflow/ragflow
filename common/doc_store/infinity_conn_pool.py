@@ -20,20 +20,16 @@ import infinity
 from infinity.connection_pool import ConnectionPool
 from infinity.errors import ErrorCode
 
-from common import settings
 from common.decorator import singleton
+from core.config import app_config
 
 
 @singleton
 class InfinityConnectionPool:
 
     def __init__(self):
-        if hasattr(settings, "INFINITY"):
-            self.INFINITY_CONFIG = settings.INFINITY
-        else:
-            self.INFINITY_CONFIG = settings.get_base_config("infinity", {"uri": "infinity:23817"})
-
-        infinity_uri = self.INFINITY_CONFIG["uri"]
+        infinity_cfg = app_config.doc_engine.infinity
+        infinity_uri = infinity_cfg.uri
         if ":" in infinity_uri:
             host, port = infinity_uri.split(":")
             self.infinity_uri = infinity.common.NetworkAddress(host, int(port))

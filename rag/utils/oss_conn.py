@@ -14,26 +14,27 @@
 #  limitations under the License.
 
 import logging
-import boto3
-from botocore.exceptions import ClientError
-from botocore.config import Config
 import time
 from io import BytesIO
+
+import boto3
+from botocore.config import Config
+from botocore.exceptions import ClientError
+
 from common.decorator import singleton
-from common import settings
+from core.config import app_config
 
 
 @singleton
 class RAGFlowOSS:
     def __init__(self):
         self.conn = None
-        self.oss_config = settings.OSS
-        self.access_key = self.oss_config.get('access_key', None)
-        self.secret_key = self.oss_config.get('secret_key', None)
-        self.endpoint_url = self.oss_config.get('endpoint_url', None)
-        self.region = self.oss_config.get('region', None)
-        self.bucket = self.oss_config.get('bucket', None)
-        self.prefix_path = self.oss_config.get('prefix_path', None)
+        self.access_key = app_config.oss.access_key or None
+        self.secret_key = app_config.oss.secret_key or None
+        self.endpoint_url = app_config.oss.endpoint_url or None
+        self.region = app_config.oss.region or None
+        self.bucket = app_config.oss.bucket or None
+        self.prefix_path = app_config.oss.prefix_path or None
         self.__open__()
 
     @staticmethod

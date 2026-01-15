@@ -29,9 +29,7 @@ from flask_login import LoginManager
 from werkzeug.serving import run_simple
 from routes import admin_bp
 from common.log_utils import init_root_logger
-from common.constants import SERVICE_CONF
 from common.config_utils import show_configs
-from common import settings
 from config import load_configurations, SERVICE_CONFIGS
 from auth import init_default_admin, setup_auth
 from flask_session import Session
@@ -62,10 +60,10 @@ if __name__ == '__main__':
     show_configs()
     login_manager = LoginManager()
     login_manager.init_app(app)
-    settings.init_settings()
+
     setup_auth(login_manager)
     init_default_admin()
-    SERVICE_CONFIGS.configs = load_configurations(SERVICE_CONF)
+    SERVICE_CONFIGS.configs = load_configurations()
 
     try:
         logging.info(f"RAGFlow admin is ready after {time.time() - start_ts}s initialization.")

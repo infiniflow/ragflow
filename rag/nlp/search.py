@@ -21,6 +21,7 @@ import math
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
+from core.config import app_config
 from rag.prompts.generator import relevant_chunks_with_toc
 from rag.nlp import rag_tokenizer, query
 import numpy as np
@@ -28,7 +29,6 @@ from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByE
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
-from common import settings
 
 
 def index_name(uid): return f"ragflow_{uid}"
@@ -122,7 +122,7 @@ class Dealer:
             else:
                 matchDense = await self.get_vector(qst, emb_mdl, topk, req.get("similarity", 0.1))
                 q_vec = matchDense.embedding_data
-                if not settings.DOC_ENGINE_INFINITY:
+                if not app_config.doc_engine.is_infinity:
                     src.append(f"q_{len(q_vec)}_vec")
 
                 fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.05,0.95"})
@@ -412,7 +412,7 @@ class Dealer:
                 rank_feature=rank_feature,
             )
         else:
-            if settings.DOC_ENGINE_INFINITY:
+            if app_config.doc_engine.is_infinity:
                 # Don't need rerank here since Infinity normalizes each way score before fusion.
                 sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
                 sim = [s if s is not None else 0.0 for s in sim]

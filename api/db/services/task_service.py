@@ -20,6 +20,8 @@ import xxhash
 from datetime import datetime
 
 from api.db.db_utils import bulk_insert_into_db
+from core.config.utils.helpers import get_svr_queue_name
+from core.providers import providers
 from deepdoc.parser import PdfParser
 from peewee import JOIN
 from api.db.db_models import DB, File2Document, File
@@ -31,8 +33,6 @@ from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp
 from common.constants import StatusEnum, TaskStatus
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
-from rag.utils.redis_conn import REDIS_CONN
-from common import settings
 from rag.nlp import search
 
 CANVAS_DEBUG_DOC_ID = "dataflow_x"
@@ -391,7 +391,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     parse_task_array = []
 
     if doc["type"] == FileType.PDF.value:
-        file_bin = settings.STORAGE_IMPL.get(bucket, name)
+        file_bin = providers.storage.conn.get(bucket, name)
         do_layout = doc["parser_config"].get("layout_recognize", "DeepDOC")
         pages = PdfParser.total_page_number(doc["name"], file_bin)
         if pages is None:
@@ -413,7 +413,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
                 parse_task_array.append(task)
 
     elif doc["parser_id"] == "table":
-        file_bin = settings.STORAGE_IMPL.get(bucket, name)
+        file_bin = providers.storage.conn.get(bucket, name)
         rn = RAGFlowExcelParser.row_number(doc["name"], file_bin)
         for i in range(0, rn, 3000):
             task = new_task()
@@ -450,7 +450,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             if pre_task["chunk_ids"]:
                 pre_chunk_ids.extend(pre_task["chunk_ids"].split())
         if pre_chunk_ids:
-            settings.docStoreConn.delete({"id": pre_chunk_ids}, search.index_name(chunking_config["tenant_id"]),
+            providers.doc_store.conn.delete({"id": pre_chunk_ids}, search.index_name(chunking_config["tenant_id"]),
                                          chunking_config["kb_id"])
     DocumentService.update_by_id(doc["id"], {"chunk_num": ck_num})
 
@@ -459,8 +459,8 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
 
     unfinished_task_array = [task for task in parse_task_array if task["progress"] < 1.0]
     for unfinished_task in unfinished_task_array:
-        assert REDIS_CONN.queue_product(
-            settings.get_svr_queue_name(priority), message=unfinished_task
+        assert providers.cache.conn.queue_product(
+            get_svr_queue_name(priority), message=unfinished_task
         ), "Can't access Redis. Please check the Redis' status."
 
 
@@ -514,14 +514,14 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
 def cancel_all_task_of(doc_id):
     for t in TaskService.query(doc_id=doc_id):
         try:
-            REDIS_CONN.set(f"{t.id}-cancel", "x")
+            providers.cache.conn.set(f"{t.id}-cancel", "x")
         except Exception as e:
             logging.exception(e)
 
 
 def has_canceled(task_id):
     try:
-        if REDIS_CONN.get(f"{task_id}-cancel"):
+        if providers.cache.conn.get(f"{task_id}-cancel"):
             logging.info(f"Task: {task_id} has been canceled")
             return True
     except Exception as e:
@@ -550,8 +550,8 @@ def queue_dataflow(tenant_id:str, flow_id:str, task_id:str, doc_id:str=CANVAS_DE
     task["dataflow_id"] = flow_id
     task["file"] = file
 
-    if not REDIS_CONN.queue_product(
-            settings.get_svr_queue_name(priority), message=task
+    if not providers.cache.conn.queue_product(
+            get_svr_queue_name(priority), message=task
     ):
         return False, "Can't access Redis. Please check the Redis' status."
 

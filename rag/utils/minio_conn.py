@@ -16,12 +16,14 @@
 
 import logging
 import time
+from io import BytesIO
+
 from minio import Minio
 from minio.commonconfig import CopySource
 from minio.error import S3Error, ServerError, InvalidResponseError
-from io import BytesIO
+
 from common.decorator import singleton
-from common import settings
+from core.config import app_config
 
 
 @singleton
@@ -30,8 +32,8 @@ class RAGFlowMinio:
         self.conn = None
         # Use `or None` to convert empty strings to None, ensuring single-bucket
         # mode is truly disabled when not configured
-        self.bucket = settings.MINIO.get('bucket', None) or None
-        self.prefix_path = settings.MINIO.get('prefix_path', None) or None
+        self.bucket = app_config.storage.minio.bucket or None
+        self.prefix_path = app_config.storage.minio.prefix_path or None
         self.__open__()
 
     @staticmethod
@@ -83,14 +85,15 @@ class RAGFlowMinio:
             pass
 
         try:
-            self.conn = Minio(settings.MINIO["host"],
-                              access_key=settings.MINIO["user"],
-                              secret_key=settings.MINIO["password"],
-                              secure=False
-                              )
+            self.conn = Minio(
+                app_config.storage.minio.endpoint,
+                access_key=app_config.storage.minio.user,
+                secret_key=app_config.storage.minio.password,
+                secure=False
+            )
         except Exception:
             logging.exception(
-                "Fail to connect %s " % settings.MINIO["host"])
+                "Fail to connect %s " % app_config.storage.minio.host)
 
     def __close__(self):
         del self.conn

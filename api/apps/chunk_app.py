@@ -29,13 +29,13 @@ from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.utils.api_utils import get_data_error_result, get_json_result, server_error_response, validate_request, \
     get_request_json
+from core.providers import providers
 from rag.app.qa import beAdoc, rmPrefix
 from rag.app.tag import label_question
 from rag.nlp import rag_tokenizer, search
 from rag.prompts.generator import cross_languages, keyword_extraction
 from common.string_utils import remove_redundant_spaces
 from common.constants import RetCode, LLMType, ParserType, PAGERANK_FLD
-from common import settings
 from api.apps import login_required, current_user
 
 
@@ -61,7 +61,8 @@ async def list_chunk():
         }
         if "available_int" in req:
             query["available_int"] = int(req["available_int"])
-        sres = await settings.retriever.search(query, search.index_name(tenant_id), kb_ids, highlight=["content_ltks"])
+        sres = await providers.retriever.conn.search(
+            query, search.index_name(tenant_id), kb_ids, highlight=["content_ltks"])
         res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
         for id in sres.ids:
             d = {
@@ -100,7 +101,7 @@ def get():
             return get_data_error_result(message="Tenant not found!")
         for tenant in tenants:
             kb_ids = KnowledgebaseService.get_kb_ids(tenant.tenant_id)
-            chunk = settings.docStoreConn.get(chunk_id, search.index_name(tenant.tenant_id), kb_ids)
+            chunk = providers.doc_store.conn.get(chunk_id, search.index_name(tenant.tenant_id), kb_ids)
             if chunk:
                 break
         if chunk is None:
@@ -174,7 +175,7 @@ async def set():
             v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not _d.get("question_kwd") else "\n".join(_d["question_kwd"])])
             v = 0.1 * v[0] + 0.9 * v[1] if doc.parser_id != ParserType.QA else v[1]
             _d["q_%d_vec" % len(v)] = v.tolist()
-            settings.docStoreConn.update({"id": req["chunk_id"]}, _d, search.index_name(tenant_id), doc.kb_id)
+            providers.doc_store.conn.update({"id": req["chunk_id"]}, _d, search.index_name(tenant_id), doc.kb_id)
 
             # update image
             image_base64 = req.get("image_base64", None)
@@ -182,7 +183,7 @@ async def set():
             if image_base64 and img_id and "-" in img_id:
                 bkt, name = img_id.split("-", 1)
                 image_binary = base64.b64decode(image_base64)
-                settings.STORAGE_IMPL.put(bkt, name, image_binary)
+                providers.storage.conn.put(bkt, name, image_binary)
             return get_json_result(data=True)
 
         return await asyncio.to_thread(_set_sync)
@@ -201,10 +202,12 @@ async def switch():
             if not e:
                 return get_data_error_result(message="Document not found!")
             for cid in req["chunk_ids"]:
-                if not settings.docStoreConn.update({"id": cid},
-                                                    {"available_int": int(req["available_int"])},
-                                                    search.index_name(DocumentService.get_tenant_id(req["doc_id"])),
-                                                    doc.kb_id):
+                if not providers.doc_store.conn.update(
+                        {"id": cid},
+                        {"available_int": int(req["available_int"])},
+                        search.index_name(DocumentService.get_tenant_id(req["doc_id"])),
+                        doc.kb_id
+                ):
                     return get_data_error_result(message="Index updating failure")
             return get_json_result(data=True)
 
@@ -223,7 +226,7 @@ async def rm():
             e, doc = DocumentService.get_by_id(req["doc_id"])
             if not e:
                 return get_data_error_result(message="Document not found!")
-            if not settings.docStoreConn.delete({"id": req["chunk_ids"]},
+            if not providers.doc_store.conn.delete({"id": req["chunk_ids"]},
                                                 search.index_name(DocumentService.get_tenant_id(req["doc_id"])),
                                                 doc.kb_id):
                 return get_data_error_result(message="Chunk deleting failure")
@@ -231,8 +234,8 @@ async def rm():
             chunk_number = len(deleted_chunk_ids)
             DocumentService.decrement_chunk_num(doc.id, doc.kb_id, 1, chunk_number, 0)
             for cid in deleted_chunk_ids:
-                if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
-                    settings.STORAGE_IMPL.rm(doc.kb_id, cid)
+                if providers.storage.conn.obj_exist(doc.kb_id, cid):
+                    providers.storage.conn.rm(doc.kb_id, cid)
             return get_json_result(data=True)
 
         return await asyncio.to_thread(_rm_sync)
@@ -288,7 +291,7 @@ async def create():
             v, c = embd_mdl.encode([doc.name, req["content_with_weight"] if not d["question_kwd"] else "\n".join(d["question_kwd"])])
             v = 0.1 * v[0] + 0.9 * v[1]
             d["q_%d_vec" % len(v)] = v.tolist()
-            settings.docStoreConn.insert([d], search.index_name(tenant_id), doc.kb_id)
+            providers.doc_store.conn.insert([d], search.index_name(tenant_id), doc.kb_id)
 
             DocumentService.increment_chunk_num(
                 doc.id, doc.kb_id, c, 1, 0)
@@ -371,7 +374,7 @@ async def retrieval_test():
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
-        ranks = await settings.retriever.retrieval(
+        ranks = await providers.retriever.conn.retrieval(
                         _question,
                         embd_mdl,
                         tenant_ids,
@@ -387,14 +390,14 @@ async def retrieval_test():
                     )
 
         if use_kg:
-            ck = await settings.kg_retriever.retrieval(_question,
+            ck = await providers.kg_retriever.conn.retrieval(_question,
                                                    tenant_ids,
                                                    kb_ids,
                                                    embd_mdl,
                                                    LLMBundle(kb.tenant_id, LLMType.CHAT))
             if ck["content_with_weight"]:
                 ranks["chunks"].insert(0, ck)
-        ranks["chunks"] = settings.retriever.retrieval_by_children(ranks["chunks"], tenant_ids)
+        ranks["chunks"] = providers.retriever.conn.retrieval_by_children(ranks["chunks"], tenant_ids)
 
         for c in ranks["chunks"]:
             c.pop("vector", None)
@@ -421,7 +424,7 @@ async def knowledge_graph():
         "doc_ids": [doc_id],
         "knowledge_graph_kwd": ["graph", "mind_map"]
     }
-    sres = await settings.retriever.search(req, search.index_name(tenant_id), kb_ids)
+    sres = await providers.retriever.conn.search(req, search.index_name(tenant_id), kb_ids)
     obj = {"graph": {}, "mind_map": {}}
     for id in sres.ids[:2]:
         ty = sres.field[id]["knowledge_graph_kwd"]

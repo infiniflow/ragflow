@@ -36,7 +36,8 @@ from common.misc_utils import get_uuid
 from api.utils.api_utils import get_data_error_result, get_error_data_result, get_json_result, get_request_json, token_required
 from api.utils.api_utils import get_result
 from quart import request, Response
-from rag.utils.redis_conn import REDIS_CONN
+
+from core.providers import providers
 
 
 @manager.route('/agents', methods=['GET'])  # noqa: F821
@@ -288,10 +289,10 @@ async def webhook(agent_id: str):
         now = time.time()
 
         try:
-            res = REDIS_CONN.lua_token_bucket(
+            res = providers.cache.conn.lua_token_bucket(
                 keys=[key],
                 args=[capacity, rate, now, cost],
-                client=REDIS_CONN.REDIS,
+                client=providers.cache.conn.REDIS,
             )
 
             allowed = int(res[0])
@@ -650,7 +651,7 @@ async def webhook(agent_id: str):
     def append_webhook_trace(agent_id: str, start_ts: float,event: dict, ttl=600):
         key = f"webhook-trace-{agent_id}-logs"
 
-        raw = REDIS_CONN.get(key)
+        raw = providers.cache.conn.get(key)
         obj = json.loads(raw) if raw else {"webhooks": {}}
 
         ws = obj["webhooks"].setdefault(
@@ -663,7 +664,7 @@ async def webhook(agent_id: str):
             **event
         })
 
-        REDIS_CONN.set_obj(key, obj, ttl)
+        providers.cache.conn.set_obj(key, obj, ttl)
 
     if execution_mode == "Immediately":
         status = response_cfg.get("status", 200)
@@ -840,7 +841,7 @@ async def webhook_trace(agent_id: str):
     webhook_id = request.args.get("webhook_id")
 
     key = f"webhook-trace-{agent_id}-logs"
-    raw = REDIS_CONN.get(key)
+    raw = providers.cache.conn.get(key)
 
     if since_ts is None:
         now = time.time()

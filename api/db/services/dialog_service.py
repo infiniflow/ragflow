@@ -35,6 +35,7 @@ from api.db.services.llm_service import LLMBundle
 from common.metadata_utils import apply_meta_data_filter
 from api.db.services.tenant_llm_service import TenantLLMService
 from common.time_utils import current_timestamp, datetime_format
+from core.providers import providers
 from graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.advanced_rag import DeepResearcher
 from rag.app.resume import forbidden_select_fields4resume
@@ -45,7 +46,6 @@ from rag.prompts.generator import chunks_format, citation_prompt, cross_language
 from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
 from common.string_utils import remove_redundant_spaces
-from common import settings
 
 
 class DialogService(CommonService):
@@ -312,7 +312,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         chat_mdl.bind_tools(toolcall_session, tools)
     bind_models_ts = timer()
 
-    retriever = settings.retriever
+    retriever = providers.retriever.conn
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
     attachments = kwargs["doc_ids"].split(",") if "doc_ids" in kwargs else []
     attachments_= ""
@@ -432,7 +432,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 kbinfos["chunks"].extend(tav_res["chunks"])
                 kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
             if prompt_config.get("use_kg"):
-                ck = await settings.kg_retriever.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
+                ck = await providers.kg_retriever.conn.retrieval(" ".join(questions), tenant_ids, dialog.kb_ids, embd_mdl,
                                                        LLMBundle(dialog.tenant_id, LLMType.CHAT))
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
@@ -630,7 +630,7 @@ Please write the SQL, only SQL, without any other explanations or text.
 
         logging.debug(f"{question} get SQL(refined): {sql}")
         tried_times += 1
-        return settings.retriever.sql_retrieval(sql, format="json"), sql
+        return providers.retriever.conn.sql_retrieval(sql, format="json"), sql
 
     try:
         tbl, sql = await get_table()
@@ -833,7 +833,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
     embedding_list = list(set([kb.embd_id for kb in kbs]))
 
     is_knowledge_graph = all([kb.parser_id == ParserType.KG for kb in kbs])
-    retriever = settings.retriever if not is_knowledge_graph else settings.kg_retriever
+    retriever = providers.retriever.conn if not is_knowledge_graph else providers.kg_retriever.conn
 
     embd_mdl = LLMBundle(tenant_id, LLMType.EMBEDDING, embedding_list[0])
     chat_mdl = LLMBundle(tenant_id, LLMType.CHAT, chat_llm_name)
@@ -922,7 +922,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
-    ranks = await settings.retriever.retrieval(
+    ranks = await providers.retriever.conn.retrieval(
         question=question,
         embd_mdl=embd_mdl,
         tenant_ids=tenant_ids,

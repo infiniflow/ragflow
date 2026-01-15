@@ -23,7 +23,6 @@ from urllib.parse import urlparse
 import aiosmtplib
 from email.mime.text import MIMEText
 from email.header import Header
-from common import settings
 from quart import render_template_string
 from api.utils.email_templates import EMAIL_TEMPLATES
 from selenium import webdriver
@@ -35,6 +34,7 @@ from selenium.webdriver.support.expected_conditions import staleness_of
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
+from core.config import app_config
 
 OTP_LENGTH = 4
 OTP_TTL_SECONDS = 5 * 60 # valid for 5 minutes
@@ -191,22 +191,22 @@ def get_float(req: dict, key: str, default: float | int = 10.0) -> float:
     
 
 async def send_email_html(to_email: str, subject: str, template_key: str, **context):
-
+    smtp_conf = app_config.smtp
     body = await render_template_string(EMAIL_TEMPLATES.get(template_key), **context)
     msg = MIMEText(body, "plain", "utf-8")
     msg["Subject"] = Header(subject, "utf-8")
-    msg["From"] = f"{settings.MAIL_DEFAULT_SENDER[0]} <{settings.MAIL_DEFAULT_SENDER[1]}>"
+    msg["From"] = f"{smtp_conf.default_sender[0]} <{smtp_conf.default_sender[1]}>"
     msg["To"] = to_email
 
     smtp = aiosmtplib.SMTP(
-        hostname=settings.MAIL_SERVER,
-        port=settings.MAIL_PORT,
+        hostname=smtp_conf.server,
+        port=smtp_conf.port,
         use_tls=True,
         timeout=10,
     )
 
     await smtp.connect()
-    await smtp.login(settings.MAIL_USERNAME, settings.MAIL_PASSWORD)
+    await smtp.login(smtp_conf.username, smtp_conf.password)
     await smtp.send_message(msg)
     await smtp.quit()
 

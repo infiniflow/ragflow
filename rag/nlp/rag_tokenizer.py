@@ -15,19 +15,19 @@
 #
 
 import infinity.rag_tokenizer
-from common import settings
+from core.config import app_config
 
 
 class RagTokenizer(infinity.rag_tokenizer.RagTokenizer):
 
     def tokenize(self, line: str) -> str:
-        if settings.DOC_ENGINE_INFINITY:
+        if app_config.doc_engine.is_infinity:
             return line
         else:
             return super().tokenize(line)
 
     def fine_grained_tokenize(self, tks: str) -> str:
-        if settings.DOC_ENGINE_INFINITY:
+        if app_config.doc_engine.is_infinity:
             return tks
         else:
             return super().fine_grained_tokenize(tks)

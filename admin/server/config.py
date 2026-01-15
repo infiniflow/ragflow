@@ -14,15 +14,13 @@
 #  limitations under the License.
 #
 
-
-import logging
 import threading
 from enum import Enum
 
 from pydantic import BaseModel
 from typing import Any
-from common.config_utils import read_config
-from urllib.parse import urlparse
+
+from core.config import app_config
 
 
 class BaseConfig(BaseModel):
@@ -221,97 +219,114 @@ class MinioConfig(FileStoreConfig):
         return result
 
 
-def load_configurations(config_path: str) -> list[BaseConfig]:
-    raw_configs = read_config(config_path)
+def load_configurations() -> list[BaseConfig]:
     configurations = []
     ragflow_count = 0
     id_count = 0
-    for k, v in raw_configs.items():
-        match k:
-            case "ragflow":
-                name: str = f'ragflow_{ragflow_count}'
-                host: str = v['host']
-                http_port: int = v['http_port']
-                config = RAGFlowServerConfig(id=id_count, name=name, host=host, port=http_port,
-                                             service_type="ragflow_server",
-                                             detail_func_name="check_ragflow_server_alive")
-                configurations.append(config)
-                id_count += 1
-            case "es":
-                name: str = 'elasticsearch'
-                url = v['hosts']
-                parsed = urlparse(url)
-                host: str = parsed.hostname
-                port: int = parsed.port
-                username: str = v.get('username')
-                password: str = v.get('password')
-                config = ElasticsearchConfig(id=id_count, name=name, host=host, port=port, service_type="retrieval",
-                                             retrieval_type="elasticsearch",
-                                             username=username, password=password,
-                                             detail_func_name="get_es_cluster_stats")
-                configurations.append(config)
-                id_count += 1
+    # RAGFlow Server
+    if "ragflow" in app_config.model_fields_set:
+        configurations.append(RAGFlowServerConfig(
+            id=id_count,
+            name=f'ragflow_{ragflow_count}',
+            host=app_config.ragflow.host,
+            port=app_config.ragflow.http_port,
+            service_type="ragflow_server",
+            detail_func_name="check_ragflow_server_alive"
+        ))
+        id_count += 1
+        ragflow_count += 1
 
-            case "infinity":
-                name: str = 'infinity'
-                url = v['uri']
-                parts = url.split(':', 1)
-                host = parts[0]
-                port = int(parts[1])
-                database: str = v.get('db_name', 'default_db')
-                config = InfinityConfig(id=id_count, name=name, host=host, port=port, service_type="retrieval",
-                                        retrieval_type="infinity",
-                                        db_name=database, detail_func_name="get_infinity_status")
-                configurations.append(config)
-                id_count += 1
-            case "minio":
-                name: str = 'minio'
-                url = v['host']
-                parts = url.split(':', 1)
-                host = parts[0]
-                port = int(parts[1])
-                user = v.get('user')
-                password = v.get('password')
-                config = MinioConfig(id=id_count, name=name, host=host, port=port, user=user, password=password,
-                                     service_type="file_store",
-                                     store_type="minio", detail_func_name="check_minio_alive")
-                configurations.append(config)
-                id_count += 1
-            case "redis":
-                name: str = 'redis'
-                url = v['host']
-                parts = url.split(':', 1)
-                host = parts[0]
-                port = int(parts[1])
-                password = v.get('password')
-                db: int = v.get('db')
-                config = RedisConfig(id=id_count, name=name, host=host, port=port, password=password, database=db,
-                                     service_type="message_queue", mq_type="redis", detail_func_name="get_redis_info")
-                configurations.append(config)
-                id_count += 1
-            case "mysql":
-                name: str = 'mysql'
-                host: str = v.get('host')
-                port: int = v.get('port')
-                username = v.get('user')
-                password = v.get('password')
-                config = MySQLConfig(id=id_count, name=name, host=host, port=port, username=username, password=password,
-                                     service_type="meta_data", meta_type="mysql", detail_func_name="get_mysql_status")
-                configurations.append(config)
-                id_count += 1
-            case "admin":
-                pass
-            case "task_executor":
-                name: str = 'task_executor'
-                host: str = v.get('host', '')
-                port: int = v.get('port', 0)
-                message_queue_type: str = v.get('message_queue_type')
-                config = TaskExecutorConfig(id=id_count, name=name, host=host, port=port, message_queue_type=message_queue_type,
-                                            service_type="task_executor", detail_func_name="check_task_executor_alive")
-                configurations.append(config)
-                id_count += 1
-            case _:
-                logging.warning(f"Unknown configuration key: {k}")
-                continue
+    # Elasticsearch
+    if "elasticsearch" in app_config.doc_engine.model_fields_set:
+        es_cfg = app_config.doc_engine.es
+        configurations.append(ElasticsearchConfig(
+            id=id_count,
+            name="elasticsearch",
+            host=es_cfg.hosts,
+            port=es_cfg.port,
+            service_type="retrieval",
+            retrieval_type="elasticsearch",
+            username=es_cfg.username,
+            password=es_cfg.password,
+            detail_func_name="get_es_cluster_stats"
+        ))
+        id_count += 1
+
+    # Infinity
+    if "infinity" in app_config.doc_engine.model_fields_set:
+        inf_cfg = app_config.doc_engine.infinity
+        configurations.append(InfinityConfig(
+            id=id_count,
+            name="infinity",
+            host=inf_cfg.host,
+            port=inf_cfg.port,
+            service_type="retrieval",
+            retrieval_type="infinity",
+            db_name=inf_cfg.db_name or "default_db",
+            detail_func_name="get_infinity_status"
+        ))
+        id_count += 1
+
+    # Minio
+    if "minio" in app_config.storage.model_fields_set:
+        minio_cfg = app_config.storage.minio
+        configurations.append(MinioConfig(
+            id=id_count,
+            name="minio",
+            host=minio_cfg.host,
+            port=minio_cfg.port,
+            user=minio_cfg.user,
+            password=minio_cfg.password,
+            service_type="file_store",
+            store_type="minio",
+            detail_func_name="check_minio_alive"
+        ))
+        id_count += 1
+
+    # Redis
+    if "redis" in app_config.cache.model_fields_set:
+        redis_cfg = app_config.cache.redis
+        configurations.append(RedisConfig(
+            id=id_count,
+            name="redis",
+            host=redis_cfg.host,
+            port=redis_cfg.port,
+            password=redis_cfg.password,
+            database=redis_cfg.db,
+            service_type="message_queue",
+            mq_type="redis",
+            detail_func_name="get_redis_info"
+        ))
+        id_count += 1
+
+    # MySQL
+    if "mysql" in app_config.model_fields_set:
+        mysql_cfg = app_config.mysql
+        configurations.append(MySQLConfig(
+            id=id_count,
+            name="mysql",
+            host=mysql_cfg.host,
+            port=mysql_cfg.port,
+            username=mysql_cfg.user,
+            password=mysql_cfg.password,
+            service_type="meta_data",
+            meta_type="mysql",
+            detail_func_name="get_mysql_status"
+        ))
+        id_count += 1
+
+    # Task Executor
+    if "task_executor" in app_config.model_fields_set:
+        te_cfg = app_config.task_executor
+        configurations.append(TaskExecutorConfig(
+            id=id_count,
+            name="task_executor",
+            host=te_cfg.host,
+            port=te_cfg.port,
+            message_queue_type=te_cfg.message_queue_type,
+            service_type="task_executor",
+            detail_func_name="check_task_executor_alive"
+        ))
+        id_count += 1
 
     return configurations

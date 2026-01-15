@@ -27,9 +27,9 @@ from PIL import Image
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
 from api.db.services.llm_service import LLMBundle
-from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid
+from core.providers import providers
 from deepdoc.parser import ExcelParser
 from deepdoc.parser.pdf_parser import PlainParser, RAGFlowPdfParser, VisionParser
 from deepdoc.parser.tcadp_parser import TCADPParser
@@ -837,7 +837,7 @@ class Parser(ProcessBase):
         name = from_upstream.name
         if self._canvas._doc_id:
             b, n = File2DocumentService.get_storage_address(doc_id=self._canvas._doc_id)
-            blob = settings.STORAGE_IMPL.get(b, n)
+            blob = providers.storage.conn.get(b, n)
         else:
             blob = FileService.get_blob(from_upstream.file["created_by"], from_upstream.file["id"])
 
@@ -855,7 +855,7 @@ class Parser(ProcessBase):
         outs = self.output()
         tasks = []
         for d in outs.get("json", []):
-            tasks.append(asyncio.create_task(image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=self._canvas._tenant_id), get_uuid())))
+            tasks.append(asyncio.create_task(image2id(d, partial(providers.storage.conn.put, tenant_id=self._canvas._tenant_id), get_uuid())))
 
         try:
             await asyncio.gather(*tasks, return_exceptions=False)

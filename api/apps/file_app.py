@@ -33,7 +33,7 @@ from api.db.services.file_service import FileService
 from api.utils.api_utils import get_json_result, get_request_json
 from api.utils.file_utils import filename_type
 from api.utils.web_utils import CONTENT_TYPE_MAP
-from common import settings
+from core.providers import providers
 
 
 @manager.route('/upload', methods=['POST'])  # noqa: F821
@@ -97,7 +97,8 @@ async def upload():
             # file type
             filetype = filename_type(file_obj_names[file_len - 1])
             location = file_obj_names[file_len - 1]
-            while await asyncio.to_thread(settings.STORAGE_IMPL.obj_exist, last_folder.id, location):
+
+            while await asyncio.to_thread(providers.storage.conn.obj_exist, last_folder.id, location):
                 location += "_"
             blob = await asyncio.to_thread(file_obj.read)
             filename = await asyncio.to_thread(
@@ -105,7 +106,7 @@ async def upload():
                 FileService.query,
                 name=file_obj_names[file_len - 1],
                 parent_id=last_folder.id)
-            await asyncio.to_thread(settings.STORAGE_IMPL.put, last_folder.id, location, blob)
+            await asyncio.to_thread(providers.storage.conn.put, last_folder.id, location, blob)
             file_data = {
                 "id": get_uuid(),
                 "parent_id": last_folder.id,
@@ -254,7 +255,7 @@ async def rm():
         def _delete_single_file(file):
             try:
                 if file.location:
-                    settings.STORAGE_IMPL.rm(file.parent_id, file.location)
+                    providers.storage.conn.rm(file.parent_id, file.location)
             except Exception as e:
                 logging.exception(f"Fail to remove object: {file.parent_id}/{file.location}, error: {e}")
 
@@ -357,10 +358,11 @@ async def get(file_id):
         if not check_file_team_permission(file, current_user.id):
             return get_json_result(data=False, message='No authorization.', code=RetCode.AUTHENTICATION_ERROR)
 
-        blob = await asyncio.to_thread(settings.STORAGE_IMPL.get, file.parent_id, file.location)
+        storage_conn = providers.storage.conn
+        blob = await asyncio.to_thread(storage_conn.get, file.parent_id, file.location)
         if not blob:
             b, n = File2DocumentService.get_storage_address(file_id=file_id)
-            blob = await asyncio.to_thread(settings.STORAGE_IMPL.get, b, n)
+            blob = await asyncio.to_thread(storage_conn.get, b, n)
 
         response = await make_response(blob)
         ext = re.search(r"\.([^.]+)$", file.name.lower())
@@ -439,11 +441,11 @@ async def move():
             filename = source_file_entry.name
 
             new_location = filename
-            while settings.STORAGE_IMPL.obj_exist(dest_folder.id, new_location):
+            while providers.storage.conn.obj_exist(dest_folder.id, new_location):
                 new_location += "_"
 
             try:
-                settings.STORAGE_IMPL.move(old_parent_id, old_location, dest_folder.id, new_location)
+                providers.storage.conn.move(old_parent_id, old_location, dest_folder.id, new_location)
             except Exception as storage_err:
                 raise RuntimeError(f"Move file failed at storage layer: {str(storage_err)}")
 

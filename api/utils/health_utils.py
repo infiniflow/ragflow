@@ -20,10 +20,10 @@ import requests
 from timeit import default_timer as timer
 
 from api.db.db_models import DB
-from rag.utils.redis_conn import REDIS_CONN
+from core.config import app_config
+from core.providers import providers
 from rag.utils.es_conn import ESConnection
 from rag.utils.infinity_conn import InfinityConnection
-from common import settings
 
 
 def _ok_nok(ok: bool) -> str:
@@ -43,7 +43,7 @@ def check_db() -> tuple[bool, dict]:
 def check_redis() -> tuple[bool, dict]:
     st = timer()
     try:
-        ok = bool(REDIS_CONN.health())
+        ok = bool(providers.cache.conn.health())
         return ok, {"elapsed": f"{(timer() - st) * 1000.0:.1f}"}
     except Exception as e:
         return False, {"elapsed": f"{(timer() - st) * 1000.0:.1f}", "error": str(e)}
@@ -52,7 +52,7 @@ def check_redis() -> tuple[bool, dict]:
 def check_doc_engine() -> tuple[bool, dict]:
     st = timer()
     try:
-        meta = settings.docStoreConn.health()
+        meta = providers.doc_store.conn.health()
         # treat any successful call as ok
         return True, {"elapsed": f"{(timer() - st) * 1000.0:.1f}", **(meta or {})}
     except Exception as e:
@@ -62,7 +62,7 @@ def check_doc_engine() -> tuple[bool, dict]:
 def check_storage() -> tuple[bool, dict]:
     st = timer()
     try:
-        settings.STORAGE_IMPL.health()
+        providers.storage.conn.health()
         return True, {"elapsed": f"{(timer() - st) * 1000.0:.1f}"}
     except Exception as e:
         return False, {"elapsed": f"{(timer() - st) * 1000.0:.1f}", "error": str(e)}
@@ -120,7 +120,7 @@ def get_mysql_status():
 def check_minio_alive():
     start_time = timer()
     try:
-        response = requests.get(f'http://{settings.MINIO["host"]}/minio/health/live')
+        response = requests.get(f'http://{app_config.storage.minio.host}/minio/health/live')
         if response.status_code == 200:
             return {"status": "alive", "message": f"Confirm elapsed: {(timer() - start_time) * 1000.0:.1f} ms."}
         else:
@@ -136,7 +136,7 @@ def get_redis_info():
     try:
         return {
             "status": "alive",
-            "message": REDIS_CONN.info()
+            "message": providers.cache.conn.info()
         }
     except Exception as e:
         return {
@@ -148,7 +148,7 @@ def get_redis_info():
 def check_ragflow_server_alive():
     start_time = timer()
     try:
-        url = f'http://{settings.HOST_IP}:{settings.HOST_PORT}/v1/system/ping'
+        url = f'http://{app_config.ragflow.host}:{app_config.ragflow.http_port}/v1/system/ping'
         if '0.0.0.0' in url:
             url = url.replace('0.0.0.0', '127.0.0.1')
         response = requests.get(url)
@@ -166,10 +166,10 @@ def check_ragflow_server_alive():
 def check_task_executor_alive():
     task_executor_heartbeats = {}
     try:
-        task_executors = REDIS_CONN.smembers("TASKEXE")
+        task_executors = providers.cache.conn.smembers("TASKEXE")
         now = datetime.now().timestamp()
         for task_executor_id in task_executors:
-            heartbeats = REDIS_CONN.zrangebyscore(task_executor_id, now - 60 * 30, now)
+            heartbeats = providers.cache.conn.zrangebyscore(task_executor_id, now - 60 * 30, now)
             heartbeats = [json.loads(heartbeat) for heartbeat in heartbeats]
             task_executor_heartbeats[task_executor_id] = heartbeats
         if task_executor_heartbeats:

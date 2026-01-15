@@ -20,7 +20,7 @@ from io import BytesIO
 from google.cloud import storage
 from google.api_core.exceptions import NotFound
 from common.decorator import singleton
-from common import settings
+from core.config import app_config
 
 
 @singleton
@@ -39,7 +39,7 @@ class RAGFlowGCS:
 
         try:
             self.client = storage.Client()
-            self.bucket_name = settings.GCS["bucket"]
+            self.bucket_name = app_config.storage.gcs.bucket
         except Exception:
             logging.exception("Fail to connect to GCS")
 

@@ -33,10 +33,10 @@ from common.versions import get_ragflow_version
 from common.time_utils import current_timestamp, datetime_format
 from timeit import default_timer as timer
 
-from rag.utils.redis_conn import REDIS_CONN
+from core.config import app_config
+from core.providers import providers
 from quart import jsonify
 from api.utils.health_utils import run_health_checks
-from common import settings
 
 
 @manager.route("/version", methods=["GET"])  # noqa: F821
@@ -99,7 +99,7 @@ def status():
     res = {}
     st = timer()
     try:
-        res["doc_engine"] = settings.docStoreConn.health()
+        res["doc_engine"] = providers.doc_store.conn.health()
         res["doc_engine"]["elapsed"] = "{:.1f}".format((timer() - st) * 1000.0)
     except Exception as e:
         res["doc_engine"] = {
@@ -111,15 +111,15 @@ def status():
 
     st = timer()
     try:
-        settings.STORAGE_IMPL.health()
+        providers.storage.conn.health()
         res["storage"] = {
-            "storage": settings.STORAGE_IMPL_TYPE.lower(),
+            "storage": app_config.storage.active.value,
             "status": "green",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
         }
     except Exception as e:
         res["storage"] = {
-            "storage": settings.STORAGE_IMPL_TYPE.lower(),
+            "storage": app_config.storage.active.value,
             "status": "red",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
             "error": str(e),
@@ -129,13 +129,13 @@ def status():
     try:
         KnowledgebaseService.get_by_id("x")
         res["database"] = {
-            "database": settings.DATABASE_TYPE.lower(),
+            "database": app_config.database.active.value,
             "status": "green",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
         }
     except Exception as e:
         res["database"] = {
-            "database": settings.DATABASE_TYPE.lower(),
+            "database": app_config.database.active.value,
             "status": "red",
             "elapsed": "{:.1f}".format((timer() - st) * 1000.0),
             "error": str(e),
@@ -143,7 +143,7 @@ def status():
 
     st = timer()
     try:
-        if not REDIS_CONN.health():
+        if not providers.cache.conn.health():
             raise Exception("Lost connection!")
         res["redis"] = {
             "status": "green",
@@ -158,10 +158,10 @@ def status():
 
     task_executor_heartbeats = {}
     try:
-        task_executors = REDIS_CONN.smembers("TASKEXE")
+        task_executors = providers.cache.conn.smembers("TASKEXE")
         now = datetime.now().timestamp()
         for task_executor_id in task_executors:
-            heartbeats = REDIS_CONN.zrangebyscore(task_executor_id, now - 60 * 30, now)
+            heartbeats = providers.cache.conn.zrangebyscore(task_executor_id, now - 60 * 30, now)
             heartbeats = [json.loads(heartbeat) for heartbeat in heartbeats]
             task_executor_heartbeats[task_executor_id] = heartbeats
     except Exception:
@@ -335,4 +335,4 @@ def get_config():
                         type: integer 0 means disabled, 1 means enabled
                         description: Whether user registration is enabled
     """
-    return get_json_result(data={"registerEnabled": settings.REGISTER_ENABLED})
+    return get_json_result(data={"registerEnabled": app_config.ragflow.register_enabled})

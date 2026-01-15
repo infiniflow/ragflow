@@ -27,8 +27,8 @@ from infinity.index import IndexInfo, IndexType
 from infinity.errors import ErrorCode
 import pandas as pd
 from common.file_utils import get_project_base_directory
+from core.config import app_config
 from rag.nlp import is_english
-from common import settings
 from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr
 
 
@@ -36,10 +36,10 @@ class InfinityConnectionBase(DocStoreConnection):
     def __init__(self, mapping_file_name: str="infinity_mapping.json", logger_name: str="ragflow.infinity_conn"):
         from common.doc_store.infinity_conn_pool import INFINITY_CONN
 
-        self.dbName = settings.INFINITY.get("db_name", "default_db")
+        self.dbName = app_config.doc_engine.infinity.db_name
         self.mapping_file_name = mapping_file_name
         self.logger = logging.getLogger(logger_name)
-        infinity_uri = settings.INFINITY["uri"]
+        infinity_uri = app_config.doc_engine.infinity.uri
         if ":" in infinity_uri:
             host, port = infinity_uri.split(":")
             infinity_uri = infinity.common.NetworkAddress(host, int(port))

@@ -37,10 +37,10 @@ from common.metadata_utils import dedupe_list
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
 from common.constants import LLMType, ParserType, StatusEnum, TaskStatus, SVR_CONSUMER_GROUP_NAME
+from core.providers import providers
+from core.config.utils.helpers import get_svr_queue_name
 from rag.nlp import rag_tokenizer, search
-from rag.utils.redis_conn import REDIS_CONN
 from common.doc_store.doc_store_base import OrderByExpr
-from common import settings
 
 
 class DocumentService(CommonService):
@@ -344,21 +344,21 @@ class DocumentService(CommonService):
             TaskService.filter_delete([Task.doc_id == doc.id])
             cls.delete_chunk_images(doc, tenant_id)
             if doc.thumbnail and not doc.thumbnail.startswith(IMG_BASE64_PREFIX):
-                if settings.STORAGE_IMPL.obj_exist(doc.kb_id, doc.thumbnail):
-                    settings.STORAGE_IMPL.rm(doc.kb_id, doc.thumbnail)
-            settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+                if providers.storage.conn.obj_exist(doc.kb_id, doc.thumbnail):
+                    providers.storage.conn.rm(doc.kb_id, doc.thumbnail)
+            providers.doc_store.conn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
-            graph_source = settings.docStoreConn.get_fields(
-                settings.docStoreConn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
+            graph_source = providers.doc_store.conn.get_fields(
+                providers.doc_store.conn.search(["source_id"], [], {"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]}, [], OrderByExpr(), 0, 1, search.index_name(tenant_id), [doc.kb_id]), ["source_id"]
             )
             if len(graph_source) > 0 and doc.id in list(graph_source.values())[0]["source_id"]:
-                settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "source_id": doc.id},
+                providers.doc_store.conn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "source_id": doc.id},
                                              {"remove": {"source_id": doc.id}},
                                              search.index_name(tenant_id), doc.kb_id)
-                settings.docStoreConn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]},
+                providers.doc_store.conn.update({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["graph"]},
                                              {"removed_kwd": "Y"},
                                              search.index_name(tenant_id), doc.kb_id)
-                settings.docStoreConn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
+                providers.doc_store.conn.delete({"kb_id": doc.kb_id, "knowledge_graph_kwd": ["entity", "relation", "graph", "subgraph", "community_report"], "must_not": {"exists": "source_id"}},
                                              search.index_name(tenant_id), doc.kb_id)
         except Exception:
             pass
@@ -370,15 +370,15 @@ class DocumentService(CommonService):
         page = 0
         page_size = 1000
         while True:
-            chunks = settings.docStoreConn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
+            chunks = providers.doc_store.conn.search(["img_id"], [], {"doc_id": doc.id}, [], OrderByExpr(),
                                                   page * page_size, page_size, search.index_name(tenant_id),
                                                   [doc.kb_id])
-            chunk_ids = settings.docStoreConn.get_doc_ids(chunks)
+            chunk_ids = providers.doc_store.conn.get_doc_ids(chunks)
             if not chunk_ids:
                 break
             for cid in chunk_ids:
-                if settings.STORAGE_IMPL.obj_exist(doc.kb_id, cid):
-                    settings.STORAGE_IMPL.rm(doc.kb_id, cid)
+                if providers.storage.conn.obj_exist(doc.kb_id, cid):
+                    providers.storage.conn.rm(doc.kb_id, cid)
             page += 1
 
     @classmethod
@@ -1100,12 +1100,12 @@ def queue_raptor_o_graphrag_tasks(sample_doc_id, ty, priority, fake_doc_id="", d
     task["doc_id"] = fake_doc_id
     task["doc_ids"] = doc_ids
     DocumentService.begin2parse(sample_doc_id["id"], keep_progress=True)
-    assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
+    assert providers.cache.conn.queue_product(get_svr_queue_name(priority), message=task), "Can't access Redis. Please check the Redis' status."
     return task["id"]
 
 
 def get_queue_length(priority):
-    group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
+    group_info = providers.cache.conn.queue_info(get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME)
     if not group_info:
         return 0
     return int(group_info.get("lag", 0) or 0)
@@ -1187,7 +1187,7 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             else:
                 d["image"].save(output_buffer, format='JPEG')
 
-            settings.STORAGE_IMPL.put(kb.id, d["id"], output_buffer.getvalue())
+            providers.storage.conn.put(kb.id, d["id"], output_buffer.getvalue())
             d["img_id"] = "{}-{}".format(kb.id, d["id"])
             d.pop("image", None)
             docs.append(d)
@@ -1244,10 +1244,10 @@ def doc_upload_and_parse(conversation_id, file_objs, user_id):
             d["q_%d_vec" % len(v)] = v
         for b in range(0, len(cks), es_bulk_size):
             if try_create_idx:
-                if not settings.docStoreConn.index_exist(idxnm, kb_id):
-                    settings.docStoreConn.create_idx(idxnm, kb_id, len(vectors[0]))
+                if not providers.doc_store.conn.index_exist(idxnm, kb_id):
+                    providers.doc_store.conn.create_idx(idxnm, kb_id, len(vectors[0]))
                 try_create_idx = False
-            settings.docStoreConn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
+            providers.doc_store.conn.insert(cks[b:b + es_bulk_size], idxnm, kb_id)
 
         DocumentService.increment_chunk_num(
             doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0)

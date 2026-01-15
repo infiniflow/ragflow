@@ -28,7 +28,7 @@ from common.file_utils import get_project_base_directory
 from common.misc_utils import convert_bytes
 from common.doc_store.doc_store_base import DocStoreConnection, OrderByExpr, MatchExpr
 from rag.nlp import is_english, rag_tokenizer
-from common import settings
+from core.config import app_config
 
 ATTEMPT_TIME = 2
 
@@ -40,7 +40,8 @@ class ESConnectionBase(DocStoreConnection):
         self.logger = logging.getLogger(logger_name)
 
         self.info = {}
-        self.logger.info(f"Use Elasticsearch {settings.ES['hosts']} as the doc engine.")
+        es_cfg = app_config.doc_engine.es
+        self.logger.info(f"Use Elasticsearch {es_cfg.hosts} as the doc engine.")
         self.es = ES_CONN.get_conn()
         fp_mapping = os.path.join(get_project_base_directory(), "conf", mapping_file_name)
         if not os.path.exists(fp_mapping):
@@ -48,7 +49,7 @@ class ESConnectionBase(DocStoreConnection):
             self.logger.error(msg)
             raise Exception(msg)
         self.mapping = json.load(open(fp_mapping, "r"))
-        self.logger.info(f"Elasticsearch {settings.ES['hosts']} is healthy.")
+        self.logger.info(f"Elasticsearch {es_cfg.hosts} is healthy.")
 
     def _connect(self):
         from common.doc_store.es_conn_pool import ES_CONN

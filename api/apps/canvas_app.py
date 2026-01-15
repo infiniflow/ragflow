@@ -37,10 +37,9 @@ from peewee import MySQLDatabase, PostgresqlDatabase
 from api.db.db_models import APIToken, Task
 import time
 
+from core.providers import providers
 from rag.flow.pipeline import Pipeline
 from rag.nlp import search
-from rag.utils.redis_conn import REDIS_CONN
-from common import settings
 from api.apps import login_required, current_user
 
 
@@ -192,8 +191,9 @@ async def rerun():
     if 0 < doc["progress"] < 1:
         return get_data_error_result(message=f"`{doc['name']}` is processing...")
 
-    if settings.docStoreConn.index_exist(search.index_name(current_user.id), doc["kb_id"]):
-        settings.docStoreConn.delete({"doc_id": doc["id"]}, search.index_name(current_user.id), doc["kb_id"])
+    if providers.doc_store.conn.index_exist(search.index_name(current_user.id), doc["kb_id"]):
+        providers.doc_store.conn.delete({"doc_id": doc["id"]}, search.index_name(current_user.id), doc["kb_id"])
+
     doc["progress_msg"] = ""
     doc["chunk_num"] = 0
     doc["token_num"] = 0
@@ -212,7 +212,7 @@ async def rerun():
 @login_required
 def cancel(task_id):
     try:
-        REDIS_CONN.set(f"{task_id}-cancel", "x")
+        providers.cache.conn.set(f"{task_id}-cancel", "x")
     except Exception as e:
         logging.exception(e)
     return get_json_result(data=True)
@@ -497,7 +497,7 @@ def trace():
     cvs_id = request.args.get("canvas_id")
     msg_id = request.args.get("message_id")
     try:
-        binary = REDIS_CONN.get(f"{cvs_id}-{msg_id}-logs")
+        binary = providers.cache.conn.get(f"{cvs_id}-{msg_id}-logs")
         if not binary:
             return get_json_result(data={})
 

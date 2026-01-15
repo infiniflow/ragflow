@@ -25,9 +25,8 @@ from networkx.readwrite import json_graph
 
 from common.misc_utils import get_uuid
 from common.connection_utils import timeout
+from core.providers import providers
 from rag.nlp import rag_tokenizer, search
-from rag.utils.redis_conn import REDIS_CONN
-from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 
 GRAPH_FIELD_SEP = "<SEP>"
@@ -95,7 +94,7 @@ def get_llm_cache(llmnm, txt, history, genconf):
     hasher.update((str(llmnm)+str(txt)+str(history)+str(genconf)).encode("utf-8"))
 
     k = hasher.hexdigest()
-    bin = REDIS_CONN.get(k)
+    bin = providers.cache.conn.get(k)
     if not bin:
         return None
     return bin
@@ -105,7 +104,7 @@ def set_llm_cache(llmnm, txt, v, history, genconf):
     hasher = xxhash.xxh64()
     hasher.update((str(llmnm)+str(txt)+str(history)+str(genconf)).encode("utf-8"))
     k = hasher.hexdigest()
-    REDIS_CONN.set(k, v.encode("utf-8"), 24 * 3600)
+    providers.cache.conn.set(k, v.encode("utf-8"), 24 * 3600)
 
 
 def get_embed_cache(llmnm, txt):
@@ -114,7 +113,7 @@ def get_embed_cache(llmnm, txt):
     hasher.update(str(txt).encode("utf-8"))
 
     k = hasher.hexdigest()
-    bin = REDIS_CONN.get(k)
+    bin = providers.cache.conn.get(k)
     if not bin:
         return
     return np.array(json.loads(bin))
@@ -127,7 +126,7 @@ def set_embed_cache(llmnm, txt, arr):
 
     k = hasher.hexdigest()
     arr = json.dumps(arr.tolist() if isinstance(arr, np.ndarray) else arr)
-    REDIS_CONN.set(k, arr.encode("utf-8"), 24 * 3600)
+    providers.cache.conn.set(k, arr.encode("utf-8"), 24 * 3600)
 
 
 def get_tags_from_cache(kb_ids):
@@ -135,7 +134,7 @@ def get_tags_from_cache(kb_ids):
     hasher.update(str(kb_ids).encode("utf-8"))
 
     k = hasher.hexdigest()
-    bin = REDIS_CONN.get(k)
+    bin = providers.cache.conn.get(k)
     if not bin:
         return
     return bin
@@ -146,7 +145,7 @@ def set_tags_to_cache(kb_ids, tags):
     hasher.update(str(kb_ids).encode("utf-8"))
 
     k = hasher.hexdigest()
-    REDIS_CONN.set(k, json.dumps(tags).encode("utf-8"), 600)
+    providers.cache.conn.set(k, json.dumps(tags).encode("utf-8"), 600)
 
 
 def tidy_graph(graph: nx.Graph, callback, check_attribute: bool = True):
@@ -337,7 +336,7 @@ def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
     ents = list(set(ents))
     conds = {"fields": ["content_with_weight"], "size": size, "from_entity_kwd": ents, "to_entity_kwd": ents, "knowledge_graph_kwd": ["relation"]}
     res = []
-    es_res = settings.retriever.search(conds, search.index_name(tenant_id), [kb_id] if isinstance(kb_id, str) else kb_id)
+    es_res = providers.retriever.conn.search(conds, search.index_name(tenant_id), [kb_id] if isinstance(kb_id, str) else kb_id)
     for id in es_res.ids:
         try:
             if size == 1:
@@ -391,11 +390,11 @@ async def does_graph_contains(tenant_id, kb_id, doc_id):
         "removed_kwd": "N",
     }
     res = await asyncio.to_thread(
-        settings.docStoreConn.search,
+        providers.doc_store.conn.search,
         fields, [], condition, [], OrderByExpr(),
         0, 1, search.index_name(tenant_id), [kb_id]
     )
-    fields2 = settings.docStoreConn.get_fields(res, fields)
+    fields2 = providers.doc_store.conn.get_fields(res, fields)
     graph_doc_ids = set()
     for chunk_id in fields2.keys():
         graph_doc_ids = set(fields2[chunk_id]["source_id"])
@@ -405,7 +404,7 @@ async def does_graph_contains(tenant_id, kb_id, doc_id):
 async def get_graph_doc_ids(tenant_id, kb_id) -> list[str]:
     conds = {"fields": ["source_id"], "removed_kwd": "N", "size": 1, "knowledge_graph_kwd": ["graph"]}
     res = await asyncio.to_thread(
-        settings.retriever.search,
+        providers.retriever.conn.search,
         conds,
         search.index_name(tenant_id),
         [kb_id]
@@ -421,7 +420,7 @@ async def get_graph_doc_ids(tenant_id, kb_id) -> list[str]:
 async def get_graph(tenant_id, kb_id, exclude_rebuild=None):
     conds = {"fields": ["content_with_weight", "removed_kwd", "source_id"], "size": 1, "knowledge_graph_kwd": ["graph"]}
     res = await asyncio.to_thread(
-        settings.retriever.search,
+        providers.retriever.conn.search,
         conds,
         search.index_name(tenant_id),
         [kb_id]
@@ -447,7 +446,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
     start = asyncio.get_running_loop().time()
 
     await asyncio.to_thread(
-        settings.docStoreConn.delete,
+        providers.doc_store.conn.delete,
         {"knowledge_graph_kwd": ["graph", "subgraph"]},
         search.index_name(tenant_id),
         kb_id
@@ -455,7 +454,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
 
     if change.removed_nodes:
         await asyncio.to_thread(
-            settings.docStoreConn.delete,
+            providers.doc_store.conn.delete,
             {"knowledge_graph_kwd": ["entity"], "entity_kwd": sorted(change.removed_nodes)},
             search.index_name(tenant_id),
             kb_id
@@ -466,7 +465,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         async def del_edges(from_node, to_node):
             async with chat_limiter:
                 await asyncio.to_thread(
-                    settings.docStoreConn.delete,
+                    providers.doc_store.conn.delete,
                     {"knowledge_graph_kwd": ["relation"], "from_entity_kwd": from_node, "to_entity_kwd": to_node},
                     search.index_name(tenant_id),
                     kb_id
@@ -567,7 +566,7 @@ async def set_graph(tenant_id: str, kb_id: str, embd_mdl, graph: nx.Graph, chang
         timeout = 3 if enable_timeout_assertion else 30000000
         doc_store_result = await asyncio.wait_for(
             asyncio.to_thread(
-                settings.docStoreConn.insert,
+                providers.doc_store.conn.insert,
                 chunks[b : b + es_bulk_size],
                 search.index_name(tenant_id),
                 kb_id
@@ -627,7 +626,7 @@ def merge_tuples(list1, list2):
 
 
 def get_entity_type2samples(idxnms, kb_ids: list):
-    es_res = settings.retriever.search({"knowledge_graph_kwd": "ty2ents", "kb_id": kb_ids, "size": 10000, "fields": ["content_with_weight"]},idxnms,kb_ids)
+    es_res = providers.retriever.conn.search({"knowledge_graph_kwd": "ty2ents", "kb_id": kb_ids, "size": 10000, "fields": ["content_with_weight"]},idxnms,kb_ids)
 
     res = defaultdict(list)
     for id in es_res.ids:
@@ -661,12 +660,12 @@ async def rebuild_graph(tenant_id, kb_id, exclude_rebuild=None):
     bs = 256
     for i in range(0, 1024 * bs, bs):
         es_res = await asyncio.to_thread(
-            settings.docStoreConn.search,
+            providers.doc_store.conn.search,
             flds, [], {"kb_id": kb_id, "knowledge_graph_kwd": ["subgraph"]},
             [], OrderByExpr(), i, bs, search.index_name(tenant_id), [kb_id]
         )
-        # tot = settings.docStoreConn.get_total(es_res)
-        es_res = settings.docStoreConn.get_fields(es_res, flds)
+        # tot = providers.doc_store.conn.get_total(es_res)
+        es_res = providers.doc_store.conn.get_fields(es_res, flds)
 
         if len(es_res) == 0:
             break

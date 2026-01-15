@@ -13,21 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import hashlib
 import inspect
 import logging
 import operator
 import os
 import sys
-import time
 import typing
 from datetime import datetime, timezone
 from enum import Enum
-from functools import wraps
 
 from quart_auth import AuthUser
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
-from peewee import InterfaceError, OperationalError, BigIntegerField, BooleanField, CharField, CompositeKey, DateTimeField, Field, FloatField, IntegerField, Metadata, Model, TextField
+from peewee import OperationalError, BigIntegerField, BooleanField, CharField, CompositeKey, DateTimeField, Field, FloatField, IntegerField, Metadata, Model, TextField
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
 
@@ -37,10 +34,9 @@ from api.utils.json_encode import json_dumps, json_loads
 from api.utils.configs import deserialize_b64, serialize_b64
 
 from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
-from common.decorator import singleton
 from common.constants import ParserType
-from common import settings
-
+from core.config import app_config
+from core.providers import get_providers
 
 CONTINUOUS_FIELD_TYPE = {IntegerField, FloatField, DateTimeField}
 AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {"create", "start", "end", "update", "read_access", "write_access"}
@@ -52,7 +48,7 @@ class TextFieldType(Enum):
 
 
 class LongTextField(TextField):
-    field_type = TextFieldType[settings.DATABASE_TYPE.upper()].value
+    field_type = TextFieldType[app_config.database.active.upper()].value
 
 
 class JSONField(LongTextField):
@@ -239,312 +235,14 @@ class JsonSerializedField(SerializedField):
         super(JsonSerializedField, self).__init__(serialized_type=SerializedType.JSON, object_hook=object_hook, object_pairs_hook=object_pairs_hook, **kwargs)
 
 
-class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
-    def __init__(self, *args, **kwargs):
-        self.max_retries = kwargs.pop("max_retries", 5)
-        self.retry_delay = kwargs.pop("retry_delay", 1)
-        super().__init__(*args, **kwargs)
-
-    def execute_sql(self, sql, params=None, commit=True):
-        for attempt in range(self.max_retries + 1):
-            try:
-                return super().execute_sql(sql, params, commit)
-            except (OperationalError, InterfaceError) as e:
-                error_codes = [2013, 2006]
-                error_messages = ['', 'Lost connection']
-                should_retry = (
-                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-                    (str(e) in error_messages) or
-                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
-                )
-
-                if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"Database connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
-                    )
-                    self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
-                else:
-                    logging.error(f"DB execution failure: {e}")
-                    raise
-        return None
-
-    def _handle_connection_loss(self):
-        # self.close_all()
-        # self.connect()
-        try:
-            self.close()
-        except Exception:
-            pass
-        try:
-            self.connect()
-        except Exception as e:
-            logging.error(f"Failed to reconnect: {e}")
-            time.sleep(0.1)
-            self.connect()
-
-    def begin(self):
-        for attempt in range(self.max_retries + 1):
-            try:
-                return super().begin()
-            except (OperationalError, InterfaceError) as e:
-                error_codes = [2013, 2006]
-                error_messages = ['', 'Lost connection']
-
-                should_retry = (
-                    (hasattr(e, 'args') and e.args and e.args[0] in error_codes) or
-                    (str(e) in error_messages) or
-                    (hasattr(e, '__class__') and e.__class__.__name__ == 'InterfaceError')
-                )
-
-                if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
-                    )
-                    self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
-                else:
-                    raise
-        return None
-
-
-class RetryingPooledPostgresqlDatabase(PooledPostgresqlDatabase):
-    def __init__(self, *args, **kwargs):
-        self.max_retries = kwargs.pop("max_retries", 5)
-        self.retry_delay = kwargs.pop("retry_delay", 1)
-        super().__init__(*args, **kwargs)
-
-    def execute_sql(self, sql, params=None, commit=True):
-        for attempt in range(self.max_retries + 1):
-            try:
-                return super().execute_sql(sql, params, commit)
-            except (OperationalError, InterfaceError) as e:
-                # PostgreSQL specific error codes
-                # 57P01: admin_shutdown
-                # 57P02: crash_shutdown
-                # 57P03: cannot_connect_now
-                # 08006: connection_failure
-                # 08003: connection_does_not_exist
-                # 08000: connection_exception
-                error_messages = ['connection', 'server closed', 'connection refused',
-                                'no connection to the server', 'terminating connection']
-
-                should_retry = any(msg in str(e).lower() for msg in error_messages)
-
-                if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"PostgreSQL connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
-                    )
-                    self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
-                else:
-                    logging.error(f"PostgreSQL execution failure: {e}")
-                    raise
-        return None
-
-    def _handle_connection_loss(self):
-        try:
-            self.close()
-        except Exception:
-            pass
-        try:
-            self.connect()
-        except Exception as e:
-            logging.error(f"Failed to reconnect to PostgreSQL: {e}")
-            time.sleep(0.1)
-            self.connect()
-
-    def begin(self):
-        for attempt in range(self.max_retries + 1):
-            try:
-                return super().begin()
-            except (OperationalError, InterfaceError) as e:
-                error_messages = ['connection', 'server closed', 'connection refused',
-                                'no connection to the server', 'terminating connection']
-
-                should_retry = any(msg in str(e).lower() for msg in error_messages)
-
-                if should_retry and attempt < self.max_retries:
-                    logging.warning(
-                        f"PostgreSQL connection lost during transaction (attempt {attempt+1}/{self.max_retries})"
-                    )
-                    self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
-                else:
-                    raise
-        return None
-
-
-class PooledDatabase(Enum):
-    MYSQL = RetryingPooledMySQLDatabase
-    POSTGRES = RetryingPooledPostgresqlDatabase
-
-
 class DatabaseMigrator(Enum):
     MYSQL = MySQLMigrator
     POSTGRES = PostgresqlMigrator
 
 
-@singleton
-class BaseDataBase:
-    def __init__(self):
-        database_config = settings.DATABASE.copy()
-        db_name = database_config.pop("name")
+providers = get_providers()
 
-        pool_config = {
-            'max_retries': 5,
-            'retry_delay': 1,
-        }
-        database_config.update(pool_config)
-        self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(
-            db_name, **database_config
-        )
-        # self.database_connection = PooledDatabase[settings.DATABASE_TYPE.upper()].value(db_name, **database_config)
-        logging.info("init database on cluster mode successfully")
-
-
-def with_retry(max_retries=3, retry_delay=1.0):
-    """Decorator: Add retry mechanism to database operations
-
-    Args:
-        max_retries (int): maximum number of retries
-        retry_delay (float): initial retry delay (seconds), will increase exponentially
-
-    Returns:
-        decorated function
-    """
-
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            last_exception = None
-            for retry in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_exception = e
-                    # get self and method name for logging
-                    self_obj = args[0] if args else None
-                    func_name = func.__name__
-                    lock_name = getattr(self_obj, "lock_name", "unknown") if self_obj else "unknown"
-
-                    if retry < max_retries - 1:
-                        current_delay = retry_delay * (2**retry)
-                        logging.warning(f"{func_name} {lock_name} failed: {str(e)}, retrying ({retry + 1}/{max_retries})")
-                        time.sleep(current_delay)
-                    else:
-                        logging.error(f"{func_name} {lock_name} failed after all attempts: {str(e)}")
-
-            if last_exception:
-                raise last_exception
-            return False
-
-        return wrapper
-
-    return decorator
-
-
-class PostgresDatabaseLock:
-    def __init__(self, lock_name, timeout=10, db=None):
-        self.lock_name = lock_name
-        self.lock_id = int(hashlib.md5(lock_name.encode()).hexdigest(), 16) % (2**31 - 1)
-        self.timeout = int(timeout)
-        self.db = db if db else DB
-
-    @with_retry(max_retries=3, retry_delay=1.0)
-    def lock(self):
-        cursor = self.db.execute_sql("SELECT pg_try_advisory_lock(%s)", (self.lock_id,))
-        ret = cursor.fetchone()
-        if ret[0] == 0:
-            raise Exception(f"acquire postgres lock {self.lock_name} timeout")
-        elif ret[0] == 1:
-            return True
-        else:
-            raise Exception(f"failed to acquire lock {self.lock_name}")
-
-    @with_retry(max_retries=3, retry_delay=1.0)
-    def unlock(self):
-        cursor = self.db.execute_sql("SELECT pg_advisory_unlock(%s)", (self.lock_id,))
-        ret = cursor.fetchone()
-        if ret[0] == 0:
-            raise Exception(f"postgres lock {self.lock_name} was not established by this thread")
-        elif ret[0] == 1:
-            return True
-        else:
-            raise Exception(f"postgres lock {self.lock_name} does not exist")
-
-    def __enter__(self):
-        if isinstance(self.db, PooledPostgresqlDatabase):
-            self.lock()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if isinstance(self.db, PooledPostgresqlDatabase):
-            self.unlock()
-
-    def __call__(self, func):
-        @wraps(func)
-        def magic(*args, **kwargs):
-            with self:
-                return func(*args, **kwargs)
-
-        return magic
-
-
-class MysqlDatabaseLock:
-    def __init__(self, lock_name, timeout=10, db=None):
-        self.lock_name = lock_name
-        self.timeout = int(timeout)
-        self.db = db if db else DB
-
-    @with_retry(max_retries=3, retry_delay=1.0)
-    def lock(self):
-        # SQL parameters only support %s format placeholders
-        cursor = self.db.execute_sql("SELECT GET_LOCK(%s, %s)", (self.lock_name, self.timeout))
-        ret = cursor.fetchone()
-        if ret[0] == 0:
-            raise Exception(f"acquire mysql lock {self.lock_name} timeout")
-        elif ret[0] == 1:
-            return True
-        else:
-            raise Exception(f"failed to acquire lock {self.lock_name}")
-
-    @with_retry(max_retries=3, retry_delay=1.0)
-    def unlock(self):
-        cursor = self.db.execute_sql("SELECT RELEASE_LOCK(%s)", (self.lock_name,))
-        ret = cursor.fetchone()
-        if ret[0] == 0:
-            raise Exception(f"mysql lock {self.lock_name} was not established by this thread")
-        elif ret[0] == 1:
-            return True
-        else:
-            raise Exception(f"mysql lock {self.lock_name} does not exist")
-
-    def __enter__(self):
-        if isinstance(self.db, PooledMySQLDatabase):
-            self.lock()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if isinstance(self.db, PooledMySQLDatabase):
-            self.unlock()
-
-    def __call__(self, func):
-        @wraps(func)
-        def magic(*args, **kwargs):
-            with self:
-                return func(*args, **kwargs)
-
-        return magic
-
-
-class DatabaseLock(Enum):
-    MYSQL = MysqlDatabaseLock
-    POSTGRES = PostgresDatabaseLock
-
-
-DB = BaseDataBase().database_connection
-DB.lock = DatabaseLock[settings.DATABASE_TYPE.upper()].value
+DB = providers.database.conn()
 
 
 def close_connection():
@@ -617,7 +315,7 @@ class User(DataBaseModel, AuthUser):
         return self.email
 
     def get_id(self):
-        jwt = Serializer(secret_key=settings.SECRET_KEY)
+        jwt = Serializer(secret_key=app_config.ragflow.secret_key)
         return jwt.dumps(str(self.access_token))
 
     class Meta:
@@ -1218,17 +916,17 @@ def alter_db_add_column(migrator, table_name, column_name, column_type):
         )
 
         if not should_skip_error:
-            logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, operation error: {ex}")
+            logging.critical(f"Failed to add {app_config.database.active.upper()}.{table_name} column {column_name}, operation error: {ex}")
 
     except Exception as ex:
-        logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, error: {ex}")
+        logging.critical(f"Failed to add {app_config.database.active.upper()}.{table_name} column {column_name}, error: {ex}")
         pass
 
 def alter_db_column_type(migrator, table_name, column_name, new_column_type):
     try:
         migrate(migrator.alter_column_type(table_name, column_name, new_column_type))
     except Exception as ex:
-        logging.critical(f"Failed to alter {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name} type, error: {ex}")
+        logging.critical(f"Failed to alter {app_config.database.active.upper()}.{table_name} column {column_name} type, error: {ex}")
         pass
 
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
@@ -1236,12 +934,12 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
         migrate(migrator.rename_column(table_name, old_column_name, new_column_name))
     except Exception:
         # rename fail will lead to a weired error.
-        # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
+        # logging.critical(f"Failed to rename {app_config.database.active.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
         pass
 
 def migrate_db():
     logging.disable(logging.ERROR)
-    migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
+    migrator = DatabaseMigrator[app_config.database.active.upper()].value(DB)
     alter_db_add_column(migrator, "file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True))
     alter_db_add_column(migrator, "tenant", "rerank_id", CharField(max_length=128, null=False, default="BAAI/bge-reranker-v2-m3", help_text="default rerank model ID"))
     alter_db_add_column(migrator, "dialog", "rerank_id", CharField(max_length=128, null=False, default="", help_text="default rerank model ID"))

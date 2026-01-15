@@ -29,12 +29,12 @@ from api.utils import commands
 
 from quart_auth import Unauthorized
 from quart_schema import QuartSchema
-from common import settings
 from api.utils.api_utils import server_error_response
 from api.constants import API_VERSION
 from common.misc_utils import get_uuid
+from core.config import app_config
+from core.providers import providers
 
-settings.init_settings()
 
 __all__ = ["app"]
 
@@ -57,12 +57,12 @@ app.config["BODY_TIMEOUT"] = int(os.environ.get("QUART_BODY_TIMEOUT", 600))
 # app.config["LOGIN_DISABLED"] = True
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "redis"
-app.config["SESSION_REDIS"] = settings.decrypt_database_config(name="redis")
+app.config["SESSION_REDIS"] = providers.cache.get_redis_config()
 app.config["MAX_CONTENT_LENGTH"] = int(
     os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
 )
-app.config['SECRET_KEY'] = settings.SECRET_KEY
-app.secret_key = settings.SECRET_KEY
+app.config['SECRET_KEY'] = app_config.ragflow.secret_key
+app.secret_key = app_config.ragflow.secret_key
 commands.register_commands(app)
 
 from functools import wraps
@@ -75,7 +75,7 @@ P = ParamSpec("P")
 
 
 def _load_user():
-    jwt = Serializer(secret_key=settings.SECRET_KEY)
+    jwt = Serializer(secret_key=app_config.ragflow.secret_key)
     authorization = request.headers.get("Authorization")
     g.user = None
     if not authorization:

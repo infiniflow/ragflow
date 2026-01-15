@@ -22,13 +22,13 @@ import json_repair
 import pandas as pd
 
 from common.misc_utils import get_uuid
+from core.providers import providers
 from graphrag.query_analyze_prompt import PROMPTS
 from graphrag.utils import get_entity_type2samples, get_llm_cache, set_llm_cache, get_relation
 from common.token_utils import num_tokens_from_string
 
 from rag.nlp.search import Dealer, index_name
 from common.float_utils import get_float
-from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 
 
@@ -321,7 +321,6 @@ if __name__ == "__main__":
     from api.db.services.user_service import TenantService
     from rag.nlp import search
 
-    settings.init_settings()
     parser = argparse.ArgumentParser()
     parser.add_argument('-t', '--tenant_id', default=False, help="Tenant ID", action='store', required=True)
     parser.add_argument('-d', '--kb_id', default=False, help="Knowledge base ID", action='store', required=True)
@@ -334,6 +333,6 @@ if __name__ == "__main__":
     _, kb = KnowledgebaseService.get_by_id(kb_id)
     embed_bdl = LLMBundle(args.tenant_id, LLMType.EMBEDDING, kb.embd_id)
 
-    kg = KGSearch(settings.docStoreConn)
+    kg = KGSearch(providers.doc_store.conn)
     print(asyncio.run(kg.retrieval({"question": args.question, "kb_ids": [kb_id]},
                     search.index_name(kb.tenant_id), [kb_id], embed_bdl, llm_bdl)))

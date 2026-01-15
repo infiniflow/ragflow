@@ -35,10 +35,11 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from api.db.services.memory_service import MemoryService
+from core.config import app_config
+from core.providers import providers
 from memory.services.messages import MessageService
 from rag.nlp import search
 from common.constants import ActiveEnum
-from common import settings
 
 def create_new_user(user_info: dict) -> dict:
     """
@@ -63,12 +64,12 @@ def create_new_user(user_info: dict) -> dict:
     tenant = {
         "id": user_id,
         "name": user_info["nickname"] + "‘s Kingdom",
-        "llm_id": settings.CHAT_MDL,
-        "embd_id": settings.EMBEDDING_MDL,
-        "asr_id": settings.ASR_MDL,
-        "parser_ids": settings.PARSERS,
-        "img2txt_id": settings.IMAGE2TEXT_MDL,
-        "rerank_id": settings.RERANK_MDL,
+        "llm_id": app_config.user_default_llm.chat_model_cfg.model,
+        "embd_id": app_config.user_default_llm.embedding_model_cfg.model,
+        "asr_id": app_config.user_default_llm.asr_model_cfg.model,
+        "parser_ids": app_config.user_default_llm.parsers,
+        "img2txt_id": app_config.user_default_llm.image2text_model_cfg.model,
+        "rerank_id": app_config.user_default_llm.rerank_model_cfg.model,
     }
     usr_tenant = {
         "tenant_id": user_id,
@@ -159,8 +160,8 @@ def delete_user_data(user_id: str) -> dict:
             if kb_ids:
                 # step1.1.1 delete files in storage, remove bucket
                 for kb_id in kb_ids:
-                    if settings.STORAGE_IMPL.bucket_exists(kb_id):
-                        settings.STORAGE_IMPL.remove_bucket(kb_id)
+                    if providers.storage.conn.bucket_exists(kb_id):
+                        providers.storage.conn.remove_bucket(kb_id)
                 done_msg += f"- Removed {len(kb_ids)} dataset's buckets.\n"
                 # step1.1.2 delete file and document info in db
                 doc_ids = DocumentService.get_all_doc_ids_by_kb_ids(kb_ids)
@@ -180,7 +181,7 @@ def delete_user_data(user_id: str) -> dict:
                     )
                     done_msg += f"- Deleted {file2doc_delete_res} document-file relation records.\n"
                 # step1.1.3 delete chunk in es
-                r = settings.docStoreConn.delete({"kb_id": kb_ids},
+                r = providers.doc_store.conn.delete({"kb_id": kb_ids},
                                          search.index_name(tenant_id), kb_ids)
                 done_msg += f"- Deleted {r} chunk records.\n"
                 kb_delete_res = KnowledgebaseService.delete_by_ids(kb_ids)
@@ -228,7 +229,7 @@ def delete_user_data(user_id: str) -> dict:
                     if created_files:
                         # step2.1.1.1 delete file in storage
                         for f in created_files:
-                            settings.STORAGE_IMPL.rm(f.parent_id, f.location)
+                            providers.storage.conn.rm(f.parent_id, f.location)
                         done_msg += f"- Deleted {len(created_files)} uploaded file.\n"
                         # step2.1.1.2 delete file record
                         file_delete_res = FileService.delete_by_ids([f.id for f in created_files])
@@ -247,7 +248,7 @@ def delete_user_data(user_id: str) -> dict:
                     kb_doc_info = {}
                     for _tenant_id, kb_doc in kb_grouped_doc.items():
                         for _kb_id, docs in kb_doc.items():
-                            chunk_delete_res += settings.docStoreConn.delete(
+                            chunk_delete_res += providers.doc_store.conn.delete(
                                 {"doc_id": [d["id"] for d in docs]},
                                 search.index_name(_tenant_id), _kb_id
                             )

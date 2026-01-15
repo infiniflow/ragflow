@@ -41,7 +41,7 @@ from common.mcp_tool_call_conn import MCPToolCallSession, close_multiple_mcp_too
 from api.db.services.tenant_llm_service import LLMFactoriesService
 from common.connection_utils import timeout
 from common.constants import RetCode
-from common import settings
+from core.config import app_config
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 
@@ -672,7 +672,7 @@ def get_mcp_tools(mcp_servers: list, timeout: float | int = 10) -> tuple[dict, s
 
 
 async def is_strong_enough(chat_model, embedding_model):
-    count = settings.STRONG_TEST_COUNT
+    count = app_config.ragflow.strong_test_count
     if not chat_model or not embedding_model:
         return
     if isinstance(count, int) and count <= 0:
@@ -712,7 +712,8 @@ async def is_strong_enough(chat_model, embedding_model):
 
 def get_allowed_llm_factories() -> list:
     factories = list(LLMFactoriesService.get_all(reverse=True, order_by="rank"))
-    if settings.ALLOWED_LLM_FACTORIES is None:
+    allowed_factories = app_config.user_default_llm.allowed_factories
+    if app_config.user_default_llm.allowed_factories is None:
         return factories
 
-    return [factory for factory in factories if factory.name in settings.ALLOWED_LLM_FACTORIES]
+    return [factory for factory in factories if factory.name in allowed_factories]

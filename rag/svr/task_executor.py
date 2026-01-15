@@ -32,6 +32,9 @@ from api.db.services.pipeline_operation_log_service import PipelineOperationLogS
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
 from common.connection_utils import timeout
 from common.metadata_utils import update_metadata_to, metadata_schema
+from core.config import app_config
+from core.providers import providers
+from core.config.utils.helpers import get_svr_queue_names, get_svr_queue_name
 from rag.utils.base64_image import image2id
 from rag.utils.raptor_utils import should_skip_raptor, get_skip_reason
 from common.log_utils import init_root_logger
@@ -67,11 +70,10 @@ from rag.app import laws, paper, presentation, manual, qa, table, book, resume, 
 from rag.nlp import search, rag_tokenizer, add_positions
 from rag.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 from common.token_utils import num_tokens_from_string, truncate
-from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
+from rag.utils.redis_utils import RedisDistributedLock
 from graphrag.utils import chat_limiter
 from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
 from common.exceptions import TaskCanceledException
-from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
 
 BATCH_SIZE = 64
@@ -170,16 +172,16 @@ async def collect():
     global CONSUMER_NAME, DONE_TASKS, FAILED_TASKS
     global UNACKED_ITERATOR
 
-    svr_queue_names = settings.get_svr_queue_names()
+    svr_queue_names = get_svr_queue_names()
     redis_msg = None
     try:
         if not UNACKED_ITERATOR:
-            UNACKED_ITERATOR = REDIS_CONN.get_unacked_iterator(svr_queue_names, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
+            UNACKED_ITERATOR = providers.cache.conn.get_unacked_iterator(svr_queue_names, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
         try:
             redis_msg = next(UNACKED_ITERATOR)
         except StopIteration:
             for svr_queue_name in svr_queue_names:
-                redis_msg = REDIS_CONN.queue_consumer(svr_queue_name, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
+                redis_msg = providers.cache.conn.queue_consumer(svr_queue_name, SVR_CONSUMER_GROUP_NAME, CONSUMER_NAME)
                 if redis_msg:
                     break
     except Exception as e:
@@ -231,14 +233,14 @@ async def collect():
 
 
 async def get_storage_binary(bucket, name):
-    return await asyncio.to_thread(settings.STORAGE_IMPL.get, bucket, name)
+    return await asyncio.to_thread(providers.storage.conn.get, bucket, name)
 
 
 @timeout(60 * 80, 1)
 async def build_chunks(task, progress_callback):
-    if task["size"] > settings.DOC_MAXIMUM_SIZE:
+    if task["size"] > app_config.rag.doc_maximum_size:
         set_progress(task["id"], prog=-1, msg="File size exceeds( <= %dMb )" %
-                                              (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
+                                              (int(app_config.rag.doc_maximum_size / 1024 / 1024)))
         return []
 
     chunker = FACTORY[task["parser_id"].lower()]
@@ -310,7 +312,7 @@ async def build_chunks(task, progress_callback):
                 d["img_id"] = ""
                 docs.append(d)
                 return
-            await image2id(d, partial(settings.STORAGE_IMPL.put, tenant_id=task["tenant_id"]), d["id"], task["kb_id"])
+            await image2id(d, partial(providers.storage.conn.put, tenant_id=task["tenant_id"]), d["id"], task["kb_id"])
             docs.append(d)
         except Exception:
             logging.exception(
@@ -452,7 +454,7 @@ async def build_chunks(task, progress_callback):
         examples = []
         all_tags = get_tags_from_cache(kb_ids)
         if not all_tags:
-            all_tags = settings.retriever.all_tags_in_portion(tenant_id, kb_ids, S)
+            all_tags = providers.retriever.conn.all_tags_in_portion(tenant_id, kb_ids, S)
             set_tags_to_cache(kb_ids, all_tags)
         else:
             all_tags = json.loads(all_tags)
@@ -465,7 +467,7 @@ async def build_chunks(task, progress_callback):
             if task_canceled:
                 progress_callback(-1, msg="Task has been canceled.")
                 return None
-            if settings.retriever.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(
+            if providers.retriever.conn.tag_content(tenant_id, kb_ids, d, all_tags, topn_tags=topn_tags, S=S) and len(
                     d[TAG_FLD]) > 0:
                 examples.append({"content": d["content_with_weight"], TAG_FLD: d[TAG_FLD]})
             else:
@@ -558,7 +560,7 @@ def build_TOC(task, docs, progress_callback):
 
 def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
-    return settings.docStoreConn.create_idx(idxnm, row.get("kb_id", ""), vector_size)
+    return providers.doc_store.conn.create_idx(idxnm, row.get("kb_id", ""), vector_size)
 
 
 async def embedding(docs, mdl, parser_config=None, callback=None):
@@ -587,9 +589,9 @@ async def embedding(docs, mdl, parser_config=None, callback=None):
         return mdl.encode([truncate(c, mdl.max_length - 10) for c in txts])
 
     cnts_ = np.array([])
-    for i in range(0, len(cnts), settings.EMBEDDING_BATCH_SIZE):
+    for i in range(0, len(cnts), app_config.rag.embedding_batch_size):
         async with embed_limiter:
-            vts, c = await asyncio.to_thread(batch_encode, cnts[i: i + settings.EMBEDDING_BATCH_SIZE])
+            vts, c = await asyncio.to_thread(batch_encode, cnts[i: i + app_config.rag.embedding_batch_size])
         if len(cnts_) == 0:
             cnts_ = vts
         else:
@@ -658,6 +660,7 @@ async def run_dataflow(task: dict):
 
     keys = [k for o in chunks for k in list(o.keys())]
     if not any([re.match(r"q_[0-9]+_vec", k) for k in keys]):
+        embedding_batch_size = app_config.rag.embedding_batch_size
         try:
             set_progress(task_id, prog=0.82, msg="\n-------------------------------------\nStart to embedding...")
             e, kb = KnowledgebaseService.get_by_id(task["kb_id"])
@@ -671,19 +674,19 @@ async def run_dataflow(task: dict):
 
             vects = np.array([])
             texts = [o.get("questions", o.get("summary", o["text"])) for o in chunks]
-            delta = 0.20 / (len(texts) // settings.EMBEDDING_BATCH_SIZE + 1)
+            delta = 0.20 / (len(texts) // embedding_batch_size + 1)
             prog = 0.8
-            for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
+            for i in range(0, len(texts), embedding_batch_size):
                 async with embed_limiter:
-                    vts, c = await asyncio.to_thread(batch_encode, texts[i: i + settings.EMBEDDING_BATCH_SIZE])
+                    vts, c = await asyncio.to_thread(batch_encode, texts[i: i + embedding_batch_size])
                 if len(vects) == 0:
                     vects = vts
                 else:
                     vects = np.concatenate((vects, vts), axis=0)
                 embedding_token_consumption += c
                 prog += delta
-                if i % (len(texts) // settings.EMBEDDING_BATCH_SIZE / 100 + 1) == 1:
-                    set_progress(task_id, prog=prog, msg=f"{i + 1} / {len(texts) // settings.EMBEDDING_BATCH_SIZE}")
+                if i % (len(texts) // embedding_batch_size / 100 + 1) == 1:
+                    set_progress(task_id, prog=prog, msg=f"{i + 1} / {len(texts) // embedding_batch_size}")
 
             assert len(vects) == len(chunks)
             for i, ck in enumerate(chunks):
@@ -805,7 +808,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
     if raptor_config.get("scope", "file") == "file":
         for x, doc_id in enumerate(doc_ids):
             chunks = []
-            for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
+            for d in providers.retriever.conn.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
                                                    fields=["content_with_weight", vctr_nm],
                                                    sort_by_position=True):
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
@@ -814,7 +817,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
     else:
         chunks = []
         for doc_id in doc_ids:
-            for d in settings.retriever.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
+            for d in providers.retriever.conn.chunk_list(doc_id, row["tenant_id"], [str(row["kb_id"])],
                                                    fields=["content_with_weight", vctr_nm],
                                                    sort_by_position=True):
                 chunks.append((d["content_with_weight"], np.array(d[vctr_nm])))
@@ -827,7 +830,7 @@ async def run_raptor_for_kb(row, kb_parser_config, chat_mdl, embd_mdl, vector_si
 async def delete_image(kb_id, chunk_id):
     try:
         async with minio_limiter:
-            settings.STORAGE_IMPL.delete(kb_id, chunk_id)
+            providers.storage.conn.delete(kb_id, chunk_id)
     except Exception:
         logging.exception(f"Deleting image of chunk {chunk_id} got exception")
         raise
@@ -856,16 +859,17 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
                 del mom_ck[fld]
         mothers.append(mom_ck)
 
-    for b in range(0, len(mothers), settings.DOC_BULK_SIZE):
-        await asyncio.to_thread(settings.docStoreConn.insert, mothers[b:b + settings.DOC_BULK_SIZE],
+    doc_bulk_size = app_config.rag.doc_bulk_size
+    for b in range(0, len(mothers), doc_bulk_size):
+        await asyncio.to_thread(providers.doc_store.conn.insert, mothers[b:b + doc_bulk_size],
                                 search.index_name(task_tenant_id), task_dataset_id, )
         task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
             return False
 
-    for b in range(0, len(chunks), settings.DOC_BULK_SIZE):
-        doc_store_result = await asyncio.to_thread(settings.docStoreConn.insert, chunks[b:b + settings.DOC_BULK_SIZE],
+    for b in range(0, len(chunks), doc_bulk_size):
+        doc_store_result = await asyncio.to_thread(providers.doc_store.conn.insert, chunks[b:b + doc_bulk_size],
                                                    search.index_name(task_tenant_id), task_dataset_id, )
         task_canceled = has_canceled(task_id)
         if task_canceled:
@@ -877,13 +881,13 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
             error_message = f"Insert chunk error: {doc_store_result}, please check log file and Elasticsearch/Infinity status!"
             progress_callback(-1, msg=error_message)
             raise Exception(error_message)
-        chunk_ids = [chunk["id"] for chunk in chunks[:b + settings.DOC_BULK_SIZE]]
+        chunk_ids = [chunk["id"] for chunk in chunks[:b + doc_bulk_size]]
         chunk_ids_str = " ".join(chunk_ids)
         try:
             TaskService.update_chunk_ids(task_id, chunk_ids_str)
         except DoesNotExist:
             logging.warning(f"do_handle_task update_chunk_ids failed since task {task_id} is unknown.")
-            doc_store_result = await asyncio.to_thread(settings.docStoreConn.delete, {"id": chunk_ids},
+            doc_store_result = await asyncio.to_thread(providers.doc_store.conn.delete, {"id": chunk_ids},
                                                        search.index_name(task_tenant_id), task_dataset_id, )
             tasks = []
             for chunk_id in chunk_ids:
@@ -933,8 +937,7 @@ async def do_handle_task(task):
     progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
 
     # FIXME: workaround, Infinity doesn't support table parsing method, this check is to notify user
-    lower_case_doc_engine = settings.DOC_ENGINE.lower()
-    if lower_case_doc_engine == 'infinity' and task['parser_id'].lower() == 'table':
+    if app_config.doc_engine.is_infinity and task['parser_id'].lower() == 'table':
         error_message = "Table parsing method is not supported by Infinity, please use other parsing methods or use Elasticsearch as the document engine."
         progress_callback(-1, msg=error_message)
         raise Exception(error_message)
@@ -1135,13 +1138,13 @@ async def do_handle_task(task):
         if has_canceled(task_id):
             try:
                 exists = await asyncio.to_thread(
-                    settings.docStoreConn.index_exist,
+                    providers.doc_store.conn.index_exist,
                     search.index_name(task_tenant_id),
                     task_dataset_id,
                 )
                 if exists:
                     await asyncio.to_thread(
-                        settings.docStoreConn.delete,
+                        providers.doc_store.conn.delete,
                         {"doc_id": task_doc_id},
                         search.index_name(task_tenant_id),
                         task_dataset_id,
@@ -1215,14 +1218,14 @@ async def report_status():
     pid = os.getpid()
 
     # Register the executor in Redis
-    REDIS_CONN.sadd("TASKEXE", CONSUMER_NAME)
+    providers.cache.conn.sadd("TASKEXE", CONSUMER_NAME)
     redis_lock = RedisDistributedLock("clean_task_executor", lock_value=CONSUMER_NAME, timeout=60)
 
     while True:
         now = datetime.now()
         now_ts = now.timestamp()
 
-        group_info = REDIS_CONN.queue_info(settings.get_svr_queue_name(0), SVR_CONSUMER_GROUP_NAME) or {}
+        group_info = providers.cache.conn.queue_info(get_svr_queue_name(0), SVR_CONSUMER_GROUP_NAME) or {}
         PENDING_TASKS = int(group_info.get("pending", 0))
         LAG_TASKS = int(group_info.get("lag", 0))
 
@@ -1242,7 +1245,7 @@ async def report_status():
 
         # Report heartbeat to Redis
         try:
-            REDIS_CONN.zadd(CONSUMER_NAME, heartbeat, now_ts)
+            providers.cache.conn.zadd(CONSUMER_NAME, heartbeat, now_ts)
         except Exception as e:
             logging.warning(f"Failed to report heartbeat: {e}")
         else:
@@ -1250,7 +1253,7 @@ async def report_status():
 
         # Clean up own expired heartbeat
         try:
-            REDIS_CONN.zremrangebyscore(CONSUMER_NAME, 0, now_ts - 60 * 30)
+            providers.cache.conn.zremrangebyscore(CONSUMER_NAME, 0, now_ts - 60 * 30)
         except Exception as e:
             logging.warning(f"Failed to clean heartbeat: {e}")
 
@@ -1262,20 +1265,20 @@ async def report_status():
             logging.warning(f"Failed to acquire Redis lock: {e}")
         if lock_acquired:
             try:
-                task_executors = REDIS_CONN.smembers("TASKEXE") or set()
+                task_executors = providers.cache.conn.smembers("TASKEXE") or set()
                 for worker_name in task_executors:
                     if worker_name == CONSUMER_NAME:
                         continue
                     try:
-                        last_heartbeat = REDIS_CONN.REDIS.zrevrange(worker_name, 0, 0, withscores=True)
+                        last_heartbeat = providers.cache.conn.REDIS.zrevrange(worker_name, 0, 0, withscores=True)
                     except Exception as e:
                         logging.warning(f"Failed to read zset for {worker_name}: {e}")
                         continue
 
                     if not last_heartbeat or now_ts - last_heartbeat[0][1] > WORKER_HEARTBEAT_TIMEOUT:
                         logging.info(f"{worker_name} expired, removed")
-                        REDIS_CONN.srem("TASKEXE", worker_name)
-                        REDIS_CONN.delete(worker_name)
+                        providers.cache.conn.srem("TASKEXE", worker_name)
+                        providers.cache.conn.delete(worker_name)
             except Exception as e:
                 logging.warning(f"Failed to clean other executors: {e}")
             finally:
@@ -1314,10 +1317,9 @@ async def main():
     """)
     logging.info(f'RAGFlow version: {get_ragflow_version()}')
     show_configs()
-    settings.init_settings()
-    settings.check_and_install_torch()
-    logging.info(f'default embedding config: {settings.EMBEDDING_CFG}')
-    settings.print_rag_settings()
+
+    logging.info(f'default embedding config: {app_config.user_default_llm.embedding_model_cfg.model_dump()}')
+
     if sys.platform != "win32":
         signal.signal(signal.SIGUSR1, start_tracemalloc_and_snapshot)
         signal.signal(signal.SIGUSR2, stop_tracemalloc)

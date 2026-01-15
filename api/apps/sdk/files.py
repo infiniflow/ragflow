@@ -30,8 +30,8 @@ from api.db.services import duplicate_name
 from api.db.services.file_service import FileService
 from api.utils.file_utils import filename_type
 from api.utils.web_utils import CONTENT_TYPE_MAP
-from common import settings
 from common.constants import RetCode
+from core.providers import providers
 
 
 @manager.route('/file/upload', methods=['POST'])  # noqa: F821
@@ -127,7 +127,7 @@ async def upload(tenant_id):
 
             filetype = filename_type(file_obj_names[file_len - 1])
             location = file_obj_names[file_len - 1]
-            while settings.STORAGE_IMPL.obj_exist(last_folder.id, location):
+            while providers.storage.conn.obj_exist(last_folder.id, location):
                 location += "_"
             blob = file_obj.read()
             filename = duplicate_name(FileService.query, name=file_obj_names[file_len - 1], parent_id=last_folder.id)
@@ -143,7 +143,7 @@ async def upload(tenant_id):
                 "size": len(blob),
             }
             file = FileService.insert(file)
-            settings.STORAGE_IMPL.put(last_folder.id, location, blob)
+            providers.storage.conn.put(last_folder.id, location, blob)
             file_res.append(file.to_json())
         return get_json_result(data=file_res)
     except Exception as e:
@@ -499,10 +499,10 @@ async def rm(tenant_id):
                     e, file = FileService.get_by_id(inner_file_id)
                     if not e:
                         return get_json_result(message="File not found!", code=RetCode.NOT_FOUND)
-                    settings.STORAGE_IMPL.rm(file.parent_id, file.location)
+                    providers.storage.conn.rm(file.parent_id, file.location)
                 FileService.delete_folder_by_pf_id(tenant_id, file_id)
             else:
-                settings.STORAGE_IMPL.rm(file.parent_id, file.location)
+                providers.storage.conn.rm(file.parent_id, file.location)
                 if not FileService.delete(file):
                     return get_json_result(message="Database error (File removal)!", code=RetCode.SERVER_ERROR)
 
@@ -618,10 +618,10 @@ async def get(tenant_id, file_id):
         if not e:
             return get_json_result(message="Document not found!", code=RetCode.NOT_FOUND)
 
-        blob = settings.STORAGE_IMPL.get(file.parent_id, file.location)
+        blob = providers.storage.conn.get(file.parent_id, file.location)
         if not blob:
             b, n = File2DocumentService.get_storage_address(file_id=file_id)
-            blob = settings.STORAGE_IMPL.get(b, n)
+            blob = providers.storage.conn.get(b, n)
 
         response = await make_response(blob)
         ext = re.search(r"\.([^.]+)$", file.name)
@@ -640,7 +640,7 @@ async def get(tenant_id, file_id):
 async def download_attachment(tenant_id, attachment_id):
     try:
         ext = request.args.get("ext", "markdown")
-        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
+        data = await asyncio.to_thread(providers.storage.conn.get, tenant_id, attachment_id)
         response = await make_response(data)
         response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
 

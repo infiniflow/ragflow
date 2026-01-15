@@ -38,10 +38,10 @@ from sklearn.metrics import silhouette_score
 
 from common.file_utils import get_project_base_directory
 from common.misc_utils import pip_install_torch
+from core.config import app_config
 from deepdoc.vision import OCR, AscendLayoutRecognizer, LayoutRecognizer, Recognizer, TableStructureRecognizer
 from rag.nlp import rag_tokenizer
 from rag.prompts.generator import vision_llm_describe_prompt
-from common import settings
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -64,8 +64,8 @@ class RAGFlowPdfParser:
 
         self.ocr = OCR()
         self.parallel_limiter = None
-        if settings.PARALLEL_DEVICES > 1:
-            self.parallel_limiter = [asyncio.Semaphore(1) for _ in range(settings.PARALLEL_DEVICES)]
+        if app_config.rag.parallel_devices > 1:
+            self.parallel_limiter = [asyncio.Semaphore(1) for _ in range(app_config.rag.parallel_devices)]
 
         layout_recognizer_type = os.getenv("LAYOUT_RECOGNIZER_TYPE", "onnx").lower()
         if layout_recognizer_type not in ["onnx", "ascend"]:
@@ -1134,12 +1134,12 @@ class RAGFlowPdfParser:
                 for i, img in enumerate(self.page_images):
                     chars = __ocr_preprocess()
 
-                    semaphore = self.parallel_limiter[i % settings.PARALLEL_DEVICES]
+                    semaphore = self.parallel_limiter[i % app_config.rag.parallel_devices]
 
                     async def wrapper(i=i, img=img, chars=chars, semaphore=semaphore):
                         await __img_ocr(
                             i,
-                            i % settings.PARALLEL_DEVICES,
+                            i % app_config.rag.parallel_devices,
                             img,
                             chars,
                             semaphore,

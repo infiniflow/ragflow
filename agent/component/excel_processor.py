@@ -31,8 +31,8 @@ import pandas as pd
 from agent.component.base import ComponentBase, ComponentParamBase
 from api.db.services.file_service import FileService
 from api.utils.api_utils import timeout
-from common import settings
 from common.misc_utils import get_uuid
+from core.providers import providers
 
 
 class ExcelProcessorParam(ComponentParamBase):
@@ -368,7 +368,7 @@ class ExcelProcessor(ComponentBase, ABC):
                 filename = f"{self._param.output_filename}.xlsx"
             
             # Store file
-            settings.STORAGE_IMPL.put(self._canvas._tenant_id, doc_id, binary_content)
+            providers.storage.conn.put(self._canvas._tenant_id, doc_id, binary_content)
             
             # Set attachment output
             self.set_output("attachment", {

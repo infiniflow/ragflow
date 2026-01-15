@@ -34,8 +34,9 @@ from api.db.services.system_settings_service import SystemSettingsService
 from api.db.joint_services.memory_message_service import init_message_id_sequence, init_memory_size_cache
 from common.constants import LLMType
 from common.file_utils import get_project_base_directory
-from common import settings
 from api.common.base64 import encode_to_base64
+from core.config import app_config
+from core.config.utils.loader import get_llm_factories
 
 DEFAULT_SUPERUSER_NICKNAME = os.getenv("DEFAULT_SUPERUSER_NICKNAME", "admin")
 DEFAULT_SUPERUSER_EMAIL = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
@@ -51,14 +52,15 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
         "creator": "system",
         "status": "1",
     }
+
     tenant = {
         "id": user_info["id"],
         "name": user_info["nickname"] + "‘s Kingdom",
-        "llm_id": settings.CHAT_MDL,
-        "embd_id": settings.EMBEDDING_MDL,
-        "asr_id": settings.ASR_MDL,
-        "parser_ids": settings.PARSERS,
-        "img2txt_id": settings.IMAGE2TEXT_MDL
+        "llm_id": app_config.user_default_llm.chat_model_cfg.model,
+        "embd_id": app_config.user_default_llm.embedding_model_cfg.model,
+        "asr_id": app_config.user_default_llm.asr_model_cfg.model,
+        "parser_ids": app_config.user_default_llm.parsers,
+        "img2txt_id": app_config.user_default_llm.image2text_model_cfg.model,
     }
     usr_tenant = {
         "tenant_id": user_info["id"],
@@ -95,7 +97,7 @@ def init_superuser(nickname=DEFAULT_SUPERUSER_NICKNAME, email=DEFAULT_SUPERUSER_
 
 def init_llm_factory():
     LLMFactoriesService.filter_delete([1 == 1])
-    factory_llm_infos = settings.FACTORY_LLM_INFOS
+    factory_llm_infos = get_llm_factories()
     for factory_llm_info in factory_llm_infos:
         info = deepcopy(factory_llm_info)
         llm_infos = info.pop("llm")

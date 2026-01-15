@@ -27,6 +27,7 @@ from api.db.services.common_service import CommonService
 from api.db.services.tenant_llm_service import LLM4Tenant, TenantLLMService
 from common.constants import LLMType
 from common.token_utils import num_tokens_from_string
+from core.config import app_config
 
 
 class LLMService(CommonService):
@@ -34,26 +35,32 @@ class LLMService(CommonService):
 
 
 def get_init_tenant_llm(user_id):
-    from common import settings
 
     tenant_llm = []
 
+    user_default_llm = app_config.user_default_llm
+    chat_model_cfg = user_default_llm.chat_model_cfg.model_dump()
+    embedding_model_cfg = user_default_llm.embedding_model_cfg.model_dump()
+    asr_model_cfg = user_default_llm.asr_model_cfg.model_dump()
+    image2text_model_cfg = user_default_llm.image2text_model_cfg.model_dump()
+    rerank_model_cfg = user_default_llm.rerank_model_cfg.model_dump()
+
     model_configs = {
-        LLMType.CHAT: settings.CHAT_CFG,
-        LLMType.EMBEDDING: settings.EMBEDDING_CFG,
-        LLMType.SPEECH2TEXT: settings.ASR_CFG,
-        LLMType.IMAGE2TEXT: settings.IMAGE2TEXT_CFG,
-        LLMType.RERANK: settings.RERANK_CFG,
+        LLMType.CHAT: chat_model_cfg,
+        LLMType.EMBEDDING: embedding_model_cfg,
+        LLMType.SPEECH2TEXT: asr_model_cfg,
+        LLMType.IMAGE2TEXT: image2text_model_cfg,
+        LLMType.RERANK: rerank_model_cfg,
     }
 
     seen = set()
     factory_configs = []
     for factory_config in [
-        settings.CHAT_CFG,
-        settings.EMBEDDING_CFG,
-        settings.ASR_CFG,
-        settings.IMAGE2TEXT_CFG,
-        settings.RERANK_CFG,
+        chat_model_cfg,
+        embedding_model_cfg,
+        asr_model_cfg,
+        image2text_model_cfg,
+        rerank_model_cfg,
     ]:
         factory_name = factory_config["factory"]
         if factory_name not in seen:

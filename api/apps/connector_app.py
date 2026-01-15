@@ -31,9 +31,10 @@ from common.constants import RetCode, TaskStatus
 from common.data_source.config import GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, GMAIL_WEB_OAUTH_REDIRECT_URI, BOX_WEB_OAUTH_REDIRECT_URI, DocumentSource
 from common.data_source.google_util.constant import WEB_OAUTH_POPUP_TEMPLATE, GOOGLE_SCOPES
 from common.misc_utils import get_uuid
-from rag.utils.redis_conn import REDIS_CONN
 from api.apps import login_required, current_user
 from box_sdk_gen import BoxOAuth, OAuthConfig, GetAuthorizeUrlOptions
+
+from core.providers import providers
 
 
 @manager.route("/set", methods=["POST"])  # noqa: F821
@@ -248,7 +249,7 @@ async def start_google_web_oauth():
         "client_config": client_config,
         "created_at": int(time.time()),
     }
-    REDIS_CONN.set_obj(_web_state_cache_key(flow_id, source), cache_payload, WEB_FLOW_TTL_SECS)
+    providers.cache.conn.set_obj(_web_state_cache_key(flow_id, source), cache_payload, WEB_FLOW_TTL_SECS)
 
     return get_json_result(
         data={
@@ -270,18 +271,18 @@ async def google_gmail_web_oauth_callback():
     if not state_id:
         return await _render_web_oauth_popup("", False, "Missing OAuth state parameter.", source)
 
-    state_cache = REDIS_CONN.get(_web_state_cache_key(state_id, source))
+    state_cache = providers.cache.conn.get(_web_state_cache_key(state_id, source))
     if not state_cache:
         return await _render_web_oauth_popup(state_id, False, "Authorization session expired. Please restart from the main window.", source)
 
     state_obj = json.loads(state_cache)
     client_config = state_obj.get("client_config")
     if not client_config:
-        REDIS_CONN.delete(_web_state_cache_key(state_id, source))
+        providers.cache.conn.delete(_web_state_cache_key(state_id, source))
         return await _render_web_oauth_popup(state_id, False, "Authorization session was invalid. Please retry.", source)
 
     if error:
-        REDIS_CONN.delete(_web_state_cache_key(state_id, source))
+        providers.cache.conn.delete(_web_state_cache_key(state_id, source))
         return await _render_web_oauth_popup(state_id, False, error_description or "Authorization was cancelled.", source)
 
     code = request.args.get("code")
@@ -295,7 +296,7 @@ async def google_gmail_web_oauth_callback():
         flow.fetch_token(code=code)
     except Exception as exc:  # pragma: no cover - defensive
         logging.exception("Failed to exchange Google OAuth code: %s", exc)
-        REDIS_CONN.delete(_web_state_cache_key(state_id, source))
+        providers.cache.conn.delete(_web_state_cache_key(state_id, source))
         return await _render_web_oauth_popup(state_id, False, "Failed to exchange tokens with Google. Please retry.", source)
 
     creds_json = flow.credentials.to_json()
@@ -303,8 +304,8 @@ async def google_gmail_web_oauth_callback():
         "user_id": state_obj.get("user_id"),
         "credentials": creds_json,
     }
-    REDIS_CONN.set_obj(_web_result_cache_key(state_id, source), result_payload, WEB_FLOW_TTL_SECS)
-    REDIS_CONN.delete(_web_state_cache_key(state_id, source))
+    providers.cache.conn.set_obj(_web_result_cache_key(state_id, source), result_payload, WEB_FLOW_TTL_SECS)
+    providers.cache.conn.delete(_web_state_cache_key(state_id, source))
 
     return await _render_web_oauth_popup(state_id, True, "Authorization completed successfully.", source)
 
@@ -320,18 +321,18 @@ async def google_drive_web_oauth_callback():
     if not state_id:
         return await _render_web_oauth_popup("", False, "Missing OAuth state parameter.", source)
 
-    state_cache = REDIS_CONN.get(_web_state_cache_key(state_id, source))
+    state_cache = providers.cache.conn.get(_web_state_cache_key(state_id, source))
     if not state_cache:
         return await _render_web_oauth_popup(state_id, False, "Authorization session expired. Please restart from the main window.", source)
 
     state_obj = json.loads(state_cache)
     client_config = state_obj.get("client_config")
     if not client_config:
-        REDIS_CONN.delete(_web_state_cache_key(state_id, source))
+        providers.cache.conn.delete(_web_state_cache_key(state_id, source))
         return await _render_web_oauth_popup(state_id, False, "Authorization session was invalid. Please retry.", source)
 
     if error:
-        REDIS_CONN.delete(_web_state_cache_key(state_id, source))
+        providers.cache.conn.delete(_web_state_cache_key(state_id, source))
         return await _render_web_oauth_popup(state_id, False, error_description or "Authorization was cancelled.", source)
 
     code = request.args.get("code")
@@ -345,7 +346,7 @@ async def google_drive_web_oauth_callback():
         flow.fetch_token(code=code)
     except Exception as exc:  # pragma: no cover - defensive
         logging.exception("Failed to exchange Google OAuth code: %s", exc)
-        REDIS_CONN.delete(_web_state_cache_key(state_id, source))
+        providers.cache.conn.delete(_web_state_cache_key(state_id, source))
         return await _render_web_oauth_popup(state_id, False, "Failed to exchange tokens with Google. Please retry.", source)
 
     creds_json = flow.credentials.to_json()
@@ -353,8 +354,8 @@ async def google_drive_web_oauth_callback():
         "user_id": state_obj.get("user_id"),
         "credentials": creds_json,
     }
-    REDIS_CONN.set_obj(_web_result_cache_key(state_id, source), result_payload, WEB_FLOW_TTL_SECS)
-    REDIS_CONN.delete(_web_state_cache_key(state_id, source))
+    providers.cache.conn.set_obj(_web_result_cache_key(state_id, source), result_payload, WEB_FLOW_TTL_SECS)
+    providers.cache.conn.delete(_web_state_cache_key(state_id, source))
 
     return await _render_web_oauth_popup(state_id, True, "Authorization completed successfully.", source)
 
@@ -367,7 +368,7 @@ async def poll_google_web_result():
     if source not in ("google-drive", "gmail"):
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Invalid Google OAuth type.")
     flow_id = req.get("flow_id")
-    cache_raw = REDIS_CONN.get(_web_result_cache_key(flow_id, source))
+    cache_raw = providers.cache.conn.get(_web_result_cache_key(flow_id, source))
     if not cache_raw:
         return get_json_result(code=RetCode.RUNNING, message="Authorization is still pending.")
 
@@ -375,7 +376,7 @@ async def poll_google_web_result():
     if result.get("user_id") != current_user.id:
         return get_json_result(code=RetCode.PERMISSION_ERROR, message="You are not allowed to access this authorization result.")
 
-    REDIS_CONN.delete(_web_result_cache_key(flow_id, source))
+    providers.cache.conn.delete(_web_result_cache_key(flow_id, source))
     return get_json_result(data={"credentials": result.get("credentials")})
 
 @manager.route("/box/oauth/web/start", methods=["POST"])  # noqa: F821
@@ -413,7 +414,7 @@ async def start_box_web_oauth():
         "client_secret": client_secret,
         "created_at": int(time.time()),
     }
-    REDIS_CONN.set_obj(_web_state_cache_key(flow_id, "box"), cache_payload, WEB_FLOW_TTL_SECS)
+    providers.cache.conn.set_obj(_web_state_cache_key(flow_id, "box"), cache_payload, WEB_FLOW_TTL_SECS)
     return get_json_result(
         data = {
             "flow_id": flow_id,
@@ -431,14 +432,14 @@ async def box_web_oauth_callback():
     if not code:
         return await _render_web_oauth_popup(flow_id, False, "Missing authorization code from Box.", "box")
 
-    cache_payload = json.loads(REDIS_CONN.get(_web_state_cache_key(flow_id, "box")))
+    cache_payload = json.loads(providers.cache.conn.get(_web_state_cache_key(flow_id, "box")))
     if not cache_payload:
         return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Box OAuth session expired or invalid.")
 
     error = request.args.get("error")
     error_description = request.args.get("error_description") or error
     if error:
-        REDIS_CONN.delete(_web_state_cache_key(flow_id, "box"))
+        providers.cache.conn.delete(_web_state_cache_key(flow_id, "box"))
         return await _render_web_oauth_popup(flow_id, False, error_description or "Authorization failed.", "box")
     
     auth = BoxOAuth(
@@ -458,8 +459,8 @@ async def box_web_oauth_callback():
         "refresh_token": token.refresh_token,
     }
 
-    REDIS_CONN.set_obj(_web_result_cache_key(flow_id, "box"), result_payload, WEB_FLOW_TTL_SECS)
-    REDIS_CONN.delete(_web_state_cache_key(flow_id, "box"))
+    providers.cache.conn.set_obj(_web_result_cache_key(flow_id, "box"), result_payload, WEB_FLOW_TTL_SECS)
+    providers.cache.conn.delete(_web_state_cache_key(flow_id, "box"))
 
     return await _render_web_oauth_popup(flow_id, True, "Authorization completed successfully.", "box")
 
@@ -470,7 +471,7 @@ async def poll_box_web_result():
     req = await get_request_json()
     flow_id = req.get("flow_id")
 
-    cache_blob = REDIS_CONN.get(_web_result_cache_key(flow_id, "box"))
+    cache_blob = providers.cache.conn.get(_web_result_cache_key(flow_id, "box"))
     if not cache_blob:
         return get_json_result(code=RetCode.RUNNING, message="Authorization is still pending.")
 
@@ -478,6 +479,6 @@ async def poll_box_web_result():
     if cache_raw.get("user_id") != current_user.id:
         return get_json_result(code=RetCode.PERMISSION_ERROR, message="You are not allowed to access this authorization result.")
     
-    REDIS_CONN.delete(_web_result_cache_key(flow_id, "box"))
+    providers.cache.conn.delete(_web_result_cache_key(flow_id, "box"))
 
     return get_json_result(data={"credentials": cache_raw})

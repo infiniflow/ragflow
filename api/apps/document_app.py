@@ -44,9 +44,9 @@ from api.utils.file_utils import filename_type, thumbnail
 from common.file_utils import get_project_base_directory
 from common.constants import RetCode, VALID_TASK_STATUS, ParserType, TaskStatus
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url
+from core.providers import providers
 from deepdoc.parser.html_parser import RAGFlowHtmlParser
 from rag.nlp import search, rag_tokenizer
-from common import settings
 
 
 @manager.route("/upload", methods=["POST"])  # noqa: F821
@@ -120,9 +120,9 @@ async def web_crawl():
             raise RuntimeError("This type of file has not been supported yet!")
 
         location = filename
-        while settings.STORAGE_IMPL.obj_exist(kb_id, location):
+        while providers.storage.conn.obj_exist(kb_id, location):
             location += "_"
-        settings.STORAGE_IMPL.put(kb_id, location, blob)
+        providers.storage.conn.put(kb_id, location, blob)
         doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
@@ -540,7 +540,7 @@ async def change_status():
                 continue
 
             status_int = int(status)
-            if not settings.docStoreConn.update({"doc_id": doc_id}, {"available_int": status_int}, search.index_name(kb.tenant_id), doc.kb_id):
+            if not providers.doc_store.conn.update({"doc_id": doc_id}, {"available_int": status_int}, search.index_name(kb.tenant_id), doc.kb_id):
                 result[doc_id] = {"error": "Database error (docStore update)!"}
             result[doc_id] = {"status": status}
         except Exception as e:
@@ -607,8 +607,8 @@ async def run():
                 DocumentService.update_by_id(id, info)
                 if req.get("delete", False):
                     TaskService.filter_delete([Task.doc_id == id])
-                    if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
-                        settings.docStoreConn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
+                    if providers.doc_store.conn.index_exist(search.index_name(tenant_id), doc.kb_id):
+                        providers.doc_store.conn.delete({"doc_id": id}, search.index_name(tenant_id), doc.kb_id)
 
                 if str(req["run"]) == TaskStatus.RUNNING.value:
                     if req.get("apply_kb"):
@@ -666,8 +666,8 @@ async def rename():
                 "title_tks": title_tks,
                 "title_sm_tks": rag_tokenizer.fine_grained_tokenize(title_tks),
             }
-            if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
-                settings.docStoreConn.update(
+            if providers.doc_store.conn.index_exist(search.index_name(tenant_id), doc.kb_id):
+                providers.doc_store.conn.update(
                     {"doc_id": req["doc_id"]},
                     es_body,
                     search.index_name(tenant_id),
@@ -690,7 +690,7 @@ async def get(doc_id):
             return get_data_error_result(message="Document not found!")
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
-        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, b, n)
+        data = await asyncio.to_thread(providers.storage.conn.get, b, n)
         response = await make_response(data)
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())
@@ -712,7 +712,7 @@ async def get(doc_id):
 async def download_attachment(attachment_id):
     try:
         ext = request.args.get("ext", "markdown")
-        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, current_user.id, attachment_id)
+        data = await asyncio.to_thread(providers.storage.conn.get, current_user.id, attachment_id)
         response = await make_response(data)
         response.headers.set("Content-Type", CONTENT_TYPE_MAP.get(ext, f"application/{ext}"))
 
@@ -748,8 +748,8 @@ async def change_parser():
             if not tenant_id:
                 return get_data_error_result(message="Tenant not found!")
             DocumentService.delete_chunk_images(doc, tenant_id)
-            if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
-                settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
+            if providers.doc_store.conn.index_exist(search.index_name(tenant_id), doc.kb_id):
+                providers.doc_store.conn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
         return None
 
     try:
@@ -785,7 +785,7 @@ async def get_image(image_id):
         if len(arr) != 2:
             return get_data_error_result(message="Image not found.")
         bkt, nm = image_id.split("-")
-        data = await asyncio.to_thread(settings.STORAGE_IMPL.get, bkt, nm)
+        data = await asyncio.to_thread(providers.storage.conn.get, bkt, nm)
         response = await make_response(data)
         response.headers.set("Content-Type", "image/JPEG")
         return response

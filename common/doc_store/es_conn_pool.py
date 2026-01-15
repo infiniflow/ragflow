@@ -17,8 +17,8 @@ import logging
 import time
 from elasticsearch import Elasticsearch
 
-from common import settings
 from common.decorator import singleton
+from core.config import app_config
 
 ATTEMPT_TIME = 2
 
@@ -27,21 +27,19 @@ ATTEMPT_TIME = 2
 class ElasticSearchConnectionPool:
 
     def __init__(self):
-        if hasattr(settings, "ES"):
-            self.ES_CONFIG = settings.ES
-        else:
-            self.ES_CONFIG = settings.get_base_config("es", {})
+        self.es_cfg = app_config.doc_engine.es
 
-        for _ in range(ATTEMPT_TIME):
-            try:
-                if self._connect():
-                    break
-            except Exception as e:
-                logging.warning(f"{str(e)}. Waiting Elasticsearch {self.ES_CONFIG['hosts']} to be healthy.")
-                time.sleep(5)
+        for es_host in self.es_cfg.hosts:
+            for _ in range(ATTEMPT_TIME):
+                try:
+                    if self._connect():
+                        break
+                except Exception as e:
+                    logging.warning(f"{str(e)}. Waiting Elasticsearch {es_host} to be healthy.")
+                    time.sleep(5)
 
         if not hasattr(self, "es_conn") or not self.es_conn or not self.es_conn.ping():
-            msg = f"Elasticsearch {self.ES_CONFIG['hosts']} is unhealthy in 10s."
+            msg = f"Elasticsearch {self.es_cfg.hosts} is unhealthy in 10s."
             logging.error(msg)
             raise Exception(msg)
         v = self.info.get("version", {"number": "8.11.3"})
@@ -53,10 +51,9 @@ class ElasticSearchConnectionPool:
 
     def _connect(self):
         self.es_conn = Elasticsearch(
-            self.ES_CONFIG["hosts"].split(","),
-            basic_auth=(self.ES_CONFIG["username"], self.ES_CONFIG[
-                "password"]) if "username" in self.ES_CONFIG and "password" in self.ES_CONFIG else None,
-            verify_certs= self.ES_CONFIG.get("verify_certs", False),
+            self.es_cfg.hosts,
+            basic_auth=(self.es_cfg.username, self.es_cfg.password) if self.es_cfg.username and self.es_cfg.password else None,
+            verify_certs= self.es_cfg.verify_certs,
             timeout=600 )
         if self.es_conn:
             self.info = self.es_conn.info()
