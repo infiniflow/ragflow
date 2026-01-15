@@ -128,7 +128,9 @@ def server_error_response(e):
     try:
         msg = repr(e).lower()
         if getattr(e, "code", None) == 401 or ("unauthorized" in msg) or ("401" in msg):
-            return get_json_result(code=RetCode.UNAUTHORIZED, message="Unauthorized"), RetCode.UNAUTHORIZED
+            resp = get_json_result(code=RetCode.UNAUTHORIZED, message="Unauthorized")
+            resp.status_code = RetCode.UNAUTHORIZED
+            return resp
     except Exception as ex:
         logging.warning(f"error checking authorization: {ex}")
 
