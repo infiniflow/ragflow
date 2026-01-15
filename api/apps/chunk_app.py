@@ -235,8 +235,6 @@ async def rm():
                                                              doc.kb_id)
             except Exception:
                 return get_data_error_result(message="Chunk deleting failure")
-            if deleted_count is None:
-                return get_data_error_result(message="Chunk deleting failure")
             deleted_chunk_ids = req["chunk_ids"]
             if isinstance(deleted_chunk_ids, list):
                 unique_chunk_ids = list(dict.fromkeys(deleted_chunk_ids))
