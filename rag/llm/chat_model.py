@@ -1263,7 +1263,7 @@ class LiteLLMBase(ABC):
         if self.model_name.lower().find("qwen3") >= 0:
             kwargs["extra_body"] = {"enable_thinking": False}
 
-        completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **gen_conf)
+        completion_args = self._construct_completion_args(history=hist, stream=False, tools=False, **{**gen_conf, **kwargs})
 
         for attempt in range(self.max_retries + 1):
             try:

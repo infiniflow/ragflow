@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideCode
 }
 ---
-
 # Set metadata
 
 Manually add metadata to an uploaded file

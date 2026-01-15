@@ -265,7 +265,6 @@ async def not_found(error):
         "message": error_msg,
     }, 404
 
-
 @app.teardown_request
 def _db_close(exception):
     if exception:
