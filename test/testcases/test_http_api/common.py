@@ -305,12 +305,6 @@ def metadata_summary(auth, dataset_id, params=None):
 
 
 # CHAT COMPLETIONS AND RELATED QUESTIONS
-def chat_completions(auth, chat_assistant_id, payload=None):
-    url = f"{HOST_ADDRESS}{CHAT_ASSISTANT_API_URL}/{chat_assistant_id}/completions"
-    res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)
-    return res.json()
-
-
 def related_questions(auth, payload=None):
     url = f"{HOST_ADDRESS}/api/{VERSION}/sessions/related_questions"
     res = requests.post(url=url, headers=HEADERS, auth=auth, json=payload)

@@ -246,7 +246,7 @@ class InfinityConnectionBase(DocStoreConnection):
             if parser_id == ParserType.TABLE.value:
                 # Table parser: add chunk_data JSON column to store table-specific fields
                 schema["chunk_data"] = {"type": "json", "default": "{}"}
-                self.logger.info(f"Added chunk_data column for TABLE parser")
+                self.logger.info("Added chunk_data column for TABLE parser")
 
         vector_name = f"q_{vector_size}_vec"
         schema[vector_name] = {"type": f"vector,{vector_size},float"}
