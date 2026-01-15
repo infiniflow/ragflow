@@ -935,7 +935,7 @@ async def stop_parsing(tenant_id, dataset_id):
 
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["GET"])  # noqa: F821
 @token_required
-def list_chunks(tenant_id, dataset_id, document_id):
+async def list_chunks(tenant_id, dataset_id, document_id):
     """
     List chunks of a document.
     ---
@@ -1081,7 +1081,7 @@ def list_chunks(tenant_id, dataset_id, document_id):
         _ = Chunk(**final_chunk)
 
     elif settings.docStoreConn.index_exist(search.index_name(tenant_id), dataset_id):
-        sres = settings.retriever.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None, highlight=True)
+        sres = await settings.retriever.search(query, search.index_name(tenant_id), [dataset_id], emb_mdl=None, highlight=True)
         res["total"] = sres.total
         for id in sres.ids:
             d = {
@@ -1559,7 +1559,7 @@ async def retrieval_test(tenant_id):
             chat_mdl = LLMBundle(kb.tenant_id, LLMType.CHAT)
             question += await keyword_extraction(chat_mdl, question)
 
-        ranks = settings.retriever.retrieval(
+        ranks = await settings.retriever.retrieval(
             question,
             embd_mdl,
             tenant_ids,

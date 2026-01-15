@@ -36,12 +36,12 @@ class TreeStructuredQueryDecompositionRetrieval:
         self._kg_retrieve = kg_retrieve
         self._lock = asyncio.Lock()
 
-    def _retrieve_information(self, search_query):
+    async def _retrieve_information(self, search_query):
         """Retrieve information from different sources"""
         # 1. Knowledge base retrieval
         kbinfos = []
         try:
-            kbinfos = self._kb_retrieve(question=search_query) if self._kb_retrieve else {"chunks": [], "doc_aggs": []}
+            kbinfos = await self._kb_retrieve(question=search_query) if self._kb_retrieve else {"chunks": [], "doc_aggs": []}
         except Exception as e:
             logging.error(f"Knowledge base retrieval error: {e}")
 
@@ -58,7 +58,7 @@ class TreeStructuredQueryDecompositionRetrieval:
         # 3. Knowledge graph retrieval (if configured)
         try:
             if self.prompt_config.get("use_kg") and self._kg_retrieve:
-                ck = self._kg_retrieve(question=search_query)
+                ck = await self._kg_retrieve(question=search_query)
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
         except Exception as e:
@@ -100,9 +100,9 @@ class TreeStructuredQueryDecompositionRetrieval:
         if callback:
             await callback(f"Searching by `{query}`...")
         st = timer()
-        ret = self._retrieve_information(query)
+        ret = await self._retrieve_information(query)
         if callback:
-            await callback("Retrieval %d results by %.1fms"%(len(ret["chunks"]), (timer()-st)*1000))
+            await callback("Retrieval %d results in %.1fms"%(len(ret["chunks"]), (timer()-st)*1000))
         await self._async_update_chunk_info(chunk_info, ret)
         ret = kb_prompt(ret, self.chat_mdl.max_length*0.5)
 
@@ -111,14 +111,14 @@ class TreeStructuredQueryDecompositionRetrieval:
         suff = await sufficiency_check(self.chat_mdl, question, ret)
         if suff["is_sufficient"]:
             if callback:
-                await callback("Yes, it's sufficient.")
+                await callback(f"Yes, the retrieved information is sufficient for '{question}'.")
             return ret
 
         #if callback:
         #    await callback("The retrieved information is not sufficient. Planing next steps...")
         succ_question_info = await multi_queries_gen(self.chat_mdl, question, query, suff["missing_information"], ret)
         if callback:
-            await callback("Next step is to search for the following questions:\n" + "\n - ".join(step["question"] for step in succ_question_info["questions"]))
+            await callback("Next step is to search for the following questions:</br> - " + "</br> - ".join(step["question"] for step in succ_question_info["questions"]))
         steps = []
         for step in succ_question_info["questions"]:
             steps.append(asyncio.create_task(self._research(chunk_info, step["question"], step["query"], depth-1, callback)))
