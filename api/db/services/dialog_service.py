@@ -403,17 +403,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     yield {"answer": msg, "reference": {}, "audio_binary": None, "final": False}
 
             await task
-            '''
-            async for think in reasoner.thinking(kbinfos, attachments_ + " ".join(questions)):
-                if isinstance(think, str):
-                    thought = think
-                    knowledges = [t for t in think.split("\n") if t]
-                elif stream:
-                    yield think
-            '''
+
         else:
             if embd_mdl:
-                kbinfos = await asyncio.to_thread(retriever.retrieval,
+                kbinfos = await retriever.retrieval(
                     " ".join(questions),
                     embd_mdl,
                     tenant_ids,
@@ -853,7 +846,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
-    kbinfos = retriever.retrieval(
+    kbinfos = await retriever.retrieval(
         question=question,
         embd_mdl=embd_mdl,
         tenant_ids=tenant_ids,
@@ -929,7 +922,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
-    ranks = settings.retriever.retrieval(
+    ranks = await settings.retriever.retrieval(
         question=question,
         embd_mdl=embd_mdl,
         tenant_ids=tenant_ids,
