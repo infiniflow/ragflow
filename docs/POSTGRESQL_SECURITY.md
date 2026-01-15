@@ -104,16 +104,12 @@ postgres:
 Test the restricted user can access only its database:
 
 ```bash
-# Should succeed - ragflow_user can access ragflow_db
+# Should succeed
 psql -h localhost -U ragflow_user -d ragflow_db -c "SELECT 1;"
 
-# Should fail - verify restricted permissions by attempting privileged operation
-psql -h localhost -U ragflow_user -d ragflow_db -c "CREATE DATABASE test_db;" 2>&1 | grep -i "permission denied"
+# Should fail (no access to other databases)
+psql -h localhost -U ragflow_user -d postgres -c "SELECT 1;"
 ```
-
-**Note on postgres database access:** By default, PostgreSQL grants CONNECT on the `postgres` system database to PUBLIC, so verifying access denial requires testing specific operations. The above tests:
-- ✅ Confirms `ragflow_user` can connect to and read from `ragflow_db`
-- ✅ Confirms `ragflow_user` cannot execute administrative commands like CREATE DATABASE
 
 ## Security Benefits
 
@@ -195,7 +191,8 @@ GRANT ALL PRIVILEGES ON DATABASE ragflow_db TO ragflow_user;
 
 -- Grant schema permissions (required for table creation and access)
 \c ragflow_db
-GRANT ALL PRIVILEGES ON SCHEMA public TO ragflow_user;
+GRANT USAGE ON SCHEMA public TO ragflow_user;
+GRANT CREATE ON SCHEMA public TO ragflow_user;
 
 -- Grant permissions on existing tables (if any)
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ragflow_user;
@@ -205,9 +202,9 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ragflow_user;
 
 -- Set default privileges for objects created by ragflow_user (the database owner)
 -- This ensures RAGFlow can access tables/sequences it creates
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ragflow_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ragflow_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO ragflow_user;
+ALTER DEFAULT PRIVILEGES FOR USER ragflow_user IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ragflow_user;
+ALTER DEFAULT PRIVILEGES FOR USER ragflow_user IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ragflow_user;
+ALTER DEFAULT PRIVILEGES FOR USER ragflow_user IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO ragflow_user;
 ```
 
 ## Recommendation

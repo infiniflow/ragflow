@@ -16,3 +16,8 @@
 class TaskCanceledException(Exception):
     def __init__(self, msg):
         self.msg = msg
+
+
+class FieldValueRequiredException(Exception):
+    def __init__(self, msg):
+        self.msg = msg

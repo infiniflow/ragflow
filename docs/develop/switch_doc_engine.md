@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideShuffle
 }
 ---
-
 # Switch document engine
 
 Switch your doc engine from Elasticsearch to Infinity.

@@ -385,6 +385,17 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
         'Formelerkennung aktivieren. Hinweis: Dies funktioniert möglicherweise nicht korrekt bei kyrillischen Dokumenten.',
       mineruTableEnable: 'Tabellenerkennung',
       mineruTableEnableTip: 'Tabellenerkennung und -extraktion aktivieren.',
+      paddleocrOptions: 'PaddleOCR-Optionen',
+      paddleocrApiUrl: 'PaddleOCR API-URL',
+      paddleocrApiUrlTip: 'API-Endpunkt-URL des PaddleOCR-Dienstes',
+      paddleocrApiUrlPlaceholder: 'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio-Zugriffstoken',
+      paddleocrAccessTokenTip: 'Zugriffstoken für die PaddleOCR-API (optional)',
+      paddleocrAccessTokenPlaceholder: 'Ihr AI Studio-Token (optional)',
+      paddleocrAlgorithm: 'PaddleOCR-Algorithmus',
+      paddleocrAlgorithmTip: 'Algorithmus, der für die PaddleOCR-Verarbeitung verwendet wird',
+      paddleocrSelectAlgorithm: 'Algorithmus auswählen',
+      paddleocrModelNamePlaceholder: 'Zum Beispiel: paddleocr-umgebung-1',
       overlappedPercent: 'Überlappungsprozent(%)',
       generationScopeTip:
         'Bestimmt, ob RAPTOR für den gesamten Datensatz oder für eine einzelne Datei generiert wird.',
@@ -448,7 +459,7 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       chunkTokenNumber: 'Empfohlene Chunk-Größe',
       chunkTokenNumberMessage: 'Chunk-Token-Anzahl ist erforderlich',
       embeddingModelTip:
-        'Das Standard-Embedding-Modell der Wissensdatenbank. Es kann nicht geändert werden, sobald die Wissensdatenbank Chunks enthält. Um zu einem anderen Standard-Embedding-Modell zu wechseln, müssen alle vorhandenen Chunks in der Wissensdatenbank gelöscht werden.',
+        'Das Standard-Embedding-Modell der Wissensdatenbank. Sobald die Wissensdatenbank Chunks enthält, führt das System beim Wechsel des Embedding-Modells eine Kompatibilitätsprüfung durch: Es zieht zufällig einige Chunks als Stichprobe, kodiert sie mit dem neuen Embedding-Modell neu und berechnet die Kosinusähnlichkeit zwischen neuen und alten Vektoren. Ein Wechsel ist nur möglich, wenn die durchschnittliche Ähnlichkeit der Stichprobe ≥ 0.9 ist. Andernfalls müssen Sie alle Chunks in der Wissensdatenbank löschen, bevor Sie das Modell ändern können.',
       permissionsTip:
         'Wenn auf "Team" gesetzt, können alle Teammitglieder die Wissensdatenbank verwalten.',
       chunkTokenNumberTip:
@@ -475,7 +486,7 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       book: `<p>Unterstützte Dateiformate sind <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
       Für jedes Buch im PDF-Format stellen Sie bitte die <i>Seitenbereiche</i> ein, um unerwünschte Informationen zu entfernen und die Analysezeit zu reduzieren.</p>`,
       laws: `<p>Unterstützte Dateiformate sind <b>DOCX</b>, <b>PDF</b>, <b>TXT</b>.</p><p>
-      Rechtliche Dokumente folgen in der Regel einem strengen Schreibformat. Wir verwenden Textmerkmale, um Teilungspunkte zu identifizieren. 
+      Rechtliche Dokumente folgen in der Regel einem strengen Schreibformat. Wir verwenden Textmerkmale, um Teilungspunkte zu identifizieren.
       </p><p>
       Der Chunk hat eine Granularität, die mit 'ARTIKEL' übereinstimmt, wobei sichergestellt wird, dass der gesamte übergeordnete Text im Chunk enthalten ist.
       </p>`,
@@ -489,7 +500,7 @@ Prozedurales Gedächtnis: Erlernte Fähigkeiten, Gewohnheiten und automatisierte
       <li>Dann werden benachbarte Segmente kombiniert, bis die Token-Anzahl den durch 'Chunk-Token-Anzahl' festgelegten Schwellenwert überschreitet, woraufhin ein Chunk erstellt wird.</li></p>`,
       paper: `<p>Nur <b>PDF</b>-Dateien werden unterstützt.</p><p>
       Papers werden nach Abschnitten wie <i>abstract, 1.1, 1.2</i> aufgeteilt. </p><p>
-      Dieser Ansatz ermöglicht es dem LLM, das Paper effektiver zusammenzufassen und umfassendere, verständlichere Antworten zu liefern. 
+      Dieser Ansatz ermöglicht es dem LLM, das Paper effektiver zusammenzufassen und umfassendere, verständlichere Antworten zu liefern.
       Es erhöht jedoch auch den Kontext für KI-Gespräche und die Rechenkosten für das LLM. Daher sollten Sie während eines Gesprächs erwägen, den Wert von '<b>topN</b>' zu reduzieren.</p>`,
       presentation: `<p>Unterstützte Dateiformate sind <b>PDF</b>, <b>PPTX</b>.</p><p>
       Jede Seite in den Folien wird als Chunk behandelt, wobei ihr Vorschaubild gespeichert wird.</p><p>
@@ -1108,6 +1119,17 @@ Beispiel: Virtual Hosted Style`,
       modelTypeMessage: 'Bitte geben Sie Ihren Modelltyp ein!',
       addLlmBaseUrl: 'Basis-URL',
       baseUrlNameMessage: 'Bitte geben Sie Ihre Basis-URL ein!',
+      paddleocr: {
+        apiUrl: 'PaddleOCR API-URL',
+        apiUrlPlaceholder: 'Zum Beispiel: https://paddleocr-server.com/layout-parsing',
+        accessToken: 'AI Studio-Zugriffstoken',
+        accessTokenPlaceholder: 'Ihr AI Studio-Token (optional)',
+        algorithm: 'PaddleOCR-Algorithmus',
+        selectAlgorithm: 'Algorithmus auswählen',
+        modelNamePlaceholder: 'Zum Beispiel: paddleocr-from-env-1',
+        modelNameRequired: 'Der Modellname ist ein Pflichtfeld',
+        apiUrlRequired: 'Die PaddleOCR API-URL ist ein Pflichtfeld'
+      },
       vision: 'Unterstützt es Vision?',
       ollamaLink: 'Wie integriere ich {{name}}',
       FishAudioLink: 'Wie verwende ich FishAudio',

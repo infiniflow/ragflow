@@ -371,14 +371,21 @@ async def retrieval_test():
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
-        ranks = settings.retriever.retrieval(_question, embd_mdl, tenant_ids, kb_ids, page, size,
-                               float(req.get("similarity_threshold", 0.0)),
-                               float(req.get("vector_similarity_weight", 0.3)),
-                               top,
-                               local_doc_ids, rerank_mdl=rerank_mdl,
-                                             highlight=req.get("highlight", False),
-                               rank_feature=labels
-                               )
+        ranks = await asyncio.to_thread(settings.retriever.retrieval,
+                    _question,
+                    embd_mdl,
+                    tenant_ids,
+                    kb_ids,
+                    page,
+                    size,
+                    float(req.get("similarity_threshold", 0.0)),
+                    float(req.get("vector_similarity_weight", 0.3)),
+                    doc_ids=local_doc_ids,
+                    top=top,
+                    rerank_mdl=rerank_mdl,
+                    rank_feature=labels,
+                )
+
         if use_kg:
             ck = await settings.kg_retriever.retrieval(_question,
                                                    tenant_ids,

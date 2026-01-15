@@ -5,7 +5,6 @@ sidebar_custom_props: {
   categoryIcon: LucideSquareTerminal
 }
 ---
-
 # Admin CLI
 
 The RAGFlow Admin CLI is a command-line-based system administration tool that offers administrators an efficient and flexible method for system interaction and control. Operating on a client-server architecture, it communicates in real-time with the Admin Service, receiving administrator commands and dynamically returning execution results.
@@ -30,9 +29,9 @@ The RAGFlow Admin CLI is a command-line-based system administration tool that of
     The default password is admin.
 
     **Parameters:**
-
+    
     - -h: RAGFlow admin server host address
-
+    
     - -p: RAGFlow admin server port
 
 ## Default administrative account
