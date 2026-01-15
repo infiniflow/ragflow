@@ -243,6 +243,7 @@ export const useSendAgentMessage = ({
     removeAllMessages,
     removeAllMessagesExceptFirst,
     scrollToBottom,
+    addPrologue,
   } = useSelectDerivedMessages();
   const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
   const {
@@ -417,12 +418,11 @@ export const useSendAgentMessage = ({
       return;
     }
     if (prologue) {
-      addNewestOneAnswer({
-        answer: prologue,
-      });
+      addPrologue(prologue);
     }
   }, [
     addNewestOneAnswer,
+    addPrologue,
     agentId,
     isTaskMode,
     prologue,
