@@ -37,7 +37,6 @@ from api.db.services.tenant_llm_service import TenantLLMService
 from common.time_utils import current_timestamp, datetime_format
 from graphrag.general.mind_map_extractor import MindMapExtractor
 from rag.advanced_rag import DeepResearcher
-from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
 from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, \
@@ -692,7 +691,7 @@ Write SQL using exact field names above. Include doc_id, docnm_kwd for data quer
         logging.debug(f"use_sql: Executing SQL retrieval (attempt {tried_times})")
         tbl = settings.retriever.sql_retrieval(sql, format="json")
         if tbl is None:
-            logging.debug(f"use_sql: SQL retrieval returned None")
+            logging.debug("use_sql: SQL retrieval returned None")
             return None, sql
         logging.debug(f"use_sql: SQL retrieval completed, got {len(tbl.get('rows', []))} rows")
         return tbl, sql
