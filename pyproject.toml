@@ -75,7 +75,7 @@ dependencies = [
     "psycopg2-binary>=2.9.11,<3.0.0",
     "pyclipper>=1.4.0,<2.0.0",
     "pycryptodomex==3.20.0",
-    "pyobvector==0.2.18",
+    "pyobvector==0.2.22",
     "pyodbc>=5.2.0,<6.0.0",
     "pypandoc>=1.16",
     "pypdf==6.4.0",
@@ -152,6 +152,7 @@ dependencies = [
     "pygithub>=2.8.1",
     "asana>=5.2.2",
     "python-gitlab>=7.0.0",
+    "quart-schema==0.23.0",
 ]
 
 [dependency-groups]
@@ -168,6 +169,7 @@ test = [
     "reportlab>=4.4.1",
     "requests>=2.32.2",
     "requests-toolbelt>=1.0.0",
+    "pycryptodomex==3.20.0",
 ]
 
 [[tool.uv.index]]
@@ -176,7 +178,6 @@ url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 [tool.setuptools]
 packages = [
     'agent',
-    'agentic_reasoning',
     'api',
     'deepdoc',
     'graphrag',

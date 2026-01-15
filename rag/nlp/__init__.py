@@ -275,7 +275,18 @@ def tokenize(d, txt, eng):
 
 def split_with_pattern(d, pattern: str, content: str, eng) -> list:
     docs = []
-    txts = [txt for txt in re.split(r"(%s)" % pattern, content, flags=re.DOTALL)]
+
+    # Validate and compile regex pattern before use
+    try:
+        compiled_pattern = re.compile(r"(%s)" % pattern, flags=re.DOTALL)
+    except re.error as e:
+        logging.warning(f"Invalid delimiter regex pattern '{pattern}': {e}. Falling back to no split.")
+        # Fallback: return content as single chunk
+        dd = copy.deepcopy(d)
+        tokenize(dd, content, eng)
+        return [dd]
+
+    txts = [txt for txt in compiled_pattern.split(content)]
     for j in range(0, len(txts), 2):
         txt = txts[j]
         if not txt:
@@ -815,11 +826,6 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
         if len(contexts) < len(res) + 1:
             contexts.append(("", ""))
         res.append(((img, tb), poss))
-
-        print("\n\n")
-        for c in contexts:
-            print(c)
-        print("\n\n")
     return contexts if return_context else res
 
 

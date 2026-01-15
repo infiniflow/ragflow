@@ -327,7 +327,7 @@ async def graph_node_to_chunk(kb_id, embd_mdl, ent_name, meta, chunks):
 
 
 @timeout(3, 3)
-def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
+async def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
     ents = from_ent_name
     if isinstance(ents, str):
         ents = [from_ent_name]
@@ -337,7 +337,7 @@ def get_relation(tenant_id, kb_id, from_ent_name, to_ent_name, size=1):
     ents = list(set(ents))
     conds = {"fields": ["content_with_weight"], "size": size, "from_entity_kwd": ents, "to_entity_kwd": ents, "knowledge_graph_kwd": ["relation"]}
     res = []
-    es_res = settings.retriever.search(conds, search.index_name(tenant_id), [kb_id] if isinstance(kb_id, str) else kb_id)
+    es_res = await settings.retriever.search(conds, search.index_name(tenant_id), [kb_id] if isinstance(kb_id, str) else kb_id)
     for id in es_res.ids:
         try:
             if size == 1:
@@ -404,12 +404,7 @@ async def does_graph_contains(tenant_id, kb_id, doc_id):
 
 async def get_graph_doc_ids(tenant_id, kb_id) -> list[str]:
     conds = {"fields": ["source_id"], "removed_kwd": "N", "size": 1, "knowledge_graph_kwd": ["graph"]}
-    res = await asyncio.to_thread(
-        settings.retriever.search,
-        conds,
-        search.index_name(tenant_id),
-        [kb_id]
-    )
+    res = await settings.retriever.search(conds, search.index_name(tenant_id), [kb_id])
     doc_ids = []
     if res.total == 0:
         return doc_ids
@@ -420,12 +415,7 @@ async def get_graph_doc_ids(tenant_id, kb_id) -> list[str]:
 
 async def get_graph(tenant_id, kb_id, exclude_rebuild=None):
     conds = {"fields": ["content_with_weight", "removed_kwd", "source_id"], "size": 1, "knowledge_graph_kwd": ["graph"]}
-    res = await asyncio.to_thread(
-        settings.retriever.search,
-        conds,
-        search.index_name(tenant_id),
-        [kb_id]
-    )
+    res = await settings.retriever.search(conds, search.index_name(tenant_id), [kb_id])
     if not res.total == 0:
         for id in res.ids:
             try:
@@ -626,8 +616,8 @@ def merge_tuples(list1, list2):
     return result
 
 
-def get_entity_type2samples(idxnms, kb_ids: list):
-    es_res = settings.retriever.search({"knowledge_graph_kwd": "ty2ents", "kb_id": kb_ids, "size": 10000, "fields": ["content_with_weight"]},idxnms,kb_ids)
+async def get_entity_type2samples(idxnms, kb_ids: list):
+    es_res = await settings.retriever.search({"knowledge_graph_kwd": "ty2ents", "kb_id": kb_ids, "size": 10000, "fields": ["content_with_weight"]},idxnms,kb_ids)
 
     res = defaultdict(list)
     for id in es_res.ids:

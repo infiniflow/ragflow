@@ -5,6 +5,7 @@ import {
 } from '@/components/dynamic-form';
 import { Modal } from '@/components/ui/modal/modal';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
+import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
 import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { FieldValues } from 'react-hook-form';
@@ -19,6 +20,7 @@ const AzureOpenAIModal = ({
 }: IModalProps<IAddLlmRequestBody> & { llmFactory: string }) => {
   const { t } = useTranslate('setting');
   const { t: tg } = useCommonTranslation();
+  const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
   const fields: FormFieldConfig[] = [
     {
@@ -26,11 +28,7 @@ const AzureOpenAIModal = ({
       label: t('modelType'),
       type: FormFieldType.Select,
       required: true,
-      options: [
-        { label: 'chat', value: 'chat' },
-        { label: 'embedding', value: 'embedding' },
-        { label: 'image2text', value: 'image2text' },
-      ],
+      options: buildModelTypeOptions(['chat', 'embedding', 'image2text']),
       defaultValue: 'embedding',
       validation: {
         message: t('modelTypeMessage'),

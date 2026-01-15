@@ -12,6 +12,10 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+
+import time
+start_ts = time.time()
+
 import asyncio
 import socket
 import concurrent
@@ -21,7 +25,6 @@ import concurrent
 import random
 import sys
 import threading
-import time
 
 from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -297,6 +300,11 @@ async def build_chunks(task, progress_callback):
                 (chunk["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
             d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
             d["create_timestamp_flt"] = datetime.now().timestamp()
+
+            if d.get("img_id"):
+                docs.append(d)
+                return
+
             if not d.get("image"):
                 _ = d.pop("image", None)
                 d["img_id"] = ""
@@ -1322,6 +1330,8 @@ async def main():
 
     report_task = asyncio.create_task(report_status())
     tasks = []
+
+    logging.info(f"RAGFlow ingestion is ready after {time.time() - start_ts}s initialization.")
     try:
         while not stop_event.is_set():
             await task_limiter.acquire()

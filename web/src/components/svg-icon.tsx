@@ -65,6 +65,27 @@ const SvgIcon = memo(
   },
 );
 
+SvgIcon.displayName = 'SvgIcon';
+
+const themeIcons = [
+  LLMFactory.FishAudio,
+  LLMFactory.TogetherAI,
+  LLMFactory.Meituan,
+  LLMFactory.Longcat,
+  LLMFactory.MinerU,
+];
+
+const svgIcons = [
+  LLMFactory.LocalAI,
+  // LLMFactory.VolcEngine,
+  // LLMFactory.MiniMax,
+  LLMFactory.Gemini,
+  LLMFactory.StepFun,
+  LLMFactory.MinerU,
+  LLMFactory.PaddleOCR,
+  // LLMFactory.DeerAPI,
+];
+
 export const LlmIcon = ({
   name,
   height = 48,
@@ -79,14 +100,7 @@ export const LlmIcon = ({
   imgClass?: string;
 }) => {
   const isDark = useIsDarkTheme();
-  const themeIcons = [
-    LLMFactory.FishAudio,
-    LLMFactory.TogetherAI,
-    LLMFactory.Meituan,
-    LLMFactory.Longcat,
-    LLMFactory.MinerU,
-  ];
-  let icon = useMemo(() => {
+  const icon = useMemo(() => {
     const icontemp = IconMap[name as keyof typeof IconMap];
     if (themeIcons.includes(name as LLMFactory)) {
       if (isDark) {
@@ -98,15 +112,6 @@ export const LlmIcon = ({
     return icontemp;
   }, [name, isDark]);
 
-  const svgIcons = [
-    LLMFactory.LocalAI,
-    // LLMFactory.VolcEngine,
-    // LLMFactory.MiniMax,
-    LLMFactory.Gemini,
-    LLMFactory.StepFun,
-    LLMFactory.MinerU,
-    // LLMFactory.DeerAPI,
-  ];
   if (svgIcons.includes(name as LLMFactory)) {
     return (
       <SvgIcon

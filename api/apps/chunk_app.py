@@ -61,7 +61,7 @@ async def list_chunk():
         }
         if "available_int" in req:
             query["available_int"] = int(req["available_int"])
-        sres = settings.retriever.search(query, search.index_name(tenant_id), kb_ids, highlight=["content_ltks"])
+        sres = await settings.retriever.search(query, search.index_name(tenant_id), kb_ids, highlight=["content_ltks"])
         res = {"total": sres.total, "chunks": [], "doc": doc.to_dict()}
         for id in sres.ids:
             d = {
@@ -223,7 +223,9 @@ async def rm():
             e, doc = DocumentService.get_by_id(req["doc_id"])
             if not e:
                 return get_data_error_result(message="Document not found!")
-            if not settings.docStoreConn.delete({"id": req["chunk_ids"]},
+            # Include doc_id in condition to properly scope the delete
+            condition = {"id": req["chunk_ids"], "doc_id": req["doc_id"]}
+            if not settings.docStoreConn.delete(condition,
                                                 search.index_name(DocumentService.get_tenant_id(req["doc_id"])),
                                                 doc.kb_id):
                 return get_data_error_result(message="Chunk deleting failure")
@@ -371,14 +373,21 @@ async def retrieval_test():
             _question += await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
-        ranks = settings.retriever.retrieval(_question, embd_mdl, tenant_ids, kb_ids, page, size,
-                               float(req.get("similarity_threshold", 0.0)),
-                               float(req.get("vector_similarity_weight", 0.3)),
-                               top,
-                               local_doc_ids, rerank_mdl=rerank_mdl,
-                                             highlight=req.get("highlight", False),
-                               rank_feature=labels
-                               )
+        ranks = await settings.retriever.retrieval(
+                        _question,
+                        embd_mdl,
+                        tenant_ids,
+                        kb_ids,
+                        page,
+                        size,
+                        float(req.get("similarity_threshold", 0.0)),
+                        float(req.get("vector_similarity_weight", 0.3)),
+                        doc_ids=local_doc_ids,
+                        top=top,
+                        rerank_mdl=rerank_mdl,
+                        rank_feature=labels
+                    )
+
         if use_kg:
             ck = await settings.kg_retriever.retrieval(_question,
                                                    tenant_ids,
@@ -406,7 +415,7 @@ async def retrieval_test():
 
 @manager.route('/knowledge_graph', methods=['GET'])  # noqa: F821
 @login_required
-def knowledge_graph():
+async def knowledge_graph():
     doc_id = request.args["doc_id"]
     tenant_id = DocumentService.get_tenant_id(doc_id)
     kb_ids = KnowledgebaseService.get_kb_ids(tenant_id)
@@ -414,7 +423,7 @@ def knowledge_graph():
         "doc_ids": [doc_id],
         "knowledge_graph_kwd": ["graph", "mind_map"]
     }
-    sres = settings.retriever.search(req, search.index_name(tenant_id), kb_ids)
+    sres = await settings.retriever.search(req, search.index_name(tenant_id), kb_ids)
     obj = {"graph": {}, "mind_map": {}}
     for id in sres.ids[:2]:
         ty = sres.field[id]["knowledge_graph_kwd"]
