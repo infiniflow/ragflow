@@ -4244,12 +4244,12 @@ name = "onnxruntime-gpu"
 version = "1.23.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "coloredlogs" },
-    { name = "flatbuffers" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "protobuf" },
-    { name = "sympy" },
+    { name = "coloredlogs", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "flatbuffers", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "numpy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "packaging", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "protobuf", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
+    { name = "sympy", marker = "(platform_machine != 'aarch64' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/6c/d9/b7140a4f1615195938c7e358c0804bb84271f0d6886b5cbf105c6cb58aae/onnxruntime_gpu-1.23.2-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:4f2d1f720685d729b5258ec1b36dee1de381b8898189908c98cbeecdb2f2b5c2", size = 300509596, upload-time = "2025-10-22T16:56:31.728Z" },
@@ -5478,7 +5478,7 @@ wheels = [
 
 [[package]]
 name = "pyobvector"
-version = "0.2.18"
+version = "0.2.22"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "aiomysql" },
@@ -5488,9 +5488,9 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "sqlglot" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/82/33/adf722744a88eb75b4422129cbc4fe9b05738064ee79762348e285d93520/pyobvector-0.2.18.tar.gz", hash = "sha256:58ca2765ab99de188e99c815aab914ab9efd003cfa1ce9c5f2e41d0e2b4878be", size = 43035, upload-time = "2025-11-05T06:18:36.747Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/30/b9/443d65757cdfb47d31ef4b9ed0609628ae468e52e57033051e1fad256c59/pyobvector-0.2.22.tar.gz", hash = "sha256:0bd4af46cfdfbc67e691d5b49f3b0662f702a7a42a7f7a240f1021af378e793c", size = 72706, upload-time = "2026-01-15T03:19:57.4Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5c/1f/73fa42b215722ec36172ac155626db5d2b95ea9f884cf9fb0624492e303b/pyobvector-0.2.18-py3-none-any.whl", hash = "sha256:93e34b7796e4cbc6ad139118d655eb127d1e7a0f5df76df66e25520533a15488", size = 58129, upload-time = "2025-11-05T06:18:35.326Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e0/88/1583888a4ce85202d93fa03f2817681637465668e8b260ef1b9d5a39c3ca/pyobvector-0.2.22-py3-none-any.whl", hash = "sha256:4a0f5c094af7ca8242fdf9e5111e75544de0a9615491e9ec2f9d218dc909b509", size = 60627, upload-time = "2026-01-15T03:19:55.918Z" },
 ]
 
 [[package]]
@@ -6259,7 +6259,7 @@ requires-dist = [
     { name = "pyclipper", specifier = ">=1.4.0,<2.0.0" },
     { name = "pycryptodomex", specifier = "==3.20.0" },
     { name = "pygithub", specifier = ">=2.8.1" },
-    { name = "pyobvector", specifier = "==0.2.18" },
+    { name = "pyobvector", specifier = "==0.2.22" },
     { name = "pyodbc", specifier = ">=5.2.0,<6.0.0" },
     { name = "pypandoc", specifier = ">=1.16" },
     { name = "pypdf", specifier = "==6.4.0" },
