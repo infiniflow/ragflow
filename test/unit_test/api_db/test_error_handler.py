@@ -178,13 +178,14 @@ class TestStandardErrorHandlerMigrationErrorHandling(unittest.TestCase):
         """Test that duplicate column errors log debug but return a falsy skip indicator."""
         exc = MockPostgresError("column already exists", "42701")
 
-        with patch('logging.debug') as mock_debug:
+        # Patch the module-level logger used by error_handlers, not the global logging module
+        with patch('api.db.error_handlers.logging.debug') as mock_debug:
             should_skip = StandardErrorHandler.handle_migration_error(
                 exc, "users", "email", "add_column", db_type="postgres", db_name="POSTGRES"
             )
 
             self.assertFalse(should_skip)
-            # Verify debug log was called
+            # Verify debug log was called via the module's logging reference
             mock_debug.assert_called_once()
             call_args = str(mock_debug.call_args)
             self.assertIn("skipped", call_args)
@@ -193,7 +194,7 @@ class TestStandardErrorHandlerMigrationErrorHandling(unittest.TestCase):
         """Test that type incompatibility is logged at warning level."""
         exc = MockPostgresError("cannot be cast to integer", "42804")
 
-        with patch('logging.warning') as mock_warning:
+        with patch('api.db.error_handlers.logging.warning') as mock_warning:
             should_skip = StandardErrorHandler.handle_migration_error(
                 exc, "users", "age", "alter_column_type", db_type="postgres", db_name="POSTGRES"
             )
@@ -208,7 +209,7 @@ class TestStandardErrorHandlerMigrationErrorHandling(unittest.TestCase):
         """Test that unknown errors are logged at critical level."""
         exc = Exception("Unknown database error occurred")
 
-        with patch('logging.critical') as mock_critical:
+        with patch('api.db.error_handlers.logging.critical') as mock_critical:
             should_skip = StandardErrorHandler.handle_migration_error(
                 exc, "users", "profile", "add_column", db_type="postgres", db_name="POSTGRES"
             )
@@ -223,7 +224,7 @@ class TestStandardErrorHandlerMigrationErrorHandling(unittest.TestCase):
         """Test handling of missing column error for MySQL."""
         exc = MockMySQLError(1054, "Unknown column 'user_id' in 'where clause'")
 
-        with patch('logging.warning') as mock_warning:
+        with patch('api.db.error_handlers.logging.warning') as mock_warning:
             should_skip = StandardErrorHandler.handle_migration_error(
                 exc, "profiles", "user_id", "rename_column", db_type="mysql", db_name="MYSQL"
             )
@@ -318,8 +319,8 @@ class TestStandardErrorHandlerEdgeCases(unittest.TestCase):
         exc = Exception("duplicate column 'id' cannot be cast to integer")
 
         category, is_expected, should_skip = StandardErrorHandler.categorize_error(exc)
-        # Will match the first pattern found (duplicate_column is checked first in iteration)
-        self.assertIn(category, ["duplicate_column", "incompatible_type"])
+        # Should match the first pattern found (duplicate_column is checked first)
+        self.assertEqual(category, "duplicate_column", "Should match the first pattern encountered: duplicate_column")
 
 
 if __name__ == "__main__":

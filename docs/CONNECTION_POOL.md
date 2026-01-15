@@ -24,9 +24,10 @@ A connection pool maintains a set of database connections that are reused across
 ├─────────────────────────────┤
 │  ✓ Active Connections (8)   │  In use by application
 │  ✓ Idle Connections (20)    │  Available for reuse
-│  ○ Waiting Requests (0)     │  Blocked waiting for connection
 └─────────────────────────────┘
 ```
+
+**Note**: Peewee does not track waiting requests; only active and idle connections are monitored.
 
 ## Pool Monitoring
 
@@ -68,7 +69,8 @@ The `get_pool_stats()` function returns:
 | `idle` | Available connections waiting for use |
 | `utilization_percent` | (active/max) * 100 |
 | `total_created` | Total connections created (active + idle) |
-| `waiting` | Requests waiting for a connection (Peewee doesn't track) |
+
+**Note**: Peewee does not track waiting requests, so no `waiting` field is provided by `get_pool_stats()`.
 
 ## Understanding Utilization
 
@@ -158,7 +160,7 @@ from api.db.connection import PoolDiagnostics, DB
 stats = PoolDiagnostics.get_pool_stats(DB)
 if stats['utilization_percent'] >= 99:
     print("⚠️ POOL EXHAUSTED - All connections in use!")
-    print(f"Active: {stats['active']}, Waiting: {stats['waiting']}")
+    print(f"Active: {stats['active']}/{stats['max']}, Idle: {stats['idle']}")
 ```
 
 **Solutions**:
@@ -262,18 +264,34 @@ The optimal pool size depends on:
 - **Query duration**: Longer queries = larger pool needed
 - **System memory**: Each connection uses RAM (typically 1-10MB)
 
-**Formula**:
+**Sizing Approach**:
+
+1. **Start with baseline**: 20-50 connections for most applications
+2. **Load test and monitor**: Measure actual connection utilization under realistic load
+3. **Apply adjustment rules**:
+   - Increase pool size if utilization consistently >80%
+   - Decrease pool size if utilization consistently <30%
+4. **Consider key factors**:
+   - Peak concurrent requests per second
+   - Average query duration
+   - Request arrival rate patterns
+   - Database server capacity
+
+**Example Derivation**:
 
 ```
-Pool Size = (Concurrent Users × Query Duration in Seconds) + Buffer
-```
+# Observed metrics during load testing:
+# - 50 requests/second peak load
+# - 200ms average query latency
+# - Baseline pool: 30 connections
 
-Example:
+stats = PoolDiagnostics.get_pool_stats(DB)
+print(f"Current utilization: {stats['utilization_percent']}%")
 
-```
-If you have 100 concurrent users, each query takes 1 second, 
-and 10-second queries are occasional:
-Pool Size = (100 × 1) + 10 = 110 connections
+# If utilization shows 85% during peak:
+# → Increase pool size to 40-45 connections
+# → Re-test and measure utilization
+# → Iterate until 70-80% utilization achieved
 ```
 
 ### Monitoring Pool Efficiency
@@ -284,18 +302,26 @@ Track how effectively the pool is being used:
 from api.db.connection import PoolDiagnostics, DB
 import time
 
-# Monitor efficiency over time
+# Monitor pool utilization over time
 for minute in range(60):
     stats = PoolDiagnostics.get_pool_stats(DB)
-    created = stats['total_created']
+    total_created = stats['total_created']
     max_size = stats['max']
+    active = stats['active']
     utilization = stats['utilization_percent']
     
-    # Efficiency: do we use the connections we created?
-    efficiency = (created / max_size) * 100 if max_size > 0 else 0
+    # Initialization percent: how much of the pool capacity was created
+    initialization_percent = (total_created / max_size) * 100 if max_size > 0 else 0
     
-    print(f"Minute {minute}: {utilization}% util, {efficiency}% efficiency")
+    # Active vs created: are we using what we created?
+    active_vs_created = (active / total_created) * 100 if total_created > 0 else 0
+    
+    print(f"Minute {minute}: {utilization}% util, {initialization_percent:.1f}% initialized, {active_vs_created:.1f}% of created in use")
     time.sleep(60)
+
+# Future metrics to consider:
+# - Connection reuse rate (requires 'reuse_count' stat)
+# - Idle vs active time ratio (requires 'idle_time' tracking)
 ```
 
 ### Connection Reuse
@@ -401,19 +427,59 @@ if after['active'] > baseline['active']:
 Look for database operations that don't close connections:
 
 ```python
-# Bad: Connection not closed
 from api.db.connection import DB
 
-def bad_operation():
-    cursor = DB.execute_sql("SELECT * FROM documents")
-    # Forgot to close cursor!
+# Bad Example 1: Starting a transaction without commit/rollback
+def bad_transaction():
+    DB.begin()  # Transaction started
+    Documents.create(name="test")
+    # Missing DB.commit() or DB.rollback()!
+    # Connection stays open with uncommitted transaction
 
-# Good: Connection properly closed
+# Bad Example 2: Manual connection without closing
+def bad_manual_connection():
+    conn = DB.connection()  # Acquires connection from pool
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM documents")
+    # Missing conn.close()!
+    # Connection leaked and never returned to pool
+
+# Bad Example 3: Exception mid-transaction without cleanup
+def bad_exception_handling():
+    DB.begin()
+    try:
+        Documents.create(name="test")
+        raise ValueError("Something went wrong")
+        DB.commit()
+    except ValueError:
+        pass  # Exception caught but DB.rollback() never called!
+        # Transaction left open, connection leaked
+
+# Good: Use DB.atomic() for automatic cleanup
 def good_operation():
-    with DB.atomic():  # Automatic cleanup
+    with DB.atomic():  # Automatic commit on success, rollback on exception
         results = Documents.select()
         # Process results
     # Connection automatically returned to pool
+
+# Good: Proper manual connection handling
+def good_manual_connection():
+    conn = DB.connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM documents")
+        # Process results
+    finally:
+        conn.close()  # Always close in finally block
+
+# Good: Proper exception handling around transactions
+def good_exception_handling():
+    try:
+        with DB.atomic():  # Handles commit/rollback automatically
+            Documents.create(name="test")
+            raise ValueError("Something went wrong")
+    except ValueError:
+        pass  # Transaction already rolled back by atomic() context manager
 ```
 
 ### 3. Fix and Verify

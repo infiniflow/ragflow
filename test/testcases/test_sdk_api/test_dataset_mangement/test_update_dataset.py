@@ -663,6 +663,8 @@ class TestDatasetUpdate:
             {
                 "raptor": {"use_raptor": False},
                 "graphrag": {"use_graphrag": False},
+                "image_context_size": 0,
+                "table_context_size": 0,
             },
         )
         dataset.update({"chunk_method": "qa", "parser_config": {}})
@@ -679,6 +681,8 @@ class TestDatasetUpdate:
             {
                 "raptor": {"use_raptor": False},
                 "graphrag": {"use_graphrag": False},
+                "image_context_size": 0,
+                "table_context_size": 0,
             },
         )
         dataset.update({"chunk_method": "qa"})
@@ -695,6 +699,8 @@ class TestDatasetUpdate:
             {
                 "raptor": {"use_raptor": False},
                 "graphrag": {"use_graphrag": False},
+                "image_context_size": 0,
+                "table_context_size": 0,
             },
         )
         dataset.update({"chunk_method": "qa", "parser_config": None})

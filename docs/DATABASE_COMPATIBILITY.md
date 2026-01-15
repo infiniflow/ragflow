@@ -21,7 +21,7 @@ RAGFlow is designed to support multiple database backends, with primary support 
 - Rich type casting and conversion functions
 - SERIAL/SEQUENCES for auto-increment
 - JSON operators: `->`, `->>`, `@>`, `?`, `||`
-- Case-sensitive collation by default
+- Collation behavior depends on database/cluster locale (e.g., `en_US.UTF-8`); see [PostgreSQL Collation Support](https://www.postgresql.org/docs/current/collation.html) for details on case-sensitivity configuration
 
 **Configuration**:
 
@@ -59,7 +59,7 @@ POSTGRES_DB=ragflow
 - JSON type with functions (JSON_EXTRACT, JSON_SET, etc.)
 - Native ENUM type
 - Compatible with MariaDB
-- VARCHAR length limit (65535 bytes for single column)
+- VARCHAR row size limit (MySQL's 65,535-byte limit applies to maximum row size - the sum of all variable-length columns plus row overhead, not to a single VARCHAR column; a single VARCHAR can approach this limit only if it's the sole variable-length column, accounting for character set encoding and row overhead)
 
 **Configuration**:
 
@@ -109,10 +109,12 @@ The `DatabaseCompat.CAPABILITIES` dictionary defines what each database supports
 
 | Type | MySQL | PostgreSQL |
 |------|-------|-----------|
-| **MAX_VARCHAR** | 65,535 bytes | Unlimited |
-| **MAX_TEXT** | 4 GB | Unlimited |
-| **MAX_JSON** | Limited | Unlimited |
+| **MAX_VARCHAR** | 65,535 bytes | ~1 GB (practical limit, subject to TOAST/internal storage) |
+| **MAX_TEXT** | 64 KB (TEXT), 16 MB (MEDIUMTEXT), 4 GB (LONGTEXT) | ~1 GB (practical limit) |
+| **MAX_JSON** | Limited | ~1 GB (practical limit) |
 | **Array elements** | N/A | Unlimited |
+
+**Note**: The 4 GB limit applies only to LONGTEXT. Regular TEXT is limited to 64 KB.
 
 ## Field Compatibility
 
@@ -178,7 +180,6 @@ DatabaseCompat.TYPE_EQUIVALENTS = {
     }
 }
 
-### Getting Equivalent Types
 
 ```python
 from api.db.migrations import DatabaseCompat
@@ -262,8 +263,8 @@ class Event(DataBaseModel):
 
 **Compatibility**:
 
-- MySQL: `TIMESTAMP` (UTC only)
-- PostgreSQL: `TIMESTAMP WITH TIME ZONE` (full TZ support)
+- MySQL: `TIMESTAMP` (stored in UTC, converted to/from the connection/session `time_zone` on read/write — behavior differs from PostgreSQL's `TIMESTAMP WITH TIME ZONE` which stores the timezone explicitly)
+- PostgreSQL: `TIMESTAMP WITH TIME ZONE` (full TZ support with explicit timezone storage)
 
 ### SerializedField
 
@@ -556,7 +557,7 @@ docs = Document.select().where(
 - Use JSON instead of JSONB
 - Store arrays as comma-separated text
 - Use VARCHAR with very large limits (TEXT is fine)
-- Assume DDL rollback on error (it works, but monitor it)
+- Rely on exception handlers alone for DDL errors (always test schema migrations thoroughly)
 
 ### MySQL Best Practices
 
@@ -574,7 +575,7 @@ docs = Document.select().where(
 - Use VARCHAR > 1000 without good reason
 - Assume type conversion works automatically
 - Forget MySQL DDL is not transactional
-- Store arrays in JSON-like structures
+- MySQL has no native array type — avoid storing lists as comma-separated strings; use JSON columns to represent arrays/structured list data
 
 ## Configuration
 

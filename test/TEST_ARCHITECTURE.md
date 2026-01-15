@@ -56,6 +56,7 @@ test/testcases/
 test/
 ├── integration/                 (~12 files)
 │   ├── conftest.py             # Shared fixtures, authentication
+│   ├── helpers.py              # Test utilities
 │   ├── test_dataset_lifecycle.py
 │   ├── test_chat_workflow.py
 │   ├── test_document_processing.py
@@ -76,7 +77,7 @@ test/
 │   │   ├── test_document_service.py
 │   │   └── ...
 │   └── utils/
-└── testcases/                  (kept for reference/backward compat)
+└── testcases/ (legacy - located at test/testcases/)
     ├── libs/
     ├── utils/
     ├── conftest.py             (used by integration/ and api_contract/)
@@ -84,7 +85,7 @@ test/
 ```
 
 **Benefits:**
-1. **40% fewer test files**: ~15 core files instead of 40+
+1. **~62.5% fewer test files**: ~15 core files instead of 40+
 2. **Service-centric**: Tests validate business logic, not HTTP routes
 3. **Resilient**: Refactoring APIs doesn't require test changes
 4. **Clear intent**: Each integration test documents a user workflow
@@ -176,6 +177,7 @@ class TestDatasetApiContract:
 
 1. **Create integration test structure:**
    - `test/integration/conftest.py` - Shared fixtures
+   - `test/integration/helpers.py` - Test utilities to avoid circular dependencies
    - `test/integration/test_dataset_lifecycle.py` - First workflow
    - `test/integration/test_chat_workflow.py` - Second workflow
 
@@ -207,6 +209,29 @@ As you modularize services (per [AGENTS.md](../AGENTS.md#2-directory-structure))
 - Create `test/unit_test/services/` with per-service tests
 - Move business logic validation from integration tests to unit tests where appropriate
 - Keep integration tests focused on workflows
+
+### Phase 3.5: Migrate Fixture Infrastructure (Week 3.5)
+
+Before archiving `testcases/`, migrate shared fixture infrastructure to prevent circular dependencies:
+
+1. **Copy fixture definitions** from `test/testcases/conftest.py` to new locations:
+   - `test/integration/conftest.py` - fixtures like `api_client`, `token`, `cleanup`
+   - `test/api_contract/conftest.py` - contract-specific fixtures
+
+2. **Update imports** in all `test/integration/` and `test/api_contract/` tests:
+   - Change `from test.testcases.conftest import ...` to local conftest imports
+   - Ensure no remaining references to `testcases/conftest.py`
+
+3. **Validate independence** - run tests without `testcases/`:
+   ```bash
+   # Temporarily rename testcases to verify independence
+   mv test/testcases test/testcases_backup
+   pytest test/integration/ -v
+   pytest test/api_contract/ -v
+   mv test/testcases_backup test/testcases
+   ```
+
+4. **Fix any failures** before proceeding to Phase 4
 
 ### Phase 4: Archive Original Tests (Week 4)
 
@@ -339,7 +364,7 @@ What is a complete user workflow? Example:
 """My workflow: step1 → step2 → step3."""
 
 import pytest
-from testcases.test_http_api.common import create_dataset  # Use existing helpers
+from test.integration.helpers import create_dataset, upload_document, parse_documents
 
 @pytest.mark.usefixtures("clear_datasets")  # Setup/teardown
 class TestMyWorkflow:
@@ -379,12 +404,12 @@ def clear_datasets():
     # Cleanup happens here
 ```
 
-### 4. Reuse existing helpers
+### 4. Reuse stable integration helpers
 
-From `test/testcases/test_http_api/common.py`:
+From `test/integration/helpers.py` (stable module for integration tests):
 
 ```python
-from testcases.test_http_api.common import (
+from test.integration.helpers import (
     create_dataset,
     upload_document,
     parse_documents,
@@ -395,13 +420,15 @@ dataset = create_dataset(api_client, {"name": "my_dataset"})
 upload_document(api_client, dataset["id"], file_path)
 ```
 
+**Note:** These helpers are maintained in `test/integration/helpers.py` to avoid circular dependencies when archiving legacy test packages. They are re-implementations of the helpers from `testcases/test_http_api/common.py`, extracted during Phase 1 of the migration.
+
 ---
 
 ## References
 
 - [AGENTS.md](../AGENTS.md) - Project architecture and modularization
 - [CLAUDE.md](../CLAUDE.md) - Development guidelines
-- [PR_STRATEGY.md](./archive/PR_STRATEGY.md) - Why this refactoring matters (PR #6)
+- [PR_STRATEGY.md](./testcases/archive/PR_STRATEGY.md) - Why this refactoring matters (PR #6) *(available after Phase 4 archival)*
 
 ---
 
@@ -436,17 +463,20 @@ A: 1. Identify the workflow it tests
 ## Success Criteria
 
 ✅ **Phase 1 (Initial Setup):**
-- `test/integration/` has at least 2 workflows
+- Create `test/integration/helpers.py` with stable implementations of `create_dataset`, `upload_document`, `parse_documents` ported from `testcases/test_http_api/common.py`
+- `test/integration/` has at least 2 workflows using new helpers module
 - `test/api_contract/` validates critical endpoints
 - Both run successfully in CI/CD
 
 ✅ **Phase 2 (Migration):**
+- Update all integration tests to import helpers from `test/integration/helpers.py` instead of `testcases/test_http_api/common.py`
 - All critical paths from `testcases/test_http_api/` have integration test equivalents
 - Coverage metrics match or exceed original tests
 - Original tests still pass (backward compat)
 
 ✅ **Phase 3 (Consolidation):**
-- Original test files archived
+- Replace all imports in remaining code from `testcases.test_http_api.common` to `integration.helpers` where applicable
+- Original test files and `testcases/test_http_api/common.py` archived (legacy package no longer imported by new code)
 - CI/CD only runs new test suite
 - Test execution time is equivalent or better
 - Team consensus that new tests are easier to maintain

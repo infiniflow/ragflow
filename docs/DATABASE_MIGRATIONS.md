@@ -11,7 +11,7 @@ RAGFlow uses an automated migration system that tracks database schema changes a
 - **Duplicate Prevention**: Migrations are only applied once per database instance
 - **Execution Tracking**: All migrations are recorded with timestamp, status, and duration
 - **Error Handling**: Expected errors (like duplicate columns) are distinguished from critical failures
-- **Atomic Operations**: Migrations are wrapped in transactions for data consistency
+- **Atomic Operations**: Migrations are wrapped in transactions for data consistency (transactional DDL on PostgreSQL; best-effort atomicity on MySQL due to implicit commits)
 - **Cross-Database Support**: Same migrations work on MySQL and PostgreSQL
 
 ## Understanding Migrations
@@ -21,6 +21,7 @@ RAGFlow uses an automated migration system that tracks database schema changes a
 Each database maintains a `migration_history` table that tracks all applied migrations:
 
 ```sql
+-- PostgreSQL syntax
 CREATE TABLE migration_history (
     id SERIAL PRIMARY KEY,
     migration_name VARCHAR(255) UNIQUE NOT NULL,
@@ -30,7 +31,20 @@ CREATE TABLE migration_history (
     duration_ms INTEGER,
     db_type VARCHAR(16)  -- 'mysql' | 'postgres'
 );
+
+-- MySQL syntax
+CREATE TABLE migration_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    migration_name VARCHAR(255) UNIQUE NOT NULL,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(16) DEFAULT 'success',  -- 'success' | 'failed' | 'skipped'
+    error_message TEXT,
+    duration_ms INTEGER,
+    db_type VARCHAR(16)  -- 'mysql' | 'postgres'
+);
 ```
+
+**Note**: PostgreSQL uses `SERIAL` for auto-incrementing primary keys, while MySQL uses `INT AUTO_INCREMENT`.
 
 ### Migration Lifecycle
 
@@ -40,7 +54,10 @@ When migrations run:
 2. **Check**: For each migration, check if it has already been successfully applied
 3. **Execute**: If not yet applied, execute the migration operation
 4. **Record**: Log the result (success, failed, or skipped) with metadata
-5. **Atomicity**: All migrations in a run are wrapped in a single transaction
+5. **Atomicity**: 
+   - **PostgreSQL**: Full transactional atomicity — all migrations in a run are wrapped in a single transaction and can be rolled back as a unit
+   - **MySQL**: No transactional DDL support — each DDL statement (ALTER TABLE, CREATE INDEX, etc.) causes an implicit commit, so rollbacks cannot undo DDL changes. Migrations are not fully atomic on MySQL.
+   - **Recommendation for MySQL users**: Test migrations on a backup first, use smaller reversible steps, or maintain database backups before running migrations
 
 ### Migration Status Values
 
@@ -214,21 +231,37 @@ recent = MigrationHistory.select().order_by(
 ).limit(10)
 ```
 
-1. **Manual remediation**: If needed, manually fix the schema and mark the migration as skipped:
+5. **Manual remediation**: If needed, manually fix the schema and mark the migration as skipped:
 
 ```python
-MigrationTracker.record_migration(
-    "problematic_migration", 
-    "skipped",
-    error="Manually resolved schema conflict"
+from datetime import datetime
+from api.db.migrations import MigrationHistory
+from common import settings
+
+# After manually fixing the schema issue (e.g., running ALTER TABLE directly)
+# Record the migration as completed to prevent re-execution
+MigrationHistory.create(
+    migration_name="20250115_problematic_migration",  # Use the actual migration name
+    status="success",  # or "skipped" if you chose to skip it
+    duration_ms=0,
+    db_type=settings.DATABASE_TYPE.lower(),
+    applied_at=datetime.now(),
+    error_message="Manually remediated after direct schema fix"
 )
 ```
+
+This marks the migration as completed in the history, preventing future attempts to re-run it.
+
 
 ## Database Compatibility
 
 ### MySQL-Specific Considerations
 
-- VARCHAR max length is 65535 bytes (use TEXT for larger content)
+- VARCHAR max length: MySQL's 65,535 byte limit applies to the **entire row** (minus row overhead), not a single VARCHAR column. A single VARCHAR can theoretically hold up to 65,535 characters, but is constrained by:
+  - Total row size limit (all columns combined)
+  - Character set byte usage (e.g., `utf8mb4` uses up to 4 bytes per character)
+  - Length prefix overhead (1-2 bytes depending on max length)
+  - **Recommendation**: Use `TEXT` for very large column data or when content may exceed row limits
 - JSON type is text-based, not optimized like PostgreSQL's JSONB
 - DDL operations are not transactional
 - Type casting is more limited
@@ -275,7 +308,7 @@ mysql_type = DatabaseCompat.get_equivalent_type(
 ### ❌ Don't
 
 - Reuse migration names (each migration must be unique)
-- Perform data transformations in migrations (use separate scripts)
+- Perform complex data transformations in migrations (use separate scripts for long-running or complex data operations)
 - Lock large tables for extended periods
 - Omit error handling
 - Skip database compatibility testing
@@ -333,7 +366,7 @@ MigrationHistory.create(
 )
 ```
 
-1. **Future feature**: Full rollback support is planned for a future release
+4. **Future feature**: Full rollback support is planned for a future release
 
 ## Advanced Topics
 
@@ -351,8 +384,9 @@ def migrate_complex_change(migrator):
     # Phase 1: Add new column
     alter_db_add_column(migrator, "documents", "status_v2", CharField())
     
-    # Phase 2: Migrate data (if needed)
-    # Note: Data transformation should be done separately or via script
+    # Phase 2: Simple data migration (if needed)
+    # Note: Only trivial, atomic schema-aligned data tweaks are allowed.
+    # Complex or long-running transformations must use separate scripts.
     
     # Phase 3: Drop old column (if needed)
     # This would be a separate migration

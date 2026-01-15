@@ -331,7 +331,7 @@ class TestIntegrationScenarios(unittest.TestCase):
     def test_migration_field_compatibility_check(self):
         """Test checking field compatibility before migration"""
         # Simulate checking if a new field is compatible with current DB
-        field = MockJSONField()
+        field = JSONField()
         current_db = "postgres"
 
         is_compatible, warning = DatabaseCompat.validate_field_for_db(field, current_db)
@@ -374,23 +374,8 @@ class TestIntegrationScenarios(unittest.TestCase):
         self.assertEqual(postgres_text, "LONGTEXT")
 
 
-# Mark tests by priority
-class TestPhase4P1(TestDatabaseCapabilities, TestTypeEquivalence):
-    """Priority 1 tests: Core functionality"""
-
-    pass
-
-
-class TestPhase4P2(TestFieldValidation, TestCapabilityDecorators):
-    """Priority 2 tests: Validation and decorators"""
-
-    pass
-
-
-class TestPhase4P3(TestDatabaseModelValidation, TestIntegrationScenarios):
-    """Priority 3 tests: Integration and edge cases"""
-
-    pass
+# Test priority markers can be added using pytest.mark.priority1, etc.
+# instead of creating wrapper classes that cause duplicate test discovery
 
 
 if __name__ == "__main__":

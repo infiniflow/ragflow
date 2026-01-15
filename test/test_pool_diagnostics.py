@@ -107,11 +107,10 @@ class TestPoolDiagnostics(unittest.TestCase):
 
     def test_get_pool_stats_handles_missing_attributes(self):
         """Test that get_pool_stats handles databases without expected attributes"""
-        mock_db_minimal = MagicMock()
-        # Remove all pool-related attributes
-        del mock_db_minimal._in_use
-        del mock_db_minimal._connections
-        del mock_db_minimal.max_connections
+        # Use spec=[] to create a mock that raises AttributeError for undefined attributes
+        mock_db_minimal = MagicMock(spec=[])
+        # MagicMock with spec=[] won't auto-create _in_use, _connections, max_connections
+        # so accessing them will raise AttributeError as expected
 
         stats = PoolDiagnostics.get_pool_stats(mock_db_minimal)
 
@@ -139,7 +138,7 @@ class TestPoolDiagnostics(unittest.TestCase):
     @patch('logging.critical')
     def test_log_pool_health_warning_threshold(self, mock_critical, mock_warning, mock_debug):
         """Test logging when utilization exceeds warning threshold (80%)"""
-        # 85% utilization
+        # 90% utilization
         self.mock_db._in_use = {f"conn_{i}": MagicMock() for i in range(9)}
 
         PoolDiagnostics.log_pool_health(self.mock_db)

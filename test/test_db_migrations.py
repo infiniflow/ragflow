@@ -226,28 +226,28 @@ class TestMigrationIntegration(unittest.TestCase):
         MigrationHistory.delete().execute()
 
     @patch("api.db.migrations.DatabaseMigrator")
-    def test_migrate_db_prevents_duplicate_runs(self, mock_migrator):
+    @patch("api.db.migrations.alter_db_add_column")
+    def test_migrate_db_prevents_duplicate_runs(self, mock_add_column, mock_migrator):
         """Test that migrate_db doesn't run migrations twice"""
         # Mock the migrator
         mock_migrator_instance = MagicMock()
         mock_migrator.__getitem__.return_value.value.return_value = mock_migrator_instance
 
         # First run - migrations should be executed
-        with patch("api.db.migrations.alter_db_add_column") as mock_add_column:
-            migrate_db()
+        migrate_db()
 
-            # Count how many times migrations were called
-            first_run_call_count = mock_add_column.call_count
+        # Record call count after first run
+        first_run_call_count = mock_add_column.call_count
 
         # Second run - migrations should be skipped
-        with patch("api.db.migrations.alter_db_add_column") as mock_add_column:
-            migrate_db()
+        migrate_db()
 
-            # Should not call migrations again (or minimal calls for new migrations)
-            second_run_call_count = mock_add_column.call_count
+        # Record call count after second run
+        second_run_call_count = mock_add_column.call_count
 
-        # Second run should have fewer calls (ideally 0 if all were successful)
-        self.assertLessEqual(second_run_call_count, first_run_call_count)
+        # Second run should not increase call count (no new migrations executed)
+        self.assertEqual(first_run_call_count, second_run_call_count, 
+                        "Call count should not increase on second run since migrations are idempotent")
 
     def test_migration_timing(self):
         """Test that migration duration is recorded"""
@@ -262,12 +262,16 @@ class TestMigrationIntegration(unittest.TestCase):
 
     def test_migration_db_type_tracking(self):
         """Test that database type is tracked"""
+        # Get expected DB type dynamically
+        from common import settings
+        expected_db_type = settings.DATABASE_TYPE.lower() if hasattr(settings, 'DATABASE_TYPE') else "postgres"
+        
         MigrationTracker.record_migration("db_type_test", "success")
 
         result = MigrationHistory.select().where(MigrationHistory.migration_name == "db_type_test").first()
 
-        # Should match current database type (postgres from mock)
-        self.assertEqual(result.db_type, "postgres")
+        # Should match current database type
+        self.assertEqual(result.db_type, expected_db_type)
 
 
 class TestMigrationErrorHandling(unittest.TestCase):
@@ -306,18 +310,15 @@ class TestMigrationErrorHandling(unittest.TestCase):
 
     def test_has_migration_run_handles_missing_table(self):
         """Test that has_migration_run handles missing table gracefully"""
-        # Temporarily drop the table
-        try:
-            MigrationHistory.drop_table(safe=True)
-        except Exception:
-            pass
-
-        # Should not raise exception, should return False
-        result = MigrationTracker.has_migration_run("test_migration")
-        self.assertFalse(result)
-
-        # Recreate table for other tests
-        MigrationTracker.init_tracking_table()
+        # Mock the database layer to simulate missing table error
+        with patch.object(MigrationHistory, 'table_exists', return_value=False):
+            with patch.object(MigrationHistory, 'select') as mock_select:
+                # Simulate the same error as a missing table
+                mock_select.side_effect = Exception("Table 'migration_history' doesn't exist")
+                
+                # Should not raise exception, should return False
+                result = MigrationTracker.has_migration_run("test_migration")
+                self.assertFalse(result)
 
 
 @pytest.mark.p1
@@ -472,10 +473,7 @@ class TestTransactionSafety(unittest.TestCase):
         with patch("api.db.migrations.alter_db_add_column"):
             with patch("api.db.migrations.alter_db_column_type"):
                 with patch("api.db.migrations.alter_db_rename_column"):
-                    try:
-                        migrate_db()
-                    except Exception:
-                        pass  # Ignore any errors from mocked setup
+                    migrate_db()
 
         # Verify atomic was called to start transaction
         mock_db.atomic.assert_called()
@@ -525,29 +523,33 @@ class TestTransactionSafety(unittest.TestCase):
         with patch("api.db.migrations.alter_db_add_column"):
             with patch("api.db.migrations.alter_db_column_type"):
                 with patch("api.db.migrations.alter_db_rename_column"):
-                    try:
-                        migrate_db()
-                    except Exception:
-                        pass
+                    migrate_db()
 
         # Verify begin and commit were logged
         begin_calls = [call for call in mock_logger.log_transaction_state.call_args_list if "begin" in str(call)]
-        _commit_calls = [call for call in mock_logger.log_transaction_state.call_args_list if "commit" in str(call)]
+        commit_calls = [call for call in mock_logger.log_transaction_state.call_args_list if "commit" in str(call)]
 
         # Should have at least one begin call
         self.assertGreater(len(begin_calls), 0, "Transaction begin should be logged")
+        # Should have at least one commit call
+        self.assertGreater(len(commit_calls), 0, "Transaction commit should be logged")
+        # Commit calls should match or be close to begin calls
+        self.assertGreaterEqual(len(commit_calls), len(begin_calls) - 1, "Commit count should be at least as many as begin (minus potential rollbacks)")
 
-    def test_failed_migration_recorded_before_rollback(self):
-        """Test that failed migration is recorded in tracking table before rollback"""
+    def test_record_failed_migration(self):
+        """Test that MigrationTracker.record_migration correctly records a failed migration status.
+        
+        Note: This test verifies record_migration behavior only. It does not exercise
+        the transactional rollback path. For full rollback testing, see integration tests.
+        """
         MigrationTracker.init_tracking_table()
 
-        # Manually simulate what happens in migrate_db when a migration fails
         migration_name = "test_failing_migration"
 
-        # Record the failure (this happens before rollback)
+        # Record a failed migration status
         MigrationTracker.record_migration(migration_name, "failed", error="Test error", duration_ms=100)
 
-        # Verify it was recorded
+        # Verify it was recorded correctly
         result = MigrationHistory.select().where(MigrationHistory.migration_name == migration_name).first()
 
         self.assertIsNotNone(result)
@@ -583,11 +585,26 @@ class TestTransactionSafetyP1:
 
     def test_atomic_all_or_nothing(self):
         """Test that migrations are truly atomic (all-or-nothing)"""
-        # This is a conceptual test - in practice, the atomic() context manager
-        # handles this. Here we verify the structure is in place.
-
-        # Verify tracking table exists (prerequisite for atomic migrations)
-        assert MigrationHistory.table_exists()
+        import pytest
+        
+        # Create a test migration that fails partway through
+        def failing_migration(migrator):
+            # This should succeed
+            MigrationHistory.create(migration_name="test_atomic_fail", status="failed")
+            # This should cause rollback
+            raise Exception("Simulated migration failure")
+        
+        # Verify no migration record exists before
+        initial_count = MigrationHistory.select().where(MigrationHistory.migration_name == "test_atomic_fail").count()
+        
+        # Run migration in atomic context and expect failure
+        with pytest.raises(Exception):
+            with DB.atomic():
+                failing_migration(None)
+        
+        # Verify rollback - no migration record should exist
+        final_count = MigrationHistory.select().where(MigrationHistory.migration_name == "test_atomic_fail").count()
+        assert initial_count == final_count, "Migration should have been rolled back completely"
 
     def test_transaction_logger_handles_both_databases(self):
         """Test that TransactionLogger works with both MySQL and PostgreSQL"""

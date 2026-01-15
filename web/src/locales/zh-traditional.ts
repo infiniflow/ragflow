@@ -202,6 +202,9 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
+      settings: '設置',
+      autoMetadataTip:
+        '自動生成元數據。適用於解析新文件。現有文件需要重新解析才能更新（ chunk 將保留）。請注意，配置中指定的索引模型將消耗額外的 Token。',
       titleDescription: '在這裡更新您的知識庫詳細信息，尤其是切片方法。',
       imageTableContextWindow: '影像與表格上下文視窗',
       imageTableContextWindowTip:
@@ -218,7 +221,7 @@ export default {
       chunkTokenNumber: '建議文本塊大小',
       chunkTokenNumberMessage: '塊Token數是必填項',
       embeddingModelTip:
-        '知識庫的預設嵌入模型。一旦知識庫已有資料區塊，則無法更改。若要切換到不同的預設嵌入模型，必須刪除知識庫中所有現有的資料區塊。',
+        '知識庫採用的默認嵌入模型。一旦知識庫內已經產生了文本塊，更換嵌入模型時，系統將隨機抽取若干 chunk 進行兼容性校驗，使用新嵌入模型重新編碼並計算新舊向量的餘弦相似度，樣本平均相似度需 ≥ 0.9 方可切換。否則，必須刪除知識庫內的所有文本塊後才能更改。',
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
       chunkTokenNumberTip:
         '建議的生成文本塊的 token 數閾值。如果切分得到的小文本段 token 數達不到這一閾值，系統就會不斷與之後的文本段合併，直至再合併下一個文本段會超過這一閾值為止，此時產生一個最終文本塊。如果系統在切分文本段時始終沒有遇到文本分段標識符，即便文本段 token 數已經超過這一閾值，系統也不會生成新文本塊。',
@@ -367,6 +370,18 @@ export default {
  `,
       tags: '標籤',
       addTag: '增加標籤',
+      paddleocrOptions: 'PaddleOCR 選項',
+      paddleocrApiUrl: 'PaddleOCR API URL',
+      paddleocrApiUrlTip: 'PaddleOCR 服務的 API 端點 URL',
+      paddleocrApiUrlPlaceholder:
+        '例如：https://paddleocr-server.com/layout-parsing',
+      paddleocrAccessToken: 'AI Studio 訪問令牌',
+      paddleocrAccessTokenTip: 'PaddleOCR API 的訪問令牌（可選）',
+      paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可選）',
+      paddleocrAlgorithm: 'PaddleOCR 算法',
+      paddleocrAlgorithmTip: '用於 PaddleOCR 解析的算法',
+      paddleocrSelectAlgorithm: '選擇算法',
+      paddleocrModelNamePlaceholder: '例如：paddleocr-環境-1',
       useGraphRag: '提取知識圖譜',
       useGraphRagTip:
         '基於知識庫內所有切好的文本塊構建知識圖譜，用以提升多跳和複雜問題回答的正確率。請注意：構建知識圖譜將消耗大量 token 和時間。詳見 https://ragflow.io/docs/dev/construct_knowledge_graph。',
@@ -644,6 +659,17 @@ export default {
       modelNameMessage: '請輸入模型名稱！',
       modelTypeMessage: '請輸入模型類型！',
       baseUrlNameMessage: '請輸入基礎 Url！',
+      paddleocr: {
+        apiUrl: 'PaddleOCR API URL',
+        apiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
+        accessToken: 'AI Studio 存取權杖',
+        accessTokenPlaceholder: '您的 AI Studio 權杖（選填）',
+        algorithm: 'PaddleOCR 演算法',
+        selectAlgorithm: '選擇演算法',
+        modelNamePlaceholder: '例如：paddleocr-from-env-1',
+        modelNameRequired: '模型名稱為必填項目',
+        apiUrlRequired: 'PaddleOCR API URL 為必填項目',
+      },
       ollamaLink: '如何集成 {{name}}',
       FishAudioLink: '如何使用Fish Audio',
       TencentCloudLink: '如何使用騰訊雲語音識別',
