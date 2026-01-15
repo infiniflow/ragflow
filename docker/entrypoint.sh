@@ -150,26 +150,46 @@ done
 
 # -----------------------------------------------------------------------------
 # Replace env variables in the service_conf.yaml file
+# This uses a safe substitution method that properly handles special characters
+# like $ in passwords without interpreting them as shell variables.
 # -----------------------------------------------------------------------------
 CONF_DIR="/ragflow/conf"
 TEMPLATE_FILE="${CONF_DIR}/service_conf.yaml.template"
 CONF_FILE="${CONF_DIR}/service_conf.yaml"
 
 rm -f "${CONF_FILE}"
-DEF_ENV_VALUE_PATTERN="\$\{([^:]+):-([^}]+)\}"
+
+# Function to safely substitute a single ${VAR:-default} pattern in a line
+# without using eval, properly handling special characters in values
+substitute_var() {
+    local line="$1"
+    local varname="$2"
+    local default="$3"
+    local pattern="\${${varname}:-${default}}"
+    local value
+
+    # Get the value from environment variable or use default
+    if [ -n "${!varname+x}" ] && [ -n "${!varname}" ]; then
+        value="${!varname}"
+    else
+        value="$default"
+    fi
+
+    # Use printf with %s to safely handle special characters in the value
+    # The pattern is matched literally using bash string replacement
+    printf '%s\n' "${line/\$\{${varname}:-${default}\}/${value}}"
+}
+
+DEF_ENV_VALUE_PATTERN='\$\{([^:]+):-([^}]+)\}'
 while IFS= read -r line || [[ -n "$line" ]]; do
-    if [[ "$line" =~ DEF_ENV_VALUE_PATTERN ]]; then
+    result="$line"
+    # Process all ${VAR:-default} patterns in the line
+    while [[ "$result" =~ $DEF_ENV_VALUE_PATTERN ]]; do
         varname="${BASH_REMATCH[1]}"
         default="${BASH_REMATCH[2]}"
-
-        if [ -n "${!varname}" ]; then
-            eval "echo \"$line"\" >> "${CONF_FILE}"
-        else
-            echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" >> "${CONF_FILE}"
-        fi
-    else
-        eval "echo \"$line\"" >> "${CONF_FILE}"
-    fi
+        result="$(substitute_var "$result" "$varname" "$default")"
+    done
+    printf '%s\n' "$result" >> "${CONF_FILE}"
 done < "${TEMPLATE_FILE}"
 
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
