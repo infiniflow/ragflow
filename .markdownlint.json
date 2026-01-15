@@ -1,0 +1,8 @@
+{
+  "extends": "markdownlint/style/relaxed",
+  "fenced-code-language": false,
+  "table-column-style": false,
+  "blanks-around-headings": false,
+  "blanks-around-lists": false,
+  "no-bare-urls": false
+}

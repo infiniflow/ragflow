@@ -199,3 +199,15 @@ backup
 
 
 .hypothesis
+docs/archive/AUDIT_REPORT_2026_01_10.md
+docs/archive/CLEAN_BILL_OF_HEALTH.md
+docs/archive/COMPLETION_SUMMARY.md
+docs/archive/DATABASE_IMPROVEMENTS_PLAN.md
+docs/archive/FILE2DOCUMENT_INTEGRITY_CHANGES.md
+docs/archive/PR_strategy_notes.md
+docs/archive/PR_STRATEGY.md
+docs/archive/TEST_REFACTORING_PLAN.md
+docs/archive/UNRAID_DEPLOYMENT_CHECKLIST.md
+.env.prod
+.markdownlint.json
+PRE_CODE_RABBIT_AUDIT.md

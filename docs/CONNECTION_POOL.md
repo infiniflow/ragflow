@@ -241,62 +241,17 @@ peewee.OperationalError: (2003, "Can't connect to MySQL server on 'localhost'")
 **Root Cause Analysis**:
 
 ```python
-# Monitor connection patterns
-from api.db.connection import PoolDiagnostics, DB
-import time
+from api.db.migrations import MigrationHistory
 
-# Baseline measurement
-baseline = PoolDiagnostics.get_pool_stats(DB)
-print(f"Baseline active: {baseline['active']}")
+# Check if migrations are hung
+hung = MigrationHistory.select().where(
+    MigrationHistory.status == "failed"
+)
 
-time.sleep(30)  # Wait during problematic period
-
-current = PoolDiagnostics.get_pool_stats(DB)
-print(f"Current active: {current['active']}")
-if current['active'] > baseline['active'] + 5:
-    print("⚠️ Rising active connections detected!")
-```
-
-**Check for long-running/blocking queries**:
-
-```sql
--- MySQL: Check active connections and queries
-SHOW PROCESSLIST;
-SELECT * FROM information_schema.processlist 
-WHERE command != 'Sleep' AND time > 30;
-
--- PostgreSQL: Check active queries and blocking
-SELECT pid, usename, query, state, query_start
-FROM pg_stat_activity 
-WHERE state = 'active' AND query_start < NOW() - INTERVAL '30 seconds';
-
--- Check for blocking queries (PostgreSQL)
-SELECT 
-    blocked_locks.pid AS blocked_pid,
-    blocking_locks.pid AS blocking_pid,
-    blocked_activity.query AS blocked_query,
-    blocking_activity.query AS blocking_query,
-    blocked_locks.locktype,
-    blocked_locks.relation::regclass AS locked_relation
-FROM pg_catalog.pg_locks blocked_locks
-JOIN pg_catalog.pg_stat_activity blocked_activity 
-    ON blocked_activity.pid = blocked_locks.pid
-JOIN pg_catalog.pg_locks blocking_locks 
-    ON blocking_locks.locktype = blocked_locks.locktype
-    AND blocking_locks.database IS NOT DISTINCT FROM blocked_locks.database
-    AND blocking_locks.relation IS NOT DISTINCT FROM blocked_locks.relation
-    AND blocking_locks.page IS NOT DISTINCT FROM blocked_locks.page
-    AND blocking_locks.tuple IS NOT DISTINCT FROM blocked_locks.tuple
-    AND blocking_locks.virtualxid IS NOT DISTINCT FROM blocked_locks.virtualxid
-    AND blocking_locks.transactionid IS NOT DISTINCT FROM blocked_locks.transactionid
-    AND blocking_locks.classid IS NOT DISTINCT FROM blocked_locks.classid
-    AND blocking_locks.objid IS NOT DISTINCT FROM blocked_locks.objid
-    AND blocking_locks.objsubid IS NOT DISTINCT FROM blocked_locks.objsubid
-    AND blocking_locks.pid != blocked_locks.pid
-JOIN pg_catalog.pg_stat_activity blocking_activity 
-    ON blocking_activity.pid = blocking_locks.pid
-WHERE blocked_locks.granted = false
-  AND blocking_locks.granted = true;
+# Check connection creation rate
+recent_history = MigrationHistory.select().order_by(
+    MigrationHistory.applied_at.desc()
+).limit(100)
 ```
 
 ## Performance Tuning

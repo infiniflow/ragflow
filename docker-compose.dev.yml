@@ -1,0 +1,40 @@
+services:
+  ragflow-dev:
+    image: infiniflow/ragflow:nightly
+    container_name: ragflow-dev
+    platform: linux/amd64
+    env_file: .env.dev
+    ports:
+      - "${SVR_HTTP_PORT:-9380}:9380"
+      # Expose Web UI via nginx when testing end-to-end
+      - "${SVR_WEB_HTTP_PORT:-8080}:80"
+      - "${SVR_WEB_HTTPS_PORT:-8443}:443"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - ragflow
+    volumes:
+      # Mount only source directories to preserve the image's built-in .venv
+      - ./api:/ragflow/api:rw
+      - ./common:/ragflow/common:rw
+      - ./rag:/ragflow/rag:rw
+      - ./agent:/ragflow/agent:rw
+      - ./agentic_reasoning:/ragflow/agentic_reasoning:rw
+      - ./deepdoc:/ragflow/deepdoc:rw
+      - ./memory:/ragflow/memory:rw
+      - ./graphrag:/ragflow/graphrag:rw
+      - ./plugin:/ragflow/plugin:rw
+      - ./conf:/ragflow/conf:rw
+      # Logs
+      - ./logs:/ragflow/logs:rw
+      # Config and entrypoint overrides
+      - ./docker/nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf:ro
+      - ./docker/nginx/proxy.conf:/etc/nginx/proxy.conf:ro
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/service_conf.yaml.dev.template:/ragflow/conf/service_conf.yaml.template:ro
+      - ./docker/entrypoint.sh:/ragflow/entrypoint.sh:ro
+    restart: unless-stopped
+
+networks:
+  ragflow:
+    driver: bridge
