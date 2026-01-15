@@ -1,0 +1,11 @@
+{
+  "label": "Memory",
+  "position": 10,
+  "link": {
+    "type": "generated-index",
+    "description": "Guides on using Memory."
+  },
+  "customProps": {
+    "categoryIcon": "LucideBox"
+  }
+}
