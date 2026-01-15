@@ -373,13 +373,14 @@ def my_llms():
 
 @manager.route("/list", methods=["GET"])  # noqa: F821
 @login_required
-def list_app():
+async def list_app():
     self_deployed = ["FastEmbed", "Ollama", "Xinference", "LocalAI", "LM-Studio", "GPUStack"]
     weighted = []
     model_type = request.args.get("model_type")
+    tenant_id = current_user.id
     try:
-        TenantLLMService.ensure_mineru_from_env(current_user.id)
-        objs = TenantLLMService.query(tenant_id=current_user.id)
+        TenantLLMService.ensure_mineru_from_env(tenant_id)
+        objs = TenantLLMService.query(tenant_id=tenant_id)
         facts = set([o.to_dict()["llm_factory"] for o in objs if o.api_key and o.status == StatusEnum.VALID.value])
         status = {(o.llm_name + "@" + o.llm_factory) for o in objs if o.status == StatusEnum.VALID.value}
         llms = LLMService.get_all()
