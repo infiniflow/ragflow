@@ -194,7 +194,7 @@ function CheckboxFormMultiple({
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="space-y-8 px-5 py-2.5"
+        className="space-y-8 px-5 py-2.5 max-h-[80vh] overflow-auto"
         onReset={() => form.reset()}
       >
         <div className="space-y-4">
@@ -265,20 +265,22 @@ function CheckboxFormMultiple({
                       )}
                     </div>
                   </div>
-                  {!!filteredItem.list?.length &&
-                    filteredItem.list.map((item) => {
-                      return (
-                        <FilterField
-                          key={item.id}
-                          item={{ ...item }}
-                          parent={{
-                            ...x,
-                            id: x.field,
-                            // field: `${x.field}${item.field ? '.' + item.field : ''}`,
-                          }}
-                        />
-                      );
-                    })}
+                  <div className="space-y-4 max-h-[300px] overflow-auto scrollbar-thin">
+                    {!!filteredItem.list?.length &&
+                      filteredItem.list.map((item) => {
+                        return (
+                          <FilterField
+                            key={item.id}
+                            item={{ ...item }}
+                            parent={{
+                              ...x,
+                              id: x.field,
+                              // field: `${x.field}${item.field ? '.' + item.field : ''}`,
+                            }}
+                          />
+                        );
+                      })}
+                  </div>
                   <FormMessage />
                 </FormItem>
               );
