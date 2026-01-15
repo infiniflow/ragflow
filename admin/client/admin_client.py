@@ -370,21 +370,21 @@ Meta Commands:
     print(help_text)
 
 
-class AdminCLI(Cmd):
+class RAGFlowCLI(Cmd):
     def __init__(self):
         super().__init__()
         self.parser = Lark(GRAMMAR, start="start", parser="lalr", transformer=AdminTransformer())
         self.command_history = []
         self.is_interactive = False
-        self.admin_account = "admin@ragflow.io"
-        self.admin_password: str = "admin"
+        self.account = "admin@ragflow.io"
+        self.account_password: str = "admin"
         self.session = requests.Session()
         self.access_token: str = ""
         self.host: str = ""
         self.port: int = 0
 
     intro = r"""Type "\h" for help."""
-    prompt = "admin> "
+    prompt = "ragflow> "
 
     def onecmd(self, command: str) -> bool:
         try:
@@ -427,11 +427,21 @@ class AdminCLI(Cmd):
         except Exception as e:
             return {"type": "error", "message": f"Parse error: {str(e)}"}
 
-    def verify_admin(self, arguments: dict, single_command: bool):
+    def verify_auth(self, arguments: dict, single_command: bool):
         self.host = arguments["host"]
         self.port = arguments["port"]
-        print("Attempt to access server for admin login")
-        url = f"http://{self.host}:{self.port}/api/v1/admin/login"
+        # Determine mode and username
+        mode = arguments.get("type", "admin")
+        username = arguments.get("username", "admin@ragflow.io")
+        self.account = username
+        
+        # Set login endpoint based on mode
+        if mode == "admin":
+            url = f"http://{self.host}:{self.port}/api/v1/admin/login"
+            print("Attempt to access server for admin login")
+        else:  # user mode
+            url = f"http://{self.host}:{self.port}/v1/user/login"
+            print("Attempt to access server for user login")
 
         attempt_count = 3
         if single_command:
@@ -444,12 +454,12 @@ class AdminCLI(Cmd):
                 return False
 
             if single_command:
-                admin_passwd = arguments["password"]
+                account_passwd = arguments["password"]
             else:
-                admin_passwd = getpass.getpass(f"password for {self.admin_account}: ").strip()
+                account_passwd = getpass.getpass(f"password for {self.account}: ").strip()
             try:
-                self.admin_password = encrypt(admin_passwd)
-                response = self.session.post(url, json={"email": self.admin_account, "password": self.admin_password})
+                self.account_password = encrypt(account_passwd)
+                response = self.session.post(url, json={"email": self.account, "password": self.account_password})
                 if response.status_code == 200:
                     res_json = response.json()
                     error_code = res_json.get("code", -1)
@@ -465,7 +475,7 @@ class AdminCLI(Cmd):
                     print(f"Bad response，status: {response.status_code}, password is wrong")
             except Exception as e:
                 print(str(e))
-                print("Can't access server for admin login (connection failed)")
+                print("Can't access server for login (connection failed)")
 
     def _format_service_detail_table(self, data):
         if isinstance(data, list):
@@ -541,11 +551,11 @@ class AdminCLI(Cmd):
 
     def run_interactive(self):
         self.is_interactive = True
-        print("RAGFlow Admin command line interface - Type '\\?' for help, '\\q' to quit")
+        print("RAGFlow command line interface - Type '\\?' for help, '\\q' to quit")
 
         while True:
             try:
-                command = input("admin> ").strip()
+                command = input("ragflow> ").strip()
                 if not command:
                     continue
 
@@ -570,20 +580,41 @@ class AdminCLI(Cmd):
         self.execute_command(result)
 
     def parse_connection_args(self, args: List[str]) -> Dict[str, Any]:
-        parser = argparse.ArgumentParser(description="Admin CLI Client", add_help=False)
-        parser.add_argument("-h", "--host", default="localhost", help="Admin service host")
-        parser.add_argument("-p", "--port", type=int, default=9381, help="Admin service port")
+        parser = argparse.ArgumentParser(description="RAGFlow CLI Client", add_help=False)
+        parser.add_argument("-h", "--host", default="localhost", help="Admin or RAGFlow service host")
+        parser.add_argument("-p", "--port", type=int, default=9381, help="Admin or RAGFlow service port")
         parser.add_argument("-w", "--password", default="admin", type=str, help="Superuser password")
+        parser.add_argument("-t", "--type", default="admin", type=str, help="CLI mode, admin or user")
+        parser.add_argument("-u", "--username", default=None, help="Username (email). In admin mode defaults to admin@ragflow.io, in user mode required.")
         parser.add_argument("command", nargs="?", help="Single command")
         try:
             parsed_args, remaining_args = parser.parse_known_args(args)
+            # Determine username based on mode
+            username = parsed_args.username
+            if parsed_args.type == "admin":
+                if username is None:
+                    username = "admin@ragflow.io"
+            else:  # user mode
+                if username is None:
+                    print("Error: username (-u) is required in user mode")
+                    return {"error": "Username required"}
+            
             if remaining_args:
                 command = remaining_args[0]
-                return {"host": parsed_args.host, "port": parsed_args.port, "password": parsed_args.password, "command": command}
+                return {
+                    "host": parsed_args.host,
+                    "port": parsed_args.port,
+                    "password": parsed_args.password,
+                    "type": parsed_args.type,
+                    "username": username,
+                    "command": command
+                }
             else:
                 return {
                     "host": parsed_args.host,
                     "port": parsed_args.port,
+                    "type": parsed_args.type,
+                    "username": username,
                 }
         except SystemExit:
             return {"error": "Invalid connection arguments"}
@@ -1059,7 +1090,7 @@ class AdminCLI(Cmd):
 def main():
     import sys
 
-    cli = AdminCLI()
+    cli = RAGFlowCLI()
 
     args = cli.parse_connection_args(sys.argv)
     if "error" in args:
@@ -1070,18 +1101,18 @@ def main():
         if "password" not in args:
             print("Error: password is missing")
             return
-        if cli.verify_admin(args, single_command=True):
+        if cli.verify_auth(args, single_command=True):
             command: str = args["command"]
             # print(f"Run single command: {command}")
             cli.run_single_command(command)
     else:
-        if cli.verify_admin(args, single_command=False):
+        if cli.verify_auth(args, single_command=False):
             print(r"""
-                ____  ___   ______________                 ___       __          _     
-               / __ \/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ 
-              / /_/ / /| |/ / __/ /_  / / __ \ | /| / /  / /| |/ __  / __ `__ \/ / __ \
-             / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /
-            /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/  /_/  |_\__,_/_/ /_/ /_/_/_/ /_/ 
+                ____  ___   ______________                 ________    ____
+               / __ \/   | / ____/ ____/ /___ _      __   / ____/ /   /  _/
+              / /_/ / /| |/ / __/ /_  / / __ \ | /| / /  / /   / /    / /  
+             / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / /___/ /____/ /   
+            /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/   \____/_____/___/   
             """)
             cli.cmdloop()
 
