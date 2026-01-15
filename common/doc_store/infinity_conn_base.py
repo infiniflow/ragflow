@@ -228,9 +228,9 @@ class InfinityConnectionBase(DocStoreConnection):
     Table operations
     """
 
-    def create_idx(self, index_name: str, dataset_id: str, vector_size: int):
+    def create_idx(self, index_name: str, dataset_id: str, vector_size: int, parser_id: str = None):
         table_name = f"{index_name}_{dataset_id}"
-        self.logger.debug(f"CREATE_IDX: Creating table {table_name}")
+        self.logger.debug(f"CREATE_IDX: Creating table {table_name}, parser_id: {parser_id}")
 
         inf_conn = self.connPool.get_conn()
         inf_db = inf_conn.create_database(self.dbName, ConflictType.Ignore)
@@ -240,6 +240,14 @@ class InfinityConnectionBase(DocStoreConnection):
         if not os.path.exists(fp_mapping):
             raise Exception(f"Mapping file not found at {fp_mapping}")
         schema = json.load(open(fp_mapping))
+
+        if parser_id is not None:
+            from common.constants import ParserType
+            if parser_id == ParserType.TABLE.value:
+                # Table parser: add chunk_data JSON column to store table-specific fields
+                schema["chunk_data"] = {"type": "json", "default": "{}"}
+                self.logger.info(f"Added chunk_data column for TABLE parser")
+
         vector_name = f"q_{vector_size}_vec"
         schema[vector_name] = {"type": f"vector,{vector_size},float"}
         inf_table = inf_db.create_table(
@@ -488,25 +496,11 @@ class InfinityConnectionBase(DocStoreConnection):
 
             # Replace field names in SELECT clause
             select_match = re.search(r"(select\s+.*?)(from\s+)", sql, re.IGNORECASE)
-            original_select_fields = None  # Initialize outside the if block
-            transformed_field_names = []  # Track the actual field order after transformation
             if select_match:
                 select_clause = select_match.group(1)
                 from_clause = select_match.group(2)
 
-                # Store original SELECT fields for column name mapping
-                original_select_fields = select_clause
-
-                # Track field order through transformation
-                original_fields_list = [f.strip() for f in re.sub(r"^select\s+", "", original_select_fields, flags=re.IGNORECASE).strip().split(",")]
-                seen_original = set()
-                unique_original_fields = []
-                for f in original_fields_list:
-                    if f not in seen_original:
-                        seen_original.add(f)
-                        unique_original_fields.append(f)
-
-                # Apply transformations and build the final field list
+                # Apply field transformations
                 for alias, actual in field_mapping.items():
                     select_clause = re.sub(
                         rf'(^|[, ]){alias}([, ]|$)',
@@ -515,14 +509,6 @@ class InfinityConnectionBase(DocStoreConnection):
                     )
 
                 sql = select_clause + from_clause + sql[select_match.end():]
-
-                # Parse the transformed SELECT clause to get the actual field order
-                transformed_fields_list = [f.strip() for f in re.sub(r"^select\s+", "", select_clause, flags=re.IGNORECASE).strip().split(",")]
-                seen_transformed = set()
-                for f in transformed_fields_list:
-                    if f not in seen_transformed:
-                        seen_transformed.add(f)
-                        transformed_field_names.append(f)
 
             # Also replace field names in WHERE, ORDER BY, GROUP BY, and HAVING clauses
             for alias, actual in field_mapping.items():
@@ -591,14 +577,12 @@ class InfinityConnectionBase(DocStoreConnection):
             if psql_from_path:
                 psql_path = psql_from_path
 
+            # Execute SQL with psql to get both column names and data in one call
             psql_cmd = [
                 psql_path,
                 "-h", host,
                 "-p", port,
                 "-c", sql,
-                "-t",  # tuples only
-                "-A",  # unaligned output
-                "-F", "|"  # field separator
             ]
 
             self.logger.debug(f"Executing psql command: {' '.join(psql_cmd)}")
@@ -623,39 +607,41 @@ class InfinityConnectionBase(DocStoreConnection):
                     "rows": []
                 } if format == "json" else []
 
-            # Parse column names from the SQL query
-            # Following ES approach: return actual field names as stored, not aliases
-            columns = []
-            if transformed_field_names:
-                # Use the actual transformed field names that match what psql returns
-                # Don't reverse-map to aliases - this is what ES does
-                for field in transformed_field_names:
-                    columns.append({"name": field})
-            elif original_select_fields:
-                # Fallback: Parse from original SELECT clause (before transformation)
-                # Following ES approach: use the actual field names from the SQL
-                select_fields = re.sub(r"^select\s+", "", original_select_fields, flags=re.IGNORECASE).strip()
-                if select_fields != "*":
-                    seen_fields = set()  # Track seen fields to avoid duplicates
-                    for f in select_fields.split(","):
-                        field = f.strip()
-                        # Skip duplicates
-                        if field in seen_fields:
-                            continue
-                        seen_fields.add(field)
-                        # Use the field name as-is (ES approach)
-                        columns.append({"name": field})
-                else:
-                    # For SELECT *, we'll need to get column names from a separate query
-                    # For now, use empty column names
-                    columns = []
+            # Parse psql table output which has format:
+            #  col1 | col2 | col3
+            #  -----+-----+-----
+            #  val1 | val2 | val3
+            lines = output.split("\n")
 
-            # Parse rows
+            # Extract column names from first line
+            columns = []
             rows = []
-            for line in output.split("\n"):
-                if line.strip():
-                    row = [cell.strip() for cell in line.split("|")]
+
+            if len(lines) >= 1:
+                header_line = lines[0]
+                for col_name in header_line.split("|"):
+                    col_name = col_name.strip()
+                    if col_name:
+                        columns.append({"name": col_name})
+
+            # Data starts after the separator line (line with dashes)
+            data_start = 2 if len(lines) >= 2 and "-" in lines[1] else 1
+            for i in range(data_start, len(lines)):
+                line = lines[i].strip()
+                # Skip empty lines and footer lines like "(1 row)"
+                if not line or re.match(r"^\(\d+ row", line):
+                    continue
+                # Split by | and strip each cell
+                row = [cell.strip() for cell in line.split("|")]
+                # Ensure row matches column count
+                if len(row) == len(columns):
                     rows.append(row)
+                elif len(row) > len(columns):
+                    # Row has more cells than columns - truncate
+                    rows.append(row[:len(columns)])
+                elif len(row) < len(columns):
+                    # Row has fewer cells - pad with empty strings
+                    rows.append(row + [""] * (len(columns) - len(row)))
 
             if format == "json":
                 result = {

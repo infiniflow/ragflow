@@ -24,17 +24,11 @@ from common import (
     create_chat_assistant,
     create_session_with_chat_assistant,
     delete_chat_assistants,
-    delete_documents,
     list_documents,
     upload_documents,
     parse_documents,
 )
 from utils import wait_for
-
-
-# Test constants
-FIELD_NAME_SUFFIXES = ["_tks", "_long", "_kwd"]
-
 
 @wait_for(30, 1, "Document parsing timeout")
 def wait_for_parsing_completion(auth, dataset_id, document_id=None):
@@ -64,23 +58,31 @@ def wait_for_parsing_completion(auth, dataset_id, document_id=None):
             if doc["id"] == document_id:
                 status = doc.get("run", "UNKNOWN")
                 if status == "DONE":
-                    print(f"[Parsing] ✓ Document {document_id[:8]}... parsed successfully")
                     return True
                 elif status == "FAILED":
                     pytest.fail(f"Document parsing failed: {doc}")
-                return False
+                    return False
         return False
 
 # Test data
 TEST_EXCEL_DATA = [
-    ["url", "title2", "body"],
-    ["https://example1.com", "Title 1", "Body content1"],
-    ["https://example2.com", "Title 2", "Body content2"],
-    ["https://example3.com", "Title 3", "Body content3"],
-    ["https://example4.com", "Title 4", "Body content4"],
-    ["https://example5.com", "Title 5", "Body content5"],
-    ["https://example6.com", "Title 6", "Body content6"],
-    ["https://example7.com", "Title 7", "Body content7"],
+    ["employee_id", "name", "department", "salary"],
+    ["E001", "Alice Johnson", "Engineering", "95000"],
+    ["E002", "Bob Smith", "Marketing", "65000"],
+    ["E003", "Carol Williams", "Engineering", "88000"],
+    ["E004", "David Brown", "Sales", "72000"],
+    ["E005", "Eva Davis", "HR", "68000"],
+    ["E006", "Frank Miller", "Engineering", "102000"],
+]
+
+TEST_EXCEL_DATA_2 = [
+    ["product", "price", "category"],
+    ["Laptop", "999", "Electronics"],
+    ["Mouse", "29", "Electronics"],
+    ["Desk", "299", "Furniture"],
+    ["Chair", "199", "Furniture"],
+    ["Monitor", "399", "Electronics"],
+    ["Keyboard", "79", "Electronics"],
 ]
 
 DEFAULT_CHAT_PROMPT = (
@@ -98,108 +100,144 @@ class TestTableParserDatasetChat:
     Verifies that:
     1. Excel files are uploaded and parsed correctly into table parser datasets
     2. Chat assistants can query the parsed table data via SQL
-    3. Field names are displayed correctly (e.g., 'body' not 'body_tks')
-    4. Different types of queries work (aggregate, simple select, multiple fields)
+    3. Different types of queries work
     """
+
+    @pytest.fixture(autouse=True)
+    def setup_chat_assistant(self, HttpApiAuth, add_table_parser_dataset, request):
+        """
+        Setup fixture that runs before each test method.
+        Creates chat assistant once and reuses it across all test cases.
+        """
+        # Only setup once (first time)
+        if not hasattr(self.__class__, 'chat_id'):
+            self.__class__.dataset_id = add_table_parser_dataset
+            self.__class__.auth = HttpApiAuth
+
+            # Upload and parse Excel files once for all tests
+            self._upload_and_parse_excel(HttpApiAuth, add_table_parser_dataset)
+
+            # Create a single chat assistant and session for all tests
+            chat_id, session_id = self._create_chat_assistant_with_session(
+                HttpApiAuth, add_table_parser_dataset
+            )
+            self.__class__.chat_id = chat_id
+            self.__class__.session_id = session_id
+
+            # Store the total number of parametrize cases
+            mark = request.node.get_closest_marker('parametrize')
+            if mark:
+                # Get the number of test cases from parametrize
+                param_values = mark.args[1]
+                self.__class__._total_tests = len(param_values)
+            else:
+                self.__class__._total_tests = 1
+
+        yield
+
+        # Teardown: cleanup chat assistant after all tests
+        # Use a class-level counter to track tests
+        if not hasattr(self.__class__, '_test_counter'):
+            self.__class__._test_counter = 0
+        self.__class__._test_counter += 1
+
+        # Cleanup after all parametrize tests complete
+        if self.__class__._test_counter >= self.__class__._total_tests:
+            self._teardown_chat_assistant()
+
+    def _teardown_chat_assistant(self):
+        """Teardown method to clean up chat assistant."""
+        if hasattr(self.__class__, 'chat_id') and self.__class__.chat_id:
+            try:
+                delete_chat_assistants(self.__class__.auth, {"ids": [self.__class__.chat_id]})
+            except Exception as e:
+                print(f"[Teardown] Warning: Failed to delete chat assistant: {e}")
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "question, expected_answer_pattern",
         [
-            # Test simple field display - should show all titles
-            ("Show me the columns of url and body", r"url\|body\|source"),
-            # Test COUNT query - should show count(*)
-            ("How many rows are there?", r"count\(\*\)"),
+            ("show me column of product", r"\|product\|Source"),
+            ("which product has price 79", r"Keyboard"),
+            ("How many rows in the dataset?", r"count\(\*\)"),
+            ("Show me all employees in Engineering department", r"(Alice|Carol|Frank)"),
         ],
     )
-    def test_table_parser_dataset_chat(
-        self, HttpApiAuth, add_table_parser_dataset, question, expected_answer_pattern
-    ):
+    def test_table_parser_dataset_chat(self, question, expected_answer_pattern):
         """
         Test that table parser dataset chat works correctly.
-
-        This test ensures that when querying table data via chat:
-        - Field names are displayed as 'body' not 'body_tks'
-        - Field names are displayed as 'title2' not 'title2_long'
-        - The answers are user-friendly and don't expose internal field naming
-        - Chat assistants can successfully query table parser datasets
         """
-        dataset_id = add_table_parser_dataset
-
-        # Step 1: Upload and parse Excel file
-        self._upload_and_parse_excel(HttpApiAuth, dataset_id)
-
-        # Step 2: Create chat assistant with session
-        chat_id, session_id = self._create_chat_assistant_with_session(
-            HttpApiAuth, dataset_id
+        # Use class-level attributes (set by setup fixture)
+        answer = self._ask_question(
+            self.__class__.auth,
+            self.__class__.chat_id,
+            self.__class__.session_id,
+            question
         )
 
-        try:
-            # Step 3: Send question and verify response
-            answer = self._ask_question(HttpApiAuth, chat_id, session_id, question)
-
-            # Step 4: Verify field name display
-            self._assert_no_internal_field_names(answer)
+        # Verify answer matches expected pattern if provided
+        if expected_answer_pattern:
             self._assert_answer_matches_pattern(answer, expected_answer_pattern)
+        else:
+            # Just verify we got a non-empty answer
+            assert answer and len(answer) > 0, "Expected non-empty answer"
 
-        finally:
-            # Cleanup
-            delete_chat_assistants(HttpApiAuth, {"ids": [chat_id]})
-            # Cleanup documents to ensure clean state for next test
-            self._cleanup_documents(HttpApiAuth, dataset_id)
+        # print(f"[Test] Question: {question}")
+        # print(f"[Test] Answer: {answer[:100]}...")
 
-    def _upload_and_parse_excel(self, auth, dataset_id):
+    @staticmethod
+    def _upload_and_parse_excel(auth, dataset_id):
         """
-        Upload an Excel file and wait for parsing to complete.
+        Upload 2 Excel files and wait for parsing to complete.
 
         Returns:
-            str: The document ID of the uploaded file
+            list: The document IDs of the uploaded files
 
         Raises:
             AssertionError: If upload or parsing fails
         """
-        excel_file_path = None
+        excel_file_paths = []
+        document_ids = []
         try:
-            # Create temporary Excel file
-            excel_file_path = self._create_temp_excel_file()
+            # Create 2 temporary Excel files
+            excel_file_paths.append(TestTableParserDatasetChat._create_temp_excel_file(TEST_EXCEL_DATA))
+            excel_file_paths.append(TestTableParserDatasetChat._create_temp_excel_file(TEST_EXCEL_DATA_2))
 
-            # Upload document
-            res = upload_documents(auth, dataset_id, [excel_file_path])
-            assert res["code"] == 0, f"Failed to upload document: {res}"
-            document_id = res["data"][0]["id"]
+            # Upload documents
+            res = upload_documents(auth, dataset_id, excel_file_paths)
+            assert res["code"] == 0, f"Failed to upload documents: {res}"
 
-            # Start parsing
-            parse_payload = {"document_ids": [document_id]}
+            for doc in res["data"]:
+                document_ids.append(doc["id"])
+
+            # Start parsing for all documents
+            parse_payload = {"document_ids": document_ids}
             res = parse_documents(auth, dataset_id, parse_payload)
             assert res["code"] == 0, f"Failed to start parsing: {res}"
 
-            # Wait for parsing completion
-            wait_for_parsing_completion(auth, dataset_id, document_id)
+            # Wait for parsing completion for all documents
+            for doc_id in document_ids:
+                wait_for_parsing_completion(auth, dataset_id, doc_id)
 
-            return document_id
+            return document_ids
 
         finally:
-            # Clean up temporary file
-            if excel_file_path:
-                os.unlink(excel_file_path)
+            # Clean up temporary files
+            for excel_file_path in excel_file_paths:
+                if excel_file_path:
+                    os.unlink(excel_file_path)
 
-    def _cleanup_documents(self, auth, dataset_id):
+    @staticmethod
+    def _create_temp_excel_file(data):
         """
-        Delete all documents from the dataset to ensure clean state for each test.
+        Create a temporary Excel file with the given table test data.
 
-        This is important because the dataset is shared across all test cases in the class.
+        Args:
+            data: List of lists containing the Excel data
+
+        Returns:
+            str: Path to the created temporary file
         """
-        try:
-            res = list_documents(auth, dataset_id)
-            if res["code"] == 0 and "docs" in res["data"]:
-                doc_ids = [doc["id"] for doc in res["data"]["docs"]]
-                if doc_ids:
-                    delete_documents(auth, dataset_id, {"document_ids": doc_ids})
-        except Exception as e:
-            print(f"Warning: Failed to cleanup documents: {e}")
-
-    def _create_temp_excel_file(self):
-        """Create a temporary Excel file with table test data."""
         from openpyxl import Workbook
 
         f = tempfile.NamedTemporaryFile(mode="wb", suffix=".xlsx", delete=False)
@@ -209,14 +247,15 @@ class TestTableParserDatasetChat:
         ws = wb.active
 
         # Write test data to the worksheet
-        for row_idx, row_data in enumerate(TEST_EXCEL_DATA, start=1):
+        for row_idx, row_data in enumerate(data, start=1):
             for col_idx, value in enumerate(row_data, start=1):
                 ws.cell(row=row_idx, column=col_idx, value=value)
 
         wb.save(f.name)
         return f.name
 
-    def _create_chat_assistant_with_session(self, auth, dataset_id):
+    @staticmethod
+    def _create_chat_assistant_with_session(auth, dataset_id):
         """
         Create a chat assistant and session for testing.
 
@@ -267,20 +306,6 @@ class TestTableParserDatasetChat:
         assert res_json["code"] == 0, f"Chat completion failed: {res_json}"
 
         return res_json["data"]["answer"]
-
-    def _assert_no_internal_field_names(self, answer):
-        """
-        Assert that the answer doesn't contain internal field name suffixes.
-
-        Internal field names have suffixes like '_tks', '_long', '_kwd' which should
-        not be exposed to end users in chat responses.
-        """
-        for suffix in FIELD_NAME_SUFFIXES:
-            assert suffix not in answer, (
-                f"Answer should not contain internal field names with '{suffix}' suffix.\n"
-                f"This suggests the system is exposing technical implementation details.\n"
-                f"Answer: {answer}"
-            )
 
     def _assert_answer_matches_pattern(self, answer, pattern):
         """

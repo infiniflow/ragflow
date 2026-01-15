@@ -274,7 +274,7 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
 
 
 async def async_chat(dialog, messages, stream=True, **kwargs):
-    logging.debug("Begin aysnc_chat")
+    logging.debug("Begin async_chat")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     if not dialog.kb_ids and not dialog.prompt_config.get("tavily_api_key"):
         async for ans in async_chat_solo(dialog, messages, stream):
@@ -333,6 +333,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
             yield ans
             return
+        else:
+            logging.debug("SQL failed or returned no results, falling back to vector search")
 
     param_keys = [p["key"] for p in prompt_config.get("parameters", [])]
     logging.debug(f"attachments={attachments}, param_keys={param_keys}, embd_mdl={embd_mdl}")
@@ -584,74 +586,92 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
     logging.debug(f"use_sql: Question: {question}")
 
+    # Determine which document engine we're using
+    doc_engine = "infinity" if settings.DOC_ENGINE_INFINITY else "es"
+
     # Construct the full table name
     # For Elasticsearch: ragflow_{tenant_id} (kb_id is in WHERE clause)
     # For Infinity: ragflow_{tenant_id}_{kb_id} (each KB has its own table)
-    if settings.DOC_ENGINE_INFINITY and kb_ids and len(kb_ids) == 1:
+    base_table = index_name(tenant_id)
+    if doc_engine == "infinity" and kb_ids and len(kb_ids) == 1:
         # Infinity: append kb_id to table name
-        table_name = f"{index_name(tenant_id)}_{kb_ids[0]}"
+        table_name = f"{base_table}_{kb_ids[0]}"
         logging.debug(f"use_sql: Using Infinity table name: {table_name}")
     else:
         # Elasticsearch/OpenSearch: use base index name
-        table_name = index_name(tenant_id)
+        table_name = base_table
         logging.debug(f"use_sql: Using ES/OS table name: {table_name}")
 
-    sys_prompt = """
-You are a Database Administrator. You need to check the fields of the following tables based on the user's list of questions and write the SQL corresponding to the last question.
-Ensure that:
-1. ALWAYS use the exact database field names provided in the schema (e.g. body_tks). Do NOT use the display names/descriptions (e.g. body) in your SQL queries.
-2. Field names should not start with a digit. If any field name starts with a digit, use double quotes around it.
-3. Write only the SQL, no explanations or additional text.
-"""
-    user_prompt = """
-Table name: {};
-Table of database fields are as follows (use the field names directly in SQL):
-{}
+    # Generate engine-specific SQL prompts
+    if doc_engine == "infinity":
+        # Build Infinity prompts with JSON extraction context
+        json_field_names = list(field_map.keys())
+        sys_prompt = """You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
 
-Question are as follows:
+JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
+Numeric Cast: CAST(json_extract_string(chunk_data, '$.FieldName') AS INTEGER/FLOAT)
+NULL Check: json_extract_isnull(chunk_data, '$.FieldName') == false
+
+RULES:
+1. Use EXACT field names (case-sensitive) from the list below
+2. For SELECT: include doc_id, docnm, and json_extract_string() for requested fields
+3. For COUNT: use COUNT(*) or COUNT(DISTINCT json_extract_string(...))
+4. Add AS alias for extracted field names
+5. DO NOT select 'content' field
+6. Only add NULL check (json_extract_isnull() == false) in WHERE clause when:
+   - Question asks to "show me" or "display" specific columns
+   - Question mentions "not null" or "excluding null"
+   - Add NULL check for count specific column
+   - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
+7. Output ONLY the SQL, no explanations"""
+        user_prompt = """Table: {}
+Fields (EXACT case): {}
 {}
-Please write the SQL using the exact field names above, only SQL, without any other explanations or text.
-""".format(table_name, "\n".join([f"{k} ({v})" for k, v in field_map.items()]), question)
+Question: {}
+Write SQL using json_extract_string() with exact field names. Include doc_id, docnm for data queries. Only SQL.""".format(
+            table_name,
+            ", ".join(json_field_names),
+            "\n".join([f"  - {field}" for field in json_field_names]),
+            question
+        )
+    else:
+        # Build ES/OS prompts with direct field access
+        sys_prompt = """You are a Database Administrator. Write SQL queries.
+
+RULES:
+1. Use EXACT field names from the schema below (e.g., product_tks, not product)
+2. Quote field names starting with digit: "123_field"
+3. Add IS NOT NULL in WHERE clause when:
+   - Question asks to "show me" or "display" specific columns
+4. Include doc_id/docnm in non-aggregate statement
+5. Output ONLY the SQL, no explanations"""
+        user_prompt = """Table: {}
+Available fields:
+{}
+Question: {}
+Write SQL using exact field names above. Include doc_id, docnm_kwd for data queries. Only SQL.""".format(
+            table_name,
+            "\n".join([f"  - {k} ({v})" for k, v in field_map.items()]),
+            question
+        )
+
     tried_times = 0
 
     async def get_table():
         nonlocal sys_prompt, user_prompt, question, tried_times
         sql = await chat_mdl.async_chat(sys_prompt, [{"role": "user", "content": user_prompt}], {"temperature": 0.06})
-        sql = re.sub(r"^.*</think>", "", sql, flags=re.DOTALL)
-        logging.debug(f"{question} ==> {user_prompt} get SQL: {sql}")
-        sql = re.sub(r"[\r\n]+", " ", sql.lower())
-        sql = re.sub(r".*select ", "select ", sql.lower())
-        sql = re.sub(r" +", " ", sql)
-        sql = re.sub(r"([;；]|```).*", "", sql)
-        sql = re.sub(r"&", "and", sql)
-        if sql[: len("select ")] != "select ":
-            return None, None
-        # Check if SQL has aggregate functions (COUNT, SUM, AVG, MAX, MIN) or DISTINCT
-        # If yes, don't modify the SELECT clause
-        if not re.search(r"(count\(|distinct|(sum|avg|max|min)\(|group by )", sql.lower()):
-            if sql[: len("select *")] != "select *":
-                # Check if LLM already included doc_id/docnm in the SQL
-                # Remove them if present to avoid duplication
-                select_clause = sql[len("select "):sql.lower().find(" from ")]
+        logging.debug(f"use_sql: Raw SQL from LLM: {repr(sql[:500])}")
+        # Remove think blocks if present (format: </think>...)
+        sql = re.sub(r"</think>\n.*?\n\s*", "", sql, flags=re.DOTALL)
+        sql = re.sub(r"思考\n.*?\n", "", sql, flags=re.DOTALL)
+        # Remove markdown code blocks (```sql ... ```)
+        sql = re.sub(r"```(?:sql)?\s*", "", sql, flags=re.IGNORECASE)
+        sql = re.sub(r"```\s*$", "", sql, flags=re.IGNORECASE)
+        # Remove trailing semicolon that ES SQL parser doesn't like
+        sql = sql.rstrip().rstrip(';').strip()
 
-                # Remove doc_id and docnm/docnm_kwd from the select clause if they exist
-                select_fields = [f.strip() for f in select_clause.split(",")]
-                select_fields = [f for f in select_fields if f.lower() not in ["doc_id", "docnm", "docnm_kwd"]]
-
-                # Prepend doc_id,docnm_kwd and the cleaned select fields
-                sql = "select doc_id,docnm_kwd," + ",".join(select_fields) + sql[sql.lower().find(" from "):]
-            else:
-                flds = []
-                for k in field_map.keys():
-                    if k in forbidden_select_fields4resume:
-                        continue
-                    if len(flds) > 11:
-                        break
-                    flds.append(k)
-                sql = "select doc_id,docnm_kwd," + ",".join(flds) + sql[8:]
-
-        # Add kb_id filter for Elasticsearch/OpenSearch (not needed for Infinity as it's in table name)
-        if not settings.DOC_ENGINE_INFINITY and kb_ids:
+        # Add kb_id filter for ES/OS only (Infinity already has it in table name)
+        if doc_engine != "infinity" and kb_ids:
             # Build kb_filter: single KB or multiple KBs with OR
             if len(kb_ids) == 1:
                 kb_filter = f"kb_id = '{kb_ids[0]}'"
@@ -671,6 +691,9 @@ Please write the SQL using the exact field names above, only SQL, without any ot
         tried_times += 1
         logging.debug(f"use_sql: Executing SQL retrieval (attempt {tried_times})")
         tbl = settings.retriever.sql_retrieval(sql, format="json")
+        if tbl is None:
+            logging.debug(f"use_sql: SQL retrieval returned None")
+            return None, sql
         logging.debug(f"use_sql: SQL retrieval completed, got {len(tbl.get('rows', []))} rows")
         return tbl, sql
 
@@ -680,7 +703,27 @@ Please write the SQL using the exact field names above, only SQL, without any ot
         logging.debug(f"use_sql: Retrieved {len(tbl.get('rows', []))} rows, columns: {[c['name'] for c in tbl.get('columns', [])]}")
     except Exception as e:
         logging.warning(f"use_sql: Initial SQL execution FAILED with error: {e}")
-        user_prompt = """
+        # Build retry prompt with error information
+        if doc_engine == "infinity":
+            # Build Infinity error retry prompt
+            json_field_names = list(field_map.keys())
+            user_prompt = """
+Table name: {};
+JSON fields available in 'chunk_data' column (use these exact names in json_extract_string):
+{}
+
+Question: {}
+Please write the SQL using json_extract_string(chunk_data, '$.field_name') with the field names from the list above. Only SQL, no explanations.
+
+
+The SQL error you provided last time is as follows:
+{}
+
+Please correct the error and write SQL again using json_extract_string(chunk_data, '$.field_name') syntax with the correct field names. Only SQL, no explanations.
+""".format(table_name, "\n".join([f"  - {field}" for field in json_field_names]), question, e)
+        else:
+            # Build ES/OS error retry prompt
+            user_prompt = """
         Table name: {};
         Table of database fields are as follows (use the field names directly in SQL):
         {}
@@ -709,8 +752,8 @@ Please write the SQL using the exact field names above, only SQL, without any ot
 
     logging.debug(f"use_sql: Proceeding with {len(tbl['rows'])} rows to build answer")
 
-    docid_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"] == "doc_id"])
-    doc_name_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"] in ["docnm_kwd", "docnm"]])
+    docid_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"].lower() == "doc_id"])
+    doc_name_idx = set([ii for ii, c in enumerate(tbl["columns"]) if c["name"].lower() in ["docnm_kwd", "docnm"]])
 
     logging.debug(f"use_sql: All columns: {[(i, c['name']) for i, c in enumerate(tbl['columns'])]}")
     logging.debug(f"use_sql: docid_idx={docid_idx}, doc_name_idx={doc_name_idx}")
@@ -722,13 +765,40 @@ Please write the SQL using the exact field names above, only SQL, without any ot
 
     # Helper function to map column names to display names
     def map_column_name(col_name):
+        if col_name.lower() == "count(star)":
+            return "COUNT(*)"
+
+        # First, try to extract AS alias from any expression (aggregate functions, json_extract_string, etc.)
+        # Pattern: anything AS alias_name
+        as_match = re.search(r'\s+AS\s+([^\s,)]+)', col_name, re.IGNORECASE)
+        if as_match:
+            alias = as_match.group(1).strip('"\'')
+
+            # Use the alias for display name lookup
+            if alias in field_map:
+                display = field_map[alias]
+                return re.sub(r"(/.*|（[^（）]+）)", "", display)
+            # If alias not in field_map, try to match case-insensitively
+            for field_key, display_value in field_map.items():
+                if field_key.lower() == alias.lower():
+                    return re.sub(r"(/.*|（[^（）]+）)", "", display_value)
+            # Return alias as-is if no mapping found
+            return alias
+
         # Try direct mapping first (for simple column names)
         if col_name in field_map:
             display = field_map[col_name]
             # Clean up any suffix patterns
             return re.sub(r"(/.*|（[^（）]+）)", "", display)
 
-        # For aggregate expressions or complex expressions, replace field names with display names
+        # Try case-insensitive match for simple column names
+        col_lower = col_name.lower()
+        for field_key, display_value in field_map.items():
+            if field_key.lower() == col_lower:
+                return re.sub(r"(/.*|（[^（）]+）)", "", display_value)
+
+        # For aggregate expressions or complex expressions without AS alias,
+        # try to replace field names with display names
         result = col_name
         for field_name, display_name in field_map.items():
             # Replace field_name with display_name in the expression
@@ -759,17 +829,20 @@ Please write the SQL using the exact field names above, only SQL, without any ot
             col_name = tbl["columns"][col_idx]["name"]
             value = row_dict.get(col_name, " ")
             row_values.append(remove_redundant_spaces(str(value)).replace("None", " "))
+        # Add Source column with citation marker if Source column exists
+        if docid_idx and doc_name_idx:
+            row_values.append(f" ##{row_idx}$$")
         row_str = "|" + "|".join(row_values) + "|"
         if re.sub(r"[ |]+", "", row_str):
             rows.append(row_str)
     if quota:
-        rows = "\n".join([r + f" ##{ii}$$ |" for ii, r in enumerate(rows)])
+        rows = "\n".join(rows)
     else:
-        rows = "\n".join([r + f" ##{ii}$$ |" for ii, r in enumerate(rows)])
+        rows = "\n".join(rows)
     rows = re.sub(r"T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|", "|", rows)
 
     if not docid_idx or not doc_name_idx:
-        logging.warning("SQL missing field: " + sql)
+        logging.warning(f"use_sql: SQL missing required doc_id or docnm_kwd field. docid_idx={docid_idx}, doc_name_idx={doc_name_idx}. SQL: {sql}")
         # For aggregate queries (COUNT, SUM, AVG, MAX, MIN, DISTINCT), fetch doc_id, docnm_kwd separately
         # to provide source chunks, but keep the original table format answer
         if re.search(r"(count|sum|avg|max|min|distinct)\s*\(", sql.lower()):
@@ -790,9 +863,9 @@ Please write the SQL using the exact field names above, only SQL, without any ot
                 try:
                     chunks_tbl = settings.retriever.sql_retrieval(chunks_sql, format="json")
                     if chunks_tbl.get("rows") and len(chunks_tbl["rows"]) > 0:
-                        # Build chunks reference
-                        chunks_did_idx = next((i for i, c in enumerate(chunks_tbl["columns"]) if c["name"] == "doc_id"), None)
-                        chunks_dn_idx = next((i for i, c in enumerate(chunks_tbl["columns"]) if c["name"] == "docnm_kwd"), None)
+                        # Build chunks reference - use case-insensitive matching
+                        chunks_did_idx = next((i for i, c in enumerate(chunks_tbl["columns"]) if c["name"].lower() == "doc_id"), None)
+                        chunks_dn_idx = next((i for i, c in enumerate(chunks_tbl["columns"]) if c["name"].lower() in ["docnm_kwd", "docnm"]), None)
                         if chunks_did_idx is not None and chunks_dn_idx is not None:
                             chunks = [{"doc_id": r[chunks_did_idx], "docnm_kwd": r[chunks_dn_idx]} for r in chunks_tbl["rows"]]
                             # Build doc_aggs

@@ -558,13 +558,8 @@ def build_TOC(task, docs, progress_callback):
 
 def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
-    # Create index/table with base schema
-    # This applies to ALL parser types.
-    #
-    # For TABLE parser:
-    #   - Base table created here with general columns
-    #   - File-specific columns added during first insertion
-    return settings.docStoreConn.create_idx(idxnm, row.get("kb_id", ""), vector_size)
+    parser_id = row.get("parser_id", None)
+    return settings.docStoreConn.create_idx(idxnm, row.get("kb_id", ""), vector_size, parser_id)
 
 
 async def embedding(docs, mdl, parser_config=None, callback=None):

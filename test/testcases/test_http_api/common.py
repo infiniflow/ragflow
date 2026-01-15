@@ -49,6 +49,11 @@ def update_dataset(auth, dataset_id, payload=None, *, headers=HEADERS, data=None
 
 
 def delete_datasets(auth, payload=None, *, headers=HEADERS, data=None):
+    """
+    Delete datasets.
+    The endpoint is DELETE /api/{VERSION}/datasets with payload {"ids": [...]}
+    This is the standard SDK REST API endpoint for dataset deletion.
+    """
     res = requests.delete(url=f"{HOST_ADDRESS}{DATASETS_API_URL}", headers=headers, auth=auth, json=payload, data=data)
     return res.json()
 
@@ -253,7 +258,6 @@ def batch_add_sessions_with_chat_assistant(auth, chat_assistant_id, num):
     return session_ids
 
 
-<<<<<<< HEAD
 # DATASET GRAPH AND TASKS
 def knowledge_graph(auth, dataset_id, params=None):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}/knowledge_graph"

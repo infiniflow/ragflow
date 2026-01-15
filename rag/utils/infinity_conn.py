@@ -17,7 +17,6 @@
 import re
 import json
 import copy
-import os
 from infinity.common import InfinityException, SortType
 from infinity.errors import ErrorCode
 from common.decorator import singleton
@@ -25,7 +24,6 @@ import pandas as pd
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.doc_store.doc_store_base import MatchExpr, MatchTextExpr, MatchDenseExpr, FusionExpr, OrderByExpr
 from common.doc_store.infinity_conn_base import InfinityConnectionBase
-from common.file_utils import get_project_base_directory
 
 
 @singleton
@@ -320,13 +318,18 @@ class InfinityConnection(InfinityConnectionBase):
             if vector_size == 0:
                 raise ValueError("Cannot infer vector size from documents")
 
-            # Fallback: Create table with base schema (shouldn't normally happen as init_kb() creates it)
-            # Dynamic columns will be added by add_dynamic_columns() below
-            self.logger.debug(f"Fallback: Creating table {table_name} with base schema")
-            self.create_idx(index_name, knowledgebase_id, vector_size)
-            table_instance = db_instance.get_table(table_name)
+            # Determine parser_id from document structure
+            # Table parser documents have 'chunk_data' field
+            parser_id = None
+            if "chunk_data" in documents[0] and isinstance(documents[0].get("chunk_data"), dict):
+                from common.constants import ParserType
+                parser_id = ParserType.TABLE.value
+                self.logger.debug(f"Detected TABLE parser from document structure")
 
-        self.add_dynamic_columns(table_name, documents, table_instance)
+            # Fallback: Create table with base schema (shouldn't normally happen as init_kb() creates it)
+            self.logger.debug(f"Fallback: Creating table {table_name} with base schema, parser_id: {parser_id}")
+            self.create_idx(index_name, knowledgebase_id, vector_size, parser_id)
+            table_instance = db_instance.get_table(table_name)
 
         # embedding fields can't have a default value....
         embedding_clmns = []
@@ -386,6 +389,12 @@ class InfinityConnection(InfinityConnectionBase):
                         d[k] = v
                 elif re.search(r"_feas$", k):
                     d[k] = json.dumps(v)
+                elif k == "chunk_data":
+                    # Convert data dict to JSON string for storage
+                    if isinstance(v, dict):
+                        d[k] = json.dumps(v)
+                    else:
+                        d[k] = v
                 elif k == "kb_id":
                     if isinstance(d[k], list):
                         d[k] = d[k][0]  # since d[k] is a list, but we need a str
@@ -419,92 +428,6 @@ class InfinityConnection(InfinityConnectionBase):
         self.connPool.release_conn(inf_conn)
         self.logger.debug(f"INFINITY inserted into {table_name} {str_ids}.")
         return []
-
-    def add_dynamic_columns(self, table_name: str, documents: list[dict], table_instance):
-        """
-        Add missing columns dynamically based on document fields
-
-        PARSER TYPE BEHAVIOR:
-        ---------------------
-        1. GENERAL PARSER:
-           - Tables created with basic schema
-           - All general parser fields are already in base schema
-           - add_dynamic_columns() finds no missing columns to add
-        2. TABLE PARSER:
-           - Tables created with basic schema(same as general parser)
-           - Table-specific fields are NOT in base schema
-           - add_dynamic_columns() adds these file-specific columns during first insertion
-        """
-        try:
-            import infinity
-
-            # Get existing columns
-            existing_columns = set([col_name for col_name, _, _, _ in table_instance.show_columns().rows()])
-
-            # Collect all field names from documents
-            all_fields = set()
-            for doc in documents:
-                all_fields.update(doc.keys())
-
-            # Build alias fields set from infinity_mapping.json
-            # These are fields that get transformed to their base names during insertion
-            alias_fields = set()
-            fp_mapping = os.path.join(get_project_base_directory(), "conf", self.mapping_file_name)
-            if os.path.exists(fp_mapping):
-                schema = json.load(open(fp_mapping))
-                for field_name, field_info in schema.items():
-                    if "comment" in field_info:
-                        # Parse comma-separated aliases from comment
-                        # e.g., "docnm_kwd, title_tks, title_sm_tks"
-                        aliases = [a.strip() for a in field_info["comment"].split(",")]
-                        alias_fields.update(aliases)
-
-            # Find fields that need to be added
-            fields_to_add = []
-            for field in all_fields:
-                if field in existing_columns:
-                    continue
-                # Check if field is an alias (should be transformed, not stored as-is)
-                if field in alias_fields:
-                    self.logger.error(f"Unsupported alias field '{field}' in documents. This field will not be added as a column.")
-                    continue
-                # Skip special fields
-                if field.startswith("q_") or "_vec" in field:
-                    continue
-                fields_to_add.append(field)
-
-            if fields_to_add:
-                print(f"[DEBUG] Adding {len(fields_to_add)} dynamic columns: {fields_to_add}")
-                # Add columns with appropriate types based on field name suffix
-                for field_name in fields_to_add:
-                    # Determine field type based on suffix
-                    if field_name.endswith("_tks"):
-                        # Text field with analyzer
-                        field_def = {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"]}
-                    elif field_name.endswith("_kwd"):
-                        # Keyword field with analyzer
-                        field_def = {"type": "varchar", "default": "", "analyzer": "whitespace-#"}
-                    elif field_name.endswith("_long"):
-                        # Integer field
-                        field_def = {"type": "integer", "default": 0}
-                    elif field_name.endswith("_flt"):
-                        # Float field
-                        field_def = {"type": "double", "default": 0.0}
-                    elif field_name.endswith("_dt"):
-                        # Datetime field
-                        field_def = {"type": "varchar", "default": ""}
-                    else:
-                        # Default to varchar
-                        field_def = {"type": "varchar", "default": ""}
-
-                    add_result = table_instance.add_columns({field_name: field_def})
-
-                    if add_result.error_code == infinity.ErrorCode.OK:
-                        self.logger.info(f"Added dynamic column: {field_name} (type: {field_def['type']})")
-                    else:
-                        self.logger.warning(f"Failed to add column {field_name}: {add_result.error_msg}")
-        except Exception as e:
-            self.logger.warning(f"Failed to add dynamic columns: {e}")
 
     def update(self, condition: dict, new_value: dict, index_name: str, knowledgebase_id: str) -> bool:
         # if 'position_int' in newValue:
@@ -680,6 +603,9 @@ class InfinityConnection(InfinityConnectionBase):
                 res2[column] = res2[column].apply(lambda v: [kwd for kwd in v.split("###") if kwd])
             elif re.search(r"_feas$", k):
                 res2[column] = res2[column].apply(lambda v: json.loads(v) if v else {})
+            elif k == "chunk_data":
+                # Parse JSON data back to dict for table parser fields
+                res2[column] = res2[column].apply(lambda v: json.loads(v) if v and isinstance(v, str) else v)
             elif k == "position_int":
                 def to_position_int(v):
                     if v:
