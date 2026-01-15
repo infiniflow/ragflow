@@ -73,6 +73,9 @@ async def create_memory():
 async def update_memory(memory_id):
     req = await get_request_json()
     update_dict = {}
+    current_memory = MemoryService.get_by_memory_id(memory_id)
+    if not current_memory:
+        return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
     # check name length
     if "name" in req:
         name = req["name"]
@@ -117,9 +120,6 @@ async def update_memory(memory_id):
     for field in ["avatar", "description", "system_prompt", "user_prompt"]:
         if field in req:
             update_dict[field] = req[field]
-    current_memory = MemoryService.get_by_memory_id(memory_id)
-    if not current_memory:
-        return get_json_result(code=RetCode.NOT_FOUND, message=f"Memory '{memory_id}' not found.")
 
     memory_dict = current_memory.to_dict()
     memory_dict.update({"memory_type": get_memory_type_human(current_memory.memory_type)})
@@ -146,7 +146,6 @@ async def update_memory(memory_id):
         MemoryService.update_memory(current_memory.tenant_id, memory_id, to_update)
         updated_memory = MemoryService.get_by_memory_id(memory_id)
         return get_json_result(message=True, data=format_ret_data_from_memory(updated_memory))
-
     except Exception as e:
         logging.error(e)
         return get_json_result(message=str(e), code=RetCode.SERVER_ERROR)
