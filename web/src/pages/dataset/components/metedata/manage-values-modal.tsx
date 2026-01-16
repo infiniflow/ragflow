@@ -7,11 +7,15 @@ import { Button } from '@/components/ui/button';
 import { FormLabel } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
-import { Switch } from '@/components/ui/switch';
+import { RAGFlowSelect } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Trash2 } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
+import {
+  isMetadataValueTypeWithEnum,
+  metadataValueTypeOptions,
+} from './hooks/use-manage-modal';
 import { useManageValues } from './hooks/use-manage-values-modal';
 import { IManageValuesProps } from './interface';
 
@@ -62,8 +66,8 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
     visible,
     isAddValue,
     isShowDescription,
-    isShowValueSwitch,
     isVerticalShowValue,
+    isShowType,
   } = props;
   const {
     metaData,
@@ -80,6 +84,7 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
     handleHideModal,
   } = useManageValues(props);
   const { t } = useTranslation();
+  const canShowValues = isMetadataValueTypeWithEnum(metaData.valueType);
 
   return (
     <Modal
@@ -115,6 +120,16 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
             </div>
           </div>
         )}
+        {isShowType && (
+          <div className="flex flex-col gap-2">
+            <div>Type</div>
+            <RAGFlowSelect
+              value={metaData.valueType || 'string'}
+              options={metadataValueTypeOptions}
+              onChange={(value) => handleChange('valueType', value)}
+            />
+          </div>
+        )}
         {isShowDescription && (
           <div className="flex flex-col gap-2">
             <FormLabel
@@ -133,26 +148,7 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
             </div>
           </div>
         )}
-        {isShowValueSwitch && (
-          <div className="flex flex-col gap-2">
-            <FormLabel
-              className="text-text-primary text-base"
-              tooltip={t('knowledgeDetails.metadata.restrictTDefinedValuesTip')}
-            >
-              {t('knowledgeDetails.metadata.restrictDefinedValues')}
-            </FormLabel>
-            <div>
-              <Switch
-                checked={metaData.restrictDefinedValues || false}
-                onCheckedChange={(checked) =>
-                  handleChange('restrictDefinedValues', checked)
-                }
-              />
-            </div>
-          </div>
-        )}
-        {((metaData.restrictDefinedValues && isShowValueSwitch) ||
-          !isShowValueSwitch) && (
+        {canShowValues && (
           <div className="flex flex-col gap-2">
             <div className="flex justify-between items-center">
               <div>{t('knowledgeDetails.metadata.values')}</div>
