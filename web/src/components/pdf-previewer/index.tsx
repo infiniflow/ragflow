@@ -2,6 +2,7 @@ import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/knowledge';
 import FileError from '@/pages/document-viewer/file-error';
 import { Skeleton } from 'antd';
+import * as pdfjs from 'pdfjs-dist';
 import { useEffect, useRef, useState } from 'react';
 import {
   AreaHighlight,
@@ -12,6 +13,8 @@ import {
   Popup,
 } from 'react-pdf-highlighter';
 import { useCatchDocumentError } from './hooks';
+
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs-dist/pdf.worker.min.js';
 
 import {
   useGetChunkHighlights,
@@ -62,7 +65,6 @@ const DocumentPreviewer = ({ chunk, documentId, visible }: IProps) => {
       <PdfLoader
         url={url}
         beforeLoad={<Skeleton active />}
-        workerSrc="/pdfjs-dist/pdf.worker.min.js"
         errorMessage={<FileError>{error}</FileError>}
       >
         {(pdfDocument) => {
