@@ -28,6 +28,9 @@ from api.db.db_models import TenantLLM
 from rag.utils.base64_image import test_image
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, OcrModel, Seq2txtModel
 
+# Cache refresh rate limiting (in seconds)
+REFRESH_COOLDOWN = 300  # 5 minutes
+
 manager = Blueprint("llm_app", __name__, url_prefix="/llm")
 
 @manager.route("/factories", methods=["GET"])
@@ -91,8 +94,6 @@ async def get_factory_models(factory: str):
                 # Clear cache to force refresh with rate limiting
                 from rag.utils.redis_conn import REDIS_CONN
                 
-                # Rate limiting: 5-minute cooldown per user per factory
-                REFRESH_COOLDOWN = 300  # 5 minutes in seconds
                 rate_limit_key = f"refresh_limit:{current_user.id}:{factory}"
                 
                 try:

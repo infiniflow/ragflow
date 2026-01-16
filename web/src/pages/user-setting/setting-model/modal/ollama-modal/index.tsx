@@ -3,14 +3,17 @@ import {
   FormFieldConfig,
   FormFieldType,
 } from '@/components/dynamic-form';
+import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
 import { LLMFactory } from '@/constants/llm';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useBuildModelTypeOptions } from '@/hooks/logic-hooks/use-build-options';
+import { useFetchFactoryModels } from '@/hooks/use-llm-request';
 import { IModalProps } from '@/interfaces/common';
+import { IDynamicModel } from '@/interfaces/database/llm';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { useMemo } from 'react';
-import { FieldValues } from 'react-hook-form';
+import { useEffect, useMemo, useState } from 'react';
+import { FieldValues, useFormContext } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 
 const llmFactoryToUrlMap: Partial<Record<LLMFactory, string>> = {
@@ -34,6 +37,177 @@ const llmFactoryToUrlMap: Partial<Record<LLMFactory, string>> = {
   [LLMFactory.TokenPony]: 'https://docs.tokenpony.cn/#/',
 };
 
+// Mapping of factories to their supported model types (for non-dynamic providers)
+const llmFactoryModelTypeOptions: Partial<Record<LLMFactory, string[]>> = {
+  [LLMFactory.HuggingFace]: ['embedding', 'chat', 'rerank'],
+  [LLMFactory.LMStudio]: ['chat', 'embedding', 'image2text'],
+  [LLMFactory.Xinference]: [
+    'chat',
+    'embedding',
+    'rerank',
+    'image2text',
+    'speech2text',
+    'tts',
+  ],
+  [LLMFactory.ModelScope]: ['chat'],
+  [LLMFactory.GPUStack]: ['chat', 'embedding', 'rerank', 'speech2text', 'tts'],
+};
+
+// Props interface for ModelFormContent component
+interface ModelFormContentProps {
+  isDynamicProvider: boolean;
+  modelsLoading: boolean;
+  filteredModels: IDynamicModel[];
+  dynamicModels: IDynamicModel[];
+  selectedProvider: string | null;
+  selectedModelType: string;
+  defaultBaseUrl?: string;
+  setSelectedProvider: (provider: string | null) => void;
+  setSelectedModelType: (type: string) => void;
+  refetchModels: () => void;
+  url: string;
+  llmFactory: string;
+  hideModal?: () => void;
+  loading?: boolean;
+  handleOk: (values?: FieldValues) => Promise<void>;
+  t: (key: string, options?: any) => string;
+  tc: (key: string, options?: any) => string;
+}
+
+// Separate component to use useFormContext inside DynamicForm.Root
+const ModelFormContent = ({
+  isDynamicProvider,
+  modelsLoading,
+  filteredModels,
+  dynamicModels,
+  selectedProvider,
+  selectedModelType,
+  defaultBaseUrl,
+  setSelectedProvider,
+  setSelectedModelType,
+  refetchModels,
+  url,
+  llmFactory,
+  hideModal,
+  loading,
+  handleOk,
+  t,
+  tc,
+}: ModelFormContentProps) => {
+  const form = useFormContext();
+
+  // Auto-populate base_url when modal opens (only if not editing)
+  useEffect(() => {
+    if (isDynamicProvider && defaultBaseUrl && !form.getValues('api_base')) {
+      form.setValue('api_base', defaultBaseUrl);
+    }
+  }, [isDynamicProvider, defaultBaseUrl, form]);
+
+  // Auto-populate max_tokens and model_type when model is selected
+  const selectedModel = form.watch('llm_name');
+
+  useEffect(() => {
+    if (isDynamicProvider && selectedModel) {
+      const model = dynamicModels.find(
+        (m: any) => m.llm_name === selectedModel,
+      );
+      if (model) {
+        // Auto-populate max_tokens
+        form.setValue('max_tokens', model.max_tokens);
+
+        // Ensure model_type matches the actual model type
+        if (model.model_type !== form.getValues('model_type')) {
+          form.setValue('model_type', model.model_type);
+        }
+      }
+    }
+  }, [selectedModel, isDynamicProvider, dynamicModels, form]);
+
+  // Watch for model_type changes
+  useEffect(() => {
+    const subscription = form.watch((value, { name }) => {
+      if (name === 'model_type' && isDynamicProvider) {
+        const newModelType = value.model_type;
+        if (newModelType !== selectedModelType) {
+          setSelectedModelType(newModelType);
+          // Reset provider and model selection when category changes
+          setSelectedProvider(null);
+          form.setValue('provider_filter', '');
+          form.setValue('llm_name', '');
+        }
+      }
+
+      if (name === 'provider_filter') {
+        const newProvider = value.provider_filter;
+        setSelectedProvider(newProvider || null);
+        // Reset model selection when provider changes
+        form.setValue('llm_name', '');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [
+    form,
+    isDynamicProvider,
+    selectedModelType,
+    setSelectedModelType,
+    setSelectedProvider,
+  ]);
+
+  return (
+    <>
+      {isDynamicProvider && (
+        <div className="flex justify-end mb-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetchModels()}
+            disabled={modelsLoading}
+          >
+            {modelsLoading
+              ? tc('refreshing', 'Refreshing...')
+              : tc('refresh', 'Refresh')}
+          </Button>
+        </div>
+      )}
+
+      {isDynamicProvider && modelsLoading && (
+        <div className="text-sm text-muted-foreground mb-2">
+          {tc('loadingModels', 'Loading models')}...
+        </div>
+      )}
+
+      {isDynamicProvider && !modelsLoading && filteredModels.length === 0 && (
+        <div className="text-sm text-destructive mb-2">
+          {selectedProvider
+            ? t('noModelsForProvider', {
+                provider: selectedProvider,
+              })
+            : t('noModelsAvailable')}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between w-full gap-2 ">
+        <a href={url} target="_blank" rel="noreferrer" className="text-sm">
+          {t('ollamaLink', { name: llmFactory })}
+        </a>
+        <div className="flex gap-2">
+          <DynamicForm.CancelButton
+            handleCancel={() => {
+              hideModal?.();
+            }}
+          />
+          <DynamicForm.SavingButton
+            submitLoading={loading || false}
+            buttonText={tc('ok')}
+            submitFunc={handleOk}
+          />
+        </div>
+      </div>
+    </>
+  );
+};
+
 const OllamaModal = ({
   visible,
   hideModal,
@@ -50,86 +224,175 @@ const OllamaModal = ({
   const { t: tc } = useCommonTranslation();
   const { buildModelTypeOptions } = useBuildModelTypeOptions();
 
-  const optionsMap: Partial<
-    Record<LLMFactory, { label: string; value: string }[]>
-  > & {
-    Default: { label: string; value: string }[];
-  } = {
-    [LLMFactory.HuggingFace]: buildModelTypeOptions([
-      'embedding',
-      'chat',
-      'rerank',
-    ]),
-    [LLMFactory.LMStudio]: buildModelTypeOptions([
-      'chat',
-      'embedding',
-      'image2text',
-    ]),
-    [LLMFactory.Xinference]: buildModelTypeOptions([
-      'chat',
-      'embedding',
-      'rerank',
-      'image2text',
-      'speech2text',
-      'tts',
-    ]),
-    [LLMFactory.ModelScope]: buildModelTypeOptions(['chat']),
-    [LLMFactory.GPUStack]: buildModelTypeOptions([
-      'chat',
-      'embedding',
-      'rerank',
-      'speech2text',
-      'tts',
-    ]),
-    [LLMFactory.OpenRouter]: buildModelTypeOptions(['chat', 'image2text']),
-    Default: buildModelTypeOptions([
-      'chat',
-      'embedding',
-      'rerank',
-      'image2text',
-    ]),
-  };
+  // State for dynamic model support
+  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [selectedModelType, setSelectedModelType] = useState<string>('chat');
+
+  // Check if this is a potentially dynamic provider
+  // These providers MAY support dynamic model discovery from the backend.
+  // Whether they actually support it depends on backend configuration and
+  // is determined by checking supportedCategories from the API response.
+  const canBeDynamic = [
+    LLMFactory.OpenRouter,
+    LLMFactory.Ollama,
+    LLMFactory.LocalAI,
+    LLMFactory.Xinference,
+  ].includes(llmFactory as LLMFactory);
+
+  // Fetch dynamic models if provider supports it
+  // Only queries backend when canBeDynamic is true and modal is visible
+  const {
+    data: dynamicModels,
+    supportedCategories,
+    defaultBaseUrl,
+    loading: modelsLoading,
+    refetch: refetchModels,
+  } = useFetchFactoryModels(
+    llmFactory,
+    selectedModelType,
+    canBeDynamic && visible,
+  );
+
+  // Determine if provider is actually dynamic based on backend response
+  // Computed directly from canBeDynamic and supportedCategories
+  const isDynamicProvider = useMemo(
+    () => canBeDynamic && supportedCategories.length > 0,
+    [canBeDynamic, supportedCategories],
+  );
+
+  // Extract unique providers from models for filtering
+  const [availableProviders, setAvailableProviders] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (isDynamicProvider && dynamicModels.length > 0) {
+      const providers = Array.from(
+        new Set(dynamicModels.map((m) => m.provider)),
+      ).sort();
+      setAvailableProviders(providers);
+    } else {
+      // Reset providers when dynamic mode is disabled or no models available
+      setAvailableProviders([]);
+    }
+  }, [dynamicModels, isDynamicProvider]);
+
+  // Filter models by selected provider
+  const filteredModels = useMemo(() => {
+    if (!isDynamicProvider) return [];
+
+    let models = dynamicModels;
+
+    // Filter by selected provider if one is selected
+    if (selectedProvider) {
+      models = models.filter((m) => m.provider === selectedProvider);
+    }
+
+    return models;
+  }, [dynamicModels, selectedProvider, isDynamicProvider]);
+
+  // Fallback model type options for non-dynamic providers
+  const modelTypeOptions = useMemo(() => {
+    if (isDynamicProvider) {
+      // Use supported categories from backend
+      return buildModelTypeOptions(supportedCategories);
+    }
+
+    // Use predefined options for static providers
+    const factoryOptions = llmFactoryModelTypeOptions[llmFactory as LLMFactory];
+    if (factoryOptions) {
+      return buildModelTypeOptions(factoryOptions);
+    }
+
+    // Default fallback
+    return buildModelTypeOptions(['chat', 'embedding', 'rerank', 'image2text']);
+  }, [
+    isDynamicProvider,
+    supportedCategories,
+    buildModelTypeOptions,
+    llmFactory,
+  ]);
 
   const url =
     llmFactoryToUrlMap[llmFactory as LLMFactory] ||
     'https://github.com/infiniflow/ragflow/blob/main/docs/guides/models/deploy_local_llm.mdx';
 
   const fields = useMemo<FormFieldConfig[]>(() => {
-    const getOptions = (factory: string) => {
-      return optionsMap[factory as LLMFactory] || optionsMap.Default;
-    };
-
     const baseFields: FormFieldConfig[] = [
+      // Model Type selection (always first)
       {
         name: 'model_type',
         label: t('modelType'),
         type: FormFieldType.Select,
         required: true,
-        options: getOptions(llmFactory),
+        options: modelTypeOptions,
         validation: {
           message: t('modelTypeMessage'),
         },
       },
-      {
-        name: 'llm_name',
-        label: t(llmFactory === 'Xinference' ? 'modelUid' : 'modelName'),
-        type: FormFieldType.Text,
-        required: true,
-        placeholder: t('modelNameMessage'),
-        validation: {
-          message: t('modelNameMessage'),
-        },
-      },
+
+      // Provider selection (only for dynamic providers)
+      ...(isDynamicProvider && availableProviders.length > 0
+        ? [
+            {
+              name: 'provider_filter',
+              label: t('provider', 'Provider'),
+              type: FormFieldType.Select,
+              required: false,
+              placeholder: t('selectProvider', 'Select provider (optional)'),
+              options: availableProviders.map((p) => ({
+                value: p,
+                label: p.charAt(0).toUpperCase() + p.slice(1),
+              })),
+            } as FormFieldConfig,
+          ]
+        : []),
+
+      // Model selection (dropdown for dynamic, text input for static)
+      isDynamicProvider
+        ? {
+            name: 'llm_name',
+            label: t('model', 'Model'),
+            type: FormFieldType.Select,
+            required: true,
+            placeholder: modelsLoading
+              ? tc('loading', 'Loading...')
+              : t('selectModel', 'Select model'),
+            options: filteredModels.map((model) => ({
+              value: model.llm_name,
+              label: `${model.name} (${(model.max_tokens / 1000).toFixed(0)}K)`,
+            })),
+            disabled: modelsLoading || filteredModels.length === 0,
+          }
+        : {
+            name: 'llm_name',
+            label: t(llmFactory === 'Xinference' ? 'modelUid' : 'modelName'),
+            type: FormFieldType.Text,
+            required: true,
+            placeholder: t('modelNameMessage'),
+            validation: {
+              message: t('modelNameMessage'),
+            },
+          },
+
+      // Base URL (auto-populated for dynamic with default, required for static)
       {
         name: 'api_base',
         label: t('addLlmBaseUrl'),
         type: FormFieldType.Text,
-        required: true,
-        placeholder: t('baseUrlNameMessage'),
+        required: !isDynamicProvider || !defaultBaseUrl,
+        placeholder: defaultBaseUrl || t('baseUrlNameMessage'),
         validation: {
           message: t('baseUrlNameMessage'),
         },
+        tooltip:
+          isDynamicProvider && defaultBaseUrl
+            ? t(
+                'defaultBaseUrlTooltip',
+                'Default base URL is pre-filled, you can override it',
+              )
+            : undefined,
       },
+
+      // API Key
       {
         name: 'api_key',
         label: t('apiKey'),
@@ -137,6 +400,8 @@ const OllamaModal = ({
         required: false,
         placeholder: t('apiKeyMessage'),
       },
+
+      // Max Tokens (auto-populated for dynamic, manual for static)
       {
         name: 'max_tokens',
         label: t('maxTokens'),
@@ -146,6 +411,7 @@ const OllamaModal = ({
         validation: {
           message: t('maxTokensMessage'),
         },
+        disabled: isDynamicProvider && filteredModels.length > 0,
         customValidate: (value: any) => {
           if (value !== undefined && value !== null && value !== '') {
             if (typeof value !== 'number') {
@@ -160,8 +426,8 @@ const OllamaModal = ({
       },
     ];
 
-    // Add provider_order field only for OpenRouter
-    if (llmFactory === 'OpenRouter') {
+    // Add provider_order field only for OpenRouter (legacy support)
+    if (llmFactory === LLMFactory.OpenRouter && !isDynamicProvider) {
       baseFields.push({
         name: 'provider_order',
         label: 'Provider Order',
@@ -172,27 +438,39 @@ const OllamaModal = ({
       });
     }
 
-    // Add vision switch (conditional on model_type === 'chat')
-    baseFields.push({
-      name: 'vision',
-      label: t('vision'),
-      type: FormFieldType.Switch,
-      required: false,
-      dependencies: ['model_type'],
-      shouldRender: (formValues: any) => {
-        return formValues?.model_type === 'chat';
-      },
-    });
+    // Vision switch only for non-dynamic providers with chat model type
+    if (!isDynamicProvider) {
+      baseFields.push({
+        name: 'vision',
+        label: t('vision'),
+        type: FormFieldType.Switch,
+        required: false,
+        dependencies: ['model_type'],
+        shouldRender: (formValues: any) => {
+          return formValues?.model_type === 'chat';
+        },
+      });
+    }
 
     return baseFields;
-  }, [llmFactory, t]);
+  }, [
+    llmFactory,
+    t,
+    tc,
+    isDynamicProvider,
+    availableProviders,
+    filteredModels,
+    modelsLoading,
+    defaultBaseUrl,
+    modelTypeOptions,
+  ]);
 
   const defaultValues: FieldValues = useMemo(() => {
     if (editMode && initialValues) {
       return {
         llm_name: initialValues.llm_name || '',
         model_type: initialValues.model_type || 'chat',
-        api_base: initialValues.api_base || '',
+        api_base: initialValues.api_base || defaultBaseUrl || '',
         max_tokens: initialValues.max_tokens || 8192,
         api_key: '',
         vision: initialValues.model_type === 'image2text',
@@ -201,18 +479,26 @@ const OllamaModal = ({
     }
     return {
       model_type:
-        llmFactory in optionsMap
-          ? optionsMap[llmFactory as LLMFactory]?.at(0)?.value
-          : 'embedding',
+        isDynamicProvider && supportedCategories.length > 0
+          ? supportedCategories[0]
+          : 'chat',
+      api_base: defaultBaseUrl || '',
       vision: false,
     };
-  }, [editMode, initialValues, llmFactory]);
+  }, [
+    editMode,
+    initialValues,
+    isDynamicProvider,
+    supportedCategories,
+    defaultBaseUrl,
+  ]);
 
   const handleOk = async (values?: FieldValues) => {
     if (!values) return;
 
+    // For non-dynamic providers, convert vision=true to image2text model type
     const modelType =
-      values.model_type === 'chat' && values.vision
+      !isDynamicProvider && values.model_type === 'chat' && values.vision
         ? 'image2text'
         : values.model_type;
 
@@ -225,7 +511,7 @@ const OllamaModal = ({
       max_tokens: values.max_tokens as number,
     };
 
-    // Add provider_order only if it exists (for OpenRouter)
+    // Add provider_order only if it exists (for OpenRouter legacy)
     if (values.provider_order) {
       data.provider_order = values.provider_order as string;
     }
@@ -249,25 +535,25 @@ const OllamaModal = ({
         defaultValues={defaultValues}
         labelClassName="font-normal"
       >
-        <div className="flex items-center justify-between w-full gap-2 ">
-          <a href={url} target="_blank" rel="noreferrer" className="text-sm">
-            {t('ollamaLink', { name: llmFactory })}
-          </a>
-          <div className="flex gap-2">
-            <DynamicForm.CancelButton
-              handleCancel={() => {
-                hideModal?.();
-              }}
-            />
-            <DynamicForm.SavingButton
-              submitLoading={loading || false}
-              buttonText={tc('ok')}
-              submitFunc={(values: FieldValues) => {
-                handleOk(values);
-              }}
-            />
-          </div>
-        </div>
+        <ModelFormContent
+          isDynamicProvider={isDynamicProvider}
+          modelsLoading={modelsLoading}
+          filteredModels={filteredModels}
+          dynamicModels={dynamicModels}
+          selectedProvider={selectedProvider}
+          selectedModelType={selectedModelType}
+          defaultBaseUrl={defaultBaseUrl ?? undefined}
+          setSelectedProvider={setSelectedProvider}
+          setSelectedModelType={setSelectedModelType}
+          refetchModels={refetchModels}
+          url={url}
+          llmFactory={llmFactory}
+          hideModal={hideModal}
+          loading={loading}
+          handleOk={handleOk}
+          t={t}
+          tc={tc}
+        />
       </DynamicForm.Root>
     </Modal>
   );

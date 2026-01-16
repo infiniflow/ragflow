@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 from abc import ABC, abstractmethod
-from typing import List, Dict, Optional, Type, Tuple
+from typing import List, Dict, Optional, Type, Tuple, Set
 from enum import Enum
 import logging
 import threading
@@ -77,7 +77,7 @@ class DynamicModelProvider(ABC):
         pass
 
     @abstractmethod
-    def get_supported_categories(self) -> set[str]:
+    def get_supported_categories(self) -> Set[str]:
         """
         Return which RAGFlow model_types this provider can support.
 
@@ -189,9 +189,19 @@ def get_provider(factory_name: str) -> Optional[DynamicModelProvider]:
         # Create new instance if provider is registered
         provider_class = DYNAMIC_PROVIDERS.get(factory_name)
         if provider_class:
-            instance = provider_class()
-            PROVIDER_INSTANCES[factory_name] = instance
-            return instance
+            try:
+                instance = provider_class()
+                PROVIDER_INSTANCES[factory_name] = instance
+                return instance
+            except Exception as e:
+                # Log instantiation failure and cache None to avoid repeated attempts
+                logger.error(
+                    f"Failed to instantiate provider '{factory_name}': {type(e).__name__}: {e}",
+                    exc_info=True
+                )
+                # Cache None as failure marker to prevent repeated instantiation attempts
+                PROVIDER_INSTANCES[factory_name] = None
+                return None
         return None
 
 
@@ -220,8 +230,9 @@ def _register_providers():
         try:
             # Import provider module (triggers its registration)
             __import__(module_name)
-        except ImportError as e:
-            # Check if module exists but failed to import, or is simply not installed
+        except Exception as e:
+            # Catch all exceptions to prevent one bad provider from crashing the system
+            # Use find_spec to distinguish between missing modules and import errors
             spec = importlib.util.find_spec(module_name)
             if spec is None:
                 # Module not found - expected for optional providers
@@ -229,7 +240,7 @@ def _register_providers():
             else:
                 # Module exists but failed to import - this is a real error
                 logger.warning(
-                    f"Failed to import provider module {module_name} (module exists but import failed): {e}",
+                    f"Failed to import provider module {module_name} (module exists but import failed): {type(e).__name__}: {e}",
                     exc_info=True
                 )
             # Continue with other providers even if one fails

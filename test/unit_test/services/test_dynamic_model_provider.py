@@ -25,7 +25,8 @@ async def test_fetch_models_with_cache():
     provider = OpenRouterProvider()
 
     # Mock Redis cache hit
-    with patch.object(provider, '_get_cached_models') as mock_cache:
+    with patch.object(provider, '_get_cached_models') as mock_cache, \
+         patch('httpx.AsyncClient') as mock_client:
         mock_cache.return_value = [{"id": "test-model", "name": "Test Model"}]
 
         models, cache_hit = await provider.fetch_available_models()
@@ -33,6 +34,9 @@ async def test_fetch_models_with_cache():
         assert len(models) == 1
         assert models[0]["id"] == "test-model"
         assert cache_hit is True
+        
+        # Verify no HTTP client was invoked when cache hit
+        mock_client.assert_not_called()
 
 
 @pytest.mark.asyncio

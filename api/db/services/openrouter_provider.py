@@ -132,6 +132,9 @@ class OpenRouterProvider(DynamicModelProvider):
             # Extract provider for frontend filtering
             provider = self._extract_provider(safe_id)
 
+            # Extract pricing safely, handling None values
+            pricing = model.get("pricing") or {}
+            
             transformed.append({
                 "id": safe_id,
                 "llm_name": safe_id,
@@ -141,8 +144,8 @@ class OpenRouterProvider(DynamicModelProvider):
                 "max_tokens": model.get("context_length", 8192),
                 "is_tools": self._supports_tools(safe_id),
                 "pricing": {
-                    "prompt": safe_float(model.get("pricing", {}).get("prompt", 0)),
-                    "completion": safe_float(model.get("pricing", {}).get("completion", 0))
+                    "prompt": safe_float(pricing.get("prompt", 0)),
+                    "completion": safe_float(pricing.get("completion", 0))
                 },
                 "tags": self._generate_tags(model, model_type),
                 "architecture": model.get("architecture", {}),
@@ -236,9 +239,11 @@ class OpenRouterProvider(DynamicModelProvider):
 
     def _generate_tags(self, model: Dict, model_type: str) -> str:
         """Generate RAGFlow-style tags"""
-        tags = ["LLM"]
+        tags = []
 
+        # Add "LLM" tag only for chat models (generative language models)
         if model_type == "chat":
+            tags.append("LLM")
             tags.append("CHAT")
         elif model_type == "embedding":
             tags.append("TEXT EMBEDDING")
@@ -294,6 +299,8 @@ class OpenRouterProvider(DynamicModelProvider):
         """
         Return hardcoded popular models as fallback when API is unavailable.
         
+        Includes models for multiple types: chat (LLM), embedding, and speech2text.
+        
         IMPORTANT: These values can become stale and should be verified periodically.
         
         Last verified: January 16, 2026
@@ -304,7 +311,7 @@ class OpenRouterProvider(DynamicModelProvider):
               migrate to a more resilient fallback mechanism (e.g., bundled JSON,
               secondary API endpoint, or graceful degradation without models).
         """
-        logging.warning("Using fallback models")
+        logging.warning("Using fallback models (includes chat, embedding, and speech2text defaults)")
         return [
             {
                 "id": "anthropic/claude-3.5-sonnet",
@@ -370,6 +377,47 @@ class OpenRouterProvider(DynamicModelProvider):
                 "tags": "LLM,CHAT,32K",
                 "architecture": {},
                 "supports_vision": False
+            },
+            # Embedding models
+            {
+                "id": "openai/text-embedding-3-small",
+                "llm_name": "openai/text-embedding-3-small",
+                "name": "Text Embedding 3 Small",
+                "model_type": "embedding",
+                "provider": "openai",
+                "max_tokens": 8191,
+                "is_tools": False,
+                "pricing": {"prompt": 0.00002, "completion": 0.0},
+                "tags": "TEXT EMBEDDING,8K",
+                "architecture": {},
+                "supports_vision": False
+            },
+            {
+                "id": "openai/text-embedding-ada-002",
+                "llm_name": "openai/text-embedding-ada-002",
+                "name": "Text Embedding Ada 002",
+                "model_type": "embedding",
+                "provider": "openai",
+                "max_tokens": 8191,
+                "is_tools": False,
+                "pricing": {"prompt": 0.0001, "completion": 0.0},
+                "tags": "TEXT EMBEDDING,8K",
+                "architecture": {},
+                "supports_vision": False
+            },
+            # Speech2Text models
+            {
+                "id": "openai/whisper-large-v3",
+                "llm_name": "openai/whisper-large-v3",
+                "name": "Whisper Large V3",
+                "model_type": "speech2text",
+                "provider": "openai",
+                "max_tokens": 0,
+                "is_tools": False,
+                "pricing": {"prompt": 0.006, "completion": 0.0},
+                "tags": "SPEECH2TEXT",
+                "architecture": {},
+                "supports_vision": False
             }
         ]
 
@@ -392,7 +440,7 @@ class OpenRouterProvider(DynamicModelProvider):
 
     def get_supported_categories(self) -> set[str]:
         """OpenRouter can support these RAGFlow model categories"""
-        return {"chat", "embedding", "speech2text", "tts"}
+        return {"chat", "embedding", "rerank", "speech2text", "tts"}
 
     def get_default_base_url(self) -> Optional[str]:
         """Default OpenRouter API endpoint"""

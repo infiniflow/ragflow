@@ -3,6 +3,7 @@ import message from '@/components/ui/message';
 import { LlmModelType } from '@/constants/knowledge';
 import { ResponseGetType } from '@/interfaces/database/base';
 import {
+  IDynamicModel,
   IFactory,
   IMyLlmValue,
   IThirdOAIModelCollection as IThirdAiModelCollection,
@@ -13,7 +14,7 @@ import {
   IAddLlmRequestBody,
   IDeleteLlmRequestBody,
 } from '@/interfaces/request/llm';
-import userService from '@/services/user-service';
+import userService, { getFactoryModels } from '@/services/user-service';
 import { getLLMIconName, getRealModelName } from '@/utils/llm-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DefaultOptionType } from 'antd/es/select';
@@ -27,6 +28,7 @@ export const enum LLMApiAction {
   MyLlmList = 'myLlmList',
   MyLlmListDetailed = 'myLlmListDetailed',
   FactoryList = 'factoryList',
+  FactoryModels = 'factoryModels',
   SaveApiKey = 'saveApiKey',
   SaveTenantInfo = 'saveTenantInfo',
   AddLlm = 'addLlm',
@@ -34,6 +36,16 @@ export const enum LLMApiAction {
   EnableLlm = 'enableLlm',
   DeleteFactory = 'deleteFactory',
 }
+
+// Factory function to generate default factory model data
+const makeDefaultFactoryData = (factoryName: string) => ({
+  factory: factoryName,
+  models: [],
+  models_by_category: {},
+  supported_categories: [],
+  default_base_url: null,
+  is_dynamic: false,
+});
 
 export const useFetchLlmList = (modelType?: LlmModelType) => {
   const { data } = useQuery<IThirdAiModelCollection>({
@@ -437,4 +449,59 @@ export const useDeleteFactory = () => {
   });
 
   return { data, loading, deleteFactory: mutateAsync };
+};
+
+export const useFetchFactoryModels = (
+  factoryName: string,
+  category?: string,
+  enabled: boolean = false,
+): {
+  data: IDynamicModel[];
+  dataByCategory: Record<string, IDynamicModel[]>;
+  supportedCategories: string[];
+  defaultBaseUrl: string | null;
+  loading: boolean;
+  refetch: () => void;
+} => {
+  const { t } = useTranslation();
+
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery({
+    queryKey: [LLMApiAction.FactoryModels, factoryName, category],
+    initialData: makeDefaultFactoryData(factoryName),
+    enabled,
+    gcTime: 0,
+    queryFn: async () => {
+      try {
+        const { data } = await getFactoryModels(factoryName, false, category);
+        if (data?.code !== 0) {
+          message.error(data?.message || t('message.fetchFailed'));
+          return makeDefaultFactoryData(factoryName);
+        }
+        return {
+          factory: data?.data?.factory ?? factoryName,
+          models: data?.data?.models ?? [],
+          models_by_category: data?.data?.models_by_category ?? {},
+          supported_categories: data?.data?.supported_categories ?? [],
+          default_base_url: data?.data?.default_base_url ?? null,
+          is_dynamic: data?.data?.is_dynamic ?? false,
+        };
+      } catch {
+        message.error(t('message.fetchFailed'));
+        return makeDefaultFactoryData(factoryName);
+      }
+    },
+  });
+
+  return {
+    data: data.models,
+    dataByCategory: data.models_by_category,
+    supportedCategories: data.supported_categories,
+    defaultBaseUrl: data.default_base_url,
+    loading,
+    refetch,
+  };
 };
