@@ -48,6 +48,7 @@ import {
   initialVariableAssignerValues,
   initialWaitingDialogueValues,
   initialWenCaiValues,
+  initialPDFGeneratorValues,
   initialWikipediaValues,
   initialYahooFinanceValues,
 } from '../constant';
@@ -179,7 +180,7 @@ export const useInitializeOperatorParams = () => {
       [Operator.Loop]: initialLoopValues,
       [Operator.LoopStart]: {},
       [Operator.ExitLoop]: {},
-      [Operator.PDFGenerator]: {},
+      [Operator.PDFGenerator]: initialPDFGeneratorValues,
       [Operator.ExcelProcessor]: {},
     };
   }, [llmId]);

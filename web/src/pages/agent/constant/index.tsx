@@ -1016,10 +1016,10 @@ export const initialPDFGeneratorValues = {
   watermark_text: '',
   enable_toc: false,
   outputs: {
-    file_path: { type: 'string', value: '' },
-    pdf_base64: { type: 'string', value: '' },
-    download: { type: 'string', value: '' },
-    success: { type: 'boolean', value: false },
+    file_path: { type: 'string' },
+    pdf_base64: { type: 'string' },
+    download: { type: 'string' },
+    success: { type: 'boolean' },
   },
 };
 
