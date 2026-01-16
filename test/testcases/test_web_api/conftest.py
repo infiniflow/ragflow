@@ -14,7 +14,8 @@
 #  limitations under the License.
 #
 from time import sleep
-
+from ragflow_sdk import RAGFlow
+from configs import HOST_ADDRESS, VERSION
 import pytest
 from common import (
     batch_add_chunks,
@@ -81,7 +82,9 @@ def generate_test_files(request: FixtureRequest, tmp_path):
 def ragflow_tmp_dir(request, tmp_path_factory):
     class_name = request.cls.__name__
     return tmp_path_factory.mktemp(class_name)
-
+@pytest.fixture(scope="session")
+def client(token: str) -> RAGFlow:
+    return RAGFlow(api_key=token, base_url=HOST_ADDRESS, version=VERSION)
 
 @pytest.fixture(scope="session")
 def WebApiAuth(auth):

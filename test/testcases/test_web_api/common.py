@@ -99,7 +99,7 @@ def batch_create_datasets(auth, num):
 
 
 # DOCUMENT APP
-def upload_documents(auth, payload=None, files_path=None):
+def upload_documents(auth, payload=None, files_path=None, *, filename_override=None):
     url = f"{HOST_ADDRESS}{DOCUMENT_APP_URL}/upload"
 
     if files_path is None:
@@ -115,7 +115,8 @@ def upload_documents(auth, payload=None, files_path=None):
         for fp in files_path:
             p = Path(fp)
             f = p.open("rb")
-            fields.append(("file", (p.name, f)))
+            filename = filename_override if filename_override is not None else p.name
+            fields.append(("file", (filename, f)))
             file_objects.append(f)
         m = MultipartEncoder(fields=fields)
 

@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 import logging
+import os
+import time
 
 from quart import request
 from api.apps import login_required, current_user
@@ -35,22 +37,56 @@ from common.constants import MemoryType, RetCode, ForgettingPolicy
 @login_required
 @validate_request("name", "memory_type", "embd_id", "llm_id")
 async def create_memory():
+    timing_enabled = os.getenv("RAGFLOW_API_TIMING")
+    t_start = time.perf_counter() if timing_enabled else None
     req = await get_request_json()
+    t_parsed = time.perf_counter() if timing_enabled else None
     # check name length
     name = req["name"]
     memory_name = name.strip()
     if len(memory_name) == 0:
+        if timing_enabled:
+            logging.info(
+                "api_timing create_memory invalid_name parse_ms=%.2f total_ms=%.2f path=%s",
+                (t_parsed - t_start) * 1000,
+                (time.perf_counter() - t_start) * 1000,
+                request.path,
+            )
         return get_error_argument_result("Memory name cannot be empty or whitespace.")
     if len(memory_name) > MEMORY_NAME_LIMIT:
+        if timing_enabled:
+            logging.info(
+                "api_timing create_memory invalid_name parse_ms=%.2f total_ms=%.2f path=%s",
+                (t_parsed - t_start) * 1000,
+                (time.perf_counter() - t_start) * 1000,
+                request.path,
+            )
         return get_error_argument_result(f"Memory name '{memory_name}' exceeds limit of {MEMORY_NAME_LIMIT}.")
     # check memory_type valid
+    if not isinstance(req["memory_type"], list):
+        if timing_enabled:
+            logging.info(
+                "api_timing create_memory invalid_memory_type parse_ms=%.2f total_ms=%.2f path=%s",
+                (t_parsed - t_start) * 1000,
+                (time.perf_counter() - t_start) * 1000,
+                request.path,
+            )
+        return get_error_argument_result("Memory type must be a list.")
     memory_type = set(req["memory_type"])
     invalid_type = memory_type - {e.name.lower() for e in MemoryType}
     if invalid_type:
+        if timing_enabled:
+            logging.info(
+                "api_timing create_memory invalid_memory_type parse_ms=%.2f total_ms=%.2f path=%s",
+                (t_parsed - t_start) * 1000,
+                (time.perf_counter() - t_start) * 1000,
+                request.path,
+            )
         return get_error_argument_result(f"Memory type '{invalid_type}' is not supported.")
     memory_type = list(memory_type)
 
     try:
+        t_before_db = time.perf_counter() if timing_enabled else None
         res, memory = MemoryService.create_memory(
             tenant_id=current_user.id,
             name=memory_name,
@@ -58,6 +94,15 @@ async def create_memory():
             embd_id=req["embd_id"],
             llm_id=req["llm_id"]
         )
+        if timing_enabled:
+            logging.info(
+                "api_timing create_memory parse_ms=%.2f validate_ms=%.2f db_ms=%.2f total_ms=%.2f path=%s",
+                (t_parsed - t_start) * 1000,
+                (t_before_db - t_parsed) * 1000,
+                (time.perf_counter() - t_before_db) * 1000,
+                (time.perf_counter() - t_start) * 1000,
+                request.path,
+            )
 
         if res:
             return get_json_result(message=True, data=format_ret_data_from_memory(memory))
