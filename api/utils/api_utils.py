@@ -31,6 +31,12 @@ from quart import (
     jsonify,
     request
 )
+from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
+
+try:
+    from quart.exceptions import BadRequest as QuartBadRequest
+except ImportError:  # pragma: no cover - optional dependency
+    QuartBadRequest = None
 
 from peewee import OperationalError
 
@@ -48,35 +54,33 @@ requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSON
 
 async def _coerce_request_data() -> dict:
     """Fetch JSON body with sane defaults; fallback to form data."""
+    if hasattr(request, "_cached_payload"):
+        return request._cached_payload
     payload: Any = None
-    last_error: Exception | None = None
 
-    try:
-        payload = await request.get_json(force=True, silent=True)
-    except Exception as e:
-        last_error = e
-        payload = None
+    body_bytes = await request.get_data()
+    has_body = bool(body_bytes)
+    content_type = (request.content_type or "").lower()
+    is_json = content_type.startswith("application/json")
 
-    if payload is None:
-        try:
-            form = await request.form
-            payload = form.to_dict()
-        except Exception as e:
-            last_error = e
-            payload = None
+    if not has_body:
+        payload = {}
+    elif is_json:
+        payload = await request.get_json(force=False, silent=False)
+        if isinstance(payload, dict):
+            payload = payload or {}
+        elif isinstance(payload, str):
+            raise AttributeError("'str' object has no attribute 'get'")
+        else:
+            raise TypeError("JSON payload must be an object.")
+    else:
+        form = await request.form
+        payload = form.to_dict() if form else None
+        if payload is None:
+            raise TypeError("Request body is not a valid form payload.")
 
-    if payload is None:
-        if last_error is not None:
-            raise last_error
-        raise ValueError("No JSON body or form data found in request.")
-
-    if isinstance(payload, dict):
-        return payload or {}
-
-    if isinstance(payload, str):
-        raise AttributeError("'str' object has no attribute 'get'")
-
-    raise TypeError(f"Unsupported request payload type: {type(payload)!r}")
+    request._cached_payload = payload
+    return payload
 
 async def get_request_json():
     return await _coerce_request_data()
@@ -124,16 +128,12 @@ def server_error_response(e):
     try:
         msg = repr(e).lower()
         if getattr(e, "code", None) == 401 or ("unauthorized" in msg) or ("401" in msg):
-            return get_json_result(code=RetCode.UNAUTHORIZED, message=repr(e))
+            resp = get_json_result(code=RetCode.UNAUTHORIZED, message="Unauthorized")
+            resp.status_code = RetCode.UNAUTHORIZED
+            return resp
     except Exception as ex:
         logging.warning(f"error checking authorization: {ex}")
 
-    if len(e.args) > 1:
-        try:
-            serialized_data = serialize_for_json(e.args[1])
-            return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=serialized_data)
-        except Exception:
-            return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=None)
     if repr(e).find("index_not_found_exception") >= 0:
         return get_json_result(code=RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
 
@@ -168,7 +168,17 @@ def validate_request(*args, **kwargs):
     def wrapper(func):
         @wraps(func)
         async def decorated_function(*_args, **_kwargs):
-            errs = process_args(await _coerce_request_data())
+            exception_types = (AttributeError, TypeError, WerkzeugBadRequest)
+            if QuartBadRequest is not None:
+                exception_types = exception_types + (QuartBadRequest,)
+            if args or kwargs:
+                try:
+                    input_arguments = await _coerce_request_data()
+                except exception_types:
+                    input_arguments = {}
+            else:
+                input_arguments = await _coerce_request_data()
+            errs = process_args(input_arguments)
             if errs:
                 return get_json_result(code=RetCode.ARGUMENT_ERROR, message=errs)
             if inspect.iscoroutinefunction(func):
