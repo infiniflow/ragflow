@@ -483,6 +483,7 @@ const OllamaModal = ({
       model_type: 'chat',
       api_base: defaultBaseUrl || '',
       vision: false,
+      provider_filter: '', // Initialize provider filter to ensure dropdown value persists
     };
   }, [editMode, initialValues, defaultBaseUrl]);
 
