@@ -123,7 +123,7 @@ const ModelFormContent = ({
     }
   }, [selectedModel, isDynamicProvider, dynamicModels, form]);
 
-  // Watch for model_type changes
+  // Watch for model_type and provider_filter changes
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
       if (name === 'model_type' && isDynamicProvider) {
@@ -132,16 +132,22 @@ const ModelFormContent = ({
           setSelectedModelType(newModelType);
           // Reset provider and model selection when category changes
           setSelectedProvider(null);
-          form.setValue('provider_filter', '');
-          form.setValue('llm_name', '');
+          // Use setTimeout to ensure form field updates after re-render
+          setTimeout(() => {
+            form.setValue('provider_filter', '', { shouldValidate: false });
+            form.setValue('llm_name', '', { shouldValidate: false });
+          }, 0);
         }
       }
 
       if (name === 'provider_filter') {
         const newProvider = value.provider_filter;
+        // Update state to filter models
         setSelectedProvider(newProvider || null);
         // Reset model selection when provider changes
-        form.setValue('llm_name', '');
+        setTimeout(() => {
+          form.setValue('llm_name', '', { shouldValidate: false });
+        }, 0);
       }
     });
 
@@ -407,33 +413,33 @@ const OllamaModal = ({
           : t('apiKeyMessage'),
       },
 
-      // Max Tokens field
-      // For dynamic providers: auto-populated from model selection, shown as disabled info
-      // For static providers: manual input required
-      {
-        name: 'max_tokens',
-        label: t('maxTokens'),
-        type: FormFieldType.Number,
-        required: true,
-        placeholder: isDynamicProvider
-          ? t('autoPopulated', 'Auto-populated from selected model')
-          : t('maxTokensTip'),
-        disabled: isDynamicProvider, // Disabled for dynamic (auto-populated)
-        validation: {
-          message: t('maxTokensMessage'),
-        },
-        customValidate: (value: any) => {
-          if (value !== undefined && value !== null && value !== '') {
-            if (typeof value !== 'number') {
-              return t('maxTokensInvalidMessage');
-            }
-            if (value < 0) {
-              return t('maxTokensMinMessage');
-            }
-          }
-          return true;
-        },
-      },
+      // Max Tokens field (only visible for non-dynamic providers)
+      // For dynamic providers: hidden but still in form state (auto-populated)
+      ...(isDynamicProvider
+        ? []
+        : [
+            {
+              name: 'max_tokens',
+              label: t('maxTokens'),
+              type: FormFieldType.Number,
+              required: true,
+              placeholder: t('maxTokensTip'),
+              validation: {
+                message: t('maxTokensMessage'),
+              },
+              customValidate: (value: any) => {
+                if (value !== undefined && value !== null && value !== '') {
+                  if (typeof value !== 'number') {
+                    return t('maxTokensInvalidMessage');
+                  }
+                  if (value < 0) {
+                    return t('maxTokensMinMessage');
+                  }
+                }
+                return true;
+              },
+            } as FormFieldConfig,
+          ]),
     ];
 
     // Add provider_order field only for OpenRouter (legacy support)
