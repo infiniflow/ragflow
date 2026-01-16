@@ -199,3 +199,7 @@ backup
 
 
 .hypothesis
+
+
+docker/oceanbase/data
+docker/oceanbase/conf
