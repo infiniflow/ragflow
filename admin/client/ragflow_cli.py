@@ -745,7 +745,7 @@ class RAGFlowCLI(Cmd):
 
     def _handle_list_services(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         url = f"http://{self.host}:{self.port}/api/v1/admin/services"
         response = self.session.get(url)
@@ -757,7 +757,7 @@ class RAGFlowCLI(Cmd):
 
     def _handle_show_service(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         service_id: int = command["number"]
 
@@ -780,28 +780,28 @@ class RAGFlowCLI(Cmd):
 
     def _handle_restart_service(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         service_id: int = command["number"]
         print(f"Restart service {service_id}")
 
     def _handle_shutdown_service(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         service_id: int = command["number"]
         print(f"Shutdown service {service_id}")
 
     def _handle_startup_service(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         service_id: int = command["number"]
         print(f"Startup service {service_id}")
 
     def _handle_list_users(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         url = f"http://{self.host}:{self.port}/api/v1/admin/users"
         response = self.session.get(url)
@@ -813,7 +813,7 @@ class RAGFlowCLI(Cmd):
 
     def _handle_show_user(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
@@ -830,7 +830,7 @@ class RAGFlowCLI(Cmd):
 
     def _handle_drop_user(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
@@ -845,7 +845,7 @@ class RAGFlowCLI(Cmd):
 
     def _handle_alter_user(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
@@ -862,7 +862,7 @@ class RAGFlowCLI(Cmd):
 
     def _handle_create_user(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
@@ -880,7 +880,7 @@ class RAGFlowCLI(Cmd):
 
     def _handle_activate_user(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
@@ -901,7 +901,7 @@ class RAGFlowCLI(Cmd):
 
     def _grant_admin(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
@@ -917,7 +917,7 @@ class RAGFlowCLI(Cmd):
 
     def _revoke_admin(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         user_name_tree: Tree = command["user_name"]
         user_name: str = user_name_tree.children[0].strip("'\"")
@@ -933,7 +933,7 @@ class RAGFlowCLI(Cmd):
 
     def _set_variable(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         var_name_tree: Tree = command["var_name"]
         var_name = var_name_tree.children[0].strip("'\"")
@@ -949,7 +949,7 @@ class RAGFlowCLI(Cmd):
 
     def _show_variable(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         var_name_tree: Tree = command["var_name"]
         var_name = var_name_tree.children[0].strip("'\"")
@@ -963,7 +963,7 @@ class RAGFlowCLI(Cmd):
 
     def _list_variables(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         url = f"http://{self.host}:{self.port}/api/v1/admin/variables"
         response = self.session.get(url)
@@ -975,7 +975,7 @@ class RAGFlowCLI(Cmd):
 
     def _list_configs(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         url = f"http://{self.host}:{self.port}/api/v1/admin/configs"
         response = self.session.get(url)
@@ -987,7 +987,7 @@ class RAGFlowCLI(Cmd):
 
     def _list_environments(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         url = f"http://{self.host}:{self.port}/api/v1/admin/environments"
         response = self.session.get(url)
@@ -999,7 +999,7 @@ class RAGFlowCLI(Cmd):
 
     def _handle_list_datasets(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
@@ -1017,7 +1017,7 @@ class RAGFlowCLI(Cmd):
 
     def _handle_list_agents(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
@@ -1035,7 +1035,7 @@ class RAGFlowCLI(Cmd):
 
     def _create_role(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
@@ -1055,7 +1055,7 @@ class RAGFlowCLI(Cmd):
 
     def _drop_role(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
         
         role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
@@ -1070,7 +1070,7 @@ class RAGFlowCLI(Cmd):
 
     def _alter_role(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
@@ -1088,7 +1088,7 @@ class RAGFlowCLI(Cmd):
 
     def _list_roles(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         url = f"http://{self.host}:{self.port}/api/v1/admin/roles"
         response = self.session.get(url)
@@ -1100,7 +1100,7 @@ class RAGFlowCLI(Cmd):
 
     def _show_role(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
@@ -1115,7 +1115,7 @@ class RAGFlowCLI(Cmd):
 
     def _grant_permission(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         role_name_tree: Tree = command["role_name"]
         role_name_str: str = role_name_tree.children[0].strip("'\"")
@@ -1137,7 +1137,7 @@ class RAGFlowCLI(Cmd):
 
     def _revoke_permission(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         role_name_tree: Tree = command["role_name"]
         role_name_str: str = role_name_tree.children[0].strip("'\"")
@@ -1159,7 +1159,7 @@ class RAGFlowCLI(Cmd):
 
     def _alter_user_role(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
 
         role_name_tree: Tree = command["role_name"]
         role_name_str: str = role_name_tree.children[0].strip("'\"")
@@ -1176,7 +1176,7 @@ class RAGFlowCLI(Cmd):
 
     def _show_user_permission(self, command):
         if self.mode != "admin":
-            print(f"This command is only allowed in ADMIN mode")
+            print("This command is only allowed in ADMIN mode")
         
         user_name_tree: Tree = command["user_name"]
         user_name_str: str = user_name_tree.children[0].strip("'\"")
@@ -1207,7 +1207,7 @@ class RAGFlowCLI(Cmd):
 
     def _list_user_datasets(self, command):
         if self.mode != "user":
-            print(f"This command is only allowed in USER mode")
+            print("This command is only allowed in USER mode")
 
         url = f"http://{self.host}:{self.port}/v1/kb/list"
         response = self.session.post(url)
@@ -1219,7 +1219,7 @@ class RAGFlowCLI(Cmd):
 
     def _list_user_agents(self, command):
         if self.mode != "user":
-            print(f"This command is only allowed in USER mode")
+            print("This command is only allowed in USER mode")
 
         url = f"http://{self.host}:{self.port}/v1/canvas/list"
         response = self.session.get(url)
@@ -1231,7 +1231,7 @@ class RAGFlowCLI(Cmd):
 
     def _list_user_chats(self, command):
         if self.mode != "user":
-            print(f"This command is only allowed in USER mode")
+            print("This command is only allowed in USER mode")
 
         url = f"http://{self.host}:{self.port}/v1/dialog/next"
         response = self.session.get(url)
@@ -1243,7 +1243,7 @@ class RAGFlowCLI(Cmd):
 
     def _list_user_model_providers(self, command):
         if self.mode != "user":
-            print(f"This command is only allowed in USER mode")
+            print("This command is only allowed in USER mode")
 
         url = f"http://{self.host}:{self.port}/v1/llm/my_llms"
         response = self.session.get(url)
@@ -1256,7 +1256,7 @@ class RAGFlowCLI(Cmd):
 
     def _list_user_default_models(self, command):
         if self.mode != "user":
-            print(f"This command is only allowed in USER mode")
+            print("This command is only allowed in USER mode")
 
         url = f"http://{self.host}:{self.port}/v1/user/tenant_info"
         response = self.session.get(url)
