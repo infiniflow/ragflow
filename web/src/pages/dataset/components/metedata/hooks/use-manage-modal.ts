@@ -14,11 +14,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import {
+  IBuiltInMetadataItem,
+  IMetaDataJsonSchemaProperty,
   IMetaDataReturnJSONSettings,
   IMetaDataReturnJSONType,
   IMetaDataReturnType,
   IMetaDataTableData,
   MetadataOperations,
+  MetadataValueType,
   ShowManageMetadataModalProps,
 } from '../interface';
 export enum MetadataType {
@@ -71,6 +74,90 @@ export const MetadataDeleteMap = (
     },
   };
 };
+
+const DEFAULT_VALUE_TYPE: MetadataValueType = 'string';
+const VALUE_TYPES_WITH_ENUM = new Set<MetadataValueType>(['enum']);
+const VALUE_TYPE_LABELS: Record<MetadataValueType, string> = {
+  string: 'String',
+  bool: 'Bool',
+  enum: 'Enum',
+  time: 'Time',
+  int: 'Int',
+  float: 'Float',
+};
+
+export const metadataValueTypeOptions = Object.entries(VALUE_TYPE_LABELS).map(
+  ([value, label]) => ({ label, value }),
+);
+
+export const getMetadataValueTypeLabel = (value?: MetadataValueType) =>
+  VALUE_TYPE_LABELS[value || DEFAULT_VALUE_TYPE] || VALUE_TYPE_LABELS.string;
+
+export const isMetadataValueTypeWithEnum = (value?: MetadataValueType) =>
+  VALUE_TYPES_WITH_ENUM.has(value || DEFAULT_VALUE_TYPE);
+
+const schemaToValueType = (
+  property?: IMetaDataJsonSchemaProperty,
+): MetadataValueType => {
+  if (!property) return DEFAULT_VALUE_TYPE;
+  if (
+    property.type === 'array' &&
+    property.items?.type === 'string' &&
+    (property.items.enum?.length || 0) > 0
+  ) {
+    return 'enum';
+  }
+  if (property.type === 'boolean') return 'bool';
+  if (property.type === 'integer') return 'int';
+  if (property.type === 'number') return 'float';
+  if (property.type === 'string' && property.format) {
+    return 'time';
+  }
+  if (property.type === 'string' && property.enum?.length) {
+    return 'enum';
+  }
+  return DEFAULT_VALUE_TYPE;
+};
+
+const valueTypeToSchema = (
+  valueType: MetadataValueType,
+  description: string,
+  values: string[],
+): IMetaDataJsonSchemaProperty => {
+  const schema: IMetaDataJsonSchemaProperty = {
+    description: description || '',
+  };
+
+  switch (valueType) {
+    case 'bool':
+      schema.type = 'boolean';
+      return schema;
+    case 'int':
+      schema.type = 'integer';
+      return schema;
+    case 'float':
+      schema.type = 'number';
+      return schema;
+    case 'time':
+      schema.type = 'string';
+      schema.format = 'date-time';
+      return schema;
+    case 'enum':
+      schema.type = 'string';
+      if (values?.length) {
+        schema.enum = values;
+      }
+      return schema;
+    case 'string':
+    default:
+      schema.type = 'string';
+      if (values?.length) {
+        schema.enum = values;
+      }
+      return schema;
+  }
+};
+
 export const util = {
   changeToMetaDataTableData(data: IMetaDataReturnType): IMetaDataTableData[] {
     return Object.entries(data).map(([key, value]) => {
@@ -117,25 +204,58 @@ export const util = {
   tableDataToMetaDataSettingJSON(
     data: IMetaDataTableData[],
   ): IMetaDataReturnJSONSettings {
-    return data.map((item) => {
-      return {
-        key: item.field,
-        description: item.description,
-        enum: item.values,
-      };
-    });
+    const properties = data.reduce<Record<string, IMetaDataJsonSchemaProperty>>(
+      (acc, item) => {
+        if (!item.field) {
+          return acc;
+        }
+        const valueType = item.valueType || DEFAULT_VALUE_TYPE;
+        const values =
+          isMetadataValueTypeWithEnum(valueType) && item.restrictDefinedValues
+            ? item.values
+            : [];
+        acc[item.field] = valueTypeToSchema(
+          valueType,
+          item.description,
+          values,
+        );
+        return acc;
+      },
+      {},
+    );
+
+    return {
+      type: 'object',
+      properties,
+      additionalProperties: false,
+    };
   },
 
   metaDataSettingJSONToMetaDataTableData(
     data: IMetaDataReturnJSONSettings,
   ): IMetaDataTableData[] {
-    if (!Array.isArray(data)) return [];
-    return data.map((item) => {
+    if (!data) return [];
+    if (Array.isArray(data)) {
+      return data.map((item) => {
+        return {
+          field: item.key,
+          description: item.description,
+          values: item.enum || [],
+          restrictDefinedValues: !!item.enum?.length,
+          valueType: DEFAULT_VALUE_TYPE,
+        } as IMetaDataTableData;
+      });
+    }
+    const properties = data.properties || {};
+    return Object.entries(properties).map(([key, property]) => {
+      const valueType = schemaToValueType(property);
+      const values = property.enum || property.items?.enum || [];
       return {
-        field: item.key,
-        description: item.description,
-        values: item.enum,
-        restrictDefinedValues: !!item.enum?.length,
+        field: key,
+        description: property.description || '',
+        values,
+        restrictDefinedValues: !!values.length,
+        valueType,
       } as IMetaDataTableData;
     });
   },
@@ -384,21 +504,15 @@ export const useManageMetaDataModal = (
   );
 
   const handleSaveSettings = useCallback(
-    async (callback: () => void) => {
+    async (callback: () => void, builtInMetadata?: IBuiltInMetadataItem[]) => {
       const data = util.tableDataToMetaDataSettingJSON(tableData);
-      const { data: res } = await kbService.kbUpdateMetaData({
-        kb_id: id,
+      callback?.();
+      return {
         metadata: data,
-        enable_metadata: true,
-      });
-      if (res.code === 0) {
-        message.success(t('message.operated'));
-        callback?.();
-      }
-
-      return data;
+        builtInMetadata: builtInMetadata || [],
+      };
     },
-    [tableData, id, t],
+    [tableData],
   );
 
   const handleSaveSingleFileSettings = useCallback(
@@ -421,7 +535,13 @@ export const useManageMetaDataModal = (
   );
 
   const handleSave = useCallback(
-    async ({ callback }: { callback: () => void }) => {
+    async ({
+      callback,
+      builtInMetadata,
+    }: {
+      callback: () => void;
+      builtInMetadata?: string[];
+    }) => {
       switch (type) {
         case MetadataType.UpdateSingle:
           handleSaveUpdateSingle(callback);
@@ -430,7 +550,7 @@ export const useManageMetaDataModal = (
           handleSaveManage(callback);
           break;
         case MetadataType.Setting:
-          return handleSaveSettings(callback);
+          return handleSaveSettings(callback, builtInMetadata);
         case MetadataType.SingleFileSetting:
           return handleSaveSingleFileSettings(callback);
         default:

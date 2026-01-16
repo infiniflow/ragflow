@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MetadataDeleteMap, MetadataType } from '../hooks/use-manage-modal';
+import {
+  isMetadataValueTypeWithEnum,
+  MetadataDeleteMap,
+  MetadataType,
+} from '../hooks/use-manage-modal';
 import { IManageValuesProps, IMetaDataTableData } from '../interface';
 
 export const useManageValues = (props: IManageValuesProps) => {
   const {
     data,
 
-    isShowValueSwitch,
     hideModal,
     onSave,
     addUpdateValue,
@@ -16,7 +19,10 @@ export const useManageValues = (props: IManageValuesProps) => {
     type,
   } = props;
   const { t } = useTranslation();
-  const [metaData, setMetaData] = useState(data);
+  const [metaData, setMetaData] = useState<IMetaDataTableData>({
+    ...data,
+    valueType: data.valueType || 'string',
+  });
   const [valueError, setValueError] = useState<Record<string, string>>({
     field: '',
     values: '',
@@ -61,10 +67,28 @@ export const useManageValues = (props: IManageValuesProps) => {
           };
         });
       }
-      setMetaData((prev) => ({
-        ...prev,
-        [field]: value,
-      }));
+      setMetaData((prev) => {
+        if (field === 'valueType') {
+          const nextValueType = (value ||
+            'string') as IMetaDataTableData['valueType'];
+          const supportsEnum = isMetadataValueTypeWithEnum(nextValueType);
+          if (!supportsEnum) {
+            setTempValues([]);
+          }
+          return {
+            ...prev,
+            valueType: nextValueType,
+            values: supportsEnum ? prev.values : [],
+            restrictDefinedValues: supportsEnum
+              ? prev.restrictDefinedValues || nextValueType === 'enum'
+              : false,
+          };
+        }
+        return {
+          ...prev,
+          [field]: value,
+        };
+      });
     },
     [existsKeys, type, t],
   );
@@ -74,7 +98,10 @@ export const useManageValues = (props: IManageValuesProps) => {
 
   useEffect(() => {
     setTempValues([...data.values]);
-    setMetaData(data);
+    setMetaData({
+      ...data,
+      valueType: data.valueType || 'string',
+    });
   }, [data]);
 
   const handleHideModal = useCallback(() => {
@@ -86,14 +113,19 @@ export const useManageValues = (props: IManageValuesProps) => {
     if (type === MetadataType.Setting && valueError.field) {
       return;
     }
-    if (!metaData.restrictDefinedValues && isShowValueSwitch) {
-      const newMetaData = { ...metaData, values: [] };
-      onSave(newMetaData);
-    } else {
-      onSave(metaData);
+    const supportsEnum = isMetadataValueTypeWithEnum(metaData.valueType);
+    if (!supportsEnum) {
+      onSave({
+        ...metaData,
+        values: [],
+        restrictDefinedValues: false,
+      });
+      handleHideModal();
+      return;
     }
+    onSave(metaData);
     handleHideModal();
-  }, [metaData, onSave, handleHideModal, isShowValueSwitch, type, valueError]);
+  }, [metaData, onSave, handleHideModal, type, valueError]);
 
   // Handle value changes, only update temporary state
   const handleValueChange = useCallback(

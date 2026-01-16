@@ -11,13 +11,44 @@ export interface IMetaDataReturnJSONSettingItem {
   description?: string;
   enum?: string[];
 }
-export type IMetaDataReturnJSONSettings = Array<IMetaDataReturnJSONSettingItem>;
+export interface IMetaDataJsonSchemaProperty {
+  type?: string;
+  description?: string;
+  enum?: string[];
+  items?: {
+    type?: string;
+    enum?: string[];
+  };
+  format?: string;
+}
+export interface IMetaDataJsonSchema {
+  type?: 'object';
+  properties?: Record<string, IMetaDataJsonSchemaProperty>;
+  additionalProperties?: boolean;
+}
+export type IMetaDataReturnJSONSettings =
+  | IMetaDataJsonSchema
+  | Array<IMetaDataReturnJSONSettingItem>;
+
+export type MetadataValueType =
+  | 'string'
+  | 'bool'
+  | 'enum'
+  | 'time'
+  | 'int'
+  | 'float';
 
 export type IMetaDataTableData = {
   field: string;
   description: string;
   restrictDefinedValues?: boolean;
   values: string[];
+  valueType?: MetadataValueType;
+};
+
+export type IBuiltInMetadataItem = {
+  key: string;
+  type: MetadataValueType;
 };
 
 export type IManageModalProps = {
@@ -34,6 +65,7 @@ export type IManageModalProps = {
   isAddValue?: boolean;
   isShowValueSwitch?: boolean;
   isVerticalShowValue?: boolean;
+  builtInMetadata?: IBuiltInMetadataItem[];
   success?: (data: any) => void;
 };
 
@@ -45,6 +77,7 @@ export interface IManageValuesProps {
   isAddValue?: boolean;
   isShowDescription?: boolean;
   isShowValueSwitch?: boolean;
+  isShowType?: boolean;
   isVerticalShowValue?: boolean;
   data: IMetaDataTableData;
   type: MetadataType;
@@ -81,6 +114,7 @@ export type ShowManageMetadataModalProps = Partial<IManageModalProps> & {
   isCanAdd: boolean;
   type: MetadataType;
   record?: Record<string, any>;
+  builtInMetadata?: IBuiltInMetadataItem[];
   options?: ShowManageMetadataModalOptions;
   title?: ReactNode | string;
   isDeleteSingleValue?: boolean;
