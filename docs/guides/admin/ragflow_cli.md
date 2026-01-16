@@ -5,11 +5,11 @@ sidebar_custom_props: {
   categoryIcon: LucideSquareTerminal
 }
 ---
-# Admin CLI
+# RAGFlow CLI
 
-The RAGFlow Admin CLI is a command-line-based system administration tool that offers administrators an efficient and flexible method for system interaction and control. Operating on a client-server architecture, it communicates in real-time with the Admin Service, receiving administrator commands and dynamically returning execution results.
+The RAGFlow CLI is a command-line-based system administration tool that offers administrators an efficient and flexible method for system interaction and control. Operating on a client-server architecture, it communicates in real-time with the Admin Service, receiving administrator commands and dynamically returning execution results.
 
-## Using the Admin CLI
+## Using the RAGFlow CLI
 
 1. Ensure the Admin Service is running.
 
@@ -154,7 +154,7 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 - List all available services.
 
 ```
-admin> list services;
+ragflow> list services;
 command: list services;
 Listing all services
 +-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+---------+
@@ -175,7 +175,7 @@ Listing all services
 - Show ragflow_server.
 
 ```
-admin> show service 0;
+ragflow> show service 0;
 command: show service 0;
 Showing service: 0
 Service ragflow_0 is alive. Detail:
@@ -185,7 +185,7 @@ Confirm elapsed: 26.0 ms.
 - Show mysql.
 
 ```
-admin> show service 1;
+ragflow> show service 1;
 command: show service 1;
 Showing service: 1
 Service mysql is alive. Detail:
@@ -201,7 +201,7 @@ Service mysql is alive. Detail:
 - Show minio.
 
 ```
-admin> show service 2;
+ragflow> show service 2;
 command: show service 2;
 Showing service: 2
 Service minio is alive. Detail:
@@ -211,7 +211,7 @@ Confirm elapsed: 2.1 ms.
 - Show elasticsearch.
 
 ```
-admin> show service 3;
+ragflow> show service 3;
 command: show service 3;
 Showing service: 3
 Service elasticsearch is alive. Detail:
@@ -225,7 +225,7 @@ Service elasticsearch is alive. Detail:
 - Show infinity.
 
 ```
-admin> show service 4;
+ragflow> show service 4;
 command: show service 4;
 Showing service: 4
 Fail to show service, code: 500, message: Infinity is not in use.
@@ -234,7 +234,7 @@ Fail to show service, code: 500, message: Infinity is not in use.
 - Show redis.
 
 ```
-admin> show service 5;
+ragflow> show service 5;
 command: show service 5;
 Showing service: 5
 Service redis is alive. Detail:
@@ -249,7 +249,7 @@ Service redis is alive. Detail:
 - Show RAGFlow version
 
 ```
-admin> show version;
+ragflow> show version;
 +-----------------------+
 | version               |
 +-----------------------+
@@ -262,7 +262,7 @@ admin> show version;
 - List all user.
 
 ```
-admin> list users;
+ragflow> list users;
 command: list users;
 Listing all users
 +-------------------------------+----------------------+-----------+----------+
@@ -278,7 +278,7 @@ Listing all users
 - Show specified user.
 
 ```
-admin> show user "admin@ragflow.io";
+ragflow> show user "admin@ragflow.io";
 command: show user "admin@ragflow.io";
 Showing user: admin@ragflow.io
 +-------------------------------+------------------+-----------+--------------+------------------+--------------+----------+-----------------+---------------+--------+-------------------------------+
@@ -293,7 +293,7 @@ Showing user: admin@ragflow.io
 - Create new user.
 
 ```
-admin> create user "example@ragflow.io" "psw";
+ragflow> create user "example@ragflow.io" "psw";
 command: create user "example@ragflow.io" "psw";
 Create user: example@ragflow.io, password: psw, role: user
 +----------------------------------+--------------------+----------------------------------+--------------+---------------+----------+
@@ -308,7 +308,7 @@ Create user: example@ragflow.io, password: psw, role: user
 - Alter user password.
 
 ```
-admin> alter user password "example@ragflow.io" "newpsw";
+ragflow> alter user password "example@ragflow.io" "newpsw";
 command: alter user password "example@ragflow.io" "newpsw";
 Alter user: example@ragflow.io, password: newpsw
 Password updated successfully!
@@ -319,7 +319,7 @@ Password updated successfully!
 - Alter user active, turn off.
 
 ```
-admin> alter user active "example@ragflow.io" off;
+ragflow> alter user active "example@ragflow.io" off;
 command: alter user active "example@ragflow.io" off;
 Alter user example@ragflow.io activate status, turn off.
 Turn off user activate status successfully!
@@ -330,7 +330,7 @@ Turn off user activate status successfully!
 - Drop user.
 
 ```
-admin> Drop user "example@ragflow.io";
+ragflow> Drop user "example@ragflow.io";
 command: Drop user "example@ragflow.io";
 Drop user: example@ragflow.io
 Successfully deleted user. Details:
@@ -350,7 +350,7 @@ Delete user's data at the same time.
 - List the specified user's dataset.
 
 ```
-admin> list datasets of "lynn_inf@hotmail.com";
+ragflow> list datasets of "lynn_inf@hotmail.com";
 command: list datasets of "lynn_inf@hotmail.com";
 Listing all datasets of user: lynn_inf@hotmail.com
 +-----------+-------------------------------+---------+----------+---------------+------------+--------+-----------+-------------------------------+
@@ -366,7 +366,7 @@ Listing all datasets of user: lynn_inf@hotmail.com
 - List the specified user's agents.
 
 ```
-admin> list agents of "lynn_inf@hotmail.com";
+ragflow> list agents of "lynn_inf@hotmail.com";
 command: list agents of "lynn_inf@hotmail.com";
 Listing all agents of user: lynn_inf@hotmail.com
 +-----------------+-------------+------------+-----------------+
@@ -381,7 +381,7 @@ Listing all agents of user: lynn_inf@hotmail.com
 - Display the current RAGFlow version.
 
 ```
-admin> show version;
+ragflow> show version;
 show_version
 +-----------------------+
 | version               |
@@ -395,7 +395,7 @@ show_version
 - Grant administrator privileges to the specified user.
 
 ```
-admin> grant admin "anakin.skywalker@ragflow.io";
+ragflow> grant admin "anakin.skywalker@ragflow.io";
 Grant successfully!
 ```
 
@@ -404,7 +404,7 @@ Grant successfully!
 - Revoke administrator privileges from the specified user.
 
 ```
-admin> revoke admin "anakin.skywalker@ragflow.io";
+ragflow> revoke admin "anakin.skywalker@ragflow.io";
 Revoke successfully!
 ```
 
@@ -413,7 +413,7 @@ Revoke successfully!
 - List all system settings.
 
 ```
-admin> list vars;
+ragflow> list vars;
 +-----------+---------------------+--------------+-----------+
 | data_type | name                | source       | value     |
 +-----------+---------------------+--------------+-----------+
@@ -435,7 +435,7 @@ admin> list vars;
 - Display the content of a specific system configuration/setting by its name or name prefix.
 
 ```
-admin> show var mail.server;
+ragflow> show var mail.server;
 +-----------+-------------+--------------+-----------+
 | data_type | name        | source       | value     |
 +-----------+-------------+--------------+-----------+
@@ -448,7 +448,7 @@ admin> show var mail.server;
 - Set the value for a specified configuration item.
 
 ```
-admin> set var mail.server 127.0.0.1;
+ragflow> set var mail.server 127.0.0.1;
 Set variable successfully
 ```
 
@@ -458,7 +458,7 @@ Set variable successfully
 - List all system configurations.
 
 ```
-admin> list configs;
+ragflow> list configs;
 +-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
 | extra                                                                                     | host      | id | name          | port  | service_type   |
 +-------------------------------------------------------------------------------------------+-----------+----+---------------+-------+----------------+
@@ -477,7 +477,7 @@ admin> list configs;
 - List all system environments which can accessed by Admin service.
 
 ```
-admin> list envs;
+ragflow> list envs;
 +-------------------------+------------------+
 | env                     | value            |
 +-------------------------+------------------+
@@ -495,7 +495,7 @@ admin> list envs;
 - Show help information.
 
 ```
-admin> \help
+ragflow> \help
 command: \help
 
 Commands:
@@ -521,7 +521,7 @@ Meta Commands:
 - Exit
 
 ```
-admin> \q
+ragflow> \q
 command: \q
 Goodbye!
 ```
