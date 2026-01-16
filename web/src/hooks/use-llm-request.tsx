@@ -489,7 +489,11 @@ export const useFetchFactoryModels = (
           default_base_url: data?.data?.default_base_url ?? null,
           is_dynamic: data?.data?.is_dynamic ?? false,
         };
-      } catch {
+      } catch (error) {
+        console.error(
+          `Failed to fetch factory models for '${factoryName}':`,
+          error,
+        );
         message.error(t('message.fetchFailed'));
         return makeDefaultFactoryData(factoryName);
       }

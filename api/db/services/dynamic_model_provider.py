@@ -171,20 +171,19 @@ def register_provider(factory_name: str, provider_class: Type[DynamicModelProvid
 def get_provider(factory_name: str) -> Optional[DynamicModelProvider]:
     """Get provider instance by factory name (cached, thread-safe)
     
-    Returns cached instance if available, otherwise creates, caches, and returns new instance.
+    Returns cached instance if available (may be None for failed instantiation),
+    otherwise creates, caches, and returns new instance.
     Uses double-checked locking to avoid race conditions during lazy instantiation.
     """
-    # First check without lock (fast path for already-cached instances)
-    cached_provider = PROVIDER_INSTANCES.get(factory_name)
-    if cached_provider is not None:
-        return cached_provider
+    # First check without lock (fast path for already-cached instances or failures)
+    if factory_name in PROVIDER_INSTANCES:
+        return PROVIDER_INSTANCES[factory_name]
     
     # Acquire lock for cache miss
     with _registry_lock:
-        # Double-check: another thread may have created the instance
-        cached_provider = PROVIDER_INSTANCES.get(factory_name)
-        if cached_provider is not None:
-            return cached_provider
+        # Double-check: another thread may have created the instance or cached a failure
+        if factory_name in PROVIDER_INSTANCES:
+            return PROVIDER_INSTANCES[factory_name]
         
         # Create new instance if provider is registered
         provider_class = DYNAMIC_PROVIDERS.get(factory_name)
@@ -243,8 +242,7 @@ def _register_providers():
                     f"Failed to import provider module {module_name} (module exists but import failed): {type(e).__name__}: {e}",
                     exc_info=True
                 )
-            # Continue with other providers even if one fails
-        # Let non-ImportError exceptions propagate
+            # All exceptions are caught and logged; continue with other providers
 
 
 # Register providers on module import

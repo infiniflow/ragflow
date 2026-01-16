@@ -260,19 +260,20 @@ const OllamaModal = ({
     [canBeDynamic, supportedCategories],
   );
 
-  // Extract unique providers from models for filtering
-  const [availableProviders, setAvailableProviders] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (isDynamicProvider && dynamicModels.length > 0) {
-      const providers = Array.from(
-        new Set(dynamicModels.map((m) => m.provider)),
-      ).sort();
-      setAvailableProviders(providers);
-    } else {
-      // Reset providers when dynamic mode is disabled or no models available
-      setAvailableProviders([]);
+  // Extract unique providers from models for the CURRENT CATEGORY
+  // This implements cascading filtering: category → providers → models
+  const availableProviders = useMemo(() => {
+    if (!isDynamicProvider || dynamicModels.length === 0) {
+      return [];
     }
+
+    // Only show providers that have models in the currently selected category
+    // This automatically filters the provider dropdown based on model_type selection
+    const providers = Array.from(
+      new Set(dynamicModels.map((m) => m.provider)),
+    ).sort();
+
+    return providers;
   }, [dynamicModels, isDynamicProvider]);
 
   // Filter models by selected provider
@@ -398,32 +399,41 @@ const OllamaModal = ({
         label: t('apiKey'),
         type: FormFieldType.Text,
         required: false,
-        placeholder: t('apiKeyMessage'),
+        placeholder: isDynamicProvider
+          ? t(
+              'apiKeyOptional',
+              'API Key (optional - reuses existing key if empty)',
+            )
+          : t('apiKeyMessage'),
       },
 
-      // Max Tokens (auto-populated for dynamic, manual for static)
-      {
-        name: 'max_tokens',
-        label: t('maxTokens'),
-        type: FormFieldType.Number,
-        required: true,
-        placeholder: t('maxTokensTip'),
-        validation: {
-          message: t('maxTokensMessage'),
-        },
-        disabled: isDynamicProvider && filteredModels.length > 0,
-        customValidate: (value: any) => {
-          if (value !== undefined && value !== null && value !== '') {
-            if (typeof value !== 'number') {
-              return t('maxTokensInvalidMessage');
-            }
-            if (value < 0) {
-              return t('maxTokensMinMessage');
-            }
-          }
-          return true;
-        },
-      },
+      // Max Tokens (only shown for non-dynamic providers)
+      // For dynamic providers, max_tokens is auto-populated and shown in model dropdown
+      ...(isDynamicProvider
+        ? []
+        : [
+            {
+              name: 'max_tokens',
+              label: t('maxTokens'),
+              type: FormFieldType.Number,
+              required: true,
+              placeholder: t('maxTokensTip'),
+              validation: {
+                message: t('maxTokensMessage'),
+              },
+              customValidate: (value: any) => {
+                if (value !== undefined && value !== null && value !== '') {
+                  if (typeof value !== 'number') {
+                    return t('maxTokensInvalidMessage');
+                  }
+                  if (value < 0) {
+                    return t('maxTokensMinMessage');
+                  }
+                }
+                return true;
+              },
+            } as FormFieldConfig,
+          ]),
     ];
 
     // Add provider_order field only for OpenRouter (legacy support)
@@ -484,6 +494,7 @@ const OllamaModal = ({
       api_base: defaultBaseUrl || '',
       vision: false,
       provider_filter: '', // Initialize provider filter to ensure dropdown value persists
+      max_tokens: 8192, // Default for dynamic providers (will be auto-populated when model selected)
     };
   }, [editMode, initialValues, defaultBaseUrl]);
 
@@ -505,8 +516,12 @@ const OllamaModal = ({
       max_tokens: values.max_tokens as number,
     };
 
-    // Add provider_order only if it exists (for OpenRouter legacy)
-    if (values.provider_order) {
+    // For OpenRouter, always send provider_order (empty string for dynamic mode)
+    // This ensures the backend can properly handle API key JSON format
+    if (llmFactory === LLMFactory.OpenRouter) {
+      data.provider_order = values.provider_order || '';
+    } else if (values.provider_order) {
+      // For other factories, only add if it exists
       data.provider_order = values.provider_order as string;
     }
 

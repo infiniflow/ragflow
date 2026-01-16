@@ -343,7 +343,23 @@ async def add_llm():
         api_key = apikey_json(["api_key", "api_version"])
 
     elif factory == "OpenRouter":
-        api_key = apikey_json(["api_key", "provider_order"])
+        # For dynamic providers, allow API key reuse from existing models
+        provided_api_key = req.get("api_key", "")
+        if not provided_api_key or provided_api_key.strip() == "":
+            # Try to retrieve existing API key for this factory
+            existing_llms = TenantLLMService.query(
+                tenant_id=current_user.id,
+                llm_factory=factory
+            )
+            if existing_llms:
+                # Reuse the API key from the first existing model
+                api_key = existing_llms[0].api_key
+            else:
+                # No existing key and no provided key - assemble with empty values
+                api_key = apikey_json(["api_key", "provider_order"])
+        else:
+            # User provided a new API key - assemble it
+            api_key = apikey_json(["api_key", "provider_order"])
 
     elif factory == "MinerU":
         api_key = apikey_json(["api_key", "provider_order"])
