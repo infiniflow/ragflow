@@ -21,7 +21,8 @@ from typing import List, Dict, Optional, Tuple
 from rag.utils.redis_conn import REDIS_CONN
 from api.db.services.dynamic_model_provider import (
     DynamicModelProvider,
-    DynamicModelCapability
+    DynamicModelCapability,
+    register_provider
 )
 
 
@@ -448,5 +449,4 @@ class OpenRouterProvider(DynamicModelProvider):
 
 
 # Register OpenRouter provider
-from api.db.services.dynamic_model_provider import register_provider
 register_provider("OpenRouter", OpenRouterProvider)

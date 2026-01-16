@@ -37,8 +37,18 @@ export const enum LLMApiAction {
   DeleteFactory = 'deleteFactory',
 }
 
+// Interface for factory model data structure
+interface IFactoryModelData {
+  factory: string;
+  models: IDynamicModel[];
+  models_by_category: Record<string, IDynamicModel[]>;
+  supported_categories: string[];
+  default_base_url: string | null;
+  is_dynamic: boolean;
+}
+
 // Factory function to generate default factory model data
-const makeDefaultFactoryData = (factoryName: string) => ({
+const makeDefaultFactoryData = (factoryName: string): IFactoryModelData => ({
   factory: factoryName,
   models: [],
   models_by_category: {},
@@ -475,6 +485,11 @@ export const useFetchFactoryModels = (
     enabled,
     gcTime: 0,
     queryFn: async () => {
+      console.log('[useFetchFactoryModels] Query running:', {
+        factoryName,
+        category,
+        enabled,
+      });
       try {
         const { data } = await getFactoryModels(factoryName, false, category);
         if (data?.code !== 0) {

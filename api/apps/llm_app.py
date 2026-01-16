@@ -160,6 +160,7 @@ async def get_factory_models(factory: str):
 
             # Check if category filter is requested
             category_filter = request.args.get("category", None)
+            logging.info(f"[CATEGORY FILTER] Factory: {factory}, Category parameter: {category_filter}, Query args: {request.args}")
 
             # Organize models by category
             models_by_category = {}

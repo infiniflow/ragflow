@@ -70,6 +70,15 @@ def test_get_openrouter_models_dynamic(api_client):
         
         # Verify the mock was actually called
         mock_fetch.assert_awaited_once()
+        
+        # Verify the mocked model data is actually returned in the response
+        resp_model = data["data"]["models"][0]
+        assert resp_model["id"] == mock_models[0]["id"]
+        assert resp_model["llm_name"] == mock_models[0]["llm_name"]
+        assert resp_model["name"] == mock_models[0]["name"]
+        assert resp_model["max_tokens"] == mock_models[0]["max_tokens"]
+        assert resp_model["pricing"]["prompt"] == mock_models[0]["pricing"]["prompt"]
+        assert resp_model["pricing"]["completion"] == mock_models[0]["pricing"]["completion"]
 
 
 @pytest.mark.p2

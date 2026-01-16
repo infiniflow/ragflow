@@ -259,6 +259,24 @@ const OllamaModal = ({
     canBeDynamic && visible,
   );
 
+  // Debug logging for category changes
+  useEffect(() => {
+    console.log('[OllamaModal] State changed:', {
+      llmFactory,
+      selectedModelType,
+      canBeDynamic,
+      visible,
+      isDynamicProvider: canBeDynamic && supportedCategories.length > 0,
+      supportedCategoriesCount: supportedCategories.length,
+    });
+  }, [
+    llmFactory,
+    selectedModelType,
+    canBeDynamic,
+    visible,
+    supportedCategories,
+  ]);
+
   // Determine if provider is actually dynamic based on backend response
   // Computed directly from canBeDynamic and supportedCategories
   const isDynamicProvider = useMemo(
@@ -363,10 +381,18 @@ const OllamaModal = ({
             placeholder: modelsLoading
               ? tc('loading', 'Loading...')
               : t('selectModel', 'Select model'),
-            options: filteredModels.map((model) => ({
-              value: model.llm_name,
-              label: `${model.name} (${(model.max_tokens / 1000).toFixed(0)}K)`,
-            })),
+            options: filteredModels.map((model) => {
+              const tokensDisplay =
+                typeof model.max_tokens === 'number' &&
+                isFinite(model.max_tokens) &&
+                model.max_tokens > 0
+                  ? `${Math.round(model.max_tokens / 1000)}K`
+                  : '—';
+              return {
+                value: model.llm_name,
+                label: `${model.name} (${tokensDisplay})`,
+              };
+            }),
             disabled: modelsLoading || filteredModels.length === 0,
           }
         : {

@@ -163,6 +163,12 @@ export const getFactoryModels = (
   if (params.toString()) {
     url += `?${params.toString()}`;
   }
+  console.log('[getFactoryModels] Fetching:', {
+    factory,
+    category,
+    refresh,
+    finalUrl: url,
+  });
   return request.get(url);
 };
 
