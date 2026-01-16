@@ -1075,3 +1075,13 @@ export enum WebhookStatus {
   Live = 'live',
   Stopped = 'stopped',
 }
+
+// Map BeginQueryType to TypesWithArray
+export const BeginQueryTypeMap = {
+  [BeginQueryType.Line]: TypesWithArray.String,
+  [BeginQueryType.Paragraph]: TypesWithArray.String,
+  [BeginQueryType.Options]: TypesWithArray.ArrayString,
+  [BeginQueryType.File]: 'File',
+  [BeginQueryType.Integer]: TypesWithArray.Number,
+  [BeginQueryType.Boolean]: TypesWithArray.Boolean,
+};
