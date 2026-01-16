@@ -61,9 +61,9 @@ sql_command: list_services
            | list_variables
            | list_configs
            | list_environments
-           | generate_token
-           | list_tokens
-           | drop_token
+           | generate_key
+           | list_keys
+           | drop_key
 
 // meta command definition
 meta_command: "\\" meta_command_name [meta_args]
@@ -151,9 +151,9 @@ list_variables: LIST VARS ";"
 list_configs: LIST CONFIGS ";"
 list_environments: LIST ENVS ";"
 
-generate_token: GENERATE KEY FOR USER quoted_string ";"
-list_tokens: LIST KEYS OF quoted_string ";"
-drop_token: DROP KEY quoted_string OF quoted_string ";"
+generate_key: GENERATE KEY FOR USER quoted_string ";"
+list_keys: LIST KEYS OF quoted_string ";"
+drop_key: DROP KEY quoted_string OF quoted_string ";"
 
 show_version: SHOW VERSION ";"
 
@@ -307,18 +307,18 @@ class AdminTransformer(Transformer):
     def list_environments(self, items):
         return {"type": "list_environments"}
 
-    def generate_token(self, items):
+    def generate_key(self, items):
         user_name = items[4]
-        return {"type": "generate_token", "user_name": user_name}
+        return {"type": "generate_key", "user_name": user_name}
 
-    def list_tokens(self, items):
+    def list_keys(self, items):
         user_name = items[3]
-        return {"type": "list_tokens", "user_name": user_name}
+        return {"type": "list_keys", "user_name": user_name}
 
-    def drop_token(self, items):
-        token = items[2]
+    def drop_key(self, items):
+        key = items[2]
         user_name = items[4]
-        return {"type": "drop_token", "token": token, "user_name": user_name}
+        return {"type": "drop_key", "key": key, "user_name": user_name}
 
     def action_list(self, items):
         return items
@@ -388,7 +388,7 @@ GRANT ADMIN <user>
 REVOKE ADMIN <user>
 GENERATE KEY FOR USER <user>
 LIST KEYS OF <user>
-DROP KEY <token> OF <user>
+DROP KEY <key> OF <user>
 
 Meta Commands:
 \\?, \\h, \\help     Show this help
@@ -691,12 +691,12 @@ class AdminCLI(Cmd):
                 self._list_configs(command_dict)
             case "list_environments":
                 self._list_environments(command_dict)
-            case "generate_token":
-                self._generate_token(command_dict)
-            case "list_tokens":
-                self._list_tokens(command_dict)
-            case "drop_token":
-                self._drop_token(command_dict)
+            case "generate_key":
+                self._generate_key(command_dict)
+            case "list_keys":
+                self._list_keys(command_dict)
+            case "drop_key":
+                self._drop_key(command_dict)
             case "meta":
                 self._handle_meta_command(command_dict)
             case _:
@@ -1076,7 +1076,7 @@ class AdminCLI(Cmd):
         else:
             print(f"Fail to show version, code: {res_json['code']}, message: {res_json['message']}")
 
-    def _generate_token(self, command: dict[str, Any]) -> None:
+    def _generate_key(self, command: dict[str, Any]) -> None:
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Generating API key for user: {user_name}")
@@ -1088,7 +1088,7 @@ class AdminCLI(Cmd):
         else:
             print(f"Failed to generate key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
-    def _list_tokens(self, command: dict[str, Any]) -> None:
+    def _list_keys(self, command: dict[str, Any]) -> None:
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
         print(f"Listing API keys for user: {user_name}")
@@ -1100,21 +1100,21 @@ class AdminCLI(Cmd):
         else:
             print(f"Failed to list keys for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
-    def _drop_token(self, command: dict[str, Any]) -> None:
-        token_tree: Tree = command["token"]
-        token: str = token_tree.children[0].strip("'\"")
+    def _drop_key(self, command: dict[str, Any]) -> None:
+        key_tree: Tree = command["key"]
+        key: str = key_tree.children[0].strip("'\"")
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
-        print(f"Dropping API token for user: {user_name}")
-        # URL encode the token to handle special characters
-        encoded_token: str = urllib.parse.quote(token, safe="")
-        url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/token/{encoded_token}"
+        print(f"Dropping API key for user: {user_name}")
+        # URL encode the key to handle special characters
+        encoded_key: str = urllib.parse.quote(key, safe="")
+        url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/token/{encoded_key}"
         response: requests.Response = self.session.delete(url)
         res_json: dict[str, Any] = response.json()
         if response.status_code == 200:
             print(res_json["message"])
         else:
-            print(f"Failed to drop token for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Failed to drop key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _handle_meta_command(self, command):
         meta_command = command["command"]

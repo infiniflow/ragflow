@@ -94,20 +94,20 @@ Commands are case-insensitive and must be terminated with a semicolon(;).
 - Changes the user to active or inactive.
 - [Example](#example-alter-user-active)
 
-`GENERATE TOKEN FOR USER <username>;`
+`GENERATE KEY FOR USER <username>;`
 
-- Generates a new API token for the specified user.
-- [Example](#example-generate-token)
+- Generates a new API key for the specified user.
+- [Example](#example-generate-key)
 
-`LIST TOKENS OF <username>;`
+`LIST KEYS OF <username>;`
 
-- Lists all API tokens associated with the specified user.
-- [Example](#example-list-tokens)
+- Lists all API keys associated with the specified user.
+- [Example](#example-list-keys)
 
-`DROP TOKEN <token> OF <username>;`
+`DROP KEY <key> OF <username>;`
 
-- Deletes a specific API token for the specified user.
-- [Example](#example-drop-token)
+- Deletes a specific API key for the specified user.
+- [Example](#example-drop-key)
 
 ### Data and Agent Commands
 
@@ -361,13 +361,13 @@ Delete done!
 
 Delete user's data at the same time.
 
-<span id="example-generate-token"></span>
+<span id="example-generate-key"></span>
 
-- Generate API token for user.
+- Generate API key for user.
 
 ```
-admin> generate token for user "example@ragflow.io";
-Generating API token for user: example@ragflow.io
+admin> generate key for user "example@ragflow.io";
+Generating API key for user: example@ragflow.io
 +----------------------------------+-------------------------------+---------------+----------------------------------+-----------------------------------------------------+-------------+-------------+
 | beta                             | create_date                   | create_time   | tenant_id                        | token                                               | update_date | update_time |
 +----------------------------------+-------------------------------+---------------+----------------------------------+-----------------------------------------------------+-------------+-------------+
@@ -375,13 +375,13 @@ Generating API token for user: example@ragflow.io
 +----------------------------------+-------------------------------+---------------+----------------------------------+-----------------------------------------------------+-------------+-------------+
 ```
 
-<span id="example-list-tokens"></span>
+<span id="example-list-keys"></span>
 
-- List all API tokens for user.
+- List all API keys for user.
 
 ```
-admin> list tokens of "example@ragflow.io";
-Listing API tokens for user: example@ragflow.io
+admin> list keys of "example@ragflow.io";
+Listing API keys for user: example@ragflow.io
 +----------------------------------+-------------------------------+---------------+-----------+--------+----------------------------------+-----------------------------------------------------+-------------------------------+---------------+
 | beta                             | create_date                   | create_time   | dialog_id | source | tenant_id                        | token                                               | update_date                   | update_time   |
 +----------------------------------+-------------------------------+---------------+-----------+--------+----------------------------------+-----------------------------------------------------+-------------------------------+---------------+
@@ -389,13 +389,13 @@ Listing API tokens for user: example@ragflow.io
 +----------------------------------+-------------------------------+---------------+-----------+--------+----------------------------------+-----------------------------------------------------+-------------------------------+---------------+
 ```
 
-<span id="example-drop-token"></span>
+<span id="example-drop-key"></span>
 
-- Drop API token for user.
+- Drop API key for user.
 
 ```
-admin> drop token "ragflow-piwVJHEk09M5UN3LS_Xx9HA7yehs3yNOc9GGsD4jzus" of "example@ragflow.io";
-Dropping API token for user: example@ragflow.io
+admin> drop key "ragflow-piwVJHEk09M5UN3LS_Xx9HA7yehs3yNOc9GGsD4jzus" of "example@ragflow.io";
+Dropping API key for user: example@ragflow.io
 API key deleted successfully
 ```
 
@@ -578,9 +578,9 @@ SHOW USER PERMISSION <user>
 SHOW VERSION
 GRANT ADMIN <user>
 REVOKE ADMIN <user>
-GENERATE TOKEN FOR USER <user>
-LIST TOKENS OF <user>
-DROP TOKEN <token> OF <user>
+GENERATE KEY FOR USER <user>
+LIST KEYS OF <user>
+DROP KEY <key> OF <user>
 
 Meta Commands:
   \?, \h, \help     Show this help
