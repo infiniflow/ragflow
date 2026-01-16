@@ -117,13 +117,19 @@ async def get_factory_models(factory: str):
                                 code=RetCode.OPERATING_ERROR
                             )
                     
-                    # Delete cache and set rate limit
+                    # Delete cache and set rate limit only if deletion succeeds
                     # Note: api_key may not be available yet, so we clear the base key
                     # In practice, most users will have the same cache (public endpoint)
                     cache_key_to_delete = provider.get_cache_key()
-                    REDIS_CONN.delete(cache_key_to_delete)
-                    REDIS_CONN.set(rate_limit_key, str(time.time()), REFRESH_COOLDOWN)
-                    logging.info(f"Cache cleared for {factory} by user {current_user.id}")
+                    deleted_count = REDIS_CONN.delete(cache_key_to_delete)
+                    
+                    if deleted_count > 0:
+                        # Cache successfully deleted, set rate limit
+                        REDIS_CONN.set(rate_limit_key, str(time.time()), REFRESH_COOLDOWN)
+                        logging.info(f"Cache cleared for {factory} by user {current_user.id}")
+                    else:
+                        # Cache key didn't exist or delete failed
+                        logging.warning(f"Failed to delete cache for {factory}: key '{cache_key_to_delete}' not found or already deleted")
                     
                 except Exception as e:
                     logging.warning(f"Failed to clear cache for {factory}: {e}")
@@ -150,20 +156,30 @@ async def get_factory_models(factory: str):
                 logging.warning(f"Failed to retrieve user API key for {factory}: {e}", exc_info=True)
 
             # Fetch models (uses cache if available)
-            models, cache_hit = await provider.fetch_available_models(api_key=api_key)
+            all_models, cache_hit = await provider.fetch_available_models(api_key=api_key)
+
+            # Check if category filter is requested
+            category_filter = request.args.get("category", None)
 
             # Organize models by category
             models_by_category = {}
-            for model in models:
+            for model in all_models:
                 cat = model["model_type"]
                 if cat not in models_by_category:
                     models_by_category[cat] = []
                 models_by_category[cat].append(model)
 
+            # If category filter is provided, return only models from that category
+            if category_filter and category_filter in models_by_category:
+                filtered_models = models_by_category[category_filter]
+            else:
+                # No filter or invalid category - return all models
+                filtered_models = all_models
+
             return get_json_result(data={
                 "factory": factory,
-                "models": models,
-                "models_by_category": models_by_category,
+                "models": filtered_models,  # Return filtered models
+                "models_by_category": models_by_category,  # Full categorization
                 "supported_categories": list(provider.get_supported_categories()),
                 "default_base_url": provider.get_default_base_url(),
                 "cached": cache_hit,

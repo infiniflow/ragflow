@@ -407,33 +407,33 @@ const OllamaModal = ({
           : t('apiKeyMessage'),
       },
 
-      // Max Tokens (only shown for non-dynamic providers)
-      // For dynamic providers, max_tokens is auto-populated and shown in model dropdown
-      ...(isDynamicProvider
-        ? []
-        : [
-            {
-              name: 'max_tokens',
-              label: t('maxTokens'),
-              type: FormFieldType.Number,
-              required: true,
-              placeholder: t('maxTokensTip'),
-              validation: {
-                message: t('maxTokensMessage'),
-              },
-              customValidate: (value: any) => {
-                if (value !== undefined && value !== null && value !== '') {
-                  if (typeof value !== 'number') {
-                    return t('maxTokensInvalidMessage');
-                  }
-                  if (value < 0) {
-                    return t('maxTokensMinMessage');
-                  }
-                }
-                return true;
-              },
-            } as FormFieldConfig,
-          ]),
+      // Max Tokens field
+      // For dynamic providers: auto-populated from model selection, shown as disabled info
+      // For static providers: manual input required
+      {
+        name: 'max_tokens',
+        label: t('maxTokens'),
+        type: FormFieldType.Number,
+        required: true,
+        placeholder: isDynamicProvider
+          ? t('autoPopulated', 'Auto-populated from selected model')
+          : t('maxTokensTip'),
+        disabled: isDynamicProvider, // Disabled for dynamic (auto-populated)
+        validation: {
+          message: t('maxTokensMessage'),
+        },
+        customValidate: (value: any) => {
+          if (value !== undefined && value !== null && value !== '') {
+            if (typeof value !== 'number') {
+              return t('maxTokensInvalidMessage');
+            }
+            if (value < 0) {
+              return t('maxTokensMinMessage');
+            }
+          }
+          return true;
+        },
+      },
     ];
 
     // Add provider_order field only for OpenRouter (legacy support)
@@ -507,13 +507,17 @@ const OllamaModal = ({
         ? 'image2text'
         : values.model_type;
 
+    // For dynamic providers, max_tokens might not be in form values (hidden field)
+    // Retrieve it from form state or use a sensible default
+    const maxTokens = values.max_tokens || 8192;
+
     const data: IAddLlmRequestBody & { provider_order?: string } = {
       llm_factory: llmFactory,
       llm_name: values.llm_name as string,
       model_type: modelType,
       api_base: values.api_base as string,
       api_key: values.api_key as string,
-      max_tokens: values.max_tokens as number,
+      max_tokens: maxTokens as number,
     };
 
     // For OpenRouter, always send provider_order (empty string for dynamic mode)
