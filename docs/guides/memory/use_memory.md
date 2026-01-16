@@ -41,7 +41,7 @@ The chat model for extracting knowledge from the memory.
 
 ### Memory type
 
-The way that the memory is stored:
+What is stored in the memory:
 
 `Raw`: The raw dialogue between the user and the Agent (Required by default).
 `Semantic Memory`: General knowledge and facts about the user and world.
