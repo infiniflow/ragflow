@@ -445,6 +445,7 @@ class DocumentService(CommonService):
             .where(
             cls.model.status == StatusEnum.VALID.value,
             ~(cls.model.type == FileType.VIRTUAL.value),
+            ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value)),
             (((cls.model.progress < 1) & (cls.model.progress > 0)) |
              (cls.model.id.in_(unfinished_task_query)))) # including unfinished tasks like GraphRAG, RAPTOR and Mindmap
         return list(docs.dicts())
@@ -936,6 +937,8 @@ class DocumentService(CommonService):
                 bad = 0
                 e, doc = DocumentService.get_by_id(d["id"])
                 status = doc.run  # TaskStatus.RUNNING.value
+                if status == TaskStatus.CANCEL.value:
+                    continue
                 doc_progress = doc.progress if doc and doc.progress else 0.0
                 special_task_running = False
                 priority = 0
@@ -979,7 +982,16 @@ class DocumentService(CommonService):
                         info["progress_msg"] += "\n%d tasks are ahead in the queue..."%get_queue_length(priority)
                 else:
                     info["progress_msg"] = "%d tasks are ahead in the queue..."%get_queue_length(priority)
-                cls.update_by_id(d["id"], info)
+                info["update_time"] = current_timestamp()
+                info["update_date"] = get_format_time()
+                (
+                    cls.model.update(info)
+                    .where(
+                        (cls.model.id == d["id"])
+                        & ((cls.model.run.is_null(True)) | (cls.model.run != TaskStatus.CANCEL.value))
+                    )
+                    .execute()
+                )
             except Exception as e:
                 if str(e).find("'0'") < 0:
                     logging.exception("fetch task exception")
@@ -1012,7 +1024,7 @@ class DocumentService(CommonService):
     @classmethod
     @DB.connection_context()
     def knowledgebase_basic_info(cls, kb_id: str) -> dict[str, int]:
-        # cancelled: run == "2" but progress can vary
+        # cancelled: run == "2"
         cancelled = (
             cls.model.select(fn.COUNT(1))
             .where((cls.model.kb_id == kb_id) & (cls.model.run == TaskStatus.CANCEL))
