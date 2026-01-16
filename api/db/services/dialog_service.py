@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import binascii
 import logging
 import re
@@ -23,7 +24,6 @@ from functools import partial
 from timeit import default_timer as timer
 from langfuse import Langfuse
 from peewee import fn
-from agentic_reasoning import DeepResearcher
 from api.db.services.file_service import FileService
 from common.constants import LLMType, ParserType, StatusEnum
 from api.db.db_models import DB, Dialog
@@ -36,6 +36,7 @@ from common.metadata_utils import apply_meta_data_filter
 from api.db.services.tenant_llm_service import TenantLLMService
 from common.time_utils import current_timestamp, datetime_format
 from graphrag.general.mind_map_extractor import MindMapExtractor
+from rag.advanced_rag import DeepResearcher
 from rag.app.resume import forbidden_select_fields4resume
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
@@ -295,10 +296,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     langfuse_keys = TenantLangfuseService.filter_by_tenant(tenant_id=dialog.tenant_id)
     if langfuse_keys:
         langfuse = Langfuse(public_key=langfuse_keys.public_key, secret_key=langfuse_keys.secret_key, host=langfuse_keys.host)
-        if langfuse.auth_check():
-            langfuse_tracer = langfuse
-            trace_id = langfuse_tracer.create_trace_id()
-            trace_context = {"trace_id": trace_id}
+        try:
+            if langfuse.auth_check():
+                langfuse_tracer = langfuse
+                trace_id = langfuse_tracer.create_trace_id()
+                trace_context = {"trace_id": trace_id}
+        except Exception:
+            # Skip langfuse tracing if connection fails
+            pass
 
     check_langfuse_tracer_ts = timer()
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
@@ -380,16 +385,28 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     doc_ids=attachments,
                 ),
             )
+            queue = asyncio.Queue()
+            async def callback(msg:str):
+                nonlocal queue
+                await queue.put(msg + "<br/>")
 
-            async for think in reasoner.thinking(kbinfos, attachments_ + " ".join(questions)):
-                if isinstance(think, str):
-                    thought = think
-                    knowledges = [t for t in think.split("\n") if t]
-                elif stream:
-                    yield think
+            await callback("<START_DEEP_RESEARCH>")
+            task = asyncio.create_task(reasoner.research(kbinfos, questions[-1], questions[-1], callback=callback))
+            while True:
+                msg = await queue.get()
+                if msg.find("<START_DEEP_RESEARCH>") == 0:
+                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "start_to_think": True}
+                elif msg.find("<END_DEEP_RESEARCH>") == 0:
+                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
+                    break
+                else:
+                    yield {"answer": msg, "reference": {}, "audio_binary": None, "final": False}
+
+            await task
+
         else:
             if embd_mdl:
-                kbinfos = retriever.retrieval(
+                kbinfos = await retriever.retrieval(
                     " ".join(questions),
                     embd_mdl,
                     tenant_ids,
@@ -420,8 +437,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 if ck["content_with_weight"]:
                     kbinfos["chunks"].insert(0, ck)
 
-            knowledges = kb_prompt(kbinfos, max_tokens)
-
+    knowledges = kb_prompt(kbinfos, max_tokens)
     logging.debug("{}->{}".format(" ".join(questions), "\n->".join(knowledges)))
 
     retrieval_ts = timer()
@@ -830,7 +846,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
-    kbinfos = retriever.retrieval(
+    kbinfos = await retriever.retrieval(
         question=question,
         embd_mdl=embd_mdl,
         tenant_ids=tenant_ids,
@@ -906,7 +922,7 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
         metas = DocumentService.get_meta_by_kbs(kb_ids)
         doc_ids = await apply_meta_data_filter(meta_data_filter, metas, question, chat_mdl, doc_ids)
 
-    ranks = settings.retriever.retrieval(
+    ranks = await settings.retriever.retrieval(
         question=question,
         embd_mdl=embd_mdl,
         tenant_ids=tenant_ids,

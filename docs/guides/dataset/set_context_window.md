@@ -5,7 +5,6 @@ sidebar_custom_props: {
    categoryIcon: LucideListChevronsUpDown
 }
 ---
-
 # Set context window size
 
 Set context window size for images and tables to improve long-context RAG performances.
