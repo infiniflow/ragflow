@@ -192,13 +192,116 @@ class RAGFlowPdfParser:
                     return False
         return True
 
-    def _table_transformer_job(self, ZM):
+    def _evaluate_table_orientation(self, table_img, sample_ratio=0.3):
+        """
+        评估表格图像的最佳旋转方向。
+        
+        对表格图像尝试 4 个方向（0°、90°、180°、270°），
+        使用 OCR 置信度来确定最佳方向。
+        
+        Args:
+            table_img: PIL Image 对象，表格区域的图像
+            sample_ratio: 采样比例，用于快速评估时只检测部分区域
+            
+        Returns:
+            tuple: (best_angle, best_img, confidence_scores)
+                - best_angle: 最佳旋转角度 (0, 90, 180, 270)
+                - best_img: 旋转后的最佳图像
+                - confidence_scores: 各方向的置信度字典
+        """
+        
+        rotations = [
+            (0, "original"),
+            (90, "rotate_90"),      # 顺时针 90°
+            (180, "rotate_180"),    # 180°
+            (270, "rotate_270"),    # 顺时针 270° (逆时针 90°)
+        ]
+        
+        results = {}
+        best_score = -1
+        best_angle = 0
+        best_img = table_img
+        
+        for angle, name in rotations:
+            # 旋转图像
+            if angle == 0:
+                rotated_img = table_img
+            else:
+                # PIL 的 rotate 是逆时针，所以用负角度实现顺时针
+                rotated_img = table_img.rotate(-angle, expand=True)
+            
+            # 转换为 numpy 数组进行 OCR
+            img_array = np.array(rotated_img)
+            
+            # 执行 OCR 检测和识别
+            try:
+                ocr_results = self.ocr(img_array)
+                
+                if ocr_results:
+                    # 计算平均置信度
+                    scores = [conf for _, (_, conf) in ocr_results]
+                    avg_score = sum(scores) / len(scores) if scores else 0
+                    total_regions = len(scores)
+                    
+                    # 综合评分：考虑平均置信度和识别到的区域数量
+                    # 更多的识别区域 + 更高的置信度 = 更好的方向
+                    combined_score = avg_score * (1 + 0.1 * min(total_regions, 50) / 50)
+                else:
+                    avg_score = 0
+                    total_regions = 0
+                    combined_score = 0
+                    
+            except Exception as e:
+                logging.warning(f"OCR failed for angle {angle}: {e}")
+                avg_score = 0
+                total_regions = 0
+                combined_score = 0
+            
+            results[angle] = {
+                "avg_confidence": avg_score,
+                "total_regions": total_regions,
+                "combined_score": combined_score
+            }
+            
+            logging.debug(f"Table orientation {angle}°: avg_conf={avg_score:.4f}, regions={total_regions}, combined={combined_score:.4f}")
+            
+            if combined_score > best_score:
+                best_score = combined_score
+                best_angle = angle
+                best_img = rotated_img
+        
+        logging.info(f"Best table orientation: {best_angle}° (score={best_score:.4f})")
+        
+        return best_angle, best_img, results
+
+    def _table_transformer_job(self, ZM, auto_rotate=True):
+        """
+        处理表格结构识别。
+        
+        当 auto_rotate=True 时，完整的处理流程：
+        1. 对表格图像进行方向评估，选择最佳旋转角度
+        2. 使用旋转后的图像进行表格结构识别 (TSR)
+        3. 对旋转后的图像重新进行 OCR
+        4. 将新的 OCR 结果与 TSR 单元格坐标匹配
+        
+        Args:
+            ZM: 缩放系数
+            auto_rotate: 是否启用自动方向校准
+        """
         logging.debug("Table processing...")
         imgs, pos = [], []
         tbcnt = [0]
         MARGIN = 10
         self.tb_cpns = []
+        self.table_rotations = {}  # 存储每个表格的旋转信息
+        self.rotated_table_imgs = {}  # 存储旋转后的表格图像
+        
         assert len(self.page_layout) == len(self.page_images)
+        
+        # 收集所有表格的布局信息
+        table_layouts = []  # [(page, table_layout, left, top, right, bott), ...]
+        
+        table_index = 0
         for p, tbls in enumerate(self.page_layout):  # for page
             tbls = [f for f in tbls if f["type"] == "table"]
             tbcnt.append(len(tbls))
@@ -210,29 +313,81 @@ class RAGFlowPdfParser:
                 top *= ZM
                 right *= ZM
                 bott *= ZM
-                pos.append((left, top))
-                imgs.append(self.page_images[p].crop((left, top, right, bott)))
+                pos.append((left, top, p, table_index))  # 添加 page 和 table_index
+                
+                # 记录表格布局信息
+                table_layouts.append({
+                    "page": p,
+                    "table_index": table_index,
+                    "layout": tb,
+                    "coords": (left, top, right, bott)
+                })
+                
+                # 裁剪表格图像
+                table_img = self.page_images[p].crop((left, top, right, bott))
+                
+                if auto_rotate:
+                    # 对表格进行方向评估
+                    logging.debug(f"Evaluating orientation for table {table_index} on page {p}")
+                    best_angle, rotated_img, rotation_scores = self._evaluate_table_orientation(table_img)
+                    
+                    # 存储旋转信息
+                    self.table_rotations[table_index] = {
+                        "page": p,
+                        "original_pos": (left, top, right, bott),
+                        "best_angle": best_angle,
+                        "scores": rotation_scores,
+                        "rotated_size": rotated_img.size  # (width, height)
+                    }
+                    
+                    # 存储旋转后的图像
+                    self.rotated_table_imgs[table_index] = rotated_img
+                    imgs.append(rotated_img)
+                    
+                    if best_angle != 0:
+                        logging.info(f"Table {table_index} on page {p}: rotated {best_angle}° for better recognition")
+                else:
+                    imgs.append(table_img)
+                    self.table_rotations[table_index] = {
+                        "page": p,
+                        "original_pos": (left, top, right, bott),
+                        "best_angle": 0,
+                        "scores": {},
+                        "rotated_size": table_img.size
+                    }
+                    self.rotated_table_imgs[table_index] = table_img
+                
+                table_index += 1
 
         assert len(self.page_images) == len(tbcnt) - 1
         if not imgs:
             return
+        
+        # 进行表格结构识别 (TSR)
         recos = self.tbl_det(imgs)
+        
+        # 如果有表格被旋转，需要对旋转后的图像重新进行 OCR，并替换 self.boxes 中的表格区域
+        if auto_rotate:
+            self._ocr_rotated_tables(ZM, table_layouts, recos, tbcnt)
+        
+        # 处理 TSR 结果（这部分保持原有逻辑，但需要正确处理旋转后的坐标）
         tbcnt = np.cumsum(tbcnt)
         for i in range(len(tbcnt) - 1):  # for page
             pg = []
             for j, tb_items in enumerate(recos[tbcnt[i] : tbcnt[i + 1]]):  # for table
                 poss = pos[tbcnt[i] : tbcnt[i + 1]]
                 for it in tb_items:  # for table components
-                    it["x0"] = it["x0"] + poss[j][0]
-                    it["x1"] = it["x1"] + poss[j][0]
-                    it["top"] = it["top"] + poss[j][1]
-                    it["bottom"] = it["bottom"] + poss[j][1]
-                    for n in ["x0", "x1", "top", "bottom"]:
-                        it[n] /= ZM
-                    it["top"] += self.page_cum_height[i]
-                    it["bottom"] += self.page_cum_height[i]
-                    it["pn"] = i
+                    # TSR 坐标是相对于旋转后图像的，需要记录
+                    it["x0_rotated"] = it["x0"]
+                    it["x1_rotated"] = it["x1"]
+                    it["top_rotated"] = it["top"]
+                    it["bottom_rotated"] = it["bottom"]
+                    
+                    # 如果表格被旋转，坐标转换到页面坐标系需要考虑旋转
+                    # 但由于我们已经用旋转后的图像重新做了 OCR，这里暂时保持简单处理
+                    it["pn"] = poss[j][2]  # page number
                     it["layoutno"] = j
+                    it["table_index"] = poss[j][3]  # table index
                     pg.append(it)
             self.tb_cpns.extend(pg)
 
@@ -245,8 +400,9 @@ class RAGFlowPdfParser:
         headers = gather(r".*header$")
         rows = gather(r".* (row|header)")
         spans = gather(r".*spanning")
-        clmns = sorted([r for r in self.tb_cpns if re.match(r"table column$", r["label"])], key=lambda x: (x["pn"], x["layoutno"], x["x0"]))
+        clmns = sorted([r for r in self.tb_cpns if re.match(r"table column$", r["label"])], key=lambda x: (x["pn"], x["layoutno"], x["x0_rotated"] if "x0_rotated" in x else x["x0"]))
         clmns = Recognizer.layouts_cleanup(self.boxes, clmns, 5, 0.5)
+        
         for b in self.boxes:
             if b.get("layout_type", "") != "table":
                 continue
@@ -277,6 +433,104 @@ class RAGFlowPdfParser:
                 b["H_left"] = spans[ii]["x0"]
                 b["H_right"] = spans[ii]["x1"]
                 b["SP"] = ii
+
+    def _ocr_rotated_tables(self, ZM, table_layouts, tsr_results, tbcnt):
+        """
+        对旋转后的表格图像重新进行 OCR，并更新 self.boxes。
+        
+        Args:
+            ZM: 缩放系数
+            table_layouts: 表格布局信息列表
+            tsr_results: TSR 识别结果
+            tbcnt: 每页表格数量累计
+        """
+        tbcnt = np.cumsum(tbcnt)
+        
+        for tbl_info in table_layouts:
+            table_index = tbl_info["table_index"]
+            page = tbl_info["page"]
+            layout = tbl_info["layout"]
+            left, top, right, bott = tbl_info["coords"]
+            
+            rotation_info = self.table_rotations.get(table_index, {})
+            best_angle = rotation_info.get("best_angle", 0)
+            
+            # 获取旋转后的表格图像
+            rotated_img = self.rotated_table_imgs.get(table_index)
+            if rotated_img is None:
+                continue
+            
+            # 如果表格被旋转了，需要对旋转后的图像重新进行 OCR
+            if best_angle != 0:
+                logging.info(f"Re-OCR table {table_index} on page {page} with rotation {best_angle}°")
+                
+                # 对旋转后的图像进行 OCR
+                img_array = np.array(rotated_img)
+                ocr_results = self.ocr(img_array)
+                
+                if not ocr_results:
+                    logging.warning(f"No OCR results for rotated table {table_index}")
+                    continue
+                
+                # 移除 self.boxes 中原来属于这个表格区域的所有文本框
+                # 表格区域定义为 layout 中的 x0, top, x1, bottom
+                table_x0 = layout["x0"]
+                table_top = layout["top"]
+                table_x1 = layout["x1"]
+                table_bottom = layout["bottom"]
+                
+                # 过滤掉原来在表格区域内的 boxes
+                original_box_count = len(self.boxes)
+                self.boxes = [
+                    b for b in self.boxes 
+                    if not (b.get("page_number") == page + self.page_from and
+                           b.get("layout_type") == "table" and
+                           b["x0"] >= table_x0 - 5 and b["x1"] <= table_x1 + 5 and
+                           b["top"] >= table_top - 5 and b["bottom"] <= table_bottom + 5)
+                ]
+                removed_count = original_box_count - len(self.boxes)
+                logging.debug(f"Removed {removed_count} original boxes from table {table_index}")
+                
+                # 将新的 OCR 结果添加到 self.boxes
+                # OCR 结果的坐标是相对于旋转后图像的，需要保持
+                rotated_width, rotated_height = rotated_img.size
+                
+                for bbox, (text, conf) in ocr_results:
+                    if conf < 0.5:  # 过滤低置信度结果
+                        continue
+                    
+                    # bbox 格式: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+                    x_coords = [p[0] for p in bbox]
+                    y_coords = [p[1] for p in bbox]
+                    
+                    # 在旋转后图像中的坐标
+                    box_x0 = min(x_coords) / ZM
+                    box_x1 = max(x_coords) / ZM
+                    box_top = min(y_coords) / ZM
+                    box_bottom = max(y_coords) / ZM
+                    
+                    # 创建新的 box，标记为来自旋转后的表格
+                    new_box = {
+                        "text": text,
+                        "x0": box_x0 + table_x0,  # 相对于页面的坐标
+                        "x1": box_x1 + table_x0,
+                        "top": box_top + table_top + self.page_cum_height[page],
+                        "bottom": box_bottom + table_top + self.page_cum_height[page],
+                        "page_number": page + self.page_from,
+                        "layout_type": "table",
+                        "layoutno": f"table-{table_index}",
+                        "_rotated": True,
+                        "_rotation_angle": best_angle,
+                        "_table_index": table_index,
+                        # 保存在旋转图像中的原始坐标，用于后续表格重建
+                        "_rotated_x0": box_x0,
+                        "_rotated_x1": box_x1,
+                        "_rotated_top": box_top,
+                        "_rotated_bottom": box_bottom,
+                    }
+                    self.boxes.append(new_box)
+                
+                logging.info(f"Added {len(ocr_results)} OCR results from rotated table {table_index}")
 
     def __ocr(self, pagenum, img, chars, ZM=3, device_id: int | None = None):
         start = timer()
@@ -1180,10 +1434,26 @@ class RAGFlowPdfParser:
         if len(self.boxes) == 0 and zoomin < 9:
             self.__images__(fnm, zoomin * 3, page_from, page_to, callback)
 
-    def __call__(self, fnm, need_image=True, zoomin=3, return_html=False):
+    def __call__(self, fnm, need_image=True, zoomin=3, return_html=False, auto_rotate_tables=None):
+        """
+        解析 PDF 文件。
+        
+        Args:
+            fnm: PDF 文件路径或二进制内容
+            need_image: 是否需要提取图像
+            zoomin: 缩放系数
+            return_html: 是否返回 HTML 格式的表格
+            auto_rotate_tables: 是否对表格进行自动方向校准。
+                               None: 使用环境变量 TABLE_AUTO_ROTATE 的设置（默认为 True）
+                               True: 启用自动方向校准
+                               False: 禁用自动方向校准
+        """
+        if auto_rotate_tables is None:
+            auto_rotate_tables = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
+        
         self.__images__(fnm, zoomin)
         self._layouts_rec(zoomin)
-        self._table_transformer_job(zoomin)
+        self._table_transformer_job(zoomin, auto_rotate=auto_rotate_tables)
         self._text_merge()
         self._concat_downward()
         self._filter_forpages()
@@ -1201,8 +1471,11 @@ class RAGFlowPdfParser:
         if callback:
             callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
 
+        # 从环境变量读取是否启用表格自动旋转
+        auto_rotate_tables = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
+        
         start = timer()
-        self._table_transformer_job(zoomin)
+        self._table_transformer_job(zoomin, auto_rotate=auto_rotate_tables)
         if callback:
             callback(0.83, "Table analysis ({:.2f}s)".format(timer() - start))
 
