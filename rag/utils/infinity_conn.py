@@ -42,6 +42,7 @@ class InfinityConnection(InfinityConnectionBase):
         return False
 
     def convert_select_fields(self, output_fields: list[str]) -> list[str]:
+        need_empty_count = "important_kwd" in output_fields
         for i, field in enumerate(output_fields):
             if field in ["docnm_kwd", "title_tks", "title_sm_tks"]:
                 output_fields[i] = "docnm"
@@ -53,6 +54,8 @@ class InfinityConnection(InfinityConnectionBase):
                 output_fields[i] = "content"
             elif field in ["authors_tks", "authors_sm_tks"]:
                 output_fields[i] = "authors"
+        if need_empty_count and "important_kwd_empty_count" not in output_fields:
+            output_fields.append("important_kwd_empty_count")
         return list(set(output_fields))
 
     @staticmethod
@@ -340,7 +343,13 @@ class InfinityConnection(InfinityConnectionBase):
                     if not d.get("docnm_kwd"):
                         d["docnm"] = self.list2str(v)
                 elif k == "important_kwd":
-                    d["important_keywords"] = self.list2str(v, ",")
+                    if isinstance(v, list):
+                        empty_count = sum(1 for kw in v if kw == "")
+                        tokens = [kw for kw in v if kw != ""]
+                        d["important_keywords"] = self.list2str(tokens, ",")
+                        d["important_kwd_empty_count"] = empty_count
+                    else:
+                        d["important_keywords"] = self.list2str(v, ",")
                 elif k == "important_tks":
                     if not d.get("important_kwd"):
                         d["important_keywords"] = v
@@ -429,7 +438,13 @@ class InfinityConnection(InfinityConnectionBase):
                 if not new_value.get("docnm_kwd"):
                     new_value["docnm"] = v
             elif k == "important_kwd":
-                new_value["important_keywords"] = self.list2str(v, ",")
+                if isinstance(v, list):
+                    empty_count = sum(1 for kw in v if kw == "")
+                    tokens = [kw for kw in v if kw != ""]
+                    new_value["important_keywords"] = self.list2str(tokens, ",")
+                    new_value["important_kwd_empty_count"] = empty_count
+                else:
+                    new_value["important_keywords"] = self.list2str(v, ",")
             elif k == "important_tks":
                 if not new_value.get("important_kwd"):
                     new_value["important_keywords"] = v
@@ -532,7 +547,15 @@ class InfinityConnection(InfinityConnectionBase):
                     res[field] = res["docnm"]
         if "important_keywords" in res.columns:
             if "important_kwd" in fields_all:
-                res["important_kwd"] = res["important_keywords"].apply(lambda v: v.split(",") if v else [])
+                if "important_kwd_empty_count" in res.columns:
+                    base = res["important_keywords"].apply(lambda raw: raw.split(",") if raw else [])
+                    counts = res["important_kwd_empty_count"].fillna(0).astype(int)
+                    res["important_kwd"] = [
+                        tokens + [""] * empty_count
+                        for tokens, empty_count in zip(base.tolist(), counts.tolist())
+                    ]
+                else:
+                    res["important_kwd"] = res["important_keywords"].apply(lambda v: v.split(",") if v else [])
             if "important_tks" in fields_all:
                 res["important_tks"] = res["important_keywords"]
         if "questions" in res.columns:
