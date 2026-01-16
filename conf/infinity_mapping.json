@@ -9,6 +9,7 @@
 	"docnm": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"], "comment": "docnm_kwd, title_tks, title_sm_tks"},
 	"name_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"tag_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"important_kwd_empty_count": {"type": "integer", "default": 0},
 	"important_keywords": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"], "comment": "important_kwd, important_tks"},
 	"questions": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"], "comment": "question_kwd, question_tks"},
 	"content": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"], "comment": "content_with_weight, content_ltks, content_sm_ltks"},
