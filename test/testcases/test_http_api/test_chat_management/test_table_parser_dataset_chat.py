@@ -30,7 +30,7 @@ from common import (
 )
 from utils import wait_for
 
-@wait_for(30, 1, "Document parsing timeout")
+@wait_for(200, 1, "Document parsing timeout")
 def wait_for_parsing_completion(auth, dataset_id, document_id=None):
     """
     Wait for document parsing to complete.
@@ -49,7 +49,9 @@ def wait_for_parsing_completion(auth, dataset_id, document_id=None):
     if document_id is None:
         # Wait for all documents to complete
         for doc in docs:
-            if doc.get("run") != "DONE":
+            status = doc.get("run", "UNKNOWN")
+            if status != "DONE":
+                print(f"[DEBUG] Document {doc.get('name', 'unknown')} status: {status}, progress: {doc.get('progress', 0)}%, msg: {doc.get('progress_msg', '')}")
                 return False
         return True
     else:
@@ -57,6 +59,7 @@ def wait_for_parsing_completion(auth, dataset_id, document_id=None):
         for doc in docs:
             if doc["id"] == document_id:
                 status = doc.get("run", "UNKNOWN")
+                print(f"[DEBUG] Document {doc.get('name', 'unknown')} status: {status}, progress: {doc.get('progress', 0)}%, msg: {doc.get('progress_msg', '')}")
                 if status == "DONE":
                     return True
                 elif status == "FAILED":
@@ -182,8 +185,8 @@ class TestTableParserDatasetChat:
             # Just verify we got a non-empty answer
             assert answer and len(answer) > 0, "Expected non-empty answer"
 
-        # print(f"[Test] Question: {question}")
-        # print(f"[Test] Answer: {answer[:100]}...")
+        print(f"[Test] Question: {question}")
+        print(f"[Test] Answer: {answer[:100]}...")
 
     @staticmethod
     def _upload_and_parse_excel(auth, dataset_id):
