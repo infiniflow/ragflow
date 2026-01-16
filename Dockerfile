@@ -154,7 +154,8 @@ RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
     else \
         sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
     fi; \
-    uv sync --python 3.12 --frozen
+    uv sync --python 3.12 --frozen && \
+    uv pip install pip
 
 COPY web web
 COPY docs docs
