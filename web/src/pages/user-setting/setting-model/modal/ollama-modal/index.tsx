@@ -478,20 +478,13 @@ const OllamaModal = ({
       };
     }
     return {
-      model_type:
-        isDynamicProvider && supportedCategories.length > 0
-          ? supportedCategories[0]
-          : 'chat',
+      // Always default to 'chat' as the most common use case
+      // This matches the selectedModelType state initialization
+      model_type: 'chat',
       api_base: defaultBaseUrl || '',
       vision: false,
     };
-  }, [
-    editMode,
-    initialValues,
-    isDynamicProvider,
-    supportedCategories,
-    defaultBaseUrl,
-  ]);
+  }, [editMode, initialValues, defaultBaseUrl]);
 
   const handleOk = async (values?: FieldValues) => {
     if (!values) return;
