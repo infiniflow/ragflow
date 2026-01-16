@@ -52,6 +52,9 @@ uv-x86_64*.tar.gz
 .venv
 docker/data
 
+# Exclude local service configuration (user-specific overrides of conf/service_conf.yaml.template)
+conf/service_conf.yaml
+
 # OceanBase data and conf
 docker/oceanbase/conf
 docker/oceanbase/data
@@ -215,3 +218,4 @@ docs/archive/UNRAID_DEPLOYMENT_CHECKLIST.md
 .env.prod
 .markdownlint.json
 PRE_CODE_RABBIT_AUDIT.md
+

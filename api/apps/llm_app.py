@@ -16,21 +16,25 @@
 import logging
 import json
 import os
-from quart import request
+import time
+from quart import Blueprint, request
 
 from api.apps import login_required, current_user
 from api.db.services.tenant_llm_service import LLMFactoriesService, TenantLLMService
 from api.db.services.llm_service import LLMService
 from api.utils.api_utils import get_allowed_llm_factories, get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
-from common.constants import StatusEnum, LLMType
+from common.constants import StatusEnum, LLMType, RetCode
 from api.db.db_models import TenantLLM
 from rag.utils.base64_image import test_image
 from rag.llm import EmbeddingModel, ChatModel, RerankModel, CvModel, TTSModel, OcrModel, Seq2txtModel
 
+manager = Blueprint("llm_app", __name__, url_prefix="/llm")
 
-@manager.route("/factories", methods=["GET"])  # noqa: F821
+@manager.route("/factories", methods=["GET"])
 @login_required
-def factories():
+async def factories():
+    from api.db.services.dynamic_model_provider import is_dynamic_provider
+
     try:
         fac = get_allowed_llm_factories()
         fac = [f.to_dict() for f in fac if f.name not in ["Youdao", "FastEmbed", "BAAI", "Builtin"]]
@@ -49,8 +53,156 @@ def factories():
                     [LLMType.CHAT, LLMType.EMBEDDING, LLMType.RERANK, LLMType.IMAGE2TEXT, LLMType.SPEECH2TEXT, LLMType.TTS, LLMType.OCR],
                 )
             )
+            f["is_dynamic"] = is_dynamic_provider(f["name"])
 
         return get_json_result(data=fac)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/factories/<factory>/models", methods=["GET"])  # noqa: F821
+@login_required
+async def get_factory_models(factory: str):
+    """
+    Get available models for a factory.
+
+    For dynamic providers (OpenRouter), fetches from their API with caching.
+    For static providers, returns models from database.
+
+    Query params:
+        - refresh: bool (optional) - Force cache refresh
+    """
+    from api.db.services.dynamic_model_provider import get_provider, is_dynamic_provider
+
+    try:
+        # Check if factory supports dynamic discovery
+        if is_dynamic_provider(factory):
+            provider = get_provider(factory)
+            if not provider:
+                return get_json_result(
+                    data=False,
+                    message=f"Provider {factory} not found",
+                    code=RetCode.ARGUMENT_ERROR
+                )
+
+            # Check if user wants to force refresh
+            refresh = request.args.get("refresh", "false").lower() == "true"
+            if refresh:
+                # Clear cache to force refresh with rate limiting
+                from rag.utils.redis_conn import REDIS_CONN
+                
+                # Rate limiting: 5-minute cooldown per user per factory
+                REFRESH_COOLDOWN = 300  # 5 minutes in seconds
+                rate_limit_key = f"refresh_limit:{current_user.id}:{factory}"
+                
+                try:
+                    # Check if user is within cooldown period
+                    last_refresh = REDIS_CONN.get(rate_limit_key)
+                    if last_refresh:
+                        # Decode bytes if necessary
+                        if isinstance(last_refresh, bytes):
+                            last_refresh_str = last_refresh.decode('utf-8')
+                        else:
+                            last_refresh_str = str(last_refresh)
+                        
+                        last_refresh_time = float(last_refresh_str)
+                        time_since_refresh = time.time() - last_refresh_time
+                        
+                        if time_since_refresh < REFRESH_COOLDOWN:
+                            remaining = int(REFRESH_COOLDOWN - time_since_refresh)
+                            return get_json_result(
+                                data=False,
+                                message=f"Cache refresh rate limit exceeded. Please wait {remaining} seconds.",
+                                code=RetCode.OPERATING_ERROR
+                            )
+                    
+                    # Delete cache and set rate limit
+                    # Note: api_key may not be available yet, so we clear the base key
+                    # In practice, most users will have the same cache (public endpoint)
+                    cache_key_to_delete = provider.get_cache_key()
+                    REDIS_CONN.delete(cache_key_to_delete)
+                    REDIS_CONN.set(rate_limit_key, str(time.time()), REFRESH_COOLDOWN)
+                    logging.info(f"Cache cleared for {factory} by user {current_user.id}")
+                    
+                except Exception as e:
+                    logging.warning(f"Failed to clear cache for {factory}: {e}")
+
+            # Get user's API key if they have one configured
+            # Note: For factory-level model discovery, we only need one valid API key
+            # for the factory (not model-specific). We use the first available active
+            # configuration since API keys are typically factory-wide credentials.
+            api_key = None
+            try:
+                tenant_llms = TenantLLMService.query(
+                    tenant_id=current_user.id,
+                    llm_factory=factory
+                )
+                if tenant_llms:
+                    # Find first valid configuration with an API key
+                    valid_llm = next(
+                        (llm for llm in tenant_llms if llm.status == StatusEnum.VALID.value and llm.api_key),
+                        None
+                    )
+                    if valid_llm:
+                        api_key = valid_llm.api_key
+            except Exception as e:
+                logging.warning(f"Failed to retrieve user API key for {factory}: {e}", exc_info=True)
+
+            # Fetch models (uses cache if available)
+            models, cache_hit = await provider.fetch_available_models(api_key=api_key)
+
+            # Organize models by category
+            models_by_category = {}
+            for model in models:
+                cat = model["model_type"]
+                if cat not in models_by_category:
+                    models_by_category[cat] = []
+                models_by_category[cat].append(model)
+
+            return get_json_result(data={
+                "factory": factory,
+                "models": models,
+                "models_by_category": models_by_category,
+                "supported_categories": list(provider.get_supported_categories()),
+                "default_base_url": provider.get_default_base_url(),
+                "cached": cache_hit,
+                "is_dynamic": True
+            })
+        else:
+            # Static provider - return from database
+            llms = LLMService.query(fid=factory, status=StatusEnum.VALID.value)
+            
+            # Validate factory exists if no models found
+            if not llms:
+                # Check if factory is known at all
+                known_factories = [f.name for f in get_allowed_llm_factories()]
+                if factory not in known_factories:
+                    return get_json_result(
+                        data=False,
+                        message=f"Provider {factory} not found",
+                        code=RetCode.ARGUMENT_ERROR
+                    )
+            
+            models = [llm.to_dict() for llm in llms]
+
+            # Organize models by category for consistent response shape
+            models_by_category = {}
+            for model in models:
+                cat = model.get("model_type", "chat")
+                if cat not in models_by_category:
+                    models_by_category[cat] = []
+                models_by_category[cat].append(model)
+
+            return get_json_result(data={
+                "factory": factory,
+                "models": models,
+                "models_by_category": models_by_category,
+                "supported_categories": [],
+                "default_base_url": None,
+                "cached": False,
+                "is_dynamic": False
+            })
+
     except Exception as e:
         return server_error_response(e)
 
@@ -132,7 +284,7 @@ async def add_llm():
     req = await get_request_json()
     factory = req["llm_factory"]
     api_key = req.get("api_key", "x")
-    llm_name = req.get("llm_name")
+    llm_name = req.get("llm_name", "")
 
     if factory not in [f.name for f in get_allowed_llm_factories()]:
         return get_data_error_result(message=f"LLM factory {factory} is not allowed")
@@ -328,7 +480,7 @@ async def delete_factory():
 
 @manager.route("/my_llms", methods=["GET"])  # noqa: F821
 @login_required
-def my_llms():
+async def my_llms():
     try:
         TenantLLMService.ensure_mineru_from_env(current_user.id)
         include_details = request.args.get("include_details", "false").lower() == "true"
