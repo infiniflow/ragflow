@@ -111,8 +111,8 @@ VAR: "VAR"i
 VARS: "VARS"i
 CONFIGS: "CONFIGS"i
 ENVS: "ENVS"i
-TOKEN: "TOKEN"i
-TOKENS: "TOKENS"i
+KEY: "KEY"i
+KEYS: "KEYS"i
 GENERATE: "GENERATE"i
 
 list_services: LIST SERVICES ";"
@@ -151,9 +151,9 @@ list_variables: LIST VARS ";"
 list_configs: LIST CONFIGS ";"
 list_environments: LIST ENVS ";"
 
-generate_token: GENERATE TOKEN FOR USER quoted_string ";"
-list_tokens: LIST TOKENS OF quoted_string ";"
-drop_token: DROP TOKEN quoted_string OF quoted_string ";"
+generate_token: GENERATE KEY FOR USER quoted_string ";"
+list_tokens: LIST KEYS OF quoted_string ";"
+drop_token: DROP KEY quoted_string OF quoted_string ";"
 
 show_version: SHOW VERSION ";"
 
@@ -386,9 +386,9 @@ SHOW USER PERMISSION <user>
 SHOW VERSION
 GRANT ADMIN <user>
 REVOKE ADMIN <user>
-GENERATE TOKEN FOR USER <user>
-LIST TOKENS OF <user>
-DROP TOKEN <token> OF <user>
+GENERATE KEY FOR USER <user>
+LIST KEYS OF <user>
+DROP KEY <token> OF <user>
 
 Meta Commands:
 \\?, \\h, \\help     Show this help
@@ -1079,26 +1079,26 @@ class AdminCLI(Cmd):
     def _generate_token(self, command: dict[str, Any]) -> None:
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
-        print(f"Generating API token for user: {user_name}")
+        print(f"Generating API key for user: {user_name}")
         url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/new_token"
         response: requests.Response = self.session.post(url)
         res_json: dict[str, Any] = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Failed to generate token for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Failed to generate key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _list_tokens(self, command: dict[str, Any]) -> None:
         username_tree: Tree = command["user_name"]
         user_name: str = username_tree.children[0].strip("'\"")
-        print(f"Listing API tokens for user: {user_name}")
+        print(f"Listing API keys for user: {user_name}")
         url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/token_list"
         response: requests.Response = self.session.get(url)
         res_json: dict[str, Any] = response.json()
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Failed to list tokens for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+            print(f"Failed to list keys for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _drop_token(self, command: dict[str, Any]) -> None:
         token_tree: Tree = command["token"]
