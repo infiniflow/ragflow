@@ -207,7 +207,7 @@ class MCPToolCallSession(ToolCallSession):
         if self._close:
             return "Error: Session is closed"
 
-        future = asyncio.run_coroutine_threadsafe(self._call_mcp_tool(name, arguments), self._event_loop)
+        future = asyncio.run_coroutine_threadsafe(self._call_mcp_tool(name, arguments, request_timeout=timeout), self._event_loop)
         try:
             return future.result(timeout=timeout)
         except FuturesTimeoutError:
