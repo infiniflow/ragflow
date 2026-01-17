@@ -4,72 +4,77 @@ ragflow:
 admin:
   host: 0.0.0.0
   http_port: 9381
-mysql:
-  name: 'rag_flow'
-  user: 'root'
-  password: 'infini_rag_flow'
-  host: 'localhost'
-  port: 5455
-  max_connections: 900
-  stale_timeout: 300
-  max_allowed_packet: 1073741824
+#mysql:
+#  name: 'rag_flow'
+#  user: 'root'
+#  password: 'infini_rag_flow'
+#  host: 'mysql'
+#  port: 3306
+#  max_connections: 900
+#  stale_timeout: 300
+#  max_allowed_packet: 1073741824
 minio:
-  user: 'rag_flow'
-  password: 'infini_rag_flow'
-  host: 'localhost:9000'
-  bucket: ''
+  user: 'ragflow'
+  password: 'ragflow_dev_pass'
+  host: 'minio-dev:9000'
+  bucket: 'ragflow'
   prefix_path: ''
 es:
-  hosts: 'http://localhost:1200'
+  hosts: 'http://elasticsearch-dev:9200'
   username: 'elastic'
-  password: 'infini_rag_flow'
+  password: 'ragflow_dev_pass'
 os:
-  hosts: 'http://localhost:1201'
+  hosts: 'http://opensearch01:9201'
   username: 'admin'
   password: 'infini_rag_flow_OS_01'
-infinity:
-  uri: 'localhost:23817'
-  db_name: 'default_db'
-oceanbase:
-  scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
-  config:
-    db_name: 'test'
-    user: 'root@ragflow'
-    password: 'infini_rag_flow'
-    host: 'localhost'
-    port: 2881
+#infinity:
+#  uri: 'infinity:23817'
+#  db_name: 'default_db'
+#oceanbase:
+#  scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
+#  config:
+#    db_name: 'test'
+#    user: 'root@ragflow'
+#    password: 'infini_rag_flow'
+#    host: 'oceanbase'
+#    port: 2881
 redis:
   db: 1
   username: ''
-  password: 'infini_rag_flow'
-  host: 'localhost:6379'
-task_executor:
-  message_queue_type: 'redis'
+  password: 'ragflow_dev_pass'
+  host: 'redis-dev:6379'
 user_default_llm:
   default_models:
     embedding_model:
       api_key: 'xxx'
-      base_url: 'http://localhost:6380'
-# postgres:
-#   name: 'rag_flow'
-#   user: 'rag_flow'
-#   password: 'infini_rag_flow'
-#   host: 'postgres'
-#   port: 5432
-#   max_connections: 100
-#   stale_timeout: 30
+      base_url: 'http://host.docker.internal:80'
+postgres:
+  name: 'ragflow'
+  user: 'ragflow'
+  password: 'ragflow_dev_pass'
+  host: 'postgres-dev'
+  port: 5432
+  max_connections: 50
+  keepalives_idle: 30
+  keepalives_interval: 10
+  keepalives_count: 3
+  stale_timeout: 30
 # s3:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
 #   region: 'region'
-#gcs:
-#  bucket: 'bridgtl-edm-d-bucket-ragflow'
+#   endpoint_url: 'endpoint_url'
+#   bucket: 'bucket'
+#   prefix_path: 'prefix_path'
+#   signature_version: 'v4'
+#   addressing_style: 'path'
 # oss:
-#   access_key: 'access_key'
-#   secret_key: 'secret_key'
-#   endpoint_url: 'http://oss-cn-hangzhou.aliyuncs.com'
-#   region: 'cn-hangzhou'
-#   bucket: 'bucket_name'
+#   access_key: ''
+#   secret_key: ''
+#   endpoint_url: ''
+#   region: ''
+#   bucket: ''
+#   prefix_path: ''
 # azure:
 #   auth_type: 'sas'
 #   container_url: 'container_url'
@@ -97,35 +102,34 @@ user_default_llm:
 #       api_key: 'xxxx'
 #       base_url: 'https://api.xx.com'
 #     embedding_model:
-#       api_key: 'xxx'
-#       base_url: 'http://localhost:6380'
+#       name: 'bge-m3'
 #     rerank_model: 'bge-reranker-v2'
 #     asr_model:
 #       model: 'whisper-large-v3' # alias of name
 #     image2text_model: ''
 # oauth:
 #   oauth2:
-#     display_name: "OAuth2"
-#     client_id: "your_client_id"
-#     client_secret: "your_client_secret"
-#     authorization_url: "https://your-oauth-provider.com/oauth/authorize"
-#     token_url: "https://your-oauth-provider.com/oauth/token"
-#     userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
-#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/oauth2"
+#     display_name: OAuth2
+#     client_id: your_client_id
+#     client_secret: your_client_secret
+#     authorization_url: https://your-oauth-provider.com/oauth/authorize
+#     token_url: https://your-oauth-provider.com/oauth/token
+#     userinfo_url: https://your-oauth-provider.com/oauth/userinfo
+#     redirect_uri: https://your-app.com/v1/user/oauth/callback/oauth2
 #   oidc:
-#     display_name: "OIDC"
-#     client_id: "your_client_id"
-#     client_secret: "your_client_secret"
-#     issuer: "https://your-oauth-provider.com/oidc"
-#     scope: "openid email profile"
-#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/oidc"
+#     display_name: OIDC
+#     client_id: your_client_id
+#     client_secret: your_client_secret
+#     issuer: https://your-oauth-provider.com/oidc
+#     scope: openid email profile
+#     redirect_uri: https://your-app.com/v1/user/oauth/callback/oidc
 #   github:
-#     type: "github"
-#     icon: "github"
-#     display_name: "Github"
-#     client_id: "your_client_id"
-#     client_secret: "your_client_secret"
-#     redirect_uri: "https://your-app.com/v1/user/oauth/callback/github"
+#     type: github
+#     icon: github
+#     display_name: Github
+#     client_id: your_client_id
+#     client_secret: your_client_secret
+#     redirect_uri: https://your-app.com/v1/user/oauth/callback/github
 # authentication:
 #   client:
 #     switch: false
@@ -138,17 +142,17 @@ user_default_llm:
 #   component: false
 #   dataset: false
 # smtp:
-#   mail_server: ""
+#   mail_server: 
 #   mail_port: 465
 #   mail_use_ssl: true
 #   mail_use_tls: false
-#   mail_username: ""
-#   mail_password: ""
+#   mail_username: 
+#   mail_password: 
 #   mail_default_sender:
-#     - "RAGFlow" # display name
-#     - "" # sender email address
-#   mail_frontend_url: "https://your-frontend.example.com"
+#     - RAGFlow # display name
+#     -  # sender email address
+#   mail_frontend_url: https://your-frontend.example.com
 # tcadp_config:
-#  secret_id: 'tencent_secret_id'
-#  secret_key: 'tencent_secret_key'
-#  region: 'tencent_region'
+#   secret_id: ''
+#   secret_key: ''
+#   region: ''

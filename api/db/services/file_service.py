@@ -188,6 +188,7 @@ class FileService(CommonService):
     @DB.connection_context()
     def create_folder(cls, file, parent_id, name, count):
         from api.apps import current_user
+
         # Recursively create folder structure
         # Args:
         #     file: Current file object
@@ -395,29 +396,22 @@ class FileService(CommonService):
 
         # CTE to calculate size of files in folders and subfolders
         # We need to preserve the root folder context to group by it
-        cte_ref = Table('folder_tree')
+        cte_ref = Table("folder_tree")
 
         # Anchor: The target folders themselves
-        anchor = cls.model.select(cls.model.id.alias('root_id'), cls.model.id).where(cls.model.id << folder_ids)
+        anchor = cls.model.select(cls.model.id.alias("root_id"), cls.model.id).where(cls.model.id << folder_ids)
 
         # Recursive: Children of folders in the tree
         # Note: We must alias the recursive table to join it
         FA = cls.model.alias()
-        recursive = (FA
-                     .select(cte_ref.c.root_id, FA.id)
-                     .join(cte_ref, on=(FA.parent_id == cte_ref.c.id))
-                     .where(FA.id != FA.parent_id))
+        recursive = FA.select(cte_ref.c.root_id, FA.id).join(cte_ref, on=(FA.parent_id == cte_ref.c.id)).where(FA.id != FA.parent_id)
 
-        cte = anchor.union_all(recursive).cte('folder_tree', recursive=True, columns=('root_id', 'id'))
+        cte = anchor.union_all(recursive).cte("folder_tree", recursive=True, columns=("root_id", "id"))
 
         # Main query: join CTE with File to get sizes
-        query = (cls.model
-                 .select(cte.c.root_id, fn.SUM(cls.model.size).alias('total_size'))
-                 .join(cte, on=(cls.model.id == cte.c.id))
-                 .with_cte(cte)
-                 .group_by(cte.c.root_id))
+        query = cls.model.select(cte.c.root_id, fn.SUM(cls.model.size).alias("total_size")).join(cte, on=(cls.model.id == cte.c.id)).with_cte(cte).group_by(cte.c.root_id)
 
-        return {row['root_id']: row['total_size'] for row in query.dicts()}
+        return {row["root_id"]: row["total_size"] for row in query.dicts()}
 
     @classmethod
     @DB.connection_context()
@@ -426,15 +420,11 @@ class FileService(CommonService):
             return set()
 
         # Check which folders have at least one child folder
-        query = (cls.model
-                 .select(cls.model.parent_id)
-                 .where(
-                     (cls.model.parent_id << folder_ids) &
-                     (cls.model.tenant_id == tenant_id) &
-                     (cls.model.type == FileType.FOLDER.value) &
-                     (cls.model.id != cls.model.parent_id)
-                 )
-                 .group_by(cls.model.parent_id))
+        query = (
+            cls.model.select(cls.model.parent_id)
+            .where((cls.model.parent_id << folder_ids) & (cls.model.tenant_id == tenant_id) & (cls.model.type == FileType.FOLDER.value) & (cls.model.id != cls.model.parent_id))
+            .group_by(cls.model.parent_id)
+        )
 
         return set(row.parent_id for row in query)
 
@@ -445,7 +435,7 @@ class FileService(CommonService):
             return {}
 
         kbs = (
-            cls.model.select(cls.model.id.alias('file_id'), Knowledgebase.id, Knowledgebase.name, File2Document.document_id)
+            cls.model.select(cls.model.id.alias("file_id"), Knowledgebase.id, Knowledgebase.name, File2Document.document_id)
             .join(File2Document, on=(File2Document.file_id == cls.model.id))
             .join(Document, on=(File2Document.document_id == Document.id))
             .join(Knowledgebase, on=(Knowledgebase.id == Document.kb_id))
@@ -454,14 +444,10 @@ class FileService(CommonService):
 
         result = {}
         for row in kbs.dicts():
-            fid = row['file_id']
+            fid = row["file_id"]
             if fid not in result:
                 result[fid] = []
-            result[fid].append({
-                "kb_id": row["id"],
-                "kb_name": row["name"],
-                "document_id": row["document_id"]
-            })
+            result[fid].append({"kb_id": row["id"], "kb_name": row["name"], "document_id": row["document_id"]})
         return result
 
     @classmethod
@@ -529,7 +515,6 @@ class FileService(CommonService):
                 if filetype == FileType.PDF.value:
                     blob = read_potential_broken_pdf(blob)
                 settings.STORAGE_IMPL.put(kb.id, location, blob)
-
 
                 img = thumbnail_img(filename, blob)
                 thumbnail_location = ""
@@ -669,7 +654,7 @@ class FileService(CommonService):
         return errors
 
     @staticmethod
-    def upload_info(user_id, file, url: str|None=None):
+    def upload_info(user_id, file, url: str | None = None):
         def structured(filename, filetype, blob, content_type):
             nonlocal user_id
             if filetype == FileType.PDF.value:
@@ -686,37 +671,24 @@ class FileService(CommonService):
                 "mime_type": content_type,
                 "created_by": user_id,
                 "created_at": time.time(),
-                "preview_url": None
+                "preview_url": None,
             }
 
         if url:
-            from crawl4ai import (
-                AsyncWebCrawler,
-                BrowserConfig,
-                CrawlerRunConfig,
-                DefaultMarkdownGenerator,
-                PruningContentFilter,
-                CrawlResult
-            )
+            from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, DefaultMarkdownGenerator, PruningContentFilter, CrawlResult
+
             filename = re.sub(r"\?.*", "", url.split("/")[-1])
+
             async def adownload():
                 browser_config = BrowserConfig(
                     headless=True,
                     verbose=False,
                 )
                 async with AsyncWebCrawler(config=browser_config) as crawler:
-                    crawler_config = CrawlerRunConfig(
-                        markdown_generator=DefaultMarkdownGenerator(
-                            content_filter=PruningContentFilter()
-                        ),
-                        pdf=True,
-                        screenshot=False
-                    )
-                    result: CrawlResult = await crawler.arun(
-                        url=url,
-                        config=crawler_config
-                    )
+                    crawler_config = CrawlerRunConfig(markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter()), pdf=True, screenshot=False)
+                    result: CrawlResult = await crawler.arun(url=url, config=crawler_config)
                     return result
+
             page = asyncio.run(adownload())
             if page.pdf:
                 if filename.split(".")[-1].lower() != "pdf":
@@ -731,16 +703,16 @@ class FileService(CommonService):
     @staticmethod
     def get_files(files: Union[None, list[dict]]) -> list[str]:
         if not files:
-            return  []
+            return []
+
         def image_to_base64(file):
-            return "data:{};base64,{}".format(file["mime_type"],
-                                        base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
+            return "data:{};base64,{}".format(file["mime_type"], base64.b64encode(FileService.get_blob(file["created_by"], file["id"])).decode("utf-8"))
+
         exe = ThreadPoolExecutor(max_workers=5)
         threads = []
         for file in files:
-            if file["mime_type"].find("image") >=0:
+            if file["mime_type"].find("image") >= 0:
                 threads.append(exe.submit(image_to_base64, file))
                 continue
             threads.append(exe.submit(FileService.parse, file["name"], FileService.get_blob(file["created_by"], file["id"]), True, file["created_by"]))
         return [th.result() for th in threads]
-
