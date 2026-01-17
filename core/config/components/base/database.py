@@ -138,8 +138,6 @@ class DatabaseConfig(BaseModel):
         else:
             db_conf = current_db
 
-        if not db_conf.password:
-            raise ValueError(f"Password for active database '{self.active.value}' is required")
         db_conf.password = decrypt_password(db_conf.password, password_conf)
 
     @model_validator(mode="after")

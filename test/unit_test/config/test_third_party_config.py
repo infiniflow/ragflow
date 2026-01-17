@@ -38,7 +38,7 @@ def test_third_party_overrides():
                     "client_secret": "github-client-secret"
                 }
             },
-            "tcadp-config": {
+            "tcadp": {
                 "region": "us-east-1",
             }
         }

@@ -75,10 +75,12 @@ def test_redis_build_dsn_without_password():
 def test_redis_connection_params_full():
     cfg = RedisConfig(host="1.2.3.4", port=6379, db=1, username="u", password="p")
     params = cfg.connection_params
-    assert params == {"host": "1.2.3.4", "port": 6379, "db": 1, "username": "u", "password": "p"}
+    assert params == {
+        "host": "1.2.3.4", "port": 6379, "db": 1, "username": "u", "password": "p", "decode_responses": True
+    }
 
 
 def test_redis_connection_params_minimal():
     cfg = RedisConfig(host="1.2.3.4", port=6379, db=1)
     params = cfg.connection_params
-    assert params == {"host": "1.2.3.4", "port": 6379, "db": 1}
+    assert params == {"host": "1.2.3.4", "port": 6379, "db": 1, "decode_responses": True}

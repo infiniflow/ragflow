@@ -103,6 +103,4 @@ class CacheConfig(BaseModel):
     def decrypt_password(self, password_conf: PasswordConfig) -> None:
         """Decrypt password of the currently active cache if needed."""
         conf = self.current
-        if not conf.password:
-            return
         conf.password = decrypt_password(conf.password, password_conf)

@@ -28,7 +28,11 @@ def test_user_default_llm_defaults(monkeypatch):
     assert llm_cfg.api_key == ""
     assert llm_cfg.factory == ""
     assert llm_cfg.allowed_factories is None
-    assert llm_cfg.parsers == ""
+    assert llm_cfg.parsers == (
+        "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,"
+        "paper:Paper,book:Book,laws:Laws,presentation:Presentation,"
+        "picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"
+    )
 
     models = ("embedding_model", "chat_model", "rerank_model", "asr_model", "image2text_model")
     for model in models:

@@ -122,6 +122,4 @@ class StorageConfig(BaseModel):
         """Decrypt password of the currently active cache if needed."""
         conf = self.current
         if self.active == ObjectStorageType.MINIO:
-            if not conf.password:
-                return
             conf.password = decrypt_password(conf.password, password_conf)
