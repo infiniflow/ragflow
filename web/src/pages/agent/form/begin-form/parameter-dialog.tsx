@@ -96,7 +96,7 @@ function ParameterForm({
       },
       [],
     );
-  }, []);
+  }, [t]);
 
   const type = useWatch({
     control: form.control,

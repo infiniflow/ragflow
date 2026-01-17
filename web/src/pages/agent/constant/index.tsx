@@ -1016,10 +1016,10 @@ export const initialPDFGeneratorValues = {
   watermark_text: '',
   enable_toc: false,
   outputs: {
-    file_path: { type: 'string', value: '' },
-    pdf_base64: { type: 'string', value: '' },
-    download: { type: 'string', value: '' },
-    success: { type: 'boolean', value: false },
+    file_path: { type: 'string' },
+    pdf_base64: { type: 'string' },
+    download: { type: 'string' },
+    success: { type: 'boolean' },
   },
 };
 
@@ -1075,3 +1075,13 @@ export enum WebhookStatus {
   Live = 'live',
   Stopped = 'stopped',
 }
+
+// Map BeginQueryType to TypesWithArray
+export const BeginQueryTypeMap = {
+  [BeginQueryType.Line]: TypesWithArray.String,
+  [BeginQueryType.Paragraph]: TypesWithArray.String,
+  [BeginQueryType.Options]: TypesWithArray.ArrayString,
+  [BeginQueryType.File]: 'File',
+  [BeginQueryType.Integer]: TypesWithArray.Number,
+  [BeginQueryType.Boolean]: TypesWithArray.Boolean,
+};

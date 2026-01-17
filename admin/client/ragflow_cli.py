@@ -17,6 +17,7 @@
 import argparse
 import base64
 import getpass
+import urllib.parse
 from cmd import Cmd
 from typing import Any, Dict, List
 
@@ -60,6 +61,9 @@ sql_command: list_services
            | list_variables
            | list_configs
            | list_environments
+           | generate_key
+           | list_keys
+           | drop_key
            | list_user_datasets
            | list_user_agents
            | list_user_chats
@@ -112,6 +116,9 @@ VAR: "VAR"i
 VARS: "VARS"i
 CONFIGS: "CONFIGS"i
 ENVS: "ENVS"i
+KEY: "KEY"i
+KEYS: "KEYS"i
+GENERATE: "GENERATE"i
 MODEL: "MODEL"i
 MODELS: "MODELS"i
 PROVIDERS: "PROVIDERS"i
@@ -149,6 +156,10 @@ show_version: SHOW VERSION ";"
 
 grant_admin: GRANT ADMIN quoted_string ";"
 revoke_admin: REVOKE ADMIN quoted_string ";"
+
+generate_key: GENERATE KEY FOR USER quoted_string ";"
+list_keys: LIST KEYS OF quoted_string ";"
+drop_key: DROP KEY quoted_string OF quoted_string ";"
 
 set_variable: SET VAR identifier identifier ";"
 show_variable: SHOW VAR identifier ";"
@@ -294,6 +305,19 @@ class RAGFlowCLITransformer(Transformer):
         user_name = items[2]
         return {"type": "revoke_admin", "user_name": user_name}
 
+    def generate_key(self, items):
+        user_name = items[4]
+        return {"type": "generate_key", "user_name": user_name}
+
+    def list_keys(self, items):
+        user_name = items[3]
+        return {"type": "list_keys", "user_name": user_name}
+
+    def drop_key(self, items):
+        key = items[2]
+        user_name = items[4]
+        return {"type": "drop_key", "key": key, "user_name": user_name}
+
     def set_variable(self, items):
         var_name = items[2]
         var_value = items[3]
@@ -393,6 +417,9 @@ SHOW USER PERMISSION <user>
 SHOW VERSION
 GRANT ADMIN <user>
 REVOKE ADMIN <user>
+GENERATE KEY FOR USER <user>
+LIST KEYS OF <user>
+DROP KEY <key> OF <user>
 
 Meta Commands:
 \\?, \\h, \\help     Show this help
@@ -466,7 +493,7 @@ class RAGFlowCLI(Cmd):
         self.mode = arguments.get("type", "admin")
         username = arguments.get("username", "admin@ragflow.io")
         self.account = username
-        
+
         # Set login endpoint based on mode
         if self.mode == "admin":
             url = f"http://{self.host}:{self.port}/api/v1/admin/login"
@@ -496,7 +523,9 @@ class RAGFlowCLI(Cmd):
                     res_json = response.json()
                     error_code = res_json.get("code", -1)
                     if error_code == 0:
-                        self.session.headers.update({"Content-Type": "application/json", "Authorization": response.headers["Authorization"], "User-Agent": "RAGFlow-CLI/0.23.1"})
+                        self.session.headers.update(
+                            {"Content-Type": "application/json", "Authorization": response.headers["Authorization"],
+                             "User-Agent": "RAGFlow-CLI/0.23.1"})
                         print("Authentication successful.")
                         return True
                     else:
@@ -617,7 +646,8 @@ class RAGFlowCLI(Cmd):
         parser.add_argument("-p", "--port", type=int, default=9381, help="Admin or RAGFlow service port")
         parser.add_argument("-w", "--password", default="admin", type=str, help="Superuser password")
         parser.add_argument("-t", "--type", default="admin", type=str, help="CLI mode, admin or user")
-        parser.add_argument("-u", "--username", default=None, help="Username (email). In admin mode defaults to admin@ragflow.io, in user mode required.")
+        parser.add_argument("-u", "--username", default=None,
+                            help="Username (email). In admin mode defaults to admin@ragflow.io, in user mode required.")
         parser.add_argument("command", nargs="?", help="Single command")
         try:
             parsed_args, remaining_args = parser.parse_known_args(args)
@@ -630,7 +660,7 @@ class RAGFlowCLI(Cmd):
                 if username is None:
                     print("Error: username (-u) is required in user mode")
                     return {"error": "Username required"}
-            
+
             if remaining_args:
                 command = remaining_args[0]
                 return {
@@ -717,6 +747,12 @@ class RAGFlowCLI(Cmd):
                 self._grant_admin(command_dict)
             case "revoke_admin":
                 self._revoke_admin(command_dict)
+            case "generate_key":
+                self._generate_key(command_dict)
+            case "list_keys":
+                self._list_keys(command_dict)
+            case "drop_key":
+                self._drop_key(command_dict)
             case "set_variable":
                 self._set_variable(command_dict)
             case "show_variable":
@@ -737,7 +773,6 @@ class RAGFlowCLI(Cmd):
                 self._list_user_model_providers(command_dict)
             case "list_user_default_models":
                 self._list_user_default_models(command_dict)
-
             case "meta":
                 self._handle_meta_command(command_dict)
             case _:
@@ -822,7 +857,7 @@ class RAGFlowCLI(Cmd):
         response = self.session.get(url)
         res_json = response.json()
         if response.status_code == 200:
-            table_data = res_json["data"]
+            table_data = res_json["data"][0]
             table_data.pop("avatar")
             self._print_table_simple(table_data)
         else:
@@ -898,7 +933,6 @@ class RAGFlowCLI(Cmd):
         else:
             print(f"Unknown activate status: {activate_status}.")
 
-
     def _grant_admin(self, command):
         if self.mode != "admin":
             print("This command is only allowed in ADMIN mode")
@@ -913,7 +947,8 @@ class RAGFlowCLI(Cmd):
         if response.status_code == 200:
             print(res_json["message"])
         else:
-            print(f"Fail to grant {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to grant {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
 
     def _revoke_admin(self, command):
         if self.mode != "admin":
@@ -929,7 +964,49 @@ class RAGFlowCLI(Cmd):
         if response.status_code == 200:
             print(res_json["message"])
         else:
-            print(f"Fail to revoke {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to revoke {user_name} admin authorization, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _generate_key(self, command: dict[str, Any]) -> None:
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Generating API key for user: {user_name}")
+        url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/new_token"
+        response: requests.Response = self.session.post(url)
+        res_json: dict[str, Any] = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(
+                f"Failed to generate key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _list_keys(self, command: dict[str, Any]) -> None:
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Listing API keys for user: {user_name}")
+        url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/token_list"
+        response: requests.Response = self.session.get(url)
+        res_json: dict[str, Any] = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Failed to list keys for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _drop_key(self, command: dict[str, Any]) -> None:
+        key_tree: Tree = command["key"]
+        key: str = key_tree.children[0].strip("'\"")
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Dropping API key for user: {user_name}")
+        # URL encode the key to handle special characters
+        encoded_key: str = urllib.parse.quote(key, safe="")
+        url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/token/{encoded_key}"
+        response: requests.Response = self.session.delete(url)
+        res_json: dict[str, Any] = response.json()
+        if response.status_code == 200:
+            print(res_json["message"])
+        else:
+            print(f"Failed to drop key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _set_variable(self, command):
         if self.mode != "admin":
@@ -945,7 +1022,8 @@ class RAGFlowCLI(Cmd):
         if response.status_code == 200:
             print(res_json["message"])
         else:
-            print(f"Fail to set variable {var_name} to {var_value}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to set variable {var_name} to {var_value}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_variable(self, command):
         if self.mode != "admin":
@@ -1056,7 +1134,7 @@ class RAGFlowCLI(Cmd):
     def _drop_role(self, command):
         if self.mode != "admin":
             print("This command is only allowed in ADMIN mode")
-        
+
         role_name_tree: Tree = command["role_name"]
         role_name: str = role_name_tree.children[0].strip("'\"")
         print(f"drop role name: {role_name}")
@@ -1084,7 +1162,8 @@ class RAGFlowCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to update role {role_name} with description: {desc_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to update role {role_name} with description: {desc_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _list_roles(self, command):
         if self.mode != "admin":
@@ -1133,7 +1212,8 @@ class RAGFlowCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to grant role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to grant role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _revoke_permission(self, command):
         if self.mode != "admin":
@@ -1155,7 +1235,8 @@ class RAGFlowCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to revoke role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to revoke role {role_name_str} with {actions} on {resource_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _alter_user_role(self, command):
         if self.mode != "admin":
@@ -1172,12 +1253,13 @@ class RAGFlowCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to alter user: {user_name_str} to role {role_name_str}, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to alter user: {user_name_str} to role {role_name_str}, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_user_permission(self, command):
         if self.mode != "admin":
             print("This command is only allowed in ADMIN mode")
-        
+
         user_name_tree: Tree = command["user_name"]
         user_name_str: str = user_name_tree.children[0].strip("'\"")
         print(f"show_user_permission user_name: {user_name_str}")
@@ -1187,7 +1269,8 @@ class RAGFlowCLI(Cmd):
         if response.status_code == 200:
             self._print_table_simple(res_json["data"])
         else:
-            print(f"Fail to show user: {user_name_str} permission, code: {res_json['code']}, message: {res_json['message']}")
+            print(
+                f"Fail to show user: {user_name_str} permission, code: {res_json['code']}, message: {res_json['message']}")
 
     def _show_version(self, command):
         if self.mode == "admin":
