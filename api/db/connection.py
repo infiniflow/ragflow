@@ -222,8 +222,8 @@ def get_db():
 
 
 # For backward compatibility, also provide DB as module-level variable
-# It will be initialized via get_db() when first accessed
-DB = None  # Will be set by init_db() on first call
+# It is initialized via get_db() to ensure the pool is created
+DB = get_db()
 
 
 def close_connection():

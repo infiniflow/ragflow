@@ -35,7 +35,7 @@ from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
 from common.file_utils import get_project_base_directory
 from common import settings
-from api.db.db_models import init_database_tables as init_web_db
+from api.db.migrations import init_database_tables as init_web_db
 from api.db.init_data import init_web_data, init_superuser
 from common.versions import get_ragflow_version
 from common.config_utils import show_configs
