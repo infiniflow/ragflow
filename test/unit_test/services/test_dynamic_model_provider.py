@@ -166,7 +166,7 @@ def test_cache_key_and_ttl():
     """Test cache configuration"""
     provider = OpenRouterProvider()
 
-    assert provider.get_cache_key() == "openrouter:models:v1"
+    assert provider.get_cache_key() == "openrouter:models"
     assert provider.get_cache_ttl() == 3600
 
 

@@ -12,7 +12,7 @@ import { useFetchFactoryModels } from '@/hooks/use-llm-request';
 import { IModalProps } from '@/interfaces/common';
 import { IDynamicModel } from '@/interfaces/database/llm';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FieldValues, useFormContext } from 'react-hook-form';
 import { LLMHeader } from '../../components/llm-header';
 
@@ -58,7 +58,7 @@ interface ModelFormContentProps {
   isDynamicProvider: boolean;
   modelsLoading: boolean;
   filteredModels: IDynamicModel[];
-  dynamicModels: IDynamicModel[];
+  allModels: IDynamicModel[];
   selectedProvider: string | null;
   selectedModelType: string;
   defaultBaseUrl?: string;
@@ -72,6 +72,7 @@ interface ModelFormContentProps {
   handleOk: (values?: FieldValues) => Promise<void>;
   t: (key: string, options?: any) => string;
   tc: (key: string, options?: any) => string;
+  shouldShowNoModels: boolean;
 }
 
 // Separate component to use useFormContext inside DynamicForm.Root
@@ -79,7 +80,7 @@ const ModelFormContent = ({
   isDynamicProvider,
   modelsLoading,
   filteredModels,
-  dynamicModels,
+  allModels,
   selectedProvider,
   selectedModelType,
   defaultBaseUrl,
@@ -93,6 +94,7 @@ const ModelFormContent = ({
   handleOk,
   t,
   tc,
+  shouldShowNoModels,
 }: ModelFormContentProps) => {
   const form = useFormContext();
 
@@ -108,9 +110,8 @@ const ModelFormContent = ({
 
   useEffect(() => {
     if (isDynamicProvider && selectedModel) {
-      const model = dynamicModels.find(
-        (m: any) => m.llm_name === selectedModel,
-      );
+      // Search in allModels since dynamicModels is filtered by category
+      const model = allModels.find((m: any) => m.llm_name === selectedModel);
       if (model) {
         // Auto-populate max_tokens
         form.setValue('max_tokens', model.max_tokens);
@@ -121,9 +122,9 @@ const ModelFormContent = ({
         }
       }
     }
-  }, [selectedModel, isDynamicProvider, dynamicModels, form]);
+  }, [selectedModel, isDynamicProvider, allModels, form]);
 
-  // Watch for model_type and provider_filter changes
+  // Watch for model_type changes only - provider_filter is handled by form state
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
       if (name === 'model_type' && isDynamicProvider) {
@@ -132,11 +133,8 @@ const ModelFormContent = ({
           setSelectedModelType(newModelType);
           // Reset provider and model selection when category changes
           setSelectedProvider(null);
-          // Use setTimeout to ensure form field updates after re-render
-          setTimeout(() => {
-            form.setValue('provider_filter', '', { shouldValidate: false });
-            form.setValue('llm_name', '', { shouldValidate: false });
-          }, 0);
+          form.setValue('provider_filter', '', { shouldValidate: false });
+          form.setValue('llm_name', '', { shouldValidate: false });
         }
       }
 
@@ -144,10 +142,12 @@ const ModelFormContent = ({
         const newProvider = value.provider_filter;
         // Update state to filter models
         setSelectedProvider(newProvider || null);
-        // Reset model selection when provider changes
-        setTimeout(() => {
-          form.setValue('llm_name', '', { shouldValidate: false });
-        }, 0);
+      }
+
+      if (name === 'llm_name' && isDynamicProvider && value.llm_name) {
+        // When a model is selected, clear the provider filter state
+        // but keep the form field value for display
+        // This allows the dropdown to show what was selected
       }
     });
 
@@ -183,7 +183,7 @@ const ModelFormContent = ({
         </div>
       )}
 
-      {isDynamicProvider && !modelsLoading && filteredModels.length === 0 && (
+      {isDynamicProvider && shouldShowNoModels && (
         <div className="text-sm text-destructive mb-2">
           {selectedProvider
             ? t('noModelsForProvider', {
@@ -222,9 +222,11 @@ const OllamaModal = ({
   llmFactory,
   editMode = false,
   initialValues,
+  isDynamicProvider: isDynamicProviderProp,
 }: IModalProps<Partial<IAddLlmRequestBody> & { provider_order?: string }> & {
   llmFactory: string;
   editMode?: boolean;
+  isDynamicProvider?: boolean;
 }) => {
   const { t } = useTranslate('setting');
   const { t: tc } = useCommonTranslation();
@@ -234,21 +236,22 @@ const OllamaModal = ({
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [selectedModelType, setSelectedModelType] = useState<string>('chat');
 
-  // Check if this is a potentially dynamic provider
-  // These providers MAY support dynamic model discovery from the backend.
-  // Whether they actually support it depends on backend configuration and
-  // is determined by checking supportedCategories from the API response.
-  const canBeDynamic = [
-    LLMFactory.OpenRouter,
-    LLMFactory.Ollama,
-    LLMFactory.LocalAI,
-    LLMFactory.Xinference,
-  ].includes(llmFactory as LLMFactory);
+  // Use prop to determine if provider is dynamic, falling back to internal list
+  // The parent component determines this via isDynamicProvider() utility
+  const canBeDynamic =
+    isDynamicProviderProp ??
+    [
+      LLMFactory.OpenRouter,
+      LLMFactory.Ollama,
+      LLMFactory.LocalAI,
+      LLMFactory.Xinference,
+    ].includes(llmFactory as LLMFactory);
 
   // Fetch dynamic models if provider supports it
   // Only queries backend when canBeDynamic is true and modal is visible
   const {
-    data: dynamicModels,
+    data: allModels,
+    dataByCategory,
     supportedCategories,
     defaultBaseUrl,
     loading: modelsLoading,
@@ -259,14 +262,30 @@ const OllamaModal = ({
     canBeDynamic && visible,
   );
 
-  // Debug logging for category changes
+  // Provide a sensible default base URL for OpenRouter while loading
+  const effectiveDefaultBaseUrl = useMemo(() => {
+    if (defaultBaseUrl) return defaultBaseUrl;
+    if (llmFactory === LLMFactory.OpenRouter) {
+      return 'https://openrouter.ai/api/v1';
+    }
+    return null;
+  }, [defaultBaseUrl, llmFactory]);
+
+  // Get models for the currently selected category
+  const dynamicModels = useMemo(() => {
+    if (!selectedModelType || !dataByCategory) return allModels;
+    return dataByCategory[selectedModelType] || [];
+  }, [selectedModelType, dataByCategory, allModels]);
+
+  // Debug logging for prop reception and category changes
   useEffect(() => {
-    console.log('[OllamaModal] State changed:', {
+    console.log('[OllamaModal] Props/State:', {
       llmFactory,
       selectedModelType,
       canBeDynamic,
       visible,
-      isDynamicProvider: canBeDynamic && supportedCategories.length > 0,
+      isDynamicProviderProp,
+      modelsLoading,
       supportedCategoriesCount: supportedCategories.length,
     });
   }, [
@@ -274,31 +293,57 @@ const OllamaModal = ({
     selectedModelType,
     canBeDynamic,
     visible,
+    isDynamicProviderProp,
+    modelsLoading,
     supportedCategories,
   ]);
 
-  // Determine if provider is actually dynamic based on backend response
-  // Computed directly from canBeDynamic and supportedCategories
-  const isDynamicProvider = useMemo(
-    () => canBeDynamic && supportedCategories.length > 0,
-    [canBeDynamic, supportedCategories],
-  );
+  // Determine if provider should use dynamic UI
+  // Honor parent prop if provided; otherwise, enable dynamic UI during loading
+  // and once supported categories arrive from backend.
+  const isDynamicProvider = useMemo(() => {
+    // For OpenRouter, always use dynamic UI and fetch models
+    if (llmFactory === LLMFactory.OpenRouter) {
+      return true;
+    }
+    if (typeof isDynamicProviderProp === 'boolean') {
+      return (
+        isDynamicProviderProp &&
+        (supportedCategories.length > 0 || modelsLoading)
+      );
+    }
+    return canBeDynamic && (supportedCategories.length > 0 || modelsLoading);
+  }, [
+    isDynamicProviderProp,
+    canBeDynamic,
+    supportedCategories,
+    modelsLoading,
+    llmFactory,
+  ]);
 
   // Extract unique providers from models for the CURRENT CATEGORY
   // This implements cascading filtering: category → providers → models
   const availableProviders = useMemo(() => {
-    if (!isDynamicProvider || dynamicModels.length === 0) {
+    if (!isDynamicProvider) {
       return [];
     }
 
-    // Only show providers that have models in the currently selected category
-    // This automatically filters the provider dropdown based on model_type selection
-    const providers = Array.from(
-      new Set(dynamicModels.map((m) => m.provider)),
-    ).sort();
+    // If we have models, extract providers from them
+    if (dynamicModels.length > 0) {
+      const providers = Array.from(
+        new Set(dynamicModels.map((m) => m.provider)),
+      ).sort();
+      return providers;
+    }
 
-    return providers;
-  }, [dynamicModels, isDynamicProvider]);
+    // While loading, show a placeholder for known factories
+    // This ensures the provider filter dropdown is visible even during initial load
+    if (modelsLoading && llmFactory === LLMFactory.OpenRouter) {
+      return ['groq', 'fireworks', 'together', 'openai']; // Common OpenRouter providers
+    }
+
+    return [];
+  }, [dynamicModels, isDynamicProvider, modelsLoading, llmFactory]);
 
   // Filter models by selected provider
   const filteredModels = useMemo(() => {
@@ -317,8 +362,20 @@ const OllamaModal = ({
   // Fallback model type options for non-dynamic providers
   const modelTypeOptions = useMemo(() => {
     if (isDynamicProvider) {
-      // Use supported categories from backend
-      return buildModelTypeOptions(supportedCategories);
+      // Use supported categories from backend if available; otherwise fallback
+      if (supportedCategories && supportedCategories.length > 0) {
+        return buildModelTypeOptions(supportedCategories);
+      }
+      // Fallback categories while loading for OpenRouter
+      if (llmFactory === LLMFactory.OpenRouter) {
+        return buildModelTypeOptions(['chat', 'embedding', 'image2text']);
+      }
+      return buildModelTypeOptions([
+        'chat',
+        'embedding',
+        'rerank',
+        'image2text',
+      ]);
     }
 
     // Use predefined options for static providers
@@ -340,6 +397,31 @@ const OllamaModal = ({
     llmFactoryToUrlMap[llmFactory as LLMFactory] ||
     'https://github.com/infiniflow/ragflow/blob/main/docs/guides/models/deploy_local_llm.mdx';
 
+  // Use refs to access latest values without triggering fields rebuild
+  // Update refs synchronously during render (before useMemo runs)
+  const availableProvidersRef = useRef(availableProviders);
+  const filteredModelsRef = useRef(filteredModels);
+
+  availableProvidersRef.current = availableProviders;
+  filteredModelsRef.current = filteredModels;
+
+  // While loading, show placeholder models so model select appears enabled
+  const displayModels = useMemo(() => {
+    if (filteredModels.length > 0) return filteredModels;
+    if (modelsLoading && isDynamicProvider) {
+      return [
+        {
+          llm_name: '',
+          name: 'Loading...',
+          max_tokens: 0,
+          model_type: selectedModelType,
+          provider: '',
+        } as IDynamicModel,
+      ];
+    }
+    return filteredModels;
+  }, [filteredModels, modelsLoading, isDynamicProvider, selectedModelType]);
+
   const fields = useMemo<FormFieldConfig[]>(() => {
     const baseFields: FormFieldConfig[] = [
       // Model Type selection (always first)
@@ -354,19 +436,23 @@ const OllamaModal = ({
         },
       },
 
-      // Provider selection (only for dynamic providers)
-      ...(isDynamicProvider && availableProviders.length > 0
+      // Provider selection (only for dynamic providers with available providers or while loading)
+      ...(isDynamicProvider &&
+      (availableProvidersRef.current.length > 0 || modelsLoading)
         ? [
             {
               name: 'provider_filter',
-              label: t('provider', 'Provider'),
+              label: t('availableModels', 'Available Models'),
               type: FormFieldType.Select,
               required: false,
-              placeholder: t('selectProvider', 'Select provider (optional)'),
-              options: availableProviders.map((p) => ({
+              placeholder: modelsLoading
+                ? t('loading', 'Loading...')
+                : t('selectModel', 'Select model (optional)'),
+              options: availableProvidersRef.current.map((p) => ({
                 value: p,
                 label: p.charAt(0).toUpperCase() + p.slice(1),
               })),
+              disabled: modelsLoading,
             } as FormFieldConfig,
           ]
         : []),
@@ -381,7 +467,7 @@ const OllamaModal = ({
             placeholder: modelsLoading
               ? tc('loading', 'Loading...')
               : t('selectModel', 'Select model'),
-            options: filteredModels.map((model) => {
+            options: displayModels.map((model) => {
               const tokensDisplay =
                 typeof model.max_tokens === 'number' &&
                 isFinite(model.max_tokens) &&
@@ -393,7 +479,9 @@ const OllamaModal = ({
                 label: `${model.name} (${tokensDisplay})`,
               };
             }),
-            disabled: modelsLoading || filteredModels.length === 0,
+            disabled:
+              modelsLoading ||
+              (filteredModelsRef.current.length === 0 && !modelsLoading),
           }
         : {
             name: 'llm_name',
@@ -411,13 +499,13 @@ const OllamaModal = ({
         name: 'api_base',
         label: t('addLlmBaseUrl'),
         type: FormFieldType.Text,
-        required: !isDynamicProvider || !defaultBaseUrl,
-        placeholder: defaultBaseUrl || t('baseUrlNameMessage'),
+        required: !isDynamicProvider || !effectiveDefaultBaseUrl,
+        placeholder: effectiveDefaultBaseUrl || t('baseUrlNameMessage'),
         validation: {
           message: t('baseUrlNameMessage'),
         },
         tooltip:
-          isDynamicProvider && defaultBaseUrl
+          isDynamicProvider && effectiveDefaultBaseUrl
             ? t(
                 'defaultBaseUrlTooltip',
                 'Default base URL is pre-filled, you can override it',
@@ -500,11 +588,11 @@ const OllamaModal = ({
     t,
     tc,
     isDynamicProvider,
-    availableProviders,
-    filteredModels,
     modelsLoading,
     defaultBaseUrl,
     modelTypeOptions,
+    availableProviders,
+    displayModels,
   ]);
 
   const defaultValues: FieldValues = useMemo(() => {
@@ -584,10 +672,10 @@ const OllamaModal = ({
           isDynamicProvider={isDynamicProvider}
           modelsLoading={modelsLoading}
           filteredModels={filteredModels}
-          dynamicModels={dynamicModels}
+          allModels={allModels}
           selectedProvider={selectedProvider}
           selectedModelType={selectedModelType}
-          defaultBaseUrl={defaultBaseUrl ?? undefined}
+          defaultBaseUrl={effectiveDefaultBaseUrl ?? undefined}
           setSelectedProvider={setSelectedProvider}
           setSelectedModelType={setSelectedModelType}
           refetchModels={refetchModels}
@@ -598,6 +686,12 @@ const OllamaModal = ({
           handleOk={handleOk}
           t={t}
           tc={tc}
+          shouldShowNoModels={
+            isDynamicProvider &&
+            !modelsLoading &&
+            filteredModels.length === 0 &&
+            supportedCategories.length > 0
+          }
         />
       </DynamicForm.Root>
     </Modal>

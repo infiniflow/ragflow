@@ -4,11 +4,14 @@ import { LocalLlmFactories } from './constants';
 export const isLocalLlmFactory = (llmFactory: string) =>
   LocalLlmFactories.some((x) => x === llmFactory);
 
+// Dynamic providers fetch their model list from an API at runtime
+export const DynamicProviders = [
+  LLMFactory.OpenRouter,
+  LLMFactory.Xinference,
+  LLMFactory.LocalAI,
+  LLMFactory.Ollama,
+  LLMFactory.LMStudio,
+];
+
 export const isDynamicProvider = (llmFactory: string) =>
-  [
-    LLMFactory.OpenRouter,
-    LLMFactory.Xinference,
-    LLMFactory.LocalAI,
-    LLMFactory.Ollama,
-    LLMFactory.LMStudio,
-  ].some((x) => x === llmFactory);
+  DynamicProviders.some((x) => x === llmFactory);

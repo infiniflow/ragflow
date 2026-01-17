@@ -480,10 +480,15 @@ export const useFetchFactoryModels = (
     isFetching: loading,
     refetch,
   } = useQuery({
-    queryKey: [LLMApiAction.FactoryModels, factoryName, category],
+    // Don't include category in queryKey - we fetch ALL models and filter client-side
+    // This prevents refetching when category changes, eliminating the flashing UX issue
+    queryKey: [LLMApiAction.FactoryModels, factoryName],
     initialData: makeDefaultFactoryData(factoryName),
     enabled,
-    gcTime: 0,
+    // Stale-while-revalidate: use cached data immediately, refetch in background
+    // This ensures instant UI on modal open; data updates silently without blocking
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    staleTime: 0, // Data is immediately stale; refetch when query resumes
     queryFn: async () => {
       console.log('[useFetchFactoryModels] Query running:', {
         factoryName,
@@ -491,12 +496,13 @@ export const useFetchFactoryModels = (
         enabled,
       });
       try {
-        const { data } = await getFactoryModels(factoryName, false, category);
+        // Fetch ALL models (no category filter) - filtering is done client-side
+        const { data } = await getFactoryModels(factoryName, false);
         if (data?.code !== 0) {
           message.error(data?.message || t('message.fetchFailed'));
           return makeDefaultFactoryData(factoryName);
         }
-        return {
+        const mapped = {
           factory: data?.data?.factory ?? factoryName,
           models: data?.data?.models ?? [],
           models_by_category: data?.data?.models_by_category ?? {},
@@ -504,6 +510,15 @@ export const useFetchFactoryModels = (
           default_base_url: data?.data?.default_base_url ?? null,
           is_dynamic: data?.data?.is_dynamic ?? false,
         };
+        console.log('[useFetchFactoryModels] Mapped result:', {
+          factory: mapped.factory,
+          modelsCount: mapped.models.length,
+          categoryKeys: Object.keys(mapped.models_by_category || {}),
+          supportedCategoriesCount: mapped.supported_categories.length,
+          defaultBaseUrl: mapped.default_base_url,
+          isDynamic: mapped.is_dynamic,
+        });
+        return mapped;
       } catch (error) {
         console.error(
           `Failed to fetch factory models for '${factoryName}':`,

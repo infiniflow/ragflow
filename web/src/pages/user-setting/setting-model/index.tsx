@@ -31,9 +31,9 @@ import FishAudioModal from './modal/fish-audio-modal';
 import GoogleModal from './modal/google-modal';
 import HunyuanModal from './modal/hunyuan-modal';
 import MinerUModal from './modal/mineru-modal';
-import PaddleOCRModal from './modal/paddleocr-modal';
 import TencentCloudModal from './modal/next-tencent-modal';
 import OllamaModal from './modal/ollama-modal';
+import PaddleOCRModal from './modal/paddleocr-modal';
 import SparkModal from './modal/spark-modal';
 import VolcEngineModal from './modal/volcengine-modal';
 import YiyanModal from './modal/yiyan-modal';
@@ -259,15 +259,23 @@ const ModelProviders = () => {
         llmFactory={llmFactory}
       ></ApiKeyModal>
       {llmAddingVisible && (
-        <OllamaModal
-          visible={llmAddingVisible}
-          hideModal={hideLlmAddingModal}
-          onOk={onLlmAddingOk}
-          loading={llmAddingLoading}
-          editMode={llmEditMode}
-          initialValues={llmInitialValues}
-          llmFactory={selectedLlmFactory}
-        ></OllamaModal>
+        <>
+          {console.log('[SettingModel] Passing to OllamaModal', {
+            selectedLlmFactory,
+            isDynamic: isDynamicProvider(selectedLlmFactory),
+            visible: llmAddingVisible,
+          })}
+          <OllamaModal
+            visible={llmAddingVisible}
+            hideModal={hideLlmAddingModal}
+            onOk={onLlmAddingOk}
+            loading={llmAddingLoading}
+            editMode={llmEditMode}
+            initialValues={llmInitialValues}
+            llmFactory={selectedLlmFactory}
+            isDynamicProvider={isDynamicProvider(selectedLlmFactory)}
+          ></OllamaModal>
+        </>
       )}
       <VolcEngineModal
         visible={volcAddingVisible}

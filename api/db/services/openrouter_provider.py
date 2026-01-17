@@ -29,8 +29,10 @@ from api.db.services.dynamic_model_provider import (
 class OpenRouterProvider(DynamicModelProvider):
     """OpenRouter-specific implementation of dynamic model discovery"""
 
-    OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
-    CACHE_KEY = "openrouter:models:v1"
+    # OpenRouter API endpoints for different model types
+    OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"  # Chat/completion models
+    OPENROUTER_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings/models"  # Embedding models
+    CACHE_KEY = "openrouter:models"
     CACHE_TTL = 3600  # 1 hour
 
     def __init__(self, redis=None):
@@ -57,50 +59,65 @@ class OpenRouterProvider(DynamicModelProvider):
     ) -> Tuple[List[Dict], bool]:
         """
         Fetch models from OpenRouter API with caching.
-        API key is optional - OpenRouter's /models endpoint is public.
-        
+        Fetches from multiple endpoints to get all model types (chat, embedding, etc.)
+        API key is optional - OpenRouter's endpoints are public.
+
         Returns:
             tuple[List[Dict], bool]: Models and cache hit boolean
         """
         # Build dynamic cache key based on base_url and api_key
         cache_key = self._build_cache_key(base_url, api_key)
-        
+
         # Check cache first
         cached = self._get_cached_models(cache_key)
         if cached:
-            logging.info("Returning cached OpenRouter models")
+            logging.info(f"Returning cached OpenRouter models ({len(cached)} models)")
             return cached, True
 
-        # Fetch from OpenRouter API
+        # Fetch from multiple OpenRouter API endpoints
+        all_models = []
         try:
-            logging.info(f"Fetching models from OpenRouter API: {base_url or self.OPENROUTER_MODELS_URL}")
             async with httpx.AsyncClient(timeout=10.0) as client:
                 headers = {}
                 if api_key:
                     headers["Authorization"] = f"Bearer {api_key}"
 
-                response = await client.get(
+                # Fetch chat/completion models
+                logging.info(f"Fetching chat models from OpenRouter: {base_url or self.OPENROUTER_MODELS_URL}")
+                chat_response = await client.get(
                     base_url or self.OPENROUTER_MODELS_URL,
                     headers=headers
                 )
-                response.raise_for_status()
-                
-                try:
-                    data = response.json()
-                except json.JSONDecodeError as e:
-                    logging.error(f"Failed to parse JSON from OpenRouter response: {type(e).__name__}: {e}")
-                    return self._get_fallback_models(), False
+                chat_response.raise_for_status()
+                chat_data = chat_response.json()
+                chat_models = chat_data.get("data", [])
+                logging.info(f"Fetched {len(chat_models)} chat models from OpenRouter")
+
+                # Fetch embedding models
+                logging.info(f"Fetching embedding models from OpenRouter: {self.OPENROUTER_EMBEDDINGS_URL}")
+                embed_response = await client.get(
+                    self.OPENROUTER_EMBEDDINGS_URL,
+                    headers=headers
+                )
+                embed_response.raise_for_status()
+                embed_data = embed_response.json()
+                embed_models = embed_data.get("data", [])
+                logging.info(f"Fetched {len(embed_models)} embedding models from OpenRouter")
+
+                # Combine all models
+                all_models = chat_models + embed_models
+                logging.info(f"Total models fetched: {len(all_models)} ({len(chat_models)} chat + {len(embed_models)} embedding)")
 
             # Transform to RAGFlow format
-            models = self._transform_models(data.get("data", []))
-            logging.info(f"Fetched {len(models)} models from OpenRouter")
+            models = self._transform_models(all_models)
+            logging.info(f"Transformed {len(models)} models to RAGFlow format")
 
             # Cache the results
             self._cache_models(models, cache_key)
 
             return models, False
 
-        except (httpx.HTTPStatusError, httpx.RequestError) as e:
+        except (httpx.HTTPStatusError, httpx.RequestError, json.JSONDecodeError) as e:
             logging.error(f"Failed to fetch models from OpenRouter: {type(e).__name__}: {e}")
             # Fallback to hardcoded popular models if API fails
             return self._get_fallback_models(), False
@@ -160,44 +177,41 @@ class OpenRouterProvider(DynamicModelProvider):
         """
         Infer RAGFlow model type from OpenRouter model metadata.
 
-        Strategy:
-        1. Check model name for explicit patterns (embed, rerank, whisper, tts)
-        2. Check architecture modality
-        3. Default to chat for ambiguous text models
+        OpenRouter Model Type Mapping:
+        - "text->text" or "text+image->text" → chat (includes VLM/multimodal)
+        - "text->embeddings" → embedding
+        - "text->image" or "text+image->text+image" → image2text (image generation)
+        - Whisper models → speech2text (by name pattern only)
 
-        OpenRouter models have:
-        - architecture.modality: "text", "text+image", "text+audio"
-        - id patterns: "openai/gpt-4-vision" contains hints
+        Note: OpenRouter does NOT currently offer:
+        - Dedicated TTS (text-to-speech) models
+        - Dedicated ASR/speech2text models (Whisper-style)
+        - Rerank models via their API
+
+        Models with audio INPUT (like Gemini, Voxtral) are multimodal CHAT models,
+        not speech-to-text engines. They accept audio as part of conversation context.
         """
-        modality = model.get("architecture", {}).get("modality", "text")
-        model_id_lower = model_id.lower()
-        model_name_lower = model.get("name", "").lower()
+        architecture = model.get("architecture", {})
+        modality = architecture.get("modality", "")
+        output_modalities = architecture.get("output_modalities", [])
 
-        # Embedding models (explicit pattern - high priority)
-        if "embed" in model_id_lower or "embedding" in model_id_lower:
+        # Embedding models (from /embeddings/models endpoint)
+        if "embeddings" in output_modalities or "->embeddings" in modality:
             return "embedding"
 
-        # Rerank models (rare but exist on OpenRouter)
-        if "rerank" in model_id_lower or ("cohere" in model_id_lower and "rerank" in model_name_lower):
-            return "rerank"
+        # Image generation models (output includes image)
+        if "image" in output_modalities and "text" in output_modalities:
+            return "image2text"
 
-        # Audio/Speech models (whisper, etc.)
-        if "whisper" in model_id_lower or "audio" in modality or "speech" in model_id_lower:
-            return "speech2text"
-
-        # TTS models (text-to-speech)
-        if "tts" in model_id_lower or "-tts" in model_id_lower or "text-to-speech" in model_name_lower:
-            return "tts"
-
-        # Vision models → chat (multimodal)
-        if "vision" in model_id_lower or "image" in modality or modality == "text+image":
-            return "chat"  # Vision-capable chat model
-
-        # Default to chat for text-based models
-        if "text" in modality or modality == "text->text":
+        # All text-output models are chat (including multimodal with audio/image/video input)
+        # OpenRouter's multimodal models (Gemini, GPT-4o-audio, etc.) are chat models
+        # that happen to accept various input types, not dedicated ASR/TTS services
+        if "text" in output_modalities or "->text" in modality:
             return "chat"
 
-        return None
+        # Fallback for models without architecture info
+        logging.warning(f"Unknown model type for {model_id}: modality={modality}, output_modalities={output_modalities}")
+        return "chat"
 
     def _extract_provider(self, model_id: str) -> str:
         """
@@ -440,8 +454,16 @@ class OpenRouterProvider(DynamicModelProvider):
         ]
 
     def get_supported_categories(self) -> set[str]:
-        """OpenRouter can support these RAGFlow model categories"""
-        return {"chat", "embedding", "rerank", "speech2text", "tts"}
+        """OpenRouter supported RAGFlow model categories.
+
+        Fetched from:
+        - /api/v1/models → chat (includes VLM/multimodal), image2text (image generation)
+        - /api/v1/embeddings/models → embedding
+
+        Note: OpenRouter does NOT currently offer dedicated TTS, ASR, or rerank models.
+        Multimodal models (with audio/image input) are classified as 'chat'.
+        """
+        return {"chat", "embedding", "image2text"}
 
     def get_default_base_url(self) -> Optional[str]:
         """Default OpenRouter API endpoint"""

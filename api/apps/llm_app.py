@@ -170,12 +170,18 @@ async def get_factory_models(factory: str):
                     models_by_category[cat] = []
                 models_by_category[cat].append(model)
 
+            # Debug: Log available categories
+            logging.info(f"[CATEGORY FILTER] Available categories: {list(models_by_category.keys())}, Count per category: {{{', '.join([f'{k}: {len(v)}' for k, v in models_by_category.items()])}}}")
+
             # If category filter is provided, return only models from that category
             if category_filter and category_filter in models_by_category:
                 filtered_models = models_by_category[category_filter]
+                logging.info(f"[CATEGORY FILTER] Filtered to {len(filtered_models)} models for category '{category_filter}'")
             else:
                 # No filter or invalid category - return all models
                 filtered_models = all_models
+                if category_filter:
+                    logging.warning(f"[CATEGORY FILTER] Requested category '{category_filter}' not found in available categories: {list(models_by_category.keys())}")
 
             return get_json_result(data={
                 "factory": factory,
