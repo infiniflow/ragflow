@@ -588,6 +588,8 @@ def migrate_db():
         playhouse_logger.setLevel(original_playhouse_level)
 
 
+@DB.connection_context()
+@DB.lock("init_database_tables", 60)
 def init_database_tables(alter_fields=None):
     if alter_fields is None:
         alter_fields = []
