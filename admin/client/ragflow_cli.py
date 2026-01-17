@@ -437,7 +437,6 @@ class RAGFlowCLI(Cmd):
         self.account = "admin@ragflow.io"
         self.account_password: str = "admin"
         self.session = requests.Session()
-        self.access_token: str = ""
         self.host: str = ""
         self.port: int = 0
         self.mode: str = "admin"
