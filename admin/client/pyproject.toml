@@ -20,5 +20,8 @@ test = [
     "requests-toolbelt>=1.0.0",
 ]
 
+[tool.setuptools]
+py-modules = ["ragflow_cli", "parser"]
+
 [project.scripts]
 ragflow-cli = "ragflow_cli:main"
