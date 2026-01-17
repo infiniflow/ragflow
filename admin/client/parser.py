@@ -14,7 +14,7 @@
 #  limitations under the License.
 #
 
-from lark import Lark, Transformer, Tree
+from lark import Transformer
 
 
 GRAMMAR = r"""
