@@ -17,6 +17,7 @@
 import argparse
 import base64
 import getpass
+import urllib.parse
 from cmd import Cmd
 from typing import Any, Dict, List
 
@@ -60,6 +61,9 @@ sql_command: list_services
            | list_variables
            | list_configs
            | list_environments
+           | generate_key
+           | list_keys
+           | drop_key
 
 // meta command definition
 meta_command: "\\" meta_command_name [meta_args]
@@ -107,6 +111,9 @@ VAR: "VAR"i
 VARS: "VARS"i
 CONFIGS: "CONFIGS"i
 ENVS: "ENVS"i
+KEY: "KEY"i
+KEYS: "KEYS"i
+GENERATE: "GENERATE"i
 
 list_services: LIST SERVICES ";"
 show_service: SHOW SERVICE NUMBER ";"
@@ -143,6 +150,10 @@ show_variable: SHOW VAR identifier ";"
 list_variables: LIST VARS ";"
 list_configs: LIST CONFIGS ";"
 list_environments: LIST ENVS ";"
+
+generate_key: GENERATE KEY FOR USER quoted_string ";"
+list_keys: LIST KEYS OF quoted_string ";"
+drop_key: DROP KEY quoted_string OF quoted_string ";"
 
 show_version: SHOW VERSION ";"
 
@@ -296,6 +307,19 @@ class AdminTransformer(Transformer):
     def list_environments(self, items):
         return {"type": "list_environments"}
 
+    def generate_key(self, items):
+        user_name = items[4]
+        return {"type": "generate_key", "user_name": user_name}
+
+    def list_keys(self, items):
+        user_name = items[3]
+        return {"type": "list_keys", "user_name": user_name}
+
+    def drop_key(self, items):
+        key = items[2]
+        user_name = items[4]
+        return {"type": "drop_key", "key": key, "user_name": user_name}
+
     def action_list(self, items):
         return items
 
@@ -362,6 +386,9 @@ SHOW USER PERMISSION <user>
 SHOW VERSION
 GRANT ADMIN <user>
 REVOKE ADMIN <user>
+GENERATE KEY FOR USER <user>
+LIST KEYS OF <user>
+DROP KEY <key> OF <user>
 
 Meta Commands:
 \\?, \\h, \\help     Show this help
@@ -664,6 +691,12 @@ class AdminCLI(Cmd):
                 self._list_configs(command_dict)
             case "list_environments":
                 self._list_environments(command_dict)
+            case "generate_key":
+                self._generate_key(command_dict)
+            case "list_keys":
+                self._list_keys(command_dict)
+            case "drop_key":
+                self._drop_key(command_dict)
             case "meta":
                 self._handle_meta_command(command_dict)
             case _:
@@ -795,7 +828,6 @@ class AdminCLI(Cmd):
                 print(f"Fail to alter activate status, code: {res_json['code']}, message: {res_json['message']}")
         else:
             print(f"Unknown activate status: {activate_status}.")
-
 
     def _grant_admin(self, command):
         user_name_tree: Tree = command["user_name"]
@@ -1044,6 +1076,46 @@ class AdminCLI(Cmd):
         else:
             print(f"Fail to show version, code: {res_json['code']}, message: {res_json['message']}")
 
+    def _generate_key(self, command: dict[str, Any]) -> None:
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Generating API key for user: {user_name}")
+        url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/new_token"
+        response: requests.Response = self.session.post(url)
+        res_json: dict[str, Any] = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Failed to generate key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _list_keys(self, command: dict[str, Any]) -> None:
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Listing API keys for user: {user_name}")
+        url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/token_list"
+        response: requests.Response = self.session.get(url)
+        res_json: dict[str, Any] = response.json()
+        if response.status_code == 200:
+            self._print_table_simple(res_json["data"])
+        else:
+            print(f"Failed to list keys for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+
+    def _drop_key(self, command: dict[str, Any]) -> None:
+        key_tree: Tree = command["key"]
+        key: str = key_tree.children[0].strip("'\"")
+        username_tree: Tree = command["user_name"]
+        user_name: str = username_tree.children[0].strip("'\"")
+        print(f"Dropping API key for user: {user_name}")
+        # URL encode the key to handle special characters
+        encoded_key: str = urllib.parse.quote(key, safe="")
+        url: str = f"http://{self.host}:{self.port}/api/v1/admin/users/{user_name}/token/{encoded_key}"
+        response: requests.Response = self.session.delete(url)
+        res_json: dict[str, Any] = response.json()
+        if response.status_code == 200:
+            print(res_json["message"])
+        else:
+            print(f"Failed to drop key for user {user_name}, code: {res_json['code']}, message: {res_json['message']}")
+
     def _handle_meta_command(self, command):
         meta_command = command["command"]
         args = command.get("args", [])
@@ -1077,11 +1149,11 @@ def main():
     else:
         if cli.verify_admin(args, single_command=False):
             print(r"""
-                ____  ___   ______________                 ___       __          _     
-               / __ \/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___ 
+                ____  ___   ______________                 ___       __          _
+               / __ \/   | / ____/ ____/ /___ _      __   /   | ____/ /___ ___  (_)___
               / /_/ / /| |/ / __/ /_  / / __ \ | /| / /  / /| |/ __  / __ `__ \/ / __ \
              / _, _/ ___ / /_/ / __/ / / /_/ / |/ |/ /  / ___ / /_/ / / / / / / / / / /
-            /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/  /_/  |_\__,_/_/ /_/ /_/_/_/ /_/ 
+            /_/ |_/_/  |_\____/_/   /_/\____/|__/|__/  /_/  |_\__,_/_/ /_/ /_/_/_/ /_/
             """)
             cli.cmdloop()
 
