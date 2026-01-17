@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Union
 
-from peewee import fn
+from peewee import fn, Table
 
 from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileType
 from api.db.db_models import DB, Document, File, File2Document, Knowledgebase, Task
@@ -71,23 +71,22 @@ class FileService(CommonService):
         files = files.paginate(page_number, items_per_page)
 
         res_files = list(files.dicts())
+
+        # Optimization: batch fetch metadata to avoid N+1 queries
+        folder_ids = [f["id"] for f in res_files if f["type"] == FileType.FOLDER.value]
+        file_ids = [f["id"] for f in res_files if f["type"] != FileType.FOLDER.value]
+
+        folder_sizes = cls.get_folder_sizes(folder_ids) if folder_ids else {}
+        has_children_map = cls.get_has_child_folders(folder_ids, tenant_id) if folder_ids else set()
+        kbs_info_map = cls.get_files_kbs_info(file_ids) if file_ids else {}
+
         for file in res_files:
             if file["type"] == FileType.FOLDER.value:
-                file["size"] = cls.get_folder_size(file["id"])
+                file["size"] = folder_sizes.get(file["id"], 0)
                 file["kbs_info"] = []
-                children = list(
-                    cls.model.select()
-                    .where(
-                        (cls.model.tenant_id == tenant_id),
-                        (cls.model.parent_id == file["id"]),
-                        ~(cls.model.id == file["id"]),
-                    )
-                    .dicts()
-                )
-                file["has_child_folder"] = any(value["type"] == FileType.FOLDER.value for value in children)
-                continue
-            kbs_info = cls.get_kb_id_by_file_id(file["id"])
-            file["kbs_info"] = kbs_info
+                file["has_child_folder"] = file["id"] in has_children_map
+            else:
+                file["kbs_info"] = kbs_info_map.get(file["id"], [])
 
         return res_files, count
 
@@ -386,17 +385,84 @@ class FileService(CommonService):
     @classmethod
     @DB.connection_context()
     def get_folder_size(cls, folder_id):
-        size = 0
+        return cls.get_folder_sizes([folder_id]).get(folder_id, 0)
 
-        def dfs(parent_id):
-            nonlocal size
-            for f in cls.model.select(*[cls.model.id, cls.model.size, cls.model.type]).where(cls.model.parent_id == parent_id, cls.model.id != parent_id):
-                size += f.size
-                if f.type == FileType.FOLDER.value:
-                    dfs(f.id)
+    @classmethod
+    @DB.connection_context()
+    def get_folder_sizes(cls, folder_ids):
+        if not folder_ids:
+            return {}
 
-        dfs(folder_id)
-        return size
+        # CTE to calculate size of files in folders and subfolders
+        # We need to preserve the root folder context to group by it
+        cte_ref = Table('folder_tree')
+
+        # Anchor: The target folders themselves
+        anchor = cls.model.select(cls.model.id.alias('root_id'), cls.model.id).where(cls.model.id << folder_ids)
+
+        # Recursive: Children of folders in the tree
+        # Note: We must alias the recursive table to join it
+        FA = cls.model.alias()
+        recursive = (FA
+                     .select(cte_ref.c.root_id, FA.id)
+                     .join(cte_ref, on=(FA.parent_id == cte_ref.c.id))
+                     .where(FA.id != FA.parent_id))
+
+        cte = anchor.union_all(recursive).cte('folder_tree', recursive=True, columns=('root_id', 'id'))
+
+        # Main query: join CTE with File to get sizes
+        query = (cls.model
+                 .select(cte.c.root_id, fn.SUM(cls.model.size).alias('total_size'))
+                 .join(cte, on=(cls.model.id == cte.c.id))
+                 .with_cte(cte)
+                 .group_by(cte.c.root_id))
+
+        return {row['root_id']: row['total_size'] for row in query.dicts()}
+
+    @classmethod
+    @DB.connection_context()
+    def get_has_child_folders(cls, folder_ids, tenant_id):
+        if not folder_ids:
+            return set()
+
+        # Check which folders have at least one child folder
+        query = (cls.model
+                 .select(cls.model.parent_id)
+                 .where(
+                     (cls.model.parent_id << folder_ids) &
+                     (cls.model.tenant_id == tenant_id) &
+                     (cls.model.type == FileType.FOLDER.value) &
+                     (cls.model.id != cls.model.parent_id)
+                 )
+                 .group_by(cls.model.parent_id))
+
+        return set(row.parent_id for row in query)
+
+    @classmethod
+    @DB.connection_context()
+    def get_files_kbs_info(cls, file_ids):
+        if not file_ids:
+            return {}
+
+        kbs = (
+            cls.model.select(cls.model.id.alias('file_id'), Knowledgebase.id, Knowledgebase.name, File2Document.document_id)
+            .join(File2Document, on=(File2Document.file_id == cls.model.id))
+            .join(Document, on=(File2Document.document_id == Document.id))
+            .join(Knowledgebase, on=(Knowledgebase.id == Document.kb_id))
+            .where(cls.model.id << file_ids)
+        )
+
+        result = {}
+        for row in kbs.dicts():
+            fid = row['file_id']
+            if fid not in result:
+                result[fid] = []
+            result[fid].append({
+                "kb_id": row["id"],
+                "kb_name": row["name"],
+                "document_id": row["document_id"]
+            })
+        return result
 
     @classmethod
     @DB.connection_context()
