@@ -21,4 +21,4 @@ test = [
 ]
 
 [project.scripts]
-ragflow-cli = "admin_client:main"
+ragflow-cli = "ragflow_cli:main"
