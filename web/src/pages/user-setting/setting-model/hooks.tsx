@@ -544,3 +544,61 @@ export const useSubmitPaddleOCR = () => {
     paddleocrLoading: loading,
   };
 };
+
+export const useSubmitDynamicProvider = () => {
+  const [selectedLlmFactory, setSelectedLlmFactory] = useState<string>('');
+  const [editMode, setEditMode] = useState(false);
+  const [initialValues, setInitialValues] = useState<
+    Partial<IAddLlmRequestBody>
+  >();
+  const { addLlm, loading } = useAddLlm();
+  const {
+    visible: dynamicAddingVisible,
+    hideModal: hideDynamicAddingModal,
+    showModal: showDynamicAddingModal,
+  } = useSetModalState();
+
+  const onDynamicAddingOk = useCallback(
+    async (payload: IAddLlmRequestBody) => {
+      const ret = await addLlm(payload);
+      if (ret === 0) {
+        hideDynamicAddingModal();
+        setEditMode(false);
+        setInitialValues(undefined);
+      }
+    },
+    [hideDynamicAddingModal, addLlm],
+  );
+
+  const handleShowDynamicAddingModal = (
+    llmFactory: string,
+    isEdit = false,
+    editData?: any,
+    detailedModel?: any,
+  ) => {
+    setSelectedLlmFactory(llmFactory);
+    setEditMode(isEdit);
+
+    if (isEdit && editData) {
+      setInitialValues({
+        ...editData,
+        api_base: detailedModel?.api_base || '',
+        max_tokens: detailedModel?.max_tokens || 8192,
+      });
+    } else {
+      setInitialValues(undefined);
+    }
+    showDynamicAddingModal();
+  };
+
+  return {
+    dynamicAddingLoading: loading,
+    editMode,
+    initialValues,
+    onDynamicAddingOk,
+    dynamicAddingVisible,
+    hideDynamicAddingModal,
+    showDynamicAddingModal: handleShowDynamicAddingModal,
+    selectedLlmFactory,
+  };
+};
