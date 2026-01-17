@@ -44,7 +44,7 @@ async def upload():
     pf_id = form.get("parent_id")
 
     if not pf_id:
-        root_folder = FileService.get_root_folder(current_user.id)
+        root_folder = await asyncio.to_thread(FileService.get_root_folder, current_user.id)
         pf_id = root_folder["id"]
 
     files = await request.files
@@ -59,7 +59,7 @@ async def upload():
                 data=False, message='No file selected!', code=RetCode.ARGUMENT_ERROR)
     file_res = []
     try:
-        e, pf_folder = FileService.get_by_id(pf_id)
+        e, pf_folder = await asyncio.to_thread(FileService.get_by_id, pf_id)
         if not e:
             return get_data_error_result( message="Can't find this folder!")
 
