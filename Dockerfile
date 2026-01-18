@@ -43,17 +43,17 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
     chmod 1777 /tmp && \
     apt update && \
-    apt install -y libglib2.0-0 libglx-mesa0 libgl1 && \
-    apt install -y pkg-config libicu-dev libgdiplus && \
-    apt install -y default-jdk && \
-    apt install -y libatk-bridge2.0-0 && \
-    apt install -y libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev && \
-    apt install -y libjemalloc-dev && \
-    apt install -y nginx unzip curl wget git vim less && \
-    apt install -y ghostscript && \
-    apt install -y pandoc && \
-    apt install -y texlive && \
-    apt install -y fonts-freefont-ttf fonts-noto-cjk
+    apt install -y \
+        libglib2.0-0 libglx-mesa0 libgl1 \
+        pkg-config libicu-dev libgdiplus \
+        default-jdk \
+        libatk-bridge2.0-0 \
+        libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev \
+        libjemalloc-dev \
+        nginx unzip curl wget git vim less \
+        ghostscript pandoc texlive \
+        fonts-freefont-ttf fonts-noto-cjk \
+        build-essential
 
 # Install uv
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
@@ -103,7 +103,7 @@ RUN cargo --version && rustc --version
 # general x86_64 environment, install msodbcsql17.
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
-    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
+    curl https://packages.microsoft.com/config/ubuntu/24.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
     apt update && \
     arch="$(uname -m)"; \
     if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then \
