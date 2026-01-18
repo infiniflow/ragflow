@@ -24,18 +24,22 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
-import pdfplumber
+
 from PIL import Image
 
+
 try:
-    from docling.document_converter import DocumentConverter
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
 except Exception:
-    DocumentConverter = None  
+    DocumentConverter = None
 
 try:
     from deepdoc.parser.pdf_parser import RAGFlowPdfParser
 except Exception:
-    class RAGFlowPdfParser:  
+
+    class RAGFlowPdfParser:
         pass
 
 
@@ -48,7 +52,7 @@ class DoclingContentType(str, Enum):
 
 @dataclass
 class _BBox:
-    page_no: int  
+    page_no: int
     x0: float
     y0: float
     x1: float
@@ -56,54 +60,60 @@ class _BBox:
 
 
 class DoclingParser(RAGFlowPdfParser):
+    _converter_instance = None
+
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.page_images: list[Image.Image] = []
         self.page_from = 0
         self.page_to = 10_000
         self.outlines = []
-   
-        
+
+    @classmethod
+    def _get_converter(cls):
+        if cls._converter_instance is None:
+            if DocumentConverter is None:
+                return None
+
+            # Configure pipeline options
+            pipeline_options = PdfPipelineOptions()
+            pipeline_options.do_ocr = True
+            pipeline_options.do_table_structure = True
+            pipeline_options.table_structure_options.do_cell_matching = True
+            pipeline_options.generate_page_images = True
+            pipeline_options.images_scale = 2.0  # Improve image resolution
+
+            cls._converter_instance = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
+        return cls._converter_instance
+
     def check_installation(self) -> bool:
         if DocumentConverter is None:
             self.logger.warning("[Docling] 'docling' is not importable, please: pip install docling")
             return False
         try:
-            _ = DocumentConverter()
-            return True
+            # Try to initialize the singleton
+            return self._get_converter() is not None
         except Exception as e:
             self.logger.error(f"[Docling] init DocumentConverter failed: {e}")
             return False
 
-    def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=600, callback=None):
+    def __images__(self, images: list[Image.Image], zoomin: int = 1, page_from=0, page_to=600, callback=None):
         self.page_from = page_from
         self.page_to = page_to
-        bytes_io = None
         try:
-            if not isinstance(fnm, (str, PathLike)):
-                bytes_io = BytesIO(fnm)
-
-            opener = pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(bytes_io)
-            with opener as pdf:
-                pages = pdf.pages[page_from:page_to]
-                self.page_images = [p.to_image(resolution=72 * zoomin, antialias=True).original for p in pages]
+            self.page_images = images
         except Exception as e:
             self.page_images = []
             self.logger.exception(e)
-        finally:
-            if bytes_io:
-                bytes_io.close()
 
-    def _make_line_tag(self,bbox: _BBox) -> str:
+    def _make_line_tag(self, bbox: _BBox) -> str:
         if bbox is None:
             return ""
-        x0,x1, top, bott = bbox.x0, bbox.x1, bbox.y0, bbox.y1
+        x0, x1, top, bott = bbox.x0, bbox.x1, bbox.y0, bbox.y1
         if hasattr(self, "page_images") and self.page_images and len(self.page_images) >= bbox.page_no:
-            _, page_height = self.page_images[bbox.page_no-1].size
-            top, bott = page_height-top ,page_height-bott
-        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(
-            bbox.page_no, x0,x1, top, bott
-        )
+            _, page_height = self.page_images[bbox.page_no - 1].size
+            top, bott = page_height - top, page_height - bott
+        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(bbox.page_no, x0, x1, top, bott)
 
     @staticmethod
     def extract_positions(txt: str) -> list[tuple[list[int], float, float, float, float]]:
@@ -131,10 +141,10 @@ class DoclingParser(RAGFlowPdfParser):
                 bottom = top + 4
             img0 = self.page_images[pns[0]]
             x0, y0, x1, y1 = int(left), int(top), int(right), int(min(bottom, img0.size[1]))
-            
+
             crop0 = img0.crop((x0, y0, x1, y1))
             imgs.append(crop0)
-            if 0 < ii < len(poss)-1:
+            if 0 < ii < len(poss) - 1:
                 positions.append((pns[0] + self.page_from, x0, x1, y0, y1))
             remain_bottom = bottom - img0.size[1]
             for pn in pns[1:]:
@@ -168,16 +178,23 @@ class DoclingParser(RAGFlowPdfParser):
 
     def _iter_doc_items(self, doc) -> Iterable[tuple[str, Any, Optional[_BBox]]]:
         for t in getattr(doc, "texts", []):
-            parent=getattr(t, "parent", "")
-            ref=getattr(parent,"cref","")
-            label=getattr(t, "label", "")
-            if (label in ("section_header","text",) and ref in ("#/body",)) or label in ("list_item",):
+            parent = getattr(t, "parent", "")
+            ref = getattr(parent, "cref", "")
+            label = getattr(t, "label", "")
+            if (
+                label
+                in (
+                    "section_header",
+                    "text",
+                )
+                and ref in ("#/body",)
+            ) or label in ("list_item",):
                 text = getattr(t, "text", "") or ""
                 bbox = None
                 if getattr(t, "prov", None):
                     pn = getattr(t.prov[0], "page_no", None)
                     bb = getattr(t.prov[0], "bbox", None)
-                    bb = [getattr(bb, "l", None),getattr(bb, "t", None),getattr(bb, "r", None),getattr(bb, "b", None)]
+                    bb = [getattr(bb, "l", None), getattr(bb, "t", None), getattr(bb, "r", None), getattr(bb, "b", None)]
                     if pn and bb and len(bb) == 4:
                         bbox = _BBox(page_no=int(pn), x0=bb[0], y0=bb[1], x1=bb[2], y1=bb[3])
                 yield (DoclingContentType.TEXT.value, text, bbox)
@@ -189,7 +206,7 @@ class DoclingParser(RAGFlowPdfParser):
                 if getattr(item, "prov", None):
                     pn = getattr(item.prov, "page_no", None)
                     bb = getattr(item.prov, "bbox", None)
-                    bb = [getattr(bb, "l", None),getattr(bb, "t", None),getattr(bb, "r", None),getattr(bb, "b", None)]
+                    bb = [getattr(bb, "l", None), getattr(bb, "t", None), getattr(bb, "r", None), getattr(bb, "b", None)]
                     if pn and bb and len(bb) == 4:
                         bbox = _BBox(int(pn), bb[0], bb[1], bb[2], bb[3])
                 yield (DoclingContentType.EQUATION.value, text, bbox)
@@ -205,8 +222,8 @@ class DoclingParser(RAGFlowPdfParser):
                 section = payload.strip()
             else:
                 continue
-            
-            tag = self._make_line_tag(bbox) if isinstance(bbox,_BBox) else ""
+
+            tag = self._make_line_tag(bbox) if isinstance(bbox, _BBox) else ""
             if parse_method == "manual":
                 sections.append((section, typ, tag))
             elif parse_method == "paper":
@@ -228,9 +245,9 @@ class DoclingParser(RAGFlowPdfParser):
         left, top, right, bott = bbox
 
         x0 = float(left)
-        y0 = float(H-top)
+        y0 = float(H - top)
         x1 = float(right)
-        y1 = float(H-bott)
+        y1 = float(H - bott)
 
         x0, y0 = max(0.0, min(x0, W - 1)), max(0.0, min(y0, H - 1))
         x1, y1 = max(x0 + 1.0, min(x1, W)), max(y0 + 1.0, min(y1, H))
@@ -240,7 +257,7 @@ class DoclingParser(RAGFlowPdfParser):
         except Exception:
             return None, ""
 
-        pos = (page_no-1 if page_no>0 else 0, x0, x1, y0, y1)
+        pos = (page_no - 1 if page_no > 0 else 0, x0, x1, y0, y1)
         return crop, [pos]
 
     def _transfer_to_tables(self, doc):
@@ -291,13 +308,12 @@ class DoclingParser(RAGFlowPdfParser):
         binary: BytesIO | bytes | None = None,
         callback: Optional[Callable] = None,
         *,
-        output_dir: Optional[str] = None, 
-        lang: Optional[str] = None,        
-        method: str = "auto",             
+        output_dir: Optional[str] = None,
+        lang: Optional[str] = None,
+        method: str = "auto",
         delete_output: bool = True,
-        parse_method: str = "raw"     
+        parse_method: str = "raw",
     ):
-
         if not self.check_installation():
             raise RuntimeError("Docling not available, please install `docling`")
 
@@ -320,14 +336,24 @@ class DoclingParser(RAGFlowPdfParser):
         if callback:
             callback(0.1, f"[Docling] Converting: {src_path}")
 
-        try:
-            self.__images__(str(src_path), zoomin=1)
-        except Exception as e:
-            self.logger.warning(f"[Docling] render pages failed: {e}")
-
-        conv = DocumentConverter()  
+        conv = self._get_converter()
         conv_res = conv.convert(str(src_path))
         doc = conv_res.document
+
+        # Load page images from Docling result
+        page_images = []
+        for i in range(doc.num_pages):
+            # docling pages are 1-indexed
+            page = doc.pages[i + 1]
+            if hasattr(page, "image") and page.image:
+                page_images.append(page.image.pil_image)
+            else:
+                # Fallback/Debug note: Image generation options should ensure this is populated
+                self.logger.warning(f"Page {i + 1} has no image.")
+
+        # Initialize base class image list
+        self.__images__(page_images, zoomin=1)
+
         if callback:
             callback(0.7, f"[Docling] Parsed doc: {getattr(doc, 'num_pages', 'n/a')} pages")
 
