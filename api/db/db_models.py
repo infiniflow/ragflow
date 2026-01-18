@@ -259,29 +259,41 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
                 )
 
                 if should_retry and attempt < self.max_retries:
+                    # Log detailed context for easier debugging: SQL, params and full exception
                     logging.warning(
-                        f"Database connection issue (attempt {attempt+1}/{self.max_retries}): {e}"
+                        f"Database connection issue (attempt {attempt+1}/{self.max_retries}) while executing SQL: {repr(sql)} params: {repr(params)}: {e}",
+                        exc_info=True,
                     )
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    # Exponential backoff with a maximum cap to avoid excessively long sleeps
+                    backoff = min(self.retry_delay * (2 ** attempt), 30)
+                    time.sleep(backoff)
                 else:
-                    logging.error(f"DB execution failure: {e}")
+                    logging.error(f"DB execution failure while executing SQL: {repr(sql)} params: {repr(params)}: {e}", exc_info=True)
                     raise
         return None
 
     def _handle_connection_loss(self):
-        # self.close_all()
-        # self.connect()
+        # Attempt a controlled reconnect sequence with logging
         try:
             self.close()
         except Exception:
-            pass
+            logging.debug("Error while closing DB connection during reconnect attempt", exc_info=True)
+        # Try reconnect a few times with small backoff
+        for i in range(3):
+            try:
+                self.connect()
+                logging.info("Database reconnect successful")
+                return
+            except Exception as e:
+                logging.warning(f"Reconnect attempt {i+1} failed: {e}", exc_info=True)
+                time.sleep(0.1 * (2 ** i))
+        # Final attempt, allow exception to surface
         try:
             self.connect()
         except Exception as e:
-            logging.error(f"Failed to reconnect: {e}")
-            time.sleep(0.1)
-            self.connect()
+            logging.error(f"Failed to reconnect after retries: {e}", exc_info=True)
+            raise
 
     def begin(self):
         for attempt in range(self.max_retries + 1):
@@ -299,11 +311,14 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
 
                 if should_retry and attempt < self.max_retries:
                     logging.warning(
-                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries})"
+                        f"Lost connection during transaction (attempt {attempt+1}/{self.max_retries}): {e}",
+                        exc_info=True,
                     )
                     self._handle_connection_loss()
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    backoff = min(self.retry_delay * (2 ** attempt), 30)
+                    time.sleep(backoff)
                 else:
+                    logging.error(f"Lost connection during transaction and aborting: {e}", exc_info=True)
                     raise
         return None
 

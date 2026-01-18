@@ -728,6 +728,13 @@ class MinerUParser(RAGFlowPdfParser):
                     # Progress callback
                     if callback:
                         callback(-1, f"[MinerU] Processing batch {i+1}/{total_batches}: pages {batch_start+1}-{batch_end+1}")
+                    # Set options to reflect current batch for better logging and traceability
+                    try:
+                        options.start_page = batch_start
+                        options.end_page = batch_end
+                    except Exception:
+                        pass
+                    self.logger.info(f"[MinerU] request options={options}")
                     final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback, start_page=batch_start, end_page=batch_end)
                     outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
                     aggregated_outputs.extend(outputs)
