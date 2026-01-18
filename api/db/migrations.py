@@ -167,6 +167,7 @@ def alter_db_add_column(migrator, table_name, column_name, column_type):
             logging.debug(f"Added column: {table_name}.{column_name}")
     except Exception as ex:  # noqa: BLE001
         StandardErrorHandler.handle_migration_error(ex, table_name, column_name, "add_column", db_type=settings.DATABASE_TYPE.lower())
+        raise
 
 
 def alter_db_column_type(migrator, table_name, column_name, new_column_type):

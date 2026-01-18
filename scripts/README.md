@@ -57,8 +57,9 @@ Builds and publishes (or loads) the RAGFlow Docker image. Designed for local dev
 
 **Usage:**
 ```bash
-# Default (Builds ragflow-local:dev, loads to 'unraid' context)
+# Default (Builds ragflow-local:dev, loads to 'default' context)
 ./scripts/publish_dev_image.sh
+
 
 # Custom usage
 ./scripts/publish_dev_image.sh --context default --local my-image v2
@@ -67,5 +68,10 @@ Builds and publishes (or loads) the RAGFlow Docker image. Designed for local dev
 **Options:**
 - `--local`: Load image to Docker daemon (default).
 - `--push`: Push image to registry.
-- `--context <name>`: Switch to specified Docker context during build (default: `unraid`).
+- `--context <name>`: Switch to specified Docker context during build (default: `unraid`. Update this if your context differs).
 - `--platform <plat>`: Specify target platform (default: `linux/amd64`).
+
+**Arguments:**
+- `<image-name>`: Name of the Docker image (Optional. Default: `ragflow-local`)
+- `<tag>`: Tag for the Docker image (Optional. Default: `dev`)
+

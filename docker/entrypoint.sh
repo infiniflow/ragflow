@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
 # Enable verbose debugging
-set -x
+if [[ "${DEBUG_ENTRYPOINT}" == "true" ]]; then
+    set -x
+fi
 set -e
 
 # -----------------------------------------------------------------------------
@@ -165,12 +167,16 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         default="${BASH_REMATCH[2]}"
 
         if [ -n "${!varname}" ]; then
+            set +x
             eval "echo \"$line"\" >> "${CONF_FILE}"
+            if [[ "${DEBUG_ENTRYPOINT}" == "true" ]]; then set -x; fi
         else
             echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" >> "${CONF_FILE}"
         fi
     else
+        set +x
         eval "echo \"$line\"" >> "${CONF_FILE}"
+        if [[ "${DEBUG_ENTRYPOINT}" == "true" ]]; then set -x; fi
     fi
 done < "${TEMPLATE_FILE}"
 
