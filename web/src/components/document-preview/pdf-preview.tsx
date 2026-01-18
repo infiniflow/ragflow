@@ -1,3 +1,4 @@
+import * as pdfjs from 'pdfjs-dist';
 import { memo, useEffect, useRef } from 'react';
 import {
   AreaHighlight,
@@ -7,6 +8,8 @@ import {
   PdfLoader,
   Popup,
 } from 'react-pdf-highlighter';
+
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs-dist/pdf.worker.min.js';
 
 import { useCatchDocumentError } from '@/components/pdf-previewer/hooks';
 import { Spin } from '@/components/ui/spin';
@@ -73,7 +76,6 @@ const PdfPreview = ({
             <Spin />
           </div>
         }
-        workerSrc="/pdfjs-dist/pdf.worker.min.js"
         errorMessage={<FileError>{error}</FileError>}
       >
         {(pdfDocument) => {
