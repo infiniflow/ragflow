@@ -131,6 +131,10 @@ class MinerUParseOptions:
     parse_method: str = "raw"
     formula_enable: bool = True
     table_enable: bool = True
+    # Batch processing and pagination
+    batch_size: int = 30  # Number of pages per batch for large PDFs
+    start_page: Optional[int] = None  # 0-based start page (inclusive)
+    end_page: Optional[int] = None    # 0-based end page (inclusive)
 
 
 class MinerUParser(RAGFlowPdfParser):
@@ -251,12 +255,12 @@ class MinerUParser(RAGFlowPdfParser):
         return True, reason
 
     def _run_mineru(
-        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
+        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None, *, start_page: Optional[int] = None, end_page: Optional[int] = None
     ) -> Path:
-        return self._run_mineru_api(input_path, output_dir, options, callback)
+        return self._run_mineru_api(input_path, output_dir, options, callback, start_page=start_page, end_page=end_page)
 
     def _run_mineru_api(
-        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None
+        self, input_path: Path, output_dir: Path, options: MinerUParseOptions, callback: Optional[Callable] = None, *, start_page: Optional[int] = None, end_page: Optional[int] = None
     ) -> Path:
         pdf_file_path = str(input_path)
 
@@ -281,8 +285,8 @@ class MinerUParser(RAGFlowPdfParser):
             "return_content_list": True,
             "return_images": True,
             "response_format_zip": True,
-            "start_page_id": 0,
-            "end_page_id": 99999,
+            "start_page_id": 0 if start_page is None else int(start_page),
+            "end_page_id": 99999 if end_page is None else int(end_page),
         }
 
         if options.server_url:
@@ -690,13 +694,57 @@ class MinerUParser(RAGFlowPdfParser):
                 formula_enable=enable_formula,
                 table_enable=enable_table,
             )
-            final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
-            outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
-            self.logger.info(f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
-            if callback:
-                callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
+            # Determine total pages
+            try:
+                with pdfplumber.open(pdf) as p:
+                    total_pages = len(p.pages)
+            except Exception:
+                total_pages = None
 
-            return self._transfer_to_sections(outputs, parse_method), self._transfer_to_tables(outputs)
+            # Determine requested page range
+            start_page = options.start_page if options.start_page is not None else 0
+            end_page = options.end_page if options.end_page is not None else (total_pages - 1 if total_pages is not None else None)
+
+            aggregated_outputs = []
+            if total_pages is None or (end_page is not None and start_page > end_page):
+                # Fall back to single request if we cannot determine pages or invalid range
+                final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback)
+                outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
+                aggregated_outputs.extend(outputs)
+                if options.delete_output:
+                    try:
+                        shutil.rmtree(final_out_dir)
+                    except Exception:
+                        pass
+            else:
+                # Compute batches
+                bsize = max(1, int(options.batch_size))
+                pages = list(range(start_page, end_page + 1))
+                total_batches = (len(pages) + bsize - 1) // bsize
+                block_count = 0
+                for i in range(total_batches):
+                    batch_start = pages[i * bsize]
+                    batch_end = pages[min((i + 1) * bsize - 1, len(pages) - 1)]
+                    # Progress callback
+                    if callback:
+                        callback(-1, f"[MinerU] Processing batch {i+1}/{total_batches}: pages {batch_start+1}-{batch_end+1}")
+                    final_out_dir = self._run_mineru(pdf, out_dir, options, callback=callback, start_page=batch_start, end_page=batch_end)
+                    outputs = self._read_output(final_out_dir, pdf.stem, method=mineru_method_raw_str, backend=backend)
+                    aggregated_outputs.extend(outputs)
+                    block_count += len(outputs)
+                    if options.delete_output:
+                        try:
+                            shutil.rmtree(final_out_dir)
+                        except Exception:
+                            pass
+                if callback:
+                    callback(0.75, f"[MinerU] ✓ All batches completed: {block_count} blocks")
+
+            self.logger.info(f"[MinerU] Parsed {len(aggregated_outputs)} blocks from PDF.")
+            if callback:
+                callback(0.75, f"[MinerU] Parsed {len(aggregated_outputs)} blocks from PDF.")
+
+            return self._transfer_to_sections(aggregated_outputs, parse_method), self._transfer_to_tables(aggregated_outputs)
         finally:
             if temp_pdf and temp_pdf.exists():
                 try:
