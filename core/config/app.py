@@ -31,7 +31,6 @@ from core.config.env_overrides import ENV_OVERRIDES
 from core.config.legacy import normalize_legacy_yaml
 from core.config.utils.loader import load_yaml, merge_dicts
 from core.config.utils.paths import SERVICE_CONF_PATH, LOCAL_SERVICE_CONF_PATH
-from core.config.types import CacheType, DatabaseType, DocumentEngineType, ObjectStorageType
 
 
 class YAMLSource(PydanticBaseSettingsSource):
@@ -148,10 +147,8 @@ class AppConfig(BaseSettings):
         )
 
     @model_validator(mode="after")
-    @classmethod
-    def post_init(cls, values):
-        values.database.decrypt_passwords(values.security.password)
-        values.storage.decrypt_password(values.security.password)
-        values.cache.decrypt_password(values.security.password)
-
-        return values
+    def post_init(self):
+        self.database.decrypt_passwords(self.security.password)
+        self.storage.decrypt_password(self.security.password)
+        self.cache.decrypt_password(self.security.password)
+        return self
