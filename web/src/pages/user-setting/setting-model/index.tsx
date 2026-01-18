@@ -2,7 +2,7 @@ import Spotlight from '@/components/spotlight';
 import { LLMFactory } from '@/constants/llm';
 import { LlmItem, useFetchMyLlmListDetailed } from '@/hooks/use-llm-request';
 import { useCallback, useMemo } from 'react';
-import { isLocalLlmFactory } from '../utils';
+import { isDynamicProvider, isLocalLlmFactory } from '../utils';
 import SystemSetting from './components/system-setting';
 import { AvailableModels } from './components/un-add-model';
 import { UsedModel } from './components/used-model';
@@ -10,6 +10,7 @@ import {
   useSubmitApiKey,
   useSubmitAzure,
   useSubmitBedrock,
+  useSubmitDynamicProvider,
   useSubmitFishAudio,
   useSubmitGoogle,
   useSubmitHunyuan,
@@ -25,13 +26,14 @@ import {
 import ApiKeyModal from './modal/api-key-modal';
 import AzureOpenAIModal from './modal/azure-openai-modal';
 import BedrockModal from './modal/bedrock-modal';
+import DynamicProviderModal from './modal/dynamic-provider-modal';
 import FishAudioModal from './modal/fish-audio-modal';
 import GoogleModal from './modal/google-modal';
 import HunyuanModal from './modal/hunyuan-modal';
 import MinerUModal from './modal/mineru-modal';
-import PaddleOCRModal from './modal/paddleocr-modal';
 import TencentCloudModal from './modal/next-tencent-modal';
 import OllamaModal from './modal/ollama-modal';
+import PaddleOCRModal from './modal/paddleocr-modal';
 import SparkModal from './modal/spark-modal';
 import VolcEngineModal from './modal/volcengine-modal';
 import YiyanModal from './modal/yiyan-modal';
@@ -148,6 +150,17 @@ const ModelProviders = () => {
     paddleocrLoading,
   } = useSubmitPaddleOCR();
 
+  const {
+    dynamicAddingVisible,
+    hideDynamicAddingModal,
+    showDynamicAddingModal,
+    onDynamicAddingOk,
+    dynamicAddingLoading,
+    editMode: dynamicEditMode,
+    initialValues: dynamicInitialValues,
+    selectedLlmFactory: selectedDynamicLlmFactory,
+  } = useSubmitDynamicProvider();
+
   const ModalMap = useMemo(
     () => ({
       [LLMFactory.Bedrock]: showBedrockAddingModal,
@@ -180,7 +193,9 @@ const ModelProviders = () => {
   const handleAddModel = useCallback(
     (llmFactory: string) => {
       console.log('handleAddModel', llmFactory);
-      if (isLocalLlmFactory(llmFactory)) {
+      if (isDynamicProvider(llmFactory)) {
+        showDynamicAddingModal(llmFactory);
+      } else if (isLocalLlmFactory(llmFactory)) {
         showLlmAddingModal(llmFactory);
       } else if (llmFactory in ModalMap) {
         ModalMap[llmFactory as keyof typeof ModalMap]();
@@ -205,7 +220,9 @@ const ModelProviders = () => {
           model_type: model.type,
         };
 
-        if (isLocalLlmFactory(factory.name)) {
+        if (isDynamicProvider(factory.name)) {
+          showDynamicAddingModal(factory.name, true, editData, detailedModel);
+        } else if (isLocalLlmFactory(factory.name)) {
           showLlmAddingModal(factory.name, true, editData, detailedModel);
         } else if (factory.name in ModalMap) {
           ModalMap[factory.name as keyof typeof ModalMap]();
@@ -250,6 +267,7 @@ const ModelProviders = () => {
           editMode={llmEditMode}
           initialValues={llmInitialValues}
           llmFactory={selectedLlmFactory}
+          isDynamicProvider={isDynamicProvider(selectedLlmFactory)}
         ></OllamaModal>
       )}
       <VolcEngineModal
@@ -327,6 +345,17 @@ const ModelProviders = () => {
         onOk={onPaddleOCROk}
         loading={paddleocrLoading}
       ></PaddleOCRModal>
+      {dynamicAddingVisible && (
+        <DynamicProviderModal
+          visible={dynamicAddingVisible}
+          hideModal={hideDynamicAddingModal}
+          onOk={onDynamicAddingOk}
+          loading={dynamicAddingLoading}
+          editMode={dynamicEditMode}
+          initialValues={dynamicInitialValues}
+          llmFactory={selectedDynamicLlmFactory}
+        ></DynamicProviderModal>
+      )}
     </div>
   );
 };

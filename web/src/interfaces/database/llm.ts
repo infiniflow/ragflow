@@ -40,3 +40,30 @@ export interface Llm {
   status: '0' | '1';
   used_token: number;
 }
+
+export interface IDynamicModel {
+  id: string;
+  llm_name: string;
+  name: string;
+  model_type: string;
+  provider: string;
+  max_tokens: number;
+  is_tools: boolean;
+  supports_vision?: boolean;
+  pricing?: {
+    prompt: number;
+    completion: number;
+  };
+  tags: string;
+  architecture?: Record<string, any>;
+}
+
+export interface IFactoryModelsResponse {
+  factory: string;
+  models: IDynamicModel[];
+  models_by_category?: Record<string, IDynamicModel[]>;
+  supported_categories?: string[];
+  default_base_url?: string | null;
+  is_dynamic: boolean;
+  cached?: boolean;
+}

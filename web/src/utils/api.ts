@@ -26,6 +26,8 @@ export default {
 
   // llm model
   factories_list: `${api_host}/llm/factories`,
+  factory_models: (factory: string) =>
+    `${api_host}/llm/factories/${factory}/models`,
   llm_list: `${api_host}/llm/list`,
   my_llm: `${api_host}/llm/my_llms`,
   set_api_key: `${api_host}/llm/set_api_key`,

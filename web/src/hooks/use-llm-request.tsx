@@ -3,6 +3,7 @@ import message from '@/components/ui/message';
 import { LlmModelType } from '@/constants/knowledge';
 import { ResponseGetType } from '@/interfaces/database/base';
 import {
+  IDynamicModel,
   IFactory,
   IMyLlmValue,
   IThirdOAIModelCollection as IThirdAiModelCollection,
@@ -13,7 +14,7 @@ import {
   IAddLlmRequestBody,
   IDeleteLlmRequestBody,
 } from '@/interfaces/request/llm';
-import userService from '@/services/user-service';
+import userService, { getFactoryModels } from '@/services/user-service';
 import { getLLMIconName, getRealModelName } from '@/utils/llm-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DefaultOptionType } from 'antd/es/select';
@@ -27,6 +28,7 @@ export const enum LLMApiAction {
   MyLlmList = 'myLlmList',
   MyLlmListDetailed = 'myLlmListDetailed',
   FactoryList = 'factoryList',
+  FactoryModels = 'factoryModels',
   SaveApiKey = 'saveApiKey',
   SaveTenantInfo = 'saveTenantInfo',
   AddLlm = 'addLlm',
@@ -34,6 +36,26 @@ export const enum LLMApiAction {
   EnableLlm = 'enableLlm',
   DeleteFactory = 'deleteFactory',
 }
+
+// Interface for factory model data structure
+interface IFactoryModelData {
+  factory: string;
+  models: IDynamicModel[];
+  models_by_category: Record<string, IDynamicModel[]>;
+  supported_categories: string[];
+  default_base_url: string | null;
+  is_dynamic: boolean;
+}
+
+// Factory function to generate default factory model data
+const makeDefaultFactoryData = (factoryName: string): IFactoryModelData => ({
+  factory: factoryName,
+  models: [],
+  models_by_category: {},
+  supported_categories: [],
+  default_base_url: null,
+  is_dynamic: false,
+});
 
 export const useFetchLlmList = (modelType?: LlmModelType) => {
   const { data } = useQuery<IThirdAiModelCollection>({
@@ -437,4 +459,91 @@ export const useDeleteFactory = () => {
   });
 
   return { data, loading, deleteFactory: mutateAsync };
+};
+
+export const useFetchFactoryModels = (
+  factoryName: string,
+  category?: string,
+  enabled: boolean = false,
+): {
+  data: IDynamicModel[];
+  dataByCategory: Record<string, IDynamicModel[]>;
+  supportedCategories: string[];
+  defaultBaseUrl: string | null;
+  loading: boolean;
+  refetch: () => void;
+} => {
+  const { t } = useTranslation();
+
+  const {
+    data,
+    isFetching: loading,
+    refetch,
+  } = useQuery({
+    // Don't include category in queryKey - we fetch ALL models and filter client-side
+    // This prevents refetching when category changes, eliminating the flashing UX issue
+    queryKey: [LLMApiAction.FactoryModels, factoryName],
+    initialData: makeDefaultFactoryData(factoryName),
+    enabled,
+    // Stale-while-revalidate: use cached data immediately, refetch in background
+    // This ensures instant UI on modal open; data updates silently without blocking
+    gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+    staleTime: 0, // Data is immediately stale; refetch when query resumes
+    queryFn: async () => {
+      console.log('[useFetchFactoryModels] Query running:', {
+        factoryName,
+        category,
+        enabled,
+      });
+      try {
+        // Fetch ALL models (no category filter) - filtering is done client-side
+        const { data } = await getFactoryModels(factoryName, false);
+        if (data?.code !== 0) {
+          message.error(data?.message || t('message.fetchFailed'));
+          return makeDefaultFactoryData(factoryName);
+        }
+
+        const modelsRaw = data?.data?.models ?? [];
+        // Filtering is NOT done here anymore to ensure cache is reusable across categories
+        const mapped = {
+          factory: data?.data?.factory ?? factoryName,
+          models: modelsRaw,
+          models_by_category: data?.data?.models_by_category ?? {},
+          supported_categories: data?.data?.supported_categories ?? [],
+          default_base_url: data?.data?.default_base_url ?? null,
+          is_dynamic: data?.data?.is_dynamic ?? false,
+        };
+        console.log('[useFetchFactoryModels] Mapped result:', {
+          factory: mapped.factory,
+          modelsCount: mapped.models.length,
+          categoryKeys: Object.keys(mapped.models_by_category || {}),
+          supportedCategoriesCount: mapped.supported_categories.length,
+          defaultBaseUrl: mapped.default_base_url,
+          isDynamic: mapped.is_dynamic,
+        });
+        return mapped;
+      } catch (error) {
+        console.error(
+          `Failed to fetch factory models for '${factoryName}':`,
+          error,
+        );
+        message.error(t('message.fetchFailed'));
+        return makeDefaultFactoryData(factoryName);
+      }
+    },
+  });
+
+  const filteredModels = useMemo(() => {
+    if (!category) return data.models;
+    return data.models.filter((m: IDynamicModel) => m.model_type === category);
+  }, [data.models, category]);
+
+  return {
+    data: filteredModels,
+    dataByCategory: data.models_by_category,
+    supportedCategories: data.supported_categories,
+    defaultBaseUrl: data.default_base_url,
+    loading,
+    refetch,
+  };
 };
