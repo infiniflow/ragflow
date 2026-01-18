@@ -40,7 +40,7 @@ export const transformFile2Base64 = (
         ctx?.drawImage(img, 0, 0, width, height);
 
         // Convert to base64, maintain original format and transparency
-        const compressedBase64 = canvas.toDataURL('image/png');
+        const compressedBase64 = canvas.toDataURL(val.type || 'image/png');
         resolve(compressedBase64);
       };
 
@@ -95,7 +95,6 @@ export const getBase64FromUploadFileList = async (fileList?: UploadFile[]) => {
     } else {
       return file.thumbUrl;
     }
-    // return fileList[0].thumbUrl; TODO: Even JPG files will be converted to base64 parameters in png format
   }
 
   return '';
