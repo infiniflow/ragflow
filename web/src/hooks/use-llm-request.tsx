@@ -502,9 +502,12 @@ export const useFetchFactoryModels = (
           message.error(data?.message || t('message.fetchFailed'));
           return makeDefaultFactoryData(factoryName);
         }
+
+        const modelsRaw = data?.data?.models ?? [];
+        // Filtering is NOT done here anymore to ensure cache is reusable across categories
         const mapped = {
           factory: data?.data?.factory ?? factoryName,
-          models: data?.data?.models ?? [],
+          models: modelsRaw,
           models_by_category: data?.data?.models_by_category ?? {},
           supported_categories: data?.data?.supported_categories ?? [],
           default_base_url: data?.data?.default_base_url ?? null,
@@ -530,8 +533,13 @@ export const useFetchFactoryModels = (
     },
   });
 
+  const filteredModels = useMemo(() => {
+    if (!category) return data.models;
+    return data.models.filter((m: IDynamicModel) => m.model_type === category);
+  }, [data.models, category]);
+
   return {
-    data: data.models,
+    data: filteredModels,
     dataByCategory: data.models_by_category,
     supportedCategories: data.supported_categories,
     defaultBaseUrl: data.default_base_url,

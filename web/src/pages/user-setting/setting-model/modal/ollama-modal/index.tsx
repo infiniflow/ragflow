@@ -57,7 +57,7 @@ const llmFactoryModelTypeOptions: Partial<Record<LLMFactory, string[]>> = {
 interface ModelFormContentProps {
   isDynamicProvider: boolean;
   modelsLoading: boolean;
-  filteredModels: IDynamicModel[];
+
   allModels: IDynamicModel[];
   selectedProvider: string | null;
   selectedModelType: string;
@@ -79,7 +79,7 @@ interface ModelFormContentProps {
 const ModelFormContent = ({
   isDynamicProvider,
   modelsLoading,
-  filteredModels,
+
   allModels,
   selectedProvider,
   selectedModelType,
@@ -278,25 +278,6 @@ const OllamaModal = ({
   }, [selectedModelType, dataByCategory, allModels]);
 
   // Debug logging for prop reception and category changes
-  useEffect(() => {
-    console.log('[OllamaModal] Props/State:', {
-      llmFactory,
-      selectedModelType,
-      canBeDynamic,
-      visible,
-      isDynamicProviderProp,
-      modelsLoading,
-      supportedCategoriesCount: supportedCategories.length,
-    });
-  }, [
-    llmFactory,
-    selectedModelType,
-    canBeDynamic,
-    visible,
-    isDynamicProviderProp,
-    modelsLoading,
-    supportedCategories,
-  ]);
 
   // Determine if provider should use dynamic UI
   // Honor parent prop if provided; otherwise, enable dynamic UI during loading
@@ -437,8 +418,7 @@ const OllamaModal = ({
       },
 
       // Provider selection (only for dynamic providers with available providers or while loading)
-      ...(isDynamicProvider &&
-      (availableProvidersRef.current.length > 0 || modelsLoading)
+      ...(isDynamicProvider && (availableProviders.length > 0 || modelsLoading)
         ? [
             {
               name: 'provider_filter',
@@ -448,7 +428,7 @@ const OllamaModal = ({
               placeholder: modelsLoading
                 ? t('loading', 'Loading...')
                 : t('selectModel', 'Select model (optional)'),
-              options: availableProvidersRef.current.map((p) => ({
+              options: availableProviders.map((p) => ({
                 value: p,
                 label: p.charAt(0).toUpperCase() + p.slice(1),
               })),
@@ -480,8 +460,7 @@ const OllamaModal = ({
               };
             }),
             disabled:
-              modelsLoading ||
-              (filteredModelsRef.current.length === 0 && !modelsLoading),
+              modelsLoading || (filteredModels.length === 0 && !modelsLoading),
           }
         : {
             name: 'llm_name',
@@ -589,10 +568,11 @@ const OllamaModal = ({
     tc,
     isDynamicProvider,
     modelsLoading,
-    defaultBaseUrl,
+    effectiveDefaultBaseUrl,
     modelTypeOptions,
     availableProviders,
     displayModels,
+    filteredModels,
   ]);
 
   const defaultValues: FieldValues = useMemo(() => {
@@ -629,7 +609,7 @@ const OllamaModal = ({
 
     // For dynamic providers, max_tokens might not be in form values (hidden field)
     // Retrieve it from form state or use a sensible default
-    const maxTokens = values.max_tokens || 8192;
+    const maxTokens = values.max_tokens ?? 8192;
 
     const data: IAddLlmRequestBody & { provider_order?: string } = {
       llm_factory: llmFactory,
@@ -671,7 +651,6 @@ const OllamaModal = ({
         <ModelFormContent
           isDynamicProvider={isDynamicProvider}
           modelsLoading={modelsLoading}
-          filteredModels={filteredModels}
           allModels={allModels}
           selectedProvider={selectedProvider}
           selectedModelType={selectedModelType}

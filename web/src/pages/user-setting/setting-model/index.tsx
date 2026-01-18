@@ -10,6 +10,7 @@ import {
   useSubmitApiKey,
   useSubmitAzure,
   useSubmitBedrock,
+  useSubmitDynamicProvider,
   useSubmitFishAudio,
   useSubmitGoogle,
   useSubmitHunyuan,
@@ -20,13 +21,12 @@ import {
   useSubmitSystemModelSetting,
   useSubmitTencentCloud,
   useSubmitVolcEngine,
-  useSubmitDynamicProvider,
   useSubmityiyan,
 } from './hooks';
 import ApiKeyModal from './modal/api-key-modal';
 import AzureOpenAIModal from './modal/azure-openai-modal';
-import DynamicProviderModal from './modal/dynamic-provider-modal';
 import BedrockModal from './modal/bedrock-modal';
+import DynamicProviderModal from './modal/dynamic-provider-modal';
 import FishAudioModal from './modal/fish-audio-modal';
 import GoogleModal from './modal/google-modal';
 import HunyuanModal from './modal/hunyuan-modal';
@@ -259,23 +259,16 @@ const ModelProviders = () => {
         llmFactory={llmFactory}
       ></ApiKeyModal>
       {llmAddingVisible && (
-        <>
-          {console.log('[SettingModel] Passing to OllamaModal', {
-            selectedLlmFactory,
-            isDynamic: isDynamicProvider(selectedLlmFactory),
-            visible: llmAddingVisible,
-          })}
-          <OllamaModal
-            visible={llmAddingVisible}
-            hideModal={hideLlmAddingModal}
-            onOk={onLlmAddingOk}
-            loading={llmAddingLoading}
-            editMode={llmEditMode}
-            initialValues={llmInitialValues}
-            llmFactory={selectedLlmFactory}
-            isDynamicProvider={isDynamicProvider(selectedLlmFactory)}
-          ></OllamaModal>
-        </>
+        <OllamaModal
+          visible={llmAddingVisible}
+          hideModal={hideLlmAddingModal}
+          onOk={onLlmAddingOk}
+          loading={llmAddingLoading}
+          editMode={llmEditMode}
+          initialValues={llmInitialValues}
+          llmFactory={selectedLlmFactory}
+          isDynamicProvider={isDynamicProvider(selectedLlmFactory)}
+        ></OllamaModal>
       )}
       <VolcEngineModal
         visible={volcAddingVisible}

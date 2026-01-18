@@ -348,8 +348,18 @@ class DoclingParser(RAGFlowPdfParser):
             if hasattr(page, "image") and page.image:
                 page_images.append(page.image.pil_image)
             else:
-                # Fallback/Debug note: Image generation options should ensure this is populated
                 self.logger.warning(f"Page {i + 1} has no image.")
+                # Append placeholder to maintain 1-to-1 mapping
+                # Default to A4 size (approx 1240x1754 at 150dpi) or use previous page size
+                width, height = 1240, 1754
+                if page_images:
+                    width, height = page_images[-1].size
+                elif hasattr(page, "size"):
+                    try:
+                        width, height = int(page.size.width), int(page.size.height)
+                    except Exception:
+                        pass
+                page_images.append(Image.new("RGB", (width, height), (255, 255, 255)))
 
         # Initialize base class image list
         self.__images__(page_images, zoomin=1)

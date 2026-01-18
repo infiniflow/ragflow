@@ -62,11 +62,18 @@ const DynamicProviderModal = ({
     resolver: zodResolver(formSchema),
     defaultValues: {
       model_type: 'chat',
+      provider: 'all',
+      llm_name: '',
       api_base: '',
       api_key: '',
       max_tokens: 8192,
     },
   });
+
+  // Reset form when schema or factory changes to ensure validation rules are updated
+  useEffect(() => {
+    form.reset(form.getValues());
+  }, [formSchema, llmFactory, form]);
 
   const {
     dataByCategory,
@@ -75,21 +82,36 @@ const DynamicProviderModal = ({
     loading: modelsLoading,
   } = useFetchFactoryModels(llmFactory, selectedModelType, visible || false);
 
-  // Initialize form with initialValues if in editMode
+  // Initialize form with initialValues OR default values
   useEffect(() => {
-    if (visible && editMode && initialValues) {
+    if (!visible) return;
+
+    if (editMode && initialValues) {
       form.reset({
         model_type: initialValues.model_type || 'chat',
+        provider: (initialValues as any).provider || 'all',
         llm_name: initialValues.llm_name || '',
         api_base: initialValues.api_base || '',
         api_key: '',
         max_tokens: initialValues.max_tokens || 8192,
       });
       setSelectedModelType(initialValues.model_type || 'chat');
-    } else if (visible && !editMode) {
+      setSelectedProvider((initialValues as any).provider || null);
+    } else {
+      // Not edit mode
+      // If api_base is empty, set it to defaultBaseUrl.
+      // We use form.reset to set initial state, ensuring api_base picks up defaultBaseUrl
+      // when it becomes available (if the field is effectively empty/default).
+      const currentValues = form.getValues();
+      const currentApiBase = currentValues.api_base;
+      const shouldUseDefault =
+        !currentApiBase && defaultBaseUrl && defaultBaseUrl.length > 0;
+
       form.reset({
         model_type: 'chat',
-        api_base: defaultBaseUrl || '',
+        provider: 'all',
+        llm_name: '',
+        api_base: shouldUseDefault ? defaultBaseUrl : currentApiBase || '',
         api_key: '',
         max_tokens: 8192,
       });
@@ -97,13 +119,6 @@ const DynamicProviderModal = ({
       setSelectedProvider(null);
     }
   }, [visible, editMode, initialValues, form, defaultBaseUrl]);
-
-  // Update api_base when defaultBaseUrl changes and not in edit mode
-  useEffect(() => {
-    if (!editMode && defaultBaseUrl && !form.getValues('api_base')) {
-      form.setValue('api_base', defaultBaseUrl);
-    }
-  }, [defaultBaseUrl, editMode, form]);
 
   // Cascade Step 1: dynamicModels based on selectedModelType
   const dynamicModels = useMemo(() => {
@@ -159,7 +174,8 @@ const DynamicProviderModal = ({
 
   const providerOptions = useMemo(() => {
     const options = availableProviders.map((p) => ({
-      label: p === 'unknown' ? 'Unknown' : p.charAt(0).toUpperCase() + p.slice(1),
+      label:
+        p === 'unknown' ? 'Unknown' : p.charAt(0).toUpperCase() + p.slice(1),
       value: p,
     }));
     return [{ label: 'All Providers', value: 'all' }, ...options];
