@@ -31,11 +31,7 @@ def get_database_config():
     # Guard against None DATABASE_TYPE
     db_type_raw = settings.DATABASE_TYPE
     if not db_type_raw:
-        raise ValueError(
-            "DATABASE_TYPE setting is required. "
-            "Must be 'postgres' or 'mysql'. "
-            "Set via environment or service_conf.yaml"
-        )
+        raise ValueError("DATABASE_TYPE setting is required. Must be 'postgres' or 'mysql'. Set via environment or service_conf.yaml")
     db_type = db_type_raw.lower()
 
     return {
@@ -117,7 +113,7 @@ def ensure_database_exists():
 
             try:
                 # Validate identifier to prevent SQL injection (must be alphanumeric or underscore)
-                if not db_name or not all(c.isalnum() or c == '_' for c in db_name):
+                if not db_name or not all(c.isalnum() or c == "_" for c in db_name):
                     raise ValueError(f"Invalid database name: {db_name}. Database names must contain only alphanumeric characters and underscores.")
 
                 conn = mysql.connector.connect(host=db_host, port=db_port, user=db_user, password=db_pass)
@@ -197,7 +193,7 @@ _db_instance = None
 
 def init_db():
     """Initialize the database connection pool (lazy initialization).
-    
+
     Called automatically on first access via get_db().
     Can be called explicitly to control initialization timing.
     Idempotent—safe to call multiple times.
@@ -210,11 +206,11 @@ def init_db():
 
 def get_db():
     """Get the database connection pool, initializing if needed (lazy initialization).
-    
+
     This prevents side effects at import time. Connections are not opened,
     background health checks are not started, and locks are not acquired
     until this function is explicitly called.
-    
+
     Returns:
         PooledMySQLDatabase | PooledPostgresqlDatabase: The initialized connection pool
     """
@@ -270,7 +266,7 @@ def wait_for_schema_ready(max_retries: int = 30, retry_delay: float = 0.5):
     critical_tables = ["user", "sync_logs", "system_settings"]
     # Use portable identifier quoting across DBs: Postgres uses double quotes, MySQL uses backticks
     db_type = settings.DATABASE_TYPE.lower()
-    quote_char = '"' if db_type == "postgres" else '`'
+    quote_char = '"' if db_type == "postgres" else "`"
 
     for attempt in range(max_retries):
         try:
@@ -278,7 +274,10 @@ def wait_for_schema_ready(max_retries: int = 30, retry_delay: float = 0.5):
             for table in critical_tables:
                 cursor = None
                 try:
-                    cursor = DB.execute_sql(f"SELECT 1 FROM {quote_char}{table}{quote_char} LIMIT 1")
+                    # Wrap check in atomic() so that if table doesn't exist yet (ProgrammingError),
+                    # the transaction is rolled back and connection remains usable for next retry.
+                    with DB.atomic():
+                        cursor = DB.execute_sql(f"SELECT 1 FROM {quote_char}{table}{quote_char} LIMIT 1")
                 finally:
                     if cursor:
                         cursor.close()

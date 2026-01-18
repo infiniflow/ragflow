@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Enable verbose debugging
+set -x
 set -e
 
 # -----------------------------------------------------------------------------
@@ -158,7 +160,7 @@ CONF_FILE="${CONF_DIR}/service_conf.yaml"
 rm -f "${CONF_FILE}"
 DEF_ENV_VALUE_PATTERN="\$\{([^:]+):-([^}]+)\}"
 while IFS= read -r line || [[ -n "$line" ]]; do
-    if [[ "$line" =~ DEF_ENV_VALUE_PATTERN ]]; then
+    if [[ "$line" =~ $DEF_ENV_VALUE_PATTERN ]]; then
         varname="${BASH_REMATCH[1]}"
         default="${BASH_REMATCH[2]}"
 

@@ -215,3 +215,6 @@ docs/archive/UNRAID_DEPLOYMENT_CHECKLIST.md
 .env.prod
 .markdownlint.json
 PRE_CODE_RABBIT_AUDIT.md
+
+# Local dev scripts
+scripts/publish_dev_image.sh
