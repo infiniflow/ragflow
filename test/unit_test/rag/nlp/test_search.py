@@ -1,10 +1,11 @@
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from rag.nlp.search import Dealer
 
 class TestChunkList(unittest.TestCase):
-    def test_chunk_list_termination(self):
+    @patch('rag.nlp.search.query.FulltextQueryer')
+    def test_chunk_list_termination(self, mock_queryer):
         # Mock dataStore
         mock_store = MagicMock()
 
