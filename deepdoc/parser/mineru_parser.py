@@ -481,6 +481,46 @@ class MinerUParser(RAGFlowPdfParser):
             poss.append(([int(p) - 1 for p in pn.split("-")], left, right, top, bottom))
         return poss
 
+    def _clamp_coordinates_to_image(
+        self,
+        left: float | int,
+        top: float | int,
+        right: float | int,
+        bottom: float | int,
+        img_width: int,
+        img_height: int,
+    ) -> tuple[int, int, int, int]:
+        """Clamp rectangle coordinates to image bounds.
+
+        Accepts ints or floats (some upstream code provides ints) and returns integer
+        pixel coordinates (x0, y0, x1, y1) suitable for image crop operations.
+        Ensures width/height at least 1 pixel.
+        """
+        # Normalize to float to avoid runtime type-check failures (beartype)
+        left_f = float(left)
+        top_f = float(top)
+        right_f = float(right)
+        bottom_f = float(bottom)
+
+        x0 = max(0.0, min(float(img_width), left_f))
+        x1 = max(0.0, min(float(img_width), right_f))
+        y0 = max(0.0, min(float(img_height), top_f))
+        y1 = max(0.0, min(float(img_height), bottom_f))
+
+        # Ensure non-empty rect
+        if x1 <= x0:
+            if x0 < img_width:
+                x1 = min(float(img_width), x0 + 1.0)
+            else:
+                x0 = max(0.0, x1 - 1.0)
+        if y1 <= y0:
+            if y0 < img_height:
+                y1 = min(float(img_height), y0 + 1.0)
+            else:
+                y0 = max(0.0, y1 - 1.0)
+
+        return int(x0), int(y0), int(x1), int(y1)
+
     def _read_output(self, output_dir: Path, file_stem: str, method: str = "auto", backend: str = "pipeline") -> list[
         dict[str, Any]]:
         json_file = None
