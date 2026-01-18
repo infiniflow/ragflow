@@ -16,7 +16,7 @@ admin:
 minio:
   user: ${MINIO_USER}
   password: ${MINIO_PASSWORD}
-  host: ${MINIO_HOST}
+  host: ${MINIO_HOST}:${MINIO_PORT}
   bucket: ${MINIO_BUCKET}
   prefix_path: ${MINIO_PREFIX_PATH}
 es:

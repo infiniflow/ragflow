@@ -16,7 +16,7 @@ mysql:
 minio:
   user: '${MINIO_USER:-rag_flow}'
   password: '${MINIO_PASSWORD:-infini_rag_flow}'
-  host: '${MINIO_HOST:-minio}:9000'
+  host: '${MINIO_HOST:-minio}:${MINIO_PORT:-9000}'
   bucket: '${MINIO_BUCKET:-}'
   prefix_path: '${MINIO_PREFIX_PATH:-}'
 es:
