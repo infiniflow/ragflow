@@ -1585,7 +1585,7 @@
         {
             "name": "OpenRouter",
             "logo": "",
-            "tags": "LLM,IMAGE2TEXT",
+            "tags": "LLM,TEXT EMBEDDING,SPEECH2TEXT,TTS,IMAGE2TEXT",
             "status": "1",
             "llm": [],
             "rank": "840"
