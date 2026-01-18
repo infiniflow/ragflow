@@ -221,3 +221,6 @@ PRE_CODE_RABBIT_AUDIT.md
 
 # Local dev scripts
 scripts/publish_dev_image.sh
+
+# Added by cargo
+/target
