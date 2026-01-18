@@ -62,11 +62,18 @@ const DynamicProviderModal = ({
     resolver: zodResolver(formSchema),
     defaultValues: {
       model_type: 'chat',
+      provider: 'all',
+      llm_name: '',
       api_base: '',
       api_key: '',
       max_tokens: 8192,
     },
   });
+
+  // Reset form when schema or factory changes to ensure validation rules are updated
+  useEffect(() => {
+    form.reset(form.getValues());
+  }, [formSchema, llmFactory, form]);
 
   const {
     dataByCategory,
@@ -80,15 +87,19 @@ const DynamicProviderModal = ({
     if (visible && editMode && initialValues) {
       form.reset({
         model_type: initialValues.model_type || 'chat',
+        provider: (initialValues as any).provider || 'all',
         llm_name: initialValues.llm_name || '',
         api_base: initialValues.api_base || '',
         api_key: '',
         max_tokens: initialValues.max_tokens || 8192,
       });
       setSelectedModelType(initialValues.model_type || 'chat');
+      setSelectedProvider((initialValues as any).provider || null);
     } else if (visible && !editMode) {
       form.reset({
         model_type: 'chat',
+        provider: 'all',
+        llm_name: '',
         api_base: defaultBaseUrl || '',
         api_key: '',
         max_tokens: 8192,
@@ -159,7 +170,8 @@ const DynamicProviderModal = ({
 
   const providerOptions = useMemo(() => {
     const options = availableProviders.map((p) => ({
-      label: p === 'unknown' ? 'Unknown' : p.charAt(0).toUpperCase() + p.slice(1),
+      label:
+        p === 'unknown' ? 'Unknown' : p.charAt(0).toUpperCase() + p.slice(1),
       value: p,
     }));
     return [{ label: 'All Providers', value: 'all' }, ...options];

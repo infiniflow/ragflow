@@ -33,6 +33,7 @@ REFRESH_COOLDOWN = 300  # 5 minutes
 
 manager = Blueprint("llm_app", __name__, url_prefix="/llm")
 
+
 @manager.route("/factories", methods=["GET"])
 @login_required
 async def factories():
@@ -82,47 +83,39 @@ async def get_factory_models(factory: str):
         if is_dynamic_provider(factory):
             provider = get_provider(factory)
             if not provider:
-                return get_json_result(
-                    data=False,
-                    message=f"Provider {factory} not found",
-                    code=RetCode.ARGUMENT_ERROR
-                )
+                return get_json_result(data=False, message=f"Provider {factory} not found", code=RetCode.ARGUMENT_ERROR)
 
             # Check if user wants to force refresh
             refresh = request.args.get("refresh", "false").lower() == "true"
             if refresh:
                 # Clear cache to force refresh with rate limiting
                 from rag.utils.redis_conn import REDIS_CONN
-                
+
                 rate_limit_key = f"refresh_limit:{current_user.id}:{factory}"
-                
+
                 try:
                     # Check if user is within cooldown period
                     last_refresh = REDIS_CONN.get(rate_limit_key)
                     if last_refresh:
                         # Decode bytes if necessary
                         if isinstance(last_refresh, bytes):
-                            last_refresh_str = last_refresh.decode('utf-8')
+                            last_refresh_str = last_refresh.decode("utf-8")
                         else:
                             last_refresh_str = str(last_refresh)
-                        
+
                         last_refresh_time = float(last_refresh_str)
                         time_since_refresh = time.time() - last_refresh_time
-                        
+
                         if time_since_refresh < REFRESH_COOLDOWN:
                             remaining = int(REFRESH_COOLDOWN - time_since_refresh)
-                            return get_json_result(
-                                data=False,
-                                message=f"Cache refresh rate limit exceeded. Please wait {remaining} seconds.",
-                                code=RetCode.OPERATING_ERROR
-                            )
-                    
+                            return get_json_result(data=False, message=f"Cache refresh rate limit exceeded. Please wait {remaining} seconds.", code=RetCode.OPERATING_ERROR)
+
                     # Delete cache and set rate limit only if deletion succeeds
                     # Note: api_key may not be available yet, so we clear the base key
                     # In practice, most users will have the same cache (public endpoint)
                     cache_key_to_delete = provider.get_cache_key()
                     deleted_count = REDIS_CONN.delete(cache_key_to_delete)
-                    
+
                     if deleted_count > 0:
                         # Cache successfully deleted, set rate limit
                         REDIS_CONN.set(rate_limit_key, str(time.time()), REFRESH_COOLDOWN)
@@ -130,7 +123,7 @@ async def get_factory_models(factory: str):
                     else:
                         # Cache key didn't exist or delete failed
                         logging.warning(f"Failed to delete cache for {factory}: key '{cache_key_to_delete}' not found or already deleted")
-                    
+
                 except Exception as e:
                     logging.warning(f"Failed to clear cache for {factory}: {e}")
 
@@ -140,16 +133,10 @@ async def get_factory_models(factory: str):
             # configuration since API keys are typically factory-wide credentials.
             api_key = None
             try:
-                tenant_llms = TenantLLMService.query(
-                    tenant_id=current_user.id,
-                    llm_factory=factory
-                )
+                tenant_llms = TenantLLMService.query(tenant_id=current_user.id, llm_factory=factory)
                 if tenant_llms:
                     # Find first valid configuration with an API key
-                    valid_llm = next(
-                        (llm for llm in tenant_llms if llm.status == StatusEnum.VALID.value and llm.api_key),
-                        None
-                    )
+                    valid_llm = next((llm for llm in tenant_llms if llm.status == StatusEnum.VALID.value and llm.api_key), None)
                     if valid_llm:
                         api_key = valid_llm.api_key
             except Exception as e:
@@ -183,30 +170,28 @@ async def get_factory_models(factory: str):
                 if category_filter:
                     logging.warning(f"[CATEGORY FILTER] Requested category '{category_filter}' not found in available categories: {list(models_by_category.keys())}")
 
-            return get_json_result(data={
-                "factory": factory,
-                "models": filtered_models,  # Return filtered models
-                "models_by_category": models_by_category,  # Full categorization
-                "supported_categories": list(provider.get_supported_categories()),
-                "default_base_url": provider.get_default_base_url(),
-                "cached": cache_hit,
-                "is_dynamic": True
-            })
+            return get_json_result(
+                data={
+                    "factory": factory,
+                    "models": filtered_models,  # Return filtered models
+                    "models_by_category": models_by_category,  # Full categorization
+                    "supported_categories": list(provider.get_supported_categories()),
+                    "default_base_url": provider.get_default_base_url(),
+                    "cached": cache_hit,
+                    "is_dynamic": True,
+                }
+            )
         else:
             # Static provider - return from database
             llms = LLMService.query(fid=factory, status=StatusEnum.VALID.value)
-            
+
             # Validate factory exists if no models found
             if not llms:
                 # Check if factory is known at all
                 known_factories = [f.name for f in get_allowed_llm_factories()]
                 if factory not in known_factories:
-                    return get_json_result(
-                        data=False,
-                        message=f"Provider {factory} not found",
-                        code=RetCode.ARGUMENT_ERROR
-                    )
-            
+                    return get_json_result(data=False, message=f"Provider {factory} not found", code=RetCode.ARGUMENT_ERROR)
+
             models = [llm.to_dict() for llm in llms]
 
             # Organize models by category for consistent response shape
@@ -217,15 +202,9 @@ async def get_factory_models(factory: str):
                     models_by_category[cat] = []
                 models_by_category[cat].append(model)
 
-            return get_json_result(data={
-                "factory": factory,
-                "models": models,
-                "models_by_category": models_by_category,
-                "supported_categories": [],
-                "default_base_url": None,
-                "cached": False,
-                "is_dynamic": False
-            })
+            return get_json_result(
+                data={"factory": factory, "models": models, "models_by_category": models_by_category, "supported_categories": [], "default_base_url": None, "cached": False, "is_dynamic": False}
+            )
 
     except Exception as e:
         return server_error_response(e)
@@ -370,11 +349,8 @@ async def add_llm():
         provided_api_key = req.get("api_key", "")
         if not provided_api_key or provided_api_key.strip() == "":
             # Try to retrieve existing API key for this factory
-            existing_llms = TenantLLMService.query(
-                tenant_id=current_user.id,
-                llm_factory=factory
-            )
-            if existing_llms:
+            existing_llms = TenantLLMService.query(tenant_id=current_user.id, llm_factory=factory)
+            if existing_llms and existing_llms[0].api_key and existing_llms[0].api_key.strip():
                 # Reuse the API key from the first existing model
                 api_key = existing_llms[0].api_key
             else:

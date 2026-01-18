@@ -43,10 +43,18 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --platform)
+      if [[ -z "$2" || "$2" == -* ]]; then
+        echo "Error: Argument for --platform is missing or invalid."
+        exit 1
+      fi
       TARGET_PLATFORM="$2"
       shift 2
       ;;
     --context)
+      if [[ -z "$2" || "$2" == -* ]]; then
+        echo "Error: Argument for --context is missing or invalid."
+        exit 1
+      fi
       CONTEXT="$2"
       shift 2
       ;;
@@ -126,6 +134,10 @@ else
     if [ "$LOCAL_MODE" = true ]; then
         # Standard build always loads to daemon
         BUILD_CMD="docker build"
+        if [ -n "$TARGET_PLATFORM" ]; then
+            echo "⚠️ Warning: Using standard build with --platform. This might fail or be ignored if cross-compilation is not supported by the daemon."
+            BUILD_CMD="$BUILD_CMD --platform $TARGET_PLATFORM"
+        fi
     else
         echo "Error: Cannot push with standard build script logic. Use 'docker push' manually after build."
         exit 1

@@ -19,11 +19,7 @@ import hashlib
 import json
 from typing import List, Dict, Optional, Tuple
 from rag.utils.redis_conn import REDIS_CONN
-from api.db.services.dynamic_model_provider import (
-    DynamicModelProvider,
-    DynamicModelCapability,
-    register_provider
-)
+from api.db.services.dynamic_model_provider import DynamicModelProvider, DynamicModelCapability, register_provider
 
 
 class OpenRouterProvider(DynamicModelProvider):
@@ -41,22 +37,18 @@ class OpenRouterProvider(DynamicModelProvider):
     def _build_cache_key(self, base_url: Optional[str] = None, api_key: Optional[str] = None) -> str:
         """Build a cache key scoped to base_url and api_key without storing raw secrets"""
         url_part = base_url or self.OPENROUTER_MODELS_URL
-        
+
         # Hash the API key if present, use sentinel if None
         if api_key:
             key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]  # First 16 chars of hash
         else:
             key_hash = "public"
-        
+
         # Create cache key: base_key:url_hash:key_hash
         url_hash = hashlib.sha256(url_part.encode()).hexdigest()[:8]
         return f"{self.CACHE_KEY}:{url_hash}:{key_hash}"
 
-    async def fetch_available_models(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None
-    ) -> Tuple[List[Dict], bool]:
+    async def fetch_available_models(self, api_key: Optional[str] = None, base_url: Optional[str] = None) -> Tuple[List[Dict], bool]:
         """
         Fetch models from OpenRouter API with caching.
         Fetches from multiple endpoints to get all model types (chat, embedding, etc.)
@@ -84,21 +76,28 @@ class OpenRouterProvider(DynamicModelProvider):
 
                 # Fetch chat/completion models
                 logging.info(f"Fetching chat models from OpenRouter: {base_url or self.OPENROUTER_MODELS_URL}")
-                chat_response = await client.get(
-                    base_url or self.OPENROUTER_MODELS_URL,
-                    headers=headers
-                )
+                chat_response = await client.get(base_url or self.OPENROUTER_MODELS_URL, headers=headers)
                 chat_response.raise_for_status()
                 chat_data = chat_response.json()
                 chat_models = chat_data.get("data", [])
                 logging.info(f"Fetched {len(chat_models)} chat models from OpenRouter")
 
                 # Fetch embedding models
-                logging.info(f"Fetching embedding models from OpenRouter: {self.OPENROUTER_EMBEDDINGS_URL}")
-                embed_response = await client.get(
-                    self.OPENROUTER_EMBEDDINGS_URL,
-                    headers=headers
-                )
+                embed_url = self.OPENROUTER_EMBEDDINGS_URL
+                if base_url:
+                    # If base_url is provided, try to derive the embedding URL from it.
+                    # Assume base_url is for chat models (e.g., ".../models").
+                    # If it ends with "/models", replace it with "/embeddings/models".
+                    if base_url.endswith("/models"):
+                        embed_url = base_url.replace("/models", "/embeddings/models")
+                    else:
+                        # If base_url doesn't end in "/models", it might be a custom base URL
+                        # that serves all models, or a different endpoint.
+                        # For now, we'll use it as is, assuming it's the intended endpoint for embeddings.
+                        embed_url = base_url
+
+                logging.info(f"Fetching embedding models from OpenRouter: {embed_url}")
+                embed_response = await client.get(embed_url, headers=headers)
                 embed_response.raise_for_status()
                 embed_data = embed_response.json()
                 embed_models = embed_data.get("data", [])
@@ -152,24 +151,23 @@ class OpenRouterProvider(DynamicModelProvider):
 
             # Extract pricing safely, handling None values
             pricing = model.get("pricing") or {}
-            
-            transformed.append({
-                "id": safe_id,
-                "llm_name": safe_id,
-                "name": model.get("name", safe_id),
-                "model_type": model_type,
-                "provider": provider,  # NEW - enables provider filtering
-                "max_tokens": model.get("context_length", 8192),
-                "is_tools": self._supports_tools(safe_id),
-                "pricing": {
-                    "prompt": safe_float(pricing.get("prompt", 0)),
-                    "completion": safe_float(pricing.get("completion", 0))
-                },
-                "tags": self._generate_tags(model, model_type),
-                "architecture": model.get("architecture", {}),
-                # Auto-detected capabilities
-                "supports_vision": "image" in model.get("architecture", {}).get("modality", ""),
-            })
+
+            transformed.append(
+                {
+                    "id": safe_id,
+                    "llm_name": safe_id,
+                    "name": model.get("name", safe_id),
+                    "model_type": model_type,
+                    "provider": provider,  # NEW - enables provider filtering
+                    "max_tokens": model.get("context_length", 8192),
+                    "is_tools": self._supports_tools(safe_id),
+                    "pricing": {"prompt": safe_float(pricing.get("prompt", 0)), "completion": safe_float(pricing.get("completion", 0))},
+                    "tags": self._generate_tags(model, model_type),
+                    "architecture": model.get("architecture", {}),
+                    # Auto-detected capabilities
+                    "supports_vision": "image" in model.get("architecture", {}).get("modality", ""),
+                }
+            )
 
         return transformed
 
@@ -180,12 +178,11 @@ class OpenRouterProvider(DynamicModelProvider):
         OpenRouter Model Type Mapping:
         - "text->text" or "text+image->text" → chat (includes VLM/multimodal)
         - "text->embeddings" → embedding
-        - "text->image" or "text+image->text+image" → image2text (image generation)
+        - "text->image" or "image output" → image2text (image generation)
         - Whisper models → speech2text (by name pattern only)
 
         Note: OpenRouter does NOT currently offer:
         - Dedicated TTS (text-to-speech) models
-        - Dedicated ASR/speech2text models (Whisper-style)
         - Rerank models via their API
 
         Models with audio INPUT (like Gemini, Voxtral) are multimodal CHAT models,
@@ -194,13 +191,20 @@ class OpenRouterProvider(DynamicModelProvider):
         architecture = model.get("architecture", {})
         modality = architecture.get("modality", "")
         output_modalities = architecture.get("output_modalities", [])
+        mid_lower = model_id.lower()
+
+        # Speech2Text (Whisper-style)
+        if "whisper" in mid_lower or (("audio" in modality or "audio" in architecture.get("input_modalities", [])) and ("text" in output_modalities or "->text" in modality) and "speech" in mid_lower):
+            return "speech2text"
 
         # Embedding models (from /embeddings/models endpoint)
         if "embeddings" in output_modalities or "->embeddings" in modality:
             return "embedding"
 
         # Image generation models (output includes image)
-        if "image" in output_modalities and "text" in output_modalities:
+        # Check for image output (text->image) -> image2text
+        # Exclude cases where BOTH image and text are in output (multimodal chat)
+        if ("image" in output_modalities and "text" not in output_modalities) or "->image" in modality:
             return "image2text"
 
         # All text-output models are chat (including multimodal with audio/image/video input)
@@ -210,6 +214,9 @@ class OpenRouterProvider(DynamicModelProvider):
             return "chat"
 
         # Fallback for models without architecture info
+        if "whisper" in mid_lower:
+            return "speech2text"
+
         logging.warning(f"Unknown model type for {model_id}: modality={modality}, output_modalities={output_modalities}")
         return "chat"
 
@@ -230,26 +237,23 @@ class OpenRouterProvider(DynamicModelProvider):
     def _supports_tools(self, model_id: str) -> bool:
         """
         Check if model supports function calling (tool use).
-        
+
         IMPORTANT: This is a heuristic-based check since OpenRouter API doesn't
         explicitly mark tool/function calling support in model metadata.
-        
+
         TODO: Make this configurable (env var, config file, or injectable list)
               and update patterns when new tool-capable models are released.
               Consider checking OpenRouter docs periodically:
               https://openrouter.ai/docs/models
-        
+
         Note: Claude 2 has limited/unreliable tool support compared to Claude 3+,
               so it's excluded from the tool_capable list.
         """
         model_id_lower = model_id.lower()
-        
+
         # Patterns for known tool-capable models
         # Excluded: "claude-2" (limited/unreliable tool support)
-        tool_capable = [
-            "gpt-4", "gpt-3.5-turbo", "claude-3",
-            "gemini", "command", "mistral-large", "llama-3"
-        ]
+        tool_capable = ["gpt-4", "gpt-3.5-turbo", "claude-3", "gemini", "command", "mistral-large", "llama-3"]
         return any(pattern in model_id_lower for pattern in tool_capable)
 
     def _generate_tags(self, model: Dict, model_type: str) -> str:
@@ -272,9 +276,9 @@ class OpenRouterProvider(DynamicModelProvider):
         # Add context length tag
         ctx_length = model.get("context_length", 0)
         if ctx_length >= 1_000_000:
-            tags.append(f"{ctx_length//1_000_000}M")
+            tags.append(f"{ctx_length // 1_000_000}M")
         elif ctx_length >= 1000:
-            tags.append(f"{ctx_length//1000}K")
+            tags.append(f"{ctx_length // 1000}K")
 
         # Add modality tags
         modality = model.get("architecture", {}).get("modality", "")
@@ -290,7 +294,7 @@ class OpenRouterProvider(DynamicModelProvider):
             if cached:
                 # Decode bytes to string if necessary
                 if isinstance(cached, bytes):
-                    cached = cached.decode('utf-8')
+                    cached = cached.decode("utf-8")
                 elif not isinstance(cached, str):
                     # Unexpected type - log and return None instead of forcing conversion
                     logging.warning(f"Cached value has unexpected type {type(cached).__name__}, returning None")
@@ -313,15 +317,15 @@ class OpenRouterProvider(DynamicModelProvider):
     def _get_fallback_models(self) -> List[Dict]:
         """
         Return hardcoded popular models as fallback when API is unavailable.
-        
+
         Includes models for multiple types: chat (LLM), embedding, and speech2text.
-        
+
         IMPORTANT: These values can become stale and should be verified periodically.
-        
+
         Last verified: January 16, 2026
         Source: https://openrouter.ai/docs/models
         Pricing reference: https://openrouter.ai/docs/pricing
-        
+
         TODO: Refresh pricing, max_tokens, and model availability quarterly or
               migrate to a more resilient fallback mechanism (e.g., bundled JSON,
               secondary API endpoint, or graceful degradation without models).
@@ -339,7 +343,7 @@ class OpenRouterProvider(DynamicModelProvider):
                 "pricing": {"prompt": 0.003, "completion": 0.015},
                 "tags": "LLM,CHAT,200K",
                 "architecture": {},
-                "supports_vision": True
+                "supports_vision": True,
             },
             {
                 "id": "openai/gpt-4-turbo",
@@ -352,7 +356,7 @@ class OpenRouterProvider(DynamicModelProvider):
                 "pricing": {"prompt": 0.01, "completion": 0.03},
                 "tags": "LLM,CHAT,128K",
                 "architecture": {},
-                "supports_vision": True
+                "supports_vision": True,
             },
             {
                 "id": "google/gemini-pro",
@@ -365,7 +369,7 @@ class OpenRouterProvider(DynamicModelProvider):
                 "pricing": {"prompt": 0.000125, "completion": 0.000375},
                 "tags": "LLM,CHAT,32K",
                 "architecture": {},
-                "supports_vision": False
+                "supports_vision": False,
             },
             {
                 "id": "meta-llama/llama-3-70b-instruct",
@@ -378,7 +382,7 @@ class OpenRouterProvider(DynamicModelProvider):
                 "pricing": {"prompt": 0.00059, "completion": 0.00079},
                 "tags": "LLM,CHAT,8K",
                 "architecture": {},
-                "supports_vision": False
+                "supports_vision": False,
             },
             {
                 "id": "mistralai/mistral-large",
@@ -391,7 +395,7 @@ class OpenRouterProvider(DynamicModelProvider):
                 "pricing": {"prompt": 0.004, "completion": 0.012},
                 "tags": "LLM,CHAT,32K",
                 "architecture": {},
-                "supports_vision": False
+                "supports_vision": False,
             },
             # Embedding models
             {
@@ -405,7 +409,7 @@ class OpenRouterProvider(DynamicModelProvider):
                 "pricing": {"prompt": 0.00002, "completion": 0.0},
                 "tags": "TEXT EMBEDDING,8K",
                 "architecture": {},
-                "supports_vision": False
+                "supports_vision": False,
             },
             {
                 "id": "openai/text-embedding-ada-002",
@@ -418,7 +422,7 @@ class OpenRouterProvider(DynamicModelProvider):
                 "pricing": {"prompt": 0.0001, "completion": 0.0},
                 "tags": "TEXT EMBEDDING,8K",
                 "architecture": {},
-                "supports_vision": False
+                "supports_vision": False,
             },
             # Speech2Text models
             {
@@ -432,13 +436,13 @@ class OpenRouterProvider(DynamicModelProvider):
                 "pricing": {"prompt": 0.006, "completion": 0.0},
                 "tags": "SPEECH2TEXT",
                 "architecture": {},
-                "supports_vision": False
-            }
+                "supports_vision": False,
+            },
         ]
 
     def get_cache_key(self, base_url: Optional[str] = None, api_key: Optional[str] = None) -> str:
         """Get cache key for this provider, optionally scoped to base_url and api_key.
-        
+
         If base_url or api_key are provided, returns a dynamic cache key specific to those parameters.
         Otherwise returns the base cache key prefix.
         """
@@ -448,22 +452,19 @@ class OpenRouterProvider(DynamicModelProvider):
         return self.CACHE_TTL
 
     def supports_capability(self, capability: DynamicModelCapability) -> bool:
-        return capability in [
-            DynamicModelCapability.MODEL_DISCOVERY,
-            DynamicModelCapability.COST_ESTIMATION
-        ]
+        return capability in [DynamicModelCapability.MODEL_DISCOVERY, DynamicModelCapability.COST_ESTIMATION]
 
     def get_supported_categories(self) -> set[str]:
         """OpenRouter supported RAGFlow model categories.
 
         Fetched from:
-        - /api/v1/models → chat (includes VLM/multimodal), image2text (image generation)
+        - /api/v1/models → chat (includes VLM/multimodal), image2text (image generation), speech2text (Whisper)
         - /api/v1/embeddings/models → embedding
 
-        Note: OpenRouter does NOT currently offer dedicated TTS, ASR, or rerank models.
+        Note: OpenRouter does NOT currently offer dedicated TTS or rerank models.
         Multimodal models (with audio/image input) are classified as 'chat'.
         """
-        return {"chat", "embedding", "image2text"}
+        return {"chat", "embedding", "image2text", "speech2text"}
 
     def get_default_base_url(self) -> Optional[str]:
         """Default OpenRouter API endpoint"""

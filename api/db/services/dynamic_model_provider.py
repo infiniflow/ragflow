@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 class DynamicModelCapability(Enum):
     """Providers can declare which capabilities they support"""
+
     MODEL_DISCOVERY = "model_discovery"
     MODEL_VALIDATION = "model_validation"
     COST_ESTIMATION = "cost_estimation"
@@ -37,11 +38,7 @@ class DynamicModelProvider(ABC):
     """
 
     @abstractmethod
-    async def fetch_available_models(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None
-    ) -> Tuple[List[Dict], bool]:
+    async def fetch_available_models(self, api_key: Optional[str] = None, base_url: Optional[str] = None) -> Tuple[List[Dict], bool]:
         """
         Fetch available models from the provider's API.
 
@@ -121,10 +118,10 @@ class DynamicModelProvider(ABC):
     def get_type_mapping(self) -> Dict[str, str]:
         """
         Get the model type mapping for this provider.
-        
+
         Subclasses can override this to extend or modify the default mapping.
         Returns a dict mapping provider-specific types to RAGFlow LLMType values.
-        
+
         Example override in subclass:
             def get_type_mapping(self):
                 mapping = super().get_type_mapping().copy()
@@ -138,7 +135,9 @@ class DynamicModelProvider(ABC):
         Map provider-specific model type to RAGFlow's LLMType.
         Override get_type_mapping() if provider uses different taxonomy.
         """
-        return self.get_type_mapping().get(provider_type.lower(), "chat")
+        if not provider_type:
+            return "chat"
+        return self.get_type_mapping().get(str(provider_type).lower(), "chat")
 
 
 # Provider registry for dynamic model providers
@@ -151,26 +150,23 @@ _registry_lock = threading.RLock()
 
 def register_provider(factory_name: str, provider_class: Type[DynamicModelProvider]):
     """Register a dynamic model provider
-    
+
     Args:
         factory_name: Name of the factory/provider
         provider_class: Provider class (must be subclass of DynamicModelProvider)
-        
+
     Raises:
         TypeError: If provider_class is not a subclass of DynamicModelProvider
     """
     if not isinstance(provider_class, type) or not issubclass(provider_class, DynamicModelProvider):
-        raise TypeError(
-            f"provider_class must be a subclass of DynamicModelProvider, "
-            f"got {type(provider_class).__name__}"
-        )
+        raise TypeError(f"provider_class must be a subclass of DynamicModelProvider, got {type(provider_class).__name__}")
     with _registry_lock:
         DYNAMIC_PROVIDERS[factory_name] = provider_class
 
 
 def get_provider(factory_name: str) -> Optional[DynamicModelProvider]:
     """Get provider instance by factory name (cached, thread-safe)
-    
+
     Returns cached instance if available (may be None for failed instantiation),
     otherwise creates, caches, and returns new instance.
     Uses double-checked locking to avoid race conditions during lazy instantiation.
@@ -178,13 +174,13 @@ def get_provider(factory_name: str) -> Optional[DynamicModelProvider]:
     # First check without lock (fast path for already-cached instances or failures)
     if factory_name in PROVIDER_INSTANCES:
         return PROVIDER_INSTANCES[factory_name]
-    
+
     # Acquire lock for cache miss
     with _registry_lock:
         # Double-check: another thread may have created the instance or cached a failure
         if factory_name in PROVIDER_INSTANCES:
             return PROVIDER_INSTANCES[factory_name]
-        
+
         # Create new instance if provider is registered
         provider_class = DYNAMIC_PROVIDERS.get(factory_name)
         if provider_class:
@@ -194,10 +190,7 @@ def get_provider(factory_name: str) -> Optional[DynamicModelProvider]:
                 return instance
             except Exception as e:
                 # Log instantiation failure and cache None to avoid repeated attempts
-                logger.error(
-                    f"Failed to instantiate provider '{factory_name}': {type(e).__name__}: {e}",
-                    exc_info=True
-                )
+                logger.error(f"Failed to instantiate provider '{factory_name}': {type(e).__name__}: {e}", exc_info=True)
                 # Cache None as failure marker to prevent repeated instantiation attempts
                 PROVIDER_INSTANCES[factory_name] = None
                 return None
@@ -213,7 +206,7 @@ def is_dynamic_provider(factory_name: str) -> bool:
 # Import and register providers
 def _register_providers():
     """Import and register all dynamic model providers
-    
+
     Iterates over a list of provider modules and imports them.
     Each provider module should register itself upon import.
     """
@@ -224,7 +217,7 @@ def _register_providers():
         # "api.db.services.ollama_provider",
         # "api.db.services.localai_provider",
     ]
-    
+
     for module_name in provider_modules:
         try:
             # Import provider module (triggers its registration)
@@ -238,10 +231,7 @@ def _register_providers():
                 logger.debug(f"Optional provider module {module_name} not present (not installed)")
             else:
                 # Module exists but failed to import - this is a real error
-                logger.warning(
-                    f"Failed to import provider module {module_name} (module exists but import failed): {type(e).__name__}: {e}",
-                    exc_info=True
-                )
+                logger.warning(f"Failed to import provider module {module_name} (module exists but import failed): {type(e).__name__}: {e}", exc_info=True)
             # All exceptions are caught and logged; continue with other providers
 
 
