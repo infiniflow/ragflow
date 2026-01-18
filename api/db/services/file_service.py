@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Union
 
-from peewee import fn, Table
+from peewee import fn, Table, JOIN
 
 from api.db import KNOWLEDGEBASE_FOLDER_NAME, FileType
 from api.db.db_models import DB, Document, File, File2Document, Knowledgebase, Task
@@ -159,12 +159,28 @@ class FileService(CommonService):
         #     result_ids: List to store results
         # Returns:
         #     List of file IDs
-        subfolders = cls.model.select().where(cls.model.parent_id == folder_id)
-        if subfolders.exists():
-            for subfolder in subfolders:
-                cls.get_all_innermost_file_ids(subfolder.id, result_ids)
-        else:
-            result_ids.append(folder_id)
+        cte_ref = Table("folder_tree")
+
+        # Anchor: root folder itself
+        anchor = cls.model.select(cls.model.id, cls.model.parent_id).where(cls.model.id == folder_id)
+
+        # Recursive: children
+        FA = cls.model.alias()
+        recursive = FA.select(FA.id, FA.parent_id).join(cte_ref, on=(FA.parent_id == cte_ref.c.id)).where(FA.id != FA.parent_id)
+
+        cte = anchor.union_all(recursive).cte("folder_tree", recursive=True, columns=("id", "parent_id"))
+
+        Child = cls.model.alias()
+
+        query = (
+            cls.model.select(cls.model.id)
+            .join(cte, on=(cls.model.id == cte.c.id))
+            .join(Child, JOIN.LEFT_OUTER, on=((Child.parent_id == cte.c.id) & (Child.id != cte.c.id)))
+            .where(Child.id.is_null())
+            .with_cte(cte)
+        )
+
+        result_ids.extend([row.id for row in query])
         return result_ids
 
     @classmethod
