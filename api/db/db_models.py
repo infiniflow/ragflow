@@ -246,6 +246,24 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
         super().__init__(*args, **kwargs)
 
     def execute_sql(self, sql, params=None, commit=True):
+        # Pre-execute ping to detect dead connections early
+        try:
+            conn = self.get_conn()
+            if conn is not None:
+                try:
+                    # ping with reconnect=False to detect dead socket without auto-reconnecting
+                    conn.ping(reconnect=False)
+                except Exception as ping_exc:
+                    logging.warning(
+                        "DB ping failed (will reconnect): conn_thread_id=%r ping_exc=%r",
+                        getattr(conn, "thread_id", lambda: None)(), ping_exc,
+                        exc_info=True,
+                    )
+                    self._handle_connection_loss()
+        except Exception:
+            # best-effort ping; do not fail the SQL execution because of ping issues
+            pass
+
         for attempt in range(self.max_retries + 1):
             try:
                 return super().execute_sql(sql, params, commit)
@@ -259,12 +277,31 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
                 )
 
                 if should_retry and attempt < self.max_retries:
-                    # Log detailed context for easier debugging: SQL, params and full exception
+                    # capture old connection id if available
+                    old_conn_id = None
+                    try:
+                        old_conn = self.get_conn()
+                        old_conn_id = getattr(old_conn, "thread_id", lambda: None)()
+                    except Exception:
+                        old_conn_id = None
+
+                    # Log detailed context for easier debugging: SQL, params, old/new connection id and full exception
                     logging.warning(
-                        f"Database connection issue (attempt {attempt+1}/{self.max_retries}) while executing SQL: {repr(sql)} params: {repr(params)}: {e}",
+                        "Database connection issue (attempt %d/%d) while executing SQL: %r params: %r, old_conn_id=%r, exc=%r",
+                        attempt + 1, self.max_retries, sql, params, old_conn_id, repr(e),
                         exc_info=True,
                     )
                     self._handle_connection_loss()
+
+                    # after reconnect, try to capture new connection id
+                    new_conn_id = None
+                    try:
+                        new_conn = self.get_conn()
+                        new_conn_id = getattr(new_conn, "thread_id", lambda: None)()
+                    except Exception:
+                        new_conn_id = None
+                    logging.info("Database reconnect %r -> %r successful", old_conn_id, new_conn_id)
+
                     # Exponential backoff with a maximum cap to avoid excessively long sleeps
                     backoff = min(self.retry_delay * (2 ** attempt), 30)
                     time.sleep(backoff)
@@ -274,11 +311,21 @@ class RetryingPooledMySQLDatabase(PooledMySQLDatabase):
         return None
 
     def _handle_connection_loss(self):
-        # Attempt a controlled reconnect sequence with logging
+        # Attempt a controlled reconnect sequence with logging and capture connection ids
         try:
-            self.close()
+            try:
+                conn = self.get_conn()
+                conn_id = getattr(conn, "thread_id", lambda: None)()
+            except Exception:
+                conn_id = None
+            try:
+                self.close()
+                logging.debug("Closed DB connection (was thread_id=%r) during reconnect attempt", conn_id)
+            except Exception:
+                logging.debug("Error while closing DB connection during reconnect attempt", exc_info=True)
         except Exception:
-            logging.debug("Error while closing DB connection during reconnect attempt", exc_info=True)
+            logging.debug("Unexpected error while preparing for reconnect", exc_info=True)
+
         # Try reconnect a few times with small backoff
         for i in range(3):
             try:
