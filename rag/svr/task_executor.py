@@ -558,7 +558,8 @@ def build_TOC(task, docs, progress_callback):
 
 def init_kb(row, vector_size: int):
     idxnm = search.index_name(row["tenant_id"])
-    return settings.docStoreConn.create_idx(idxnm, row.get("kb_id", ""), vector_size)
+    parser_id = row.get("parser_id", None)
+    return settings.docStoreConn.create_idx(idxnm, row.get("kb_id", ""), vector_size, parser_id)
 
 
 async def embedding(docs, mdl, parser_config=None, callback=None):
@@ -739,7 +740,7 @@ async def run_dataflow(task: dict):
 
     start_ts = timer()
     set_progress(task_id, prog=0.82, msg="[DOC Engine]:\nStart to index...")
-    e = await insert_es(task_id, task["tenant_id"], task["kb_id"], chunks, partial(set_progress, task_id, 0, 100000000))
+    e = await insert_chunks(task_id, task["tenant_id"], task["kb_id"], chunks, partial(set_progress, task_id, 0, 100000000))
     if not e:
         PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id,
                                            task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
@@ -833,7 +834,17 @@ async def delete_image(kb_id, chunk_id):
         raise
 
 
-async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback):
+async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progress_callback):
+    """
+    Insert chunks into document store (Elasticsearch OR Infinity).
+
+    Args:
+        task_id: Task identifier
+        task_tenant_id: Tenant ID
+        task_dataset_id: Dataset/knowledge base ID
+        chunks: List of chunk dictionaries to insert
+        progress_callback: Callback function for progress updates
+    """
     mothers = []
     mother_ids = set([])
     for ck in chunks:
@@ -858,7 +869,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
 
     for b in range(0, len(mothers), settings.DOC_BULK_SIZE):
         await asyncio.to_thread(settings.docStoreConn.insert, mothers[b:b + settings.DOC_BULK_SIZE],
-                                search.index_name(task_tenant_id), task_dataset_id, )
+                                search.index_name(task_tenant_id), task_dataset_id)
         task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
@@ -866,7 +877,7 @@ async def insert_es(task_id, task_tenant_id, task_dataset_id, chunks, progress_c
 
     for b in range(0, len(chunks), settings.DOC_BULK_SIZE):
         doc_store_result = await asyncio.to_thread(settings.docStoreConn.insert, chunks[b:b + settings.DOC_BULK_SIZE],
-                                                   search.index_name(task_tenant_id), task_dataset_id, )
+                                                   search.index_name(task_tenant_id), task_dataset_id)
         task_canceled = has_canceled(task_id)
         if task_canceled:
             progress_callback(-1, msg="Task has been canceled.")
@@ -931,13 +942,6 @@ async def do_handle_task(task):
 
     # prepare the progress callback function
     progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
-
-    # FIXME: workaround, Infinity doesn't support table parsing method, this check is to notify user
-    lower_case_doc_engine = settings.DOC_ENGINE.lower()
-    if lower_case_doc_engine == 'infinity' and task['parser_id'].lower() == 'table':
-        error_message = "Table parsing method is not supported by Infinity, please use other parsing methods or use Elasticsearch as the document engine."
-        progress_callback(-1, msg=error_message)
-        raise Exception(error_message)
 
     task_canceled = has_canceled(task_id)
     if task_canceled:
@@ -1092,14 +1096,14 @@ async def do_handle_task(task):
     chunk_count = len(set([chunk["id"] for chunk in chunks]))
     start_ts = timer()
 
-    async def _maybe_insert_es(_chunks):
+    async def _maybe_insert_chunks(_chunks):
         if has_canceled(task_id):
             return True
-        insert_result = await insert_es(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
+        insert_result = await insert_chunks(task_id, task_tenant_id, task_dataset_id, _chunks, progress_callback)
         return bool(insert_result)
 
     try:
-        if not await _maybe_insert_es(chunks):
+        if not await _maybe_insert_chunks(chunks):
             return
 
         logging.info(
@@ -1115,7 +1119,7 @@ async def do_handle_task(task):
         if toc_thread:
             d = toc_thread.result()
             if d:
-                if not await _maybe_insert_es([d]):
+                if not await _maybe_insert_chunks([d]):
                     return
                 DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, 0, 1, 0)
 
