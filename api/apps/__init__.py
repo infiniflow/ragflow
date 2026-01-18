@@ -137,8 +137,10 @@ def _load_user():
         except Exception as e_api_token:
             logging.warning(f"load_user got exception {e_api_token}")
 
+async def _load_user_async():
+    return await current_app.ensure_async(_load_user)()
 
-current_user = LocalProxy(_load_user)
+current_user = LocalProxy(lambda: g.user)
 
 
 def login_required(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
@@ -165,7 +167,7 @@ def login_required(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         timing_enabled = os.getenv("RAGFLOW_API_TIMING")
         t_start = time.perf_counter() if timing_enabled else None
-        user = current_user
+        user = await _load_user_async()
         if timing_enabled:
             logging.info(
                 "api_timing login_required auth_ms=%.2f path=%s",
