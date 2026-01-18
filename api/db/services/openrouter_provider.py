@@ -85,23 +85,25 @@ class OpenRouterProvider(DynamicModelProvider):
                 # Fetch embedding models
                 embed_url = self.OPENROUTER_EMBEDDINGS_URL
                 if base_url:
-                    # If base_url is provided, try to derive the embedding URL from it.
-                    # Assume base_url is for chat models (e.g., ".../models").
-                    # If it ends with "/models", replace it with "/embeddings/models".
+                    # Only derive embedding URL if base_url follows known pattern
                     if base_url.endswith("/models"):
                         embed_url = base_url.replace("/models", "/embeddings/models")
                     else:
-                        # If base_url doesn't end in "/models", it might be a custom base URL
-                        # that serves all models, or a different endpoint.
-                        # For now, we'll use it as is, assuming it's the intended endpoint for embeddings.
-                        embed_url = base_url
+                        # If base_url doesn't end in "/models", do NOT assume it handles embeddings
+                        # unless explicitly configured (which we don't support yet for custom base_url).
+                        # Set to None to skip embeddings fetch for custom endpoints to avoid errors.
+                        embed_url = None
 
-                logging.info(f"Fetching embedding models from OpenRouter: {embed_url}")
-                embed_response = await client.get(embed_url, headers=headers)
-                embed_response.raise_for_status()
-                embed_data = embed_response.json()
-                embed_models = embed_data.get("data", [])
-                logging.info(f"Fetched {len(embed_models)} embedding models from OpenRouter")
+                if embed_url:
+                    logging.info(f"Fetching embedding models from OpenRouter: {embed_url}")
+                    embed_response = await client.get(embed_url, headers=headers)
+                    embed_response.raise_for_status()
+                    embed_data = embed_response.json()
+                    embed_models = embed_data.get("data", [])
+                    logging.info(f"Fetched {len(embed_models)} embedding models from OpenRouter")
+                else:
+                    embed_models = []
+                    logging.info(f"Skipping embeddings fetch: base_url '{base_url}' does not match standard pattern (ends with '/models') and no explicit embed_url derived.")
 
                 # Combine all models
                 all_models = chat_models + embed_models

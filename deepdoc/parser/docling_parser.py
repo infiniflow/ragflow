@@ -97,7 +97,12 @@ class DoclingParser(RAGFlowPdfParser):
             self.logger.error(f"[Docling] init DocumentConverter failed: {e}")
             return False
 
-    def __images__(self, images: list[Image.Image], zoomin: int = 1, page_from=0, page_to=600, callback=None):
+    def __images__(self, images: list[Image.Image], zoomin=None, callback=None, page_from=0, page_to=600, **kwargs):
+        """
+        Set page images.
+        :param zoomin: Unused, kept for compatibility.
+        :param callback: Unused, kept for compatibility.
+        """
         self.page_from = page_from
         self.page_to = page_to
         try:

@@ -82,7 +82,7 @@ const DynamicProviderModal = ({
     loading: modelsLoading,
   } = useFetchFactoryModels(llmFactory, selectedModelType, visible || false);
 
-  // Initialize form with initialValues OR default values
+  // 1. Initialize form with initialValues OR default values (RUNS ONCE on open)
   useEffect(() => {
     if (!visible) return;
 
@@ -98,27 +98,30 @@ const DynamicProviderModal = ({
       setSelectedModelType(initialValues.model_type || 'chat');
       setSelectedProvider((initialValues as any).provider || null);
     } else {
-      // Not edit mode
-      // If api_base is empty, set it to defaultBaseUrl.
-      // We use form.reset to set initial state, ensuring api_base picks up defaultBaseUrl
-      // when it becomes available (if the field is effectively empty/default).
-      const currentValues = form.getValues();
-      const currentApiBase = currentValues.api_base;
-      const shouldUseDefault =
-        !currentApiBase && defaultBaseUrl && defaultBaseUrl.length > 0;
-
+      // Not edit mode - strict reset
       form.reset({
         model_type: 'chat',
         provider: 'all',
         llm_name: '',
-        api_base: shouldUseDefault ? defaultBaseUrl : currentApiBase || '',
+        api_base: '', // Start empty, let the second effect handle defaultBaseUrl
         api_key: '',
         max_tokens: 8192,
       });
       setSelectedModelType('chat');
       setSelectedProvider(null);
     }
-  }, [visible, editMode, initialValues, form, defaultBaseUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, editMode, initialValues, form]);
+
+  // 2. Update api_base with defaultBaseUrl ONLY if field is empty (separate effect)
+  useEffect(() => {
+    if (visible && !editMode && defaultBaseUrl) {
+      const currentApiBase = form.getValues('api_base');
+      if (!currentApiBase) {
+        form.setValue('api_base', defaultBaseUrl);
+      }
+    }
+  }, [defaultBaseUrl, visible, editMode, form]);
 
   // Cascade Step 1: dynamicModels based on selectedModelType
   const dynamicModels = useMemo(() => {
