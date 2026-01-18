@@ -133,9 +133,16 @@ class MinerUParseOptions:
 
 
 class MinerUParser(RAGFlowPdfParser):
-    def __init__(self, mineru_path: str = "mineru", mineru_api: str = "", mineru_server_url: str = ""):
+    def __init__(
+        self,
+        mineru_path: str = "mineru",
+        mineru_api: str = "",
+        mineru_server_url: str = "",
+        mineru_api_key: str = "",
+    ):
         self.mineru_api = mineru_api.rstrip("/")
         self.mineru_server_url = mineru_server_url.rstrip("/")
+        self.mineru_api_key = (mineru_api_key or "").strip()
         self.outlines = []
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -193,12 +200,25 @@ class MinerUParser(RAGFlowPdfParser):
                     shutil.copyfileobj(src, dst)
 
     @staticmethod
-    def _is_http_endpoint_valid(url, timeout=5):
+    def _is_http_endpoint_valid(url, timeout=5, headers=None, method="head"):
         try:
-            response = requests.head(url, timeout=timeout, allow_redirects=True)
+            if method == "get":
+                response = requests.get(
+                    url, timeout=timeout, allow_redirects=True, headers=headers
+                )
+            else:
+                response = requests.head(
+                    url, timeout=timeout, allow_redirects=True, headers=headers
+                )
             return response.status_code in [200, 301, 302, 307, 308]
         except Exception:
             return False
+
+    def _build_headers(self, accept_json: bool = True) -> dict:
+        headers = {"Accept": "application/json"} if accept_json else {}
+        if self.mineru_api_key:
+            headers["Authorization"] = f"Bearer {self.mineru_api_key}"
+        return headers
 
     def check_installation(self, backend: str = "pipeline", server_url: Optional[str] = None) -> tuple[bool, str]:
         reason = ""
@@ -216,7 +236,9 @@ class MinerUParser(RAGFlowPdfParser):
 
         api_openapi = f"{self.mineru_api}/openapi.json"
         try:
-            api_ok = self._is_http_endpoint_valid(api_openapi)
+            api_ok = self._is_http_endpoint_valid(
+                api_openapi, headers=self._build_headers(accept_json=False), method="get"
+            )
             self.logger.info(f"[MinerU] API openapi.json reachable={api_ok} url={api_openapi}")
             if not api_ok:
                 reason = f"[MinerU] MinerU API not accessible: {api_openapi}"
@@ -233,7 +255,9 @@ class MinerUParser(RAGFlowPdfParser):
                 self.logger.warning(reason)
                 return False, reason
             try:
-                server_ok = self._is_http_endpoint_valid(resolved_server)
+                server_ok = self._is_http_endpoint_valid(
+                    resolved_server, headers=self._build_headers(accept_json=False)
+                )
                 self.logger.info(f"[MinerU] vlm-http-client server check reachable={server_ok} url={resolved_server}")
             except Exception as exc:
                 self.logger.warning(f"[MinerU] vlm-http-client server probe failed: {resolved_server}: {exc}")
@@ -283,7 +307,7 @@ class MinerUParser(RAGFlowPdfParser):
         self.logger.info(f"[MinerU] request {data=}")
         self.logger.info(f"[MinerU] request {options=}")
 
-        headers = {"Accept": "application/json"}
+        headers = self._build_headers()
         try:
             self.logger.info(f"[MinerU] invoke api: {self.mineru_api}/file_parse backend={options.backend} server_url={data.get('server_url')}")
             if callback:

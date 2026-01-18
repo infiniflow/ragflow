@@ -18,7 +18,7 @@ import { mapModelKey } from './un-add-model';
 
 interface IModelCardProps {
   item: LlmItem;
-  clickApiKey: (llmFactory: string) => void;
+  onApiKey: (llmFactory: string) => void;
   handleEditModel: (model: any, factory: LlmItem) => void;
 }
 
@@ -53,7 +53,7 @@ const sortTags = (tags: string) => {
 
 export const ModelProviderCard: FC<IModelCardProps> = ({
   item,
-  clickApiKey,
+  onApiKey,
   handleEditModel,
 }) => {
   const { visible, switchVisible } = useSetModalState();
@@ -62,7 +62,7 @@ export const ModelProviderCard: FC<IModelCardProps> = ({
   const { deleteFactory } = useHandleDeleteFactory(item.name);
 
   const handleApiKeyClick = () => {
-    clickApiKey(item.name);
+    onApiKey(item.name);
   };
 
   const handleShowMoreClick = () => {
