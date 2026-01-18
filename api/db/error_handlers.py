@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 
 
-
 class StandardErrorHandler:
     """
     Centralized error handling for database operations.
@@ -113,8 +112,9 @@ class StandardErrorHandler:
             logging.info(f"Migration {operation} skipped (transaction aborted from prior failure): {db_name}.{table}.{column}")
             return
 
-        if should_skip:
+        if should_skip or (operation == "rename_column" and category == "missing_column"):
             # This is an expected error that means the migration was already applied
+            # (e.g. column already exists, or for rename, the old column is gone)
             logging.debug(f"Migration {operation} skipped (already applied): {db_name}.{table}.{column} - {category}")
             return
 

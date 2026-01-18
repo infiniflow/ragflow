@@ -318,6 +318,8 @@ class RAGFlow:
         for data in res["data"]["memory_list"]:
             result_list.append(Memory(self, data))
         return {
+            "code": res.get("code", 0),
+            "message": res.get("message"),
             "memory_list": result_list,
             "total_count": res["data"]["total_count"]
         }

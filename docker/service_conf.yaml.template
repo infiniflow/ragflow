@@ -48,14 +48,14 @@ user_default_llm:
     embedding_model:
       api_key: 'xxx'
       base_url: 'http://${TEI_HOST}:80'
-# postgres:
-#   name: '${POSTGRES_DBNAME:-rag_flow}'
-#   user: '${POSTGRES_USER:-rag_flow}'
-#   password: '${POSTGRES_PASSWORD:-infini_rag_flow}'
-#   host: '${POSTGRES_HOST:-postgres}'
-#   port: 5432
-#   max_connections: 100
-#   stale_timeout: 30
+postgres:
+  name: '${POSTGRES_DBNAME:-rag_flow}'
+  user: '${POSTGRES_USER:-rag_flow}'
+  password: '${POSTGRES_PASSWORD:-infini_rag_flow}'
+  host: '${POSTGRES_HOST:-postgres}'
+  port: 5432
+  max_connections: 100
+  stale_timeout: 30
 # s3:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'

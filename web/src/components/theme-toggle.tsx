@@ -17,8 +17,8 @@ const ThemeToggle: FC = () => {
     <Button
       type="button"
       onClick={() => handleThemeChange(!isDarkTheme)}
-      className="relative inline-flex h-6 w-14 items-center rounded-full  transition-colors p-0.5 border-none focus:border-none bg-bg-card hover:bg-bg-card"
-      //   aria-label={isDarkTheme ? 'Switch to light mode' : 'Switch to dark mode'}
+      className="relative inline-flex h-6 w-14 items-center rounded-full transition-colors p-0.5 border-none bg-bg-card hover:bg-bg-card focus-visible:bg-bg-card focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:outline-none"
+      aria-label={isDarkTheme ? 'Switch to light mode' : 'Switch to dark mode'}
     >
       <div className="inline-flex h-full w-full items-center">
         <div

@@ -113,12 +113,7 @@ class MigrationTracker:
                 migration_name=migration_name, applied_at=datetime.now(), status=status, error_message=error, duration_ms=duration_ms, db_type=settings.DATABASE_TYPE.lower()
             ).on_conflict(
                 conflict_target=[MigrationHistory.migration_name],
-                update={
-                    MigrationHistory.applied_at: datetime.now(),
-                    MigrationHistory.status: status,
-                    MigrationHistory.error_message: error,
-                    MigrationHistory.duration_ms: duration_ms
-                }
+                update={MigrationHistory.applied_at: datetime.now(), MigrationHistory.status: status, MigrationHistory.error_message: error, MigrationHistory.duration_ms: duration_ms},
             ).execute()
             logging.debug(f"Recorded migration: {migration_name} ({status})")
         except Exception as ex:
@@ -165,12 +160,14 @@ def alter_db_add_column(migrator, table_name, column_name, column_type):
     appropriate messages based on error severity.
     """
     try:
-        from playhouse.migrate import migrate
+        with DB.atomic():
+            from playhouse.migrate import migrate
 
-        migrate(migrator.add_column(table_name, column_name, column_type))
-        logging.debug(f"Added column: {table_name}.{column_name}")
+            migrate(migrator.add_column(table_name, column_name, column_type))
+            logging.debug(f"Added column: {table_name}.{column_name}")
     except Exception as ex:  # noqa: BLE001
         StandardErrorHandler.handle_migration_error(ex, table_name, column_name, "add_column", db_type=settings.DATABASE_TYPE.lower())
+        raise
 
 
 def alter_db_column_type(migrator, table_name, column_name, new_column_type):
@@ -180,10 +177,11 @@ def alter_db_column_type(migrator, table_name, column_name, new_column_type):
     Handles expected type incompatibility errors and logs appropriately.
     """
     try:
-        from playhouse.migrate import migrate
+        with DB.atomic():
+            from playhouse.migrate import migrate
 
-        migrate(migrator.alter_column_type(table_name, column_name, new_column_type))
-        logging.debug(f"Altered column type: {table_name}.{column_name}")
+            migrate(migrator.alter_column_type(table_name, column_name, new_column_type))
+            logging.debug(f"Altered column type: {table_name}.{column_name}")
     except Exception as ex:  # noqa: BLE001
         StandardErrorHandler.handle_migration_error(ex, table_name, column_name, "alter_column_type", db_type=settings.DATABASE_TYPE.lower())
 
@@ -195,10 +193,11 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
     Handles cases where the column doesn't exist or has already been renamed.
     """
     try:
-        from playhouse.migrate import migrate
+        with DB.atomic():
+            from playhouse.migrate import migrate
 
-        migrate(migrator.rename_column(table_name, old_column_name, new_column_name))
-        logging.debug(f"Renamed column: {table_name}.{old_column_name} -> {new_column_name}")
+            migrate(migrator.rename_column(table_name, old_column_name, new_column_name))
+            logging.debug(f"Renamed column: {table_name}.{old_column_name} -> {new_column_name}")
     except Exception as ex:  # noqa: BLE001
         StandardErrorHandler.handle_migration_error(ex, table_name, old_column_name, "rename_column", db_type=settings.DATABASE_TYPE.lower())
 
@@ -211,10 +210,11 @@ def alter_db_add_not_null(migrator, table_name, column_name):
     in the target column, otherwise the migration will fail.
     """
     try:
-        from playhouse.migrate import migrate
+        with DB.atomic():
+            from playhouse.migrate import migrate
 
-        migrate(migrator.add_not_null(table_name, column_name))
-        logging.debug(f"Made column non-nullable: {table_name}.{column_name}")
+            migrate(migrator.add_not_null(table_name, column_name))
+            logging.debug(f"Made column non-nullable: {table_name}.{column_name}")
     except Exception as ex:  # noqa: BLE001
         StandardErrorHandler.handle_migration_error(ex, table_name, column_name, "add_not_null", db_type=settings.DATABASE_TYPE.lower())
 
@@ -230,14 +230,15 @@ def alter_db_add_index(migrator, table_name, columns, unique=False):
         unique: Whether to create a unique index
     """
     try:
-        from playhouse.migrate import migrate
+        with DB.atomic():
+            from playhouse.migrate import migrate
 
-        if isinstance(columns, str):
-            columns = [columns]
+            if isinstance(columns, str):
+                columns = [columns]
 
-        migrate(migrator.add_index(table_name, columns, unique))
-        index_type = "unique index" if unique else "index"
-        logging.debug(f"Added {index_type} on {table_name}({', '.join(columns)})")
+            migrate(migrator.add_index(table_name, columns, unique))
+            index_type = "unique index" if unique else "index"
+            logging.debug(f"Added {index_type} on {table_name}({', '.join(columns)})")
     except Exception as ex:  # noqa: BLE001
         StandardErrorHandler.handle_migration_error(ex, table_name, str(columns), "add_index", db_type=settings.DATABASE_TYPE.lower())
 
@@ -250,15 +251,16 @@ def cleanup_file2document_orphans():
     Orphaned records are invalid and should be removed.
     """
     try:
-        from api.db.models.knowledge import File2Document
+        with DB.atomic():
+            from api.db.models.knowledge import File2Document
 
-        # Delete records with NULL file_id or document_id
-        deleted = File2Document.delete().where((File2Document.file_id.is_null()) | (File2Document.document_id.is_null())).execute()
+            # Delete records with NULL file_id or document_id
+            deleted = File2Document.delete().where((File2Document.file_id.is_null()) | (File2Document.document_id.is_null())).execute()
 
-        if deleted > 0:
-            logging.info(f"Cleaned up {deleted} orphaned File2Document records with NULL foreign keys")
-        else:
-            logging.debug("No orphaned File2Document records found")
+            if deleted > 0:
+                logging.info(f"Cleaned up {deleted} orphaned File2Document records with NULL foreign keys")
+            else:
+                logging.debug("No orphaned File2Document records found")
     except Exception as ex:  # noqa: BLE001
         StandardErrorHandler.handle_migration_error(ex, "file2document", "orphan_cleanup", "data_cleanup", db_type=settings.DATABASE_TYPE.lower())
 
@@ -320,13 +322,14 @@ def add_memory_permissions_constraint(migrator):
     preventing invalid data at the database layer.
     """
     try:
-        # The constraint name should be unique and descriptive
-        constraint_name = "chk_memory_permissions_values"
-        constraint_sql = f"ALTER TABLE memory ADD CONSTRAINT {constraint_name} CHECK (permissions IN ('me','team'))"
+        with DB.atomic():
+            # The constraint name should be unique and descriptive
+            constraint_name = "chk_memory_permissions_values"
+            constraint_sql = f"ALTER TABLE memory ADD CONSTRAINT {constraint_name} CHECK (permissions IN ('me','team'))"
 
-        # Execute the raw SQL to add the constraint
-        DB.execute_sql(constraint_sql)
-        logging.debug(f"Added CHECK constraint to memory.permissions: {constraint_name}")
+            # Execute the raw SQL to add the constraint
+            DB.execute_sql(constraint_sql)
+            logging.debug(f"Added CHECK constraint to memory.permissions: {constraint_name}")
     except Exception as ex:  # noqa: BLE001
         # If constraint already exists or other errors, log but don't fail
         if "already exists" in str(ex) or "Duplicate" in str(ex):
@@ -343,13 +346,14 @@ def add_memory_forgetting_policy_constraint(migrator):
     preventing invalid data at the database layer.
     """
     try:
-        # The constraint name should be unique and descriptive
-        constraint_name = "chk_memory_forgetting_policy_values"
-        constraint_sql = f"ALTER TABLE memory ADD CONSTRAINT {constraint_name} CHECK (forgetting_policy IN ('LRU','FIFO'))"
+        with DB.atomic():
+            # The constraint name should be unique and descriptive
+            constraint_name = "chk_memory_forgetting_policy_values"
+            constraint_sql = f"ALTER TABLE memory ADD CONSTRAINT {constraint_name} CHECK (forgetting_policy IN ('LRU','FIFO'))"
 
-        # Execute the raw SQL to add the constraint
-        DB.execute_sql(constraint_sql)
-        logging.debug(f"Added CHECK constraint to memory.forgetting_policy: {constraint_name}")
+            # Execute the raw SQL to add the constraint
+            DB.execute_sql(constraint_sql)
+            logging.debug(f"Added CHECK constraint to memory.forgetting_policy: {constraint_name}")
     except Exception as ex:  # noqa: BLE001
         # If constraint already exists or other errors, log but don't fail
         if "already exists" in str(ex) or "Duplicate" in str(ex):
@@ -371,8 +375,9 @@ def add_fk_constraint_if_not_exists(constraint_name: str, sql: str):
         sql: The complete ALTER TABLE ADD CONSTRAINT SQL statement
     """
     try:
-        DB.execute_sql(sql)
-        logging.debug(f"Added foreign key constraint: {constraint_name}")
+        with DB.atomic():
+            DB.execute_sql(sql)
+            logging.debug(f"Added foreign key constraint: {constraint_name}")
     except Exception as ex:  # noqa: BLE001
         # Check if the error is due to constraint already existing
         error_str = str(ex).lower()
@@ -505,7 +510,8 @@ def migrate_db():
         (
             "evaluation_runs_fk_dialog",
             lambda: add_fk_constraint_if_not_exists(
-                "fk_evaluation_runs_dialog_id", "ALTER TABLE evaluation_runs ADD CONSTRAINT fk_evaluation_runs_dialog_id FOREIGN KEY (dialog_id) REFERENCES dialog(id) ON DELETE CASCADE ON UPDATE CASCADE"
+                "fk_evaluation_runs_dialog_id",
+                "ALTER TABLE evaluation_runs ADD CONSTRAINT fk_evaluation_runs_dialog_id FOREIGN KEY (dialog_id) REFERENCES dialog(id) ON DELETE CASCADE ON UPDATE CASCADE",
             ),
         ),
         (
@@ -570,7 +576,7 @@ def migrate_db():
         total_duration = int((time.time() - migration_start) * 1000)
         TransactionLogger.log_transaction_state(DB, "rollback", f"migration '{failed_migration}' failed after {total_duration}ms, rolled back {len(successful_migrations)} successful migrations")
         logging.error(f"Migration batch rolled back due to failure in '{failed_migration}': {ex}. All {len(successful_migrations)} successful migrations in this batch were rolled back.")
-        
+
         # Record the failure outside the rolled-back transaction
         # This ensures the failure record persists even though the migration was rolled back
         if failed_migration is not None:
@@ -579,7 +585,7 @@ def migrate_db():
             except Exception as record_ex:  # noqa: BLE001
                 # If we can't record the failure, log but don't fail the rollback
                 logging.warning(f"Failed to record migration failure for {failed_migration}: {record_ex}")
-        
+
         # Re-raise to notify caller of failure
         raise
     finally:
@@ -588,6 +594,8 @@ def migrate_db():
         playhouse_logger.setLevel(original_playhouse_level)
 
 
+@DB.connection_context()
+@DB.lock("init_database_tables", 60)
 def init_database_tables(alter_fields=None):
     if alter_fields is None:
         alter_fields = []

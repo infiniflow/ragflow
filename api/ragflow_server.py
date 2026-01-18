@@ -19,6 +19,7 @@
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 
 import time
+
 start_ts = time.time()
 
 import logging
@@ -29,13 +30,19 @@ import traceback
 import threading
 import uuid
 import faulthandler
+import warnings
+
+# Suppress SyntaxWarning from third-party libraries (hyppo, graspologic)
+# likely due to Python 3.12+ stricter escape sequence handling in docstrings
+warnings.filterwarnings("ignore", category=SyntaxWarning, module="hyppo")
+warnings.filterwarnings("ignore", category=SyntaxWarning, module="graspologic")
 
 from api.apps import app
 from api.db.runtime_config import RuntimeConfig
 from api.db.services.document_service import DocumentService
 from common.file_utils import get_project_base_directory
 from common import settings
-from api.db.db_models import init_database_tables as init_web_db
+from api.db.migrations import init_database_tables as init_web_db
 from api.db.init_data import init_web_data, init_superuser
 from common.versions import get_ragflow_version
 from common.config_utils import show_configs
@@ -46,7 +53,8 @@ from rag.utils.redis_conn import RedisDistributedLock
 
 stop_event = threading.Event()
 
-RAGFLOW_DEBUGPY_LISTEN = int(os.environ.get('RAGFLOW_DEBUGPY_LISTEN', "0"))
+RAGFLOW_DEBUGPY_LISTEN = int(os.environ.get("RAGFLOW_DEBUGPY_LISTEN", "0"))
+
 
 def update_progress():
     lock_value = str(uuid.uuid4())
@@ -66,6 +74,7 @@ def update_progress():
                 logging.exception("update_progress exception")
             stop_event.wait(6)
 
+
 def signal_handler(sig, frame):
     logging.info("Received interrupt signal, shutting down...")
     shutdown_all_mcp_sessions()
@@ -73,7 +82,8 @@ def signal_handler(sig, frame):
     stop_event.wait(1)
     sys.exit(0)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     faulthandler.enable()
     init_root_logger("ragflow_server")
     logging.info(r"""
@@ -84,12 +94,8 @@ if __name__ == '__main__':
     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
 
     """)
-    logging.info(
-        f'RAGFlow version: {get_ragflow_version()}'
-    )
-    logging.info(
-        f'project base: {get_project_base_directory()}'
-    )
+    logging.info(f"RAGFlow version: {get_ragflow_version()}")
+    logging.info(f"project base: {get_project_base_directory()}")
     show_configs()
     settings.init_settings()
     settings.print_rag_settings()
@@ -97,6 +103,7 @@ if __name__ == '__main__':
     if RAGFLOW_DEBUGPY_LISTEN > 0:
         logging.info(f"debugpy listen on {RAGFLOW_DEBUGPY_LISTEN}")
         import debugpy
+
         debugpy.listen(("0.0.0.0", RAGFLOW_DEBUGPY_LISTEN))
 
     # init db
@@ -106,15 +113,9 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--version", default=False, help="RAGFlow version", action="store_true"
-    )
-    parser.add_argument(
-        "--debug", default=False, help="debug mode", action="store_true"
-    )
-    parser.add_argument(
-        "--init-superuser", default=False, help="init superuser", action="store_true"
-    )
+    parser.add_argument("--version", default=False, help="RAGFlow version", action="store_true")
+    parser.add_argument("--debug", default=False, help="debug mode", action="store_true")
+    parser.add_argument("--init-superuser", default=False, help="init superuser", action="store_true")
     args = parser.parse_args()
     if args.version:
         print(get_ragflow_version())

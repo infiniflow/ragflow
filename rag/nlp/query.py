@@ -22,12 +22,13 @@ from collections import defaultdict
 from common.query_base import QueryBase
 from common.doc_store.doc_store_base import MatchTextExpr
 from rag.nlp import rag_tokenizer, term_weight, synonym
+from rag.utils.redis_conn import REDIS_CONN
 
 
 class FulltextQueryer(QueryBase):
     def __init__(self):
         self.tw = term_weight.Dealer()
-        self.syn = synonym.Dealer()
+        self.syn = synonym.Dealer(REDIS_CONN.REDIS)
         self.query_fields = [
             "title_tks^10",
             "title_sm_tks^5",
@@ -63,11 +64,10 @@ class FulltextQueryer(QueryBase):
                 syn = self.syn.lookup(tk)
                 syn = rag_tokenizer.tokenize(" ".join(syn)).split()
                 keywords.extend(syn)
-                syn = ["\"{}\"^{:.4f}".format(s, w / 4.) for s in syn if s.strip()]
+                syn = ['"{}"^{:.4f}'.format(s, w / 4.0) for s in syn if s.strip()]
                 syns.append(" ".join(syn))
 
-            q = ["({}^{:.4f}".format(tk, w) + " {})".format(syn) for (tk, w), syn in zip(tks_w, syns) if
-                 tk and not re.match(r"[.^+\(\)-]", tk)]
+            q = ["({}^{:.4f}".format(tk, w) + " {})".format(syn) for (tk, w), syn in zip(tks_w, syns) if tk and not re.match(r"[.^+\(\)-]", tk)]
             for i in range(1, len(tks_w)):
                 left, right = tks_w[i - 1][0].strip(), tks_w[i][0].strip()
                 if not left or not right:
@@ -83,9 +83,7 @@ class FulltextQueryer(QueryBase):
             if not q:
                 q.append(txt)
             query = " ".join(q)
-            return MatchTextExpr(
-                self.query_fields, query, 100, {"original_query": original_query}
-            ), keywords
+            return MatchTextExpr(self.query_fields, query, 100, {"original_query": original_query}), keywords
 
         def need_fine_grained_tokenize(tk):
             if len(tk) < 3:
@@ -107,11 +105,7 @@ class FulltextQueryer(QueryBase):
             logging.debug(json.dumps(twts, ensure_ascii=False))
             tms = []
             for tk, w in sorted(twts, key=lambda x: x[1] * -1):
-                sm = (
-                    rag_tokenizer.fine_grained_tokenize(tk).split()
-                    if need_fine_grained_tokenize(tk)
-                    else []
-                )
+                sm = rag_tokenizer.fine_grained_tokenize(tk).split() if need_fine_grained_tokenize(tk) else []
                 sm = [
                     re.sub(
                         r"[ ,\./;'\[\]\\`~!@#$%\^&\*\(\)=\+_<>\?:\"\{\}\|，。；‘’【】、！￥……（）——《》？：“”-]+",
@@ -132,7 +126,7 @@ class FulltextQueryer(QueryBase):
                 if len(keywords) < 32:
                     keywords.extend([s for s in tk_syns if s])
                 tk_syns = [rag_tokenizer.fine_grained_tokenize(s) for s in tk_syns if s]
-                tk_syns = [f"\"{s}\"" if s.find(" ") > 0 else s for s in tk_syns]
+                tk_syns = [f'"{s}"' if s.find(" ") > 0 else s for s in tk_syns]
 
                 if len(keywords) >= 32:
                     break
@@ -152,13 +146,7 @@ class FulltextQueryer(QueryBase):
             if len(twts) > 1:
                 tms += ' ("%s"~2)^1.5' % rag_tokenizer.tokenize(tt)
 
-            syns = " OR ".join(
-                [
-                    '"%s"'
-                    % rag_tokenizer.tokenize(self.sub_special_char(s))
-                    for s in syns
-                ]
-            )
+            syns = " OR ".join(['"%s"' % rag_tokenizer.tokenize(self.sub_special_char(s)) for s in syns])
             if syns and tms:
                 tms = f"({tms})^5 OR ({syns})^0.7"
 
@@ -168,9 +156,7 @@ class FulltextQueryer(QueryBase):
             query = " OR ".join([f"({t})" for t in qs if t])
             if not query:
                 query = otxt
-            return MatchTextExpr(
-                self.query_fields, query, 100, {"minimum_should_match": min_match, "original_query": original_query}
-            ), keywords
+            return MatchTextExpr(self.query_fields, query, 100, {"minimum_should_match": min_match, "original_query": original_query}), keywords
         return None, keywords
 
     def hybrid_similarity(self, avec, bvecs, atks, btkss, tkweight=0.3, vtweight=0.7):
@@ -222,7 +208,7 @@ class FulltextQueryer(QueryBase):
             tk_syns = self.syn.lookup(tk)
             tk_syns = [self.sub_special_char(s) for s in tk_syns]
             tk_syns = [rag_tokenizer.fine_grained_tokenize(s) for s in tk_syns if s]
-            tk_syns = [f"\"{s}\"" if s.find(" ") > 0 else s for s in tk_syns]
+            tk_syns = [f'"{s}"' if s.find(" ") > 0 else s for s in tk_syns]
             tk = self.sub_special_char(tk)
             if tk.find(" ") > 0:
                 tk = '"%s"' % tk
@@ -231,6 +217,4 @@ class FulltextQueryer(QueryBase):
             if tk:
                 keywords.append(f"{tk}^{w}")
 
-        return MatchTextExpr(self.query_fields, " ".join(keywords), 100,
-                             {"minimum_should_match": min(3, len(keywords) / 10),
-                              "original_query": " ".join(origin_keywords)})
+        return MatchTextExpr(self.query_fields, " ".join(keywords), 100, {"minimum_should_match": min(3, len(keywords) / 10), "original_query": " ".join(origin_keywords)})

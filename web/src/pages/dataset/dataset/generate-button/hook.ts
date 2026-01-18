@@ -148,10 +148,6 @@ export const useDatasetGenerate = () => {
       return data;
     },
   });
-  // const pauseGenerate = useCallback(() => {
-  //   // TODO: pause generate
-  //   console.log('pause generate');
-  // }, []);
   const { mutateAsync: pauseGenerate } = useMutation({
     mutationKey: [DatasetKey.pauseGenerate],
     mutationFn: async ({

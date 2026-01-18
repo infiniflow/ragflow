@@ -44,7 +44,7 @@ async def upload():
     pf_id = form.get("parent_id")
 
     if not pf_id:
-        root_folder = FileService.get_root_folder(current_user.id)
+        root_folder = await asyncio.to_thread(FileService.get_root_folder, current_user.id)
         pf_id = root_folder["id"]
 
     files = await request.files
@@ -59,7 +59,7 @@ async def upload():
                 data=False, message='No file selected!', code=RetCode.ARGUMENT_ERROR)
     file_res = []
     try:
-        e, pf_folder = FileService.get_by_id(pf_id)
+        e, pf_folder = await asyncio.to_thread(FileService.get_by_id, pf_id)
         if not e:
             return get_data_error_result( message="Can't find this folder!")
 
@@ -136,14 +136,14 @@ async def create():
     pf_id = req.get("parent_id")
     input_file_type = req.get("type")
     if not pf_id:
-        root_folder = FileService.get_root_folder(current_user.id)
+        root_folder = await asyncio.to_thread(FileService.get_root_folder, current_user.id)
         pf_id = root_folder["id"]
 
     try:
-        if not FileService.is_parent_folder_exist(pf_id):
+        if not await asyncio.to_thread(FileService.is_parent_folder_exist, pf_id):
             return get_json_result(
                 data=False, message="Parent Folder Doesn't Exist!", code=RetCode.OPERATING_ERROR)
-        if FileService.query(name=req["name"], parent_id=pf_id):
+        if await asyncio.to_thread(FileService.query, name=req["name"], parent_id=pf_id):
             return get_data_error_result(
                 message="Duplicated folder name in the same folder.")
 
@@ -152,7 +152,7 @@ async def create():
         else:
             file_type = FileType.VIRTUAL.value
 
-        file = FileService.insert({
+        file = await asyncio.to_thread(FileService.insert, {
             "id": get_uuid(),
             "parent_id": pf_id,
             "tenant_id": current_user.id,
