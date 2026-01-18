@@ -287,7 +287,9 @@ async def add_llm():
     req = await get_request_json()
     factory = req["llm_factory"]
     api_key = req.get("api_key", "x")
-    llm_name = req.get("llm_name", "")
+    llm_name = req.get("llm_name")
+    if not llm_name or not llm_name.strip():
+        return get_data_error_result(message="llm_name is required")
 
     if factory not in [f.name for f in get_allowed_llm_factories()]:
         return get_data_error_result(message=f"LLM factory {factory} is not allowed")

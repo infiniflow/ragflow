@@ -14,19 +14,19 @@ admin:
 #  stale_timeout: 300
 #  max_allowed_packet: 1073741824
 minio:
-  user: 'ragflow'
-  password: 'ragflow_dev_pass'
-  host: 'minio-dev:9000'
-  bucket: 'ragflow'
-  prefix_path: ''
+  user: ${MINIO_USER}
+  password: ${MINIO_PASSWORD}
+  host: ${MINIO_HOST}
+  bucket: ${MINIO_BUCKET}
+  prefix_path: ${MINIO_PREFIX_PATH}
 es:
-  hosts: 'http://elasticsearch-dev:9200'
-  username: 'elastic'
-  password: 'ragflow_dev_pass'
+  hosts: ${ES_HOSTS}
+  username: ${ES_USERNAME}
+  password: ${ES_PASSWORD}
 os:
-  hosts: 'http://opensearch01:9201'
-  username: 'admin'
-  password: 'infini_rag_flow_OS_01'
+  hosts: ${OPENSEARCH_HOSTS}
+  username: ${OPENSEARCH_USERNAME}
+  password: ${OPENSEARCH_PASSWORD}
 #infinity:
 #  uri: 'infinity:23817'
 #  db_name: 'default_db'
@@ -40,18 +40,19 @@ os:
 #    port: 2881
 redis:
   db: 1
-  username: ''
-  password: 'ragflow_dev_pass'
+  username: '' # Can be empty for AUTH or set via env if needed
+  password: ${REDIS_PASSWORD}
   host: 'redis-dev:6379'
 user_default_llm:
   default_models:
     embedding_model:
-      api_key: 'xxx'
-      base_url: 'http://host.docker.internal:80'
+      api_key: ${EMBEDDING_API_KEY} # Supply via secure secret management
+      # For Docker Desktop use http://host.docker.internal:80, otherwise use appropriate host
+      base_url: ${EMBEDDING_BASE_URL}
 postgres:
   name: 'ragflow'
   user: 'ragflow'
-  password: 'ragflow_dev_pass'
+  password: ${POSTGRES_PASSWORD}
   host: 'postgres-dev'
   port: 5432
   max_connections: 50
@@ -75,11 +76,11 @@ postgres:
 #   region: ''
 #   bucket: ''
 #   prefix_path: ''
-# azure:
+# azure_sas:
 #   auth_type: 'sas'
 #   container_url: 'container_url'
 #   sas_token: 'sas_token'
-# azure:
+# azure_spn:
 #   auth_type: 'spn'
 #   account_url: 'account_url'
 #   client_id: 'client_id'

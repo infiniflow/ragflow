@@ -16,7 +16,7 @@ import { IModalProps } from '@/interfaces/common';
 import { IAddLlmRequestBody } from '@/interfaces/request/llm';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -58,8 +58,13 @@ const DynamicProviderModal = ({
     return baseFormSchema;
   }, [llmFactory]);
 
+  // Keep a ref to the latest schema so validation always uses the current one
+  const formSchemaRef = useRef(formSchema);
+  formSchemaRef.current = formSchema;
+
   const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
+    resolver: (data, context, options) =>
+      zodResolver(formSchemaRef.current)(data, context, options),
     defaultValues: {
       model_type: 'chat',
       provider: 'all',

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from dataclasses import dataclass
 from enum import Enum
 from io import BytesIO
@@ -61,6 +62,7 @@ class _BBox:
 
 class DoclingParser(RAGFlowPdfParser):
     _converter_instance = None
+    _converter_lock = threading.Lock()
 
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -72,18 +74,20 @@ class DoclingParser(RAGFlowPdfParser):
     @classmethod
     def _get_converter(cls):
         if cls._converter_instance is None:
-            if DocumentConverter is None:
-                return None
+            with cls._converter_lock:
+                if cls._converter_instance is None:
+                    if DocumentConverter is None:
+                        return None
 
-            # Configure pipeline options
-            pipeline_options = PdfPipelineOptions()
-            pipeline_options.do_ocr = True
-            pipeline_options.do_table_structure = True
-            pipeline_options.table_structure_options.do_cell_matching = True
-            pipeline_options.generate_page_images = True
-            pipeline_options.images_scale = 2.0  # Improve image resolution
+                    # Configure pipeline options
+                    pipeline_options = PdfPipelineOptions()
+                    pipeline_options.do_ocr = True
+                    pipeline_options.do_table_structure = True
+                    pipeline_options.table_structure_options.do_cell_matching = True
+                    pipeline_options.generate_page_images = True
+                    pipeline_options.images_scale = 2.0  # Improve image resolution
 
-            cls._converter_instance = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
+                    cls._converter_instance = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)})
         return cls._converter_instance
 
     def check_installation(self) -> bool:
@@ -209,8 +213,11 @@ class DoclingParser(RAGFlowPdfParser):
                 text = getattr(item, "text", "") or ""
                 bbox = None
                 if getattr(item, "prov", None):
-                    pn = getattr(item.prov, "page_no", None)
-                    bb = getattr(item.prov, "bbox", None)
+                    prov = item.prov
+                    if isinstance(prov, (list, tuple)):
+                        prov = prov[0]
+                    pn = getattr(prov, "page_no", None)
+                    bb = getattr(prov, "bbox", None)
                     bb = [getattr(bb, "l", None), getattr(bb, "t", None), getattr(bb, "r", None), getattr(bb, "b", None)]
                     if pn and bb and len(bb) == 4:
                         bbox = _BBox(int(pn), bb[0], bb[1], bb[2], bb[3])
