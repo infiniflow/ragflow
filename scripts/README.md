@@ -57,12 +57,12 @@ Builds and publishes (or loads) the RAGFlow Docker image. Designed for local dev
 
 **Usage:**
 ```bash
-# Default (Builds ragflow-local:dev, loads to 'default' context)
+# Default (Builds ragflow-local:dev, loads to 'unraid' context)
 ./scripts/publish_dev_image.sh
 
 
 # Custom usage
-./scripts/publish_dev_image.sh --context default --local my-image v2
+./scripts/publish_dev_image.sh --context unraid --local my-image v2
 ```
 
 **Options:**
