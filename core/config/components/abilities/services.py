@@ -68,7 +68,7 @@ class SMTPConfig(BaseModel):
     use_ssl: bool = Field(default=True, validation_alias=AliasChoices("use_ssl", "mail_use_ssl"))
     use_tls: bool = Field(default=False, validation_alias=AliasChoices("use_tls", "mail_use_tls"))
     default_sender: tuple[str, str] = Field(
-        default="", validation_alias=AliasChoices("default_sender", "mail_default_sender"))
+        default=("RAGFlow", ""), validation_alias=AliasChoices("default_sender", "mail_default_sender"))
     frontend_url: str = Field(
         default="", validation_alias=AliasChoices("frontend_url", "mail_frontend_url"))
 
