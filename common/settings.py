@@ -249,7 +249,11 @@ def init_settings():
         ES = get_base_config("es", {})
         docStoreConn = rag.utils.es_conn.ESConnection()
     elif lower_case_doc_engine == "infinity":
-        INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
+        INFINITY = get_base_config("infinity", {
+            "uri": "infinity:23817",
+            "postgres_port": 5432,
+            "db_name": "default_db"
+        })
         docStoreConn = rag.utils.infinity_conn.InfinityConnection()
     elif lower_case_doc_engine == "opensearch":
         OS = get_base_config("os", {})
@@ -269,7 +273,11 @@ def init_settings():
         ES = get_base_config("es", {})
         msgStoreConn = memory_es_conn.ESConnection()
     elif DOC_ENGINE == "infinity":
-        INFINITY = get_base_config("infinity", {"uri": "infinity:23817"})
+        INFINITY = get_base_config("infinity", {
+            "uri": "infinity:23817",
+            "postgres_port": 5432,
+            "db_name": "default_db"
+        })
         msgStoreConn = memory_infinity_conn.InfinityConnection()
 
     global AZURE, S3, MINIO, OSS, GCS
