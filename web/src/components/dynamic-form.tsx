@@ -938,7 +938,6 @@ const DynamicForm = {
   ) as <T extends FieldValues>(
     props: DynamicFormProps<T> & { ref?: React.Ref<DynamicFormRef> },
   ) => React.ReactElement,
-
   SavingButton: ({
     submitLoading,
     buttonText,
@@ -1014,5 +1013,7 @@ const DynamicForm = {
     );
   },
 };
+
+DynamicForm.Root.displayName = 'DynamicFormRoot';
 
 export { DynamicForm };

@@ -186,7 +186,7 @@ export function useDatasetTableColumns({
                 ),
                 isCanAdd: true,
                 type: MetadataType.UpdateSingle,
-                record: row,
+                record: row.original,
                 title: (
                   <div className="flex flex-col gap-2 w-full">
                     <div className="text-base font-normal">
